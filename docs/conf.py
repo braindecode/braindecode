@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # Braindecode documentation build configuration file, created by
-# sphinx-quickstart on Sat Jul  1 01:32:17 2017.
+# sphinx-quickstart on Sat Jul  1 01:51:38 2017.
 #
 # This file is execfile()d with the current directory set to its
 # containing dir.
