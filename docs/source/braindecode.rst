@@ -6,14 +6,9 @@ Subpackages
 
 .. toctree::
 
-    braindecode.configs
-    braindecode.csp
     braindecode.datasets
     braindecode.experiments
     braindecode.models
-    braindecode.modules
-    braindecode.mywyrm
-    braindecode.test
     braindecode.torchext
 
 Submodules

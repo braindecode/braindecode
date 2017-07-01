@@ -28,6 +28,14 @@ braindecode\.torchext\.losses module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.torchext\.modules module
+-------------------------------------
+
+.. automodule:: braindecode.torchext.modules
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.torchext\.util module
 ----------------------------------
 

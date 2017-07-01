@@ -1,0 +1,5 @@
+include README.rst
+include LICENSE.txt
+
+recursive-include docs *.ipynb *.rst conf.py Makefile
+recursive-exclude docs *checkpoint.ipynb
