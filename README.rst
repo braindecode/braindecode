@@ -10,6 +10,7 @@ Installation
 ============
 
 First, install pytorch from http://pytorch.org/.
+
 Then, install braindecode via pip:
 
 .. code-block:: bash
