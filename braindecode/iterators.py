@@ -1,6 +1,7 @@
 import numpy as np
 from numpy.random import RandomState
 
+
 def get_balanced_batches(n_trials, rng, shuffle, n_batches=None,
                          batch_size=None):
     """Create indices for batches balanced in size (batches will have maximum size difference of 1).

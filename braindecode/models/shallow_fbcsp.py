@@ -2,7 +2,7 @@ import numpy as np
 from torch import nn
 from torch.nn import init
 
-from braindecode.modules.expression import Expression
+from braindecode.torchext.modules import Expression
 from braindecode.torchext.functions import safe_log, square
 from braindecode.torchext.util import np_to_var
 
