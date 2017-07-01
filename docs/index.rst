@@ -1,19 +1,20 @@
-.. Braindecode documentation master file, created by
-   sphinx-quickstart on Sat Jul  1 01:51:38 2017.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
 Welcome to Braindecode
 =======================================
 
-
-
-Some simple explanation!?!
+**Under construction**
+A deep learning for raw time-domain EEG decoding toolbox.
 
 
 Installation
 =======================================
-Well something how to install it, right?
+
+First, install pytorch from http://pytorch.org/.
+
+Then, install braindecode via pip:
+
+.. code-block:: bash
+
+  pip install braindecode
 
 
 Tutorials
