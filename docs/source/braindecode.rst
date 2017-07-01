@@ -19,32 +19,32 @@ Subpackages
 Submodules
 ----------
 
-braindecode.iterators module
-----------------------------
+braindecode\.iterators module
+-----------------------------
 
 .. automodule:: braindecode.iterators
     :members:
     :undoc-members:
     :show-inheritance:
 
-braindecode.splitters module
-----------------------------
+braindecode\.splitters module
+-----------------------------
 
 .. automodule:: braindecode.splitters
     :members:
     :undoc-members:
     :show-inheritance:
 
-braindecode.trial_segment module
---------------------------------
+braindecode\.trial\_segment module
+----------------------------------
 
 .. automodule:: braindecode.trial_segment
     :members:
     :undoc-members:
     :show-inheritance:
 
-braindecode.util module
------------------------
+braindecode\.util module
+------------------------
 
 .. automodule:: braindecode.util
     :members:

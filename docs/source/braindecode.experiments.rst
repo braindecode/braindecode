@@ -1,27 +1,27 @@
-braindecode.experiments package
-===============================
+braindecode\.experiments package
+================================
 
 Submodules
 ----------
 
-braindecode.experiments.experiment module
------------------------------------------
+braindecode\.experiments\.experiment module
+-------------------------------------------
 
 .. automodule:: braindecode.experiments.experiment
     :members:
     :undoc-members:
     :show-inheritance:
 
-braindecode.experiments.monitors module
----------------------------------------
+braindecode\.experiments\.monitors module
+-----------------------------------------
 
 .. automodule:: braindecode.experiments.monitors
     :members:
     :undoc-members:
     :show-inheritance:
 
-braindecode.experiments.stopcriteria module
--------------------------------------------
+braindecode\.experiments\.stopcriteria module
+---------------------------------------------
 
 .. automodule:: braindecode.experiments.stopcriteria
     :members:

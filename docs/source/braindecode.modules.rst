@@ -1,11 +1,11 @@
-braindecode.modules package
-===========================
+braindecode\.modules package
+============================
 
 Submodules
 ----------
 
-braindecode.modules.expression module
--------------------------------------
+braindecode\.modules\.expression module
+---------------------------------------
 
 .. automodule:: braindecode.modules.expression
     :members:

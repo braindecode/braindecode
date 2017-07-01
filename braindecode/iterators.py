@@ -57,6 +57,7 @@ def get_balanced_batches(n_trials, rng, shuffle, n_batches=None,
 class BalancedBatchSizeIterator(object):
     """
     Create batches of balanced size.
+    
     Parameters
     ----------
     batch_size: int
