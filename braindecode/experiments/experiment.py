@@ -1,10 +1,11 @@
-from collections import OrderedDict
 import logging
-from copy import deepcopy
-import pandas as pd
 import numpy as np
+from collections import OrderedDict
+from copy import deepcopy
 
-from braindecode.splitters import concatenate_sets
+import pandas as pd
+
+from braindecode.datautils.splitters import concatenate_sets
 from braindecode.experiments.stopcriteria import MaxEpochs, ColumnBelow, Or
 from braindecode.torchext.util import np_to_var, set_random_seeds
 

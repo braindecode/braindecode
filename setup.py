@@ -15,7 +15,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # http://packaging.python.org/en/latest/tutorial.html#version
-    version='0.1.2',
+    version='0.1.3',
 
     description='A deep learning for raw time-domain EEG decoding toolbox.',
     long_description=long_description,  #this is the
