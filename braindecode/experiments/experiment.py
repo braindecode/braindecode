@@ -5,7 +5,7 @@ from copy import deepcopy
 
 import pandas as pd
 
-from braindecode.datautils.splitters import concatenate_sets
+from braindecode.datautil.splitters import concatenate_sets
 from braindecode.experiments.stopcriteria import MaxEpochs, ColumnBelow, Or
 from braindecode.torchext.util import np_to_var, set_random_seeds
 

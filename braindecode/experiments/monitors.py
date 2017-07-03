@@ -1,8 +1,6 @@
 import numpy as np
 import time
 
-from braindecode.trial_segment import compute_trial_start_stop_samples
-
 
 class MisclassMonitor(object):
     def __init__(self, exponentiate_preds=False, col_suffix='misclass'):
