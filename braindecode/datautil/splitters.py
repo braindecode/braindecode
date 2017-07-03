@@ -1,6 +1,6 @@
 import numpy as np
 
-from braindecode.datasets.signal_target import apply_to_X_y
+from braindecode.datautil.signal_target import apply_to_X_y
 
 
 def concatenate_sets(set_a, set_b):
