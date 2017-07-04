@@ -4,7 +4,8 @@ from numpy.random import RandomState
 
 def get_balanced_batches(n_trials, rng, shuffle, n_batches=None,
                          batch_size=None):
-    """Create indices for batches balanced in size (batches will have maximum size difference of 1).
+    """Create indices for batches balanced in size 
+    (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
     will not have the given batch size but rather the next largest batch size
     that allows to split the set into balanced batches (maximum size difference 1).
@@ -13,9 +14,9 @@ def get_balanced_batches(n_trials, rng, shuffle, n_batches=None,
     ----------
     n_trials : int
         Size of set.
-    rng :
+    rng : RandomState
 
-    shuffle :
+    shuffle : bool
         Whether to shuffle indices before splitting set.
     n_batches :
          (Default value = None)
@@ -87,6 +88,59 @@ class BalancedBatchSizeIterator(object):
 
     def reset_rng(self):
         self.rng = RandomState(328774)
+
+
+class ClassBalancedBatchSizeIterator(object):
+    """
+    Create batches of balanced size, that are also balanced per class, i.e.
+    each class should be sampled roughly with the same frequency during
+    training.
+
+    Parameters
+    ----------
+    batch_size: int
+        Resulting batches will not necessarily have the given batch size
+        but rather the next largest batch size that allows to split the set into
+        balanced batches (maximum size difference 1).
+    """
+
+    def __init__(self, batch_size):
+        self.batch_size = batch_size
+        self.rng = RandomState(328774)
+
+    def get_batches(self, dataset, shuffle):
+        n_trials = dataset.X.shape[0]
+        batches = get_balanced_batches(n_trials,
+                                       batch_size=self.batch_size,
+                                       rng=self.rng,
+                                       shuffle=shuffle)
+        if shuffle:
+            n_classes = np.max(dataset.y) + 1
+            class_probabilities = [np.mean(dataset.y == i_class)
+                                   for i_class in range(n_classes)]
+            class_probabilites = np.array(class_probabilities)
+            # choose trials in inverse probability of class
+            trial_probabilities = [1.0 / class_probabilities[y]
+                                   for y in dataset.y]
+            trial_probabilities = np.array(trial_probabilities) / np.sum(
+                trial_probabilities)
+            i_trial_to_balanced = self.rng.choice(n_trials, n_trials,
+                                                  p=trial_probabilities)
+
+        for batch_inds in batches:
+            if shuffle:
+                batch_inds = [i_trial_to_balanced[i_trial] for i_trial in
+                              batch_inds]
+            batch_X = dataset.X[batch_inds]
+            batch_y = dataset.y[batch_inds]
+
+            # add empty fourth dimension if necessary
+            if batch_X.ndim == 3:
+                batch_X = batch_X[:, :, :, None]
+            yield (batch_X, batch_y)
+
+    def reset_rng(self):
+        self.rng = RandomState((4, 7, 2017))
 
 
 class CropsFromTrialsIterator(object):
