@@ -9,7 +9,7 @@ A deep learning toolbox to decode raw time-domain EEG.
 Installation
 ============
 
-1. Install pytorch from http://pytorch.org/.
+1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
 2. Install newest version of python-mne:
 
