@@ -9,9 +9,9 @@ A deep learning toolbox to decode raw time-domain EEG.
 Installation
 ============
 
-First, install pytorch from http://pytorch.org/.
+1. Install pytorch from http://pytorch.org/.
 
-Second install newest version of python-mne:
+2. Install newest version of python-mne:
 
 .. code-block:: bash
 
@@ -20,7 +20,7 @@ Second install newest version of python-mne:
   python setup.py install
 
 
-Then, install braindecode via pip:
+3. Install braindecode via pip:
 
 .. code-block:: bash
 
