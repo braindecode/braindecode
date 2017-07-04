@@ -77,7 +77,13 @@ class BalancedBatchSizeIterator(object):
                                        rng=self.rng,
                                        shuffle=shuffle)
         for batch_inds in batches:
-            yield (dataset.X[batch_inds], dataset.y[batch_inds])
+            batch_X = dataset.X[batch_inds]
+            batch_y = dataset.y[batch_inds]
+
+            # add empty fourth dimension if necessary
+            if batch_X.ndim == 3:
+                batch_X = batch_X[:, :, :, None]
+            yield (batch_X, batch_y)
 
     def reset_rng(self):
         self.rng = RandomState(328774)
