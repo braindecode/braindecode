@@ -59,8 +59,8 @@ def create_signal_target_from_start_and_ival(
     y = []
 
     for i_sample, mrk_code in zip(events[:, 0], events[:, 1]):
-        start_sample = i_sample + start_offset
-        stop_sample = i_sample + stop_offset
+        start_sample = int(i_sample) + start_offset
+        stop_sample = int(i_sample) + stop_offset
         if mrk_code in mrk_code_to_name_and_y:
             name, this_y = mrk_code_to_name_and_y[mrk_code]
             X.append(data[:, start_sample:stop_sample].astype(np.float32))
