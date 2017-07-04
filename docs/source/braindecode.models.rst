@@ -4,6 +4,14 @@ braindecode\.models package
 Submodules
 ----------
 
+braindecode\.models\.deep4 module
+---------------------------------
+
+.. automodule:: braindecode.models.deep4
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.models\.shallow\_fbcsp module
 ------------------------------------------
 
