@@ -48,13 +48,75 @@ class MisclassMonitor(object):
         return {column_name: float(misclass)}
 
 
+class AveragePerClassMisclassMonitor(object):
+    """
+    Compute average of misclasses per class,
+    useful if classes are highly imbalanced.
+    
+    Parameters
+    ----------
+    col_suffix: str
+        Name of the column in the monitoring output.
+    """
+    def __init__(self, col_suffix='misclass'):
+        self.col_suffix = col_suffix
+
+    def monitor_epoch(self, ):
+        return
+
+    def monitor_set(self, setname, all_preds, all_losses,
+                    all_batch_sizes, all_targets, dataset):
+        all_pred_labels = []
+        all_target_labels = []
+        for i_batch in range(len(all_batch_sizes)):
+            preds = all_preds[i_batch]
+            # preds could be examples x classes x time
+            # or just
+            # examples x classes
+            # make sure not to remove first dimension if it only has size one
+            only_one_row = preds.shape[0] == 1
+            n_classes = preds.shape[1]
+            pred_labels = np.argmax(preds, axis=1).squeeze()
+            # add first dimension again if needed
+            if only_one_row:
+                pred_labels = pred_labels[None]
+            # now examples x time or examples
+            all_pred_labels.extend(pred_labels)
+            targets = all_targets[i_batch]
+            if targets.ndim > pred_labels.ndim:
+                # targets may be one-hot-encoded
+                targets = np.argmax(targets, axis=1)
+            elif targets.ndim < pred_labels.ndim:
+                # targets may not have time dimension,
+                # in that case just repeat targets on time dimension
+                extra_dim = pred_labels.ndim - 1
+                targets = np.repeat(np.expand_dims(targets, extra_dim),
+                                    pred_labels.shape[extra_dim],
+                                    extra_dim)
+            assert targets.shape == pred_labels.shape
+            all_target_labels.extend(targets)
+        all_pred_labels = np.array(all_pred_labels)
+        all_target_labels = np.array(all_target_labels)
+        assert all_pred_labels.shape == all_target_labels.shape
+        acc_per_class = []
+        for i_class in range(n_classes):
+            mask = all_target_labels == i_class
+            acc = np.mean(all_pred_labels[mask] ==
+                          all_target_labels[mask])
+            acc_per_class.append(acc)
+        misclass = 1 - np.mean(acc_per_class)
+        column_name = "{:s}_{:s}".format(setname, self.col_suffix)
+        return {column_name: float(misclass)}
+
+
 class LossMonitor(object):
     def monitor_epoch(self,):
         return
 
     def monitor_set(self, setname, all_preds, all_losses,
                     all_batch_sizes, all_targets, dataset):
-        batch_weights = np.array(all_batch_sizes)/ np.sum(all_batch_sizes)
+        batch_weights = np.array(all_batch_sizes)/ float(
+            np.sum(all_batch_sizes))
         loss_per_batch = [np.mean(loss) for loss in all_losses]
         mean_loss = np.sum(batch_weights * loss_per_batch)
         column_name = "{:s}_loss".format(setname)
