@@ -22,14 +22,16 @@ def set_random_seeds(seed, cuda):
 
 def to_dense_prediction_model(model, axis=(2,3)):
     """
+    Transform a sequential model with strides to a model that outputs
+    dense predictions by removing the strides and instead inserting dilations.
+    Modifies model in-place.
     
     Parameters
     ----------
     model
-    axis
-
-    Returns
-    -------
+    axis: int or (int,int)
+        Axis to transform (in terms of intermediate output axes)
+        can either be 2, 3, or (2,3).
 
     """
     if not hasattr(axis, '__len__'):
