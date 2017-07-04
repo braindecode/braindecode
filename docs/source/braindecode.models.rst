@@ -12,6 +12,14 @@ braindecode\.models\.deep4 module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.models\.eegnet module
+----------------------------------
+
+.. automodule:: braindecode.models.eegnet
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.models\.shallow\_fbcsp module
 ------------------------------------------
 

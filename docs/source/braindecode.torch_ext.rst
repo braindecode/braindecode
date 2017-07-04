@@ -20,6 +20,14 @@ braindecode\.torch\_ext\.functions module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.torch\_ext\.init module
+------------------------------------
+
+.. automodule:: braindecode.torch_ext.init
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.torch\_ext\.losses module
 --------------------------------------
 
