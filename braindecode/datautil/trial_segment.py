@@ -14,6 +14,7 @@ marker_def = OrderedDict(
 
 def create_signal_target_from_raw_mne(raw, name_to_codes, epoch_ival,
                          name_to_stop_codes=None):
+    """ Create SignalTarget set from X and y given raw mne object."""
     data = raw.get_data()
     events = np.array([raw.info['events'][:,0],
                       raw.info['events'][:,2] - raw.info['events'][:,1]]).T

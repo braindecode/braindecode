@@ -9,11 +9,14 @@ log = logging.getLogger(__name__)
 class MultipleSetLoader(object):
     """
     Class to load multiple sets.
-    Resamples sets down as necessary.
+    
+    Resamples individual sets down to lowest common sampling frequency, 
+    if necessary.
 
     Parameters
     ----------
     set_loaders: object with load method: () -> MNE Raw object
+        The individual set loaders.
     """
 
     def __init__(self, set_loaders):

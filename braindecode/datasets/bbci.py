@@ -11,18 +11,34 @@ log = logging.getLogger(__name__)
 
 
 class BBCIDataset(object):
+    """
+    Loader class for files created by saving BBCI files in matlab (make
+    sure to save with '-v7.3' in matlab, see
+    https://de.mathworks.com/help/matlab/import_export/mat-file-versions.html#buk6i87
+    )
+
+    Parameters
+    ----------
+    filename: str
+    load_sensor_names: list of str, optional
+        Also speeds up loading if you only load some sensors.
+        None means load all sensors.
+    check_class_names: bool, optional
+        check if the class names are part of some known class names at
+        Translational NeuroTechnology Lab, AG Ball, Freiburg, Germany.
+    """
     def __init__(self, filename, load_sensor_names=None, check_class_names=False):
         self.__dict__.update(locals())
         del self.self
 
     def load(self):
-        cnt = self.load_continuous_signal()
-        cnt = self.add_markers(cnt)
+        cnt = self._load_continuous_signal()
+        cnt = self._add_markers(cnt)
         return cnt
 
-    def load_continuous_signal(self):
-        wanted_chan_inds, wanted_sensor_names = self.determine_sensors()
-        fs = self.determine_samplingrate()
+    def _load_continuous_signal(self):
+        wanted_chan_inds, wanted_sensor_names = self._determine_sensors()
+        fs = self._determine_samplingrate()
         with h5py.File(self.filename, 'r') as h5file:
             samples = int(h5file['nfo']['T'][0, 0])
             cnt_signal_shape = (samples, len(wanted_chan_inds))
@@ -48,7 +64,7 @@ class BBCIDataset(object):
         cnt = mne.io.RawArray(continuous_signal.T, info)
         return cnt
 
-    def determine_sensors(self):
+    def _determine_sensors(self):
         all_sensor_names = self.get_all_sensors(self.filename, pattern=None)
         if self.load_sensor_names is None:
 
@@ -71,11 +87,11 @@ class BBCIDataset(object):
                     len(eeg_sensor_names) == 16), (
                 "Recheck this code if you have different sensors...")
             self.load_sensor_names = eeg_sensor_names
-        chan_inds = self.determine_chan_inds(all_sensor_names,
-                                             self.load_sensor_names)
+        chan_inds = self._determine_chan_inds(all_sensor_names,
+                                              self.load_sensor_names)
         return chan_inds, self.load_sensor_names
 
-    def determine_samplingrate(self):
+    def _determine_samplingrate(self):
         with h5py.File(self.filename, 'r') as h5file:
             fs = h5file['dat']['fs'][0, 0]
             assert isinstance(fs, int) or fs.is_integer()
@@ -83,7 +99,7 @@ class BBCIDataset(object):
         return fs
 
     @staticmethod
-    def determine_chan_inds(all_sensor_names, sensor_names):
+    def _determine_chan_inds(all_sensor_names, sensor_names):
         assert sensor_names is not None
         chan_inds = [all_sensor_names.index(s) for s in sensor_names]
         assert len(chan_inds) == len(sensor_names), ("All"
@@ -94,6 +110,20 @@ class BBCIDataset(object):
 
     @staticmethod
     def get_all_sensors(filename, pattern=None):
+        """
+        Get all sensors that exist in the given file.
+        
+        Parameters
+        ----------
+        filename: str
+        pattern: str, optional
+            Only return those sensor names that match the given pattern.
+
+        Returns
+        -------
+        sensor_names: list of str
+            Sensor names that match the pattern or all sensor names in the file.
+        """
         with h5py.File(filename, 'r') as h5file:
             clab_set = h5file['dat']['clab'][:].squeeze()
             all_sensor_names = [''.join(chr(c) for c in h5file[obj_ref]) for
@@ -104,7 +134,7 @@ class BBCIDataset(object):
                     all_sensor_names)
         return all_sensor_names
 
-    def add_markers(self, cnt):
+    def _add_markers(self, cnt):
         with h5py.File(self.filename, 'r') as h5file:
             event_times_in_ms = h5file['mrk']['time'][:].squeeze()
             event_classes = h5file['mrk']['event']['desc'][:].squeeze()
@@ -115,7 +145,7 @@ class BBCIDataset(object):
                                for obj_ref in class_name_set]
 
             if self.check_class_names:
-                check_class_names(
+                _check_class_names(
                     all_class_names, event_times_in_ms, event_classes,)
 
         event_times_in_samples = event_times_in_ms * cnt.info['sfreq'] / 1000.0
@@ -151,7 +181,20 @@ class BBCIDataset(object):
         return cnt
 
 
-def check_class_names(all_class_names, event_times_in_ms, event_classes,):
+def _check_class_names(all_class_names, event_times_in_ms, event_classes, ):
+    """
+    Checks if the class names are part of some known class names used in
+    translational neurotechnology lab, AG Ball, Freiburg.
+    
+    Logs warning in case class names are not known. 
+    
+    Parameters
+    ----------
+    all_class_names: list of str
+    event_times_in_ms: list of number
+    event_classes: list of number
+
+    """
     if all_class_names == ['Right Hand', 'Left Hand', 'Rest', 'Feet']:
         pass
     elif ((all_class_names == ['1', '10', '11', '111', '12', '13',
@@ -176,6 +219,8 @@ def check_class_names(all_class_names, event_times_in_ms, event_classes,):
         event_classes[left_mask] = 2
         event_classes[rest_mask] = 3
         event_classes[feet_mask] = 4
+        log.warn("Swapped  class names {:s}... might cause problems...".format(
+            all_class_names))
     elif all_class_names == ['Right Hand Start', 'Left Hand Start',
                              'Rest Start', 'Feet Start',
                              'Right Hand End',
@@ -320,7 +365,24 @@ def check_class_names(all_class_names, event_times_in_ms, event_classes,):
         log.warn("Unknown class names {:s}".format(
             all_class_names))
 
+
 def load_bbci_sets_from_folder(folder, runs='all'):
+    """
+    Load bbci datasets from files in given folder.
+    
+    Parameters
+    ----------
+    folder: str
+        Folder with .BBCI.mat files inside
+    runs: list of int 
+        If you only want to load specific runs.
+        Assumes filenames with such kind of part: S001R02 for Run 2.
+        Tries to match this regex: ``'S[0-9]{3,3}R[0-9]{2,2}_'``.
+
+    Returns
+    -------
+
+    """
     bbci_mat_files = sorted(glob(os.path.join(folder, '*.BBCI.mat')))
     if runs != 'all':
         file_run_numbers = [int(re.search('S[0-9]{3,3}R[0-9]{2,2}_', f).group()[5:7])
