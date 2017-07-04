@@ -8,7 +8,6 @@ from braindecode.torch_ext.util import np_to_var
 
 
 class ShallowFBCSPNet(object):
-    # TODO: auto final dense length for shallow
     def __init__(self, in_chans,
                  n_classes,
                  input_time_length=None,
@@ -25,7 +24,7 @@ class ShallowFBCSPNet(object):
                  batch_norm=True,
                  batch_norm_alpha=0.1,
                  drop_prob=0.5):
-        if final_conv_length == 'full':
+        if final_conv_length == 'auto':
             assert input_time_length is not None
         self.__dict__.update(locals())
         del self.self
@@ -92,6 +91,9 @@ class ShallowFBCSPNet(object):
             init.xavier_uniform(model.conv_spat.weight, gain=1)
             if not self.batch_norm:
                 init.constant(model.conv_spat.bias, 0)
+            else:
+                init.constant(model.bnorm.weight, 1)
+                init.constant(model.bnorm.bias, 0)
         init.xavier_uniform(model.conv_classifier.weight, gain=1)
         init.constant(model.conv_classifier.bias, 0)
 
