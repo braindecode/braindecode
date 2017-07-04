@@ -137,13 +137,18 @@ class CropsFromTrialsIterator(object):
                                       for i_trial, block in
                                           enumerate(start_stop_blocks_per_trial)
                                       for (start, stop) in block]
-        if shuffle:
-            self.rng.shuffle(i_trial_start_stop_block)
+        i_trial_start_stop_block = np.array(i_trial_start_stop_block)
+        if i_trial_start_stop_block.ndim == 1:
+            i_trial_start_stop_block = i_trial_start_stop_block[None,:]
+        #if shuffle:
+        #    self.rng.shuffle(i_trial_start_stop_block)
 
-        for i_block in range(0, len(i_trial_start_stop_block), self.batch_size):
-            i_block_stop = min(i_block + self.batch_size,
-                               len(i_trial_start_stop_block))
-            start_stop_blocks = i_trial_start_stop_block[i_block:i_block_stop]
+        blocks_per_batch = get_balanced_batches(len(i_trial_start_stop_block),
+                                       batch_size=self.batch_size,
+                                       rng=self.rng,
+                                       shuffle=shuffle)
+        for i_blocks in blocks_per_batch:
+            start_stop_blocks = i_trial_start_stop_block[i_blocks]
             batch = create_batch_from_i_trial_start_stop_blocks(
                 X, y, start_stop_blocks, self.n_preds_per_input)
             yield batch
@@ -205,12 +210,10 @@ def create_batch_from_i_trial_start_stop_blocks(X, y, i_trial_start_stop_block,
     ys = []
     for i_trial, start, stop in i_trial_start_stop_block:
         Xs.append(X[i_trial][:,start:stop])
-        # one-hot-encode targets
-        #block_y = np.zeros((n_classes, n_preds_per_input), dtype=np.float32)
-        #block_y[y[i_trial]] = 1
-        #block_y = np.ones((n_preds_per_input), dtype=np.int64) * y[i_trial]
-        #ys.append(block_y)
         ys.append(y[i_trial])
     batch_X = np.array(Xs)
     batch_y = np.array(ys)
+    # add empty fourth dimension if necessary
+    if batch_X.ndim == 3:
+        batch_X = batch_X[:,:,:, None]
     return batch_X, batch_y

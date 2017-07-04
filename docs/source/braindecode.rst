@@ -6,10 +6,12 @@ Subpackages
 
 .. toctree::
 
-    braindecode.datautils
+    braindecode.datasets
+    braindecode.datautil
     braindecode.experiments
+    braindecode.mne_ext
     braindecode.models
-    braindecode.torchext
+    braindecode.torch_ext
 
 Submodules
 ----------

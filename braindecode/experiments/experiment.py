@@ -7,7 +7,7 @@ import pandas as pd
 
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.experiments.stopcriteria import MaxEpochs, ColumnBelow, Or
-from braindecode.torchext.util import np_to_var, set_random_seeds
+from braindecode.torch_ext.util import np_to_var, set_random_seeds
 
 log = logging.getLogger(__name__)
 
@@ -87,8 +87,8 @@ class Experiment(object):
 
     def run_until_second_stop(self):
         datasets = self.datasets
-        datasets['train'] = concatenate_sets(datasets['train'],
-                                             datasets['valid'])
+        datasets['train'] = concatenate_sets([datasets['train'],
+                                             datasets['valid']])
 
         # Todo: actually keep remembering and in case of twice number of epochs
         # reset to best model again (check if valid loss not below train loss)
@@ -122,6 +122,34 @@ class Experiment(object):
         if remember_best:
             self.rememberer.remember_epoch(self.epochs_df, self.model,
                                            self.optimizer)
+
+    def train_batch(self, inputs, targets):
+        self.model.train()
+        input_vars = np_to_var(inputs)
+        target_vars = np_to_var(targets)
+        if self.cuda:
+            input_vars = input_vars.cuda()
+            target_vars = target_vars.cuda()
+        self.optimizer.zero_grad()
+        outputs = self.model(input_vars)
+        loss = self.loss_function(outputs, target_vars)
+        loss.backward()
+        self.optimizer.step()
+        if self.model_constraint is not None:
+            self.model_constraint.apply(self.model)
+
+    def eval_on_batch(self, inputs, targets):
+        self.model.eval()
+        input_vars = np_to_var(inputs)
+        target_vars = np_to_var(targets)
+        if self.cuda:
+            input_vars = input_vars.cuda()
+            target_vars = target_vars.cuda()
+        outputs = self.model(input_vars)
+        loss = self.loss_function(outputs, target_vars)
+        outputs = outputs.cpu().data.numpy()
+        loss = loss.cpu().data.numpy()
+        return outputs, loss
 
     def monitor_epoch(self, datasets):
         result_dicts_per_monitor = OrderedDict()
@@ -166,34 +194,6 @@ class Experiment(object):
         for key, val in last_row.iteritems():
             log.info("{:25s} {:.5f}".format(key, val))
         log.info("")
-
-    def eval_on_batch(self, inputs, targets):
-        self.model.eval()
-        input_vars = np_to_var(inputs)
-        target_vars = np_to_var(targets)
-        if self.cuda:
-            input_vars = input_vars.cuda()
-            target_vars = target_vars.cuda()
-        outputs = self.model(input_vars)
-        loss = self.loss_function(outputs, target_vars)
-        outputs = outputs.cpu().data.numpy()
-        loss = loss.cpu().data.numpy()
-        return outputs, loss
-
-    def train_batch(self, inputs, targets):
-        self.model.train()
-        input_vars = np_to_var(inputs)
-        target_vars = np_to_var(targets)
-        if self.cuda:
-            input_vars = input_vars.cuda()
-            target_vars = target_vars.cuda()
-        self.optimizer.zero_grad()
-        outputs = self.model(input_vars)
-        loss = self.loss_function(outputs, target_vars)
-        loss.backward()
-        self.optimizer.step()
-        if self.model_constraint is not None:
-            self.model_constraint.apply(self.model)
 
     def setup_after_stop_training(self):
         # also remember old monitor chans, will be put back into

@@ -15,10 +15,10 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # http://packaging.python.org/en/latest/tutorial.html#version
-    version='0.1.4',
+    version='0.1.4.01',
 
-    description='A deep learning for raw time-domain EEG decoding toolbox.',
-    long_description=long_description,  #this is the
+    description='A deep learning toolbox to decode raw time-domain EEG.',
+    long_description=long_description,
 
     # The project's main homepage.
     url='https://github.com/robintibor/braindecode',
@@ -30,7 +30,7 @@ setup(
     # Choose your license
     license='BSD 3-Clause',
 
-    install_requires=['numpy','mne','torch'],
+    install_requires=['numpy', 'mne', 'torch', 'h5py', 'pandas', 'resampy'],
     #tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers

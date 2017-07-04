@@ -3,9 +3,8 @@ import time
 
 
 class MisclassMonitor(object):
-    def __init__(self, exponentiate_preds=False, col_suffix='misclass'):
+    def __init__(self, col_suffix='misclass'):
         self.col_suffix = col_suffix
-        self.exponentiate_preds = exponentiate_preds
 
     def monitor_epoch(self, ):
         return
@@ -16,14 +15,28 @@ class MisclassMonitor(object):
         all_target_labels = []
         for i_batch in range(len(all_batch_sizes)):
             preds = all_preds[i_batch]
-            if True:
-                preds = np.exp(preds)
-            pred_labels = np.argmax(preds, axis=1)
+            # preds could be examples x classes x time
+            # or just
+            # examples x classes
+            # make sure not to remove first dimension if it only has size one
+            only_one_row = preds.shape[0] == 1
+            pred_labels = np.argmax(preds, axis=1).squeeze()
+            # add first dimension again if needed
+            if only_one_row:
+                pred_labels = pred_labels[None]
+            # now examples x time or examples
             all_pred_labels.extend(pred_labels)
             targets = all_targets[i_batch]
-            # targets may be one-hot-encoded or not
-            if targets.ndim >= pred_labels.ndim:
+            if targets.ndim > pred_labels.ndim:
+                # targets may be one-hot-encoded
                 targets = np.argmax(targets, axis=1)
+            elif targets.ndim < pred_labels.ndim:
+                # targets may not have time dimension,
+                # in that case just repeat targets on time dimension
+                extra_dim = pred_labels.ndim -1
+                targets = np.repeat(np.expand_dims(targets, extra_dim),
+                                    pred_labels.shape[extra_dim],
+                                    extra_dim)
             assert targets.shape == pred_labels.shape
             all_target_labels.extend(targets)
         all_pred_labels = np.array(all_pred_labels)
@@ -66,16 +79,10 @@ class CroppedTrialMisclassMonitor(object):
         return {column_name: float(misclass)}
 
     def compute_pred_labels(self, dataset, all_preds,):
-        n_preds_per_input = all_preds[0].shape[2]
-        n_receptive_field = self.input_time_length - n_preds_per_input + 1
-
-        n_preds_per_trial = [trial.shape[1] - n_receptive_field + 1
-                        for trial in dataset.X]
-        preds_per_trial = compute_preds_per_trial_from_n_preds_per_trial(
-            all_preds, n_preds_per_trial)
+        preds_per_trial = compute_preds_per_trial_for_set(
+            all_preds, self.input_time_length, dataset)
         all_pred_labels = [np.argmax(np.mean(p, axis=1))
                            for p in preds_per_trial]
-
         all_pred_labels = np.array(all_pred_labels)
         assert all_pred_labels.shape == dataset.y.shape
         return all_pred_labels

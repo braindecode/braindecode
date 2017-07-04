@@ -2,9 +2,9 @@ import numpy as np
 from torch import nn
 from torch.nn import init
 
-from braindecode.torchext.modules import Expression
-from braindecode.torchext.functions import safe_log, square
-from braindecode.torchext.util import np_to_var
+from braindecode.torch_ext.modules import Expression
+from braindecode.torch_ext.functions import safe_log, square
+from braindecode.torch_ext.util import np_to_var
 
 
 class ShallowFBCSPNet(object):
@@ -73,7 +73,15 @@ class ShallowFBCSPNet(object):
                              nn.Conv2d(n_filters_conv, self.n_classes,
                                        (self.final_conv_length, 1), bias=True))
         model.add_module('softmax', nn.LogSoftmax())
-        model.add_module('squeeze',  Expression(lambda x: x.squeeze()))
+        # remove empty dim at end and potentially remove empty time dim
+        # do not just use squeeze as we never want to remove first dim
+        def squeeze_output(x):
+            assert x.size()[3] == 1
+            x = x[:,:,:,0]
+            if x.size()[2] == 1:
+                x = x[:,:,0]
+            return x
+        model.add_module('squeeze',  Expression(squeeze_output))
 
         # Initialization, xavier is same as in paper...
         init.xavier_uniform(model.conv_time.weight, gain=1)

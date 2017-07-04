@@ -45,7 +45,7 @@ extensions = ['sphinx.ext.autodoc',
     'nbsphinx',
 ]
 
-exclude_patterns = ['_build', '**.ipynb_checkpoints/**']
+exclude_patterns = ['_build', 'notebooks/.ipynb_checkpoints']
  
 napoleon_google_docstring = False
 napoleon_use_param = False

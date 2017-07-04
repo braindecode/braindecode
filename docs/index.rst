@@ -1,12 +1,13 @@
 Welcome to Braindecode
-=======================================
+======================
 
 **Under construction**
-A deep learning for raw time-domain EEG decoding toolbox.
+
+A deep learning toolbox to decode raw time-domain EEG.
 
 
 Installation
-=======================================
+============
 
 First, install pytorch from http://pytorch.org/.
 
@@ -27,11 +28,13 @@ Then, install braindecode via pip:
 
 
 Tutorials
-=======================================
+=========
 .. toctree::
    :maxdepth: 1
 
    notebooks/TrialWise_Decoding.ipynb
+   notebooks/Cropped_Decoding.ipynb
+   notebooks/Experiment_Class.ipynb
 
 Indices and tables
 ==================
