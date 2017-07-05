@@ -23,11 +23,13 @@ sys.path.insert(0, os.path.abspath('.'))
 sys.path.insert(0, os.path.abspath('..'))
 
 
+
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
 #
 # needs_sphinx = '1.0'
+
 
 
 # Add any Sphinx extension module names here, as strings. They can be
@@ -209,4 +211,17 @@ texinfo_documents = [
 ]
 
 
+## mock stuff
+"""
+import sys
+from unittest.mock import MagicMock
 
+class Mock(MagicMock):
+    @classmethod
+    def __getattr__(cls, name):
+            return MagicMock()
+
+MOCK_MODULES = ['scipy', 'mne', 'numpy', 'pandas', 'h5py',]
+sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+
+"""
