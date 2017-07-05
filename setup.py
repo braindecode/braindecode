@@ -15,7 +15,7 @@ setup(
     # Versions should comply with PEP440.  For a discussion on single-sourcing
     # the version across setup.py and the project code, see
     # http://packaging.python.org/en/latest/tutorial.html#version
-    version='0.1.5', # TODO: read form __init__.py?
+    version='0.1.5', # TODO: read from __init__.py?
 
     description='A deep learning toolbox to decode raw time-domain EEG.',
     long_description=long_description,
@@ -32,7 +32,7 @@ setup(
 
     setup_requires=['numpy'],
     install_requires=['mne',  'numpy', 'pandas', 'scipy',
-                      'resampy', 'matplotlib'],#'h5py',#'torch',
+                      'resampy', 'matplotlib', 'h5py', 'torch'],
     #tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers

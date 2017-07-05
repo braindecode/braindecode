@@ -6,7 +6,7 @@ SPHINXOPTS    =
 SPHINXBUILD   = python3.5 -msphinx
 SPHINXPROJ    = Braindecode
 SOURCEDIR     = .
-BUILDDIR      = _build
+BUILDDIR      = ../../braindecode-docs/
 
 # Put it first so that "make" without argument is like "make help".
 help:

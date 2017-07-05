@@ -123,10 +123,12 @@ class Experiment(object):
         should indicate best performance in this column.
     run_after_early_stop: bool
         Whether to continue running after early stop
-    batch_modifier: object
+    model_loss_function: function, optional
+        Function (model -> loss) to add a model loss like L2 regularization. 
+    batch_modifier: object, optional
         Object with modify method, that can change the batch, e.g. for data
         augmentation
-    cuda: bool
+    cuda: bool, optional
         Whether to use cuda.
         
     Attributes
@@ -138,6 +140,7 @@ class Experiment(object):
                  iterator, loss_function, optimizer, model_constraint,
                  monitors, stop_criterion, remember_best_column,
                  run_after_early_stop,
+                 model_loss_function=None,
                  batch_modifier=None, cuda=True):
         self.model = model
         self.datasets = OrderedDict(
@@ -150,6 +153,7 @@ class Experiment(object):
         self.stop_criterion = stop_criterion
         self.remember_best_column = remember_best_column
         self.run_after_early_stop = run_after_early_stop
+        self.model_loss_function = model_loss_function
         self.batch_modifier = batch_modifier
         self.cuda = cuda
         self.epochs_df = pd.DataFrame()
@@ -278,6 +282,8 @@ class Experiment(object):
         self.optimizer.zero_grad()
         outputs = self.model(input_vars)
         loss = self.loss_function(outputs, target_vars)
+        if self.model_loss_function is not None:
+            loss = loss + self.model_loss_function(self.model)
         loss.backward()
         self.optimizer.step()
         if self.model_constraint is not None:

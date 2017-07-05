@@ -4,14 +4,17 @@ https://github.com/robintibor/braindevel.
 Braindecode
 ===========
 
-A deep learning for raw time-domain EEG decoding toolbox.
+**Under construction**
+
+A deep learning toolbox to decode raw time-domain EEG.
+
 
 Installation
 ============
 
-First, install pytorch from http://pytorch.org/.
+1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
-Second install newest version of python-mne:
+2. Install newest version of python-mne:
 
 .. code-block:: bash
 
@@ -20,14 +23,15 @@ Second install newest version of python-mne:
   python setup.py install
 
 
-Then, install braindecode via pip:
+3. Install braindecode via pip:
 
 .. code-block:: bash
 
   pip install braindecode
 
 
+
 Documentation
 =============
 
-Documentation is online under http://braindecode.readthedocs.io/
+Documentation is online under https://robintibor.github.io/braindecode/

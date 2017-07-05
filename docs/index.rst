@@ -27,6 +27,7 @@ Installation
   pip install braindecode
 
 
+
 Tutorials
 =========
 .. toctree::
