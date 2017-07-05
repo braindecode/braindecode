@@ -41,7 +41,7 @@ API
 ===
 
 .. autosummary::
-   :toctree: _autosummary
+   :toctree: source
 
    braindecode.datautil
    braindecode.experiments

@@ -20,6 +20,7 @@ def apply_to_X_y(fn, *sets):
     Apply a function to all `X` and `y` attributes of all given sets.
     
     Applies function to list of X arrays and to list of y arrays separately.
+    
     Parameters
     ----------
     fn: function

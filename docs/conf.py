@@ -33,13 +33,14 @@ sys.path.insert(0, os.path.abspath('..'))
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc',
+extensions = [
+    'sphinx.ext.autodoc',
     'sphinx.ext.doctest',
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
     'sphinx.ext.ifconfig',
-    'sphinx.ext.viewcode',
+    #'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
     'nbsphinx',
@@ -73,8 +74,11 @@ def linkcode_resolve(domain, info):
     return "https://github.com/robintibor/braindecode/blob/master/%s" % filename
 
 autosummary_generate = True #https://stackoverflow.com/a/21665947/1469195
+autodoc_member_order = 'bysource'
+## Default flags used by autodoc directives
+autodoc_default_flags = ['members', 'show-inheritance']
 
-exclude_patterns = ['_build', 'notebooks/.ipynb_checkpoints', '_templates']
+exclude_patterns = ['_build', '_templates',]
  
 napoleon_google_docstring = False
 napoleon_use_param = False

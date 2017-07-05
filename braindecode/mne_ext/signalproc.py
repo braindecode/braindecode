@@ -33,6 +33,7 @@ def concatenate_raws_with_events(raws):
 def resample_cnt(cnt, new_fs):
     """
     Resample continuous recording using `resampy`.
+
     Parameters
     ----------
     cnt: `mne.io.RawArray`

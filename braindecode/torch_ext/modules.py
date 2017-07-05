@@ -1,13 +1,15 @@
 import torch
 
+
 class Expression(torch.nn.Module):
-    """Compute given expression on forward pass.
+    """
+    Compute given expression on forward pass.
     
     Parameters
     ----------
     expression_fn: function
-        Should accept variable number of `torch.autograd.Variable`s to compute
-         its output.
+        Should accept variable number of objects of type
+        `torch.autograd.Variable` to compute its output.
     """
     def __init__(self, expression_fn):
         super(Expression, self).__init__()

@@ -174,6 +174,7 @@ def compute_preds_per_trial_for_set(all_preds, input_time_length,
                                         dataset, ):
     """
     Compute predictions per trial from predictions for crops.
+    
     Parameters
     ----------
     all_preds: list of 2darrays (classes x time)
@@ -182,6 +183,7 @@ def compute_preds_per_trial_for_set(all_preds, input_time_length,
         Temporal length of one input to the model.
     dataset: :class:`.SignalAndTarget`
         Dataset the crops were taken from.
+    
     Returns
     -------
     preds_per_trial: list of 2darrays (classes x time)
@@ -201,6 +203,7 @@ def compute_preds_per_trial_from_n_preds_per_trial(
         all_preds, n_preds_per_trial):
     """
     Compute predictions per trial from predictions for crops.
+
     Parameters
     ----------
     all_preds: list of 2darrays (classes x time)

@@ -28,8 +28,8 @@ def create_signal_target_from_raw_mne(raw, name_to_start_codes, epoch_ival_ms,
         Epoching interval in milliseconds. In case only `name_to_codes` given,
         represents start offset and stop offset from start markers. In case
         `name_to_stop_codes` given, represents offset from start marker
-         and offset from stop marker. E.g. [500, -500] would mean 500ms
-         after the start marker until 500 ms before the stop marker.
+        and offset from stop marker. E.g. [500, -500] would mean 500ms
+        after the start marker until 500 ms before the stop marker.
     name_to_stop_codes: dict (str -> int or list of int), optional
         Dictionary mapping class names to stop marker code or stop marker codes.
         Order does not matter, dictionary should contain each class in
@@ -71,8 +71,8 @@ def create_signal_target(data, events, fs, name_to_start_codes, epoch_ival_ms,
         Epoching interval in milliseconds. In case only `name_to_codes` given,
         represents start offset and stop offset from start markers. In case
         `name_to_stop_codes` given, represents offset from start marker
-         and offset from stop marker. E.g. [500, -500] would mean 500ms
-         after the start marker until 500 ms before the stop marker.
+        and offset from stop marker. E.g. [500, -500] would mean 500ms
+        after the start marker until 500 ms before the stop marker.
     name_to_stop_codes: dict (str -> int or list of int), optional
         Dictionary mapping class names to stop marker code or stop marker codes.
         Order does not matter, dictionary should contain each class in
@@ -217,7 +217,7 @@ def add_breaks(
         Marker code that will be used for break start markers.
     break_stop_code: int
         Marker code that will be used for break stop markers.
-     name_to_start_codes: OrderedDict (str -> int or list of int)
+    name_to_start_codes: OrderedDict (str -> int or list of int)
         Ordered dictionary mapping class names to start marker code or 
         start marker codes.
     name_to_stop_codes: dict (str -> int or list of int), optional
@@ -229,7 +229,8 @@ def add_breaks(
 
     Returns
     -------
-
+    events: 2d-array
+        Events with break start and stop markers.
     """
     min_samples = (None if min_break_length_ms is None
                    else ms_to_samples(min_break_length_ms, fs))
