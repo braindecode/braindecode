@@ -10,7 +10,21 @@ from braindecode.torch_ext.util import np_to_var
 
 class EEGNet(object):
     """
-    See https://arxiv.org/pdf/1611.08024.pdf.
+    EEGNet model from [EEGNet]_.
+
+    Notes
+    -----
+    This implementation is not guaranteed to be correct, has not been checked
+    by original authors, only reimplemented from the paper description.
+
+    References
+    ----------
+
+    .. [EEGNet] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon, 
+       S. M., Hung, C. P., & Lance, B. J. (2016).
+       EEGNet: A Compact Convolutional Network for EEG-based
+       Brain-Computer Interfaces.
+       arXiv preprint arXiv:1611.08024.
     """
     def __init__(self, in_chans,
                  n_classes,

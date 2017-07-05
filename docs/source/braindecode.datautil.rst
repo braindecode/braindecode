@@ -1,6 +1,11 @@
 braindecode\.datautil package
 =============================
 
+.. automodule:: braindecode.datautil
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -53,10 +58,3 @@ braindecode\.datautil\.util module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: braindecode.datautil
-    :members:
-    :undoc-members:
-    :show-inheritance:

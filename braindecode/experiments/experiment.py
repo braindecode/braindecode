@@ -1,9 +1,9 @@
 import logging
-import numpy as np
 from collections import OrderedDict
 from copy import deepcopy
 
 import pandas as pd
+import torch as th
 
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.experiments.stopcriteria import MaxEpochs, ColumnBelow, Or
@@ -13,6 +13,22 @@ log = logging.getLogger(__name__)
 
 
 class RememberBest(object):
+    """
+    Class to remember and restore 
+    the parameters of the model and the parameters of the
+    optimizer at the epoch with the best performance.
+
+    Parameters
+    ----------
+    column_name: str
+        The lowest value in this column should indicate the epoch with the
+        best performance (e.g. misclass might make sense).
+        
+    Attributes
+    ----------
+    best_epoch: int
+        Index of best epoch
+    """
     def __init__(self, column_name):
         self.column_name = column_name
         self.best_epoch = 0
@@ -21,6 +37,19 @@ class RememberBest(object):
         self.optimizer_state_dict = None
 
     def remember_epoch(self, epochs_df, model, optimizer):
+        """
+        Remember this epoch: Remember parameter values in case this epoch
+        has the best performance so far.
+        
+        Parameters
+        ----------
+        epochs_df: `pandas.Dataframe`
+            Dataframe containing the column `column_name` with which performance
+            is evaluated.
+        model: `torch.nn.Module`
+        optimizer: `torch.optim.Optimizer`
+
+        """
         i_epoch = len(epochs_df) - 1
         current_val = float(epochs_df[self.column_name].iloc[-1])
         if current_val <= self.lowest_val:
@@ -33,6 +62,19 @@ class RememberBest(object):
             log.info("")
 
     def reset_to_best_model(self, epochs_df, model, optimizer):
+        """
+        Reset parameters to parameters at best epoch and remove rows 
+        after best epoch from epochs dataframe.
+        
+        Modifies parameters of model and optimizer, changes epochs_df in-place.
+        
+        Parameters
+        ----------
+        epochs_df: `pandas.Dataframe`
+        model: `torch.nn.Module`
+        optimizer: `torch.optim.Optimizer`
+
+        """
         # Remove epochs past the best one from epochs dataframe
         epochs_df.drop(range(self.best_epoch+1, len(epochs_df)), inplace=True)
         model.load_state_dict(self.model_state_dict)
@@ -40,6 +82,58 @@ class RememberBest(object):
 
 
 class Experiment(object):
+    """
+    Class that performs one experiment on training, validation and test set.
+
+    It trains as follows:
+    
+    1. Train on training set until a given stop criterion is fulfilled
+    2. Reset to the best epoch, i.e. reset parameters of the model and the 
+       optimizer to the state at the best epoch (“best” according to a given
+       criterion)
+    3. Continue training on the combined training + validation set until the
+       loss on the validation set is as low as it was on the best epoch for the
+       training set. (or until the ConvNet was trained twice as many epochs as
+       the best epoch to prevent infinite training)
+
+    Parameters
+    ----------
+    model: `torch.nn.Module`
+    train_set: :class:`.SignalAndTarget`
+    valid_set: :class:`.SignalAndTarget`
+    test_set: :class:`.SignalAndTarget`
+    iterator: iterator object
+    loss_function: function 
+        Function mapping predictions and targets to a loss: 
+        (predictions: `torch.autograd.Variable`, 
+        targets:`torch.autograd.Variable`)
+        -> loss: `torch.autograd.Variable`
+    optimizer: torch.optim.Optimizer`
+    model_constraint: object
+        Object with apply function that takes model and constraints its 
+        parameters. `None` for no constraint.
+    monitors: list of objects
+        List of objects with monitor_epoch and monitor_set method, should
+        monitor the traning progress.
+    stop_criterion: object
+        Object with `should_stop` method, that takes in monitoring dataframe
+        and returns if training should stop:
+    remember_best_column: str
+        Name of column to use for storing parameters of best model. Lowest value
+        should indicate best performance in this column.
+    run_after_early_stop: bool
+        Whether to continue running after early stop
+    batch_modifier: object
+        Object with modify method, that can change the batch, e.g. for data
+        augmentation
+    cuda: bool
+        Whether to use cuda.
+        
+    Attributes
+    ----------
+    epochs_df: `pandas.DataFrame`
+        Monitoring values for all epochs.
+    """
     def __init__(self, model, train_set, valid_set, test_set,
                  iterator, loss_function, optimizer, model_constraint,
                  monitors, stop_criterion, remember_best_column,
@@ -63,6 +157,9 @@ class Experiment(object):
         self.rememberer = None
 
     def run(self):
+        """
+        Run complete training.
+        """
         self.setup_training()
         log.info("Run until first stop...")
         self.run_until_early_stop()
@@ -75,17 +172,34 @@ class Experiment(object):
             self.run_until_second_stop()
 
     def setup_training(self):
+        """
+        Setup training, i.e. set random seeds, transform model to cuda,
+        initialize monitoring.
+        """
         # reset remember best extension in case you rerun some experiment
         self.rememberer = RememberBest(self.remember_best_column)
         self.epochs_df = pd.DataFrame()
         set_random_seeds(seed=2382938, cuda=self.cuda)
         if self.cuda:
+            assert th.cuda.is_available(), "Cuda not available"
             self.model.cuda()
 
     def run_until_early_stop(self):
+        """
+        Run training and evaluation using only training set for training
+        until stop criterion is fulfilled.
+        """
         self.run_until_stop(self.datasets, remember_best=True)
 
     def run_until_second_stop(self):
+        """
+        Run training and evaluation using combined training + validation set 
+        for training. 
+        
+        Runs until loss on validation  set decreases below loss on training set 
+        of best epoch or  until as many epochs trained after as before 
+        first stop.
+        """
         datasets = self.datasets
         datasets['train'] = concatenate_sets([datasets['train'],
                                              datasets['valid']])
@@ -95,6 +209,18 @@ class Experiment(object):
         self.run_until_stop(datasets, remember_best=False)
 
     def run_until_stop(self, datasets, remember_best):
+        """
+        Run training and evaluation on given datasets until stop criterion is
+        fulfilled.
+        
+        Parameters
+        ----------
+        datasets: OrderedDict
+            Dictionary with train, valid and test as str mapping to
+            :class:`.SignalAndTarget` objects.
+        remember_best: bool
+            Whether to remember parameters at best epoch.
+        """
         self.monitor_epoch(datasets)
         self.print_epoch()
         if remember_best:
@@ -106,6 +232,17 @@ class Experiment(object):
             self.run_one_epoch(datasets, remember_best)
 
     def run_one_epoch(self, datasets, remember_best):
+        """
+        Run training and evaluation on given datasets for one epoch.
+        
+        Parameters
+        ----------
+        datasets: OrderedDict
+            Dictionary with train, valid and test as str mapping to
+            :class:`.SignalAndTarget` objects.
+        remember_best: bool
+            Whether to remember parameters if this epoch is best epoch.
+        """
         batch_generator = self.iterator.get_batches(datasets['train'],
                                                     shuffle=True)
         # TODO, add timing again?
@@ -124,6 +261,14 @@ class Experiment(object):
                                            self.optimizer)
 
     def train_batch(self, inputs, targets):
+        """
+        Train on given inputs and targets.
+        
+        Parameters
+        ----------
+        inputs: `torch.autograd.Variable`
+        targets: `torch.autograd.Variable`
+        """
         self.model.train()
         input_vars = np_to_var(inputs)
         target_vars = np_to_var(targets)
@@ -139,6 +284,20 @@ class Experiment(object):
             self.model_constraint.apply(self.model)
 
     def eval_on_batch(self, inputs, targets):
+        """
+        Evaluate given inputs and targets.
+        
+        Parameters
+        ----------
+        inputs: `torch.autograd.Variable`
+        targets: `torch.autograd.Variable`
+
+        Returns
+        -------
+        predictions: `torch.autograd.Variable`
+        loss: `torch.autograd.Variable`
+
+        """
         self.model.eval()
         input_vars = np_to_var(inputs)
         target_vars = np_to_var(targets)
@@ -152,6 +311,18 @@ class Experiment(object):
         return outputs, loss
 
     def monitor_epoch(self, datasets):
+        """
+        Evaluate one epoch for given datasets.
+        
+        Stores results in `epochs_df`
+        
+        Parameters
+        ----------
+        datasets: OrderedDict
+            Dictionary with train, valid and test as str mapping to
+            :class:`.SignalAndTarget` objects.
+
+        """
         result_dicts_per_monitor = OrderedDict()
         for m in self.monitors:
             result_dicts_per_monitor[m] = OrderedDict()
@@ -187,6 +358,9 @@ class Experiment(object):
         self.epochs_df = self.epochs_df[list(row_dict.keys())]
 
     def print_epoch(self):
+        """
+        Print monitoring values for this epoch.
+        """
         # -1 due to doing one monitor at start of training
         i_epoch = len(self.epochs_df) - 1
         log.info("Epoch {:d}".format(i_epoch))
@@ -196,6 +370,11 @@ class Experiment(object):
         log.info("")
 
     def setup_after_stop_training(self):
+        """
+        Setup training after first stop. 
+        
+        Resets parameters to best parameters and updates stop criterion.
+        """
         # also remember old monitor chans, will be put back into
         # monitor chans after experiment finished
         self.before_stop_df = deepcopy(self.epochs_df)

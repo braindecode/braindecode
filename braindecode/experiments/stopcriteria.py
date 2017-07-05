@@ -2,6 +2,13 @@ import numpy as np
 
 
 class MaxEpochs(object):
+    """
+    Stop when given number of epochs reached:
+    
+    Parameters
+    ----------
+    max_epochs: int
+    """
     def __init__(self, max_epochs):
         self.max_epochs = max_epochs
 
@@ -11,6 +18,13 @@ class MaxEpochs(object):
 
 
 class Or(object):
+    """
+    Stop when one of the given stop criteria is triggered.
+
+    Parameters
+    ----------
+    stop_criteria: iterable of stop criteria objects
+    """
     def __init__(self, stop_criteria):
         self.stop_criteria = stop_criteria
 
@@ -19,10 +33,36 @@ class Or(object):
                        for s in self.stop_criteria])
 
 
+class And(object):
+    """
+    Stop when all of the given stop criteria are triggered.
+
+    Parameters
+    ----------
+    stop_criteria: iterable of stop criteria objects
+    """
+    def __init__(self, stop_criteria):
+        self.stop_criteria = stop_criteria
+
+    def should_stop(self, epochs_df):
+        return np.all([s.should_stop(epochs_df)
+                       for s in self.stop_criteria])
+
+
 class NoDecrease(object):
     """ Stops if there is no decrease on a given monitor channel
-    for given number of epochs."""
+    for given number of epochs.
 
+    Parameters
+    ----------
+    column_name: str
+        Name of column to monitor for decrease.
+    num_epochs: str
+        Number of epochs to wait before stopping when there is no decrease.
+    min_decrease: float, optional
+        Minimum relative decrease that counts as a decrease. E.g. 0.1 means
+        only 10% decreases count as a decrease and reset the counter.
+    """
     def __init__(self, column_name, num_epochs, min_decrease=1e-6):
         self.column_name = column_name
         self.num_epochs = num_epochs
@@ -42,7 +82,16 @@ class NoDecrease(object):
 
 
 class ColumnBelow():
-    """ Stops if the given column is below the given value."""
+    """
+    Stops if the given column is below the given value.
+
+    Parameters
+    ----------
+    column_name: str
+        Name of column to monitor. 
+    target_value: float
+        When column decreases below this value, criterion will say to stop.
+    """
     def __init__(self, column_name, target_value):
         self.column_name = column_name
         self.target_value = target_value

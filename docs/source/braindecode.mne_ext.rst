@@ -1,6 +1,11 @@
 braindecode\.mne\_ext package
 =============================
 
+.. automodule:: braindecode.mne_ext
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -13,10 +18,3 @@ braindecode\.mne\_ext\.signalproc module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: braindecode.mne_ext
-    :members:
-    :undoc-members:
-    :show-inheritance:

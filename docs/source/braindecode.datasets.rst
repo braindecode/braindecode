@@ -1,6 +1,11 @@
 braindecode\.datasets package
 =============================
 
+.. automodule:: braindecode.datasets
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -21,10 +26,3 @@ braindecode\.datasets\.multiple module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: braindecode.datasets
-    :members:
-    :undoc-members:
-    :show-inheritance:

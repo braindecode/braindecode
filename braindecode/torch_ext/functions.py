@@ -5,7 +5,7 @@ def square(x):
 
 
 def safe_log(x, eps=1e-6):
-    """ Prevents log(0) by using max of eps and given x."""
+    """ Prevents :math:`log(0)` by using :math:`log(max(x, eps))`."""
     return th.log(th.clamp(x, min=eps))
 
 

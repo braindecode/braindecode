@@ -12,27 +12,88 @@ marker_def = OrderedDict(
     (['Right', 1], ['Left', [2]], ['Rest', 3], ['Feet', 4]))
 
 
-def create_signal_target_from_raw_mne(raw, name_to_codes, epoch_ival,
-                         name_to_stop_codes=None):
-    """ Create SignalTarget set from X and y given raw mne object."""
+def create_signal_target_from_raw_mne(raw, name_to_start_codes, epoch_ival_ms,
+                                      name_to_stop_codes=None):
+    """
+    Create SignalTarget set from given `mne.io.RawArray`.
+    
+    Parameters
+    ----------
+    raw: `mne.io.RawArray`
+    name_to_start_codes: OrderedDict (str -> int or list of int)
+        Ordered dictionary mapping class names to marker code or marker codes.
+        y-labels will be assigned in increasing key order, i.e.
+        first classname gets y-value 0, second classname y-value 1, etc.
+    epoch_ival_ms: iterable of (int,int)
+        Epoching interval in milliseconds. In case only `name_to_codes` given,
+        represents start offset and stop offset from start markers. In case
+        `name_to_stop_codes` given, represents offset from start marker
+         and offset from stop marker. E.g. [500, -500] would mean 500ms
+         after the start marker until 500 ms before the stop marker.
+    name_to_stop_codes: dict (str -> int or list of int), optional
+        Dictionary mapping class names to stop marker code or stop marker codes.
+        Order does not matter, dictionary should contain each class in
+        `name_to_codes` dictionary.
+
+    Returns
+    -------
+    dataset: :class:`.SignalAndTarget`
+        Dataset with `X` as the trial signals and `y` as the trial labels.
+    """
     data = raw.get_data()
     events = np.array([raw.info['events'][:,0],
                       raw.info['events'][:,2] - raw.info['events'][:,1]]).T
     fs = raw.info['sfreq']
-    return create_signal_target(data, events, fs, name_to_codes, epoch_ival,
-                         name_to_stop_codes=name_to_stop_codes)
+    return create_signal_target(data, events, fs, name_to_start_codes,
+                                epoch_ival_ms,
+                                name_to_stop_codes=name_to_stop_codes)
 
-def create_signal_target(data, events, fs, name_to_codes, epoch_ival,
+
+def create_signal_target(data, events, fs, name_to_start_codes, epoch_ival_ms,
                          name_to_stop_codes=None):
+    """
+    Create SignalTarget set given continuous data.
+    
+    Parameters
+    ----------
+    data: 2d-array of number
+        The continuous recorded data. Channels x times order.
+    events: 2d-array
+        Dimensions: Number of events, 2. For each event, should contain sample
+        index and marker code.
+    fs: number
+        Sampling rate.
+    name_to_start_codes: OrderedDict (str -> int or list of int)
+        Ordered dictionary mapping class names to marker code or marker codes.
+        y-labels will be assigned in increasing key order, i.e.
+        first classname gets y-value 0, second classname y-value 1, etc.
+    epoch_ival_ms: iterable of (int,int)
+        Epoching interval in milliseconds. In case only `name_to_codes` given,
+        represents start offset and stop offset from start markers. In case
+        `name_to_stop_codes` given, represents offset from start marker
+         and offset from stop marker. E.g. [500, -500] would mean 500ms
+         after the start marker until 500 ms before the stop marker.
+    name_to_stop_codes: dict (str -> int or list of int), optional
+        Dictionary mapping class names to stop marker code or stop marker codes.
+        Order does not matter, dictionary should contain each class in
+        `name_to_codes` dictionary.
+
+    Returns
+    -------
+    dataset: :class:`.SignalAndTarget`
+        Dataset with `X` as the trial signals and `y` as the trial labels.
+
+    """
     if name_to_stop_codes is None:
-        return create_signal_target_from_start_and_ival(
-            data, events, fs, name_to_codes, epoch_ival)
+        return _create_signal_target_from_start_and_ival(
+            data, events, fs, name_to_start_codes, epoch_ival_ms)
     else:
-        return create_signal_target_from_start_and_stop(
-            data, events, fs, name_to_codes, epoch_ival, name_to_stop_codes)
+        return _create_signal_target_from_start_and_stop(
+            data, events, fs, name_to_start_codes, epoch_ival_ms,
+            name_to_stop_codes)
 
 
-def to_mrk_code_to_name_and_y(name_to_codes):
+def _to_mrk_code_to_name_and_y(name_to_codes):
     # Create mapping from marker code to class name and y=classindex
     mrk_code_to_name_and_y = {}
     for i_class, class_name in enumerate(name_to_codes):
@@ -47,13 +108,13 @@ def to_mrk_code_to_name_and_y(name_to_codes):
     return mrk_code_to_name_and_y
 
 
-def create_signal_target_from_start_and_ival(
-        data, events, fs, name_to_codes, epoch_ival):
-    ival_in_samples = ms_to_samples(np.array(epoch_ival), fs)
+def _create_signal_target_from_start_and_ival(
+        data, events, fs, name_to_codes, epoch_ival_ms):
+    ival_in_samples = ms_to_samples(np.array(epoch_ival_ms), fs)
     start_offset = np.int32(np.round(ival_in_samples[0]))
     # we will use ceil but exclusive...
     stop_offset = np.int32(np.ceil(ival_in_samples[1]))
-    mrk_code_to_name_and_y = to_mrk_code_to_name_and_y(name_to_codes)
+    mrk_code_to_name_and_y = _to_mrk_code_to_name_and_y(name_to_codes)
 
     class_to_n_trials = Counter()
     X = []
@@ -71,15 +132,16 @@ def create_signal_target_from_start_and_ival(
     return SignalAndTarget(np.array(X), np.array(y))
 
 
-def create_signal_target_from_start_and_stop(
-        data, events, fs, name_to_start_codes, epoch_ival, name_to_stop_codes):
+def _create_signal_target_from_start_and_stop(
+        data, events, fs, name_to_start_codes, epoch_ival_ms,
+        name_to_stop_codes):
     assert np.array_equal(list(name_to_start_codes.keys()),
                           list(name_to_stop_codes.keys()))
-    ival_in_samples = ms_to_samples(np.array(epoch_ival), fs)
+    ival_in_samples = ms_to_samples(np.array(epoch_ival_ms), fs)
     start_offset = np.int32(np.round(ival_in_samples[0]))
     # we will use ceil but exclusive...
     stop_offset = np.int32(np.ceil(ival_in_samples[1]))
-    start_code_to_name_and_y = to_mrk_code_to_name_and_y(name_to_start_codes)
+    start_code_to_name_and_y = _to_mrk_code_to_name_and_y(name_to_start_codes)
     # Ensure all stop marker codes are iterables
     for name in name_to_stop_codes:
         codes = name_to_stop_codes[name]
@@ -138,16 +200,44 @@ def create_signal_target_from_start_and_stop(
 
 
 def add_breaks(
-        events, fs, break_start_code, break_stop_code, name_to_start_codes=None,
-        name_to_stop_codes=None, min_break_length_ms=None,
+        events, fs, break_start_code, break_stop_code, name_to_start_codes,
+        name_to_stop_codes, min_break_length_ms=None,
         max_break_length_ms=None):
+    """
+    Add break events to given events.
+    
+    Parameters
+    ----------
+    events: 2d-array
+        Dimensions: Number of events, 2. For each event, should contain sample
+        index and marker code.
+    fs: number
+        Sampling rate.
+    break_start_code: int
+        Marker code that will be used for break start markers.
+    break_stop_code: int
+        Marker code that will be used for break stop markers.
+     name_to_start_codes: OrderedDict (str -> int or list of int)
+        Ordered dictionary mapping class names to start marker code or 
+        start marker codes.
+    name_to_stop_codes: dict (str -> int or list of int), optional
+        Dictionary mapping class names to stop marker code or stop marker codes.
+    min_break_length_ms: number, optional
+        Minimum length in milliseconds a break should have to be included.
+    max_break_length_ms: number, optional
+        Maximum length in milliseconds a break can have to be included.
+
+    Returns
+    -------
+
+    """
     min_samples = (None if min_break_length_ms is None
                    else ms_to_samples(min_break_length_ms, fs))
     max_samples = (None if min_break_length_ms is None
                    else ms_to_samples(max_break_length_ms, fs))
     orig_events = events
     events = np.array([events[:,0], events[:,2] - events[:,1]]).T
-    break_starts, break_stops = extract_break_start_stop_ms(
+    break_starts, break_stops = _extract_break_start_stop_ms(
         events, name_to_start_codes, name_to_stop_codes)
 
     break_durations = break_stops - break_starts
@@ -172,9 +262,9 @@ def add_breaks(
     return new_events
 
 
-def extract_break_start_stop_ms(events, name_to_start_codes,
-                                name_to_stop_codes):
-    start_code_to_name_and_y = to_mrk_code_to_name_and_y(name_to_start_codes)
+def _extract_break_start_stop_ms(events, name_to_start_codes,
+                                 name_to_stop_codes):
+    start_code_to_name_and_y = _to_mrk_code_to_name_and_y(name_to_start_codes)
     # Ensure all stop marker codes are iterables
     for name in name_to_stop_codes:
         codes = name_to_stop_codes[name]
@@ -189,7 +279,7 @@ def extract_break_start_stop_ms(events, name_to_start_codes,
     i_event = 0
     while i_event < len(events):
         while (i_event < len(events)) and (
-            event_codes[i_event] not in all_stop_codes):
+                event_codes[i_event] not in all_stop_codes):
             i_event += 1
         if i_event < len(events):
             # one sample after start

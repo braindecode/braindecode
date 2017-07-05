@@ -3,6 +3,15 @@ import time
 
 
 class MisclassMonitor(object):
+    """
+    Monitor the examplewise misclassification rate.
+    
+    Parameters
+    ----------
+    col_suffix: str, optional
+        Name of the column in the monitoring output.
+    """
+
     def __init__(self, col_suffix='misclass'):
         self.col_suffix = col_suffix
 
@@ -110,6 +119,9 @@ class AveragePerClassMisclassMonitor(object):
 
 
 class LossMonitor(object):
+    """
+    Monitor the examplewise loss.
+    """
     def monitor_epoch(self,):
         return
 
@@ -124,6 +136,14 @@ class LossMonitor(object):
 
 
 class CroppedTrialMisclassMonitor(object):
+    """
+    Compute trialwise misclasses from predictions for crops.
+    
+    Parameters
+    ----------
+    input_time_length: int
+        Temporal length of one input to the model.
+    """
     def __init__(self, input_time_length=None):
         self.input_time_length = input_time_length
 
@@ -134,13 +154,13 @@ class CroppedTrialMisclassMonitor(object):
                     all_batch_sizes, all_targets, dataset):
         """Assuming one hot encoding for now"""
         assert self.input_time_length is not None, "Need to know input time length..."
-        all_pred_labels = self.compute_pred_labels(dataset, all_preds)
+        all_pred_labels = self._compute_pred_labels(dataset, all_preds)
         assert all_pred_labels.shape == dataset.y.shape
         misclass = 1 - np.mean(all_pred_labels == dataset.y)
         column_name = "{:s}_misclass".format(setname)
         return {column_name: float(misclass)}
 
-    def compute_pred_labels(self, dataset, all_preds,):
+    def _compute_pred_labels(self, dataset, all_preds, ):
         preds_per_trial = compute_preds_per_trial_for_set(
             all_preds, self.input_time_length, dataset)
         all_pred_labels = [np.argmax(np.mean(p, axis=1))
@@ -152,17 +172,49 @@ class CroppedTrialMisclassMonitor(object):
 
 def compute_preds_per_trial_for_set(all_preds, input_time_length,
                                         dataset, ):
-        n_preds_per_input = all_preds[0].shape[2]
-        n_receptive_field = input_time_length - n_preds_per_input + 1
-        n_preds_per_trial = [trial.shape[1] - n_receptive_field + 1
-                             for trial in dataset.X]
-        preds_per_trial = compute_preds_per_trial_from_n_preds_per_trial(
-            all_preds, n_preds_per_trial)
-        return preds_per_trial
+    """
+    Compute predictions per trial from predictions for crops.
+    Parameters
+    ----------
+    all_preds: list of 2darrays (classes x time)
+        All predictions for the crops. 
+    input_time_length: int
+        Temporal length of one input to the model.
+    dataset: :class:`.SignalAndTarget`
+        Dataset the crops were taken from.
+    Returns
+    -------
+    preds_per_trial: list of 2darrays (classes x time)
+        Predictions for each trial, without overlapping predictions.
+
+    """
+    n_preds_per_input = all_preds[0].shape[2]
+    n_receptive_field = input_time_length - n_preds_per_input + 1
+    n_preds_per_trial = [trial.shape[1] - n_receptive_field + 1
+                         for trial in dataset.X]
+    preds_per_trial = compute_preds_per_trial_from_n_preds_per_trial(
+        all_preds, n_preds_per_trial)
+    return preds_per_trial
 
 
 def compute_preds_per_trial_from_n_preds_per_trial(
         all_preds, n_preds_per_trial):
+    """
+    Compute predictions per trial from predictions for crops.
+    Parameters
+    ----------
+    all_preds: list of 2darrays (classes x time)
+        All predictions for the crops. 
+    input_time_length: int
+        Temporal length of one input to the model.
+    n_preds_per_trial: list of int
+        Number of predictions for each trial.
+    Returns
+    -------
+    preds_per_trial: list of 2darrays (classes x time)
+        Predictions for each trial, without overlapping predictions.
+
+    """
     # all_preds_arr has shape forward_passes x classes x time
     all_preds_arr = np.concatenate(all_preds, axis=0)
     preds_per_trial = []
@@ -192,6 +244,11 @@ def compute_preds_per_trial_from_n_preds_per_trial(
 
 
 class RuntimeMonitor(object):
+    """
+    Monitor the runtime of each epoch.
+    
+    First epoch will have runtime 0.
+    """
     def __init__(self):
         self.last_call_time = None
 

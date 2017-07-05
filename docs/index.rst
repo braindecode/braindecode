@@ -36,6 +36,19 @@ Tutorials
    notebooks/Cropped_Decoding.ipynb
    notebooks/Experiment_Class.ipynb
 
+
+API
+===
+
+.. autosummary::
+   :toctree: _autosummary
+
+   braindecode.datautil
+   braindecode.experiments
+   braindecode.mne_ext
+   braindecode.models
+   braindecode.torch_ext
+
 Indices and tables
 ==================
 

@@ -9,6 +9,33 @@ log = logging.getLogger(__name__)
 
 def exponential_running_standardize(data, factor_new=0.001,
                                     init_block_size=None, eps=1e-4):
+    """
+    Perform exponential running standardization. 
+    
+    Compute the exponental running mean :math:`m_t` at time `t` as 
+    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+    
+    Then, compute exponential running variance :math:`v_t` at time `t` as 
+    :math:`m_t=\mathrm{factornew} \cdot (m_t - x_t)^2 + (1 - \mathrm{factornew}) \cdot v_{t-1}`.
+    
+    Finally, standardize the data point :math:`x_t` at time `t` as:
+    :math:`x'_t=(x_t - m_t) / max(\sqrt{v_t}, eps)`.
+    
+    
+    Parameters
+    ----------
+    data: 2darray (time, channels)
+    factor_new: float
+    init_block_size: int
+        Standardize data before to this index with regular standardization. 
+    eps: float
+        Stabilizer for division by zero variance.
+
+    Returns
+    -------
+    standardized: 2darray (time, channels)
+        Standardized data.
+    """
     df = pd.DataFrame(data)
     meaned = df.ewm(alpha=factor_new).mean()
     demeaned = df - meaned
@@ -29,6 +56,28 @@ def exponential_running_standardize(data, factor_new=0.001,
 
 
 def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
+    """
+    Perform exponential running demeanining. 
+
+    Compute the exponental running mean :math:`m_t` at time `t` as 
+    :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
+
+    Deman the data point :math:`x_t` at time `t` as:
+    :math:`x'_t=(x_t - m_t)`.
+
+
+    Parameters
+    ----------
+    data: 2darray (time, channels)
+    factor_new: float
+    init_block_size: int
+        Demean data before to this index with regular demeaning. 
+        
+    Returns
+    -------
+    demeaned: 2darray (time, channels)
+        Demeaned data.
+    """
     df = pd.DataFrame(data)
     meaned = df.ewm(alpha=factor_new).mean()
     demeaned = df - meaned
@@ -43,7 +92,7 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
 
 def highpass_cnt(data, low_cut_hz, fs, filt_order=3, axis=0):
     """
-     Highpass signal using butterworth filter of given order.
+     Highpass signal applying **causal** butterworth filter of given order.
 
     Parameters
     ----------
@@ -70,7 +119,7 @@ def highpass_cnt(data, low_cut_hz, fs, filt_order=3, axis=0):
 
 def lowpass_cnt(data, high_cut_hz, fs, filt_order=3, axis=0):
     """
-     Lowpass signal using butterworth filter of given order.
+     Lowpass signal applying **causal** butterworth filter of given order.
 
     Parameters
     ----------
@@ -98,7 +147,7 @@ def lowpass_cnt(data, high_cut_hz, fs, filt_order=3, axis=0):
 
 def bandpass_cnt(data, low_cut_hz, high_cut_hz, fs, filt_order=3, axis=0):
     """
-     Bandpass signal using butterworth filter of given order.
+     Bandpass signal applying **causal** butterworth filter of given order.
 
     Parameters
     ----------
@@ -137,6 +186,28 @@ def bandpass_cnt(data, low_cut_hz, high_cut_hz, fs, filt_order=3, axis=0):
 
 
 def filter_is_stable(a):
+    """
+    Check if filter coefficients of IIR filter are stable.
+    
+    Parameters
+    ----------
+    a: list or 1darray of number
+        Denominator filter coefficients a.
+
+    Returns
+    -------
+    is_stable: bool
+        Filter is stable or not.  
+    Notes
+    ----
+    Filter is stable if absolute value of all  roots is smaller than 1,
+    see [1]_.
+    
+    References
+    ----------
+    .. [1] HYRY, "SciPy 'lfilter' returns only NaNs" StackOverflow,
+       http://stackoverflow.com/a/8812737/1469195
+    """
     assert a[0] == 1.0, (
         "a[0] should normally be zero, did you accidentally supply b?\n"
         "a: {:s}".format(str(a)))

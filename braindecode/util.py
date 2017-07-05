@@ -1,33 +1,6 @@
 import os
 import errno
 import numpy as np
-from copy import deepcopy
-
-
-def deepcopy_xarr(xarr):
-    """
-    Deepcopy for xarray that makes sure coords and attrs
-    are properly deepcopied.
-    With normal copy method from xarray, when i mutated
-    xarr.coords[coord].data it would also mutate in the copy
-    and vice versa.
-    Parameters
-    ----------
-    xarr: DateArray
-
-    Returns
-    -------
-    xcopy: DateArray
-        Deep copy of xarr
-    """
-    xcopy = xarr.copy(deep=True)
-
-    for dim in xcopy.coords:
-        xcopy.coords[dim].data = np.copy(xcopy.coords[dim].data)
-    xcopy.attrs = deepcopy(xcopy.attrs)
-    for attr in xcopy.attrs:
-        xcopy.attrs[attr] = deepcopy(xcopy.attrs[attr])
-    return xcopy
 
 
 class FuncAndArgs(object):
@@ -59,18 +32,6 @@ class FuncAndArgs(object):
         
     def __call__(self, *other_args, **other_kwargs):
         return self.apply(*other_args, **other_kwargs)
-    
-    
-class GetAttr(object):
-    """ Hacky class for yaml to return attr of something.
-    Uses new to actually return completely different object... """
-    def __new__(cls, obj, attr):
-        return getattr(obj, attr) 
-
-class ApplyFunc(object):
-    """ Hacky class to wrap function call in object for yaml loading... """
-    def __new__(cls, func,args, kwargs):
-        return func(*args, **kwargs)
 
 def add_message_to_exception(exc, additional_message):
     #  give some more info...
@@ -83,9 +44,6 @@ def add_message_to_exception(exc, additional_message):
         arg0 = args[0]
     arg0 += additional_message
     exc.args = (arg0, ) + args[1:]
-    
-def unzip(l):
-    return zip(*l)
 
 def dict_compare(d1, d2):
     """From http://stackoverflow.com/a/18860653/1469195"""

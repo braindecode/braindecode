@@ -1,6 +1,11 @@
 braindecode\.experiments package
 ================================
 
+.. automodule:: braindecode.experiments
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -29,10 +34,3 @@ braindecode\.experiments\.stopcriteria module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: braindecode.experiments
-    :members:
-    :undoc-members:
-    :show-inheritance:

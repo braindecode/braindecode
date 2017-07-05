@@ -1,6 +1,11 @@
 braindecode\.models package
 ===========================
 
+.. automodule:: braindecode.models
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -28,11 +33,12 @@ braindecode\.models\.shallow\_fbcsp module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.models\.util module
+--------------------------------
 
-Module contents
----------------
-
-.. automodule:: braindecode.models
+.. automodule:: braindecode.models.util
     :members:
     :undoc-members:
     :show-inheritance:
+
+

@@ -1,6 +1,11 @@
 braindecode package
 ===================
 
+.. automodule:: braindecode
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Subpackages
 -----------
 
@@ -25,10 +30,3 @@ braindecode\.util module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: braindecode
-    :members:
-    :undoc-members:
-    :show-inheritance:

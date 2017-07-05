@@ -10,16 +10,17 @@ log = logging.getLogger(__name__)
 
 def concatenate_raws_with_events(raws):
     """
-    Concatenates `Raw` mne objects, respects info['events'] attributes
-    and concatenates them correctly. Also does not modify raws[0] inplace
-    as the concatenate_raws function of mne does
+    Concatenates `mne.io.RawArray` objects, respects `info['events']` attributes
+    and concatenates them correctly. Also does not modify `raws[0]` inplace
+    as the :func:`concatenate_raws` function of MNE does.
+    
     Parameters
     ----------
-    raws: list of `Raw` mne objects
+    raws: list of `mne.io.RawArray`
 
     Returns
     -------
-    concatenated_raw: `Raw` mne object
+    concatenated_raw: `mne.io.RawArray`
     """
     # prevent in-place modification of raws[0]
     raws[0] = deepcopy(raws[0])
@@ -30,6 +31,20 @@ def concatenate_raws_with_events(raws):
 
 
 def resample_cnt(cnt, new_fs):
+    """
+    Resample continuous recording using `resampy`.
+    Parameters
+    ----------
+    cnt: `mne.io.RawArray`
+    new_fs: float
+        New sampling rate.
+
+    Returns
+    -------
+    resampled: `mne.io.RawArray`
+        Resampled object.
+
+    """
     if new_fs == cnt.info['sfreq']:
         log.info(
             "Just copying data, no resampling, since new sampling rate same.")
@@ -54,5 +69,21 @@ def resample_cnt(cnt, new_fs):
 
 
 def mne_apply(func, raw, verbose='WARNING'):
+    """
+    Apply function to data of `mne.io.RawArray`.
+    
+    Parameters
+    ----------
+    func: function
+        Should accept 2d-array (channels x time) and return modified 2d-array
+    raw: `mne.io.RawArray`
+    verbose: bool
+        Whether to log creation of new `mne.io.RawArray`.
+
+    Returns
+    -------
+    transformed_set: Copy of `raw` with data transformed by given function.
+
+    """
     new_data = func(raw.get_data())
     return mne.io.RawArray(new_data, raw.info, verbose=verbose)

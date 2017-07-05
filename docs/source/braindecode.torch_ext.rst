@@ -1,6 +1,11 @@
 braindecode\.torch\_ext package
 ===============================
 
+.. automodule:: braindecode.torch_ext
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 Submodules
 ----------
 
@@ -53,10 +58,3 @@ braindecode\.torch\_ext\.util module
     :show-inheritance:
 
 
-Module contents
----------------
-
-.. automodule:: braindecode.torch_ext
-    :members:
-    :undoc-members:
-    :show-inheritance:
