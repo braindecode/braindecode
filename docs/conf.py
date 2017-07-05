@@ -212,7 +212,7 @@ texinfo_documents = [
 
 
 ## mock stuff
-"""
+#"""
 import sys
 from unittest.mock import MagicMock
 
@@ -221,7 +221,7 @@ class Mock(MagicMock):
     def __getattr__(cls, name):
             return MagicMock()
 
-MOCK_MODULES = ['scipy', 'mne', 'numpy', 'pandas', 'h5py',]
+MOCK_MODULES = ['torch', 'h5py',]
 sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 
-"""
+#"""

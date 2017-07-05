@@ -31,8 +31,8 @@ setup(
     license='BSD 3-Clause',
 
     setup_requires=['numpy'],
-    install_requires=['mne', 'torch', 'numpy', 'pandas', 'scipy',
-                      'resampy', 'matplotlib'],#'h5py',
+    install_requires=['mne',  'numpy', 'pandas', 'scipy',
+                      'resampy', 'matplotlib'],#'h5py',#'torch',
     #tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers
