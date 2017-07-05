@@ -124,7 +124,8 @@ class Experiment(object):
     run_after_early_stop: bool
         Whether to continue running after early stop
     model_loss_function: function, optional
-        Function (model -> loss) to add a model loss like L2 regularization. 
+        Function (model -> loss) to add a model loss like L2 regularization.
+        Note that this loss is not accounted for in monitoring at the moment.
     batch_modifier: object, optional
         Object with modify method, that can change the batch, e.g. for data
         augmentation
