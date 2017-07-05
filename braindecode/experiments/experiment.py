@@ -89,7 +89,7 @@ class Experiment(object):
     
     1. Train on training set until a given stop criterion is fulfilled
     2. Reset to the best epoch, i.e. reset parameters of the model and the 
-       optimizer to the state at the best epoch (“best” according to a given
+       optimizer to the state at the best epoch ("best" according to a given
        criterion)
     3. Continue training on the combined training + validation set until the
        loss on the validation set is as low as it was on the best epoch for the
