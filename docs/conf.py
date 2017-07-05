@@ -214,7 +214,8 @@ texinfo_documents = [
 ## mock stuff
 #"""
 import sys
-from unittest.mock import MagicMock
+from mock import Mock as MagicMock
+#from unittest.mock import MagicMock
 
 class Mock(MagicMock):
     @classmethod
