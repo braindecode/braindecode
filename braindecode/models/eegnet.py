@@ -46,7 +46,7 @@ class EEGNet(object):
         model = nn.Sequential()
         n_filters_1 = 16
         model.add_module('conv_1', nn.Conv2d(
-            self.in_chans, n_filters_1, (1, 1), stride=1, bias=False))
+            self.in_chans, n_filters_1, (1, 1), stride=1, bias=True))
         model.add_module('bnorm_1', nn.BatchNorm2d(
             n_filters_1, momentum=0.1, affine=True),)
         model.add_module('elu_1', Expression(elu))
@@ -60,7 +60,7 @@ class EEGNet(object):
         model.add_module('conv_2', nn.Conv2d(
             1, n_filters_2, self.second_kernel_size, stride=1,
             padding=(self.second_kernel_size[0] // 2, 0),
-            bias=False))
+            bias=True))
         model.add_module('bnorm_2',nn.BatchNorm2d(
             n_filters_2, momentum=0.1, affine=True),)
         model.add_module('elu_2', Expression(elu))
@@ -72,7 +72,7 @@ class EEGNet(object):
         model.add_module('conv_3', nn.Conv2d(
             n_filters_2, n_filters_3, self.third_kernel_size, stride=1,
             padding=(self.third_kernel_size[0] // 2, 0),
-            bias=False))
+            bias=True))
         model.add_module('bnorm_3',nn.BatchNorm2d(
             n_filters_3, momentum=0.1, affine=True),)
         model.add_module('elu_3', Expression(elu))

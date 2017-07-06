@@ -29,3 +29,13 @@ def log_categorical_crossentropy(logpreds, targets, dims=None):
         for dim in dims:
             result = th.sum(result, dim=int(dim))
     return result
+
+
+def l2_loss(model):
+    losses = [th.sum(p * p) for p in model.parameters()]
+    return sum(losses)
+
+
+def l1_loss(model):
+    losses = [th.sum(th.abs(p)) for p in model.parameters()]
+    return sum(losses)
