@@ -11,7 +11,13 @@ Installation
 
 1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
-2. Install newest version of python-mne:
+2. Install numpy (necessary for resamply installation to work), e.g.:
+
+.. code-block:: bash
+
+  pip install numpy
+
+3. Install newest version of python-mne:
 
 .. code-block:: bash
 
@@ -20,7 +26,7 @@ Installation
   python setup.py install
 
 
-3. Install braindecode via pip:
+4. Install braindecode via pip:
 
 .. code-block:: bash
 
