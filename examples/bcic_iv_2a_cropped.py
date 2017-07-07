@@ -50,7 +50,9 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
 
     # Preprocessing
 
-    train_cnt = train_cnt.drop_channels(['STI 014'])
+    train_cnt = train_cnt.drop_channels(['STI 014', 'EOG-left',
+                                         'EOG-central', 'EOG-right'])
+    assert len(train_cnt.ch_names) == 22
     # lets convert to millvolt for numerical stability of next operations
     train_cnt = mne_apply(lambda a: a * 1e6, train_cnt)
     train_cnt = mne_apply(
@@ -62,8 +64,10 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
                                                   init_block_size=1000,
                                                   eps=1e-4).T,
         train_cnt)
-    test_cnt.load_data()
-    test_cnt = test_cnt.drop_channels(['STI 014'])
+
+    test_cnt = test_cnt.drop_channels(['STI 014', 'EOG-left',
+                                       'EOG-central', 'EOG-right'])
+    assert len(test_cnt.ch_names) == 22
     test_cnt = mne_apply(lambda a: a * 1e6, test_cnt)
     test_cnt = mne_apply(
         lambda a: bandpass_cnt(a, low_cut_hz, 38, test_cnt.info['sfreq'],
@@ -97,10 +101,12 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
         model = Deep4Net(n_chans, n_classes, input_time_length=input_time_length,
                             final_conv_length=2).create_network()
 
+
     to_dense_prediction_model(model)
     if cuda:
         model.cuda()
 
+    log.info("Model: \n{:s}".format(str(model)))
     dummy_input = np_to_var(train_set.X[:1, :, :, None])
     if cuda:
         dummy_input = dummy_input.cuda()

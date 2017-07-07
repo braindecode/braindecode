@@ -17,6 +17,14 @@ braindecode\.datasets\.bbci module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.datasets\.bcic\_iv\_2a module
+------------------------------------------
+
+.. automodule:: braindecode.datasets.bcic_iv_2a
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.datasets\.multiple module
 --------------------------------------
 
