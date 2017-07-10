@@ -3,6 +3,101 @@ import errno
 import numpy as np
 
 
+def corr(a, b):
+    """
+    Computes correlation only between terms of a and terms of b, not within
+    a and b.
+
+    Parameters
+    ----------
+    a, b: 2darray, features x samples
+
+    Returns
+    -------
+    Correlation between features in x and features in y
+    """
+    # Difference to numpy:
+    # Correlation only between terms of x and y
+    # not between x and x or y and y
+    this_cov = cov(a, b)
+    return _cov_to_corr(this_cov, a, b)
+
+
+def cov(a, b):
+    """
+    Computes covariance only between terms of a and terms of b, not within
+    a and b.
+
+    Parameters
+    ----------
+    a, b: 2darray, features x samples
+
+    Returns
+    -------
+    Covariance between features in x and features in y
+    """
+    demeaned_a = a - np.mean(a, axis=1, keepdims=True)
+    demeaned_b = b - np.mean(b, axis=1, keepdims=True)
+    this_cov = np.dot(demeaned_a, demeaned_b.T) / (b.shape[1] - 1)
+    return this_cov
+
+
+def _cov_to_corr(this_cov, a, b):
+    # computing "unbiased" corr
+    # ddof=1 for unbiased..
+    var_a = np.var(a, axis=1, ddof=1)
+    var_b = np.var(b, axis=1, ddof=1)
+    return _cov_and_var_to_corr(this_cov, var_a, var_b)
+
+
+def _cov_and_var_to_corr(this_cov, var_a, var_b):
+    divisor = np.outer(np.sqrt(var_a), np.sqrt(var_b))
+    return this_cov / divisor
+
+
+def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
+    """
+    Reshape two nd-arrays into 2d-arrays, apply function and reshape
+    result back.
+    Parameters
+    ----------
+    stat_fn: function
+        Function to apply to 2d-arrays
+    a: nd-array: nd-array
+    b: nd-array
+    axis_a: int or list of int
+        sample axis
+    axis_b: int or list of int
+        sample axis
+
+    Returns
+    -------
+    result: nd-array
+        The result reshaped to remaining_dims_a + remaining_dims_b
+    """
+    if not hasattr(axis_a, '__len__'):
+        axis_a = [axis_a]
+    if not hasattr(axis_b, '__len__'):
+        axis_b = [axis_b]
+    other_axis_a = [i for i in range(a.ndim) if i not in axis_a]
+    other_axis_b = [i for i in range(b.ndim) if i not in axis_b]
+    transposed_topo_a = a.transpose(tuple(other_axis_a) + tuple(axis_a))
+    n_stat_axis_a = [a.shape[i] for i in axis_a]
+    n_other_axis_a = [a.shape[i] for i in other_axis_a]
+    flat_topo_a = transposed_topo_a.reshape(np.prod(n_other_axis_a),
+                                            np.prod(n_stat_axis_a))
+    transposed_topo_b = b.transpose(tuple(other_axis_b) + tuple(axis_b))
+    n_stat_axis_b = [b.shape[i] for i in axis_b]
+    n_other_axis_b = [b.shape[i] for i in other_axis_b]
+    flat_topo_b = transposed_topo_b.reshape(np.prod(n_other_axis_b),
+                                            np.prod(n_stat_axis_b))
+    assert np.array_equal(n_stat_axis_a, n_stat_axis_b)
+    stat_result = stat_fn(flat_topo_a, flat_topo_b)
+    topo_result = stat_result.reshape(
+        tuple(n_other_axis_a) + tuple(n_other_axis_b))
+    return topo_result
+
+
 class FuncAndArgs(object):
     """Container for a function and its arguments. 
     Useful in case you want to pass a function and its arguments 
