@@ -1,9 +1,11 @@
 Welcome to Braindecode
 ======================
 
-**Under construction**
-
 A deep learning toolbox to decode raw time-domain EEG.
+
+For EEG researchers that want to want to work with deep learning and
+deep learning researchers that want to work with EEG data.
+For now focussed on convolutional networks.
 
 
 Installation
