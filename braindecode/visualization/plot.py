@@ -66,9 +66,12 @@ def ax_scalp(v, channels,
     References
     ----------
 
-    .. [1] Venthur, B., Dähne, S., Höhne, J., Heller, H., &
-    Blankertz, B. (2015). Wyrm: A brain-computer interface toolbox in python.
-    Neuroinformatics, 13(4), 471-486.
+
+    .. [1] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
+       Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
+       Deep learning with convolutional neural networks for EEG decoding and
+       visualization.
+       arXiv preprint arXiv:1703.05051.
 
     """
     if ax is None:
@@ -121,7 +124,7 @@ def ax_scalp(v, channels,
         ax.plot([-0.1, 0, 0.1], [1, 1.1, 1], color='black',
                 linewidth=scalp_line_width, linestyle=scalp_line_style)
         # add ears
-        add_ears(ax, scalp_line_width, scalp_line_style)
+        _add_ears(ax, scalp_line_width, scalp_line_style)
     # add markers at channels positions
     # set the axes limits, so the figure is centered on the scalp
     ax.set_ylim([-1.05, 1.15])
@@ -140,7 +143,7 @@ def ax_scalp(v, channels,
     return image
 
 
-def add_ears(ax, linewidth, linestyle):
+def _add_ears(ax, linewidth, linestyle):
     start_x = np.cos(10 * np.pi / 180.0)
     start_y = np.sin(10 * np.pi / 180.0)
     end_x = np.cos(-15 * np.pi / 180.0)

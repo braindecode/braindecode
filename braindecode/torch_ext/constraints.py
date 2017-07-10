@@ -11,8 +11,8 @@ class MaxNormDefaultConstraint(object):
 
     .. [1] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J., 
        Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
-       Deep learning with convolutional neural networks for brain mapping and
-       decoding of movement-related information from the human EEG.
+       Deep learning with convolutional neural networks for EEG decoding and
+       visualization.
        arXiv preprint arXiv:1703.05051.
     
     """

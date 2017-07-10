@@ -19,6 +19,11 @@ def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
                                               batch_size=30,
                                               seed=((2017, 7, 10))):
     """
+    Perturb input amplitudes and compute correlation between amplitude
+    perturbations and prediction changes when pushing perturbed input through
+    the prediction function.
+
+    For more details, see [EEGDeepLearning]_.
 
     Parameters
     ----------
