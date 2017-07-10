@@ -33,4 +33,12 @@ braindecode\.datasets\.multiple module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.datasets\.sensor\_positions module
+-----------------------------------------------
+
+.. automodule:: braindecode.datasets.sensor_positions
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 

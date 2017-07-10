@@ -42,6 +42,7 @@ Tutorials
    notebooks/TrialWise_Decoding.ipynb
    notebooks/Cropped_Decoding.ipynb
    notebooks/Experiment_Class.ipynb
+   notebooks/visualization/Perturbation.ipynb
 
 
 API
