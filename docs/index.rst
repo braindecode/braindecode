@@ -47,6 +47,11 @@ Tutorials
    notebooks/visualization/Perturbation.ipynb
 
 
+Troubleshooting
+===============
+Please report any issues on github: https://github.com/robintibor/braindecode
+
+
 API
 ===
 
