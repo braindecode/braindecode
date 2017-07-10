@@ -157,7 +157,7 @@ class BBCIDataset(object):
                 zip(event_times_in_samples, event_classes)):
             if i_sample == previous_i_sample:
                 log.warning("Same sample has at least two markers.\n"
-                            "{:d}: ({:d} and {:d}).\n".format(i_sample,
+                            "{:d}: ({:.0f} and {:.0f}).\n".format(i_sample,
                                                               event_classes[
                                                                   i_event - 1],
                                                               event_classes[
