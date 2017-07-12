@@ -17,6 +17,7 @@ Subpackages
     braindecode.mne_ext
     braindecode.models
     braindecode.torch_ext
+    braindecode.visualization
 
 Submodules
 ----------
