@@ -83,7 +83,7 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
     train_set, valid_set = split_into_two_sets(train_set,
                                                first_set_fraction=0.8)
 
-    set_random_seeds(seed=20190706, cuda=True)
+    set_random_seeds(seed=20190706, cuda=cuda)
 
     n_classes = 4
     n_chans = int(train_set.X.shape[1])
