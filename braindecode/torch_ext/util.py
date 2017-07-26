@@ -8,10 +8,13 @@ def np_to_var(X, requires_grad=False, **var_kwargs):
     """
     Convenience function to transform numpy array to `torch.autograd.Variable`.
         
+    Converts `X` to ndarray using asarray if necessary.
+    
     Returns
     -------
     var: `torch.autograd.Variable`
     """
+    X = np.asarray(X)
     return Variable(th.from_numpy(X), requires_grad=requires_grad, **var_kwargs)
 
 
