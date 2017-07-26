@@ -103,9 +103,9 @@ class ShallowFBCSPNet(object):
             init.xavier_uniform(model.conv_spat.weight, gain=1)
             if not self.batch_norm:
                 init.constant(model.conv_spat.bias, 0)
-            else:
-                init.constant(model.bnorm.weight, 1)
-                init.constant(model.bnorm.bias, 0)
+        if self.batch_norm:
+            init.constant(model.bnorm.weight, 1)
+            init.constant(model.bnorm.bias, 0)
         init.xavier_uniform(model.conv_classifier.weight, gain=1)
         init.constant(model.conv_classifier.bias, 0)
 
