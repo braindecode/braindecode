@@ -11,10 +11,6 @@ import torch as th
 
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.util import to_dense_prediction_model
-from hyperoptim.parse import cartesian_dict_of_lists_product, \
-    product_of_list_of_lists_of_dicts
-from hyperoptim.util import save_pkl_artifact
-
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.experiments.experiment import Experiment
 from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
