@@ -63,6 +63,7 @@ API
    braindecode.mne_ext
    braindecode.models
    braindecode.torch_ext
+   braindecode.visualization
 
 Indices and tables
 ==================
