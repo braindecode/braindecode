@@ -1,6 +1,7 @@
 import logging
 from collections import OrderedDict
 from copy import deepcopy
+import time
 
 import pandas as pd
 import torch as th
@@ -250,7 +251,7 @@ class Experiment(object):
         """
         batch_generator = self.iterator.get_batches(datasets['train'],
                                                     shuffle=True)
-        # TODO, add timing again?
+        start_train_epoch_time = time.time()
         for inputs, targets in batch_generator:
             if self.batch_modifier is not None:
                 inputs, targets = self.batch_modifier.process(inputs,
@@ -258,6 +259,9 @@ class Experiment(object):
             # could happen that batch modifier has removed all inputs...
             if len(inputs) > 0:
                 self.train_batch(inputs, targets)
+        end_train_epoch_time = time.time()
+        log.info("Time only for training updates: {:.2f}s".format(
+            end_train_epoch_time - start_train_epoch_time))
 
         self.monitor_epoch(datasets)
         self.print_epoch()
