@@ -10,6 +10,21 @@ log = logging.getLogger(__name__)
 
 
 def gaussian_perturbation(amps, rng):
+    """
+    Create gaussian noise tensor with same shape as amplitudes.
+
+    Parameters
+    ----------
+    amps: ndarray
+        Amplitudes.
+    rng: RandomState
+        Random generator.
+
+    Returns
+    -------
+    perturbation: ndarray
+        Perturbations to add to the amplitudes.
+    """
     perturbation = rng.randn(*amps.shape)
     return perturbation
 
@@ -46,6 +61,15 @@ def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
     amplitude_pred_corrs: ndarray
         Correlations between amplitude perturbations and prediction changes
         for all sensors and frequency bins.
+
+    References
+    ----------
+
+    .. [EEGDeepLearning] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
+       Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
+       Deep learning with convolutional neural networks for EEG decoding and
+       visualization.
+       arXiv preprint arXiv:1703.05051.
     """
     inds_per_batch = get_balanced_batches(
         n_trials=len(examples), rng=None, shuffle=False, batch_size=batch_size)
@@ -69,7 +93,7 @@ def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
         perturbation = np.maximum(-amps, perturbation)
         new_amps = amps + perturbation
         log.info("Compute new  complex inputs...")
-        new_complex = amplitude_phase_to_complex(new_amps, phases)
+        new_complex = _amplitude_phase_to_complex(new_amps, phases)
         log.info("Compute new real inputs...")
         new_in = np.fft.irfft(new_complex, axis=2).astype(np.float32)
         log.info("Compute new predictions...")
@@ -88,5 +112,5 @@ def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
     return amp_pred_corrs
 
 
-def amplitude_phase_to_complex(amplitude, phase):
+def _amplitude_phase_to_complex(amplitude, phase):
     return amplitude * np.cos(phase) + amplitude * np.sin(phase) * 1j
