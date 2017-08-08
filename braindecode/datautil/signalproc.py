@@ -3,6 +3,7 @@ import logging
 import pandas as pd
 import numpy as np
 import scipy
+import scipy.signal
 
 log = logging.getLogger(__name__)
 
