@@ -48,7 +48,7 @@ class EEGNet(object):
         model.add_module('conv_1', nn.Conv2d(
             self.in_chans, n_filters_1, (1, 1), stride=1, bias=True))
         model.add_module('bnorm_1', nn.BatchNorm2d(
-            n_filters_1, momentum=0.1, affine=True),)
+            n_filters_1, momentum=0.01, affine=True, eps=1e-3),)
         model.add_module('elu_1', Expression(elu))
         # transpose to examples x 1 x (virtual, not EEG) channels x time
         model.add_module('permute_1', Expression(lambda x: x.permute(0,3,1,2)))
@@ -56,13 +56,17 @@ class EEGNet(object):
         model.add_module('drop_1', nn.Dropout(p=self.drop_prob))
 
         n_filters_2 = 4
-        # not clear to me how they did the padding
+        # keras padds unequal padding more in front, so padding
+        # too large should be ok.
+        # Not padding in time so that croped training makes sense
+        # https://stackoverflow.com/questions/43994604/padding-with-even-kernel-size-in-a-convolutional-layer-in-keras-theano
+
         model.add_module('conv_2', nn.Conv2d(
             1, n_filters_2, self.second_kernel_size, stride=1,
             padding=(self.second_kernel_size[0] // 2, 0),
             bias=True))
         model.add_module('bnorm_2',nn.BatchNorm2d(
-            n_filters_2, momentum=0.1, affine=True),)
+            n_filters_2, momentum=0.01, affine=True, eps=1e-3),)
         model.add_module('elu_2', Expression(elu))
         model.add_module('pool_2', pool_class(
             kernel_size=(2, 4), stride=(2, 4)))
@@ -74,7 +78,7 @@ class EEGNet(object):
             padding=(self.third_kernel_size[0] // 2, 0),
             bias=True))
         model.add_module('bnorm_3',nn.BatchNorm2d(
-            n_filters_3, momentum=0.1, affine=True),)
+            n_filters_3, momentum=0.01, affine=True, eps=1e-3),)
         model.add_module('elu_3', Expression(elu))
         model.add_module('pool_3', pool_class(
             kernel_size=(2, 4), stride=(2, 4)))
