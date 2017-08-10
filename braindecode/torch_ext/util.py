@@ -4,7 +4,7 @@ import numpy as np
 import random
 
 
-def np_to_var(X, requires_grad=False, dtype=None, **var_kwargs):
+def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **var_kwargs):
     """
     Convenience function to transform numpy array to `torch.autograd.Variable`.
         
@@ -27,7 +27,10 @@ def np_to_var(X, requires_grad=False, dtype=None, **var_kwargs):
     X = np.asarray(X)
     if dtype is not None:
         X = X.astype(dtype)
-    return Variable(th.from_numpy(X), requires_grad=requires_grad, **var_kwargs)
+    X_tensor = th.from_numpy(X)
+    if pin_memory:
+        X_tensor = X_tensor.pin_memory()
+    return Variable(X_tensor, requires_grad=requires_grad, **var_kwargs)
 
 
 def var_to_np(var):

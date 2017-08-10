@@ -132,6 +132,8 @@ class Experiment(object):
         augmentation
     cuda: bool, optional
         Whether to use cuda.
+    pin_memory: bool, optional
+        Whether to pin memory of inputs and targets of batch.
         
     Attributes
     ----------
@@ -143,7 +145,7 @@ class Experiment(object):
                  monitors, stop_criterion, remember_best_column,
                  run_after_early_stop,
                  model_loss_function=None,
-                 batch_modifier=None, cuda=True):
+                 batch_modifier=None, cuda=True, pin_memory=False):
         self.model = model
         self.datasets = OrderedDict(
             (('train', train_set), ('valid', valid_set), ('test', test_set)))
@@ -161,6 +163,7 @@ class Experiment(object):
         self.epochs_df = pd.DataFrame()
         self.before_stop_df = None
         self.rememberer = None
+        self.pin_memory = pin_memory
 
     def run(self):
         """
@@ -279,8 +282,8 @@ class Experiment(object):
         targets: `torch.autograd.Variable`
         """
         self.model.train()
-        input_vars = np_to_var(inputs)
-        target_vars = np_to_var(targets)
+        input_vars = np_to_var(inputs, pin_memory=self.pin_memory)
+        target_vars = np_to_var(targets, pin_memory=self.pin_memory)
         if self.cuda:
             input_vars = input_vars.cuda()
             target_vars = target_vars.cuda()
@@ -310,8 +313,8 @@ class Experiment(object):
 
         """
         self.model.eval()
-        input_vars = np_to_var(inputs)
-        target_vars = np_to_var(targets)
+        input_vars = np_to_var(inputs, pin_memory=self.pin_memory)
+        target_vars = np_to_var(targets, pin_memory=self.pin_memory)
         if self.cuda:
             input_vars = input_vars.cuda()
             target_vars = target_vars.cuda()
