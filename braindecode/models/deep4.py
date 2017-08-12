@@ -29,11 +29,11 @@ class Deep4Net(object):
                  filter_time_length=10,
                  pool_time_length=3,
                  pool_time_stride=3,
-                 num_filters_2=50,
+                 n_filters_2=50,
                  filter_length_2=10,
-                 num_filters_3=100,
+                 n_filters_3=100,
                  filter_length_3=10,
-                 num_filters_4=200,
+                 n_filters_4=200,
                  filter_length_4=10,
                  first_nonlin=elu,
                  first_pool_mode='max',
@@ -89,18 +89,18 @@ class Deep4Net(object):
                              stride=(self.pool_time_stride, 1)))
         model.add_module('pool_nonlin', Expression(self.first_pool_nonlin))
 
-        def add_conv_pool_block(model, num_filters_before,
-                                num_filters, filter_length, block_nr):
+        def add_conv_pool_block(model, n_filters_before,
+                                n_filters, filter_length, block_nr):
             suffix = '_{:d}'.format(block_nr)
             model.add_module('drop' + suffix,
                              nn.Dropout(p=self.drop_prob))
             model.add_module('conv' + suffix.format(block_nr),
-                             nn.Conv2d(num_filters_before, num_filters,
+                             nn.Conv2d(n_filters_before, n_filters,
                                        (filter_length, 1),
                                        stride=1, bias=not self.batch_norm))
             if self.batch_norm:
                 model.add_module('bnorm' + suffix,
-                             nn.BatchNorm2d(num_filters,
+                             nn.BatchNorm2d(n_filters,
                                             momentum=self.batch_norm_alpha,
                                             affine=True,
                                             eps=1e-5))
@@ -114,11 +114,11 @@ class Deep4Net(object):
             model.add_module('pool_nonlin' + suffix,
                              Expression(self.later_pool_nonlin))
 
-        add_conv_pool_block(model, n_filters_conv, self.num_filters_2,
+        add_conv_pool_block(model, n_filters_conv, self.n_filters_2,
                             self.filter_length_2, 2)
-        add_conv_pool_block(model, self.num_filters_2, self.num_filters_3,
+        add_conv_pool_block(model, self.n_filters_2, self.n_filters_3,
                             self.filter_length_3, 3)
-        add_conv_pool_block(model, self.num_filters_3, self.num_filters_4,
+        add_conv_pool_block(model, self.n_filters_3, self.n_filters_4,
                             self.filter_length_4, 4)
 
 
@@ -129,7 +129,7 @@ class Deep4Net(object):
             n_out_time = out.cpu().data.numpy().shape[2]
             self.final_conv_length = n_out_time
         model.add_module('conv_classifier',
-                             nn.Conv2d(self.num_filters_4, self.n_classes,
+                             nn.Conv2d(self.n_filters_4, self.n_classes,
                                        (self.final_conv_length, 1), bias=True))
         model.add_module('softmax', nn.LogSoftmax())
         # remove empty dim at end and potentially remove empty time dim
