@@ -60,6 +60,8 @@ If you use this code in a scientific publication, please cite us as:
   issn = {1097-0193},
   url = {http://dx.doi.org/10.1002/hbm.23730},
   doi = {10.1002/hbm.23730},
+  month = aug,
+	year = {2017},
   keywords = {electroencephalography, EEG analysis, machine learning, end-to-end learning, brain–machine interface, 
     brain–computer interface, model interpretability, brain mapping},
   }
