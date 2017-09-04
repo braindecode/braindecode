@@ -18,7 +18,8 @@ def ax_scalp(v, channels,
              scalp_line_width=1,
              scalp_line_style='solid',
              chan_pos_list=CHANNEL_10_20_APPROX,
-             interpolation='bilinear'):
+             interpolation='bilinear',
+             fontsize=8):
     """Draw a scalp plot.
 
     Draws a scalp plot on an existing axes. The method takes an array of
@@ -138,7 +139,7 @@ def ax_scalp(v, channels,
     if annotate:
         for i in zip(channels, list(zip(x, y))):
             ax.annotate(" " + i[0], i[1], horizontalalignment="center",
-                        verticalalignment='center')
+                        verticalalignment='center', fontsize=fontsize)
     ax.set_aspect(1)
     return image
 

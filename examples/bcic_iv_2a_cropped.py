@@ -126,7 +126,7 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
     model_constraint = MaxNormDefaultConstraint()
 
     loss_function = lambda preds, targets: F.nll_loss(
-        th.mean(preds, dim=2)[:, :, 0], targets)
+        th.mean(preds, dim=2, keepdim=False), targets)
 
     exp = Experiment(model, train_set, valid_set, test_set, iterator=iterator,
                      loss_function=loss_function, optimizer=optimizer,

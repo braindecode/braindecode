@@ -25,7 +25,7 @@ def gaussian_perturbation(amps, rng):
     perturbation: ndarray
         Perturbations to add to the amplitudes.
     """
-    perturbation = rng.randn(*amps.shape)
+    perturbation = rng.randn(*amps.shape).astype(np.float32)
     return perturbation
 
 
@@ -92,7 +92,7 @@ def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
         # zero
         perturbation = np.maximum(-amps, perturbation)
         new_amps = amps + perturbation
-        log.info("Compute new  complex inputs...")
+        log.info("Compute new complex inputs...")
         new_complex = _amplitude_phase_to_complex(new_amps, phases)
         log.info("Compute new real inputs...")
         new_in = np.fft.irfft(new_complex, axis=2).astype(np.float32)
