@@ -2,7 +2,7 @@ import numpy as np
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
-from braindecode.torch_ext.modules import Expression
+from braindecode.torch_ext.modules import Expression, AvgPool2dWithConv
 from braindecode.torch_ext.functions import identity
 from braindecode.torch_ext.util import np_to_var
 
@@ -53,7 +53,7 @@ class Deep4Net(object):
         del self.self
 
     def create_network(self):
-        pool_class_dict = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)
+        pool_class_dict = dict(max=nn.MaxPool2d, mean=AvgPool2dWithConv)
         first_pool_class = pool_class_dict[self.first_pool_mode]
         later_pool_class = pool_class_dict[self.later_pool_mode]
         model = nn.Sequential()
