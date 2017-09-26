@@ -17,7 +17,7 @@ def exponential_running_standardize(data, factor_new=0.001,
     :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
     
     Then, compute exponential running variance :math:`v_t` at time `t` as 
-    :math:`m_t=\mathrm{factornew} \cdot (m_t - x_t)^2 + (1 - \mathrm{factornew}) \cdot v_{t-1}`.
+    :math:`v_t=\mathrm{factornew} \cdot (m_t - x_t)^2 + (1 - \mathrm{factornew}) \cdot v_{t-1}`.
     
     Finally, standardize the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t) / max(\sqrt{v_t}, eps)`.
@@ -214,4 +214,3 @@ def filter_is_stable(a):
         "a: {:s}".format(str(a)))
     # from http://stackoverflow.com/a/8812737/1469195
     return np.all(np.abs(np.roots(a))<1)
-

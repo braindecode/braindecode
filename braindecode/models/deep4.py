@@ -45,7 +45,8 @@ class Deep4Net(object):
                  double_time_convs=False,
                  split_first_layer=True,
                  batch_norm=True,
-                 batch_norm_alpha=0.1):
+                 batch_norm_alpha=0.1,
+                 stride_before_pool=False):
         if final_conv_length == 'auto':
             assert input_time_length is not None
 
@@ -53,6 +54,12 @@ class Deep4Net(object):
         del self.self
 
     def create_network(self):
+        if self.stride_before_pool:
+            conv_stride = self.pool_time_stride
+            pool_stride = 1
+        else:
+            conv_stride = 1
+            pool_stride = self.pool_time_stride
         pool_class_dict = dict(max=nn.MaxPool2d, mean=AvgPool2dWithConv)
         first_pool_class = pool_class_dict[self.first_pool_mode]
         later_pool_class = pool_class_dict[self.later_pool_mode]
@@ -66,14 +73,15 @@ class Deep4Net(object):
                                                     stride=1, ))
             model.add_module('conv_spat',
                              nn.Conv2d(self.n_filters_time, self.n_filters_spat,
-                                       (1, self.in_chans), stride=1,
+                                       (1, self.in_chans),
+                                       stride=(conv_stride, 1),
                                        bias=not self.batch_norm))
             n_filters_conv = self.n_filters_spat
         else:
             model.add_module('conv_time',
                              nn.Conv2d(self.in_chans, self.n_filters_time,
                                        (self.filter_time_length, 1),
-                                       stride=1,
+                                       stride=(conv_stride, 1),
                                        bias=not self.batch_norm))
             n_filters_conv = self.n_filters_time
         if self.batch_norm:
@@ -86,7 +94,7 @@ class Deep4Net(object):
         model.add_module('pool',
                          first_pool_class(
                              kernel_size=(self.pool_time_length, 1),
-                             stride=(self.pool_time_stride, 1)))
+                             stride=(pool_stride, 1)))
         model.add_module('pool_nonlin', Expression(self.first_pool_nonlin))
 
         def add_conv_pool_block(model, n_filters_before,
@@ -97,7 +105,8 @@ class Deep4Net(object):
             model.add_module('conv' + suffix.format(block_nr),
                              nn.Conv2d(n_filters_before, n_filters,
                                        (filter_length, 1),
-                                       stride=1, bias=not self.batch_norm))
+                                       stride=(conv_stride, 1),
+                                       bias=not self.batch_norm))
             if self.batch_norm:
                 model.add_module('bnorm' + suffix,
                              nn.BatchNorm2d(n_filters,
@@ -110,7 +119,7 @@ class Deep4Net(object):
             model.add_module('pool' + suffix,
                              later_pool_class(
                                  kernel_size=(self.pool_time_length, 1),
-                                 stride=(self.pool_time_stride, 1)))
+                                 stride=(pool_stride, 1)))
             model.add_module('pool_nonlin' + suffix,
                              Expression(self.later_pool_nonlin))
 
