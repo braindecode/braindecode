@@ -33,7 +33,7 @@ def log_categorical_crossentropy_1_hot(logpreds, targets, dims=None):
     return result
 
 
-def log_categorical_crossentropy(log_preds, targets):
+def log_categorical_crossentropy(log_preds, targets, class_weights=None):
     """
     Returns log categorical crossentropy for given log-predictions and targets.
     
@@ -47,6 +47,8 @@ def log_categorical_crossentropy(log_preds, targets):
     log_preds: torch.autograd.Variable`
         Logarithm of softmax output.
     targets: `torch.autograd.Variable`
+    class_weights: list of int, optional
+        Weights given to loss of different classes
 
     Returns
     -------
@@ -54,6 +56,8 @@ def log_categorical_crossentropy(log_preds, targets):
     loss: `torch.autograd.Variable`
     """
     if log_preds.size() == targets.size():
+        assert class_weights is None, (
+            "Class weights not implemented for one-hot")
         return log_categorical_crossentropy_1_hot(log_preds, targets)
     n_classes = log_preds.size()[1]
     n_elements = 0
@@ -62,7 +66,10 @@ def log_categorical_crossentropy(log_preds, targets):
         mask = targets == i_class
         mask = mask.type_as(log_preds)
         n_elements -= th.sum(mask)
-        losses.append(th.sum(mask * log_preds[:,i_class]))
+        this_loss = th.sum(mask * log_preds[:,i_class])
+        if class_weights is not None:
+            this_loss = this_loss * class_weights[i_class]
+        losses.append(this_loss)
     return th.sum(th.stack(losses)) / n_elements
 
 
