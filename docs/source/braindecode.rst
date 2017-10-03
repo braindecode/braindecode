@@ -30,4 +30,12 @@ braindecode\.util module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.version module
+---------------------------
+
+.. automodule:: braindecode.version
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 

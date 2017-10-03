@@ -218,7 +218,7 @@ class CropsFromTrialsIterator(object):
         for i_blocks in blocks_per_batch:
             start_stop_blocks = i_trial_start_stop_block[i_blocks]
             batch = _create_batch_from_i_trial_start_stop_blocks(
-                X, y, start_stop_blocks)
+                X, y, start_stop_blocks, self.n_preds_per_input)
             yield batch
 
 
@@ -231,7 +231,7 @@ def _compute_start_stop_block_inds(i_trial_starts, i_trial_stops,
     ----------
     i_trial_starts: 1darray/list of int
         Indices of first samples to predict(!).
-    i_trial_stops: 1daray/list of int
+    i_trial_stops: 1darray/list of int
         Indices one past last sample to predict.
     input_time_length: int
     n_preds_per_input: int
@@ -299,12 +299,17 @@ def _get_start_stop_blocks_for_trial(i_trial_start, i_trial_stop,
     return start_stop_blocks
 
 
-def _create_batch_from_i_trial_start_stop_blocks(X, y, i_trial_start_stop_block):
+def _create_batch_from_i_trial_start_stop_blocks(X, y, i_trial_start_stop_block,
+                                                 n_preds_per_input=None):
     Xs = []
     ys = []
     for i_trial, start, stop in i_trial_start_stop_block:
         Xs.append(X[i_trial][:,start:stop])
-        ys.append(y[i_trial])
+        if not hasattr(y[i_trial], '__len__'):
+            ys.append(y[i_trial])
+        else:
+            assert n_preds_per_input is not None
+            ys.append(y[i_trial][stop-n_preds_per_input:stop])
     batch_X = np.array(Xs)
     batch_y = np.array(ys)
     # add empty fourth dimension if necessary

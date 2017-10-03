@@ -9,13 +9,16 @@ with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
 
+# This will add __version__ to version dict
+version = {}
+with open(path.join(here, 'braindecode/version.py'), encoding='utf-8') as (
+        version_file):
+    exec(version_file.read(), version)
+
 setup(
     name='Braindecode',
 
-    # Versions should comply with PEP440.  For a discussion on single-sourcing
-    # the version across setup.py and the project code, see
-    # http://packaging.python.org/en/latest/tutorial.html#version
-    version='0.1.9', # TODO: read from __init__.py?
+    version=version['__version__'],
 
     description='A deep learning toolbox to decode raw time-domain EEG.',
     long_description=long_description,

@@ -21,3 +21,13 @@ apidoc:
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 %: Makefile
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
+
+
+removeipynbcheckpoints: Makefile
+	rm -rf notebooks/.ipynb_checkpoints/ notebooks/visualization/.ipynb_checkpoints/
+
+removesource: Makefile
+	rm -rf source/
+
+rmanddoc: removesource removeipynbcheckpoints apidoc html
+	echo "Done"

@@ -33,16 +33,21 @@ def concatenate_two_sets(set_a, set_b):
     -------
     concatenated_set: :class:`.SignalAndTarget`
     """
-    if hasattr(set_a.X, 'ndim') and hasattr(set_b.X, 'ndim'):
-        new_X = np.concatenate((set_a.X, set_b.X), axis=0)
-    else:
-        if hasattr(set_a.X, 'ndim'):
-            set_a.X = set_a.X.tolist()
-        if hasattr(set_b.X, 'ndim'):
-            set_b.X = set_b.X.tolist()
-        new_X = set_a.X + set_b.X
-    new_y = np.concatenate((set_a.y, set_b.y), axis=0)
+    new_X = concatenate_np_array_or_add_lists(set_a.X, set_b.X)
+    new_y = concatenate_np_array_or_add_lists(set_a.y, set_b.y)
     return SignalAndTarget(new_X, new_y)
+
+def concatenate_np_array_or_add_lists(a, b):
+    if hasattr(a, 'ndim') and hasattr(b, 'ndim'):
+        new = np.concatenate((a, b), axis=0)
+    else:
+        if hasattr(a, 'ndim'):
+            a = a.tolist()
+        if hasattr(b, 'ndim'):
+            b = b.tolist()
+        new = a + b
+    return new
+
 
 
 def split_into_two_sets(dataset, first_set_fraction=None, n_first_set=None):
