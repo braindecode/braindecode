@@ -59,6 +59,7 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
     """
     Reshape two nd-arrays into 2d-arrays, apply function and reshape
     result back.
+
     Parameters
     ----------
     stat_fn: function
