@@ -33,7 +33,7 @@ class BCICompetition4Set2A(object):
             mask = np.isnan(data[i_chan])
             chan_mean = np.nanmean(data[i_chan])
             data[i_chan, mask] = chan_mean
-        gdf_events = raw_edf.get_edf_events()
+        gdf_events = raw_edf.find_edf_events()
         raw_edf = mne.io.RawArray(data, raw_edf.info, verbose='WARNING')
         # remember gdf events
         raw_edf.info['gdf_events'] = gdf_events
