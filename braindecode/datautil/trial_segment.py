@@ -359,8 +359,11 @@ def _extract_break_start_stop_ms(events, name_to_start_codes,
             start_sample = event_samples[i_event]
             start_code = event_codes[i_event]
             assert start_code in start_code_to_name_and_y
-            break_starts.append(stop_sample)
-            break_stops.append(start_sample)
+            # let's start one after stop of the trial and stop one efore
+            # start of the trial to ensure that markers will be
+            # in right order
+            break_starts.append(stop_sample + 1)
+            break_stops.append(start_sample - 1)
     return np.array(break_starts), np.array(break_stops)
 
 
