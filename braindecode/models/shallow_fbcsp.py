@@ -45,8 +45,7 @@ class ShallowFBCSPNet(object):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         model = nn.Sequential()
         if self.split_first_layer:
-            model.add_module('dimshuffle',
-                             Expression(lambda x: x.permute(0, 3, 2, 1)))
+            model.add_module('dimshuffle', Expression(_transpose_time_to_spat))
             model.add_module('conv_time', nn.Conv2d(1, self.n_filters_time,
                                                     (
                                                     self.filter_time_length, 1),
@@ -84,15 +83,7 @@ class ShallowFBCSPNet(object):
                              nn.Conv2d(n_filters_conv, self.n_classes,
                                        (self.final_conv_length, 1), bias=True))
         model.add_module('softmax', nn.LogSoftmax())
-        # remove empty dim at end and potentially remove empty time dim
-        # do not just use squeeze as we never want to remove first dim
-        def squeeze_output(x):
-            assert x.size()[3] == 1
-            x = x[:,:,:,0]
-            if x.size()[2] == 1:
-                x = x[:,:,0]
-            return x
-        model.add_module('squeeze',  Expression(squeeze_output))
+        model.add_module('squeeze',  Expression(_squeeze_final_output))
 
         # Initialization, xavier is same as in paper...
         init.xavier_uniform(model.conv_time.weight, gain=1)
@@ -110,3 +101,18 @@ class ShallowFBCSPNet(object):
         init.constant(model.conv_classifier.bias, 0)
 
         return model
+
+
+# remove empty dim at end and potentially remove empty time dim
+# do not just use squeeze as we never want to remove first dim
+def _squeeze_final_output(x):
+    assert x.size()[3] == 1
+    x = x[:,:,:,0]
+    if x.size()[2] == 1:
+        x = x[:,:,0]
+    return x
+
+
+def _transpose_time_to_spat(x):
+    return x.permute(0, 3, 2, 1)
+

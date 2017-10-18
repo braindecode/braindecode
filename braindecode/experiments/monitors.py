@@ -154,9 +154,16 @@ class CroppedTrialMisclassMonitor(object):
                     all_batch_sizes, all_targets, dataset):
         """Assuming one hot encoding for now"""
         assert self.input_time_length is not None, "Need to know input time length..."
-        all_pred_labels = self._compute_pred_labels(dataset, all_preds)
-        assert all_pred_labels.shape == dataset.y.shape
-        misclass = 1 - np.mean(all_pred_labels == dataset.y)
+        # First case that each trial only has a single label
+        if not hasattr(dataset.y[0], '__len__'):
+            all_pred_labels = self._compute_pred_labels(dataset, all_preds)
+            all_trial_labels = dataset.y
+            assert all_pred_labels.shape == dataset.y.shape
+        else:
+            all_trial_labels, all_pred_labels = (
+                self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds))
+        assert all_pred_labels.shape == all_trial_labels.shape
+        misclass = 1 - np.mean(all_pred_labels == all_trial_labels)
         column_name = "{:s}_misclass".format(setname)
         return {column_name: float(misclass)}
 
@@ -168,6 +175,33 @@ class CroppedTrialMisclassMonitor(object):
         all_pred_labels = np.array(all_pred_labels)
         assert all_pred_labels.shape == dataset.y.shape
         return all_pred_labels
+
+    def _compute_trial_pred_labels_from_cnt_y(self, dataset, all_preds, ):
+        # Todo: please test this
+        # we only want the preds that are for the same labels as the last label in y
+        # (there might be parts of other class-data at start, for trialwise misclass we assume
+        # they are contained in other trials at the end...)
+        preds_per_trial = compute_preds_per_trial_for_set(
+            all_preds, self.input_time_length, dataset)
+        trial_labels = []
+        trial_pred_labels = []
+        for trial_pred, trial_y in zip(preds_per_trial, dataset.y):
+            # first cut to the part actually having predictions
+            trial_y = trial_y[-trial_pred.shape[1]:]
+            wanted_class = trial_y[-1]
+            trial_labels.append(wanted_class)
+            # extract the first marker different from the wanted class
+            # by starting from the back of the trial
+            i_last_sample = np.flatnonzero(trial_y[::-1] != wanted_class)
+            if len(i_last_sample) > 0:
+                i_last_sample = i_last_sample[0]
+                # remember last sample is now from back
+                trial_pred = trial_pred[:, -i_last_sample:]
+            trial_pred_label = np.argmax(np.mean(trial_pred, axis=1))
+            trial_pred_labels.append(trial_pred_label)
+        trial_labels = np.array(trial_labels)
+        trial_pred_labels = np.array(trial_pred_labels)
+        return trial_labels, trial_pred_labels
 
 
 def compute_preds_per_trial_for_set(all_preds, input_time_length,
