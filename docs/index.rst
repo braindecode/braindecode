@@ -19,16 +19,7 @@ Installation
 
   pip install numpy
 
-3. Install newest version of python-mne:
-
-.. code-block:: bash
-
-  git clone git://github.com/mne-tools/mne-python.git
-  cd mne-python
-  python setup.py install
-
-
-4. Install braindecode via pip:
+3. Install braindecode via pip:
 
 .. code-block:: bash
 
