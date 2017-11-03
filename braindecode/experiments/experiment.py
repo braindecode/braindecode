@@ -320,7 +320,11 @@ class Experiment(object):
             target_vars = target_vars.cuda()
         outputs = self.model(input_vars)
         loss = self.loss_function(outputs, target_vars)
-        outputs = outputs.cpu().data.numpy()
+        if hasattr(outputs, 'cpu'):
+            outputs = outputs.cpu().data.numpy()
+        else:
+            # assume it is iterable
+            outputs = [o.cpu().data.numpy() for o in outputs]
         loss = loss.cpu().data.numpy()
         return outputs, loss
 
