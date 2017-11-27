@@ -12,7 +12,7 @@ def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **var_kwargs
     
     Parameters
     ----------
-    X: ndarray or list
+    X: ndarray or list or number
         Input arrays
     requires_grad: bool
         passed on to Variable constructor
@@ -24,6 +24,8 @@ def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **var_kwargs
     -------
     var: `torch.autograd.Variable`
     """
+    if not hasattr(X, '__len__'):
+        X = [X]
     X = np.asarray(X)
     if dtype is not None:
         X = X.astype(dtype)
@@ -58,3 +60,17 @@ def set_random_seeds(seed, cuda):
     if cuda:
         th.cuda.manual_seed_all(seed)
     np.random.seed(seed)
+
+
+def confirm_gpu_availability():
+    """
+    Should crash if gpu not available, attempts to create a FloatTensor on GPU.
+    Returns
+    -------
+    success: bool
+        Always returns true, should crash if gpu not available
+    """
+    a = th.FloatTensor(1).cuda()
+    # Just make sure a is not somehow removed by any smart compiling,
+    # probably not necessary.
+    return a is not None
