@@ -115,8 +115,6 @@ def ax_scalp(v, channels,
     image = ax.imshow(zz, vmin=vmin, vmax=vmax, cmap=cmap,
                       extent=[min(x), max(x), min(y), max(y)], origin='lower',
                       interpolation=interpolation)
-    # image = ax.contourf(xx, yy, zz, 100, vmin=vmin, vmax=vmax,
-    #    cmap=colormap)
     if scalp_line_width > 0:
         # paint the head
         ax.add_artist(plt.Circle((0, 0), 1, linestyle=scalp_line_style,

@@ -9,9 +9,6 @@ from braindecode.datautil.util import ms_to_samples
 
 log = logging.getLogger(__name__)
 
-marker_def = OrderedDict(
-    (['Right', 1], ['Left', [2]], ['Rest', 3], ['Feet', 4]))
-
 
 def create_signal_target_from_raw_mne(
         raw, name_to_start_codes, epoch_ival_ms,

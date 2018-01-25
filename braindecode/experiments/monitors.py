@@ -10,10 +10,15 @@ class MisclassMonitor(object):
     ----------
     col_suffix: str, optional
         Name of the column in the monitoring output.
+    threshold_for_binary_case: bool, optional
+        In case of binary classification with only one output prediction
+        per target, define the threshold for separating the classes, i.e.
+        0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
     """
 
-    def __init__(self, col_suffix='misclass'):
+    def __init__(self, col_suffix='misclass', threshold_for_binary_case=None):
         self.col_suffix = col_suffix
+        self.threshold_for_binary_case = threshold_for_binary_case
 
     def monitor_epoch(self, ):
         return
@@ -28,11 +33,19 @@ class MisclassMonitor(object):
             # or just
             # examples x classes
             # make sure not to remove first dimension if it only has size one
-            only_one_row = preds.shape[0] == 1
-            pred_labels = np.argmax(preds, axis=1).squeeze()
-            # add first dimension again if needed
-            if only_one_row:
-                pred_labels = pred_labels[None]
+            if preds.ndim > 1:
+                only_one_row = preds.shape[0] == 1
+
+                pred_labels = np.argmax(preds, axis=1).squeeze()
+                # add first dimension again if needed
+                if only_one_row:
+                    pred_labels = pred_labels[None]
+            else:
+                assert self.threshold_for_binary_case is not None, (
+                    "In case of only one output, please supply the "
+                    "threshold_for_binary_case parameter")
+                # binary classification case... assume logits
+                pred_labels = np.int32(preds > self.threshold_for_binary_case)
             # now examples x time or examples
             all_pred_labels.extend(pred_labels)
             targets = all_targets[i_batch]

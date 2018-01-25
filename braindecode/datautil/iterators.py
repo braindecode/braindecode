@@ -162,19 +162,23 @@ class CropsFromTrialsIterator(object):
         Number of predictions ConvNet makes per one input. Can be computed
         by making a forward pass with the given input time length, the
         output length in 3rd dimension is n_preds_per_input.
+    seed: int
+        Random seed for initialization of `numpy.RandomState`.
     
     See Also
     --------
     braindecode.experiments.monitors.compute_preds_per_trial_for_set : Assigns predictions to trials, removes overlaps.
     """
-    def __init__(self, batch_size, input_time_length, n_preds_per_input):
+    def __init__(self, batch_size, input_time_length, n_preds_per_input,
+                 seed=(2017, 6, 28)):
         self.batch_size = batch_size
         self.input_time_length = input_time_length
         self.n_preds_per_input = n_preds_per_input
-        self.rng = RandomState((2017, 6, 28))
+        self.seed = seed
+        self.rng = RandomState(self.seed)
 
     def reset_rng(self):
-        self.rng = RandomState((2017, 6, 28))
+        self.rng = RandomState(self.seed)
 
     def get_batches(self, dataset, shuffle):
         # start always at first predictable sample, so
