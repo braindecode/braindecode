@@ -77,3 +77,30 @@ def split_into_two_sets(dataset, first_set_fraction=None, n_first_set=None):
     second_set = apply_to_X_y(lambda a: a[n_first_set:], dataset)
     return first_set, second_set
 
+
+def select_examples(dataset, indices):
+    """
+    Select examples from dataset.
+    
+    Parameters
+    ----------
+    dataset: :class:`.SignalAndTarget`
+    indices: list of int, 1d-array of int
+        Indices to select
+
+    Returns
+    -------
+    reduced_set: :class:`.SignalAndTarget`
+        Dataset with only examples selected.
+    """
+    # probably not necessary
+    indices = np.array(indices)
+    if hasattr(dataset.X, 'ndim'):
+        # numpy array
+        new_X = np.array(dataset.X)[indices]
+    else:
+        # list
+        new_X = [dataset.X[i] for i in indices]
+    new_y = np.asarray(dataset.y)[indices]
+    return SignalAndTarget(new_X, new_y)
+

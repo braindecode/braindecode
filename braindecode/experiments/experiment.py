@@ -134,6 +134,9 @@ class Experiment(object):
         Whether to use cuda.
     pin_memory: bool, optional
         Whether to pin memory of inputs and targets of batch.
+    do_early_stop: bool
+        Whether to do an early stop at all. If true, reset to best model
+        even in case experiment does not run after early stop.
         
     Attributes
     ----------
@@ -145,10 +148,21 @@ class Experiment(object):
                  monitors, stop_criterion, remember_best_column,
                  run_after_early_stop,
                  model_loss_function=None,
-                 batch_modifier=None, cuda=True, pin_memory=False):
+                 batch_modifier=None, cuda=True, pin_memory=False,
+                 do_early_stop=True):
+        if run_after_early_stop:
+            assert do_early_stop == True, ("Can only run after early stop if "
+            "doing an early stop")
+        if do_early_stop:
+            assert valid_set is not None
+            assert remember_best_column is not None
         self.model = model
         self.datasets = OrderedDict(
             (('train', train_set), ('valid', valid_set), ('test', test_set)))
+        if valid_set is None:
+            self.datasets.pop('valid')
+            assert run_after_early_stop == False
+            assert do_early_stop == False
         self.iterator = iterator
         self.loss_function = loss_function
         self.optimizer = optimizer
@@ -164,6 +178,8 @@ class Experiment(object):
         self.before_stop_df = None
         self.rememberer = None
         self.pin_memory = pin_memory
+        self.do_early_stop = do_early_stop
+
 
     def run(self):
         """
@@ -171,11 +187,12 @@ class Experiment(object):
         """
         self.setup_training()
         log.info("Run until first stop...")
-        self.run_until_early_stop()
-        # always setup for second stop, in order to get best model
-        # even if not running after early stop...
-        log.info("Setup for second stop...")
-        self.setup_after_stop_training()
+        self.run_until_first_stop()
+        if self.do_early_stop:
+            # always setup for second stop, in order to get best model
+            # even if not running after early stop...
+            log.info("Setup for second stop...")
+            self.setup_after_stop_training()
         if self.run_after_early_stop:
             log.info("Run until second stop...")
             self.run_until_second_stop()
@@ -186,19 +203,20 @@ class Experiment(object):
         initialize monitoring.
         """
         # reset remember best extension in case you rerun some experiment
-        self.rememberer = RememberBest(self.remember_best_column)
+        if self.do_early_stop:
+            self.rememberer = RememberBest(self.remember_best_column)
         self.epochs_df = pd.DataFrame()
         set_random_seeds(seed=2382938, cuda=self.cuda)
         if self.cuda:
             assert th.cuda.is_available(), "Cuda not available"
             self.model.cuda()
 
-    def run_until_early_stop(self):
+    def run_until_first_stop(self):
         """
         Run training and evaluation using only training set for training
         until stop criterion is fulfilled.
         """
-        self.run_until_stop(self.datasets, remember_best=True)
+        self.run_until_stop(self.datasets, remember_best=self.do_early_stop)
 
     def run_until_second_stop(self):
         """
@@ -313,14 +331,20 @@ class Experiment(object):
 
         """
         self.model.eval()
-        input_vars = np_to_var(inputs, pin_memory=self.pin_memory)
-        target_vars = np_to_var(targets, pin_memory=self.pin_memory)
+        input_vars = np_to_var(inputs, pin_memory=self.pin_memory,
+                               volatile=True)
+        target_vars = np_to_var(targets, pin_memory=self.pin_memory,
+                                volatile=True)
         if self.cuda:
             input_vars = input_vars.cuda()
             target_vars = target_vars.cuda()
         outputs = self.model(input_vars)
         loss = self.loss_function(outputs, target_vars)
-        outputs = outputs.cpu().data.numpy()
+        if hasattr(outputs, 'cpu'):
+            outputs = outputs.cpu().data.numpy()
+        else:
+            # assume it is iterable
+            outputs = [o.cpu().data.numpy() for o in outputs]
         loss = loss.cpu().data.numpy()
         return outputs, loss
 
