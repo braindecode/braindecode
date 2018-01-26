@@ -80,10 +80,10 @@ class AvgPool2dWithConv(torch.nn.Module):
         return pooled
 
 
-class IntermediateOutputWrapper(nn.Module):
+class IntermediateOutputWrapper(torch.nn.Module):
     def __init__(self, to_select, model):
         """
-        Forward returns list of intermediate activations in a network during forward pass
+        forward() returns list of intermediate activations in a network during forward pass
         
         to_select: list of module names for which activation should be returned
         model: network model

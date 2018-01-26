@@ -9,116 +9,6 @@ from braindecode.util import wrap_reshape_apply_fn, corr
 log = logging.getLogger(__name__)
 
 
-def gaussian_perturbation(amps, rng):
-    """
-    Create gaussian noise tensor with same shape as amplitudes.
-
-    Parameters
-    ----------
-    amps: ndarray
-        Amplitudes.
-    rng: RandomState
-        Random generator.
-
-    Returns
-    -------
-    perturbation: ndarray
-        Perturbations to add to the amplitudes.
-    """
-    perturbation = rng.randn(*amps.shape).astype(np.float32)
-    return perturbation
-
-
-def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
-                                              perturb_fn=gaussian_perturbation,
-                                              batch_size=30,
-                                              seed=((2017, 7, 10))):
-    """
-    Perturb input amplitudes and compute correlation between amplitude
-    perturbations and prediction changes when pushing perturbed input through
-    the prediction function.
-
-    For more details, see [EEGDeepLearning]_.
-
-    Parameters
-    ----------
-    pred_fn: function
-        Function accepting an numpy input and returning prediction.
-    examples: ndarray
-        Numpy examples, first axis should be example axis.
-    n_iterations: int
-        Number of iterations to compute.
-    perturb_fn: function, optional
-        Function accepting amplitude array and random generator and returning
-        perturbation. Default is Gaussian perturbation.
-    batch_size: int, optional
-        Batch size for computing predictions.
-    seed: int, optional
-        Random generator seed
-
-    Returns
-    -------
-    amplitude_pred_corrs: ndarray
-        Correlations between amplitude perturbations and prediction changes
-        for all sensors and frequency bins.
-
-    References
-    ----------
-
-    .. [EEGDeepLearning] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
-       Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
-       Deep learning with convolutional neural networks for EEG decoding and
-       visualization.
-       arXiv preprint arXiv:1703.05051.
-    """
-    inds_per_batch = get_balanced_batches(
-        n_trials=len(examples), rng=None, shuffle=False, batch_size=batch_size)
-    log.info("Compute original predictions...")
-    orig_preds = [pred_fn(examples[example_inds])
-                  for example_inds in inds_per_batch]
-    orig_preds_arr = np.concatenate(orig_preds)
-    rng = RandomState(seed)
-    fft_input = np.fft.rfft(examples, axis=2)
-    amps = np.abs(fft_input)
-    phases = np.angle(fft_input)
-
-    amp_pred_corrs = []
-    for i_iteration in range(n_iterations):
-        log.info("Iteration {:d}...".format(i_iteration))
-        log.info("Sample perturbation...")
-        perturbation = perturb_fn(amps, rng)
-        log.info("Compute new amplitudes...")
-        # do not allow perturbation to make amplitudes go below
-        # zero
-        perturbation = np.maximum(-amps, perturbation)
-        new_amps = amps + perturbation
-        log.info("Compute new complex inputs...")
-        new_complex = _amplitude_phase_to_complex(new_amps, phases)
-        log.info("Compute new real inputs...")
-        new_in = np.fft.irfft(new_complex, axis=2).astype(np.float32)
-        log.info("Compute new predictions...")
-        new_preds = [pred_fn(new_in[example_inds])
-                     for example_inds in inds_per_batch]
-
-        new_preds_arr = np.concatenate(new_preds)
-
-        diff_preds = new_preds_arr - orig_preds_arr
-
-        log.info("Compute correlation...")
-        amp_pred_corr = wrap_reshape_apply_fn(corr, perturbation[:, :, :, 0],
-                                              diff_preds,
-                                              axis_a=(0,), axis_b=(0))
-        amp_pred_corrs.append(amp_pred_corr)
-    return amp_pred_corrs
-
-
-def _amplitude_phase_to_complex(amplitude, phase):
-    return amplitude * np.cos(phase) + amplitude * np.sin(phase) * 1j
-
-
-
-
-
 def phase_perturbation(amps,phases,rng=np.random.RandomState()):
     """
     Takes amps and phases of BxCxF with B input, C channels, F frequencies
@@ -217,7 +107,7 @@ def mean_diff_feature_maps(x,y):
     """
     return np.mean(x-y,axis=2)
 
-def perturbation_correlation(pert_fn, diff_fn, pred_fn, n_layers, inputs, n_iterations,
+def spectral_perturbation_correlation(pert_fn, diff_fn, pred_fn, n_layers, inputs, n_iterations,
                                                   batch_size=30,
                                                   seed=((2017, 7, 10))):
     """
@@ -244,41 +134,102 @@ def perturbation_correlation(pert_fn, diff_fn, pred_fn, n_layers, inputs, n_iter
         n_trials=len(inputs), rng=rng, shuffle=False, batch_size=batch_size)
     
     # Calculate layer activations and reshape
+    log.info("Compute original predictions...")
     orig_preds = [pred_fn(inputs[inds])
                   for inds in batch_inds]
-    orig_preds_layers = [np.concatenate([orig_preds[o][l] for o in range(len(orig_preds))])
+    use_shape = list(orig_preds[0][0].shape)
+    use_shape.extend([1]*(4-len(use_shape)))
+    use_shape[0] = len(inputs)
+    orig_preds_layers = [np.concatenate([orig_preds[o][l] for o in range(len(orig_preds))]).reshape(use_shape)
                         for l in range(n_layers)]
     
     # Compute FFT of inputs
     fft_input = np.fft.rfft(inputs, n=inputs.shape[2], axis=2)
     amps = np.abs(fft_input)
     phases = np.angle(fft_input)
+    print amps.shape
     
     pert_corrs = [0]*n_layers
     for i in range(n_iterations):
-        print('Iteration%d'%i)
-        
+        log.info("Iteration {:d}...".format(i))
+        log.info("Sample perturbation...")
         amps_pert,phases_pert,pert_vals = pert_fn(amps,phases,rng=rng)
         
         # Compute perturbed inputs
+        log.info("Compute perturbed complex inputs...")
         fft_pert = amps_pert*np.exp(1j*phases_pert)
+        log.info("Compute perturbed real inputs...")
         inputs_pert = np.fft.irfft(fft_pert, n=inputs.shape[2], axis=2).astype(np.float32)
         
         # Calculate layer activations for perturbed inputs
+        log.info("Compute new predictions...")
         new_preds = [pred_fn(inputs_pert[inds])
                      for inds in batch_inds]
-        new_preds_layers = [np.concatenate([new_preds[o][l] for o in range(len(new_preds))])
+        new_preds_layers = [np.concatenate([new_preds[o][l] for o in range(len(new_preds))]).reshape(use_shape)
                         for l in range(n_layers)]
         
         for l in range(n_layers):
-            # Calculate correlations of original and perturbed feature map activations
-            preds_diff = diff_fn(orig_preds_layers[l][:,:,:,0],new_preds_layers[l][:,:,:,0])
+            log.info("Layer {:d}...".format(l))
+            # Calculate difference of original and perturbed feature map activations
+            log.info("Compute activation difference...")
+            preds_diff = diff_fn(new_preds_layers[l][:,:,:,0],orig_preds_layers[l][:,:,:,0])
             
-            # Calculate feature map correlations with absolute phase perturbations
+            # Calculate feature map differences with perturbations
+            log.info("Compute correlation...")
             pert_corrs_tmp = wrap_reshape_apply_fn(corr,
                                                    pert_vals[:,:,:,0],preds_diff,
-                                                   axis_a=(0), axis_b=(0))
+                                                   axis_a=(0,), axis_b=(0))
             pert_corrs[l] += pert_corrs_tmp
             
     pert_corrs = [pert_corrs[l]/n_iterations for l in range(n_layers)] #mean over iterations
     return pert_corrs
+
+
+def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
+                                              perturb_fn=amp_perturbation_additive,
+                                              batch_size=30,
+                                              seed=((2017, 7, 10))):
+    """
+    Perturb input amplitudes and compute correlation between amplitude
+    perturbations and prediction changes when pushing perturbed input through
+    the prediction function.
+
+    For more details, see [EEGDeepLearning]_.
+
+    Parameters
+    ----------
+    pred_fn: function
+        Function accepting an numpy input and returning prediction.
+    examples: ndarray
+        Numpy examples, first axis should be example axis.
+    n_iterations: int
+        Number of iterations to compute.
+    perturb_fn: function, optional
+        Function accepting amplitude array and random generator and returning
+        perturbation. Default is Gaussian perturbation.
+    batch_size: int, optional
+        Batch size for computing predictions.
+    seed: int, optional
+        Random generator seed
+
+    Returns
+    -------
+    amplitude_pred_corrs: ndarray
+        Correlations between amplitude perturbations and prediction changes
+        for all sensors and frequency bins.
+
+    References
+    ----------
+
+    .. [EEGDeepLearning] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
+       Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
+       Deep learning with convolutional neural networks for EEG decoding and
+       visualization.
+       arXiv preprint arXiv:1703.05051.
+    """
+    pred_fn_new = lambda x: [pred_fn(x)]
+    pred_corrs = spectral_perturbation_correlation(perturb_fn, mean_diff_feature_maps,
+        pred_fn_new, 1, examples, n_iterations,
+        batch_size=batch_size, seed=seed)
+
+    return pred_corrs[0]
