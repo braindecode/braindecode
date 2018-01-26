@@ -90,10 +90,15 @@ def correlate_feature_maps(x,y):
     x = x.reshape((-1,shape_x[-1]))
     y = y.reshape((-1,shape_y[-1]))
     
-    corr_ = np.zeros((x.shape[0]))
-    for i in range(x.shape[0]):
-        # Correlation of standardized variables
-        corr_[i] = np.correlate((x[i]-x[i].mean())/x[i].std(),(y[i]-y[i].mean())/y[i].std())
+    x = (x-x.mean(axis=1,keepdims=True))/x.std(axis=1,keepdims=True)
+    y = (y-y.mean(axis=1,keepdims=True))/y.std(axis=1,keepdims=True)
+    
+    tmp_corr = x*y
+    corr_ = tmp_corr.sum(axis=1)
+    #corr_ = np.zeros((x.shape[0]))
+    #for i in range(x.shape[0]):
+    #    # Correlation of standardized variables
+    #    corr_[i] = np.correlate((x[i]-x[i].mean())/x[i].std(),(y[i]-y[i].mean())/y[i].std())
     
     return corr_.reshape(*shape_x[:-1])
 
