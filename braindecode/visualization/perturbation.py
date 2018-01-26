@@ -28,9 +28,9 @@ def phase_perturbation(amps,phases,rng=np.random.RandomState()):
         
     # Sample phase perturbation noise
     phase_noise = rng.uniform(-np.pi,np.pi,noise_shape).astype(np.float32)
-    phase_noise = phase_noise.repeat(phases.shape[1],axis=1)
+    phase_noise_rep = phase_noise.repeat(phases.shape[1],axis=1)
     # Apply noise to inputs
-    phases_pert = phases+phase_noise
+    phases_pert = phases+phase_noise_rep
     phases_pert[phases_pert<-np.pi] += 2*np.pi
     phases_pert[phases_pert>np.pi] -= 2*np.pi
     
@@ -132,22 +132,23 @@ def spectral_perturbation_correlation(pert_fn, diff_fn, pred_fn, n_layers, input
     # Get batch indeces
     batch_inds = get_balanced_batches(
         n_trials=len(inputs), rng=rng, shuffle=False, batch_size=batch_size)
-    
     # Calculate layer activations and reshape
     log.info("Compute original predictions...")
     orig_preds = [pred_fn(inputs[inds])
                   for inds in batch_inds]
-    use_shape = list(orig_preds[0][0].shape)
-    use_shape.extend([1]*(4-len(use_shape)))
-    use_shape[0] = len(inputs)
-    orig_preds_layers = [np.concatenate([orig_preds[o][l] for o in range(len(orig_preds))]).reshape(use_shape)
+    use_shape = []
+    for l in range(n_layers):
+        tmp = list(orig_preds[0][l].shape)
+        tmp.extend([1]*(4-len(tmp)))
+        tmp[0] = len(inputs)
+        use_shape.append(tmp)
+    orig_preds_layers = [np.concatenate([orig_preds[o][l] for o in range(len(orig_preds))]).reshape(use_shape[l])
                         for l in range(n_layers)]
     
     # Compute FFT of inputs
     fft_input = np.fft.rfft(inputs, n=inputs.shape[2], axis=2)
     amps = np.abs(fft_input)
     phases = np.angle(fft_input)
-    print amps.shape
     
     pert_corrs = [0]*n_layers
     for i in range(n_iterations):
@@ -165,7 +166,7 @@ def spectral_perturbation_correlation(pert_fn, diff_fn, pred_fn, n_layers, input
         log.info("Compute new predictions...")
         new_preds = [pred_fn(inputs_pert[inds])
                      for inds in batch_inds]
-        new_preds_layers = [np.concatenate([new_preds[o][l] for o in range(len(new_preds))]).reshape(use_shape)
+        new_preds_layers = [np.concatenate([new_preds[o][l] for o in range(len(new_preds))]).reshape(use_shape[l])
                         for l in range(n_layers)]
         
         for l in range(n_layers):
