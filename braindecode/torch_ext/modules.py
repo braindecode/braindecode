@@ -81,17 +81,17 @@ class AvgPool2dWithConv(torch.nn.Module):
 
 
 class IntermediateOutputWrapper(torch.nn.Module):
-    def __init__(self, to_select, model):
-        """
-        forward() returns list of intermediate activations in a network during forward pass
+    """
+    forward() returns list of intermediate activations in a network during forward pass
         
-        to_select: list of module names for which activation should be returned
-        model: network model
+    to_select: list of module names for which activation should be returned
+    model: network model
                 
-        model = Deep4Net()
-        select_modules = ['conv_spat','conv_2','conv_3','conv_4'] # Specify intermediate outputs
-        model_pert = IntermediateOutputWrapper(select_modules,model) # Wrap model
-        """
+    model = Deep4Net()
+    select_modules = ['conv_spat','conv_2','conv_3','conv_4'] # Specify intermediate outputs
+    model_pert = IntermediateOutputWrapper(select_modules,model) # Wrap model
+    """
+    def __init__(self, to_select, model):
         if not len(list(model.children()))==len(list(model.named_children())):
             raise Exception('All modules in model need to have names!')
             
