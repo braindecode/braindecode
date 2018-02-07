@@ -51,15 +51,16 @@ def amp_perturbation_additive(amps,phases,rng=np.random.RandomState()):
         phases_pert: Input phases (not modified)
         pert_vals: Amplitude noise
     """
-    amp_noise = rng.normal(0,0.02,amps.shape).astype(np.float32)
+    amp_noise = rng.normal(0,1,amps.shape).astype(np.float32)
     amps_pert = amps+amp_noise
     amps_pert[amps_pert<0] = 0
+    amp_noise = amps_pert-amps
     return amps_pert,phases,amp_noise
 
 def amp_perturbation_multiplicative(amps,phases,rng=np.random.RandomState()):
     """
     Takes amps and phases of BxCxF with B input, C channels, F frequencies
-    Adds multiplicative noise N(0,0.02) to amplitudes
+    Adds multiplicative noise N(1,0.02) to amplitudes
     
     amps: Spectral amplitude
     phases: Spectral phases (not used)
