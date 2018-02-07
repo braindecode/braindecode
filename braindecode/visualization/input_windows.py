@@ -88,3 +88,51 @@ def get_input_windows_from_units_2d(inputs,units,receptive_field_size):
                             unit[2]:unit[2]+receptive_field_size[0],
                             unit[3]:unit[3]+receptive_field_size[1]]
     return windows
+
+
+def most_activating_input_windows(inputs,activations,receptive_field_size,top_percentage=0.05):
+    """
+    Get the input windows that evoked highest activation in a feature map
+
+    inputs: [NxCxTx1] Inputs used for the calculation of activations
+    activations: [NxFxHx1] Activations
+    receptive_field_size: [Wx1] Receptive field of a unit of the layer on the input
+    top_percentage: How many of the most activating input windows should be returned (default: top 5%)
+
+    Returns
+    input_windows: [FxUxCxWx1] Returns U (resulting from top_percentage) input windows for each filter
+    """
+    n_units = int(inputs.shape[0]*top_percentage)
+    input_windows = np.zeros((activations.shape[1],n_units,inputs.shape[1],
+                              receptive_field_size[0],receptive_field_size[1]))
+    for filt in range(activations.shape[1]):
+        units,w = get_max_act_index(activations[:,[filt]],n_units=n_units)
+        w = w.squeeze()
+        windows_tmp = get_input_windows_from_units_2d(inputs,units,receptive_field_size)
+        input_windows[filt] = windows_tmp
+    return input_windows
+
+def activation_reverse_correlation(inputs,activations,receptive_field_size):
+    """
+    Get reverse correlations for filters
+
+    inputs: [NxCxTx1] Inputs used for the calculation of activations
+    activations: [NxFxHx1] Activations
+    receptive_field_size: [Wx1] Receptive field of a unit of the layer on the input
+
+    Returns
+    reverse_corr: [FxCxWx1] Reverse correlations over all input windows for each filter
+    """
+    reverse_corr = np.zeros((activations.shape[1],inputs.shape[1],
+                            receptive_field_size[0],receptive_field_size[1]))
+    for filt in range(activations.shape[1]):
+        act_tmp = activations[:,filt]
+        divisor = 0
+        for start_ind in range(activations.shape[2]):
+            end_ind = start_ind+receptive_field_size[0]
+            w = act_tmp[:,[start_ind],:,np.newaxis]
+            windows_tmp = inputs[:,:,start_ind:end_ind]
+            reverse_corr[filt] += np.sum(w*windows_tmp,axis=0)
+            divisor += np.sum(np.abs(w))
+        reverse_corr[filt] /= divisor
+    return reverse_corr
