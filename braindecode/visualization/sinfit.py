@@ -20,25 +20,35 @@ def fit_fn_sin(x,*kwargs):
     return sig
 
 def signal_fit(signals,fs):
-    """
-    Fits sinusoid and linear function to signals
+    """Fits sinusoid and linear function to signals
     see sinfit.fit_fn_sin and sinfit.fit_fn_lin
 
-    signals: [FxCxTx1] Filters x Channels x Time x 1
-    fs: Sampling frequency
+    Parameters
+    ----------
+    signals : numpy array
+        [FxCxTx1] Filters x Channels x Time x 1
+    fs : float
+        Sampling frequency
 
-    Returns:
-    params_sin: [FxCx4] Parameters of sinusoid fit
-    params_lin: [FxCx2] Parameters of sinusoid fit
-    err_sin: [FxCx1] MSE for sinusoid fit
-    err_lin: [FxCx1] MSE for linear fit
+    Returns
+    -------
+    params_sin : numpy array
+        [FxCx4] Parameters of sinusoid fit
+        Parameters are: Frequency,Amplitude,Phase,DCOffset
+    params_lin : numpy array
+        [FxCx2] Parameters of sinusoid fit
+        Parameters are: Frequency,Amplitude,Phase,DCOffset
+    err_sin : numpy array
+        [FxCx1] MSE for sinusoid fit
+    err_lin : numpy array
+        [FxCx1] MSE for linear fit
     """
     params_sin = []
     params_lin = []
-    
+
     err_sin = []
     err_lin = []
-    
+
     freqs = np.fft.rfftfreq(signals.shape[2], d=1.0/fs)[1:]
     x = np.linspace(0,signals.shape[2]/fs,signals.shape[2])*2*np.pi
     for filt in range(signals.shape[0]):
@@ -62,7 +72,7 @@ def signal_fit(signals,fs):
 
             err_sin_ch = np.square(fit_fn_sin(x,*fit_sin_ch[0]) - X_tmp).mean()
             err_lin_ch = np.square(fit_fn_lin(x,*fit_lin_ch[0]) - X_tmp).mean()
-            
+
             params_sin_tmp.append(fit_sin_ch[0])
             params_lin_tmp.append(fit_lin_ch[0])
             err_sin_tmp.append(err_sin_ch)
@@ -75,5 +85,5 @@ def signal_fit(signals,fs):
     params_lin = np.asarray(params_lin)
     err_sin = np.asarray(err_sin)
     err_lin = np.asarray(err_lin)
-    
+
     return params_sin,params_lin,err_sin,err_lin
