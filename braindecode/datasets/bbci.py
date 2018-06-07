@@ -137,7 +137,7 @@ class BBCIDataset(object):
     def _add_markers(self, cnt):
         with h5py.File(self.filename, 'r') as h5file:
             event_times_in_ms = h5file['mrk']['time'][:].squeeze()
-            event_classes = h5file['mrk']['event']['desc'][:].squeeze()
+            event_classes = h5file['mrk']['event']['desc'][:].squeeze().astype(np.int64)
 
             # Check whether class names known and correct order
             class_name_set = h5file['nfo']['className'][:].squeeze()
