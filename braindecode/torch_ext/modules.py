@@ -92,10 +92,10 @@ class IntermediateOutputWrapper(torch.nn.Module):
         network model
 
     Examples
-    --------        
-    model = Deep4Net()
-    select_modules = ['conv_spat','conv_2','conv_3','conv_4'] # Specify intermediate outputs
-    model_pert = IntermediateOutputWrapper(select_modules,model) # Wrap model
+    --------
+    >>> model = Deep4Net()
+    >>> select_modules = ['conv_spat','conv_2','conv_3','conv_4'] # Specify intermediate outputs
+    >>> model_pert = IntermediateOutputWrapper(select_modules,model) # Wrap model
     """
     def __init__(self, to_select, model):
         if not len(list(model.children()))==len(list(model.named_children())):
