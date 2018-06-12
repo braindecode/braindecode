@@ -192,26 +192,32 @@ def get_channelpos_from_angle(channame, chan_pos_list=CHANNEL_10_20_APPROX):
         if i[0].lower() == channame:
             # convert the 90/4th angular position into x, y, z
             p = i[1]
-            ea, eb = p[0] * (90 / 4), p[1] * (90 / 4)
-            ea = ea * math.pi / 180
-            eb = eb * math.pi / 180
-            x = math.sin(ea) * math.cos(eb)
-            y = math.sin(eb)
-            z = math.cos(ea) * math.cos(eb)
-            # Calculate the stereographic projection.
-            # Given a unit sphere with radius ``r = 1`` and center at
-            # the origin. Project the point ``p = (x, y, z)`` from the
-            # sphere's South pole (0, 0, -1) on a plane on the sphere's
-            # North pole (0, 0, 1).
-            #
-            # The formula is:
-            #
-            # P' = P * (2r / (r + z))
-            #
-            # We changed the values to move the point of projection
-            # further below the south pole
-            mu = 1 / (1.3 + z)
-            x *= mu
-            y *= mu
+            x, y = _convert_2d_angle_to_2d_coord(*p)
             return x, y
     return None
+
+
+def _convert_2d_angle_to_2d_coord(a,b):
+    # convert the 90/4th angular position into x, y, z
+    ea, eb = a * (90 / 4), b * (90 / 4)
+    ea = ea * math.pi / 180
+    eb = eb * math.pi / 180
+    x = math.sin(ea) * math.cos(eb)
+    y = math.sin(eb)
+    z = math.cos(ea) * math.cos(eb)
+    # Calculate the stereographic projection.
+    # Given a unit sphere with radius ``r = 1`` and center at
+    # the origin. Project the point ``p = (x, y, z)`` from the
+    # sphere's South pole (0, 0, -1) on a plane on the sphere's
+    # North pole (0, 0, 1).
+    #
+    # The formula is:
+    #
+    # P' = P * (2r / (r + z))
+    #
+    # We changed the values to move the point of projection
+    # further below the south pole
+    mu = 1 / (1.3 + z)
+    x *= mu
+    y *= mu
+    return x, y
