@@ -146,7 +146,8 @@ def lowpass_cnt(data, high_cut_hz, fs, filt_order=3, axis=0):
     return data_lowpassed
 
 
-def bandpass_cnt(data, low_cut_hz, high_cut_hz, fs, filt_order=3, axis=0):
+def bandpass_cnt(data, low_cut_hz, high_cut_hz, fs, filt_order=3, axis=0,
+                 filtfilt=False):
     """
      Bandpass signal applying **causal** butterworth filter of given order.
 
@@ -158,6 +159,8 @@ def bandpass_cnt(data, low_cut_hz, high_cut_hz, fs, filt_order=3, axis=0):
     high_cut_hz: float
     fs: float
     filt_order: int
+    filtfilt: bool
+        Whether to use filtfilt instead of lfilter
 
     Returns
     -------
@@ -182,7 +185,10 @@ def bandpass_cnt(data, low_cut_hz, high_cut_hz, fs, filt_order=3, axis=0):
     high = high_cut_hz / nyq_freq
     b, a = scipy.signal.butter(filt_order, [low, high], btype='bandpass')
     assert filter_is_stable(a), "Filter should be stable..."
-    data_bandpassed = scipy.signal.lfilter(b, a, data, axis=axis)
+    if filtfilt:
+        data_bandpassed = scipy.signal.filtfilt(b, a, data, axis=axis)
+    else:
+        data_bandpassed = scipy.signal.lfilter(b, a, data, axis=axis)
     return data_bandpassed
 
 
