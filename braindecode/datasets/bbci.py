@@ -93,7 +93,7 @@ class BBCIDataset(object):
 
     def _determine_samplingrate(self):
         with h5py.File(self.filename, 'r') as h5file:
-            fs = h5file['dat']['fs'][0, 0]
+            fs = h5file['nfo']['fs'][0, 0]
             assert isinstance(fs, int) or fs.is_integer()
             fs = int(fs)
         return fs
@@ -125,7 +125,7 @@ class BBCIDataset(object):
             Sensor names that match the pattern or all sensor names in the file.
         """
         with h5py.File(filename, 'r') as h5file:
-            clab_set = h5file['dat']['clab'][:].squeeze()
+            clab_set = h5file['nfo']['clab'][:].squeeze()
             all_sensor_names = [''.join(chr(c) for c in h5file[obj_ref]) for
                                 obj_ref in clab_set]
             if pattern is not None:
