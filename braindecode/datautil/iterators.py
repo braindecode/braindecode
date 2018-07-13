@@ -64,10 +64,13 @@ class BalancedBatchSizeIterator(object):
         Resulting batches will not necessarily have the given batch size
         but rather the next largest batch size that allows to split the set into
         balanced batches (maximum size difference 1).
+    seed: int
+        Random seed for initialization of `numpy.RandomState`.
     """
-    def __init__(self, batch_size):
+    def __init__(self, batch_size, seed=328774):
         self.batch_size = batch_size
-        self.rng = RandomState(328774)
+        self.seed = seed
+        self.rng = RandomState(self.seed)
 
     def get_batches(self, dataset, shuffle):
         n_trials = dataset.X.shape[0]
@@ -85,7 +88,7 @@ class BalancedBatchSizeIterator(object):
             yield (batch_X, batch_y)
 
     def reset_rng(self):
-        self.rng = RandomState(328774)
+        self.rng = RandomState(self.seed)
 
 
 class ClassBalancedBatchSizeIterator(object):
@@ -100,11 +103,14 @@ class ClassBalancedBatchSizeIterator(object):
         Resulting batches will not necessarily have the given batch size
         but rather the next largest batch size that allows to split the set into
         balanced batches (maximum size difference 1).
+    seed: int
+        Random seed for initialization of `numpy.RandomState`.
     """
 
-    def __init__(self, batch_size):
+    def __init__(self, batch_size, seed=328774):
         self.batch_size = batch_size
-        self.rng = RandomState(328774)
+        self.seed = seed
+        self.rng = RandomState(self.seed)
 
     def get_batches(self, dataset, shuffle):
         n_trials = dataset.X.shape[0]
@@ -138,7 +144,7 @@ class ClassBalancedBatchSizeIterator(object):
             yield (batch_X, batch_y)
 
     def reset_rng(self):
-        self.rng = RandomState((4, 7, 2017))
+        self.rng = RandomState(self.seed)
 
 
 class CropsFromTrialsIterator(object):

@@ -137,6 +137,8 @@ class Experiment(object):
     do_early_stop: bool
         Whether to do an early stop at all. If true, reset to best model
         even in case experiment does not run after early stop.
+    seed: int
+        Random seed for python random module numpy.random and torch.
         
     Attributes
     ----------
@@ -149,7 +151,7 @@ class Experiment(object):
                  run_after_early_stop,
                  model_loss_function=None,
                  batch_modifier=None, cuda=True, pin_memory=False,
-                 do_early_stop=True):
+                 do_early_stop=True, seed=2382938):
         if run_after_early_stop:
             assert do_early_stop == True, ("Can only run after early stop if "
             "doing an early stop")
@@ -179,6 +181,7 @@ class Experiment(object):
         self.rememberer = None
         self.pin_memory = pin_memory
         self.do_early_stop = do_early_stop
+        self.seed = seed
 
 
     def run(self):
@@ -206,7 +209,7 @@ class Experiment(object):
         if self.do_early_stop:
             self.rememberer = RememberBest(self.remember_best_column)
         self.epochs_df = pd.DataFrame()
-        set_random_seeds(seed=2382938, cuda=self.cuda)
+        set_random_seeds(seed=self.seed, cuda=self.cuda)
         if self.cuda:
             assert th.cuda.is_available(), "Cuda not available"
             self.model.cuda()
