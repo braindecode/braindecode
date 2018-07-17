@@ -195,7 +195,13 @@ class Experiment(object):
             self.setup_after_stop_training()
         if self.run_after_early_stop:
             log.info("Run until second stop...")
+            loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             self.run_until_second_stop()
+            # if no valid loss was found below the best train loss on 1st run,
+            # reset model to the epoch with lowest valid_misclass
+            log.info("Resetting to best epoch {%d}".format(self.rememberer.best_epoch))
+            self.rememberer.reset_to_best_model(self.epochs_df, self.model,
+                                                self.optimizer)
 
     def setup_training(self):
         """
@@ -231,9 +237,7 @@ class Experiment(object):
         datasets['train'] = concatenate_sets([datasets['train'],
                                              datasets['valid']])
 
-        # Todo: actually keep remembering and in case of twice number of epochs
-        # reset to best model again (check if valid loss not below train loss)
-        self.run_until_stop(datasets, remember_best=False)
+        self.run_until_stop(datasets, remember_best=True)
 
     def run_until_stop(self, datasets, remember_best):
         """
