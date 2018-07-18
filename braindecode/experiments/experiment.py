@@ -199,8 +199,8 @@ class Experiment(object):
             self.run_until_second_stop()
             # if no valid loss was found below the best train loss on 1st run,
             # reset model to the epoch with lowest valid_misclass
-            if float(self.epochs_df['valid_loss'].iloc[-1] > loss_to_reach:
-                log.info("Resetting to best epoch {%d}".format(self.rememberer.best_epoch))
+            if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
+                log.info("Resetting to best epoch {:d}".format(self.rememberer.best_epoch))
                 self.rememberer.reset_to_best_model(self.epochs_df, self.model,
                                                     self.optimizer)
 
