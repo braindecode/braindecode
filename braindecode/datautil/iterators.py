@@ -15,7 +15,6 @@ def get_balanced_batches(n_trials, rng, shuffle, n_batches=None,
     n_trials : int
         Size of set.
     rng : RandomState
-
     shuffle : bool
         Whether to shuffle indices before splitting set.
     n_batches : int, optional
@@ -65,12 +64,13 @@ class BalancedBatchSizeIterator(object):
         but rather the next largest batch size that allows to split the set into
         balanced batches (maximum size difference 1).
     seed: int
-        Random seed for the the random generator that shuffles the batches.
+        Random seed for initialization of `numpy.RandomState` random generator
+        that shuffles the batches.
     """
     def __init__(self, batch_size, seed=328774):
         self.batch_size = batch_size
         self.seed = seed
-        self.rng = RandomState(seed)
+        self.rng = RandomState(self.seed)
 
     def get_batches(self, dataset, shuffle):
         n_trials = dataset.X.shape[0]
@@ -104,13 +104,14 @@ class ClassBalancedBatchSizeIterator(object):
         but rather the next largest batch size that allows to split the set into
         balanced batches (maximum size difference 1).
     seed: int
-        Random seed for the the random generator that shuffles the batches.
+        Random seed for initialization of `numpy.RandomState` random generator
+        that shuffles the batches.
     """
 
     def __init__(self, batch_size, seed=328774):
         self.batch_size = batch_size
         self.seed = seed
-        self.rng = RandomState(seed)
+        self.rng = RandomState(self.seed)
 
     def get_batches(self, dataset, shuffle):
         n_trials = dataset.X.shape[0]
@@ -169,7 +170,8 @@ class CropsFromTrialsIterator(object):
         by making a forward pass with the given input time length, the
         output length in 3rd dimension is n_preds_per_input.
     seed: int
-        Random seed for initialization of `numpy.RandomState`.
+        Random seed for initialization of `numpy.RandomState` random generator
+        that shuffles the batches.
     
     See Also
     --------
