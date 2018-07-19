@@ -154,7 +154,7 @@ class Experiment(object):
                  run_after_early_stop,
                  model_loss_function=None,
                  batch_modifier=None, cuda=True, pin_memory=False,
-                 do_early_stop=True, reset_after_second_run=False, 
+                 do_early_stop=True, reset_after_second_run=False,
                  seed=2382938):
         if run_after_early_stop or reset_after_second_run:
             assert do_early_stop == True, ("Can only run after early stop or "
