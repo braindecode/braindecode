@@ -9,6 +9,14 @@ braindecode\.visualization package
 Submodules
 ----------
 
+braindecode\.visualization\.input\_windows module
+-------------------------------------------------
+
+.. automodule:: braindecode.visualization.input_windows
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.visualization\.perturbation module
 -----------------------------------------------
 
@@ -21,6 +29,14 @@ braindecode\.visualization\.plot module
 ---------------------------------------
 
 .. automodule:: braindecode.visualization.plot
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+braindecode\.visualization\.sinfit module
+-----------------------------------------
+
+.. automodule:: braindecode.visualization.sinfit
     :members:
     :undoc-members:
     :show-inheritance:

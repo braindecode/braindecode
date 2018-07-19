@@ -137,6 +137,9 @@ class Experiment(object):
     do_early_stop: bool
         Whether to do an early stop at all. If true, reset to best model
         even in case experiment does not run after early stop.
+    print_0_epoch: bool
+        Whether to compute monitor values and print them before the
+        start of training.
         
     Attributes
     ----------
@@ -149,7 +152,8 @@ class Experiment(object):
                  run_after_early_stop,
                  model_loss_function=None,
                  batch_modifier=None, cuda=True, pin_memory=False,
-                 do_early_stop=True):
+                 do_early_stop=True,
+                 print_0_epoch=True):
         if run_after_early_stop:
             assert do_early_stop == True, ("Can only run after early stop if "
             "doing an early stop")
@@ -163,6 +167,9 @@ class Experiment(object):
             self.datasets.pop('valid')
             assert run_after_early_stop == False
             assert do_early_stop == False
+        if test_set is None:
+            self.datasets.pop('test')
+
         self.iterator = iterator
         self.loss_function = loss_function
         self.optimizer = optimizer
@@ -179,7 +186,7 @@ class Experiment(object):
         self.rememberer = None
         self.pin_memory = pin_memory
         self.do_early_stop = do_early_stop
-
+        self.print_0_epoch = print_0_epoch
 
     def run(self):
         """
@@ -248,11 +255,12 @@ class Experiment(object):
         remember_best: bool
             Whether to remember parameters at best epoch.
         """
-        self.monitor_epoch(datasets)
-        self.print_epoch()
-        if remember_best:
-            self.rememberer.remember_epoch(self.epochs_df, self.model,
-                                           self.optimizer)
+        if self.print_0_epoch:
+            self.monitor_epoch(datasets)
+            self.print_epoch()
+            if remember_best:
+                self.rememberer.remember_epoch(self.epochs_df, self.model,
+                                               self.optimizer)
 
         self.iterator.reset_rng()
         while not self.stop_criterion.should_stop(self.epochs_df):
