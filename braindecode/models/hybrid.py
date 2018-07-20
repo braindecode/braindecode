@@ -11,11 +11,17 @@ from braindecode.models.util import to_dense_prediction_model
 class HybridNet(nn.Module, BaseModel):
     def __init__(self, n_chans, n_classes, input_time_length):
         super(HybridNet, self).__init__()
-        deep_model = Deep4Net(n_chans, n_classes,
+        deep_model = Deep4Net(n_chans, n_classes, n_filters_time=20,
+                              n_filters_spat=30,
+                              n_filters_2=40,
+                              n_filters_3=50,
+                              n_filters_4=60,
                               input_time_length=input_time_length,
                               final_conv_length=2).create_network()
         shallow_model = ShallowFBCSPNet(n_chans, n_classes,
                                         input_time_length=input_time_length,
+                                        n_filters_time=30,
+                                        n_filters_spat=40,
                                         filter_time_length=28,
                                         final_conv_length=29,
                                         ).create_network()
@@ -43,8 +49,8 @@ class HybridNet(nn.Module, BaseModel):
 
         to_dense_prediction_model(reduced_deep_model)
         to_dense_prediction_model(reduced_shallow_model)
-        self.reduced_shallow_model = reduced_shallow_model
         self.reduced_deep_model = reduced_deep_model
+        self.reduced_shallow_model = reduced_shallow_model
         self.final_conv = nn.Conv2d(100, n_classes, kernel_size=(1, 1),
                                     stride=1)
 
