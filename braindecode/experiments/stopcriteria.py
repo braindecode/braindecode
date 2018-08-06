@@ -27,10 +27,29 @@ class Or(object):
     """
     def __init__(self, stop_criteria):
         self.stop_criteria = stop_criteria
+        self.triggered = dict([(s, False) for s in stop_criteria])
 
     def should_stop(self, epochs_df):
-        return np.any([s.should_stop(epochs_df)
-                       for s in self.stop_criteria])
+        # Update dictionary of which criterion was triggered ...
+        for s in self.stop_criteria:
+            self.triggered[s] = s.should_stop(epochs_df)
+        # Then check if any of them was triggered.
+        return np.any(list(self.triggered.values()))
+
+    def was_triggered(self, criterion):
+        """
+        Return if given criterion was triggered in the last call to should stop.
+        
+        Parameters
+        ----------
+        criterion: stop criterion
+
+        Returns
+        -------
+        triggered: bool
+
+        """
+        return self.triggered[criterion]
 
 
 class And(object):
@@ -45,8 +64,26 @@ class And(object):
         self.stop_criteria = stop_criteria
 
     def should_stop(self, epochs_df):
-        return np.all([s.should_stop(epochs_df)
-                       for s in self.stop_criteria])
+        # Update dictionary of which criterion was triggered ...
+        for s in self.stop_criteria:
+            self.triggered[s] = s.should_stop(epochs_df)
+        # Then check if all of them were triggered.
+        return np.all(list(self.triggered.values()))
+
+    def was_triggered(self, criterion):
+        """
+        Return if given criterion was triggered in the last call to should stop.
+
+        Parameters
+        ----------
+        criterion: stop criterion
+
+        Returns
+        -------
+        triggered: bool
+
+        """
+        return self.triggered[criterion]
 
 
 class NoDecrease(object):
