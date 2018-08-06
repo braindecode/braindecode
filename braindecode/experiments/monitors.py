@@ -70,6 +70,34 @@ class MisclassMonitor(object):
         return {column_name: float(misclass)}
 
 
+def compute_pred_labels_from_trial_preds(
+        all_preds, threshold_for_binary_case=None):
+    all_pred_labels = []
+    for i_batch in range(len(all_preds)):
+        preds = all_preds[i_batch]
+        # preds could be examples x classes x time
+        # or just
+        # examples x classes
+        # make sure not to remove first dimension if it only has size one
+        if preds.ndim > 1:
+            only_one_row = preds.shape[0] == 1
+
+            pred_labels = np.argmax(preds, axis=1).squeeze()
+            # add first dimension again if needed
+            if only_one_row:
+                pred_labels = pred_labels[None]
+        else:
+            assert threshold_for_binary_case is not None, (
+                "In case of only one output, please supply the "
+                "threshold_for_binary_case parameter")
+            # binary classification case... assume logits
+            pred_labels = np.int32(preds > threshold_for_binary_case)
+        # now examples x time or examples
+        all_pred_labels.extend(pred_labels)
+    all_pred_labels = np.array(all_pred_labels)
+    return all_pred_labels
+
+
 class AveragePerClassMisclassMonitor(object):
     """
     Compute average of misclasses per class,
@@ -148,6 +176,7 @@ class LossMonitor(object):
         return {column_name: mean_loss}
 
 
+
 class CroppedTrialMisclassMonitor(object):
     """
     Compute trialwise misclasses from predictions for crops.
@@ -169,9 +198,10 @@ class CroppedTrialMisclassMonitor(object):
         assert self.input_time_length is not None, "Need to know input time length..."
         # First case that each trial only has a single label
         if not hasattr(dataset.y[0], '__len__'):
-            all_pred_labels = self._compute_pred_labels(dataset, all_preds)
-            all_trial_labels = dataset.y
+            all_pred_labels = compute_trial_labels_from_crop_preds(
+                all_preds, self.input_time_length, dataset.X)
             assert all_pred_labels.shape == dataset.y.shape
+            all_trial_labels = dataset.y
         else:
             all_trial_labels, all_pred_labels = (
                 self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds))
@@ -181,8 +211,8 @@ class CroppedTrialMisclassMonitor(object):
         return {column_name: float(misclass)}
 
     def _compute_pred_labels(self, dataset, all_preds, ):
-        preds_per_trial = compute_preds_per_trial_for_set(
-            all_preds, self.input_time_length, dataset)
+        preds_per_trial = compute_preds_per_trial_from_crops(
+            all_preds, self.input_time_length, dataset.X)
         all_pred_labels = [np.argmax(np.mean(p, axis=1))
                            for p in preds_per_trial]
         all_pred_labels = np.array(all_pred_labels)
@@ -194,8 +224,8 @@ class CroppedTrialMisclassMonitor(object):
         # we only want the preds that are for the same labels as the last label in y
         # (there might be parts of other class-data at start, for trialwise misclass we assume
         # they are contained in other trials at the end...)
-        preds_per_trial = compute_preds_per_trial_for_set(
-            all_preds, self.input_time_length, dataset)
+        preds_per_trial = compute_preds_per_trial_from_crops(
+            all_preds, self.input_time_length, dataset.X)
         trial_labels = []
         trial_pred_labels = []
         for trial_pred, trial_y in zip(preds_per_trial, dataset.y):
@@ -217,8 +247,36 @@ class CroppedTrialMisclassMonitor(object):
         return trial_labels, trial_pred_labels
 
 
-def compute_preds_per_trial_for_set(all_preds, input_time_length,
-                                        dataset, ):
+def compute_trial_labels_from_crop_preds(all_preds, input_time_length, X):
+    """
+    Compute predicted trial labels from arrays of crop predictions
+
+    Parameters
+    ----------
+    all_preds: list of 2darrays (classes x time)
+        All predictions for the crops.
+    input_time_length: int
+        Temporal length of one input to the model.
+    X: ndarray
+        Input tensor the crops were taken from.
+
+    Returns
+    -------
+    pred_labels_per_trial: 1darray
+        Predicted label for each trial.
+
+    """
+
+    preds_per_trial = compute_preds_per_trial_from_crops(
+        all_preds, input_time_length, X)
+    pred_labels_per_trial = [np.argmax(np.mean(p, axis=1))
+                       for p in preds_per_trial]
+    pred_labels_per_trial = np.array(pred_labels_per_trial)
+    return pred_labels_per_trial
+
+
+def compute_preds_per_trial_from_crops(all_preds, input_time_length,
+                                        X, ):
     """
     Compute predictions per trial from predictions for crops.
     
@@ -228,8 +286,8 @@ def compute_preds_per_trial_for_set(all_preds, input_time_length,
         All predictions for the crops. 
     input_time_length: int
         Temporal length of one input to the model.
-    dataset: :class:`.SignalAndTarget`
-        Dataset the crops were taken from.
+    X: ndarray
+        Input tensor the crops were taken from.
     
     Returns
     -------
@@ -240,7 +298,7 @@ def compute_preds_per_trial_for_set(all_preds, input_time_length,
     n_preds_per_input = all_preds[0].shape[2]
     n_receptive_field = input_time_length - n_preds_per_input + 1
     n_preds_per_trial = [trial.shape[1] - n_receptive_field + 1
-                         for trial in dataset.X]
+                         for trial in X]
     preds_per_trial = compute_preds_per_trial_from_n_preds_per_trial(
         all_preds, n_preds_per_trial)
     return preds_per_trial

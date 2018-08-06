@@ -7,6 +7,7 @@ import pandas as pd
 import torch as th
 
 from braindecode.datautil.splitters import concatenate_sets
+from braindecode.experiments.loggers import Printer
 from braindecode.experiments.stopcriteria import MaxEpochs, ColumnBelow, Or
 from braindecode.torch_ext.util import np_to_var, set_random_seeds
 
@@ -140,9 +141,11 @@ class Experiment(object):
     reset_after_second_run: bool
         If true, reset to best model when second run did not find a valid loss
         below or equal to the best train loss of first run.
-    print_0_epoch: bool
-        Whether to compute monitor values and print them before the
+    log_0_epoch: bool
+        Whether to compute monitor values and log them before the
         start of training.
+    loggers: list of :class:`.Logger`
+        How to show computed metrics.
     seed: int
         Random seed for python random module numpy.random and torch.
         
@@ -159,7 +162,8 @@ class Experiment(object):
                  batch_modifier=None, cuda=True, pin_memory=False,
                  do_early_stop=True,
                  reset_after_second_run=False,
-                 print_0_epoch=True,
+                 log_0_epoch=True,
+                 loggers=('print',),
                  seed=2382938):
         if run_after_early_stop or reset_after_second_run:
             assert do_early_stop == True, ("Can only run after early stop or "
@@ -194,8 +198,9 @@ class Experiment(object):
         self.pin_memory = pin_memory
         self.do_early_stop = do_early_stop
         self.reset_after_second_run = reset_after_second_run
-        self.print_0_epoch = print_0_epoch
+        self.log_0_epoch = log_0_epoch
         self.seed = seed
+        self.loggers = loggers
 
     def run(self):
         """
@@ -231,6 +236,8 @@ class Experiment(object):
         # reset remember best extension in case you rerun some experiment
         if self.do_early_stop:
             self.rememberer = RememberBest(self.remember_best_column)
+        if self.loggers == ('print',):
+            self.loggers = [Printer()]
         self.epochs_df = pd.DataFrame()
         set_random_seeds(seed=self.seed, cuda=self.cuda)
         if self.cuda:
@@ -272,9 +279,9 @@ class Experiment(object):
         remember_best: bool
             Whether to remember parameters at best epoch.
         """
-        if self.print_0_epoch:
+        if self.log_0_epoch:
             self.monitor_epoch(datasets)
-            self.print_epoch()
+            self.log_epoch()
             if remember_best:
                 self.rememberer.remember_epoch(self.epochs_df, self.model,
                                                self.optimizer)
@@ -310,7 +317,7 @@ class Experiment(object):
             end_train_epoch_time - start_train_epoch_time))
 
         self.monitor_epoch(datasets)
-        self.print_epoch()
+        self.log_epoch()
         if remember_best:
             self.rememberer.remember_epoch(self.epochs_df, self.model,
                                            self.optimizer)
@@ -356,21 +363,20 @@ class Experiment(object):
 
         """
         self.model.eval()
-        input_vars = np_to_var(inputs, pin_memory=self.pin_memory,
-                               volatile=True)
-        target_vars = np_to_var(targets, pin_memory=self.pin_memory,
-                                volatile=True)
-        if self.cuda:
-            input_vars = input_vars.cuda()
-            target_vars = target_vars.cuda()
-        outputs = self.model(input_vars)
-        loss = self.loss_function(outputs, target_vars)
-        if hasattr(outputs, 'cpu'):
-            outputs = outputs.cpu().data.numpy()
-        else:
-            # assume it is iterable
-            outputs = [o.cpu().data.numpy() for o in outputs]
-        loss = loss.cpu().data.numpy()
+        with th.no_grad():
+            input_vars = np_to_var(inputs, pin_memory=self.pin_memory)
+            target_vars = np_to_var(targets, pin_memory=self.pin_memory)
+            if self.cuda:
+                input_vars = input_vars.cuda()
+                target_vars = target_vars.cuda()
+            outputs = self.model(input_vars)
+            loss = self.loss_function(outputs, target_vars)
+            if hasattr(outputs, 'cpu'):
+                outputs = outputs.cpu().data.numpy()
+            else:
+                # assume it is iterable
+                outputs = [o.cpu().data.numpy() for o in outputs]
+            loss = loss.cpu().data.numpy()
         return outputs, loss
 
     def monitor_epoch(self, datasets):
@@ -420,17 +426,12 @@ class Experiment(object):
         assert set(self.epochs_df.columns) == set(row_dict.keys())
         self.epochs_df = self.epochs_df[list(row_dict.keys())]
 
-    def print_epoch(self):
+    def log_epoch(self):
         """
         Print monitoring values for this epoch.
         """
-        # -1 due to doing one monitor at start of training
-        i_epoch = len(self.epochs_df) - 1
-        log.info("Epoch {:d}".format(i_epoch))
-        last_row = self.epochs_df.iloc[-1]
-        for key, val in last_row.iteritems():
-            log.info("{:25s} {:.5f}".format(key, val))
-        log.info("")
+        for logger in self.loggers:
+            logger.log_epoch(self.epochs_df)
 
     def setup_after_stop_training(self):
         """
