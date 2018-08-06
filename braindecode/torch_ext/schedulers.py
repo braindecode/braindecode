@@ -45,9 +45,10 @@ class CosineAnnealing(object):
             [0], self.update_period_boundaries))
 
     def get_lr(self, initial_val, i_update):
+        # i_update + 1 in error message since first update is i_update=0
         assert i_update < self.update_period_boundaries[-1], (
             "More updates ({:d}) than expected ({:d})".format(
-                i_update, self.update_period_boundaries[-1] - 1))
+                i_update + 1, self.update_period_boundaries[-1]))
         i_end_period = np.searchsorted(self.update_period_boundaries,
                                        i_update, side='right')
         assert i_end_period > 0

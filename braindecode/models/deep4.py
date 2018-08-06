@@ -142,37 +142,37 @@ class Deep4Net(BaseModel):
         model.add_module('conv_classifier',
                              nn.Conv2d(self.n_filters_4, self.n_classes,
                                        (self.final_conv_length, 1), bias=True))
-        model.add_module('softmax', nn.LogSoftmax())
+        model.add_module('softmax', nn.LogSoftmax(dim=1))
         model.add_module('squeeze',  Expression(_squeeze_final_output))
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
-        init.xavier_uniform(model.conv_time.weight, gain=1)
+        init.xavier_uniform_(model.conv_time.weight, gain=1)
         # maybe no bias in case of no split layer and batch norm
         if self.split_first_layer or (not self.batch_norm):
-            init.constant(model.conv_time.bias, 0)
+            init.constant_(model.conv_time.bias, 0)
         if self.split_first_layer:
-            init.xavier_uniform(model.conv_spat.weight, gain=1)
+            init.xavier_uniform_(model.conv_spat.weight, gain=1)
             if not self.batch_norm:
-                init.constant(model.conv_spat.bias, 0)
+                init.constant_(model.conv_spat.bias, 0)
         if self.batch_norm:
-            init.constant(model.bnorm.weight, 1)
-            init.constant(model.bnorm.bias, 0)
+            init.constant_(model.bnorm.weight, 1)
+            init.constant_(model.bnorm.bias, 0)
         param_dict = dict(list(model.named_parameters()))
         for block_nr in range(2,5):
             conv_weight = param_dict['conv_{:d}.weight'.format(block_nr)]
-            init.xavier_uniform(conv_weight, gain=1)
+            init.xavier_uniform_(conv_weight, gain=1)
             if not self.batch_norm:
                 conv_bias = param_dict['conv_{:d}.bias'.format(block_nr)]
-                init.constant(conv_bias, 0)
+                init.constant_(conv_bias, 0)
             else:
                 bnorm_weight = param_dict['bnorm_{:d}.weight'.format(block_nr)]
                 bnorm_bias = param_dict['bnorm_{:d}.bias'.format(block_nr)]
-                init.constant(bnorm_weight, 1)
-                init.constant(bnorm_bias, 0)
+                init.constant_(bnorm_weight, 1)
+                init.constant_(bnorm_bias, 0)
 
-        init.xavier_uniform(model.conv_classifier.weight, gain=1)
-        init.constant(model.conv_classifier.bias, 0)
+        init.xavier_uniform_(model.conv_classifier.weight, gain=1)
+        init.constant_(model.conv_classifier.bias, 0)
 
         # Start in eval mode
         model.eval()
