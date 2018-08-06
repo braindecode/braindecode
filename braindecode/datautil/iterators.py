@@ -156,7 +156,7 @@ class CropsFromTrialsIterator(object):
     Predicting the given input batches can lead to some samples
     being predicted multiple times, if the receptive field size
     (input_time_length - n_preds_per_input + 1) is not a divisor
-    of the trial length.  :func:`compute_preds_per_trial_for_set`
+    of the trial length.  :func:`compute_preds_per_trial_from_crops`
     can help with removing the overlapped predictions again for evaluation.
 
     Parameters
@@ -175,7 +175,7 @@ class CropsFromTrialsIterator(object):
     
     See Also
     --------
-    braindecode.experiments.monitors.compute_preds_per_trial_for_set : Assigns predictions to trials, removes overlaps.
+    braindecode.experiments.monitors.compute_preds_per_trial_from_crops : Assigns predictions to trials, removes overlaps.
     """
     def __init__(self, batch_size, input_time_length, n_preds_per_input,
                  seed=(2017, 6, 28)):
