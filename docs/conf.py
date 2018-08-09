@@ -103,7 +103,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'Braindecode'
-copyright = '2017, Robin Tibor Schirrmeister'
+copyright = '2018, Robin Tibor Schirrmeister'
 author = 'Robin Tibor Schirrmeister'
 
 # The version info for the project you're documenting, acts as replacement for

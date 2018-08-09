@@ -110,7 +110,7 @@ class Experiment(object):
         (predictions: `torch.autograd.Variable`, 
         targets:`torch.autograd.Variable`)
         -> loss: `torch.autograd.Variable`
-    optimizer: torch.optim.Optimizer`
+    optimizer: `torch.optim.Optimizer`
     model_constraint: object
         Object with apply function that takes model and constraints its 
         parameters. `None` for no constraint.

@@ -49,6 +49,22 @@ braindecode\.torch\_ext\.modules module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.torch\_ext\.optimizers module
+------------------------------------------
+
+.. automodule:: braindecode.torch_ext.optimizers
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+braindecode\.torch\_ext\.schedulers module
+------------------------------------------
+
+.. automodule:: braindecode.torch_ext.schedulers
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.torch\_ext\.util module
 ------------------------------------
 

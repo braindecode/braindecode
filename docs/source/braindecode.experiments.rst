@@ -17,6 +17,14 @@ braindecode\.experiments\.experiment module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.experiments\.loggers module
+----------------------------------------
+
+.. automodule:: braindecode.experiments.loggers
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.experiments\.monitors module
 -----------------------------------------
 

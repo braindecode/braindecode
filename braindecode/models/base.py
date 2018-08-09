@@ -32,6 +32,7 @@ def find_optimizer(optimizer_name):
 
 class BaseModel(object):
     def cuda(self):
+        """Move underlying model to GPU."""
         self._ensure_network_exists()
         assert not self.compiled,\
             ("Call cuda before compiling model, otherwise optimization will not work")
@@ -40,6 +41,13 @@ class BaseModel(object):
         return self
 
     def parameters(self):
+        """
+        Return parameters of underlying torch model.
+    
+        Returns
+        -------
+        parameters: list of torch tensors
+        """
         self._ensure_network_exists()
         return self.network.parameters()
 
@@ -49,7 +57,25 @@ class BaseModel(object):
             self.cuda = False
             self.compiled = False
 
-    def compile(self, loss, optimizer, metrics,  cropped=False, seed=0):
+    def compile(self, loss, optimizer, monitors=None,  cropped=False, iterator_seed=0):
+        """
+        Setup training for this model.
+        
+        Parameters
+        ----------
+        loss: function (predictions, targets) -> torch scalar
+        optimizer: `torch.optim.Optimizer` or string
+            Either supply an optimizer or the name of the class (e.g. 'adam')
+        monitors: List of Braindecode monitors, optional
+            In case you want to monitor additional values except for loss, misclass and runtime.
+        cropped: bool
+            Whether to perform cropped decoding, see cropped decoding tutorial.
+        iterator_seed: int
+            Seed to seed the iterator random generator.
+        Returns
+        -------
+
+        """
         self.loss = loss
         self._ensure_network_exists()
         if cropped:
@@ -58,8 +84,10 @@ class BaseModel(object):
             optimizer_class = find_optimizer(optimizer)
             optimizer = optimizer_class(self.network.parameters())
         self.optimizer = optimizer
-        self.metrics = metrics
-        self.seed_rng = RandomState(seed)
+        self.extra_monitors = monitors
+        # Already setting it here, so multiple calls to fit
+        # will lead to different batches being drawn
+        self.seed_rng = RandomState(iterator_seed)
         self.cropped = cropped
         self.compiled = True
 
@@ -67,25 +95,40 @@ class BaseModel(object):
             validation_data=None, model_constraint=None,
             remember_best_column=None, scheduler=None):
         """
+        Fit the model using the given training data.
         
+        Will set `epochs_df` variable with a pandas dataframe to the history
+        of the training process.
         
         Parameters
         ----------
-        train_X
-        train_y
-        epochs
-        batch_size
-        input_time_length
-        validation_data
-        model_constraint
-        remember_best_column
-        scheduler
+        train_X: ndarray
+            Training input data
+        train_y: 1darray
+            Training labels
+        epochs: int
+            Number of epochs to train
+        batch_size: int
+        input_time_length: int, optional
+            Super crop size, what temporal size is pushed forward through 
+            the network, see cropped decoding tuturial.
+        validation_data: (ndarray, 1darray), optional
+            X and y for validation set if wanted
+        model_constraint: object, optional
+            You can supply :class:`.MaxNormDefaultConstraint` if wanted.
+        remember_best_column: string, optional
+            In case you want to do an early stopping/reset parameters to some
+            "best" epoch, define here the monitored value whose minimum
+            determines the best epoch.
+        scheduler: 'cosine' or None, optional
+            Whether to use cosine annealing (:class:`.CosineAnnealing`).
 
         Returns
         -------
-
+        exp: 
+            Underlying braindecode :class:`.Experiment`
         """
-        if not self.compiled:
+        if (not hasattr(self, 'compiled')) or (not self.compiled):
             raise ValueError("Compile the model first by calling model.compile(loss, optimizer, metrics)")
 
 
@@ -94,6 +137,7 @@ class BaseModel(object):
                              "which is the number of timesteps that will be pushed through"
                              "the network in a single pass.")
         if self.cropped:
+            self.network.eval()
             test_input = np_to_var(train_X[0:1], dtype=np.float32)
             while len(test_input.size()) < 4:
                 test_input = test_input.unsqueeze(-1)
@@ -106,12 +150,15 @@ class BaseModel(object):
                 n_preds_per_input=n_preds_per_input,
                 seed=self.seed_rng.randint(0, 4294967295))
         else:
-            self.iterator = BalancedBatchSizeIterator(batch_size=batch_size, seed=self.seed_rng.randint(0, 4294967295))
+            self.iterator = BalancedBatchSizeIterator(
+                batch_size=batch_size,
+                seed=self.seed_rng.randint(0, 4294967295))
         stop_criterion = MaxEpochs(epochs - 1)# -1 since we dont print 0 epoch, which matters for this stop criterion
         train_set = SignalAndTarget(train_X, train_y)
         optimizer = self.optimizer
         if scheduler is not None:
-            assert scheduler == 'cosine'
+            assert scheduler == 'cosine', (
+                "Supply either 'cosine' or None as scheduler.")
             n_updates_per_epoch = sum(
                 [1 for _ in self.iterator.get_batches(train_set, shuffle=True)])
             n_updates_per_period = n_updates_per_epoch * epochs
@@ -131,15 +178,14 @@ class BaseModel(object):
         else:
             valid_set = None
         test_set = None
-        if self.cropped:
-            monitor_dict = {'acc': lambda :
-            CroppedTrialMisclassMonitor(input_time_length)}
-        else:
-            monitor_dict = {'acc': MisclassMonitor}
         self.monitors = [LossMonitor()]
-        extra_monitors = [monitor_dict[m]() for m in self.metrics]
-        self.monitors += extra_monitors
-        self.monitors += [RuntimeMonitor()]
+        if self.cropped:
+            self.monitors.append(CroppedTrialMisclassMonitor(input_time_length))
+        else:
+            self.monitors.append(MisclassMonitor())
+        if self.extra_monitors is not None:
+            self.monitors.extend(self.extra_monitors)
+        self.monitors.append(RuntimeMonitor())
         exp = Experiment(self.network, train_set, valid_set, test_set,
                          iterator=self.iterator,
                          loss_function=loss_function, optimizer=optimizer,
@@ -154,6 +200,22 @@ class BaseModel(object):
         return exp
 
     def evaluate(self, X,y):
+        """
+        Evaluate, i.e., compute metrics on given inputs and targets.
+        
+        Parameters
+        ----------
+        X: ndarray
+            Input data.
+        y: 1darray
+            Targets.
+
+        Returns
+        -------
+        result: dict
+            Dictionary with result metrics.
+
+        """
         stop_criterion = MaxEpochs(0)
         train_set = SignalAndTarget(X, y)
         model_constraint = None
@@ -187,6 +249,22 @@ class BaseModel(object):
         return result_dict
 
     def predict(self, X, threshold_for_binary_case=None):
+        """
+        Predict the labels for given input data.
+        
+        Parameters
+        ----------
+        X: ndarray
+            Input data.
+        threshold_for_binary_case: float, optional
+            In case of a model with single output, the threshold for assigning,
+            label 0 or 1, e.g. 0.5.
+
+        Returns
+        -------
+        pred_labels: 1darray
+            Predicted labels per trial. 
+        """
         all_preds = []
         for b_X, _ in self.iterator.get_batches(SignalAndTarget(X, X), False):
             all_preds.append(var_to_np(self.network(np_to_var(b_X))))

@@ -45,7 +45,7 @@ class EEGNetv4(BaseModel):
                  pool_mode='mean',
                  F1=8,
                  D=2,
-                 F2=16,
+                 F2=16, # usually set to F1*D (?)
                  kernel_length=64,
                  third_kernel_size=(8, 4),
                  drop_prob=0.25

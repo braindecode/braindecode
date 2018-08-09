@@ -32,9 +32,10 @@ Tutorials
 .. toctree::
    :maxdepth: 1
 
-   notebooks/TrialWise_Decoding.ipynb
+   notebooks/Trialwise_Decoding.ipynb
    notebooks/Cropped_Decoding.ipynb
-   notebooks/Experiment_Class.ipynb
+   notebooks/Trialwise_Manual_Training_Loop.ipynb
+   notebooks/Cropped_Manual_Training_Loop.ipynb
    notebooks/visualization/Perturbation.ipynb
 
 

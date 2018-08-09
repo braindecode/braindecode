@@ -9,6 +9,14 @@ braindecode\.models package
 Submodules
 ----------
 
+braindecode\.models\.base module
+--------------------------------
+
+.. automodule:: braindecode.models.base
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.models\.deep4 module
 ---------------------------------
 
@@ -21,6 +29,14 @@ braindecode\.models\.eegnet module
 ----------------------------------
 
 .. automodule:: braindecode.models.eegnet
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+braindecode\.models\.hybrid module
+----------------------------------
+
+.. automodule:: braindecode.models.hybrid
     :members:
     :undoc-members:
     :show-inheritance:
