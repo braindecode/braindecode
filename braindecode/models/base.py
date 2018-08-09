@@ -93,7 +93,8 @@ class BaseModel(object):
 
     def fit(self, train_X, train_y, epochs, batch_size, input_time_length=None,
             validation_data=None, model_constraint=None,
-            remember_best_column=None, scheduler=None):
+            remember_best_column=None, scheduler=None,
+            log_0_epoch=True):
         """
         Fit the model using the given training data.
         
@@ -122,6 +123,8 @@ class BaseModel(object):
             determines the best epoch.
         scheduler: 'cosine' or None, optional
             Whether to use cosine annealing (:class:`.CosineAnnealing`).
+        log_0_epoch: bool
+            Whether to compute the metrics once before training as well.
 
         Returns
         -------
@@ -153,7 +156,10 @@ class BaseModel(object):
             self.iterator = BalancedBatchSizeIterator(
                 batch_size=batch_size,
                 seed=self.seed_rng.randint(0, 4294967295))
-        stop_criterion = MaxEpochs(epochs - 1)# -1 since we dont print 0 epoch, which matters for this stop criterion
+        if log_0_epoch:
+            stop_criterion = MaxEpochs(epochs)
+        else:
+            stop_criterion = MaxEpochs(epochs - 1)
         train_set = SignalAndTarget(train_X, train_y)
         optimizer = self.optimizer
         if scheduler is not None:
@@ -193,7 +199,8 @@ class BaseModel(object):
                          monitors=self.monitors,
                          stop_criterion=stop_criterion,
                          remember_best_column=remember_best_column,
-                         run_after_early_stop=False, cuda=self.cuda, log_0_epoch=True,
+                         run_after_early_stop=False, cuda=self.cuda,
+                         log_0_epoch=log_0_epoch,
                          do_early_stop=(remember_best_column is not None))
         exp.run()
         self.epochs_df = exp.epochs_df
