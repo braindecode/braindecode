@@ -151,11 +151,11 @@ class BaseModel(object):
             self.iterator = CropsFromTrialsIterator(
                 batch_size=batch_size, input_time_length=input_time_length,
                 n_preds_per_input=n_preds_per_input,
-                seed=self.seed_rng.randint(0, 4294967295))
+                seed=self.seed_rng.randint(0, np.iinfo(np.int32).max-1))
         else:
             self.iterator = BalancedBatchSizeIterator(
                 batch_size=batch_size,
-                seed=self.seed_rng.randint(0, 4294967295))
+                seed=self.seed_rng.randint(0, np.iinfo(np.int32).max-1))
         if log_0_epoch:
             stop_criterion = MaxEpochs(epochs)
         else:
