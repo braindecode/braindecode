@@ -10,18 +10,18 @@ from braindecode.models.util import to_dense_prediction_model
 
 class HybridNet(nn.Module, BaseModel):
     """
-       Hybrid ConvNet model from [3]_.
+    Hybrid ConvNet model from [3]_.
        
-       Very hardcoded at the moment.
+    Very hardcoded at the moment.
 
-       References
-       ----------
+    References
+    ----------
 
-       .. [3] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J., 
-          Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
-          Deep learning with convolutional neural networks for EEG decoding and
-          visualization.
-          arXiv preprint arXiv:1703.05051.
+    .. [3] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
+       Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F. & Ball, T. (2017).
+       Deep learning with convolutional neural networks for EEG decoding and
+       visualization.
+       Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     """
     def __init__(self, n_chans, n_classes, input_time_length):
         super(HybridNet, self).__init__()

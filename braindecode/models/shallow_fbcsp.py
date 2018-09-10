@@ -15,11 +15,11 @@ class ShallowFBCSPNet(BaseModel):
     References
     ----------
 
-    .. [2] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J., 
-       Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
+    .. [2] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
+       Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F. & Ball, T. (2017).
        Deep learning with convolutional neural networks for EEG decoding and
        visualization.
-       arXiv preprint arXiv:1703.05051.
+       Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     """
     def __init__(self, in_chans,
                  n_classes,

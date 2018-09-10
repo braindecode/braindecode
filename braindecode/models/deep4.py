@@ -17,10 +17,10 @@ class Deep4Net(BaseModel):
     ----------
 
     .. [1] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J., 
-       Glasstetter, M., Eggensperger, K., Tangermann, M., ... & Ball, T. (2017).
+       Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F. & Ball, T. (2017).
        Deep learning with convolutional neural networks for EEG decoding and
        visualization.
-       arXiv preprint arXiv:1703.05051.
+       Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     """
     def __init__(self, in_chans,
                  n_classes,
@@ -103,7 +103,7 @@ class Deep4Net(BaseModel):
             suffix = '_{:d}'.format(block_nr)
             model.add_module('drop' + suffix,
                              nn.Dropout(p=self.drop_prob))
-            model.add_module('conv' + suffix.format(block_nr),
+            model.add_module('conv' + suffix,
                              nn.Conv2d(n_filters_before, n_filters,
                                        (filter_length, 1),
                                        stride=(conv_stride, 1),
