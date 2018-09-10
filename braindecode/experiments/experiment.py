@@ -146,8 +146,6 @@ class Experiment(object):
         start of training.
     loggers: list of :class:`.Logger`
         How to show computed metrics.
-    seed: int
-        Random seed for python random module numpy.random and torch.
         
     Attributes
     ----------
@@ -163,8 +161,7 @@ class Experiment(object):
                  do_early_stop=True,
                  reset_after_second_run=False,
                  log_0_epoch=True,
-                 loggers=('print',),
-                 seed=2382938):
+                 loggers=('print',)):
         if run_after_early_stop or reset_after_second_run:
             assert do_early_stop == True, ("Can only run after early stop or "
             "reset after second run if doing an early stop")
@@ -199,7 +196,6 @@ class Experiment(object):
         self.do_early_stop = do_early_stop
         self.reset_after_second_run = reset_after_second_run
         self.log_0_epoch = log_0_epoch
-        self.seed = seed
         self.loggers = loggers
 
     def run(self):
@@ -230,7 +226,7 @@ class Experiment(object):
 
     def setup_training(self):
         """
-        Setup training, i.e. set random seeds, transform model to cuda,
+        Setup training, i.e. transform model to cuda,
         initialize monitoring.
         """
         # reset remember best extension in case you rerun some experiment
@@ -239,7 +235,6 @@ class Experiment(object):
         if self.loggers == ('print',):
             self.loggers = [Printer()]
         self.epochs_df = pd.DataFrame()
-        set_random_seeds(seed=self.seed, cuda=self.cuda)
         if self.cuda:
             assert th.cuda.is_available(), "Cuda not available"
             self.model.cuda()
