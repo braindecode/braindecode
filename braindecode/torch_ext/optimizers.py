@@ -4,7 +4,7 @@ from torch.optim.optimizer import Optimizer
 
 
 class AdamW(Optimizer):
-    """Implements Adam algorithm with fixed as TODO 
+    """Implements Adam algorithm with fixed as in `AdamW`
 
     It has been proposed in `Adam: A Method for Stochastic Optimization`_.
 
