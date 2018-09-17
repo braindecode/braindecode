@@ -8,7 +8,7 @@ from braindecode.util import wrap_reshape_apply_fn, corr
 log = logging.getLogger(__name__)
 
 
-def phase_perturbation(amps,phases,rng=np.random.RandomState()):
+def phase_perturbation(amps,phases,rng=None):
     """Takes amps and phases of BxCxF with B input, C channels, F frequencies
     Shifts spectral phases randomly U(-pi,pi) for input and frequencies, but same for all channels
 
@@ -19,7 +19,7 @@ def phase_perturbation(amps,phases,rng=np.random.RandomState()):
     phases : numpy array
         Spectral phases
     rng : object
-        Random Seed
+        Random Generator
 
     Returns
     -------
@@ -30,6 +30,8 @@ def phase_perturbation(amps,phases,rng=np.random.RandomState()):
     pert_vals : numpy array
         Absolute phase shifts
     """
+    if rng is None:
+        rng = np.random.RandomState()
     noise_shape = list(phases.shape)
     noise_shape[1] = 1 # Do not sample noise for channels individually
 
@@ -44,7 +46,7 @@ def phase_perturbation(amps,phases,rng=np.random.RandomState()):
     pert_vals = np.abs(phase_noise)
     return amps,phases_pert,pert_vals
 
-def amp_perturbation_additive(amps,phases,rng=np.random.RandomState()):
+def amp_perturbation_additive(amps,phases,rng=None):
     """Takes amplitudes and phases of BxCxF with B input, C channels, F frequencies
     Adds additive noise N(0,0.02) to amplitudes
 
@@ -66,13 +68,15 @@ def amp_perturbation_additive(amps,phases,rng=np.random.RandomState()):
     pert_vals : numpy array
         Amplitude noise
     """
+    if rng is None:
+        rng = np.random.RandomState()
     amp_noise = rng.normal(0,1,amps.shape).astype(np.float32)
     amps_pert = amps+amp_noise
     amps_pert[amps_pert<0] = 0
     amp_noise = amps_pert-amps
     return amps_pert,phases,amp_noise
 
-def amp_perturbation_multiplicative(amps,phases,rng=np.random.RandomState()):
+def amp_perturbation_multiplicative(amps,phases,rng=None):
     """Takes amplitude and phases of BxCxF with B input, C channels, F frequencies
     Adds multiplicative noise N(1,0.02) to amplitudes
 
@@ -94,6 +98,8 @@ def amp_perturbation_multiplicative(amps,phases,rng=np.random.RandomState()):
     pert_vals : numpy array
         Amplitude scaling factor
     """
+    if rng is None:
+        rng = np.random.RandomState()
     amp_noise = rng.normal(1,0.02,amps.shape).astype(np.float32)
     amps_pert = amps*amp_noise
     amps_pert[amps_pert<0] = 0
