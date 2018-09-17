@@ -1,5 +1,6 @@
 import numpy as np
 
+from braindecode.datautil.iterators import get_balanced_batches
 from braindecode.datautil.signal_target import apply_to_X_y, SignalAndTarget
 
 
@@ -104,3 +105,86 @@ def select_examples(dataset, indices):
     new_y = np.asarray(dataset.y)[indices]
     return SignalAndTarget(new_X, new_y)
 
+
+def split_into_train_valid_test(dataset, n_folds, i_test_fold, rng=None):
+    """
+    Split datasets into folds, select one valid fold, one test fold and merge rest as train fold.
+
+    Parameters
+    ----------
+    dataset: :class:`.SignalAndTarget`
+    n_folds: int
+        Number of folds to split dataset into.
+    i_test_fold: int
+        Index of the test fold (0-based). Validation fold will be immediately preceding fold.
+    rng: `numpy.random.RandomState`, optional
+        Random Generator for shuffling, None means no shuffling
+
+    Returns
+    -------
+    reduced_set: :class:`.SignalAndTarget`
+        Dataset with only examples selected.
+    """
+    n_trials = len(dataset.X)
+    if n_trials < n_folds:
+        raise ValueError("Less Trials: {:d} than folds: {:d}".format(
+            n_trials, n_folds
+            ))
+    shuffle = rng is not None
+    folds = get_balanced_batches(
+        n_trials, rng, shuffle, n_batches=n_folds)
+    test_inds = folds[i_test_fold]
+    valid_inds = folds[i_test_fold - 1]
+    all_inds = list(range(n_trials))
+    train_inds = np.setdiff1d(all_inds, np.union1d(test_inds, valid_inds))
+    assert np.intersect1d(train_inds, valid_inds).size == 0
+    assert np.intersect1d(train_inds, test_inds).size == 0
+    assert np.intersect1d(valid_inds, test_inds).size == 0
+    assert np.array_equal(np.sort(
+        np.union1d(train_inds, np.union1d(valid_inds, test_inds))),
+        all_inds)
+
+    train_set = select_examples(dataset, train_inds)
+    valid_set = select_examples(dataset, valid_inds)
+    test_set = select_examples(dataset, test_inds)
+
+    return train_set, valid_set, test_set
+
+
+def split_into_train_test(dataset, n_folds, i_test_fold, rng=None):
+    """
+     Split datasets into folds, select one test fold and merge rest as train fold.
+
+    Parameters
+    ----------
+    dataset: :class:`.SignalAndTarget`
+    n_folds: int
+        Number of folds to split dataset into.
+    i_test_fold: int
+        Index of the test fold (0-based)
+    rng: `numpy.random.RandomState`, optional
+        Random Generator for shuffling, None means no shuffling
+
+    Returns
+    -------
+    reduced_set: :class:`.SignalAndTarget`
+        Dataset with only examples selected.
+    """
+    n_trials = len(dataset.X)
+    if n_trials < n_folds:
+        raise ValueError("Less Trials: {:d} than folds: {:d}".format(
+            n_trials, n_folds
+        ))
+    shuffle = rng is not None
+    folds = get_balanced_batches(n_trials, rng, shuffle,
+                                 n_batches=n_folds)
+    test_inds = folds[i_test_fold]
+    all_inds = list(range(len(n_trials)))
+    train_inds = np.setdiff1d(all_inds, test_inds)
+    assert np.intersect1d(train_inds, test_inds).size == 0
+    assert np.array_equal(np.sort(np.union1d(train_inds, test_inds)),
+                          all_inds)
+
+    train_set = select_examples(dataset, train_inds)
+    test_set = select_examples(dataset, test_inds)
+    return train_set, test_set
