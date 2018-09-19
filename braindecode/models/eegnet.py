@@ -21,7 +21,7 @@ class Conv2dWithConstraint(nn.Conv2d):
 
 class EEGNetv4(BaseModel):
     """
-    EEGNet v4 model from [EEGNet]_.
+    EEGNet v4 model from [EEGNet4]_.
 
     Notes
     -----
@@ -31,7 +31,7 @@ class EEGNetv4(BaseModel):
     References
     ----------
 
-    .. [EEGNet] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon,
+    .. [EEGNet4] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon,
        S. M., Hung, C. P., & Lance, B. J. (2018).
        EEGNet: A Compact Convolutional Network for EEG-based
        Brain-Computer Interfaces.
