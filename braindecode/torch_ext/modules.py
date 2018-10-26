@@ -28,8 +28,10 @@ class Expression(torch.nn.Module):
                 expression_str = "{:s} {:s}".format(
                     self.expression_fn.func.__name__,
                     str(self.expression_fn.kwargs))
-        else:
+        elif hasattr(self.expression_fn, '__name__'):
             expression_str = self.expression_fn.__name__
+        else:
+            expression_str = repr(self.expression_fn)
         return (self.__class__.__name__ + '(' +
                 'expression=' + str(expression_str) + ')')
 
@@ -46,12 +48,15 @@ class AvgPool2dWithConv(torch.nn.Module):
         Stride of the pooling operation.
     dilation: int or (int,int)
         Dilation applied to the pooling filter.
+    padding: int or (int,int)
+        Padding applied before the pooling operation.
     """
-    def __init__(self, kernel_size, stride, dilation=1):
+    def __init__(self, kernel_size, stride, dilation=1, padding=0):
         super(AvgPool2dWithConv, self).__init__()
         self.kernel_size = kernel_size
         self.stride = stride
         self.dilation = dilation
+        self.padding = padding
         # don't name them "weights" to
         # make sure these are not accidentally used by some procedure
         # that initializes parameters or something
@@ -79,6 +84,7 @@ class AvgPool2dWithConv(torch.nn.Module):
 
         pooled = F.conv2d(x, self._pool_weights, bias=None, stride=self.stride,
                           dilation=self.dilation,
+                          padding=self.padding,
                           groups=in_channels,)
         return pooled
 
