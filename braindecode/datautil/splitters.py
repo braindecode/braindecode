@@ -179,7 +179,7 @@ def split_into_train_test(dataset, n_folds, i_test_fold, rng=None):
     folds = get_balanced_batches(n_trials, rng, shuffle,
                                  n_batches=n_folds)
     test_inds = folds[i_test_fold]
-    all_inds = list(range(len(n_trials)))
+    all_inds = list(range(n_trials))
     train_inds = np.setdiff1d(all_inds, test_inds)
     assert np.intersect1d(train_inds, test_inds).size == 0
     assert np.array_equal(np.sort(np.union1d(train_inds, test_inds)),
