@@ -5,11 +5,12 @@ import time
 
 import pandas as pd
 import torch as th
+import numpy as np
 
 from braindecode.datautil.splitters import concatenate_sets
 from braindecode.experiments.loggers import Printer
 from braindecode.experiments.stopcriteria import MaxEpochs, ColumnBelow, Or
-from braindecode.torch_ext.util import np_to_var, set_random_seeds
+from braindecode.torch_ext.util import np_to_var
 
 log = logging.getLogger(__name__)
 
@@ -214,15 +215,15 @@ class Experiment(object):
             log.info("Run until second stop...")
             loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
             self.run_until_second_stop()
-            if self.reset_after_second_run:
+            if (float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach
+                    and self.reset_after_second_run):
                 # if no valid loss was found below the best train loss on 1st
                 # run, reset model to the epoch with lowest valid_misclass
-                if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
-                    log.info("Resetting to best epoch {:d}".format(
-                        self.rememberer.best_epoch))
-                    self.rememberer.reset_to_best_model(self.epochs_df,
-                                                        self.model,
-                                                        self.optimizer)
+                log.info("Resetting to best epoch {:d}".format(
+                    self.rememberer.best_epoch))
+                self.rememberer.reset_to_best_model(self.epochs_df,
+                                                    self.model,
+                                                    self.optimizer)
 
     def setup_training(self):
         """
@@ -367,11 +368,11 @@ class Experiment(object):
             outputs = self.model(input_vars)
             loss = self.loss_function(outputs, target_vars)
             if hasattr(outputs, 'cpu'):
-                outputs = outputs.cpu().data.numpy()
+                outputs = outputs.cpu().detach().numpy()
             else:
                 # assume it is iterable
-                outputs = [o.cpu().data.numpy() for o in outputs]
-            loss = loss.cpu().data.numpy()
+                outputs = [o.cpu().detach().numpy() for o in outputs]
+            loss = loss.cpu().detach().numpy()
         return outputs, loss
 
     def monitor_epoch(self, datasets):
@@ -390,23 +391,66 @@ class Experiment(object):
         result_dicts_per_monitor = OrderedDict()
         for m in self.monitors:
             result_dicts_per_monitor[m] = OrderedDict()
-        for m in self.monitors:
             result_dict = m.monitor_epoch()
             if result_dict is not None:
                 result_dicts_per_monitor[m].update(result_dict)
         for setname in datasets:
             assert setname in ['train', 'valid', 'test']
             dataset = datasets[setname]
-            all_preds = []
-            all_losses = []
-            all_batch_sizes = []
-            all_targets = []
-            for batch in self.iterator.get_batches(dataset, shuffle=False):
-                preds, loss = self.eval_on_batch(batch[0], batch[1])
-                all_preds.append(preds)
+            batch_generator = self.iterator.get_batches(dataset, shuffle=False)
+            if hasattr(batch_generator, "__len__"):
+                # prevent loading of data to estimate number of batches when
+                # using lazy iterators
+                n_batches = len(batch_generator)
+            else:
+                # iterating through traditional iterators is cheap, since
+                # nothing is loaded, recreate generator afterwards
+                n_batches = sum(1 for i in batch_generator)
+                batch_generator = self.iterator.get_batches(dataset,
+                                                            shuffle=False)
+            all_preds, all_targets = None, None
+            all_losses, all_batch_sizes = [], []
+            for inputs, targets in batch_generator:
+                preds, loss = self.eval_on_batch(inputs, targets)
                 all_losses.append(loss)
-                all_batch_sizes.append(len(batch[0]))
-                all_targets.append(batch[1])
+                all_batch_sizes.append(len(targets))
+                if all_preds is None:
+                    assert all_targets is None
+                    # first batch size is largest
+                    max_size, n_classes, n_preds_per_input = preds.shape
+                    # pre-allocate memory for all predictions and targets
+                    all_preds =  np.nan * np.ones(
+                        (n_batches * max_size, n_classes, n_preds_per_input),
+                        dtype=np.float32)
+                    all_preds[:len(preds)] = preds
+                    all_targets =  np.nan * np.ones((n_batches * max_size))
+                    all_targets[:len(targets)] = targets
+                else:
+                    start_i = sum(all_batch_sizes[:-1])
+                    stop_i = sum(all_batch_sizes)
+                    all_preds[start_i:stop_i] = preds
+                    all_targets[start_i:stop_i] = targets
+
+            # check for unequal batches
+            unequal_batches = len(set(all_batch_sizes)) > 1
+            all_batch_sizes = sum(all_batch_sizes)
+            # remove nan rows in case of unequal batch sizes
+            if unequal_batches:
+                assert np.sum(np.isnan(all_preds[:all_batch_sizes - 1])) == 0
+                assert np.sum(np.isnan(all_preds[all_batch_sizes:])) > 0
+                range_to_delete = range(all_batch_sizes, len(all_preds))
+                all_preds = np.delete(all_preds, range_to_delete, axis=0)
+                all_targets = np.delete(all_targets, range_to_delete, axis=0)
+            assert np.sum(np.isnan(all_preds)) == 0, (
+                "There are still nans in predictions")
+            assert np.sum(np.isnan(all_targets)) == 0, (
+                "There are still nans in targets")
+            # add empty dimension
+            # monitors expect n_batches x ...
+            all_preds = all_preds[np.newaxis, :]
+            all_targets = all_targets[np.newaxis, :]
+            all_batch_sizes = [all_batch_sizes]
+            all_losses = [all_losses]
 
             for m in self.monitors:
                 result_dict = m.monitor_set(setname, all_preds, all_losses,
@@ -418,7 +462,9 @@ class Experiment(object):
         for m in self.monitors:
             row_dict.update(result_dicts_per_monitor[m])
         self.epochs_df = self.epochs_df.append(row_dict, ignore_index=True)
-        assert set(self.epochs_df.columns) == set(row_dict.keys())
+        assert set(self.epochs_df.columns) == set(row_dict.keys()), (
+            "Columns of dataframe: {:s}\n and keys of dict {:s} not same")\
+            .format(str(set(self.epochs_df.columns)), str(set(row_dict.keys())))
         self.epochs_df = self.epochs_df[list(row_dict.keys())]
 
     def log_epoch(self):
