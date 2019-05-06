@@ -434,16 +434,26 @@ class Experiment(object):
                 all_batch_sizes.append(len(targets))
                 if all_preds is None:
                     assert all_targets is None
-                    # first batch size is largest
-                    max_size, n_classes, n_preds_per_input = preds.shape
-                    # pre-allocate memory for all predictions and targets
-                    all_preds = np.nan * np.ones(
-                        (n_batches * max_size, n_classes, n_preds_per_input),
-                        dtype=np.float32,
-                    )
-                    all_preds[: len(preds)] = preds
+                    if len(preds.shape) == 2:
+                        # first batch size is largest
+                        max_size, n_classes = preds.shape
+                        # pre-allocate memory for all predictions and targets
+                        all_preds = np.nan * np.ones(
+                            (n_batches * max_size, n_classes),
+                            dtype=np.float32,
+                        )
+                    else:
+                        assert len(preds.shape) == 3
+                        # first batch size is largest
+                        max_size, n_classes, n_preds_per_input = preds.shape
+                        # pre-allocate memory for all predictions and targets
+                        all_preds = np.nan * np.ones(
+                            (n_batches * max_size, n_classes, n_preds_per_input),
+                            dtype=np.float32,
+                        )
+                    all_preds[:len(preds)] = preds
                     all_targets = np.nan * np.ones((n_batches * max_size))
-                    all_targets[: len(targets)] = targets
+                    all_targets[:len(targets)] = targets
                 else:
                     start_i = sum(all_batch_sizes[:-1])
                     stop_i = sum(all_batch_sizes)
@@ -457,6 +467,9 @@ class Experiment(object):
             if unequal_batches:
                 assert np.sum(np.isnan(all_preds[: all_batch_sizes - 1])) == 0
                 assert np.sum(np.isnan(all_preds[all_batch_sizes:])) > 0
+                # TODO: is there a reason we dont just take
+                # all_preds = all_preds[:all_batch_sizes] and
+                # all_targets = all_targets[:all_batch_sizes] ?
                 range_to_delete = range(all_batch_sizes, len(all_preds))
                 all_preds = np.delete(all_preds, range_to_delete, axis=0)
                 all_targets = np.delete(all_targets, range_to_delete, axis=0)
