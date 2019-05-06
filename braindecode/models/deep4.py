@@ -132,6 +132,7 @@ class Deep4Net(BaseModel):
                             self.filter_length_4, 4)
 
 
+        #model.add_module('drop_classifier', nn.Dropout(p=self.drop_prob))
         model.eval()
         if self.final_conv_length == 'auto':
             out = model(np_to_var(np.ones(

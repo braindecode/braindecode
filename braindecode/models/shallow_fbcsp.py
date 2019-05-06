@@ -74,6 +74,7 @@ class ShallowFBCSPNet(BaseModel):
                                     stride=(self.pool_time_stride, 1)))
         model.add_module('pool_nonlin', Expression(self.pool_nonlin))
         model.add_module('drop', nn.Dropout(p=self.drop_prob))
+        model.eval()
         if self.final_conv_length == 'auto':
             out = model(np_to_var(np.ones(
                 (1, self.in_chans, self.input_time_length,1),
