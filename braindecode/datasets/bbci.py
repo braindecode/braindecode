@@ -56,8 +56,11 @@ class BBCIDataset(object):
             assert not np.any(
                 np.isnan(continuous_signal)), "No NaNs expected in signal"
 
-        # Assume we cant know channel type here automatically
-        ch_types = ['misc'] * len(wanted_chan_inds)
+        if self.load_sensor_names is None:
+            ch_types = ['EEG'] * len(wanted_chan_inds)
+        else:
+            # Assume we cant know channel type here automatically
+            ch_types = ['misc'] * len(wanted_chan_inds)
         info = mne.create_info(ch_names=wanted_sensor_names, sfreq=fs,
                                ch_types=ch_types)
 
