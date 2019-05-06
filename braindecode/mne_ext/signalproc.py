@@ -2,6 +2,7 @@ import logging
 from copy import deepcopy
 
 import resampy
+import numpy as np
 from mne.io.base import concatenate_raws
 import mne
 
@@ -88,3 +89,21 @@ def mne_apply(func, raw, verbose='WARNING'):
     """
     new_data = func(raw.get_data())
     return mne.io.RawArray(new_data, raw.info, verbose=verbose)
+
+
+def common_average_reference_cnt(cnt,):
+    """
+    Common average reference, subtract average over electrodes at each timestep.
+
+    Parameters
+    ----------
+    cnt: `mne.io.RawArray`
+
+    Returns
+    -------
+    car_cnt: cnt: `mne.io.RawArray`
+        Same data after common average reference.
+    """
+
+    return mne_apply(lambda a: a - np.mean(a, axis=0, keepdim=True),
+                     cnt)
