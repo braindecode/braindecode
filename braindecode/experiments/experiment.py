@@ -439,8 +439,7 @@ class Experiment(object):
                         max_size, n_classes = preds.shape
                         # pre-allocate memory for all predictions and targets
                         all_preds = np.nan * np.ones(
-                            (n_batches * max_size, n_classes),
-                            dtype=np.float32,
+                            (n_batches * max_size, n_classes), dtype=np.float32
                         )
                     else:
                         assert len(preds.shape) == 3
@@ -451,9 +450,9 @@ class Experiment(object):
                             (n_batches * max_size, n_classes, n_preds_per_input),
                             dtype=np.float32,
                         )
-                    all_preds[:len(preds)] = preds
+                    all_preds[: len(preds)] = preds
                     all_targets = np.nan * np.ones((n_batches * max_size))
-                    all_targets[:len(targets)] = targets
+                    all_targets[: len(targets)] = targets
                 else:
                     start_i = sum(all_batch_sizes[:-1])
                     stop_i = sum(all_batch_sizes)
