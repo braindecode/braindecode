@@ -4,12 +4,20 @@ import numpy as np
 from numpy.random import RandomState
 import torch as th
 
-from braindecode.experiments.monitors import LossMonitor, MisclassMonitor, \
-    RuntimeMonitor, CroppedTrialMisclassMonitor, \
-    compute_trial_labels_from_crop_preds, compute_pred_labels_from_trial_preds
+from braindecode.experiments.monitors import (
+    LossMonitor,
+    MisclassMonitor,
+    RuntimeMonitor,
+    CroppedTrialMisclassMonitor,
+    compute_trial_labels_from_crop_preds,
+    compute_pred_labels_from_trial_preds,
+    compute_preds_per_trial_from_crops,
+)
 from braindecode.experiments.stopcriteria import MaxEpochs
-from braindecode.datautil.iterators import BalancedBatchSizeIterator, \
-    CropsFromTrialsIterator
+from braindecode.datautil.iterators import (
+    BalancedBatchSizeIterator,
+    CropsFromTrialsIterator,
+)
 from braindecode.experiments.experiment import Experiment
 from braindecode.datautil.signal_target import SignalAndTarget
 from braindecode.models.util import to_dense_prediction_model
@@ -29,16 +37,16 @@ def find_optimizer(optimizer_name):
             break
     if not optim_found:
         raise ValueError("Unknown optimizer {:s}".format(optimizer))
-    return \
-        optimizer
+    return optimizer
 
 
 class BaseModel(object):
     def cuda(self):
         """Move underlying model to GPU."""
         self._ensure_network_exists()
-        assert not self.compiled,\
-            ("Call cuda before compiling model, otherwise optimization will not work")
+        assert (
+            not self.compiled
+        ), "Call cuda before compiling model, otherwise optimization will not work"
         self.network = self.network.cuda()
         self.cuda = True
         return self
@@ -55,12 +63,19 @@ class BaseModel(object):
         return self.network.parameters()
 
     def _ensure_network_exists(self):
-        if not hasattr(self, 'network'):
+        if not hasattr(self, "network"):
             self.network = self.create_network()
             self.cuda = False
             self.compiled = False
 
-    def compile(self, loss, optimizer, extra_monitors=None,  cropped=False, iterator_seed=0):
+    def compile(
+        self,
+        loss,
+        optimizer,
+        extra_monitors=None,
+        cropped=False,
+        iterator_seed=0,
+    ):
         """
         Setup training for this model.
         
@@ -82,15 +97,19 @@ class BaseModel(object):
         self.loss = loss
         self._ensure_network_exists()
         if cropped:
-            model_already_dense = np.any([
-                hasattr(m, 'dilation') and (m.dilation != 1) and
-                (m.dilation) != (1, 1) for m in self.network.modules()
-            ])
+            model_already_dense = np.any(
+                [
+                    hasattr(m, "dilation")
+                    and (m.dilation != 1)
+                    and (m.dilation) != (1, 1)
+                    for m in self.network.modules()
+                ]
+            )
             if not model_already_dense:
                 to_dense_prediction_model(self.network)
             else:
                 log.info("Seems model was already converted to dense model...")
-        if not hasattr(optimizer, 'step'):
+        if not hasattr(optimizer, "step"):
             optimizer_class = find_optimizer(optimizer)
             optimizer = optimizer_class(self.network.parameters())
         self.optimizer = optimizer
@@ -101,10 +120,19 @@ class BaseModel(object):
         self.cropped = cropped
         self.compiled = True
 
-    def fit(self, train_X, train_y, epochs, batch_size, input_time_length=None,
-            validation_data=None, model_constraint=None,
-            remember_best_column=None, scheduler=None,
-            log_0_epoch=True):
+    def fit(
+        self,
+        train_X,
+        train_y,
+        epochs,
+        batch_size,
+        input_time_length=None,
+        validation_data=None,
+        model_constraint=None,
+        remember_best_column=None,
+        scheduler=None,
+        log_0_epoch=True,
+    ):
         """
         Fit the model using the given training data.
         
@@ -141,33 +169,43 @@ class BaseModel(object):
         exp: 
             Underlying braindecode :class:`.Experiment`
         """
-        if (not hasattr(self, 'compiled')) or (not self.compiled):
-            raise ValueError("Compile the model first by calling model.compile(loss, optimizer, metrics)")
-
+        if (not hasattr(self, "compiled")) or (not self.compiled):
+            raise ValueError(
+                "Compile the model first by calling model.compile(loss, optimizer, metrics)"
+            )
 
         if self.cropped and input_time_length is None:
-            raise ValueError("In cropped mode, need to specify input_time_length,"
-                             "which is the number of timesteps that will be pushed through"
-                             "the network in a single pass.")
+            raise ValueError(
+                "In cropped mode, need to specify input_time_length,"
+                "which is the number of timesteps that will be pushed through"
+                "the network in a single pass."
+            )
         if self.cropped:
             self.network.eval()
-            test_input = np_to_var(np.ones(
-                (1, train_X.shape[1], input_time_length,) + train_X.shape[3:],
-                dtype=np.float32))
+            test_input = np_to_var(
+                np.ones(
+                    (1, train_X.shape[1], input_time_length)
+                    + train_X.shape[3:],
+                    dtype=np.float32,
+                )
+            )
             while len(test_input.size()) < 4:
                 test_input = test_input.unsqueeze(-1)
             if self.cuda:
-                    test_input = test_input.cuda()
+                test_input = test_input.cuda()
             out = self.network(test_input)
             n_preds_per_input = out.cpu().data.numpy().shape[2]
             self.iterator = CropsFromTrialsIterator(
-                batch_size=batch_size, input_time_length=input_time_length,
+                batch_size=batch_size,
+                input_time_length=input_time_length,
                 n_preds_per_input=n_preds_per_input,
-                seed=self.seed_rng.randint(0, np.iinfo(np.int32).max-1))
+                seed=self.seed_rng.randint(0, np.iinfo(np.int32).max - 1),
+            )
         else:
             self.iterator = BalancedBatchSizeIterator(
                 batch_size=batch_size,
-                seed=self.seed_rng.randint(0, np.iinfo(np.int32).max-1))
+                seed=self.seed_rng.randint(0, np.iinfo(np.int32).max - 1),
+            )
         if log_0_epoch:
             stop_criterion = MaxEpochs(epochs)
         else:
@@ -175,22 +213,28 @@ class BaseModel(object):
         train_set = SignalAndTarget(train_X, train_y)
         optimizer = self.optimizer
         if scheduler is not None:
-            assert scheduler == 'cosine', (
-                "Supply either 'cosine' or None as scheduler.")
+            assert (
+                scheduler == "cosine"
+            ), "Supply either 'cosine' or None as scheduler."
             n_updates_per_epoch = sum(
-                [1 for _ in self.iterator.get_batches(train_set, shuffle=True)])
+                [1 for _ in self.iterator.get_batches(train_set, shuffle=True)]
+            )
             n_updates_per_period = n_updates_per_epoch * epochs
-            if scheduler == 'cosine':
+            if scheduler == "cosine":
                 scheduler = CosineAnnealing(n_updates_per_period)
             schedule_weight_decay = False
-            if optimizer.__class__.__name__ == 'AdamW':
+            if optimizer.__class__.__name__ == "AdamW":
                 schedule_weight_decay = True
-            optimizer = ScheduledOptimizer(scheduler, self.optimizer,
-                                           schedule_weight_decay=schedule_weight_decay)
+            optimizer = ScheduledOptimizer(
+                scheduler,
+                self.optimizer,
+                schedule_weight_decay=schedule_weight_decay,
+            )
         loss_function = self.loss
         if self.cropped:
-            loss_function = lambda outputs, targets:\
-                self.loss(th.mean(outputs, dim=2), targets)
+            loss_function = lambda outputs, targets: self.loss(
+                th.mean(outputs, dim=2), targets
+            )
         if validation_data is not None:
             valid_set = SignalAndTarget(validation_data[0], validation_data[1])
         else:
@@ -204,21 +248,28 @@ class BaseModel(object):
         if self.extra_monitors is not None:
             self.monitors.extend(self.extra_monitors)
         self.monitors.append(RuntimeMonitor())
-        exp = Experiment(self.network, train_set, valid_set, test_set,
-                         iterator=self.iterator,
-                         loss_function=loss_function, optimizer=optimizer,
-                         model_constraint=model_constraint,
-                         monitors=self.monitors,
-                         stop_criterion=stop_criterion,
-                         remember_best_column=remember_best_column,
-                         run_after_early_stop=False, cuda=self.cuda,
-                         log_0_epoch=log_0_epoch,
-                         do_early_stop=(remember_best_column is not None))
+        exp = Experiment(
+            self.network,
+            train_set,
+            valid_set,
+            test_set,
+            iterator=self.iterator,
+            loss_function=loss_function,
+            optimizer=optimizer,
+            model_constraint=model_constraint,
+            monitors=self.monitors,
+            stop_criterion=stop_criterion,
+            remember_best_column=remember_best_column,
+            run_after_early_stop=False,
+            cuda=self.cuda,
+            log_0_epoch=log_0_epoch,
+            do_early_stop=(remember_best_column is not None),
+        )
         exp.run()
         self.epochs_df = exp.epochs_df
         return exp
 
-    def evaluate(self, X,y):
+    def evaluate(self, X, y):
         """
         Evaluate, i.e., compute metrics on given inputs and targets.
         
@@ -242,32 +293,45 @@ class BaseModel(object):
         test_set = None
         loss_function = self.loss
         if self.cropped:
-            loss_function = lambda outputs, targets: \
-                self.loss(th.mean(outputs, dim=2), targets)
+            loss_function = lambda outputs, targets: self.loss(
+                th.mean(outputs, dim=2), targets
+            )
 
         # reset runtime monitor if exists...
         for monitor in self.monitors:
-            if hasattr(monitor, 'last_call_time'):
+            if hasattr(monitor, "last_call_time"):
                 monitor.last_call_time = time.time()
-        exp = Experiment(self.network, train_set, valid_set, test_set,
-                         iterator=self.iterator,
-                         loss_function=loss_function, optimizer=self.optimizer,
-                         model_constraint=model_constraint,
-                         monitors=self.monitors,
-                         stop_criterion=stop_criterion,
-                         remember_best_column=None,
-                         run_after_early_stop=False, cuda=self.cuda,
-                         log_0_epoch=True,
-                         do_early_stop=False)
+        exp = Experiment(
+            self.network,
+            train_set,
+            valid_set,
+            test_set,
+            iterator=self.iterator,
+            loss_function=loss_function,
+            optimizer=self.optimizer,
+            model_constraint=model_constraint,
+            monitors=self.monitors,
+            stop_criterion=stop_criterion,
+            remember_best_column=None,
+            run_after_early_stop=False,
+            cuda=self.cuda,
+            log_0_epoch=True,
+            do_early_stop=False,
+        )
 
-        exp.monitor_epoch({'train': train_set})
+        exp.monitor_epoch({"train": train_set})
 
-        result_dict = dict([(key.replace('train_', ''), val)
-                            for key, val in
-                            dict(exp.epochs_df.iloc[0]).items()])
+        result_dict = dict(
+            [
+                (key.replace("train_", ""), val)
+                for key, val in dict(exp.epochs_df.iloc[0]).items()
+            ]
+        )
         return result_dict
 
-    def predict(self, X, threshold_for_binary_case=None):
+    def predict_classes(
+        self, X, threshold_for_binary_case=None, individual_crops=False
+    ):
         """
         Predict the labels for given input data.
         
@@ -281,20 +345,61 @@ class BaseModel(object):
 
         Returns
         -------
-        pred_labels: 1darray
-            Predicted labels per trial. 
+        pred_labels: 1darray or list of 1darrays
+            Predicted labels per trial, optionally for each crop within trial.
         """
+        if individual_crops:
+            assert self.cropped, "Cropped labels only for cropped decoding"
+        outs_per_trial = self.predict_outs(
+            X=X,
+            threshold_for_binary_case=threshold_for_binary_case,
+            individual_crops=individual_crops,
+        )
+
+        pred_labels = [np.argmax(o, axis=0) for o in outs_per_trial]
+        if not individual_crops:
+            pred_labels = np.array(pred_labels)
+        return pred_labels
+
+    def predict_outs(
+        self, X, threshold_for_binary_case=None, individual_crops=False
+    ):
+        """
+        Predict raw outputs of the network for given input.
+
+        Parameters
+        ----------
+        X: ndarray
+            Input data.
+        threshold_for_binary_case: float, optional
+            In case of a model with single output, the threshold for assigning,
+            label 0 or 1, e.g. 0.5.
+        individual_crops: bool
+
+        Returns
+        -------
+            outs_per_trial: 2darray or list of 2darrays
+                Network outputs for each trial, optionally for each crop within trial.
+        """
+        if individual_crops:
+            assert self.cropped, "Cropped labels only for cropped decoding"
         all_preds = []
         with th.no_grad():
-            for b_X, _ in self.iterator.get_batches(SignalAndTarget(X, X), False):
+            for b_X, _ in self.iterator.get_batches(
+                SignalAndTarget(X, X), False
+            ):
                 b_X_var = np_to_var(b_X)
                 if self.cuda:
                     b_X_var = b_X_var.cuda()
                 all_preds.append(var_to_np(self.network(b_X_var)))
         if self.cropped:
-            pred_labels = compute_trial_labels_from_crop_preds(
-                all_preds, self.iterator.input_time_length, X)
+            outs_per_trial = compute_preds_per_trial_from_crops(
+                all_preds, self.iterator.input_time_length, X
+            )
+            if not individual_crops:
+                outs_per_trial = np.array(
+                    [np.mean(o, axis=1) for o in outs_per_trial]
+                )
         else:
-            pred_labels = compute_pred_labels_from_trial_preds(
-                all_preds, threshold_for_binary_case)
-        return pred_labels
+            outs_per_trial = np.concatenate(all_preds)
+        return outs_per_trial
