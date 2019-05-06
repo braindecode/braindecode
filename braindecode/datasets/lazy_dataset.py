@@ -5,10 +5,13 @@ class LazyDataset(ABC):
     """ Class implementing an abstract lazy data set. Custom lazy data sets
     have to override file_paths, X and y as well as the load_lazy function to
     load trials or crops. """
+
     def __init__(self):
         self.file_paths = "Not implemented: a list of all file paths"
-        self.X = ("Not implemented: a list of empty ndarrays with number of "
-                  "samples as second dimension")
+        self.X = (
+            "Not implemented: a list of empty ndarrays with number of "
+            "samples as second dimension"
+        )
         self.y = "Not implemented: a list of all targets"
 
     @abstractmethod
