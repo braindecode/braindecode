@@ -2,8 +2,7 @@ import numpy as np
 from numpy.random import RandomState
 
 
-def get_balanced_batches(n_trials, rng, shuffle, n_batches=None,
-                         batch_size=None):
+def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None):
     """Create indices for batches balanced in size 
     (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
@@ -67,6 +66,7 @@ class BalancedBatchSizeIterator(object):
         Random seed for initialization of `numpy.RandomState` random generator
         that shuffles the batches.
     """
+
     def __init__(self, batch_size, seed=328774):
         self.batch_size = batch_size
         self.seed = seed
@@ -74,10 +74,9 @@ class BalancedBatchSizeIterator(object):
 
     def get_batches(self, dataset, shuffle):
         n_trials = dataset.X.shape[0]
-        batches = get_balanced_batches(n_trials,
-                                       batch_size=self.batch_size,
-                                       rng=self.rng,
-                                       shuffle=shuffle)
+        batches = get_balanced_batches(
+            n_trials, batch_size=self.batch_size, rng=self.rng, shuffle=shuffle
+        )
         for batch_inds in batches:
             batch_X = dataset.X[batch_inds]
             batch_y = dataset.y[batch_inds]
@@ -115,27 +114,27 @@ class ClassBalancedBatchSizeIterator(object):
 
     def get_batches(self, dataset, shuffle):
         n_trials = dataset.X.shape[0]
-        batches = get_balanced_batches(n_trials,
-                                       batch_size=self.batch_size,
-                                       rng=self.rng,
-                                       shuffle=shuffle)
+        batches = get_balanced_batches(
+            n_trials, batch_size=self.batch_size, rng=self.rng, shuffle=shuffle
+        )
         if shuffle:
             n_classes = np.max(dataset.y) + 1
-            class_probabilities = [np.mean(dataset.y == i_class)
-                                   for i_class in range(n_classes)]
+            class_probabilities = [
+                np.mean(dataset.y == i_class) for i_class in range(n_classes)
+            ]
             class_probabilities = np.array(class_probabilities)
             # choose trials in inverse probability of class
-            trial_probabilities = [1.0 / class_probabilities[y]
-                                   for y in dataset.y]
+            trial_probabilities = [1.0 / class_probabilities[y] for y in dataset.y]
             trial_probabilities = np.array(trial_probabilities) / np.sum(
-                trial_probabilities)
-            i_trial_to_balanced = self.rng.choice(n_trials, n_trials,
-                                                  p=trial_probabilities)
+                trial_probabilities
+            )
+            i_trial_to_balanced = self.rng.choice(
+                n_trials, n_trials, p=trial_probabilities
+            )
 
         for batch_inds in batches:
             if shuffle:
-                batch_inds = [i_trial_to_balanced[i_trial] for i_trial in
-                              batch_inds]
+                batch_inds = [i_trial_to_balanced[i_trial] for i_trial in batch_inds]
             batch_X = dataset.X[batch_inds]
             batch_y = dataset.y[batch_inds]
 
@@ -177,8 +176,10 @@ class CropsFromTrialsIterator(object):
     --------
     braindecode.experiments.monitors.compute_preds_per_trial_from_crops : Assigns predictions to trials, removes overlaps.
     """
-    def __init__(self, batch_size, input_time_length, n_preds_per_input,
-                 seed=(2017, 6, 28)):
+
+    def __init__(
+        self, batch_size, input_time_length, n_preds_per_input, seed=(2017, 6, 28)
+    ):
         self.batch_size = batch_size
         self.input_time_length = input_time_length
         self.n_preds_per_input = n_preds_per_input
@@ -200,43 +201,57 @@ class CropsFromTrialsIterator(object):
         for i_trial, input_len in enumerate(input_lens):
             assert input_len >= self.input_time_length, (
                 "Input length {:d} of trial {:d} is smaller than the "
-                "input time length {:d}".format(input_len, i_trial,
-                                                self.input_time_length))
+                "input time length {:d}".format(
+                    input_len, i_trial, self.input_time_length
+                )
+            )
         start_stop_blocks_per_trial = _compute_start_stop_block_inds(
-            i_trial_starts, i_trial_stops, self.input_time_length,
-            self.n_preds_per_input, check_preds_smaller_trial_len=True)
+            i_trial_starts,
+            i_trial_stops,
+            self.input_time_length,
+            self.n_preds_per_input,
+            check_preds_smaller_trial_len=True,
+        )
         for i_trial, trial_blocks in enumerate(start_stop_blocks_per_trial):
             assert trial_blocks[0][0] == 0
             assert trial_blocks[-1][1] == i_trial_stops[i_trial]
 
-        return self._yield_block_batches(dataset.X, dataset.y,
-                                        start_stop_blocks_per_trial,
-                                        shuffle=shuffle)
+        return self._yield_block_batches(
+            dataset.X, dataset.y, start_stop_blocks_per_trial, shuffle=shuffle
+        )
 
     def _yield_block_batches(self, X, y, start_stop_blocks_per_trial, shuffle):
         # add trial nr to start stop blocks and flatten at same time
-        i_trial_start_stop_block = [(i_trial, start, stop)
-                                      for i_trial, block in
-                                          enumerate(start_stop_blocks_per_trial)
-                                      for (start, stop) in block]
+        i_trial_start_stop_block = [
+            (i_trial, start, stop)
+            for i_trial, block in enumerate(start_stop_blocks_per_trial)
+            for (start, stop) in block
+        ]
         i_trial_start_stop_block = np.array(i_trial_start_stop_block)
         if i_trial_start_stop_block.ndim == 1:
-            i_trial_start_stop_block = i_trial_start_stop_block[None,:]
+            i_trial_start_stop_block = i_trial_start_stop_block[None, :]
 
-        blocks_per_batch = get_balanced_batches(len(i_trial_start_stop_block),
-                                       batch_size=self.batch_size,
-                                       rng=self.rng,
-                                       shuffle=shuffle)
+        blocks_per_batch = get_balanced_batches(
+            len(i_trial_start_stop_block),
+            batch_size=self.batch_size,
+            rng=self.rng,
+            shuffle=shuffle,
+        )
         for i_blocks in blocks_per_batch:
             start_stop_blocks = i_trial_start_stop_block[i_blocks]
             batch = _create_batch_from_i_trial_start_stop_blocks(
-                X, y, start_stop_blocks, self.n_preds_per_input)
+                X, y, start_stop_blocks, self.n_preds_per_input
+            )
             yield batch
 
 
-def _compute_start_stop_block_inds(i_trial_starts, i_trial_stops,
-                                   input_time_length, n_preds_per_input,
-                                   check_preds_smaller_trial_len):
+def _compute_start_stop_block_inds(
+    i_trial_starts,
+    i_trial_stops,
+    input_time_length,
+    n_preds_per_input,
+    check_preds_smaller_trial_len,
+):
     """
     Compute start stop block inds for all trials
     Parameters
@@ -261,27 +276,29 @@ def _compute_start_stop_block_inds(i_trial_starts, i_trial_stops,
         i_trial_start = i_trial_starts[i_trial]
         i_trial_stop = i_trial_stops[i_trial]
         start_stop_blocks = _get_start_stop_blocks_for_trial(
-            i_trial_start, i_trial_stop, input_time_length,
-            n_preds_per_input)
+            i_trial_start, i_trial_stop, input_time_length, n_preds_per_input
+        )
 
         if check_preds_smaller_trial_len:
             # check that block is correct, all predicted samples together
             # should be the trial samples
             all_predicted_samples = [
-                range(stop - n_preds_per_input,
-                      stop) for _,stop in start_stop_blocks]
+                range(stop - n_preds_per_input, stop) for _, stop in start_stop_blocks
+            ]
             # this check takes about 50 ms in performance test
             # whereas loop itself takes only 5 ms.. deactivate it if not necessary
             assert np.array_equal(
                 range(i_trial_starts[i_trial], i_trial_stops[i_trial]),
-                np.unique(np.concatenate(all_predicted_samples)))
+                np.unique(np.concatenate(all_predicted_samples)),
+            )
 
         start_stop_blocks_per_trial.append(start_stop_blocks)
     return start_stop_blocks_per_trial
 
 
-def _get_start_stop_blocks_for_trial(i_trial_start, i_trial_stop,
-                                     input_time_length, n_preds_per_input):
+def _get_start_stop_blocks_for_trial(
+    i_trial_start, i_trial_stop, input_time_length, n_preds_per_input
+):
 
     """
     Compute start stop block inds for one trial
@@ -311,20 +328,21 @@ def _get_start_stop_blocks_for_trial(i_trial_start, i_trial_stop,
     return start_stop_blocks
 
 
-def _create_batch_from_i_trial_start_stop_blocks(X, y, i_trial_start_stop_block,
-                                                 n_preds_per_input=None):
+def _create_batch_from_i_trial_start_stop_blocks(
+    X, y, i_trial_start_stop_block, n_preds_per_input=None
+):
     Xs = []
     ys = []
     for i_trial, start, stop in i_trial_start_stop_block:
-        Xs.append(X[i_trial][:,start:stop])
-        if not hasattr(y[i_trial], '__len__'):
+        Xs.append(X[i_trial][:, start:stop])
+        if not hasattr(y[i_trial], "__len__"):
             ys.append(y[i_trial])
         else:
             assert n_preds_per_input is not None
-            ys.append(y[i_trial][stop-n_preds_per_input:stop])
+            ys.append(y[i_trial][stop - n_preds_per_input : stop])
     batch_X = np.array(Xs)
     batch_y = np.array(ys)
     # add empty fourth dimension if necessary
     if batch_X.ndim == 3:
-        batch_X = batch_X[:,:,:, None]
+        batch_X = batch_X[:, :, :, None]
     return batch_X, batch_y

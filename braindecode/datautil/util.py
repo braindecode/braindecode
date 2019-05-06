@@ -34,4 +34,3 @@ def samples_to_ms(n_samples, fs):
     milliseconds: int
     """
     return n_samples * 1000.0 / fs
-

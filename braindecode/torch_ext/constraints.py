@@ -16,12 +16,14 @@ class MaxNormDefaultConstraint(object):
        Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     
     """
+
     def apply(self, model):
         last_weight = None
         for name, module in list(model.named_children()):
-            if hasattr(module, 'weight') and (
-                    not module.__class__.__name__.startswith('BatchNorm')):
-                module.weight.data = th.renorm(module.weight.data,2,0,maxnorm=2)
+            if hasattr(module, "weight") and (
+                not module.__class__.__name__.startswith("BatchNorm")
+            ):
+                module.weight.data = th.renorm(module.weight.data, 2, 0, maxnorm=2)
                 last_weight = module.weight
         if last_weight is not None:
-            last_weight.data = th.renorm(last_weight.data,2,0,maxnorm=0.5)
+            last_weight.data = th.renorm(last_weight.data, 2, 0, maxnorm=0.5)

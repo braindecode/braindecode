@@ -9,6 +9,7 @@ class SignalAndTarget(object):
     y: 1darray or list
         Labels for each trial.
     """
+
     def __init__(self, X, y):
         assert len(X) == len(y)
         self.X = X
@@ -35,4 +36,4 @@ def apply_to_X_y(fn, *sets):
     """
     X = fn(*[s.X for s in sets])
     y = fn(*[s.y for s in sets])
-    return SignalAndTarget(X,y)
+    return SignalAndTarget(X, y)

@@ -26,7 +26,7 @@ def log_categorical_crossentropy_1_hot(logpreds, targets, dims=None):
     result = -logpreds * targets
     # Sum across dims if axis given or more than 1 dim
     if dims is not None:
-        if not hasattr(dims, '__len__'):
+        if not hasattr(dims, "__len__"):
             dims = [dims]
         for dim in dims:
             result = th.sum(result, dim=int(dim))
@@ -56,8 +56,7 @@ def log_categorical_crossentropy(log_preds, targets, class_weights=None):
     loss: `torch.autograd.Variable`
     """
     if log_preds.size() == targets.size():
-        assert class_weights is None, (
-            "Class weights not implemented for one-hot")
+        assert class_weights is None, "Class weights not implemented for one-hot"
         return log_categorical_crossentropy_1_hot(log_preds, targets)
     n_classes = log_preds.size()[1]
     n_elements = 0
@@ -66,7 +65,7 @@ def log_categorical_crossentropy(log_preds, targets, class_weights=None):
         mask = targets == i_class
         mask = mask.type_as(log_preds)
         n_elements -= th.sum(mask)
-        this_loss = th.sum(mask * log_preds[:,i_class])
+        this_loss = th.sum(mask * log_preds[:, i_class])
         if class_weights is not None:
             this_loss = this_loss * class_weights[i_class]
         losses.append(this_loss)

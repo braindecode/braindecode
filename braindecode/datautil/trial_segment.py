@@ -11,11 +11,14 @@ log = logging.getLogger(__name__)
 
 
 def create_signal_target_from_raw_mne(
-        raw, name_to_start_codes, epoch_ival_ms,
-        name_to_stop_codes=None,
-        prepad_trials_to_n_samples=None,
-        one_hot_labels=False,
-        one_label_per_trial=True):
+    raw,
+    name_to_start_codes,
+    epoch_ival_ms,
+    name_to_stop_codes=None,
+    prepad_trials_to_n_samples=None,
+    one_hot_labels=False,
+    one_label_per_trial=True,
+):
     """
     Create SignalTarget set from given `mne.io.RawArray`.
     
@@ -51,21 +54,32 @@ def create_signal_target_from_raw_mne(
         Dataset with `X` as the trial signals and `y` as the trial labels.
     """
     data = raw.get_data()
-    events = np.array([raw.info['events'][:,0],
-                      raw.info['events'][:,2]]).T
-    fs = raw.info['sfreq']
+    events = np.array([raw.info["events"][:, 0], raw.info["events"][:, 2]]).T
+    fs = raw.info["sfreq"]
     return create_signal_target(
-        data, events, fs, name_to_start_codes,
+        data,
+        events,
+        fs,
+        name_to_start_codes,
         epoch_ival_ms,
         name_to_stop_codes=name_to_stop_codes,
         prepad_trials_to_n_samples=prepad_trials_to_n_samples,
         one_hot_labels=one_hot_labels,
-        one_label_per_trial=one_label_per_trial)
+        one_label_per_trial=one_label_per_trial,
+    )
 
 
-def create_signal_target(data, events, fs, name_to_start_codes, epoch_ival_ms,
-                         name_to_stop_codes=None, prepad_trials_to_n_samples=None,
-                         one_hot_labels=False, one_label_per_trial=True):
+def create_signal_target(
+    data,
+    events,
+    fs,
+    name_to_start_codes,
+    epoch_ival_ms,
+    name_to_stop_codes=None,
+    prepad_trials_to_n_samples=None,
+    one_hot_labels=False,
+    one_label_per_trial=True,
+):
     """
     Create SignalTarget set given continuous data.
     
@@ -109,15 +123,26 @@ def create_signal_target(data, events, fs, name_to_start_codes, epoch_ival_ms,
     """
     if name_to_stop_codes is None:
         return _create_signal_target_from_start_and_ival(
-            data, events, fs, name_to_start_codes, epoch_ival_ms,
+            data,
+            events,
+            fs,
+            name_to_start_codes,
+            epoch_ival_ms,
             one_hot_labels=one_hot_labels,
-            one_label_per_trial=one_label_per_trial)
+            one_label_per_trial=one_label_per_trial,
+        )
     else:
         return _create_signal_target_from_start_and_stop(
-            data, events, fs, name_to_start_codes, epoch_ival_ms,
-            name_to_stop_codes, prepad_trials_to_n_samples,
+            data,
+            events,
+            fs,
+            name_to_start_codes,
+            epoch_ival_ms,
+            name_to_stop_codes,
+            prepad_trials_to_n_samples,
             one_hot_labels=one_hot_labels,
-            one_label_per_trial=one_label_per_trial)
+            one_label_per_trial=one_label_per_trial,
+        )
 
 
 def _to_mrk_code_to_name_and_y(name_to_codes):
@@ -125,7 +150,7 @@ def _to_mrk_code_to_name_and_y(name_to_codes):
     mrk_code_to_name_and_y = {}
     for i_class, class_name in enumerate(name_to_codes):
         codes = name_to_codes[class_name]
-        if hasattr(codes, '__len__'):
+        if hasattr(codes, "__len__"):
             for code in codes:
                 assert code not in mrk_code_to_name_and_y
                 mrk_code_to_name_and_y[code] = (class_name, i_class)
@@ -136,15 +161,19 @@ def _to_mrk_code_to_name_and_y(name_to_codes):
 
 
 def _create_signal_target_from_start_and_ival(
-        data, events, fs, name_to_codes, epoch_ival_ms,
-        one_hot_labels, one_label_per_trial):
+    data, events, fs, name_to_codes, epoch_ival_ms, one_hot_labels, one_label_per_trial
+):
     cnt_y, i_start_stops = _create_cnt_y_and_trial_bounds_from_start_and_ival(
         data.shape[1], events, fs, name_to_codes, epoch_ival_ms
     )
     signal_target = _create_signal_target_from_cnt_y_start_stops(
-        data, cnt_y, i_start_stops, prepad_trials_to_n_samples=None,
+        data,
+        cnt_y,
+        i_start_stops,
+        prepad_trials_to_n_samples=None,
         one_hot_labels=one_hot_labels,
-        one_label_per_trial=one_label_per_trial)
+        one_label_per_trial=one_label_per_trial,
+    )
     # make into arrray as all should have same dimensions
     signal_target.X = np.array(signal_target.X, dtype=np.float32)
     signal_target.y = np.array(signal_target.y, dtype=np.int64)
@@ -152,7 +181,8 @@ def _create_signal_target_from_start_and_ival(
 
 
 def _create_cnt_y_and_trial_bounds_from_start_and_ival(
-        n_samples, events, fs, name_to_start_codes, epoch_ival_ms):
+    n_samples, events, fs, name_to_start_codes, epoch_ival_ms
+):
     ival_in_samples = ms_to_samples(np.array(epoch_ival_ms), fs)
     start_offset = np.int32(np.round(ival_in_samples[0]))
     # we will use ceil but exclusive...
@@ -169,12 +199,16 @@ def _create_cnt_y_and_trial_bounds_from_start_and_ival(
             if start_sample < 0:
                 log.warning(
                     "Ignore trial with marker code {:d}, would start at "
-                    "sample {:d}".format(mrk_code, start_sample))
+                    "sample {:d}".format(mrk_code, start_sample)
+                )
                 continue
             if stop_sample > n_samples:
-                log.warning("Ignore trial with marker code {:d}, would end at "
-                            "sample {:d} of {:d}".format(
-                    mrk_code, stop_sample - 1, n_samples - 1))
+                log.warning(
+                    "Ignore trial with marker code {:d}, would end at "
+                    "sample {:d} of {:d}".format(
+                        mrk_code, stop_sample - 1, n_samples - 1
+                    )
+                )
                 continue
 
             name, this_y = mrk_code_to_name_and_y[mrk_code]
@@ -186,24 +220,41 @@ def _create_cnt_y_and_trial_bounds_from_start_and_ival(
 
 
 def _create_signal_target_from_start_and_stop(
-        data, events, fs, name_to_start_codes, epoch_ival_ms,
-        name_to_stop_codes, prepad_trials_to_n_samples,
-        one_hot_labels, one_label_per_trial, ):
-    assert np.array_equal(list(name_to_start_codes.keys()),
-                          list(name_to_stop_codes.keys()))
+    data,
+    events,
+    fs,
+    name_to_start_codes,
+    epoch_ival_ms,
+    name_to_stop_codes,
+    prepad_trials_to_n_samples,
+    one_hot_labels,
+    one_label_per_trial,
+):
+    assert np.array_equal(
+        list(name_to_start_codes.keys()), list(name_to_stop_codes.keys())
+    )
     cnt_y, i_start_stops = _create_cnt_y_and_trial_bounds_from_start_stop(
-        data.shape[1],events, fs,name_to_start_codes, epoch_ival_ms,
-        name_to_stop_codes)
+        data.shape[1],
+        events,
+        fs,
+        name_to_start_codes,
+        epoch_ival_ms,
+        name_to_stop_codes,
+    )
     signal_target = _create_signal_target_from_cnt_y_start_stops(
-        data, cnt_y, i_start_stops,
+        data,
+        cnt_y,
+        i_start_stops,
         prepad_trials_to_n_samples=prepad_trials_to_n_samples,
-        one_hot_labels=one_hot_labels, one_label_per_trial=one_label_per_trial)
+        one_hot_labels=one_hot_labels,
+        one_label_per_trial=one_label_per_trial,
+    )
     return signal_target
 
 
 def _create_cnt_y_and_trial_bounds_from_start_stop(
-        n_samples, events, fs, name_to_start_codes, epoch_ival_ms,
-        name_to_stop_codes):
+    n_samples, events, fs, name_to_start_codes, epoch_ival_ms, name_to_stop_codes
+):
     """
     Create a one-hot-encoded continuous marker array (cnt_y).
     
@@ -240,8 +291,9 @@ def _create_cnt_y_and_trial_bounds_from_start_stop(
 
 
     """
-    assert np.array_equal(list(name_to_start_codes.keys()),
-                          list(name_to_stop_codes.keys()))
+    assert np.array_equal(
+        list(name_to_start_codes.keys()), list(name_to_stop_codes.keys())
+    )
     events = np.asarray(events)
     ival_in_samples = ms_to_samples(np.array(epoch_ival_ms), fs)
     start_offset = np.int32(np.round(ival_in_samples[0]))
@@ -251,10 +303,9 @@ def _create_cnt_y_and_trial_bounds_from_start_stop(
     # Ensure all stop marker codes are iterables
     for name in name_to_stop_codes:
         codes = name_to_stop_codes[name]
-        if not hasattr(codes, '__len__'):
+        if not hasattr(codes, "__len__"):
             name_to_stop_codes[name] = [codes]
-    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())
-                                    ).astype(np.int64)
+    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())).astype(np.int64)
     class_to_n_trials = Counter()
     n_classes = len(name_to_start_codes)
     cnt_y = np.zeros((n_samples, n_classes), dtype=np.int64)
@@ -266,7 +317,8 @@ def _create_cnt_y_and_trial_bounds_from_start_stop(
     first_start_code_found = False
     while i_event < len(events):
         while i_event < len(events) and (
-                    event_codes[i_event] not in start_code_to_name_and_y):
+            event_codes[i_event] not in start_code_to_name_and_y
+        ):
             i_event += 1
         if i_event < len(events):
             start_sample = event_samples[i_event]
@@ -278,14 +330,19 @@ def _create_cnt_y_and_trial_bounds_from_start_stop(
             waiting_for_end_code = True
 
             while i_event < len(events) and (
-                        event_codes[i_event] not in all_stop_codes):
+                event_codes[i_event] not in all_stop_codes
+            ):
                 if event_codes[i_event] in start_code_to_name_and_y:
                     log.warning(
                         "New start marker  {:.0f} at {:.0f} samples found, "
                         "no end marker for earlier start marker {:.0f} "
                         "at {:.0f} samples found.".format(
-                            event_codes[i_event], event_samples[i_event],
-                            start_code, start_sample))
+                            event_codes[i_event],
+                            event_samples[i_event],
+                            start_code,
+                            start_sample,
+                        )
+                    )
                     start_sample = event_samples[i_event]
                     start_name = start_code_to_name_and_y[start_code][0]
                     start_code = event_codes[i_event]
@@ -293,10 +350,13 @@ def _create_cnt_y_and_trial_bounds_from_start_stop(
                 i_event += 1
         if i_event == len(events):
             if waiting_for_end_code:
-                log.warning(("No end marker for start marker code {:.0f} "
-                             "at sample {:.0f} found.").format(start_code,
-                                                               start_sample))
-            elif (not first_start_code_found):
+                log.warning(
+                    (
+                        "No end marker for start marker code {:.0f} "
+                        "at sample {:.0f} found."
+                    ).format(start_code, start_sample)
+                )
+            elif not first_start_code_found:
                 log.warning("No markers found at all.")
             break
         stop_sample = event_samples[i_event]
@@ -314,25 +374,25 @@ def _create_cnt_y_and_trial_bounds_from_start_stop(
 
 
 def _create_signal_target_from_cnt_y_start_stops(
-        data,
-        cnt_y,
-        i_start_stops,
-        prepad_trials_to_n_samples,
-        one_hot_labels,
-        one_label_per_trial):
+    data,
+    cnt_y,
+    i_start_stops,
+    prepad_trials_to_n_samples,
+    one_hot_labels,
+    one_label_per_trial,
+):
     if prepad_trials_to_n_samples is not None:
         new_i_start_stops = []
         for i_start, i_stop in i_start_stops:
             if (i_stop - i_start) > prepad_trials_to_n_samples:
                 new_i_start_stops.append((i_start, i_stop))
             elif i_stop >= prepad_trials_to_n_samples:
-                new_i_start_stops.append(
-                    (i_stop - prepad_trials_to_n_samples, i_stop))
+                new_i_start_stops.append((i_stop - prepad_trials_to_n_samples, i_stop))
             else:
-                log.warning("Could not pad trial enough, therefore not "
-                            "not using trial from {:d} to {:d}".format(
-                    i_start, i_stop
-                ))
+                log.warning(
+                    "Could not pad trial enough, therefore not "
+                    "not using trial from {:d} to {:d}".format(i_start, i_stop)
+                )
                 continue
 
     else:
@@ -342,17 +402,18 @@ def _create_signal_target_from_cnt_y_start_stops(
     y = []
     for i_start, i_stop in new_i_start_stops:
         if i_start < 0:
-            log.warning("Trial start too early, therefore not "
-                        "not using trial from {:d} to {:d}".format(
-                i_start, i_stop
-            ))
+            log.warning(
+                "Trial start too early, therefore not "
+                "not using trial from {:d} to {:d}".format(i_start, i_stop)
+            )
             continue
         if i_stop > data.shape[1]:
-            log.warning("Trial stop too late (past {:d}), therefore not "
-                        "not using trial from {:d} to {:d}".format(
-                data.shape[1] - 1,
-                i_start, i_stop
-            ))
+            log.warning(
+                "Trial stop too late (past {:d}), therefore not "
+                "not using trial from {:d} to {:d}".format(
+                    data.shape[1] - 1, i_start, i_stop
+                )
+            )
             continue
         X.append(data[:, i_start:i_stop].astype(np.float32))
         y.append(cnt_y[i_start:i_stop])
@@ -362,8 +423,7 @@ def _create_signal_target_from_cnt_y_start_stops(
         new_y = []
         for this_y in y:
             # if destroying one hot later, just set most occuring class to 1
-            unique_labels, counts = np.unique(
-                this_y, axis=0, return_counts=True)
+            unique_labels, counts = np.unique(this_y, axis=0, return_counts=True)
             if not one_hot_labels:
                 meaned_y = np.mean(this_y, axis=0)
                 this_new_y = np.zeros_like(meaned_y)
@@ -373,10 +433,12 @@ def _create_signal_target_from_cnt_y_start_stops(
                 this_new_y = unique_labels[np.argmax(counts)]
 
             if len(unique_labels) > 1:
-                log.warning("Different labels within one trial: {:s},"
-                            "setting single trial label to  {:s}".format(
-                    str(unique_labels), str(this_new_y)
-                ))
+                log.warning(
+                    "Different labels within one trial: {:s},"
+                    "setting single trial label to  {:s}".format(
+                        str(unique_labels), str(this_new_y)
+                    )
+                )
             new_y.append(this_new_y)
         y = new_y
     if not one_hot_labels:
@@ -392,12 +454,14 @@ def _create_signal_target_from_cnt_y_start_stops(
                 if np.sum(this_y) > 1:
                     log.warning(
                         "Have multiple active classes and will convert to "
-                        "lowest class")
+                        "lowest class"
+                    )
             else:
                 if np.max(np.sum(this_y, axis=1)) > 1:
                     log.warning(
                         "Have multiple active classes and will convert to "
-                        "lowest class")
+                        "lowest class"
+                    )
                 this_new_y = np.argmax(this_y, axis=1)
                 this_new_y[np.sum(this_y, axis=1) == 0] = -1
             new_y.append(this_new_y)
@@ -409,12 +473,15 @@ def _create_signal_target_from_cnt_y_start_stops(
 
 
 def create_signal_target_with_breaks_from_mne(
-        cnt, name_to_start_codes,
-        trial_epoch_ival_ms,
-        name_to_stop_codes,
-        min_break_length_ms, max_break_length_ms,
-        break_epoch_ival_ms,
-        prepad_trials_to_n_samples=None):
+    cnt,
+    name_to_start_codes,
+    trial_epoch_ival_ms,
+    name_to_stop_codes,
+    min_break_length_ms,
+    max_break_length_ms,
+    break_epoch_ival_ms,
+    prepad_trials_to_n_samples=None,
+):
     """
     Create SignalTarget set from given `mne.io.RawArray`.
     
@@ -450,13 +517,15 @@ def create_signal_target_with_breaks_from_mne(
         Dataset with `X` as the trial signals and `y` as the trial labels.
         Labels as timeseries and of integers, i.e., not one-hot encoded.
     """
-    assert 'Break' not in name_to_start_codes
+    assert "Break" not in name_to_start_codes
     # Create new marker codes for start and stop of breaks
     # Use marker codes that did not exist in the given marker codes...
     all_start_codes = np.concatenate(
-        [np.atleast_1d(vals) for vals in name_to_start_codes.values()])
+        [np.atleast_1d(vals) for vals in name_to_start_codes.values()]
+    )
     all_stop_codes = np.concatenate(
-        [np.atleast_1d(vals) for vals in name_to_stop_codes.values()])
+        [np.atleast_1d(vals) for vals in name_to_stop_codes.values()]
+    )
     break_start_code = -1
     while break_start_code in np.concatenate((all_start_codes, all_stop_codes)):
         break_start_code -= 1
@@ -464,45 +533,59 @@ def create_signal_target_with_breaks_from_mne(
     while break_stop_code in np.concatenate((all_start_codes, all_stop_codes)):
         break_stop_code -= 1
 
-    events = cnt.info['events'][:, [0, 2]]
+    events = cnt.info["events"][:, [0, 2]]
     # later trial segment ival will be added when creating set
     # so remove it here
     break_epoch_ival_ms = np.array(break_epoch_ival_ms) - (
-        np.array(trial_epoch_ival_ms))
-    events_with_breaks = add_breaks(events, cnt.info['sfreq'],
-                                    break_start_code, break_stop_code,
-                                    name_to_start_codes, name_to_stop_codes,
-                                    min_break_length_ms=min_break_length_ms,
-                                    max_break_length_ms=max_break_length_ms,
-                                    break_start_offset_ms=break_epoch_ival_ms[
-                                        0],
-                                    break_stop_offset_ms=break_epoch_ival_ms[
-                                        1])
+        np.array(trial_epoch_ival_ms)
+    )
+    events_with_breaks = add_breaks(
+        events,
+        cnt.info["sfreq"],
+        break_start_code,
+        break_stop_code,
+        name_to_start_codes,
+        name_to_stop_codes,
+        min_break_length_ms=min_break_length_ms,
+        max_break_length_ms=max_break_length_ms,
+        break_start_offset_ms=break_epoch_ival_ms[0],
+        break_stop_offset_ms=break_epoch_ival_ms[1],
+    )
 
     name_to_start_codes_with_breaks = deepcopy(name_to_start_codes)
-    name_to_start_codes_with_breaks['Break'] = break_start_code
+    name_to_start_codes_with_breaks["Break"] = break_start_code
     name_to_stop_codes_with_breaks = deepcopy(name_to_stop_codes)
-    name_to_stop_codes_with_breaks['Break'] = break_stop_code
-
+    name_to_stop_codes_with_breaks["Break"] = break_stop_code
 
     data = cnt.get_data()
-    fs = cnt.info['sfreq']
+    fs = cnt.info["sfreq"]
     signal_target = create_signal_target(
-        data, events_with_breaks, fs,
-        name_to_start_codes_with_breaks, trial_epoch_ival_ms,
+        data,
+        events_with_breaks,
+        fs,
+        name_to_start_codes_with_breaks,
+        trial_epoch_ival_ms,
         name_to_stop_codes_with_breaks,
         prepad_trials_to_n_samples=prepad_trials_to_n_samples,
         one_hot_labels=False,
-        one_label_per_trial=False)
+        one_label_per_trial=False,
+    )
 
     return signal_target
 
 
 def add_breaks(
-        events, fs, break_start_code, break_stop_code, name_to_start_codes,
-        name_to_stop_codes, min_break_length_ms=None,
-        max_break_length_ms=None, break_start_offset_ms=None,
-        break_stop_offset_ms=None):
+    events,
+    fs,
+    break_start_code,
+    break_stop_code,
+    name_to_start_codes,
+    name_to_stop_codes,
+    min_break_length_ms=None,
+    max_break_length_ms=None,
+    break_start_offset_ms=None,
+    break_stop_offset_ms=None,
+):
     """
     Add break events to given events.
 
@@ -536,13 +619,16 @@ def add_breaks(
     events: 2d-array
         Events with break start and stop markers.
     """
-    min_samples = (None if min_break_length_ms is None
-                   else ms_to_samples(min_break_length_ms, fs))
-    max_samples = (None if max_break_length_ms is None
-                   else ms_to_samples(max_break_length_ms, fs))
+    min_samples = (
+        None if min_break_length_ms is None else ms_to_samples(min_break_length_ms, fs)
+    )
+    max_samples = (
+        None if max_break_length_ms is None else ms_to_samples(max_break_length_ms, fs)
+    )
     orig_events = events
     break_starts, break_stops = _extract_break_start_stop_ms(
-        events, name_to_start_codes, name_to_stop_codes)
+        events, name_to_start_codes, name_to_stop_codes
+    )
 
     break_durations = break_stops - break_starts
     valid_mask = np.array([True] * len(break_starts))
@@ -566,22 +652,20 @@ def add_breaks(
 
     new_events = np.concatenate((orig_events, break_events))
     # sort events
-    sort_order = np.argsort(new_events[:, 0], kind='mergesort')
+    sort_order = np.argsort(new_events[:, 0], kind="mergesort")
     new_events = new_events[sort_order]
     return new_events
 
 
-def _extract_break_start_stop_ms(events, name_to_start_codes,
-                                 name_to_stop_codes):
+def _extract_break_start_stop_ms(events, name_to_start_codes, name_to_stop_codes):
     assert len(events[0]) == 2, "expect only 2dimensional event array here"
     start_code_to_name_and_y = _to_mrk_code_to_name_and_y(name_to_start_codes)
     # Ensure all stop marker codes are iterables
     for name in name_to_stop_codes:
         codes = name_to_stop_codes[name]
-        if not hasattr(codes, '__len__'):
+        if not hasattr(codes, "__len__"):
             name_to_stop_codes[name] = [codes]
-    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())).astype(
-        np.int32)
+    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())).astype(np.int32)
     event_samples = events[:, 0]
     event_codes = events[:, 1]
 
@@ -589,8 +673,7 @@ def _extract_break_start_stop_ms(events, name_to_start_codes,
     break_stops = []
     i_event = 0
     while i_event < len(events):
-        while (i_event < len(events)) and (
-                    event_codes[i_event] not in all_stop_codes):
+        while (i_event < len(events)) and (event_codes[i_event] not in all_stop_codes):
             i_event += 1
         if i_event < len(events):
             # one sample after start
@@ -598,7 +681,8 @@ def _extract_break_start_stop_ms(events, name_to_start_codes,
             stop_code = event_codes[i_event]
             i_event += 1
             while (i_event < len(events)) and (
-                        event_codes[i_event] not in start_code_to_name_and_y):
+                event_codes[i_event] not in start_code_to_name_and_y
+            ):
                 if event_codes[i_event] in all_stop_codes:
                     log.warning(
                         "New end marker  {:.0f} at {:.0f} samples found, "
@@ -606,7 +690,10 @@ def _extract_break_start_stop_ms(events, name_to_start_codes,
                         "at {:.0f} samples found.".format(
                             event_codes[i_event],
                             event_samples[i_event],
-                            stop_code, stop_sample))
+                            stop_code,
+                            stop_sample,
+                        )
+                    )
                     stop_sample = event_samples[i_event]
                     stop_code = event_codes[i_event]
                 i_event += 1

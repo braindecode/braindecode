@@ -14,6 +14,7 @@ class Printer(Logger):
     """
     Prints output to the terminal using Python's logging module.
     """
+
     def log_epoch(self, epochs_df):
         # -1 due to doing one monitor at start of training
         i_epoch = len(epochs_df) - 1
@@ -34,9 +35,11 @@ class TensorboardWriter(Logger):
     log_dir: string
         Directory path to log the output to
     """
+
     def __init__(self, log_dir):
         # import inside to prevent dependency of braindecode onto tensorboardX
         from tensorboardX import SummaryWriter
+
         self.writer = SummaryWriter(log_dir)
 
     def log_epoch(self, epochs_df):

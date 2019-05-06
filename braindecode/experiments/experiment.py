@@ -31,10 +31,11 @@ class RememberBest(object):
     best_epoch: int
         Index of best epoch
     """
+
     def __init__(self, column_name):
         self.column_name = column_name
         self.best_epoch = 0
-        self.lowest_val = float('inf')
+        self.lowest_val = float("inf")
         self.model_state_dict = None
         self.optimizer_state_dict = None
 
@@ -59,8 +60,7 @@ class RememberBest(object):
             self.lowest_val = current_val
             self.model_state_dict = deepcopy(model.state_dict())
             self.optimizer_state_dict = deepcopy(optimizer.state_dict())
-            log.info("New best {:s}: {:5f}".format(self.column_name,
-                                                   current_val))
+            log.info("New best {:s}: {:5f}".format(self.column_name, current_val))
             log.info("")
 
     def reset_to_best_model(self, epochs_df, model, optimizer):
@@ -78,7 +78,7 @@ class RememberBest(object):
 
         """
         # Remove epochs past the best one from epochs dataframe
-        epochs_df.drop(range(self.best_epoch+1, len(epochs_df)), inplace=True)
+        epochs_df.drop(range(self.best_epoch + 1, len(epochs_df)), inplace=True)
         model.load_state_dict(self.model_state_dict)
         optimizer.load_state_dict(self.optimizer_state_dict)
 
@@ -152,31 +152,48 @@ class Experiment(object):
     epochs_df: `pandas.DataFrame`
         Monitoring values for all epochs.
     """
-    def __init__(self, model, train_set, valid_set, test_set,
-                 iterator, loss_function, optimizer, model_constraint,
-                 monitors, stop_criterion, remember_best_column,
-                 run_after_early_stop,
-                 model_loss_function=None,
-                 batch_modifier=None, cuda=True, pin_memory=False,
-                 do_early_stop=True,
-                 reset_after_second_run=False,
-                 log_0_epoch=True,
-                 loggers=('print',)):
+
+    def __init__(
+        self,
+        model,
+        train_set,
+        valid_set,
+        test_set,
+        iterator,
+        loss_function,
+        optimizer,
+        model_constraint,
+        monitors,
+        stop_criterion,
+        remember_best_column,
+        run_after_early_stop,
+        model_loss_function=None,
+        batch_modifier=None,
+        cuda=True,
+        pin_memory=False,
+        do_early_stop=True,
+        reset_after_second_run=False,
+        log_0_epoch=True,
+        loggers=("print",),
+    ):
         if run_after_early_stop or reset_after_second_run:
-            assert do_early_stop == True, ("Can only run after early stop or "
-            "reset after second run if doing an early stop")
+            assert do_early_stop == True, (
+                "Can only run after early stop or "
+                "reset after second run if doing an early stop"
+            )
         if do_early_stop:
             assert valid_set is not None
             assert remember_best_column is not None
         self.model = model
         self.datasets = OrderedDict(
-            (('train', train_set), ('valid', valid_set), ('test', test_set)))
+            (("train", train_set), ("valid", valid_set), ("test", test_set))
+        )
         if valid_set is None:
-            self.datasets.pop('valid')
+            self.datasets.pop("valid")
             assert run_after_early_stop == False
             assert do_early_stop == False
         if test_set is None:
-            self.datasets.pop('test')
+            self.datasets.pop("test")
 
         self.iterator = iterator
         self.loss_function = loss_function
@@ -212,17 +229,20 @@ class Experiment(object):
             self.setup_after_stop_training()
         if self.run_after_early_stop:
             log.info("Run until second stop...")
-            loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
+            loss_to_reach = float(self.epochs_df["train_loss"].iloc[-1])
             self.run_until_second_stop()
             if self.reset_after_second_run:
                 # if no valid loss was found below the best train loss on 1st
                 # run, reset model to the epoch with lowest valid_misclass
-                if float(self.epochs_df['valid_loss'].iloc[-1]) > loss_to_reach:
-                    log.info("Resetting to best epoch {:d}".format(
-                        self.rememberer.best_epoch))
-                    self.rememberer.reset_to_best_model(self.epochs_df,
-                                                        self.model,
-                                                        self.optimizer)
+                if float(self.epochs_df["valid_loss"].iloc[-1]) > loss_to_reach:
+                    log.info(
+                        "Resetting to best epoch {:d}".format(
+                            self.rememberer.best_epoch
+                        )
+                    )
+                    self.rememberer.reset_to_best_model(
+                        self.epochs_df, self.model, self.optimizer
+                    )
 
     def setup_training(self):
         """
@@ -232,7 +252,7 @@ class Experiment(object):
         # reset remember best extension in case you rerun some experiment
         if self.do_early_stop:
             self.rememberer = RememberBest(self.remember_best_column)
-        if self.loggers == ('print',):
+        if self.loggers == ("print",):
             self.loggers = [Printer()]
         self.epochs_df = pd.DataFrame()
         if self.cuda:
@@ -256,8 +276,7 @@ class Experiment(object):
         first stop.
         """
         datasets = self.datasets
-        datasets['train'] = concatenate_sets([datasets['train'],
-                                             datasets['valid']])
+        datasets["train"] = concatenate_sets([datasets["train"], datasets["valid"]])
 
         self.run_until_stop(datasets, remember_best=True)
 
@@ -278,8 +297,9 @@ class Experiment(object):
             self.monitor_epoch(datasets)
             self.log_epoch()
             if remember_best:
-                self.rememberer.remember_epoch(self.epochs_df, self.model,
-                                               self.optimizer)
+                self.rememberer.remember_epoch(
+                    self.epochs_df, self.model, self.optimizer
+                )
 
         self.iterator.reset_rng()
         while not self.stop_criterion.should_stop(self.epochs_df):
@@ -297,25 +317,25 @@ class Experiment(object):
         remember_best: bool
             Whether to remember parameters if this epoch is best epoch.
         """
-        batch_generator = self.iterator.get_batches(datasets['train'],
-                                                    shuffle=True)
+        batch_generator = self.iterator.get_batches(datasets["train"], shuffle=True)
         start_train_epoch_time = time.time()
         for inputs, targets in batch_generator:
             if self.batch_modifier is not None:
-                inputs, targets = self.batch_modifier.process(inputs,
-                                                              targets)
+                inputs, targets = self.batch_modifier.process(inputs, targets)
             # could happen that batch modifier has removed all inputs...
             if len(inputs) > 0:
                 self.train_batch(inputs, targets)
         end_train_epoch_time = time.time()
-        log.info("Time only for training updates: {:.2f}s".format(
-            end_train_epoch_time - start_train_epoch_time))
+        log.info(
+            "Time only for training updates: {:.2f}s".format(
+                end_train_epoch_time - start_train_epoch_time
+            )
+        )
 
         self.monitor_epoch(datasets)
         self.log_epoch()
         if remember_best:
-            self.rememberer.remember_epoch(self.epochs_df, self.model,
-                                           self.optimizer)
+            self.rememberer.remember_epoch(self.epochs_df, self.model, self.optimizer)
 
     def train_batch(self, inputs, targets):
         """
@@ -366,7 +386,7 @@ class Experiment(object):
                 target_vars = target_vars.cuda()
             outputs = self.model(input_vars)
             loss = self.loss_function(outputs, target_vars)
-            if hasattr(outputs, 'cpu'):
+            if hasattr(outputs, "cpu"):
                 outputs = outputs.cpu().data.numpy()
             else:
                 # assume it is iterable
@@ -395,7 +415,7 @@ class Experiment(object):
             if result_dict is not None:
                 result_dicts_per_monitor[m].update(result_dict)
         for setname in datasets:
-            assert setname in ['train', 'valid', 'test']
+            assert setname in ["train", "valid", "test"]
             dataset = datasets[setname]
             all_preds = []
             all_losses = []
@@ -409,9 +429,14 @@ class Experiment(object):
                 all_targets.append(batch[1])
 
             for m in self.monitors:
-                result_dict = m.monitor_set(setname, all_preds, all_losses,
-                                            all_batch_sizes, all_targets,
-                                            dataset)
+                result_dict = m.monitor_set(
+                    setname,
+                    all_preds,
+                    all_losses,
+                    all_batch_sizes,
+                    all_targets,
+                    dataset,
+                )
                 if result_dict is not None:
                     result_dicts_per_monitor[m].update(result_dict)
         row_dict = OrderedDict()
@@ -437,10 +462,12 @@ class Experiment(object):
         # also remember old monitor chans, will be put back into
         # monitor chans after experiment finished
         self.before_stop_df = deepcopy(self.epochs_df)
-        self.rememberer.reset_to_best_model(self.epochs_df, self.model,
-                                            self.optimizer)
-        loss_to_reach = float(self.epochs_df['train_loss'].iloc[-1])
-        self.stop_criterion = Or(stop_criteria=[
-            MaxEpochs(max_epochs=self.rememberer.best_epoch * 2),
-            ColumnBelow(column_name='valid_loss', target_value=loss_to_reach)])
+        self.rememberer.reset_to_best_model(self.epochs_df, self.model, self.optimizer)
+        loss_to_reach = float(self.epochs_df["train_loss"].iloc[-1])
+        self.stop_criterion = Or(
+            stop_criteria=[
+                MaxEpochs(max_epochs=self.rememberer.best_epoch * 2),
+                ColumnBelow(column_name="valid_loss", target_value=loss_to_reach),
+            ]
+        )
         log.info("Train loss to reach {:.5f}".format(loss_to_reach))

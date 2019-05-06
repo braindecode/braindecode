@@ -1,5 +1,6 @@
 import torch as th
 
+
 def square(x):
     return x * x
 

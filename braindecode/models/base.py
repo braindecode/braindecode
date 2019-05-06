@@ -69,12 +69,7 @@ class BaseModel(object):
             self.compiled = False
 
     def compile(
-        self,
-        loss,
-        optimizer,
-        extra_monitors=None,
-        cropped=False,
-        iterator_seed=0,
+        self, loss, optimizer, extra_monitors=None, cropped=False, iterator_seed=0
     ):
         """
         Setup training for this model.
@@ -184,8 +179,7 @@ class BaseModel(object):
             self.network.eval()
             test_input = np_to_var(
                 np.ones(
-                    (1, train_X.shape[1], input_time_length)
-                    + train_X.shape[3:],
+                    (1, train_X.shape[1], input_time_length) + train_X.shape[3:],
                     dtype=np.float32,
                 )
             )
@@ -213,9 +207,7 @@ class BaseModel(object):
         train_set = SignalAndTarget(train_X, train_y)
         optimizer = self.optimizer
         if scheduler is not None:
-            assert (
-                scheduler == "cosine"
-            ), "Supply either 'cosine' or None as scheduler."
+            assert scheduler == "cosine", "Supply either 'cosine' or None as scheduler."
             n_updates_per_epoch = sum(
                 [1 for _ in self.iterator.get_batches(train_set, shuffle=True)]
             )
@@ -226,9 +218,7 @@ class BaseModel(object):
             if optimizer.__class__.__name__ == "AdamW":
                 schedule_weight_decay = True
             optimizer = ScheduledOptimizer(
-                scheduler,
-                self.optimizer,
-                schedule_weight_decay=schedule_weight_decay,
+                scheduler, self.optimizer, schedule_weight_decay=schedule_weight_decay
             )
         loss_function = self.loss
         if self.cropped:
@@ -361,9 +351,7 @@ class BaseModel(object):
             pred_labels = np.array(pred_labels)
         return pred_labels
 
-    def predict_outs(
-        self, X, threshold_for_binary_case=None, individual_crops=False
-    ):
+    def predict_outs(self, X, threshold_for_binary_case=None, individual_crops=False):
         """
         Predict raw outputs of the network for given input.
 
@@ -385,9 +373,7 @@ class BaseModel(object):
             assert self.cropped, "Cropped labels only for cropped decoding"
         all_preds = []
         with th.no_grad():
-            for b_X, _ in self.iterator.get_batches(
-                SignalAndTarget(X, X), False
-            ):
+            for b_X, _ in self.iterator.get_batches(SignalAndTarget(X, X), False):
                 b_X_var = np_to_var(b_X)
                 if self.cuda:
                     b_X_var = b_X_var.cuda()
@@ -397,9 +383,7 @@ class BaseModel(object):
                 all_preds, self.iterator.input_time_length, X
             )
             if not individual_crops:
-                outs_per_trial = np.array(
-                    [np.mean(o, axis=1) for o in outs_per_trial]
-                )
+                outs_per_trial = np.array([np.mean(o, axis=1) for o in outs_per_trial])
         else:
             outs_per_trial = np.concatenate(all_preds)
         return outs_per_trial

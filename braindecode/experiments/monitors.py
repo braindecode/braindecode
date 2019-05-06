@@ -16,15 +16,16 @@ class MisclassMonitor(object):
         0.5 for sigmoid outputs, or np.log(0.5) for log sigmoid outputs
     """
 
-    def __init__(self, col_suffix='misclass', threshold_for_binary_case=None):
+    def __init__(self, col_suffix="misclass", threshold_for_binary_case=None):
         self.col_suffix = col_suffix
         self.threshold_for_binary_case = threshold_for_binary_case
 
-    def monitor_epoch(self, ):
+    def monitor_epoch(self,):
         return
 
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
+    def monitor_set(
+        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+    ):
         all_pred_labels = []
         all_target_labels = []
         for i_batch in range(len(all_batch_sizes)):
@@ -43,7 +44,8 @@ class MisclassMonitor(object):
             else:
                 assert self.threshold_for_binary_case is not None, (
                     "In case of only one output, please supply the "
-                    "threshold_for_binary_case parameter")
+                    "threshold_for_binary_case parameter"
+                )
                 # binary classification case... assume logits
                 pred_labels = np.int32(preds > self.threshold_for_binary_case)
             # now examples x time or examples
@@ -55,10 +57,12 @@ class MisclassMonitor(object):
             elif targets.ndim < pred_labels.ndim:
                 # targets may not have time dimension,
                 # in that case just repeat targets on time dimension
-                extra_dim = pred_labels.ndim -1
-                targets = np.repeat(np.expand_dims(targets, extra_dim),
-                                    pred_labels.shape[extra_dim],
-                                    extra_dim)
+                extra_dim = pred_labels.ndim - 1
+                targets = np.repeat(
+                    np.expand_dims(targets, extra_dim),
+                    pred_labels.shape[extra_dim],
+                    extra_dim,
+                )
             assert targets.shape == pred_labels.shape
             all_target_labels.extend(targets)
         all_pred_labels = np.array(all_pred_labels)
@@ -70,8 +74,7 @@ class MisclassMonitor(object):
         return {column_name: float(misclass)}
 
 
-def compute_pred_labels_from_trial_preds(
-        all_preds, threshold_for_binary_case=None):
+def compute_pred_labels_from_trial_preds(all_preds, threshold_for_binary_case=None):
     all_pred_labels = []
     for i_batch in range(len(all_preds)):
         preds = all_preds[i_batch]
@@ -89,7 +92,8 @@ def compute_pred_labels_from_trial_preds(
         else:
             assert threshold_for_binary_case is not None, (
                 "In case of only one output, please supply the "
-                "threshold_for_binary_case parameter")
+                "threshold_for_binary_case parameter"
+            )
             # binary classification case... assume logits
             pred_labels = np.int32(preds > threshold_for_binary_case)
         # now examples x time or examples
@@ -108,14 +112,16 @@ class AveragePerClassMisclassMonitor(object):
     col_suffix: str
         Name of the column in the monitoring output.
     """
-    def __init__(self, col_suffix='misclass'):
+
+    def __init__(self, col_suffix="misclass"):
         self.col_suffix = col_suffix
 
-    def monitor_epoch(self, ):
+    def monitor_epoch(self,):
         return
 
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
+    def monitor_set(
+        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+    ):
         all_pred_labels = []
         all_target_labels = []
         for i_batch in range(len(all_batch_sizes)):
@@ -140,9 +146,11 @@ class AveragePerClassMisclassMonitor(object):
                 # targets may not have time dimension,
                 # in that case just repeat targets on time dimension
                 extra_dim = pred_labels.ndim - 1
-                targets = np.repeat(np.expand_dims(targets, extra_dim),
-                                    pred_labels.shape[extra_dim],
-                                    extra_dim)
+                targets = np.repeat(
+                    np.expand_dims(targets, extra_dim),
+                    pred_labels.shape[extra_dim],
+                    extra_dim,
+                )
             assert targets.shape == pred_labels.shape
             all_target_labels.extend(targets)
         all_pred_labels = np.array(all_pred_labels)
@@ -151,8 +159,7 @@ class AveragePerClassMisclassMonitor(object):
         acc_per_class = []
         for i_class in range(n_classes):
             mask = all_target_labels == i_class
-            acc = np.mean(all_pred_labels[mask] ==
-                          all_target_labels[mask])
+            acc = np.mean(all_pred_labels[mask] == all_target_labels[mask])
             acc_per_class.append(acc)
         misclass = 1 - np.mean(acc_per_class)
         column_name = "{:s}_{:s}".format(setname, self.col_suffix)
@@ -163,18 +170,18 @@ class LossMonitor(object):
     """
     Monitor the examplewise loss.
     """
+
     def monitor_epoch(self,):
         return
 
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
-        batch_weights = np.array(all_batch_sizes)/ float(
-            np.sum(all_batch_sizes))
+    def monitor_set(
+        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+    ):
+        batch_weights = np.array(all_batch_sizes) / float(np.sum(all_batch_sizes))
         loss_per_batch = [np.mean(loss) for loss in all_losses]
         mean_loss = np.sum(batch_weights * loss_per_batch)
         column_name = "{:s}_loss".format(setname)
         return {column_name: mean_loss}
-
 
 
 class CroppedTrialMisclassMonitor(object):
@@ -186,51 +193,56 @@ class CroppedTrialMisclassMonitor(object):
     input_time_length: int
         Temporal length of one input to the model.
     """
+
     def __init__(self, input_time_length=None):
         self.input_time_length = input_time_length
 
     def monitor_epoch(self,):
         return
 
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
+    def monitor_set(
+        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+    ):
         """Assuming one hot encoding for now"""
         assert self.input_time_length is not None, "Need to know input time length..."
         # First case that each trial only has a single label
-        if not hasattr(dataset.y[0], '__len__'):
+        if not hasattr(dataset.y[0], "__len__"):
             all_pred_labels = compute_trial_labels_from_crop_preds(
-                all_preds, self.input_time_length, dataset.X)
+                all_preds, self.input_time_length, dataset.X
+            )
             assert all_pred_labels.shape == dataset.y.shape
             all_trial_labels = dataset.y
         else:
-            all_trial_labels, all_pred_labels = (
-                self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds))
+            all_trial_labels, all_pred_labels = self._compute_trial_pred_labels_from_cnt_y(
+                dataset, all_preds
+            )
         assert all_pred_labels.shape == all_trial_labels.shape
         misclass = 1 - np.mean(all_pred_labels == all_trial_labels)
         column_name = "{:s}_misclass".format(setname)
         return {column_name: float(misclass)}
 
-    def _compute_pred_labels(self, dataset, all_preds, ):
+    def _compute_pred_labels(self, dataset, all_preds):
         preds_per_trial = compute_preds_per_trial_from_crops(
-            all_preds, self.input_time_length, dataset.X)
-        all_pred_labels = [np.argmax(np.mean(p, axis=1))
-                           for p in preds_per_trial]
+            all_preds, self.input_time_length, dataset.X
+        )
+        all_pred_labels = [np.argmax(np.mean(p, axis=1)) for p in preds_per_trial]
         all_pred_labels = np.array(all_pred_labels)
         assert all_pred_labels.shape == dataset.y.shape
         return all_pred_labels
 
-    def _compute_trial_pred_labels_from_cnt_y(self, dataset, all_preds, ):
+    def _compute_trial_pred_labels_from_cnt_y(self, dataset, all_preds):
         # Todo: please test this
         # we only want the preds that are for the same labels as the last label in y
         # (there might be parts of other class-data at start, for trialwise misclass we assume
         # they are contained in other trials at the end...)
         preds_per_trial = compute_preds_per_trial_from_crops(
-            all_preds, self.input_time_length, dataset.X)
+            all_preds, self.input_time_length, dataset.X
+        )
         trial_labels = []
         trial_pred_labels = []
         for trial_pred, trial_y in zip(preds_per_trial, dataset.y):
             # first cut to the part actually having predictions
-            trial_y = trial_y[-trial_pred.shape[1]:]
+            trial_y = trial_y[-trial_pred.shape[1] :]
             wanted_class = trial_y[-1]
             trial_labels.append(wanted_class)
             # extract the first marker different from the wanted class
@@ -268,15 +280,14 @@ def compute_trial_labels_from_crop_preds(all_preds, input_time_length, X):
     """
 
     preds_per_trial = compute_preds_per_trial_from_crops(
-        all_preds, input_time_length, X)
-    pred_labels_per_trial = [np.argmax(np.mean(p, axis=1))
-                       for p in preds_per_trial]
+        all_preds, input_time_length, X
+    )
+    pred_labels_per_trial = [np.argmax(np.mean(p, axis=1)) for p in preds_per_trial]
     pred_labels_per_trial = np.array(pred_labels_per_trial)
     return pred_labels_per_trial
 
 
-def compute_preds_per_trial_from_crops(all_preds, input_time_length,
-                                        X, ):
+def compute_preds_per_trial_from_crops(all_preds, input_time_length, X):
     """
     Compute predictions per trial from predictions for crops.
     
@@ -297,15 +308,14 @@ def compute_preds_per_trial_from_crops(all_preds, input_time_length,
     """
     n_preds_per_input = all_preds[0].shape[2]
     n_receptive_field = input_time_length - n_preds_per_input + 1
-    n_preds_per_trial = [trial.shape[1] - n_receptive_field + 1
-                         for trial in X]
+    n_preds_per_trial = [trial.shape[1] - n_receptive_field + 1 for trial in X]
     preds_per_trial = compute_preds_per_trial_from_n_preds_per_trial(
-        all_preds, n_preds_per_trial)
+        all_preds, n_preds_per_trial
+    )
     return preds_per_trial
 
 
-def compute_preds_per_trial_from_n_preds_per_trial(
-        all_preds, n_preds_per_trial):
+def compute_preds_per_trial_from_n_preds_per_trial(all_preds, n_preds_per_trial):
     """
     Compute predictions per trial from predictions for crops.
 
@@ -336,8 +346,7 @@ def compute_preds_per_trial_from_n_preds_per_trial(
             # in the block.
             # That can happen since final block of a trial can overlap
             # with block before so we can have some redundant preds.
-            pred_samples = all_preds_arr[i_pred_block,:,
-                           -n_needed_preds:]
+            pred_samples = all_preds_arr[i_pred_block, :, -n_needed_preds:]
             preds_this_trial.append(pred_samples)
             n_needed_preds -= pred_samples.shape[1]
             i_pred_block += 1
@@ -346,8 +355,8 @@ def compute_preds_per_trial_from_n_preds_per_trial(
         preds_per_trial.append(preds_this_trial)
     assert i_pred_block == len(all_preds_arr), (
         "Expect that all prediction forward passes are needed, "
-        "used {:d}, existing {:d}".format(
-            i_pred_block, len(all_preds_arr)))
+        "used {:d}, existing {:d}".format(i_pred_block, len(all_preds_arr))
+    )
     return preds_per_trial
 
 
@@ -357,6 +366,7 @@ class RuntimeMonitor(object):
     
     First epoch will have runtime 0.
     """
+
     def __init__(self):
         self.last_call_time = None
 
@@ -367,8 +377,9 @@ class RuntimeMonitor(object):
             self.last_call_time = cur_time
         epoch_runtime = cur_time - self.last_call_time
         self.last_call_time = cur_time
-        return {'runtime': epoch_runtime}
+        return {"runtime": epoch_runtime}
 
-    def monitor_set(self, setname, all_preds, all_losses,
-                    all_batch_sizes, all_targets, dataset):
+    def monitor_set(
+        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+    ):
         return {}

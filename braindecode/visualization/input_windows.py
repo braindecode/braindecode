@@ -1,15 +1,18 @@
 import numpy as np
 import torch
 
+
 def calc_Hout(Hin, kernel, stride, dilation):
-    Hout = np.floor((Hin-dilation*(kernel-1)-1)/stride+1)
+    Hout = np.floor((Hin - dilation * (kernel - 1) - 1) / stride + 1)
     return Hout
 
+
 def calc_Hin(Hout, kernel, stride, dilation):
-    Hin = np.ceil((Hout-1)*stride+1+dilation*(kernel-1))
+    Hin = np.ceil((Hout - 1) * stride + 1 + dilation * (kernel - 1))
     return Hin
 
-def calc_receptive_field_size(model,layer_ind,start_receptive_field=np.ones((2))):
+
+def calc_receptive_field_size(model, layer_ind, start_receptive_field=np.ones((2))):
     """Calculate receptive field size for unit in specific layer of the network
     Only tested for 2d convolutions/poolings. Dimshuffle operations may lead to a wrong result
 
@@ -30,16 +33,25 @@ def calc_receptive_field_size(model,layer_ind,start_receptive_field=np.ones((2))
     receptive_field = start_receptive_field
     children = list(model.children())[:layer_ind][::-1]
     for child in children:
-        if isinstance(child,torch.nn.Sequential):
-            receptive_field = calc_receptive_field(child,-1)
-        elif isinstance(child,torch.nn.Conv2d) or isinstance(child,torch.nn.MaxPool2d) or isinstance(child,torch.nn.AvgPool2d):
-            receptive_field = calc_Hin(receptive_field,np.asarray(child.kernel_size),
-                                       np.asarray(child.stride), np.asarray(child.dilation))
+        if isinstance(child, torch.nn.Sequential):
+            receptive_field = calc_receptive_field(child, -1)
+        elif (
+            isinstance(child, torch.nn.Conv2d)
+            or isinstance(child, torch.nn.MaxPool2d)
+            or isinstance(child, torch.nn.AvgPool2d)
+        ):
+            receptive_field = calc_Hin(
+                receptive_field,
+                np.asarray(child.kernel_size),
+                np.asarray(child.stride),
+                np.asarray(child.dilation),
+            )
 
     receptive_field_size = receptive_field.astype(np.int)
     return receptive_field_size
 
-def get_max_act_index(activations,unique_per_input=True,n_units=None):
+
+def get_max_act_index(activations, unique_per_input=True, n_units=None):
     """Retrieve index of maximum activation in a feature map
 
     Parameters
@@ -58,32 +70,34 @@ def get_max_act_index(activations,unique_per_input=True,n_units=None):
     units_activation : numpy array
         Activation of the units
     """
-    assert len(activations.shape)==4,"Has to be 4d array"
-    assert activations.shape[1] == 1,"Can only handle individual filter activations"
+    assert len(activations.shape) == 4, "Has to be 4d array"
+    assert activations.shape[1] == 1, "Can only handle individual filter activations"
 
     activations_sorted = activations.argsort(axis=None)[::-1]
-    activations_sorted_ind = np.unravel_index(activations_sorted,activations.shape)
+    activations_sorted_ind = np.unravel_index(activations_sorted, activations.shape)
     unique_ind = np.arange(len(activations_sorted_ind[0]))
     if unique_per_input:
-        a,unique_ind = np.unique(activations_sorted_ind[0],return_index=True)
+        a, unique_ind = np.unique(activations_sorted_ind[0], return_index=True)
         unique_ind = sorted(unique_ind)
 
-    if n_units==None:
+    if n_units == None:
         n_units = len(unique_ind)
     activations_sorted_ind = np.asarray(activations_sorted_ind).T
-    units = activations_sorted_ind[unique_ind[:n_units],:].astype(np.int)
+    units = activations_sorted_ind[unique_ind[:n_units], :].astype(np.int)
     units_activation = activations.flat[activations_sorted[unique_ind[:n_units]]]
 
-    return units,units_activation
+    return units, units_activation
 
-def calc_receptive_field_for_units_2d(units,receptive_field_size):
-    recptive_field_tmp = receptive_field_size[np.newaxis,np.newaxis,:,:]
-    start_inds = units[:,0,]
-    stop_inds = start_inds+receptive_field_tmp
 
-    return start_inds,stop_inds
+def calc_receptive_field_for_units_2d(units, receptive_field_size):
+    recptive_field_tmp = receptive_field_size[np.newaxis, np.newaxis, :, :]
+    start_inds = units[:, 0]
+    stop_inds = start_inds + receptive_field_tmp
 
-def get_input_windows_from_units_2d(inputs,units,receptive_field_size):
+    return start_inds, stop_inds
+
+
+def get_input_windows_from_units_2d(inputs, units, receptive_field_size):
     """Cut input windows in receptive field of specified units from inputs
 
     Parameters
@@ -101,15 +115,27 @@ def get_input_windows_from_units_2d(inputs,units,receptive_field_size):
         windows : numpy array
             Cut input windows
     """
-    windows = np.zeros((units.shape[0],inputs.shape[1],receptive_field_size[0],receptive_field_size[1]))
-    for i,unit in enumerate(units):
-        windows[i] = inputs[unit[0],:,
-                            unit[2]:unit[2]+receptive_field_size[0],
-                            unit[3]:unit[3]+receptive_field_size[1]]
+    windows = np.zeros(
+        (
+            units.shape[0],
+            inputs.shape[1],
+            receptive_field_size[0],
+            receptive_field_size[1],
+        )
+    )
+    for i, unit in enumerate(units):
+        windows[i] = inputs[
+            unit[0],
+            :,
+            unit[2] : unit[2] + receptive_field_size[0],
+            unit[3] : unit[3] + receptive_field_size[1],
+        ]
     return windows
 
 
-def most_activating_input_windows(inputs,activations,receptive_field_size,top_percentage=0.05):
+def most_activating_input_windows(
+    inputs, activations, receptive_field_size, top_percentage=0.05
+):
     """Get the input windows that evoked highest activation in a feature map
 
     Parameters
@@ -128,17 +154,27 @@ def most_activating_input_windows(inputs,activations,receptive_field_size,top_pe
     input_windows : numpy array
         [FxUxCxWx1] Returns `U` (resulting from top_percentage) input windows for each filter
     """
-    n_units = int(inputs.shape[0]*top_percentage)
-    input_windows = np.zeros((activations.shape[1],n_units,inputs.shape[1],
-                              receptive_field_size[0],receptive_field_size[1]))
+    n_units = int(inputs.shape[0] * top_percentage)
+    input_windows = np.zeros(
+        (
+            activations.shape[1],
+            n_units,
+            inputs.shape[1],
+            receptive_field_size[0],
+            receptive_field_size[1],
+        )
+    )
     for filt in range(activations.shape[1]):
-        units,w = get_max_act_index(activations[:,[filt]],n_units=n_units)
+        units, w = get_max_act_index(activations[:, [filt]], n_units=n_units)
         w = w.squeeze()
-        windows_tmp = get_input_windows_from_units_2d(inputs,units,receptive_field_size)
+        windows_tmp = get_input_windows_from_units_2d(
+            inputs, units, receptive_field_size
+        )
         input_windows[filt] = windows_tmp
     return input_windows
 
-def activation_reverse_correlation(inputs,activations,receptive_field_size):
+
+def activation_reverse_correlation(inputs, activations, receptive_field_size):
     """Get reverse correlations for filters
 
     Parameters
@@ -155,16 +191,22 @@ def activation_reverse_correlation(inputs,activations,receptive_field_size):
     reverse_corr : numpy array
         [FxCxWx1] Reverse correlations over all input windows for each filter
     """
-    reverse_corr = np.zeros((activations.shape[1],inputs.shape[1],
-                            receptive_field_size[0],receptive_field_size[1]))
+    reverse_corr = np.zeros(
+        (
+            activations.shape[1],
+            inputs.shape[1],
+            receptive_field_size[0],
+            receptive_field_size[1],
+        )
+    )
     for filt in range(activations.shape[1]):
-        act_tmp = activations[:,filt]
+        act_tmp = activations[:, filt]
         divisor = 0
         for start_ind in range(activations.shape[2]):
-            end_ind = start_ind+receptive_field_size[0]
-            w = act_tmp[:,[start_ind],:,np.newaxis]
-            windows_tmp = inputs[:,:,start_ind:end_ind]
-            reverse_corr[filt] += np.sum(w*windows_tmp,axis=0)
+            end_ind = start_ind + receptive_field_size[0]
+            w = act_tmp[:, [start_ind], :, np.newaxis]
+            windows_tmp = inputs[:, :, start_ind:end_ind]
+            reverse_corr[filt] += np.sum(w * windows_tmp, axis=0)
             divisor += np.sum(np.abs(w))
         reverse_corr[filt] /= divisor
     return reverse_corr

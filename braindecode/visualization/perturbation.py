@@ -8,7 +8,7 @@ from braindecode.util import wrap_reshape_apply_fn, corr
 log = logging.getLogger(__name__)
 
 
-def phase_perturbation(amps,phases,rng=None):
+def phase_perturbation(amps, phases, rng=None):
     """Takes amps and phases of BxCxF with B input, C channels, F frequencies
     Shifts spectral phases randomly U(-pi,pi) for input and frequencies, but same for all channels
 
@@ -33,20 +33,21 @@ def phase_perturbation(amps,phases,rng=None):
     if rng is None:
         rng = np.random.RandomState()
     noise_shape = list(phases.shape)
-    noise_shape[1] = 1 # Do not sample noise for channels individually
+    noise_shape[1] = 1  # Do not sample noise for channels individually
 
     # Sample phase perturbation noise
-    phase_noise = rng.uniform(-np.pi,np.pi,noise_shape).astype(np.float32)
-    phase_noise_rep = phase_noise.repeat(phases.shape[1],axis=1)
+    phase_noise = rng.uniform(-np.pi, np.pi, noise_shape).astype(np.float32)
+    phase_noise_rep = phase_noise.repeat(phases.shape[1], axis=1)
     # Apply noise to inputs
-    phases_pert = phases+phase_noise_rep
-    phases_pert[phases_pert<-np.pi] += 2*np.pi
-    phases_pert[phases_pert>np.pi] -= 2*np.pi
+    phases_pert = phases + phase_noise_rep
+    phases_pert[phases_pert < -np.pi] += 2 * np.pi
+    phases_pert[phases_pert > np.pi] -= 2 * np.pi
 
     pert_vals = np.abs(phase_noise)
-    return amps,phases_pert,pert_vals
+    return amps, phases_pert, pert_vals
 
-def amp_perturbation_additive(amps,phases,rng=None):
+
+def amp_perturbation_additive(amps, phases, rng=None):
     """Takes amplitudes and phases of BxCxF with B input, C channels, F frequencies
     Adds additive noise N(0,0.02) to amplitudes
 
@@ -70,13 +71,14 @@ def amp_perturbation_additive(amps,phases,rng=None):
     """
     if rng is None:
         rng = np.random.RandomState()
-    amp_noise = rng.normal(0,1,amps.shape).astype(np.float32)
-    amps_pert = amps+amp_noise
-    amps_pert[amps_pert<0] = 0
-    amp_noise = amps_pert-amps
-    return amps_pert,phases,amp_noise
+    amp_noise = rng.normal(0, 1, amps.shape).astype(np.float32)
+    amps_pert = amps + amp_noise
+    amps_pert[amps_pert < 0] = 0
+    amp_noise = amps_pert - amps
+    return amps_pert, phases, amp_noise
 
-def amp_perturbation_multiplicative(amps,phases,rng=None):
+
+def amp_perturbation_multiplicative(amps, phases, rng=None):
     """Takes amplitude and phases of BxCxF with B input, C channels, F frequencies
     Adds multiplicative noise N(1,0.02) to amplitudes
 
@@ -100,12 +102,13 @@ def amp_perturbation_multiplicative(amps,phases,rng=None):
     """
     if rng is None:
         rng = np.random.RandomState()
-    amp_noise = rng.normal(1,0.02,amps.shape).astype(np.float32)
-    amps_pert = amps*amp_noise
-    amps_pert[amps_pert<0] = 0
-    return amps_pert,phases,amp_noise
+    amp_noise = rng.normal(1, 0.02, amps.shape).astype(np.float32)
+    amps_pert = amps * amp_noise
+    amps_pert[amps_pert < 0] = 0
+    return amps_pert, phases, amp_noise
 
-def correlate_feature_maps(x,y):
+
+def correlate_feature_maps(x, y):
     """Takes two activation matrices of the form Bx[F]xT where B is batch size, F number of filters (optional) and T time points
     Returns correlations of the corresponding activations over T
 
@@ -122,25 +125,26 @@ def correlate_feature_maps(x,y):
     """
     shape_x = x.shape
     shape_y = y.shape
-    assert np.array_equal(shape_x,shape_y)
-    assert len(shape_x)<4
-    x = x.reshape((-1,shape_x[-1]))
-    y = y.reshape((-1,shape_y[-1]))
+    assert np.array_equal(shape_x, shape_y)
+    assert len(shape_x) < 4
+    x = x.reshape((-1, shape_x[-1]))
+    y = y.reshape((-1, shape_y[-1]))
 
-    x = (x-x.mean(axis=1,keepdims=True))/x.std(axis=1,keepdims=True)
-    y = (y-y.mean(axis=1,keepdims=True))/y.std(axis=1,keepdims=True)
+    x = (x - x.mean(axis=1, keepdims=True)) / x.std(axis=1, keepdims=True)
+    y = (y - y.mean(axis=1, keepdims=True)) / y.std(axis=1, keepdims=True)
 
-    tmp_corr = x*y
+    tmp_corr = x * y
     corr_ = tmp_corr.sum(axis=1)
-    #corr_ = np.zeros((x.shape[0]))
-    #for i in range(x.shape[0]):
+    # corr_ = np.zeros((x.shape[0]))
+    # for i in range(x.shape[0]):
     #    # Correlation of standardized variables
     #    corr_[i] = np.correlate((x[i]-x[i].mean())/x[i].std(),(y[i]-y[i].mean())/y[i].std())
 
     correlations = corr_.reshape(*shape_x[:-1])
     return correlations
 
-def mean_diff_feature_maps(x,y):
+
+def mean_diff_feature_maps(x, y):
     """Takes two activation matrices of the form BxFxT where B is batch size, F number of filters and T time points
     Returns mean difference between feature map activations
 
@@ -155,12 +159,20 @@ def mean_diff_feature_maps(x,y):
     mean_diff : numpy array
         Mean difference between `x` and `y` Bx[F]
     """
-    mean_diff = np.mean(x-y,axis=2)
+    mean_diff = np.mean(x - y, axis=2)
     return mean_diff
 
-def spectral_perturbation_correlation(pert_fn, diff_fn, pred_fn, n_layers, inputs, n_iterations,
-                                                  batch_size=30,
-                                                  seed=((2017, 7, 10))):
+
+def spectral_perturbation_correlation(
+    pert_fn,
+    diff_fn,
+    pred_fn,
+    n_layers,
+    inputs,
+    n_iterations,
+    batch_size=30,
+    seed=((2017, 7, 10)),
+):
     """Calculates perturbation correlations for layers in network by perturbing either amplitudes or phases
 
     Parameters
@@ -192,65 +204,82 @@ def spectral_perturbation_correlation(pert_fn, diff_fn, pred_fn, n_layers, input
 
     # Get batch indeces
     batch_inds = get_balanced_batches(
-        n_trials=len(inputs), rng=rng, shuffle=False, batch_size=batch_size)
+        n_trials=len(inputs), rng=rng, shuffle=False, batch_size=batch_size
+    )
     # Calculate layer activations and reshape
     log.info("Compute original predictions...")
-    orig_preds = [pred_fn(inputs[inds])
-                  for inds in batch_inds]
+    orig_preds = [pred_fn(inputs[inds]) for inds in batch_inds]
     use_shape = []
     for l in range(n_layers):
         tmp = list(orig_preds[0][l].shape)
-        tmp.extend([1]*(4-len(tmp)))
+        tmp.extend([1] * (4 - len(tmp)))
         tmp[0] = len(inputs)
         use_shape.append(tmp)
-    orig_preds_layers = [np.concatenate([orig_preds[o][l] for o in range(len(orig_preds))]).reshape(use_shape[l])
-                        for l in range(n_layers)]
+    orig_preds_layers = [
+        np.concatenate([orig_preds[o][l] for o in range(len(orig_preds))]).reshape(
+            use_shape[l]
+        )
+        for l in range(n_layers)
+    ]
 
     # Compute FFT of inputs
     fft_input = np.fft.rfft(inputs, n=inputs.shape[2], axis=2)
     amps = np.abs(fft_input)
     phases = np.angle(fft_input)
 
-    pert_corrs = [0]*n_layers
+    pert_corrs = [0] * n_layers
     for i in range(n_iterations):
         log.info("Iteration {:d}...".format(i))
         log.info("Sample perturbation...")
-        amps_pert,phases_pert,pert_vals = pert_fn(amps,phases,rng=rng)
+        amps_pert, phases_pert, pert_vals = pert_fn(amps, phases, rng=rng)
 
         # Compute perturbed inputs
         log.info("Compute perturbed complex inputs...")
-        fft_pert = amps_pert*np.exp(1j*phases_pert)
+        fft_pert = amps_pert * np.exp(1j * phases_pert)
         log.info("Compute perturbed real inputs...")
-        inputs_pert = np.fft.irfft(fft_pert, n=inputs.shape[2], axis=2).astype(np.float32)
+        inputs_pert = np.fft.irfft(fft_pert, n=inputs.shape[2], axis=2).astype(
+            np.float32
+        )
 
         # Calculate layer activations for perturbed inputs
         log.info("Compute new predictions...")
-        new_preds = [pred_fn(inputs_pert[inds])
-                     for inds in batch_inds]
-        new_preds_layers = [np.concatenate([new_preds[o][l] for o in range(len(new_preds))]).reshape(use_shape[l])
-                        for l in range(n_layers)]
+        new_preds = [pred_fn(inputs_pert[inds]) for inds in batch_inds]
+        new_preds_layers = [
+            np.concatenate([new_preds[o][l] for o in range(len(new_preds))]).reshape(
+                use_shape[l]
+            )
+            for l in range(n_layers)
+        ]
 
         for l in range(n_layers):
             log.info("Layer {:d}...".format(l))
             # Calculate difference of original and perturbed feature map activations
             log.info("Compute activation difference...")
-            preds_diff = diff_fn(new_preds_layers[l][:,:,:,0],orig_preds_layers[l][:,:,:,0])
+            preds_diff = diff_fn(
+                new_preds_layers[l][:, :, :, 0], orig_preds_layers[l][:, :, :, 0]
+            )
 
             # Calculate feature map differences with perturbations
             log.info("Compute correlation...")
-            pert_corrs_tmp = wrap_reshape_apply_fn(corr,
-                                                   pert_vals[:,:,:,0],preds_diff,
-                                                   axis_a=(0,), axis_b=(0))
+            pert_corrs_tmp = wrap_reshape_apply_fn(
+                corr, pert_vals[:, :, :, 0], preds_diff, axis_a=(0,), axis_b=(0)
+            )
             pert_corrs[l] += pert_corrs_tmp
 
-    pert_corrs = [pert_corrs[l]/n_iterations for l in range(n_layers)] #mean over iterations
+    pert_corrs = [
+        pert_corrs[l] / n_iterations for l in range(n_layers)
+    ]  # mean over iterations
     return pert_corrs
 
 
-def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
-                                              perturb_fn=amp_perturbation_additive,
-                                              batch_size=30,
-                                              seed=((2017, 7, 10))):
+def compute_amplitude_prediction_correlations(
+    pred_fn,
+    examples,
+    n_iterations,
+    perturb_fn=amp_perturbation_additive,
+    batch_size=30,
+    seed=((2017, 7, 10)),
+):
     """
     Perturb input amplitudes and compute correlation between amplitude
     perturbations and prediction changes when pushing perturbed input through
@@ -290,8 +319,15 @@ def compute_amplitude_prediction_correlations(pred_fn, examples, n_iterations,
        Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     """
     pred_fn_new = lambda x: [pred_fn(x)]
-    pred_corrs = spectral_perturbation_correlation(perturb_fn, mean_diff_feature_maps,
-        pred_fn_new, 1, examples, n_iterations,
-        batch_size=batch_size, seed=seed)
+    pred_corrs = spectral_perturbation_correlation(
+        perturb_fn,
+        mean_diff_feature_maps,
+        pred_fn_new,
+        1,
+        examples,
+        n_iterations,
+        batch_size=batch_size,
+        seed=seed,
+    )
 
     return pred_corrs[0]

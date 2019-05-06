@@ -4,8 +4,7 @@ import numpy as np
 import random
 
 
-def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False,
-              **tensor_kwargs):
+def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
     """
     Convenience function to transform numpy array to `torch.Tensor`.
 
@@ -25,7 +24,7 @@ def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False,
     -------
     var: `torch.Tensor`
     """
-    if not hasattr(X, '__len__'):
+    if not hasattr(X, "__len__"):
         X = [X]
     X = np.asarray(X)
     if dtype is not None:
@@ -42,6 +41,7 @@ def var_to_np(var):
 
     Should work both for CPU and GPU."""
     return var.cpu().data.numpy()
+
 
 def set_random_seeds(seed, cuda):
     """

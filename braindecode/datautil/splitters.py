@@ -38,17 +38,17 @@ def concatenate_two_sets(set_a, set_b):
     new_y = concatenate_np_array_or_add_lists(set_a.y, set_b.y)
     return SignalAndTarget(new_X, new_y)
 
+
 def concatenate_np_array_or_add_lists(a, b):
-    if hasattr(a, 'ndim') and hasattr(b, 'ndim'):
+    if hasattr(a, "ndim") and hasattr(b, "ndim"):
         new = np.concatenate((a, b), axis=0)
     else:
-        if hasattr(a, 'ndim'):
+        if hasattr(a, "ndim"):
             a = a.tolist()
-        if hasattr(b, 'ndim'):
+        if hasattr(b, "ndim"):
             b = b.tolist()
         new = a + b
     return new
-
 
 
 def split_into_two_sets(dataset, first_set_fraction=None, n_first_set=None):
@@ -69,8 +69,9 @@ def split_into_two_sets(dataset, first_set_fraction=None, n_first_set=None):
     first_set, second_set: :class:`.SignalAndTarget`
         The two splitted sets.
     """
-    assert (first_set_fraction is None) != (n_first_set is None), (
-        "Pass either first_set_fraction or n_first_set")
+    assert (first_set_fraction is None) != (
+        n_first_set is None
+    ), "Pass either first_set_fraction or n_first_set"
     if n_first_set is None:
         n_first_set = int(round(len(dataset.X) * first_set_fraction))
     assert n_first_set < len(dataset.X)
@@ -96,7 +97,7 @@ def select_examples(dataset, indices):
     """
     # probably not necessary
     indices = np.array(indices)
-    if hasattr(dataset.X, 'ndim'):
+    if hasattr(dataset.X, "ndim"):
         # numpy array
         new_X = np.array(dataset.X)[indices]
     else:
@@ -127,12 +128,9 @@ def split_into_train_valid_test(dataset, n_folds, i_test_fold, rng=None):
     """
     n_trials = len(dataset.X)
     if n_trials < n_folds:
-        raise ValueError("Less Trials: {:d} than folds: {:d}".format(
-            n_trials, n_folds
-            ))
+        raise ValueError("Less Trials: {:d} than folds: {:d}".format(n_trials, n_folds))
     shuffle = rng is not None
-    folds = get_balanced_batches(
-        n_trials, rng, shuffle, n_batches=n_folds)
+    folds = get_balanced_batches(n_trials, rng, shuffle, n_batches=n_folds)
     test_inds = folds[i_test_fold]
     valid_inds = folds[i_test_fold - 1]
     all_inds = list(range(n_trials))
@@ -140,9 +138,9 @@ def split_into_train_valid_test(dataset, n_folds, i_test_fold, rng=None):
     assert np.intersect1d(train_inds, valid_inds).size == 0
     assert np.intersect1d(train_inds, test_inds).size == 0
     assert np.intersect1d(valid_inds, test_inds).size == 0
-    assert np.array_equal(np.sort(
-        np.union1d(train_inds, np.union1d(valid_inds, test_inds))),
-        all_inds)
+    assert np.array_equal(
+        np.sort(np.union1d(train_inds, np.union1d(valid_inds, test_inds))), all_inds
+    )
 
     train_set = select_examples(dataset, train_inds)
     valid_set = select_examples(dataset, valid_inds)
@@ -172,18 +170,14 @@ def split_into_train_test(dataset, n_folds, i_test_fold, rng=None):
     """
     n_trials = len(dataset.X)
     if n_trials < n_folds:
-        raise ValueError("Less Trials: {:d} than folds: {:d}".format(
-            n_trials, n_folds
-        ))
+        raise ValueError("Less Trials: {:d} than folds: {:d}".format(n_trials, n_folds))
     shuffle = rng is not None
-    folds = get_balanced_batches(n_trials, rng, shuffle,
-                                 n_batches=n_folds)
+    folds = get_balanced_batches(n_trials, rng, shuffle, n_batches=n_folds)
     test_inds = folds[i_test_fold]
     all_inds = list(range(n_trials))
     train_inds = np.setdiff1d(all_inds, test_inds)
     assert np.intersect1d(train_inds, test_inds).size == 0
-    assert np.array_equal(np.sort(np.union1d(train_inds, test_inds)),
-                          all_inds)
+    assert np.array_equal(np.sort(np.union1d(train_inds, test_inds)), all_inds)
 
     train_set = select_examples(dataset, train_inds)
     test_set = select_examples(dataset, test_inds)

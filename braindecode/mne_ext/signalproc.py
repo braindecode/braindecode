@@ -25,9 +25,9 @@ def concatenate_raws_with_events(raws):
     """
     # prevent in-place modification of raws[0]
     raws[0] = deepcopy(raws[0])
-    event_lists = [r.info['events'] for r in raws]
+    event_lists = [r.info["events"] for r in raws]
     new_raw, new_events = concatenate_raws(raws, events_list=event_lists)
-    new_raw.info['events'] = new_events
+    new_raw.info["events"] = new_events
     return new_raw
 
 
@@ -47,30 +47,28 @@ def resample_cnt(cnt, new_fs):
         Resampled object.
 
     """
-    if new_fs == cnt.info['sfreq']:
-        log.info(
-            "Just copying data, no resampling, since new sampling rate same.")
+    if new_fs == cnt.info["sfreq"]:
+        log.info("Just copying data, no resampling, since new sampling rate same.")
         return deepcopy(cnt)
     log.warning("This is not causal, uses future data....")
-    log.info("Resampling from {:f} to {:f} Hz.".format(
-        cnt.info['sfreq'], new_fs
-    ))
+    log.info("Resampling from {:f} to {:f} Hz.".format(cnt.info["sfreq"], new_fs))
 
     data = cnt.get_data().T
 
-    new_data = resampy.resample(data, cnt.info['sfreq'],
-                                new_fs, axis=0, filter='kaiser_fast').T
-    old_fs = cnt.info['sfreq']
+    new_data = resampy.resample(
+        data, cnt.info["sfreq"], new_fs, axis=0, filter="kaiser_fast"
+    ).T
+    old_fs = cnt.info["sfreq"]
     new_info = deepcopy(cnt.info)
-    new_info['sfreq'] = new_fs
-    events = new_info['events']
-    event_samples_old = cnt.info['events'][:, 0]
+    new_info["sfreq"] = new_fs
+    events = new_info["events"]
+    event_samples_old = cnt.info["events"][:, 0]
     event_samples = event_samples_old * new_fs / float(old_fs)
     events[:, 0] = event_samples
     return mne.io.RawArray(new_data, new_info)
 
 
-def mne_apply(func, raw, verbose='WARNING'):
+def mne_apply(func, raw, verbose="WARNING"):
     """
     Apply function to data of `mne.io.RawArray`.
     
@@ -105,5 +103,4 @@ def common_average_reference_cnt(cnt,):
         Same data after common average reference.
     """
 
-    return mne_apply(lambda a: a - np.mean(a, axis=0, keepdim=True),
-                     cnt)
+    return mne_apply(lambda a: a - np.mean(a, axis=0, keepdim=True), cnt)
