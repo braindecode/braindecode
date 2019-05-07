@@ -25,6 +25,14 @@ braindecode\.datasets\.bcic\_iv\_2a module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.datasets\.lazy\_dataset module
+-------------------------------------------
+
+.. automodule:: braindecode.datasets.lazy_dataset
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.datasets\.multiple module
 --------------------------------------
 

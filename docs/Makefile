@@ -3,7 +3,7 @@
 
 # You can set these variables from the command line.
 SPHINXOPTS    =
-SPHINXBUILD   = python3.5 -msphinx
+SPHINXBUILD   = /home/schirrmr/anaconda3/envs/default/bin/python3.6 -msphinx
 SPHINXPROJ    = Braindecode
 SOURCEDIR     = .
 BUILDDIR      = ../../braindecode-docs/

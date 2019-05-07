@@ -17,6 +17,14 @@ braindecode\.datautil\.iterators module
     :undoc-members:
     :show-inheritance:
 
+braindecode\.datautil\.lazy\_iterators module
+---------------------------------------------
+
+.. automodule:: braindecode.datautil.lazy_iterators
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
 braindecode\.datautil\.signal\_target module
 --------------------------------------------
 

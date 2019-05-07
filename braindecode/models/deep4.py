@@ -75,7 +75,10 @@ class Deep4Net(BaseModel):
             model.add_module(
                 "conv_time",
                 nn.Conv2d(
-                    1, self.n_filters_time, (self.filter_time_length, 1), stride=1
+                    1,
+                    self.n_filters_time,
+                    (self.filter_time_length, 1),
+                    stride=1,
                 ),
             )
             model.add_module(
@@ -139,7 +142,10 @@ class Deep4Net(BaseModel):
                 model.add_module(
                     "bnorm" + suffix,
                     nn.BatchNorm2d(
-                        n_filters, momentum=self.batch_norm_alpha, affine=True, eps=1e-5
+                        n_filters,
+                        momentum=self.batch_norm_alpha,
+                        affine=True,
+                        eps=1e-5,
                     ),
                 )
             model.add_module("nonlin" + suffix, Expression(self.later_nonlin))
@@ -147,10 +153,13 @@ class Deep4Net(BaseModel):
             model.add_module(
                 "pool" + suffix,
                 later_pool_class(
-                    kernel_size=(self.pool_time_length, 1), stride=(pool_stride, 1)
+                    kernel_size=(self.pool_time_length, 1),
+                    stride=(pool_stride, 1),
                 ),
             )
-            model.add_module("pool_nonlin" + suffix, Expression(self.later_pool_nonlin))
+            model.add_module(
+                "pool_nonlin" + suffix, Expression(self.later_pool_nonlin)
+            )
 
         add_conv_pool_block(
             model, n_filters_conv, self.n_filters_2, self.filter_length_2, 2
@@ -168,7 +177,8 @@ class Deep4Net(BaseModel):
             out = model(
                 np_to_var(
                     np.ones(
-                        (1, self.in_chans, self.input_time_length, 1), dtype=np.float32
+                        (1, self.in_chans, self.input_time_length, 1),
+                        dtype=np.float32,
                     )
                 )
             )
@@ -177,7 +187,10 @@ class Deep4Net(BaseModel):
         model.add_module(
             "conv_classifier",
             nn.Conv2d(
-                self.n_filters_4, self.n_classes, (self.final_conv_length, 1), bias=True
+                self.n_filters_4,
+                self.n_classes,
+                (self.final_conv_length, 1),
+                bias=True,
             ),
         )
         model.add_module("softmax", nn.LogSoftmax(dim=1))
