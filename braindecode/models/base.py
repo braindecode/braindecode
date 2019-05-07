@@ -180,6 +180,8 @@ class BaseModel(object):
                 "which is the number of timesteps that will be pushed through"
                 "the network in a single pass."
             )
+
+        train_X = _ensure_float32(train_X)
         if self.cropped:
             self.network.eval()
             test_input = np_to_var(
@@ -236,7 +238,9 @@ class BaseModel(object):
                 th.mean(outputs, dim=2), targets
             )
         if validation_data is not None:
-            valid_set = SignalAndTarget(validation_data[0], validation_data[1])
+            valid_X = _ensure_float32(validation_data[0])
+            valid_y = validation_data[1]
+            valid_set = SignalAndTarget(valid_X, valid_y)
         else:
             valid_set = None
         test_set = None
@@ -286,6 +290,7 @@ class BaseModel(object):
             Dictionary with result metrics.
 
         """
+        X = _ensure_float32(X)
         stop_criterion = MaxEpochs(0)
         train_set = SignalAndTarget(X, y)
         model_constraint = None
@@ -351,9 +356,7 @@ class BaseModel(object):
         if individual_crops:
             assert self.cropped, "Cropped labels only for cropped decoding"
         outs_per_trial = self.predict_outs(
-            X=X,
-            threshold_for_binary_case=threshold_for_binary_case,
-            individual_crops=individual_crops,
+            X=X, individual_crops=individual_crops
         )
 
         pred_labels = [np.argmax(o, axis=0) for o in outs_per_trial]
@@ -361,9 +364,7 @@ class BaseModel(object):
             pred_labels = np.array(pred_labels)
         return pred_labels
 
-    def predict_outs(
-        self, X, threshold_for_binary_case=None, individual_crops=False
-    ):
+    def predict_outs(self, X, individual_crops=False):
         """
         Predict raw outputs of the network for given input.
 
@@ -383,6 +384,7 @@ class BaseModel(object):
         """
         if individual_crops:
             assert self.cropped, "Cropped labels only for cropped decoding"
+        X = _ensure_float32(X)
         all_preds = []
         with th.no_grad():
             dummy_y = np.ones(len(X), dtype=np.int64)
@@ -404,3 +406,11 @@ class BaseModel(object):
         else:
             outs_per_trial = np.concatenate(all_preds)
         return outs_per_trial
+
+
+def _ensure_float32(X):
+    if hasattr(X, "astype"):
+        X = X.astype(np.float32, copy=False)
+    else:
+        X = [x.astype(np.float32, copy=False) for x in X]
+    return X
