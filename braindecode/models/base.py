@@ -385,8 +385,9 @@ class BaseModel(object):
             assert self.cropped, "Cropped labels only for cropped decoding"
         all_preds = []
         with th.no_grad():
+            dummy_y = np.ones(len(X), dtype=np.int64)
             for b_X, _ in self.iterator.get_batches(
-                SignalAndTarget(X, X), False
+                SignalAndTarget(X, dummy_y), False
             ):
                 b_X_var = np_to_var(b_X)
                 if self.cuda:
