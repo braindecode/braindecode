@@ -4,7 +4,7 @@ from torch.optim.optimizer import Optimizer
 
 
 class AdamW(Optimizer):
-    """Implements Adam algorithm with weight decay fixed as in [AdamW]_` .
+    """Implements Adam algorithm with weight decay fixed as in [AdamW]_ .
 
     Parameters
     ----------
