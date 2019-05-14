@@ -73,7 +73,7 @@ class BalancedBatchSizeIterator(object):
         self.rng = RandomState(self.seed)
 
     def get_batches(self, dataset, shuffle):
-        n_trials = dataset.X.shape[0]
+        n_trials = len(dataset.X)
         batches = get_balanced_batches(
             n_trials, batch_size=self.batch_size, rng=self.rng, shuffle=shuffle
         )
@@ -113,7 +113,7 @@ class ClassBalancedBatchSizeIterator(object):
         self.rng = RandomState(self.seed)
 
     def get_batches(self, dataset, shuffle):
-        n_trials = dataset.X.shape[0]
+        n_trials = len(dataset.X)
         batches = get_balanced_batches(
             n_trials, batch_size=self.batch_size, rng=self.rng, shuffle=shuffle
         )
