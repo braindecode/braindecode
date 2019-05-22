@@ -48,10 +48,14 @@ def resample_cnt(cnt, new_fs):
 
     """
     if new_fs == cnt.info["sfreq"]:
-        log.info("Just copying data, no resampling, since new sampling rate same.")
+        log.info(
+            "Just copying data, no resampling, since new sampling rate same."
+        )
         return deepcopy(cnt)
     log.warning("This is not causal, uses future data....")
-    log.info("Resampling from {:f} to {:f} Hz.".format(cnt.info["sfreq"], new_fs))
+    log.info(
+        "Resampling from {:f} to {:f} Hz.".format(cnt.info["sfreq"], new_fs)
+    )
 
     data = cnt.get_data().T
 

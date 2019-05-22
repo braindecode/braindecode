@@ -6,7 +6,9 @@ class ScheduledOptimizer(object):
         self.scheduler = scheduler
         self.optimizer = optimizer
         self.schedule_weight_decay = schedule_weight_decay
-        self.initial_lrs = list(map(lambda group: group["lr"], optimizer.param_groups))
+        self.initial_lrs = list(
+            map(lambda group: group["lr"], optimizer.param_groups)
+        )
         self.initial_weight_decays = list(
             map(lambda group: group["weight_decay"], optimizer.param_groups)
         )
@@ -14,7 +16,9 @@ class ScheduledOptimizer(object):
 
     def step(self):
         for group, initial_lr, initial_wd in zip(
-            self.optimizer.param_groups, self.initial_lrs, self.initial_weight_decays
+            self.optimizer.param_groups,
+            self.initial_lrs,
+            self.initial_weight_decays,
         ):
             group["lr"] = self.scheduler.get_lr(initial_lr, self.i_update)
             if self.schedule_weight_decay:

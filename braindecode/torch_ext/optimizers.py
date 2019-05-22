@@ -29,7 +29,9 @@ class AdamW(Optimizer):
       
     """
 
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0):
+    def __init__(
+        self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0
+    ):
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
         super(AdamW, self).__init__(params, defaults)
 
@@ -72,7 +74,9 @@ class AdamW(Optimizer):
 
                 bias_correction1 = 1 - beta1 ** state["step"]
                 bias_correction2 = 1 - beta2 ** state["step"]
-                step_size = group["lr"] * math.sqrt(bias_correction2) / bias_correction1
+                step_size = (
+                    group["lr"] * math.sqrt(bias_correction2) / bias_correction1
+                )
 
                 p.data.addcdiv_(-step_size, exp_avg, denom)
                 if group["weight_decay"] != 0:

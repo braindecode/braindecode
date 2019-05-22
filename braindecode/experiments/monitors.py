@@ -24,7 +24,13 @@ class MisclassMonitor(object):
         return
 
     def monitor_set(
-        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+        self,
+        setname,
+        all_preds,
+        all_losses,
+        all_batch_sizes,
+        all_targets,
+        dataset,
     ):
         all_pred_labels = []
         all_target_labels = []
@@ -74,7 +80,9 @@ class MisclassMonitor(object):
         return {column_name: float(misclass)}
 
 
-def compute_pred_labels_from_trial_preds(all_preds, threshold_for_binary_case=None):
+def compute_pred_labels_from_trial_preds(
+    all_preds, threshold_for_binary_case=None
+):
     all_pred_labels = []
     for i_batch in range(len(all_preds)):
         preds = all_preds[i_batch]
@@ -120,7 +128,13 @@ class AveragePerClassMisclassMonitor(object):
         return
 
     def monitor_set(
-        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+        self,
+        setname,
+        all_preds,
+        all_losses,
+        all_batch_sizes,
+        all_targets,
+        dataset,
     ):
         all_pred_labels = []
         all_target_labels = []
@@ -175,9 +189,17 @@ class LossMonitor(object):
         return
 
     def monitor_set(
-        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+        self,
+        setname,
+        all_preds,
+        all_losses,
+        all_batch_sizes,
+        all_targets,
+        dataset,
     ):
-        batch_weights = np.array(all_batch_sizes) / float(np.sum(all_batch_sizes))
+        batch_weights = np.array(all_batch_sizes) / float(
+            np.sum(all_batch_sizes)
+        )
         loss_per_batch = [np.mean(loss) for loss in all_losses]
         mean_loss = np.sum(batch_weights * loss_per_batch)
         column_name = "{:s}_loss".format(setname)
@@ -201,10 +223,18 @@ class CroppedTrialMisclassMonitor(object):
         return
 
     def monitor_set(
-        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+        self,
+        setname,
+        all_preds,
+        all_losses,
+        all_batch_sizes,
+        all_targets,
+        dataset,
     ):
         """Assuming one hot encoding for now"""
-        assert self.input_time_length is not None, "Need to know input time length..."
+        assert (
+            self.input_time_length is not None
+        ), "Need to know input time length..."
         # First case that each trial only has a single label
         if not hasattr(dataset.y[0], "__len__"):
             all_pred_labels = compute_trial_labels_from_crop_preds(
@@ -225,7 +255,9 @@ class CroppedTrialMisclassMonitor(object):
         preds_per_trial = compute_preds_per_trial_from_crops(
             all_preds, self.input_time_length, dataset.X
         )
-        all_pred_labels = [np.argmax(np.mean(p, axis=1)) for p in preds_per_trial]
+        all_pred_labels = [
+            np.argmax(np.mean(p, axis=1)) for p in preds_per_trial
+        ]
         all_pred_labels = np.array(all_pred_labels)
         assert all_pred_labels.shape == dataset.y.shape
         return all_pred_labels
@@ -282,7 +314,9 @@ def compute_trial_labels_from_crop_preds(all_preds, input_time_length, X):
     preds_per_trial = compute_preds_per_trial_from_crops(
         all_preds, input_time_length, X
     )
-    pred_labels_per_trial = [np.argmax(np.mean(p, axis=1)) for p in preds_per_trial]
+    pred_labels_per_trial = [
+        np.argmax(np.mean(p, axis=1)) for p in preds_per_trial
+    ]
     pred_labels_per_trial = np.array(pred_labels_per_trial)
     return pred_labels_per_trial
 
@@ -315,7 +349,9 @@ def compute_preds_per_trial_from_crops(all_preds, input_time_length, X):
     return preds_per_trial
 
 
-def compute_preds_per_trial_from_n_preds_per_trial(all_preds, n_preds_per_trial):
+def compute_preds_per_trial_from_n_preds_per_trial(
+    all_preds, n_preds_per_trial
+):
     """
     Compute predictions per trial from predictions for crops.
 
@@ -380,6 +416,12 @@ class RuntimeMonitor(object):
         return {"runtime": epoch_runtime}
 
     def monitor_set(
-        self, setname, all_preds, all_losses, all_batch_sizes, all_targets, dataset
+        self,
+        setname,
+        all_preds,
+        all_losses,
+        all_batch_sizes,
+        all_targets,
+        dataset,
     ):
         return {}

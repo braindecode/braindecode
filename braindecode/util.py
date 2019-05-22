@@ -96,7 +96,9 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
     )
     assert np.array_equal(n_stat_axis_a, n_stat_axis_b)
     stat_result = stat_fn(flat_topo_a, flat_topo_b)
-    topo_result = stat_result.reshape(tuple(n_other_axis_a) + tuple(n_other_axis_b))
+    topo_result = stat_result.reshape(
+        tuple(n_other_axis_a) + tuple(n_other_axis_b)
+    )
     return topo_result
 
 
@@ -162,7 +164,9 @@ def dict_equal(d1, d2):
     intersect_keys = d1_keys.intersection(d2_keys)
     modified = {o: (d1[o], d2[o]) for o in intersect_keys if d1[o] != d2[o]}
     return (
-        intersect_keys == d2_keys and intersect_keys == d1_keys and len(modified) == 0
+        intersect_keys == d2_keys
+        and intersect_keys == d1_keys
+        and len(modified) == 0
     )
 
 

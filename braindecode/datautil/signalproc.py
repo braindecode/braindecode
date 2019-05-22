@@ -47,11 +47,15 @@ def exponential_running_standardize(
     standardized = np.array(standardized)
     if init_block_size is not None:
         other_axis = tuple(range(1, len(data.shape)))
-        init_mean = np.mean(data[0:init_block_size], axis=other_axis, keepdims=True)
-        init_std = np.std(data[0:init_block_size], axis=other_axis, keepdims=True)
-        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(
-            eps, init_std
+        init_mean = np.mean(
+            data[0:init_block_size], axis=other_axis, keepdims=True
         )
+        init_std = np.std(
+            data[0:init_block_size], axis=other_axis, keepdims=True
+        )
+        init_block_standardized = (
+            data[0:init_block_size] - init_mean
+        ) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized
 
@@ -85,7 +89,9 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
     demeaned = np.array(demeaned)
     if init_block_size is not None:
         other_axis = tuple(range(1, len(data.shape)))
-        init_mean = np.mean(data[0:init_block_size], axis=other_axis, keepdims=True)
+        init_mean = np.mean(
+            data[0:init_block_size], axis=other_axis, keepdims=True
+        )
         demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
     return demeaned
 
@@ -110,7 +116,9 @@ def highpass_cnt(data, low_cut_hz, fs, filt_order=3, axis=0):
     if (low_cut_hz is None) or (low_cut_hz == 0):
         log.info("Not doing any highpass, since low 0 or None")
         return data.copy()
-    b, a = scipy.signal.butter(filt_order, low_cut_hz / (fs / 2.0), btype="highpass")
+    b, a = scipy.signal.butter(
+        filt_order, low_cut_hz / (fs / 2.0), btype="highpass"
+    )
     assert filter_is_stable(a)
     data_highpassed = scipy.signal.lfilter(b, a, data, axis=axis)
     return data_highpassed
@@ -134,9 +142,13 @@ def lowpass_cnt(data, high_cut_hz, fs, filt_order=3, axis=0):
         Data after applying lowpass filter.
     """
     if (high_cut_hz is None) or (high_cut_hz == fs / 2.0):
-        log.info("Not doing any lowpass, since high cut hz is None or nyquist freq.")
+        log.info(
+            "Not doing any lowpass, since high cut hz is None or nyquist freq."
+        )
         return data.copy()
-    b, a = scipy.signal.butter(filt_order, high_cut_hz / (fs / 2.0), btype="lowpass")
+    b, a = scipy.signal.butter(
+        filt_order, high_cut_hz / (fs / 2.0), btype="lowpass"
+    )
     assert filter_is_stable(a)
     data_lowpassed = scipy.signal.lfilter(b, a, data, axis=axis)
     return data_lowpassed
@@ -174,10 +186,16 @@ def bandpass_cnt(
         return data.copy()
     if low_cut_hz == 0 or low_cut_hz == None:
         log.info("Using lowpass filter since low cut hz is 0 or None")
-        return lowpass_cnt(data, high_cut_hz, fs, filt_order=filt_order, axis=axis)
+        return lowpass_cnt(
+            data, high_cut_hz, fs, filt_order=filt_order, axis=axis
+        )
     if high_cut_hz == None or high_cut_hz == (fs / 2.0):
-        log.info("Using highpass filter since high cut hz is None or nyquist freq")
-        return highpass_cnt(data, low_cut_hz, fs, filt_order=filt_order, axis=axis)
+        log.info(
+            "Using highpass filter since high cut hz is None or nyquist freq"
+        )
+        return highpass_cnt(
+            data, low_cut_hz, fs, filt_order=filt_order, axis=axis
+        )
 
     nyq_freq = 0.5 * fs
     low = low_cut_hz / nyq_freq

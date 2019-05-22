@@ -161,7 +161,13 @@ def _to_mrk_code_to_name_and_y(name_to_codes):
 
 
 def _create_signal_target_from_start_and_ival(
-    data, events, fs, name_to_codes, epoch_ival_ms, one_hot_labels, one_label_per_trial
+    data,
+    events,
+    fs,
+    name_to_codes,
+    epoch_ival_ms,
+    one_hot_labels,
+    one_label_per_trial,
 ):
     cnt_y, i_start_stops = _create_cnt_y_and_trial_bounds_from_start_and_ival(
         data.shape[1], events, fs, name_to_codes, epoch_ival_ms
@@ -253,7 +259,12 @@ def _create_signal_target_from_start_and_stop(
 
 
 def _create_cnt_y_and_trial_bounds_from_start_stop(
-    n_samples, events, fs, name_to_start_codes, epoch_ival_ms, name_to_stop_codes
+    n_samples,
+    events,
+    fs,
+    name_to_start_codes,
+    epoch_ival_ms,
+    name_to_stop_codes,
 ):
     """
     Create a one-hot-encoded continuous marker array (cnt_y).
@@ -305,7 +316,9 @@ def _create_cnt_y_and_trial_bounds_from_start_stop(
         codes = name_to_stop_codes[name]
         if not hasattr(codes, "__len__"):
             name_to_stop_codes[name] = [codes]
-    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())).astype(np.int64)
+    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())).astype(
+        np.int64
+    )
     class_to_n_trials = Counter()
     n_classes = len(name_to_start_codes)
     cnt_y = np.zeros((n_samples, n_classes), dtype=np.int64)
@@ -387,7 +400,9 @@ def _create_signal_target_from_cnt_y_start_stops(
             if (i_stop - i_start) > prepad_trials_to_n_samples:
                 new_i_start_stops.append((i_start, i_stop))
             elif i_stop >= prepad_trials_to_n_samples:
-                new_i_start_stops.append((i_stop - prepad_trials_to_n_samples, i_stop))
+                new_i_start_stops.append(
+                    (i_stop - prepad_trials_to_n_samples, i_stop)
+                )
             else:
                 log.warning(
                     "Could not pad trial enough, therefore not "
@@ -423,7 +438,9 @@ def _create_signal_target_from_cnt_y_start_stops(
         new_y = []
         for this_y in y:
             # if destroying one hot later, just set most occuring class to 1
-            unique_labels, counts = np.unique(this_y, axis=0, return_counts=True)
+            unique_labels, counts = np.unique(
+                this_y, axis=0, return_counts=True
+            )
             if not one_hot_labels:
                 meaned_y = np.mean(this_y, axis=0)
                 this_new_y = np.zeros_like(meaned_y)
@@ -620,10 +637,14 @@ def add_breaks(
         Events with break start and stop markers.
     """
     min_samples = (
-        None if min_break_length_ms is None else ms_to_samples(min_break_length_ms, fs)
+        None
+        if min_break_length_ms is None
+        else ms_to_samples(min_break_length_ms, fs)
     )
     max_samples = (
-        None if max_break_length_ms is None else ms_to_samples(max_break_length_ms, fs)
+        None
+        if max_break_length_ms is None
+        else ms_to_samples(max_break_length_ms, fs)
     )
     orig_events = events
     break_starts, break_stops = _extract_break_start_stop_ms(
@@ -657,7 +678,9 @@ def add_breaks(
     return new_events
 
 
-def _extract_break_start_stop_ms(events, name_to_start_codes, name_to_stop_codes):
+def _extract_break_start_stop_ms(
+    events, name_to_start_codes, name_to_stop_codes
+):
     assert len(events[0]) == 2, "expect only 2dimensional event array here"
     start_code_to_name_and_y = _to_mrk_code_to_name_and_y(name_to_start_codes)
     # Ensure all stop marker codes are iterables
@@ -665,7 +688,9 @@ def _extract_break_start_stop_ms(events, name_to_start_codes, name_to_stop_codes
         codes = name_to_stop_codes[name]
         if not hasattr(codes, "__len__"):
             name_to_stop_codes[name] = [codes]
-    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())).astype(np.int32)
+    all_stop_codes = np.concatenate(list(name_to_stop_codes.values())).astype(
+        np.int32
+    )
     event_samples = events[:, 0]
     event_codes = events[:, 1]
 
@@ -673,7 +698,9 @@ def _extract_break_start_stop_ms(events, name_to_start_codes, name_to_stop_codes
     break_stops = []
     i_event = 0
     while i_event < len(events):
-        while (i_event < len(events)) and (event_codes[i_event] not in all_stop_codes):
+        while (i_event < len(events)) and (
+            event_codes[i_event] not in all_stop_codes
+        ):
             i_event += 1
         if i_event < len(events):
             # one sample after start

@@ -87,7 +87,9 @@ class HybridNetModule(nn.Module):
                     kernel_size=module.kernel_size,
                     stride=module.stride,
                 )
-                reduced_shallow_model.add_module("shallow_final_conv", new_conv_layer)
+                reduced_shallow_model.add_module(
+                    "shallow_final_conv", new_conv_layer
+                )
                 break
             reduced_shallow_model.add_module(name, module)
 
@@ -95,7 +97,9 @@ class HybridNetModule(nn.Module):
         to_dense_prediction_model(reduced_shallow_model)
         self.reduced_deep_model = reduced_deep_model
         self.reduced_shallow_model = reduced_shallow_model
-        self.final_conv = nn.Conv2d(100, n_classes, kernel_size=(1, 1), stride=1)
+        self.final_conv = nn.Conv2d(
+            100, n_classes, kernel_size=(1, 1), stride=1
+        )
 
     def create_network(self):
         return self
@@ -107,9 +111,13 @@ class HybridNetModule(nn.Module):
         n_diff_deep_shallow = deep_out.size()[2] - shallow_out.size()[2]
 
         if n_diff_deep_shallow < 0:
-            deep_out = ConstantPad2d((0, 0, -n_diff_deep_shallow, 0), 0)(deep_out)
+            deep_out = ConstantPad2d((0, 0, -n_diff_deep_shallow, 0), 0)(
+                deep_out
+            )
         elif n_diff_deep_shallow > 0:
-            shallow_out = ConstantPad2d((0, 0, n_diff_deep_shallow, 0), 0)(shallow_out)
+            shallow_out = ConstantPad2d((0, 0, n_diff_deep_shallow, 0), 0)(
+                shallow_out
+            )
 
         merged_out = th.cat((deep_out, shallow_out), dim=1)
         linear_out = self.final_conv(merged_out)

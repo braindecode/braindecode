@@ -4,7 +4,9 @@ import numpy as np
 import random
 
 
-def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
+def np_to_var(
+    X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs
+):
     """
     Convenience function to transform numpy array to `torch.Tensor`.
 

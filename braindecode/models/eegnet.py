@@ -99,11 +99,15 @@ class EEGNetv4(BaseModel):
 
         model.add_module(
             "bnorm_1",
-            nn.BatchNorm2d(self.F1 * self.D, momentum=0.01, affine=True, eps=1e-3),
+            nn.BatchNorm2d(
+                self.F1 * self.D, momentum=0.01, affine=True, eps=1e-3
+            ),
         )
         model.add_module("elu_1", Expression(elu))
 
-        model.add_module("pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4)))
+        model.add_module(
+            "pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4))
+        )
         model.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
         # https://discuss.pytorch.org/t/how-to-modify-a-conv2d-to-depthwise-separable-convolution/15843/7
@@ -122,20 +126,31 @@ class EEGNetv4(BaseModel):
         model.add_module(
             "conv_separable_point",
             nn.Conv2d(
-                self.F1 * self.D, self.F2, (1, 1), stride=1, bias=False, padding=(0, 0)
+                self.F1 * self.D,
+                self.F2,
+                (1, 1),
+                stride=1,
+                bias=False,
+                padding=(0, 0),
             ),
         )
 
         model.add_module(
-            "bnorm_2", nn.BatchNorm2d(self.F2, momentum=0.01, affine=True, eps=1e-3)
+            "bnorm_2",
+            nn.BatchNorm2d(self.F2, momentum=0.01, affine=True, eps=1e-3),
         )
         model.add_module("elu_2", Expression(elu))
-        model.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
+        model.add_module(
+            "pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8))
+        )
         model.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         out = model(
             np_to_var(
-                np.ones((1, self.in_chans, self.input_time_length, 1), dtype=np.float32)
+                np.ones(
+                    (1, self.in_chans, self.input_time_length, 1),
+                    dtype=np.float32,
+                )
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -222,14 +237,18 @@ class EEGNet(object):
         model = nn.Sequential()
         n_filters_1 = 16
         model.add_module(
-            "conv_1", nn.Conv2d(self.in_chans, n_filters_1, (1, 1), stride=1, bias=True)
+            "conv_1",
+            nn.Conv2d(self.in_chans, n_filters_1, (1, 1), stride=1, bias=True),
         )
         model.add_module(
-            "bnorm_1", nn.BatchNorm2d(n_filters_1, momentum=0.01, affine=True, eps=1e-3)
+            "bnorm_1",
+            nn.BatchNorm2d(n_filters_1, momentum=0.01, affine=True, eps=1e-3),
         )
         model.add_module("elu_1", Expression(elu))
         # transpose to examples x 1 x (virtual, not EEG) channels x time
-        model.add_module("permute_1", Expression(lambda x: x.permute(0, 3, 1, 2)))
+        model.add_module(
+            "permute_1", Expression(lambda x: x.permute(0, 3, 1, 2))
+        )
 
         model.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
@@ -251,10 +270,13 @@ class EEGNet(object):
             ),
         )
         model.add_module(
-            "bnorm_2", nn.BatchNorm2d(n_filters_2, momentum=0.01, affine=True, eps=1e-3)
+            "bnorm_2",
+            nn.BatchNorm2d(n_filters_2, momentum=0.01, affine=True, eps=1e-3),
         )
         model.add_module("elu_2", Expression(elu))
-        model.add_module("pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4)))
+        model.add_module(
+            "pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4))
+        )
         model.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         n_filters_3 = 4
@@ -270,15 +292,21 @@ class EEGNet(object):
             ),
         )
         model.add_module(
-            "bnorm_3", nn.BatchNorm2d(n_filters_3, momentum=0.01, affine=True, eps=1e-3)
+            "bnorm_3",
+            nn.BatchNorm2d(n_filters_3, momentum=0.01, affine=True, eps=1e-3),
         )
         model.add_module("elu_3", Expression(elu))
-        model.add_module("pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4)))
+        model.add_module(
+            "pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4))
+        )
         model.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
         out = model(
             np_to_var(
-                np.ones((1, self.in_chans, self.input_time_length, 1), dtype=np.float32)
+                np.ones(
+                    (1, self.in_chans, self.input_time_length, 1),
+                    dtype=np.float32,
+                )
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -299,7 +327,9 @@ class EEGNet(object):
         model.add_module("softmax", nn.LogSoftmax())
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
-        model.add_module("permute_2", Expression(lambda x: x.permute(0, 1, 3, 2)))
+        model.add_module(
+            "permute_2", Expression(lambda x: x.permute(0, 1, 3, 2))
+        )
         model.add_module("squeeze", Expression(_squeeze_final_output))
         glorot_weight_zero_bias(model)
         return model

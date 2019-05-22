@@ -2,7 +2,9 @@ import numpy as np
 from numpy.random import RandomState
 
 
-def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None):
+def get_balanced_batches(
+    n_trials, rng, shuffle, n_batches=None, batch_size=None
+):
     """Create indices for batches balanced in size 
     (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
@@ -124,7 +126,9 @@ class ClassBalancedBatchSizeIterator(object):
             ]
             class_probabilities = np.array(class_probabilities)
             # choose trials in inverse probability of class
-            trial_probabilities = [1.0 / class_probabilities[y] for y in dataset.y]
+            trial_probabilities = [
+                1.0 / class_probabilities[y] for y in dataset.y
+            ]
             trial_probabilities = np.array(trial_probabilities) / np.sum(
                 trial_probabilities
             )
@@ -134,7 +138,9 @@ class ClassBalancedBatchSizeIterator(object):
 
         for batch_inds in batches:
             if shuffle:
-                batch_inds = [i_trial_to_balanced[i_trial] for i_trial in batch_inds]
+                batch_inds = [
+                    i_trial_to_balanced[i_trial] for i_trial in batch_inds
+                ]
             batch_X = dataset.X[batch_inds]
             batch_y = dataset.y[batch_inds]
 
@@ -178,7 +184,11 @@ class CropsFromTrialsIterator(object):
     """
 
     def __init__(
-        self, batch_size, input_time_length, n_preds_per_input, seed=(2017, 6, 28)
+        self,
+        batch_size,
+        input_time_length,
+        n_preds_per_input,
+        seed=(2017, 6, 28),
     ):
         self.batch_size = batch_size
         self.input_time_length = input_time_length
@@ -283,7 +293,8 @@ def _compute_start_stop_block_inds(
             # check that block is correct, all predicted samples together
             # should be the trial samples
             all_predicted_samples = [
-                range(stop - n_preds_per_input, stop) for _, stop in start_stop_blocks
+                range(stop - n_preds_per_input, stop)
+                for _, stop in start_stop_blocks
             ]
             # this check takes about 50 ms in performance test
             # whereas loop itself takes only 5 ms.. deactivate it if not necessary

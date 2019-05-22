@@ -36,12 +36,12 @@ class BCICompetition4Set2A(object):
         gdf_events = mne.events_from_annotations(raw_gdf)
         raw_gdf = mne.io.RawArray(data, raw_gdf.info, verbose="WARNING")
         # remember gdf events
-        raw_gdf.info['gdf_events'] = gdf_events
+        raw_gdf.info["gdf_events"] = gdf_events
         return raw_gdf
 
     def extract_events(self, raw_gdf):
         # all events
-        events, name_to_code = raw_gdf.info['gdf_events']
+        events, name_to_code = raw_gdf.info["gdf_events"]
 
         if "class1, Left hand - cue onset (BCI experiment)" in name_to_code:
             train_set = True
@@ -67,8 +67,7 @@ class BCICompetition4Set2A(object):
         if self.labels_filename is not None:
             classes = loadmat(self.labels_filename)["classlabel"].squeeze()
             if train_set:
-                np.testing.assert_array_equal(
-                    trial_events[:,2], classes)
+                np.testing.assert_array_equal(trial_events[:, 2], classes)
             trial_events[:, 2] = classes
         unique_classes = np.unique(trial_events[:, 2])
         assert np.array_equal(

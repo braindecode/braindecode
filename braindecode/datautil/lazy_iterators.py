@@ -92,7 +92,9 @@ class LazyCropsFromTrialsIterator(object):
             collate_fn = partial(self.collate_fn, rng_state=random_state)
         else:
             collate_fn = partial(self.collate_fn, rng_state=None)
-        batch_indeces = self._get_batch_indeces(dataset=dataset, shuffle=shuffle)
+        batch_indeces = self._get_batch_indeces(
+            dataset=dataset, shuffle=shuffle
+        )
         data_loader = DataLoader(
             dataset=dataset,
             batch_sampler=batch_indeces,

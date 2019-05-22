@@ -73,7 +73,9 @@ def signal_fit(signals, fs):
             p0 = [freqs[sort], amps_mean[sort], phases_mean[sort], offset]
 
             fit_sin_ch = leastsq(err_fn_sin, p0, args=(x, X_tmp), maxfev=100000)
-            fit_lin_ch = leastsq(err_fn_lin, [0, 0], args=(x, X_tmp), maxfev=100000)
+            fit_lin_ch = leastsq(
+                err_fn_lin, [0, 0], args=(x, X_tmp), maxfev=100000
+            )
 
             err_sin_ch = np.square(fit_fn_sin(x, *fit_sin_ch[0]) - X_tmp).mean()
             err_lin_ch = np.square(fit_fn_lin(x, *fit_lin_ch[0]) - X_tmp).mean()

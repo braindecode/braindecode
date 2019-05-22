@@ -56,7 +56,9 @@ def log_categorical_crossentropy(log_preds, targets, class_weights=None):
     loss: `torch.autograd.Variable`
     """
     if log_preds.size() == targets.size():
-        assert class_weights is None, "Class weights not implemented for one-hot"
+        assert (
+            class_weights is None
+        ), "Class weights not implemented for one-hot"
         return log_categorical_crossentropy_1_hot(log_preds, targets)
     n_classes = log_preds.size()[1]
     n_elements = 0

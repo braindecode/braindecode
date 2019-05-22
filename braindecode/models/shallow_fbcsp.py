@@ -54,7 +54,10 @@ class ShallowFBCSPNet(BaseModel):
             model.add_module(
                 "conv_time",
                 nn.Conv2d(
-                    1, self.n_filters_time, (self.filter_time_length, 1), stride=1
+                    1,
+                    self.n_filters_time,
+                    (self.filter_time_length, 1),
+                    stride=1,
                 ),
             )
             model.add_module(
@@ -102,7 +105,8 @@ class ShallowFBCSPNet(BaseModel):
             out = model(
                 np_to_var(
                     np.ones(
-                        (1, self.in_chans, self.input_time_length, 1), dtype=np.float32
+                        (1, self.in_chans, self.input_time_length, 1),
+                        dtype=np.float32,
                     )
                 )
             )
@@ -111,7 +115,10 @@ class ShallowFBCSPNet(BaseModel):
         model.add_module(
             "conv_classifier",
             nn.Conv2d(
-                n_filters_conv, self.n_classes, (self.final_conv_length, 1), bias=True
+                n_filters_conv,
+                self.n_classes,
+                (self.final_conv_length, 1),
+                bias=True,
             ),
         )
         model.add_module("softmax", nn.LogSoftmax(dim=1))

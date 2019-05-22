@@ -216,9 +216,9 @@ def spectral_perturbation_correlation(
         tmp[0] = len(inputs)
         use_shape.append(tmp)
     orig_preds_layers = [
-        np.concatenate([orig_preds[o][l] for o in range(len(orig_preds))]).reshape(
-            use_shape[l]
-        )
+        np.concatenate(
+            [orig_preds[o][l] for o in range(len(orig_preds))]
+        ).reshape(use_shape[l])
         for l in range(n_layers)
     ]
 
@@ -245,9 +245,9 @@ def spectral_perturbation_correlation(
         log.info("Compute new predictions...")
         new_preds = [pred_fn(inputs_pert[inds]) for inds in batch_inds]
         new_preds_layers = [
-            np.concatenate([new_preds[o][l] for o in range(len(new_preds))]).reshape(
-                use_shape[l]
-            )
+            np.concatenate(
+                [new_preds[o][l] for o in range(len(new_preds))]
+            ).reshape(use_shape[l])
             for l in range(n_layers)
         ]
 
@@ -256,7 +256,8 @@ def spectral_perturbation_correlation(
             # Calculate difference of original and perturbed feature map activations
             log.info("Compute activation difference...")
             preds_diff = diff_fn(
-                new_preds_layers[l][:, :, :, 0], orig_preds_layers[l][:, :, :, 0]
+                new_preds_layers[l][:, :, :, 0],
+                orig_preds_layers[l][:, :, :, 0],
             )
 
             # Calculate feature map differences with perturbations

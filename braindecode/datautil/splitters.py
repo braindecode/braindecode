@@ -128,7 +128,9 @@ def split_into_train_valid_test(dataset, n_folds, i_test_fold, rng=None):
     """
     n_trials = len(dataset.X)
     if n_trials < n_folds:
-        raise ValueError("Less Trials: {:d} than folds: {:d}".format(n_trials, n_folds))
+        raise ValueError(
+            "Less Trials: {:d} than folds: {:d}".format(n_trials, n_folds)
+        )
     shuffle = rng is not None
     folds = get_balanced_batches(n_trials, rng, shuffle, n_batches=n_folds)
     test_inds = folds[i_test_fold]
@@ -139,7 +141,8 @@ def split_into_train_valid_test(dataset, n_folds, i_test_fold, rng=None):
     assert np.intersect1d(train_inds, test_inds).size == 0
     assert np.intersect1d(valid_inds, test_inds).size == 0
     assert np.array_equal(
-        np.sort(np.union1d(train_inds, np.union1d(valid_inds, test_inds))), all_inds
+        np.sort(np.union1d(train_inds, np.union1d(valid_inds, test_inds))),
+        all_inds,
     )
 
     train_set = select_examples(dataset, train_inds)
@@ -170,7 +173,9 @@ def split_into_train_test(dataset, n_folds, i_test_fold, rng=None):
     """
     n_trials = len(dataset.X)
     if n_trials < n_folds:
-        raise ValueError("Less Trials: {:d} than folds: {:d}".format(n_trials, n_folds))
+        raise ValueError(
+            "Less Trials: {:d} than folds: {:d}".format(n_trials, n_folds)
+        )
     shuffle = rng is not None
     folds = get_balanced_batches(n_trials, rng, shuffle, n_batches=n_folds)
     test_inds = folds[i_test_fold]

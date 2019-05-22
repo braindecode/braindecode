@@ -12,7 +12,9 @@ def calc_Hin(Hout, kernel, stride, dilation):
     return Hin
 
 
-def calc_receptive_field_size(model, layer_ind, start_receptive_field=np.ones((2))):
+def calc_receptive_field_size(
+    model, layer_ind, start_receptive_field=np.ones((2))
+):
     """Calculate receptive field size for unit in specific layer of the network
     Only tested for 2d convolutions/poolings. Dimshuffle operations may lead to a wrong result
 
@@ -71,10 +73,14 @@ def get_max_act_index(activations, unique_per_input=True, n_units=None):
         Activation of the units
     """
     assert len(activations.shape) == 4, "Has to be 4d array"
-    assert activations.shape[1] == 1, "Can only handle individual filter activations"
+    assert (
+        activations.shape[1] == 1
+    ), "Can only handle individual filter activations"
 
     activations_sorted = activations.argsort(axis=None)[::-1]
-    activations_sorted_ind = np.unravel_index(activations_sorted, activations.shape)
+    activations_sorted_ind = np.unravel_index(
+        activations_sorted, activations.shape
+    )
     unique_ind = np.arange(len(activations_sorted_ind[0]))
     if unique_per_input:
         a, unique_ind = np.unique(activations_sorted_ind[0], return_index=True)
@@ -84,7 +90,9 @@ def get_max_act_index(activations, unique_per_input=True, n_units=None):
         n_units = len(unique_ind)
     activations_sorted_ind = np.asarray(activations_sorted_ind).T
     units = activations_sorted_ind[unique_ind[:n_units], :].astype(np.int)
-    units_activation = activations.flat[activations_sorted[unique_ind[:n_units]]]
+    units_activation = activations.flat[
+        activations_sorted[unique_ind[:n_units]]
+    ]
 
     return units, units_activation
 

@@ -34,7 +34,13 @@ class Expression(torch.nn.Module):
             expression_str = self.expression_fn.__name__
         else:
             expression_str = repr(self.expression_fn)
-        return self.__class__.__name__ + "(" + "expression=" + str(expression_str) + ")"
+        return (
+            self.__class__.__name__
+            + "("
+            + "expression="
+            + str(expression_str)
+            + ")"
+        )
 
 
 class AvgPool2dWithConv(torch.nn.Module):
@@ -68,14 +74,21 @@ class AvgPool2dWithConv(torch.nn.Module):
         # Create weights for the convolution on demand:
         # size or type of x changed...
         in_channels = x.size()[1]
-        weight_shape = (in_channels, 1, self.kernel_size[0], self.kernel_size[1])
+        weight_shape = (
+            in_channels,
+            1,
+            self.kernel_size[0],
+            self.kernel_size[1],
+        )
         if self._pool_weights is None or (
             (tuple(self._pool_weights.size()) != tuple(weight_shape))
             or (self._pool_weights.is_cuda != x.is_cuda)
             or (self._pool_weights.data.type() != x.data.type())
         ):
             n_pool = np.prod(self.kernel_size)
-            weights = np_to_var(np.ones(weight_shape, dtype=np.float32) / float(n_pool))
+            weights = np_to_var(
+                np.ones(weight_shape, dtype=np.float32) / float(n_pool)
+            )
             weights = weights.type_as(x)
             if x.is_cuda:
                 weights = weights.cuda()

@@ -61,7 +61,9 @@ class RememberBest(object):
             self.lowest_val = current_val
             self.model_state_dict = deepcopy(model.state_dict())
             self.optimizer_state_dict = deepcopy(optimizer.state_dict())
-            log.info("New best {:s}: {:5f}".format(self.column_name, current_val))
+            log.info(
+                "New best {:s}: {:5f}".format(self.column_name, current_val)
+            )
             log.info("")
 
     def reset_to_best_model(self, epochs_df, model, optimizer):
@@ -238,7 +240,9 @@ class Experiment(object):
                 # if no valid loss was found below the best train loss on 1st
                 # run, reset model to the epoch with lowest valid_misclass
                 log.info(
-                    "Resetting to best epoch {:d}".format(self.rememberer.best_epoch)
+                    "Resetting to best epoch {:d}".format(
+                        self.rememberer.best_epoch
+                    )
                 )
                 self.rememberer.reset_to_best_model(
                     self.epochs_df, self.model, self.optimizer
@@ -276,7 +280,9 @@ class Experiment(object):
         first stop.
         """
         datasets = self.datasets
-        datasets["train"] = concatenate_sets([datasets["train"], datasets["valid"]])
+        datasets["train"] = concatenate_sets(
+            [datasets["train"], datasets["valid"]]
+        )
 
         self.run_until_stop(datasets, remember_best=True)
 
@@ -317,7 +323,9 @@ class Experiment(object):
         remember_best: bool
             Whether to remember parameters if this epoch is best epoch.
         """
-        batch_generator = self.iterator.get_batches(datasets["train"], shuffle=True)
+        batch_generator = self.iterator.get_batches(
+            datasets["train"], shuffle=True
+        )
         start_train_epoch_time = time.time()
         for inputs, targets in batch_generator:
             if self.batch_modifier is not None:
@@ -335,7 +343,9 @@ class Experiment(object):
         self.monitor_epoch(datasets)
         self.log_epoch()
         if remember_best:
-            self.rememberer.remember_epoch(self.epochs_df, self.model, self.optimizer)
+            self.rememberer.remember_epoch(
+                self.epochs_df, self.model, self.optimizer
+            )
 
     def train_batch(self, inputs, targets):
         """
@@ -425,7 +435,9 @@ class Experiment(object):
                 # iterating through traditional iterators is cheap, since
                 # nothing is loaded, recreate generator afterwards
                 n_batches = sum(1 for i in batch_generator)
-                batch_generator = self.iterator.get_batches(dataset, shuffle=False)
+                batch_generator = self.iterator.get_batches(
+                    dataset, shuffle=False
+                )
             all_preds, all_targets = None, None
             all_losses, all_batch_sizes = [], []
             for inputs, targets in batch_generator:
@@ -447,7 +459,11 @@ class Experiment(object):
                         max_size, n_classes, n_preds_per_input = preds.shape
                         # pre-allocate memory for all predictions and targets
                         all_preds = np.nan * np.ones(
-                            (n_batches * max_size, n_classes, n_preds_per_input),
+                            (
+                                n_batches * max_size,
+                                n_classes,
+                                n_preds_per_input,
+                            ),
                             dtype=np.float32,
                         )
                     all_preds[: len(preds)] = preds
@@ -475,7 +491,9 @@ class Experiment(object):
             assert (
                 np.sum(np.isnan(all_preds)) == 0
             ), "There are still nans in predictions"
-            assert np.sum(np.isnan(all_targets)) == 0, "There are still nans in targets"
+            assert (
+                np.sum(np.isnan(all_targets)) == 0
+            ), "There are still nans in targets"
             # add empty dimension
             # monitors expect n_batches x ...
             all_preds = all_preds[np.newaxis, :]
@@ -519,12 +537,16 @@ class Experiment(object):
         # also remember old monitor chans, will be put back into
         # monitor chans after experiment finished
         self.before_stop_df = deepcopy(self.epochs_df)
-        self.rememberer.reset_to_best_model(self.epochs_df, self.model, self.optimizer)
+        self.rememberer.reset_to_best_model(
+            self.epochs_df, self.model, self.optimizer
+        )
         loss_to_reach = float(self.epochs_df["train_loss"].iloc[-1])
         self.stop_criterion = Or(
             stop_criteria=[
                 MaxEpochs(max_epochs=self.rememberer.best_epoch * 2),
-                ColumnBelow(column_name="valid_loss", target_value=loss_to_reach),
+                ColumnBelow(
+                    column_name="valid_loss", target_value=loss_to_reach
+                ),
             ]
         )
         log.info("Train loss to reach {:.5f}".format(loss_to_reach))

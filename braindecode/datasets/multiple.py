@@ -1,6 +1,9 @@
 import logging
 
-from braindecode.mne_ext.signalproc import resample_cnt, concatenate_raws_with_events
+from braindecode.mne_ext.signalproc import (
+    resample_cnt,
+    concatenate_raws_with_events,
+)
 
 log = logging.getLogger(__name__)
 
