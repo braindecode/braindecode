@@ -36,6 +36,11 @@ Documentation
 Documentation is online under https://robintibor.github.io/braindecode/
 
 
+Dataset
+=======
+The high-gamma dataset used in our publication (see below), including trained models, is available under:
+https://web.gin.g-node.org/robintibor/high-gamma-dataset/
+
 Citing
 ======
 If you use this code in a scientific publication, please cite us as:
