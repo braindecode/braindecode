@@ -1,6 +1,3 @@
-Note: The old braindecode repository has been moved to
-https://github.com/robintibor/braindevel.
-
 Braindecode
 ===========
 
@@ -33,8 +30,13 @@ Installation
 Documentation
 =============
 
-Documentation is online under https://robintibor.github.io/braindecode/
+Documentation is online under https://tntlfreiburg.github.io/braindecode/
 
+
+Dataset
+=======
+The high-gamma dataset used in our publication (see below), including trained models, is available under:
+https://web.gin.g-node.org/robintibor/high-gamma-dataset/
 
 Citing
 ======
