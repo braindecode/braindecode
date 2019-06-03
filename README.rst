@@ -1,6 +1,3 @@
-Note: The old braindecode repository has been moved to
-https://github.com/robintibor/braindevel.
-
 Braindecode
 ===========
 
@@ -33,7 +30,7 @@ Installation
 Documentation
 =============
 
-Documentation is online under https://robintibor.github.io/braindecode/
+Documentation is online under https://tntlfreiburg.github.io/braindecode/
 
 
 Dataset
