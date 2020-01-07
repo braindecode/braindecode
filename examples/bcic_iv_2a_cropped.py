@@ -56,7 +56,7 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
 
     # Preprocessing
 
-    train_cnt = train_cnt.drop_channels(['STI 014', 'EOG-left',
+    train_cnt = train_cnt.drop_channels(['EOG-left',
                                          'EOG-central', 'EOG-right'])
     assert len(train_cnt.ch_names) == 22
     # lets convert to millvolt for numerical stability of next operations
@@ -71,7 +71,7 @@ def run_exp(data_folder, subject_id, low_cut_hz, model, cuda):
                                                   eps=1e-4).T,
         train_cnt)
 
-    test_cnt = test_cnt.drop_channels(['STI 014', 'EOG-left',
+    test_cnt = test_cnt.drop_channels(['EOG-left',
                                        'EOG-central', 'EOG-right'])
     assert len(test_cnt.ch_names) == 22
     test_cnt = mne_apply(lambda a: a * 1e6, test_cnt)

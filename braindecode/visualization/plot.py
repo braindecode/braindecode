@@ -111,8 +111,8 @@ def ax_scalp(
         f = interpolate.NearestNDInterpolator(list(zip(x, y)), z)
         assert len(xx) == len(yy)
         zz = np.ones((len(xx), len(yy)))
-        for i_x in xrange(len(xx)):
-            for i_y in xrange(len(yy)):
+        for i_x in range(len(xx)):
+            for i_y in range(len(yy)):
                 # somehow this is correct. don't know why :(
                 zz[i_y, i_x] = f(xx[i_x], yy[i_y])
                 # zz[i_x,i_y] = f(xx[i_x], yy[i_y])
