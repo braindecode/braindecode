@@ -48,7 +48,7 @@ class BaseModel(object):
             not self.compiled
         ), "Call cuda before compiling model, otherwise optimization will not work"
         self.network = self.network.cuda()
-        self.cuda = True
+        self.is_cuda = True
         return self
 
     def parameters(self):
@@ -65,7 +65,7 @@ class BaseModel(object):
     def _ensure_network_exists(self):
         if not hasattr(self, "network"):
             self.network = self.create_network()
-            self.cuda = False
+            self.is_cuda = False
             self.compiled = False
 
     def compile(
@@ -193,7 +193,7 @@ class BaseModel(object):
             )
             while len(test_input.size()) < 4:
                 test_input = test_input.unsqueeze(-1)
-            if self.cuda:
+            if self.is_cuda:
                 test_input = test_input.cuda()
             out = self.network(test_input)
             n_preds_per_input = out.cpu().data.numpy().shape[2]
@@ -265,7 +265,7 @@ class BaseModel(object):
             stop_criterion=stop_criterion,
             remember_best_column=remember_best_column,
             run_after_early_stop=False,
-            cuda=self.cuda,
+            cuda=self.is_cuda,
             log_0_epoch=log_0_epoch,
             do_early_stop=(remember_best_column is not None),
         )
@@ -319,7 +319,7 @@ class BaseModel(object):
             stop_criterion=stop_criterion,
             remember_best_column=None,
             run_after_early_stop=False,
-            cuda=self.cuda,
+            cuda=self.is_cuda,
             log_0_epoch=True,
             do_early_stop=False,
         )
@@ -392,7 +392,7 @@ class BaseModel(object):
                 SignalAndTarget(X, dummy_y), False
             ):
                 b_X_var = np_to_var(b_X)
-                if self.cuda:
+                if self.is_cuda:
                     b_X_var = b_X_var.cuda()
                 all_preds.append(var_to_np(self.network(b_X_var)))
         if self.cropped:
