@@ -43,26 +43,25 @@ class BCICompetition4Set2A(object):
         # all events
         events, name_to_code = raw_gdf.info["gdf_events"]
 
-        if "class1, Left hand - cue onset (BCI experiment)" in name_to_code:
+        if not ("783" in name_to_code):
             train_set = True
+            assert all([s in name_to_code for s in ["769","770","771", "772"]])
         else:
             train_set = False
-            assert (
-                "cue unknown/undefined (used for BCI competition) "
-                in name_to_code
-            )
+            assert ("783" in name_to_code)
 
         if train_set:
-            trial_codes = [4, 5, 6, 7]  # the 4 classes
+            trial_codes = [7, 8, 9, 10]  # the 4 classes
         else:
-            trial_codes = [4]  # "unknown" class
+            trial_codes = [7]  # "unknown" class
 
         trial_mask = [ev_code in trial_codes for ev_code in events[:, 2]]
-        trial_events = events[trial_mask]
+        trial_events = np.array(events[trial_mask]).copy()
         assert len(trial_events) == 288, "Got {:d} markers".format(
             len(trial_events)
         )
-        trial_events[:, 2] = trial_events[:, 2] - 3
+        # from 7-10 to 1-4 by subtracting 6
+        trial_events[:, 2] = trial_events[:, 2] - 6
         # possibly overwrite with markers from labels file
         if self.labels_filename is not None:
             classes = loadmat(self.labels_filename)["classlabel"].squeeze()
@@ -77,7 +76,7 @@ class BCICompetition4Set2A(object):
         )
 
         # now also create 0-1 vector for rejected trials
-        trial_start_events = events[events[:, 2] == 2]
+        trial_start_events = events[events[:, 2] == 6]
         assert len(trial_start_events) == len(trial_events)
         artifact_trial_mask = np.zeros(len(trial_events), dtype=np.uint8)
         artifact_events = events[events[:, 2] == 1]
