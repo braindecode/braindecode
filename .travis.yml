@@ -16,12 +16,19 @@ install:
   - conda env create -f environment.yml 
   - conda info --envs
   - source activate braindecode
+  - pip install sphinx-gallery
+  - pip install sphinx_rtd_theme
   - pip install --upgrade pytest pytest-cov codecov
 
 # command to run tests
 script:
   - pytest
+  # Use Sphinx to make the html docs
+  - make html
+  # Tell GitHub not to use jekyll to compile the docs
+  - touch _build/html/.nojekyll
+
 after_script:
-  # Need to run from source dir to exectue "git" commands
+  # Need to run from source dir to execute "git" commands
   - cd ${SRC_DIR};
   - codecov;
