@@ -51,6 +51,7 @@ API
    :toctree: source
 
    braindecode.datautil
+   braindecode.datasets
    braindecode.experiments
    braindecode.mne_ext
    braindecode.models

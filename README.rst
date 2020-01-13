@@ -41,7 +41,7 @@ alternatively, if you use conda, you could create a dedicated environment with t
 Documentation
 =============
 
-Documentation is online under https://tntlfreiburg.github.io/braindecode/
+Documentation is online under https://braindecode.github.io/braindecode/
 
 
 Dataset

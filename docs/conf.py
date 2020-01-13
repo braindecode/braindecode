@@ -24,7 +24,8 @@ sys.path.insert(0, os.path.abspath('..'))
 import matplotlib
 matplotlib.use('agg')
 
-
+import sphinx_gallery
+from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
 
 # -- General configuration ------------------------------------------------
 
@@ -47,9 +48,10 @@ extensions = [
     #'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
-    'nbsphinx',
+    # 'nbsphinx',
     'sphinx.ext.autosummary', #https://stackoverflow.com/a/21665947/1469195
     'sphinx.ext.linkcode', #https://github.com/Lasagne/Lasagne/blob/a497f4b3f434911df989d03f1647e5f15366ebd0/docs/conf.py#L37
+    'sphinx_gallery.gen_gallery',
 ]
 
 # Resolve function for the linkcode extension.
@@ -103,8 +105,8 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'Braindecode'
-copyright = '2018, Robin Tibor Schirrmeister'
-author = 'Robin Tibor Schirrmeister'
+copyright = '2018-2020, Braindecode developers'
+author = 'Braindecode developers'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -134,6 +136,15 @@ pygments_style = 'sphinx'
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
 
+
+# Sphinx-gallery configuration
+
+sphinx_gallery_conf = {
+    'examples_dirs': ['../examples'],
+    'gallery_dirs': ['auto_examples'],
+    'doc_module': ('braindecode',),
+    'reference_url': dict(braindecode=None),
+}
 
 # -- Options for HTML output ----------------------------------------------
 
