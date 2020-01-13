@@ -29,6 +29,13 @@ Installation
 
   pip install braindecode
 
+alternatively, if you use conda, you could create a dedicated environment with the following:
+
+.. code-block:: bash
+
+	curl -O https://raw.githubusercontent.com/timeflux/timeflux/master/environment.yml
+	conda env create -f environment.yml
+	conda activate braindecode
 
 
 Documentation
