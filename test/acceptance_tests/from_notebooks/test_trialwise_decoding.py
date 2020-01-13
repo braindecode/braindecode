@@ -19,8 +19,8 @@ def test_trialwise_decoding():
     raw = concatenate_raws(parts)
 
     # Find the events in this dataset
-    events = mne.find_events(raw, shortest_event=0, stim_channel='STI 014')
-
+    events, _ = mne.events_from_annotations(raw)
+    
     # Use only EEG channels
     eeg_channel_inds = mne.pick_types(raw.info, meg=False, eeg=True, stim=False,
                                       eog=False,
