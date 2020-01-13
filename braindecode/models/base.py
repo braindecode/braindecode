@@ -9,8 +9,6 @@ from braindecode.experiments.monitors import (
     MisclassMonitor,
     RuntimeMonitor,
     CroppedTrialMisclassMonitor,
-    compute_trial_labels_from_crop_preds,
-    compute_pred_labels_from_trial_preds,
     compute_preds_per_trial_from_crops,
 )
 from braindecode.experiments.stopcriteria import MaxEpochs
@@ -54,7 +52,7 @@ class BaseModel(object):
     def parameters(self):
         """
         Return parameters of underlying torch model.
-    
+
         Returns
         -------
         parameters: list of torch tensors
@@ -78,7 +76,7 @@ class BaseModel(object):
     ):
         """
         Setup training for this model.
-        
+
         Parameters
         ----------
         loss: function (predictions, targets) -> torch scalar
@@ -124,7 +122,7 @@ class BaseModel(object):
         self,
         train_X,
         train_y,
-        epochs,
+        n_epochs,
         batch_size,
         input_time_length=None,
         validation_data=None,
@@ -135,10 +133,10 @@ class BaseModel(object):
     ):
         """
         Fit the model using the given training data.
-        
+
         Will set `epochs_df` variable with a pandas dataframe to the history
         of the training process.
-        
+
         Parameters
         ----------
         train_X: ndarray
@@ -149,7 +147,7 @@ class BaseModel(object):
             Number of epochs to train
         batch_size: int
         input_time_length: int, optional
-            Super crop size, what temporal size is pushed forward through 
+            Super crop size, what temporal size is pushed forward through
             the network, see cropped decoding tuturial.
         validation_data: (ndarray, 1darray), optional
             X and y for validation set if wanted
@@ -166,9 +164,10 @@ class BaseModel(object):
 
         Returns
         -------
-        exp: 
+        exp:
             Underlying braindecode :class:`.Experiment`
         """
+        epochs = n_epochs  # XXX fix this...
         if (not hasattr(self, "compiled")) or (not self.compiled):
             raise ValueError(
                 "Compile the model first by calling model.compile(loss, optimizer, metrics)"
@@ -276,7 +275,7 @@ class BaseModel(object):
     def evaluate(self, X, y):
         """
         Evaluate, i.e., compute metrics on given inputs and targets.
-        
+
         Parameters
         ----------
         X: ndarray
@@ -334,12 +333,12 @@ class BaseModel(object):
         )
         return result_dict
 
-    def predict_classes(
+    def predict(
         self, X, threshold_for_binary_case=None, individual_crops=False
     ):
         """
         Predict the labels for given input data.
-        
+
         Parameters
         ----------
         X: ndarray
@@ -372,15 +371,12 @@ class BaseModel(object):
         ----------
         X: ndarray
             Input data.
-        threshold_for_binary_case: float, optional
-            In case of a model with single output, the threshold for assigning,
-            label 0 or 1, e.g. 0.5.
         individual_crops: bool
 
         Returns
         -------
-            outs_per_trial: 2darray or list of 2darrays
-                Network outputs for each trial, optionally for each crop within trial.
+        outs_per_trial: 2darray or list of 2darrays
+            Network outputs for each trial, optionally for each crop within trial.
         """
         if individual_crops:
             assert self.cropped, "Cropped labels only for cropped decoding"

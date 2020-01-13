@@ -55,7 +55,8 @@ class BCICompetition4Set2A(object):
         else:
             trial_codes = [7]  # "unknown" class
 
-        trial_mask = [ev_code in trial_codes for ev_code in events[:, 2]]
+        trial_mask = np.array(
+            [ev_code in trial_codes for ev_code in events[:, 2]])
         trial_events = np.array(events[trial_mask]).copy()
         assert len(trial_events) == 288, "Got {:d} markers".format(
             len(trial_events)
