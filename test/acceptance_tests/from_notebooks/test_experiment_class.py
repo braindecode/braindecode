@@ -148,4 +148,4 @@ def test_experiment_class():
     for col in compare_df:
         np.testing.assert_allclose(np.array(compare_df[col]),
                                    exp.epochs_df[col],
-                                   rtol=1e-4, atol=1e-5)
+                                   rtol=1e-3, atol=1e-4)

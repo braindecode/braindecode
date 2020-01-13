@@ -2,9 +2,6 @@ language: python
 python:
   - "3.7"
 
-before_install:
-- pip install -U pytest-cov
-
 # command to install dependencies
 install:
   - sudo apt-get update
@@ -20,6 +17,7 @@ install:
   - conda info --envs
   - source activate braindecode
   - pip install --upgrade pytest pytest-cov codecov
+
 # command to run tests
 script:
   - pytest
