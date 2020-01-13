@@ -1,6 +1,10 @@
 Braindecode
 ===========
 
+.. image:: https://badges.gitter.im/braindecodechat/community.svg
+   :alt: Join the chat at https://gitter.im/braindecodechat/community
+   :target: https://gitter.im/braindecodechat/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
+
 A deep learning toolbox to decode raw time-domain EEG.
 
 For EEG researchers that want to want to work with deep learning and

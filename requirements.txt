@@ -1,0 +1,7 @@
+numpy
+pandas
+scipy
+resampy
+matplotlib
+h5py
+mne==0.19.2
