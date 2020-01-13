@@ -1,0 +1,21 @@
+name: braindecode
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+dependencies:
+- python>=3.6
+- numpy
+- pandas
+- scipy
+- mkl
+- resampy
+- matplotlib
+- h5py
+- pytorch
+- pytest
+- pip
+- pip:
+  - mne
+  - git+https://github.com/braindecode/braindecode
+
