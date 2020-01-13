@@ -19,7 +19,7 @@ def test_cropped_decoding():
     raw = concatenate_raws(parts)
 
     # Find the events in this dataset
-    events = mne.find_events(raw, shortest_event=0, stim_channel='STI 014')
+    events, _ = mne.events_from_annotations(raw)
 
     # Use only EEG channels
     eeg_channel_inds = mne.pick_types(raw.info, meg=False, eeg=True, stim=False,
@@ -138,8 +138,8 @@ def test_cropped_decoding():
             losses.append(loss)
             # Assign the predictions to the trials
             preds_per_trial = compute_preds_per_trial_from_crops(all_preds,
-                                                              input_time_length,
-                                                              dataset.X)
+                                                                 input_time_length,
+                                                                 dataset.X)
             # preds per trial are now trials x classes x timesteps/predictions
             # Now mean across timesteps for each trial to get per-trial predictions
             meaned_preds_per_trial = np.array(
@@ -151,24 +151,25 @@ def test_cropped_decoding():
                 setname, accuracy * 100))
     np.testing.assert_allclose(
         np.array(losses),
-        np.array([1.703004002571106,
-                  1.6295261979103088,
-                  0.71168938279151917,
-                  0.70825588703155518,
-                  0.58231228590011597,
-                  0.60176041722297668,
-                  0.46629951894283295,
-                  0.51184913516044617]),
+        np.array([1.31657708,
+                  1.73548156,
+                  1.02950428,
+                  1.43932164,
+                  0.78677772,
+                  1.12382019,
+                  0.55920881,
+                  0.87277424]),
         rtol=1e-4, atol=1e-5)
     np.testing.assert_allclose(
         np.array(accuracies),
         np.array(
-            [50.0,
-             46.666666666666664,
-             60.0,
-             53.333333333333336,
-             68.333333333333329,
-             66.666666666666657,
-             88.333333333333329,
-             83.333333333333343]),
+            [50.,
+             46.66666667,
+             50.,
+             46.66666667,
+             50.,
+             46.66666667,
+             66.66666667,
+             50.]
+        ),
         rtol=1e-4, atol=1e-5)

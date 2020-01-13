@@ -19,7 +19,7 @@ def test_trialwise_decoding():
     raw = concatenate_raws(parts)
 
     # Find the events in this dataset
-    events = mne.find_events(raw, shortest_event=0, stim_channel='STI 014')
+    events, _ = mne.events_from_annotations(raw)
 
     # Use only EEG channels
     eeg_channel_inds = mne.pick_types(raw.info, meg=False, eeg=True, stim=False,
@@ -124,33 +124,33 @@ def test_trialwise_decoding():
 
     np.testing.assert_allclose(
         np.array(losses),
-        np.array([1.1775966882705688,
-                  1.2602351903915405,
-                  0.7068756818771362,
-                  0.9367912411689758,
-                  0.394258975982666,
-                  0.6598362326622009,
-                  0.3359280526638031,
-                  0.656258761882782,
-                  0.2790488004684448,
-                  0.6104397177696228,
-                  0.27319177985191345,
-                  0.5949864983558655]),
-    rtol=1e-4, atol=1e-5)
+        np.array([0.91796708,
+                  1.2714895,
+                  0.4999536,
+                  0.94365239,
+                  0.39268905,
+                  0.89928466,
+                  0.37648854,
+                  0.8940345,
+                  0.35774994,
+                  0.86749417,
+                  0.35080773,
+                  0.80767328]),
+        rtol=1e-4, atol=1e-5)
 
     np.testing.assert_allclose(
         np.array(accuracies),
         np.array(
-            [51.666666666666671,
-             53.333333333333336,
-             63.333333333333329,
-             56.666666666666664,
-             86.666666666666671,
-             66.666666666666657,
-             90.0,
-             63.333333333333329,
-             96.666666666666671,
-             56.666666666666664,
-             96.666666666666671,
-             66.666666666666657]),
-    rtol=1e-4, atol=1e-5)
+            [55.,
+             63.33333333,
+             71.66666667,
+             63.33333333,
+             81.66666667,
+             60.,
+             78.33333333,
+             63.33333333,
+             83.33333333,
+             66.66666667,
+             80.,
+             66.66666667]),
+        rtol=1e-4, atol=1e-5)
