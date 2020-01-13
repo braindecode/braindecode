@@ -33,7 +33,7 @@ setup(
     # Choose your license
     license='BSD 3-Clause',
 
-    install_requires=['mne==0.19.2',  'numpy', 'pandas', 'scipy',
+    install_requires=['mne>=0.19.2', 'numpy', 'pandas', 'scipy',
                       'resampy', 'matplotlib', 'h5py',],
     #tests_require = [...]
 

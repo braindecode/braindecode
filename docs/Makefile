@@ -3,10 +3,10 @@
 
 # You can set these variables from the command line.
 SPHINXOPTS    =
-SPHINXBUILD   = /home/schirrmr/anaconda3/envs/default/bin/python3.6 -msphinx
+SPHINXBUILD   = sphinx-build
 SPHINXPROJ    = Braindecode
 SOURCEDIR     = .
-BUILDDIR      = ../../braindecode-docs/
+BUILDDIR      = _build/
 
 # Put it first so that "make" without argument is like "make help".
 help:
