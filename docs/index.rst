@@ -26,6 +26,13 @@ Installation
   pip install braindecode
 
 
+Examples
+========
+.. toctree::
+   :maxdepth: 1
+
+   auto_examples/index.rst
+
 
 Tutorials
 =========
@@ -41,7 +48,8 @@ Tutorials
 
 Troubleshooting
 ===============
-Please report any issues on github: https://github.com/robintibor/braindecode
+
+Please report any issues on github: https://github.com/braindecode/braindecode/issues
 
 
 API
