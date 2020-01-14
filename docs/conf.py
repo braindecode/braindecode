@@ -193,6 +193,7 @@ sphinx_gallery_conf = {
     'gallery_dirs': ['auto_examples'],
     'doc_module': ('braindecode', 'mne'),
     'backreferences_dir': 'generated',
+    'show_memory': True,
     'reference_url': dict(braindecode=None),
 }
 

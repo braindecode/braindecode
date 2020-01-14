@@ -2,7 +2,7 @@
 #
 
 # You can set these variables from the command line.
-SPHINXOPTS    = -nWT --keep-going
+SPHINXOPTS    =
 SPHINXBUILD   = sphinx-build
 SPHINXPROJ    = Braindecode
 SOURCEDIR     = .

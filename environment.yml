@@ -17,5 +17,4 @@ dependencies:
 - pip
 - pip:
   - mne
-  - git+https://github.com/braindecode/braindecode
-
+  - https://github.com/braindecode/braindecode/zipball/master

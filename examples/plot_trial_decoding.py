@@ -49,19 +49,20 @@ from mne.io import concatenate_raws
 # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
 subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
 event_codes = [5, 6, 9, 10, 13, 14]
-# event_codes = [3,4,5,6,7,8,9,10,11,12,13,14]
+# event_codes = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
 physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes)
 
 # Load each of the files
-parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto',
-                             verbose='WARNING')
-         for path in physionet_paths]
+raws = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto',
+                            verbose='WARNING')
+        for path in physionet_paths]
 
 # Concatenate them
-raw = concatenate_raws(parts)
+raw = concatenate_raws(raws)
+del raws  # to save memory
 
 # Find the events in this dataset
 events, _ = mne.events_from_annotations(raw)
@@ -154,7 +155,7 @@ from torch.optim import Adam
 import torch.nn.functional as F
 # optimizer = AdamW(model.parameters(), lr=1*0.01, weight_decay=0.5*0.001) # these are good values for the deep model
 optimizer = Adam(model.parameters(), lr=0.0625 * 0.01, weight_decay=0)
-model.compile(loss=F.nll_loss, optimizer=optimizer, iterator_seed=1,)
+model.compile(loss=F.nll_loss, optimizer=optimizer, iterator_seed=1)
 
 ##############################################################################
 # Run the training
@@ -199,6 +200,7 @@ y_pred = model.predict(test_set.X)
 
 model.predict_outs(test_set.X)
 
+##############################################################################
 # .. warning::
 #
 #   If you want to try cross-subject decoding, changing the loading code to
@@ -212,10 +214,10 @@ from braindecode.datautil import SignalAndTarget
 physionet_paths = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12])
                    for sub_id in range(1, 51)]
 physionet_paths = np.concatenate(physionet_paths)
-parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto')
-         for path in physionet_paths]
+raws = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto')
+        for path in physionet_paths]
 
-raw = concatenate_raws(parts)
+raw = concatenate_raws(raws)
 
 picks = mne.pick_types(raw.info, meg=False, eeg=True, stim=False,
                        eog=False, exclude='bads')
@@ -233,9 +235,10 @@ epoched = mne.Epochs(raw, events, dict(hands=2, feet=3), tmin=1,
 physionet_paths_valid = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12])
                          for sub_id in range(51, 56)]
 physionet_paths_valid = np.concatenate(physionet_paths_valid)
-parts_valid = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto')
-               for path in physionet_paths_valid]
-raw_valid = concatenate_raws(parts_valid)
+raws_valid = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto')
+              for path in physionet_paths_valid]
+raw_valid = concatenate_raws(raws_valid)
+del raws_valid  # save memory
 
 picks_valid = mne.pick_types(raw_valid.info, meg=False, eeg=True,
                              stim=False, eog=False,
