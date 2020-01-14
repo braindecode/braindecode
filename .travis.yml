@@ -22,11 +22,10 @@ install:
 
 # command to run tests
 script:
-  - pytest --cov=./
+  - pytest
   # Use Sphinx to make the html docs
   - cd docs; make html
 
 after_script:
   # Need to run from source dir to execute "git" commands
-  - cd ${SRC_DIR};
-  - codecov;
+  - cd ${SRC_DIR}; codecov
