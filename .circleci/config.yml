@@ -51,6 +51,7 @@ jobs:
             command: |
               python -m pip install --user --upgrade --progress-bar off pip numpy
               python -m pip install --user --upgrade --progress-bar off -r requirements.txt
+              python -m pip install --user --upgrade --progress-bar off -r docs/requirements.txt
               python -m pip install --user --upgrade --progress-bar off ipython "https://api.github.com/repos/sphinx-gallery/sphinx-gallery/zipball/master" memory_profiler
               python -m pip install --user -e .
 
@@ -96,9 +97,9 @@ jobs:
                 echo PATTERN="$PATTERN";
                 if [[ $PATTERN ]]; then
                   PATTERN="\(${PATTERN::-2}\)";
-                  echo html_dev-pattern > build.txt;
+                  echo html-pattern > build.txt;
                 else
-                  echo html_dev-noplot > build.txt;
+                  echo html > build.txt;
                 fi;
               fi;
               echo "$PATTERN" > pattern.txt;

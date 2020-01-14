@@ -35,6 +35,18 @@ Models
     Deep4Net
 
 
+Data Utils
+==========
+
+:py:mod:`braindecode.datautil`:
+
+.. currentmodule:: braindecode.datautil
+
+.. autosummary::
+   :toctree: generated/
+
+    SignalAndTarget
+
 Utils
 =====
 

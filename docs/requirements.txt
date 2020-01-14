@@ -1,3 +1,4 @@
 sphinx_gallery
-mock
 sphinx_rtd_theme
+numpydoc
+memory_profiler

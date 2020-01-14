@@ -7,6 +7,7 @@ SPHINXBUILD   = sphinx-build
 SPHINXPROJ    = Braindecode
 SOURCEDIR     = .
 BUILDDIR      = _build/
+ALLSPHINXOPTS   = -d _build/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 
 # Put it first so that "make" without argument is like "make help".
 help:
@@ -33,4 +34,9 @@ rmanddoc: removesource removeipynbcheckpoints apidoc html
 	echo "Done"
 
 clean:
-	-rm -rf _build auto_examples generated source
+	-rm -rf _build auto_examples generated
+
+html-pattern:
+	$(SPHINXBUILD) -D plot_gallery=1 -D sphinx_gallery_conf.filename_pattern=$(PATTERN) -b html $(ALLSPHINXOPTS) _build/html
+	@echo
+	@echo "Build finished. The HTML pages are in _build/html"
