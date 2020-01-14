@@ -26,6 +26,14 @@ Installation
   pip install braindecode
 
 
+Install the latest version of braindecode via pip:
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+  pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master
+
+
 Examples
 ========
 .. toctree::

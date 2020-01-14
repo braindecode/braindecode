@@ -27,13 +27,12 @@ Models
 
 .. currentmodule:: braindecode.models
 
-.. automodule:: braindecode.models
-   :no-members:
-   :no-inherited-members:
+.. autosummary::
+   :toctree: generated/
 
-   ShallowFBCSPNet
-   AvgPool2dWithConv
-   Deep4Net
+    ShallowFBCSPNet
+    AvgPool2dWithConv
+    Deep4Net
 
 
 Utils
@@ -43,8 +42,7 @@ Utils
 
 .. currentmodule:: braindecode.util
 
-.. automodule:: braindecode.util
-   :no-members:
-   :no-inherited-members:
+.. autosummary::
+   :toctree: generated/
 
-   set_random_seeds
+    set_random_seeds
