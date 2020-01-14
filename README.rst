@@ -5,9 +5,10 @@ Braindecode
    :alt: Join the chat at https://gitter.im/braindecodechat/community
    :target: https://gitter.im/braindecodechat/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
 .. image:: https://travis-ci.org/braindecode/braindecode.svg?branch=master
-    :target: https://travis-ci.org/braindecode/braindecode
-.. |Codecov| image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
-.. _Codecov: https://codecov.io/gh/braindecode/braindecode
+   :target: https://travis-ci.org/braindecode/braindecode
+.. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
+   :target: https://codecov.io/gh/braindecode/braindecode
+	:alt: Code Coverage
 
 A deep learning toolbox to decode raw time-domain EEG.
 
