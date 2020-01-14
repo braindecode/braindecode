@@ -93,7 +93,6 @@ n_classes = 2
 in_chans = train_set.X.shape[1]
 
 
-
 class EEGDataSet(Dataset):
     def __init__(self, X, y):
         self.X = X
@@ -120,21 +119,11 @@ class TrainTestSplit(object):
         # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
         # or stick to same API
         if isinstance(self.train_size, int):
-            dataset_train = EEGDataSet(
-                dataset.X[: self.train_size], dataset.y[: self.train_size]
-            )
-            dataset_valid = EEGDataSet(
-                dataset.X[self.train_size :], dataset.y[self.train_size :]
-            )
-        elif isinstance(self.train_size, float):
-            raise Exception
-            dataset_train = torch.utils.data.Subset(
-                dataset, range(0, int(self.train_size * len(dataset)))
-            )
-            dataset_valid = torch.utils.data.Subset(
-                dataset, range(int(self.train_size * len(dataset)), len(X))
-            )
-        return dataset_train, dataset_valid
+            n_train_samples = self.train_size
+        else:
+            n_train_samples = int(self.train_size * len(dataset))
+        return dataset[:n_train_samples], dataset[n_train_samples:]
+
 
 set_random_seeds(20200114, True)
 
@@ -143,8 +132,7 @@ model = ShallowFBCSPNet(
     in_chans=in_chans,
     n_classes=n_classes,
     input_time_length=train_set.X.shape[2],
-    final_conv_length="auto",
-).create_network()
+    final_conv_length="auto").create_network()
 if cuda:
     model.cuda()
 
