@@ -2,11 +2,12 @@
 #
 
 # You can set these variables from the command line.
-SPHINXOPTS    =
+SPHINXOPTS    = -nWT --keep-going
 SPHINXBUILD   = sphinx-build
 SPHINXPROJ    = Braindecode
 SOURCEDIR     = .
 BUILDDIR      = _build/
+ALLSPHINXOPTS   = -d _build/doctrees $(PAPEROPT_$(PAPER)) $(SPHINXOPTS) .
 
 # Put it first so that "make" without argument is like "make help".
 help:
@@ -36,6 +37,6 @@ clean:
 	-rm -rf _build auto_examples generated
 
 html-pattern:
-	BUILD_DEV_HTML=1 $(SPHINXBUILD) -D plot_gallery=1 -D sphinx_gallery_conf.filename_pattern=$(PATTERN) -b html $(ALLSPHINXOPTS) _build/html
+	$(SPHINXBUILD) -D plot_gallery=1 -D sphinx_gallery_conf.filename_pattern=$(PATTERN) -b html $(ALLSPHINXOPTS) _build/html
 	@echo
 	@echo "Build finished. The HTML pages are in _build/html"
