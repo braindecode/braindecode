@@ -34,3 +34,8 @@ rmanddoc: removesource removeipynbcheckpoints apidoc html
 
 clean:
 	-rm -rf _build auto_examples generated source
+
+html-pattern:
+	BUILD_DEV_HTML=1 $(SPHINXBUILD) -D plot_gallery=1 -D sphinx_gallery_conf.filename_pattern=$(PATTERN) -b html $(ALLSPHINXOPTS) _build/html
+	@echo
+	@echo "Build finished. The HTML pages are in _build/html"
