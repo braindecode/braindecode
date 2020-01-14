@@ -6,3 +6,4 @@ matplotlib
 h5py
 mne>=0.19.2
 torch
+skorch==0.7.0
