@@ -78,7 +78,7 @@ jobs:
               mkdir -p ~/mne_data
               touch pattern.txt;
               if [ "$CIRCLE_BRANCH" == "master" ] || [[ $(cat gitlog.txt) == *"[circle full]"* ]]; then
-                echo html_dev > build.txt;
+                echo html > build.txt;
               else
                 FNAMES=$(git diff --name-only $(git merge-base $CIRCLE_BRANCH upstream/master) $CIRCLE_BRANCH);
                 echo FNAMES="$FNAMES";
