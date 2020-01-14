@@ -1,3 +1,10 @@
+"""
+Skorch Trialwise Decoding
+==================
+
+Example using Skorch - How do you think?
+"""
+
 import logging
 import sys
 
