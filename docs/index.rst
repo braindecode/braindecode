@@ -39,7 +39,7 @@ Examples
 .. toctree::
    :maxdepth: 1
 
-   auto_examples/index.rst
+   auto_examples/index
 
 
 Public API
@@ -47,7 +47,7 @@ Public API
 .. toctree::
    :maxdepth: 1
 
-   api.rst
+   api
 
 
 .. Tutorials
