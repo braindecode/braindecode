@@ -1,6 +1,27 @@
 import os
 import errno
+import random
+
 import numpy as np
+
+import torch as th
+
+
+def set_random_seeds(seed, cuda):
+    """Set seeds for python random module numpy.random and torch.
+
+    Parameters
+    ----------
+    seed: int
+        Random seed.
+    cuda: bool
+        Whether to set cuda seed with torch.
+    """
+    random.seed(seed)
+    th.manual_seed(seed)
+    if cuda:
+        th.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
 
 
 def corr(a, b):
@@ -103,19 +124,19 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
 
 
 class FuncAndArgs(object):
-    """Container for a function and its arguments. 
-    Useful in case you want to pass a function and its arguments 
+    """Container for a function and its arguments.
+    Useful in case you want to pass a function and its arguments
     to another function without creating a new class.
-    You can call the new instance either with the apply method or 
+    You can call the new instance either with the apply method or
     the ()-call operator:
-    
+
     >>> FuncAndArgs(max, 2,3).apply(4)
     4
     >>> FuncAndArgs(max, 2,3)(4)
     4
     >>> FuncAndArgs(sum, [3,4])(8)
     15
-    
+
     """
 
     def __init__(self, func, *args, **kwargs):
@@ -164,9 +185,9 @@ def dict_equal(d1, d2):
     intersect_keys = d1_keys.intersection(d2_keys)
     modified = {o: (d1[o], d2[o]) for o in intersect_keys if d1[o] != d2[o]}
     return (
-        intersect_keys == d2_keys
-        and intersect_keys == d1_keys
-        and len(modified) == 0
+        intersect_keys == d2_keys and
+        intersect_keys == d1_keys and
+        len(modified) == 0
     )
 
 

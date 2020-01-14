@@ -31,3 +31,6 @@ removesource: Makefile
 
 rmanddoc: removesource removeipynbcheckpoints apidoc html
 	echo "Done"
+
+clean:
+	-rm -rf _build auto_examples generated source

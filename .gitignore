@@ -33,6 +33,7 @@ docs/auto_examples/
 docs/auto_tutorials/
 docs/modules/generated/
 docs/sphinxext/cachedir
+docs/source
 pip-log.txt
 .coverage*
 tags

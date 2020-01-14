@@ -2,8 +2,8 @@ import logging
 
 import numpy as np
 
-from braindecode.datautil.iterators import get_balanced_batches
-from braindecode.util import wrap_reshape_apply_fn, corr
+from ..datautil.iterators import get_balanced_batches
+from ..util import wrap_reshape_apply_fn, corr
 
 log = logging.getLogger(__name__)
 
@@ -319,7 +319,9 @@ def compute_amplitude_prediction_correlations(
        visualization.
        Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     """
-    pred_fn_new = lambda x: [pred_fn(x)]
+    def pred_fn_new(x):
+        return [pred_fn(x)]
+
     pred_corrs = spectral_perturbation_correlation(
         perturb_fn,
         mean_diff_feature_maps,

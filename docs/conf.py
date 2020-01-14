@@ -79,10 +79,11 @@ def linkcode_resolve(domain, info):
         filename = info['module'].replace('.', '/') + '.py'
     return "https://github.com/robintibor/braindecode/blob/master/%s" % filename
 
-autosummary_generate = True #https://stackoverflow.com/a/21665947/1469195
+autosummary_generate = True  # https://stackoverflow.com/a/21665947/1469195
 autodoc_member_order = 'bysource'
-## Default flags used by autodoc directives
-autodoc_default_flags = ['members', 'show-inheritance']
+# ## Default flags used by autodoc directives
+# autodoc_default_flags = ['members', 'show-inheritance']
+autodoc_default_options = {'inherited-members': None}
 
 exclude_patterns = ['_build', '_templates']
 
@@ -143,6 +144,7 @@ sphinx_gallery_conf = {
     'examples_dirs': ['../examples'],
     'gallery_dirs': ['auto_examples'],
     'doc_module': ('braindecode',),
+    'backreferences_dir': 'generated',
     'reference_url': dict(braindecode=None),
 }
 

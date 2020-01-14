@@ -118,7 +118,7 @@ valid_set = SignalAndTarget(X[40:70], y=y[40:70])
 # decoding and visualization](https://arxiv.org/abs/1703.05051).
 
 from braindecode.models import ShallowFBCSPNet
-from braindecode.torch_ext.util import set_random_seeds  # XXX : move to braindecode.util
+from braindecode.util import set_random_seeds  # XXX : move to braindecode.util
 
 # Set if you want to use GPU
 # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.

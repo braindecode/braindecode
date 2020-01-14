@@ -34,16 +34,24 @@ Examples
    auto_examples/index.rst
 
 
-Tutorials
-=========
+Public API
+==========
 .. toctree::
    :maxdepth: 1
 
-   notebooks/Trialwise_Decoding.ipynb
-   notebooks/Cropped_Decoding.ipynb
-   notebooks/Trialwise_Manual_Training_Loop.ipynb
-   notebooks/Cropped_Manual_Training_Loop.ipynb
-   notebooks/visualization/Perturbation.ipynb
+   api.rst
+
+
+.. Tutorials
+.. =========
+.. .. toctree::
+..    :maxdepth: 1
+
+..    notebooks/Trialwise_Decoding.ipynb
+..    notebooks/Cropped_Decoding.ipynb
+..    notebooks/Trialwise_Manual_Training_Loop.ipynb
+..    notebooks/Cropped_Manual_Training_Loop.ipynb
+..    notebooks/visualization/Perturbation.ipynb
 
 
 Troubleshooting
@@ -52,20 +60,18 @@ Troubleshooting
 Please report any issues on github: https://github.com/braindecode/braindecode/issues
 
 
-API
-===
+.. API
+.. ===
 
-.. autosummary::
-   :toctree: source
+.. .. autosummary::
+..    :toctree: source
 
-   braindecode.datautil
-   braindecode.datasets
-   braindecode.experiments
-   braindecode.mne_ext
-   braindecode.models
-   braindecode.torch_ext
-   braindecode.visualization
-
+..    braindecode.datasets
+..    braindecode.experiments
+..    braindecode.mne_ext
+..    braindecode.models
+..    braindecode.torch_ext
+..    braindecode.visualization
 
 Citing
 ======
@@ -97,4 +103,4 @@ Indices and tables
 * :ref:`search`
 
 
-.. _GitHub: https://github.com/robintibor/braindecode
+.. _GitHub: https://github.com/braindecode/braindecode
