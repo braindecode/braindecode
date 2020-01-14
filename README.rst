@@ -25,7 +25,7 @@ Installation
 
   pip install numpy
 
-3. Install braindecode via pip:
+3. Install latest release of braindecode via pip:
 
 .. code-block:: bash
 
@@ -38,6 +38,13 @@ alternatively, if you use conda, you could create a dedicated environment with t
 	curl -O https://raw.githubusercontent.com/braindecode/braindecode/master/environment.yml
 	conda env create -f environment.yml
 	conda activate braindecode
+
+Install the latest version of braindecode via pip:
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+  pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master
 
 
 Documentation
