@@ -114,7 +114,7 @@ jobs:
         - run:
             name: make html
             command: |
-              cd doc;
+              cd docs;
               PATTERN=$(cat ../pattern.txt) make $(cat ../build.txt);
 
         # Reduce upload time of artifacts we will (almost) never look at
@@ -128,10 +128,10 @@ jobs:
 
         # Save the outputs
         - store_artifacts:
-            path: doc/_build/html/
+            path: docs/_build/html/
             destination: dev
         - persist_to_workspace:
-            root: doc/_build
+            root: docs/_build
             paths:
               - html
 
