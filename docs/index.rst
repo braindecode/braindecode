@@ -26,38 +26,60 @@ Installation
   pip install braindecode
 
 
+Install the latest version of braindecode via pip:
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Tutorials
-=========
+.. code-block:: bash
+
+  pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master
+
+
+Examples
+========
 .. toctree::
    :maxdepth: 1
 
-   notebooks/Trialwise_Decoding.ipynb
-   notebooks/Cropped_Decoding.ipynb
-   notebooks/Trialwise_Manual_Training_Loop.ipynb
-   notebooks/Cropped_Manual_Training_Loop.ipynb
-   notebooks/visualization/Perturbation.ipynb
+   auto_examples/index.rst
+
+
+Public API
+==========
+.. toctree::
+   :maxdepth: 1
+
+   api.rst
+
+
+.. Tutorials
+.. =========
+.. .. toctree::
+..    :maxdepth: 1
+
+..    notebooks/Trialwise_Decoding.ipynb
+..    notebooks/Cropped_Decoding.ipynb
+..    notebooks/Trialwise_Manual_Training_Loop.ipynb
+..    notebooks/Cropped_Manual_Training_Loop.ipynb
+..    notebooks/visualization/Perturbation.ipynb
 
 
 Troubleshooting
 ===============
-Please report any issues on github: https://github.com/robintibor/braindecode
+
+Please report any issues on github: https://github.com/braindecode/braindecode/issues
 
 
-API
-===
+.. API
+.. ===
 
-.. autosummary::
-   :toctree: source
+.. .. autosummary::
+..    :toctree: source
 
-   braindecode.datautil
-   braindecode.datasets
-   braindecode.experiments
-   braindecode.mne_ext
-   braindecode.models
-   braindecode.torch_ext
-   braindecode.visualization
-
+..    braindecode.datasets
+..    braindecode.experiments
+..    braindecode.mne_ext
+..    braindecode.models
+..    braindecode.torch_ext
+..    braindecode.visualization
 
 Citing
 ======
@@ -89,4 +111,4 @@ Indices and tables
 * :ref:`search`
 
 
-.. _GitHub: https://github.com/robintibor/braindecode
+.. _GitHub: https://github.com/braindecode/braindecode

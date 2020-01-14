@@ -9,12 +9,15 @@ from braindecode.torch_ext.util import np_to_var
 
 
 class ShallowFBCSPNet(BaseModel):
-    """
-    Shallow ConvNet model from [2]_.
+    """Shallow ConvNet model from [2]_.
+
+    Parameters
+    ----------
+    in_chans : int
+        XXX
 
     References
     ----------
-
     .. [2] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
        Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F. & Ball, T. (2017).
        Deep learning with convolutional neural networks for EEG decoding and

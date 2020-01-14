@@ -1,17 +1,17 @@
 import numpy as np
+
 import torch
 import torch.nn.functional as F
 
-from braindecode.torch_ext.util import np_to_var
+from .util import np_to_var
 
 
 class Expression(torch.nn.Module):
-    """
-    Compute given expression on forward pass.
+    """Compute given expression on forward pass.
 
     Parameters
     ----------
-    expression_fn: function
+    expression_fn : callable
         Should accept variable number of objects of type
         `torch.autograd.Variable` to compute its output.
     """
@@ -35,11 +35,8 @@ class Expression(torch.nn.Module):
         else:
             expression_str = repr(self.expression_fn)
         return (
-            self.__class__.__name__
-            + "("
-            + "expression="
-            + str(expression_str)
-            + ")"
+            self.__class__.__name__ +
+            "(expression=%s) " % expression_str
         )
 
 
@@ -81,9 +78,9 @@ class AvgPool2dWithConv(torch.nn.Module):
             self.kernel_size[1],
         )
         if self._pool_weights is None or (
-            (tuple(self._pool_weights.size()) != tuple(weight_shape))
-            or (self._pool_weights.is_cuda != x.is_cuda)
-            or (self._pool_weights.data.type() != x.data.type())
+            (tuple(self._pool_weights.size()) != tuple(weight_shape)) or
+            (self._pool_weights.is_cuda != x.is_cuda) or
+            (self._pool_weights.data.type() != x.data.type())
         ):
             n_pool = np.prod(self.kernel_size)
             weights = np_to_var(

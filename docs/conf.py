@@ -16,16 +16,19 @@
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#
+
 import os
 import sys
-sys.path.insert(0, os.path.abspath('.'))
-sys.path.insert(0, os.path.abspath('..'))
+
+# sys.path.insert(0, os.path.abspath('.'))
+# sys.path.insert(0, os.path.abspath('..'))
+
 import matplotlib
 matplotlib.use('agg')
 
 import sphinx_gallery
 from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
+from numpydoc import numpydoc, docscrape  # noqa
 
 # -- General configuration ------------------------------------------------
 
@@ -47,49 +50,50 @@ extensions = [
     'sphinx.ext.ifconfig',
     #'sphinx.ext.viewcode',
     'sphinx.ext.githubpages',
-    'sphinx.ext.napoleon',
+    # 'sphinx.ext.napoleon',
     # 'nbsphinx',
     'sphinx.ext.autosummary', #https://stackoverflow.com/a/21665947/1469195
-    'sphinx.ext.linkcode', #https://github.com/Lasagne/Lasagne/blob/a497f4b3f434911df989d03f1647e5f15366ebd0/docs/conf.py#L37
+    # 'sphinx.ext.linkcode', #https://github.com/Lasagne/Lasagne/blob/a497f4b3f434911df989d03f1647e5f15366ebd0/docs/conf.py#L37
     'sphinx_gallery.gen_gallery',
+    'numpydoc'
 ]
 
-# Resolve function for the linkcode extension.
-# See https://github.com/Lasagne/Lasagne/blob/a497f4b3f434911df989d03f1647e5f15366ebd0/docs/conf.py#L37
-def linkcode_resolve(domain, info):
-    def find_source():
-        import braindecode
-        # try to find the file and line number, based on code from numpy:
-        # https://github.com/numpy/numpy/blob/master/doc/source/conf.py#L286
-        obj = sys.modules[info['module']]
-        for part in info['fullname'].split('.'):
-            obj = getattr(obj, part)
-        import inspect
-        import os
-        fn = inspect.getsourcefile(obj)
-        fn = os.path.relpath(fn, start=os.path.dirname(braindecode.__file__))
-        source, lineno = inspect.getsourcelines(obj)
-        return fn, lineno, lineno + len(source) - 1
+# # Resolve function for the linkcode extension.
+# # See https://github.com/Lasagne/Lasagne/blob/a497f4b3f434911df989d03f1647e5f15366ebd0/docs/conf.py#L37
+# def linkcode_resolve(domain, info):
+#     def find_source():
+#         import braindecode
+#         # try to find the file and line number, based on code from numpy:
+#         # https://github.com/numpy/numpy/blob/master/doc/source/conf.py#L286
+#         obj = sys.modules[info['module']]
+#         for part in info['fullname'].split('.'):
+#             obj = getattr(obj, part)
+#         import inspect
+#         import os
+#         fn = inspect.getsourcefile(obj)
+#         fn = os.path.relpath(fn, start=os.path.dirname(braindecode.__file__))
+#         source, lineno = inspect.getsourcelines(obj)
+#         return fn, lineno, lineno + len(source) - 1
 
-    if domain != 'py' or not info['module']:
-        return None
-    try:
-        filename = 'braindecode/%s#L%d-L%d' % find_source()
-    except Exception:
-        filename = info['module'].replace('.', '/') + '.py'
-    return "https://github.com/robintibor/braindecode/blob/master/%s" % filename
+#     if domain != 'py' or not info['module']:
+#         return None
+#     try:
+#         filename = 'braindecode/%s#L%d-L%d' % find_source()
+#     except Exception:
+#         filename = info['module'].replace('.', '/') + '.py'
+#     return "https://github.com/robintibor/braindecode/blob/master/%s" % filename
 
-autosummary_generate = True #https://stackoverflow.com/a/21665947/1469195
-autodoc_member_order = 'bysource'
-## Default flags used by autodoc directives
-autodoc_default_flags = ['members', 'show-inheritance']
+autosummary_generate = True  # https://stackoverflow.com/a/21665947/1469195
+# autodoc_member_order = 'bysource'
+# ## Default flags used by autodoc directives
+# autodoc_default_flags = ['members', 'show-inheritance']
+autodoc_default_options = {'inherited-members': None}
 
 exclude_patterns = ['_build', '_templates']
 
-
-napoleon_google_docstring = False
-napoleon_use_param = False
-napoleon_use_ivar = True
+# napoleon_google_docstring = False
+# napoleon_use_param = False
+# napoleon_use_ivar = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -139,10 +143,21 @@ todo_include_todos = True
 
 # Sphinx-gallery configuration
 
+# Example configuration for intersphinx: refer to the Python standard library.
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/{.major}'.format(sys.version_info), None),
+    'numpy': ('https://docs.scipy.org/doc/numpy/', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
+    'matplotlib': ('https://matplotlib.org/', None),
+    'sklearn': ('http://scikit-learn.org/stable', None),
+    'mne': ('http://mne.tools/stable', None),
+}
+
 sphinx_gallery_conf = {
     'examples_dirs': ['../examples'],
     'gallery_dirs': ['auto_examples'],
-    'doc_module': ('braindecode',),
+    'doc_module': ('braindecode', 'mne'),
+    'backreferences_dir': 'generated',
     'reference_url': dict(braindecode=None),
 }
 

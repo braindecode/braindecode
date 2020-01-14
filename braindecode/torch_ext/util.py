@@ -1,7 +1,8 @@
-import torch as th
-from torch.autograd import Variable
-import numpy as np
 import random
+
+import numpy as np
+
+import torch as th
 
 
 def np_to_var(
@@ -48,7 +49,7 @@ def var_to_np(var):
 def set_random_seeds(seed, cuda):
     """
     Set seeds for python random module numpy.random and torch.
-    
+
     Parameters
     ----------
     seed: int
