@@ -24,7 +24,7 @@ install:
 script:
   - pytest
   # Use Sphinx to make the html docs
-  - make html
+  - cd docs; make html
 
 after_script:
   # Need to run from source dir to execute "git" commands
