@@ -8,13 +8,12 @@ In this example, we will use a convolutional neural network on the
 1. Executed and imagined opening and closing of both hands
 2. Executed and imagined opening and closing of both feet
 
-<div class="alert alert-warning">
+.. warning::
 
-We use only one subject (with 90 trials) in this tutorial for demonstration
-purposes. A more interesting decoding task with many more trials would be
-to do cross-subject decoding on the same dataset.
+    We use only one subject (with 90 trials) in this tutorial for demonstration
+    purposes. A more interesting decoding task with many more trials would be
+    to do cross-subject decoding on the same dataset.
 
-</div>
 """
 
 # Enable logging
@@ -135,16 +134,20 @@ if cuda:
     model.cuda()
 
 
-# We use [AdamW](https://arxiv.org/abs/1711.05101) to optimize the parameters of our network together with [Cosine Annealing](https://arxiv.org/abs/1608.03983) of the learning rate. We supply some default parameters that we have found to work well for motor decoding, however we strongly encourage you to perform your own hyperparameter optimization using cross validation on your training data.
+# We use [AdamW](https://arxiv.org/abs/1711.05101) to optimize the parameters of
+# our network together with [Cosine Annealing](https://arxiv.org/abs/1608.03983)
+# of the learning rate. We supply some default parameters that we have found to
+# work well for motor decoding, however we strongly encourage you to perform
+# your own hyperparameter optimization using cross validation on your training
+# data.
 
-# <div class="alert alert-info">
+##############################################################################
+# .. warning::
 #
-# We will now use the Braindecode model class directly to perform the training in a few lines of code. If you instead want to use your own training loop, have a look at the [Trialwise Low-Level Tutorial](./TrialWise_LowLevel.html).
-#
-# </div>
-
-# In[ ]:
-
+#   We will now use the Braindecode model class directly to perform the
+#   training in a few lines of code. If you instead want to use your own
+#   training loop, have a look at the
+#   `Trialwise Low-Level Tutorial <./TrialWise_LowLevel.html>`_.
 
 # from braindecode.torch_ext.optimizers import AdamW
 from torch.optim import Adam
@@ -153,10 +156,9 @@ import torch.nn.functional as F
 optimizer = Adam(model.parameters(), lr=0.0625 * 0.01, weight_decay=0)
 model.compile(loss=F.nll_loss, optimizer=optimizer, iterator_seed=1,)
 
-# ## Run the training
-
-# In[ ]:
-
+##############################################################################
+# Run the training
+# ----------------
 
 n_epochs = 4
 model.fit(train_set.X, train_set.y, n_epochs=n_epochs, batch_size=64,
@@ -168,7 +170,7 @@ model.fit(train_set.X, train_set.y, n_epochs=n_epochs, batch_size=64,
 model.epochs_df
 
 # Eventually, we arrive at 83.4% accuracy, so 25 from 30 trials are correctly
-# predicted. In the [Cropped Decoding Tutorial](./Cropped_Decoding.html),
+# predicted. In the `Cropped Decoding Tutorial <./Cropped_Decoding.html>`_,
 # we can learn how to achieve higher accuracies using cropped training.
 
 ##############################################################################
@@ -187,23 +189,22 @@ model.evaluate(test_set.X, test_set.y)
 
 y_pred = model.predict(test_set.X)
 
+##############################################################################
 # We can also retrieve the raw network outputs per trial as such:
 #
-# <div class="alert alert-warning">
-# Note these are log-softmax outputs, so to get probabilities one would
-# have to exponentiate them using `th.exp`.
-# </div>
+# .. warning::
+#
+#    Note these are log-softmax outputs, so to get probabilities one would
+#    have to exponentiate them using `th.exp`.
 
 model.predict_outs(test_set.X)
 
-# <div class="alert alert-info">
+# .. warning::
 #
-# If you want to try cross-subject decoding, changing the loading code to
-# the following will perform cross-subject decoding on imagined left vs
-# right hand closing, with 50 training and 5 validation subjects
-# (Warning, might be very slow if you are on CPU):
-#
-# </div>
+#   If you want to try cross-subject decoding, changing the loading code to
+#   the following will perform cross-subject decoding on imagined left vs
+#   right hand closing, with 50 training and 5 validation subjects
+#   (Warning, might be very slow if you are on CPU):
 
 from braindecode.datautil import SignalAndTarget
 
@@ -257,10 +258,9 @@ valid_set = SignalAndTarget(valid_X, y=valid_y)
 
 
 ##############################################################################
-# Dataset references
-# ------------------
+# References
+# ----------
 #
-
 #  This dataset was created and contributed to PhysioNet by the developers of the [BCI2000](http://www.schalklab.org/research/bci2000) instrumentation system, which they used in making these recordings. The system is described in:
 #
 #      Schalk, G., McFarland, D.J., Hinterberger, T., Birbaumer, N., Wolpaw, J.R. (2004) BCI2000: A General-Purpose Brain-Computer Interface (BCI) System. IEEE TBME 51(6):1034-1043.

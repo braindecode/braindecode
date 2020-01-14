@@ -17,17 +17,12 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
-import os
 import sys
-
-# sys.path.insert(0, os.path.abspath('.'))
-# sys.path.insert(0, os.path.abspath('..'))
 
 import matplotlib
 matplotlib.use('agg')
 
-import sphinx_gallery
-from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
+import sphinx_gallery  # noqa
 from numpydoc import numpydoc, docscrape  # noqa
 
 # -- General configuration ------------------------------------------------
@@ -37,63 +32,103 @@ from numpydoc import numpydoc, docscrape  # noqa
 # needs_sphinx = '1.0'
 
 
-
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx.ext.doctest',
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
+    'sphinx.ext.linkcode',
     'sphinx.ext.ifconfig',
-    #'sphinx.ext.viewcode',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
-    # 'sphinx.ext.napoleon',
-    # 'nbsphinx',
-    'sphinx.ext.autosummary', #https://stackoverflow.com/a/21665947/1469195
-    # 'sphinx.ext.linkcode', #https://github.com/Lasagne/Lasagne/blob/a497f4b3f434911df989d03f1647e5f15366ebd0/docs/conf.py#L37
     'sphinx_gallery.gen_gallery',
     'numpydoc'
 ]
 
-# # Resolve function for the linkcode extension.
-# # See https://github.com/Lasagne/Lasagne/blob/a497f4b3f434911df989d03f1647e5f15366ebd0/docs/conf.py#L37
-# def linkcode_resolve(domain, info):
-#     def find_source():
-#         import braindecode
-#         # try to find the file and line number, based on code from numpy:
-#         # https://github.com/numpy/numpy/blob/master/doc/source/conf.py#L286
-#         obj = sys.modules[info['module']]
-#         for part in info['fullname'].split('.'):
-#             obj = getattr(obj, part)
-#         import inspect
-#         import os
-#         fn = inspect.getsourcefile(obj)
-#         fn = os.path.relpath(fn, start=os.path.dirname(braindecode.__file__))
-#         source, lineno = inspect.getsourcelines(obj)
-#         return fn, lineno, lineno + len(source) - 1
 
-#     if domain != 'py' or not info['module']:
-#         return None
-#     try:
-#         filename = 'braindecode/%s#L%d-L%d' % find_source()
-#     except Exception:
-#         filename = info['module'].replace('.', '/') + '.py'
-#     return "https://github.com/robintibor/braindecode/blob/master/%s" % filename
+def linkcode_resolve(domain, info):
+    """Determine the URL corresponding to a Python object.
 
-autosummary_generate = True  # https://stackoverflow.com/a/21665947/1469195
-# autodoc_member_order = 'bysource'
-# ## Default flags used by autodoc directives
-# autodoc_default_flags = ['members', 'show-inheritance']
+    Parameters
+    ----------
+    domain : str
+        Only useful when 'py'.
+    info : dict
+        With keys "module" and "fullname".
+
+    Returns
+    -------
+    url : str
+        The code URL.
+
+    Notes
+    -----
+    This has been adapted to deal with our "verbose" decorator.
+
+    Adapted from SciPy (doc/source/conf.py).
+    """
+    import mne
+    if domain != 'py':
+        return None
+
+    modname = info['module']
+    fullname = info['fullname']
+
+    submod = sys.modules.get(modname)
+    if submod is None:
+        return None
+
+    obj = submod
+    for part in fullname.split('.'):
+        try:
+            obj = getattr(obj, part)
+        except Exception:
+            return None
+    # deal with our decorators properly
+    while hasattr(obj, '__wrapped__'):
+        obj = obj.__wrapped__
+
+    try:
+        fn = inspect.getsourcefile(obj)
+    except Exception:
+        fn = None
+    if not fn:
+        try:
+            fn = inspect.getsourcefile(sys.modules[obj.__module__])
+        except Exception:
+            fn = None
+    if not fn:
+        return None
+    fn = op.relpath(fn, start=op.dirname(mne.__file__))
+    fn = '/'.join(op.normpath(fn).split(os.sep))  # in case on Windows
+
+    try:
+        source, lineno = inspect.getsourcelines(obj)
+    except Exception:
+        lineno = None
+
+    if lineno:
+        linespec = "#L%d-L%d" % (lineno, lineno + len(source) - 1)
+    else:
+        linespec = ""
+
+    if 'dev' in braindecode.__version__:
+        kind = 'master'
+    else:
+        kind = 'maint/%s' % ('.'.join(mne.__version__.split('.')[:2]))
+    return "http://github.com/braindecode/braindecode/blob/%s/braindecode/%s%s" % (  # noqa
+       kind, fn, linespec)
+
+
+autosummary_generate = True
 autodoc_default_options = {'inherited-members': None}
 
 exclude_patterns = ['_build', '_templates']
-
-# napoleon_google_docstring = False
-# napoleon_use_param = False
-# napoleon_use_ivar = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -166,7 +201,7 @@ sphinx_gallery_conf = {
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-#html_theme = 'alabaster'
+# html_theme = 'alabaster'
 
 import sphinx_rtd_theme
 html_theme = "sphinx_rtd_theme"
@@ -181,7 +216,8 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+# html_static_path = ['_static']
+html_static_path = []
 
 
 # -- Options for HTMLHelp output ------------------------------------------
