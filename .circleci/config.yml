@@ -31,7 +31,7 @@ jobs:
         # Load our data
         - restore_cache:
             keys:
-              - data-cache-0
+              # - data-cache-0
               - pip-cache
 
         - run:
@@ -49,8 +49,9 @@ jobs:
         - run:
             name: Get Python running
             command: |
-              python -m pip install --user --upgrade --progress-bar off pip numpy
+              python -m pip install --user --upgrade --progress-bar off pip
               python -m pip install --user --upgrade --progress-bar off -r requirements.txt
+              python -m pip install --user --upgrade --progress-bar off torch
               python -m pip install --user --upgrade --progress-bar off -r docs/requirements.txt
               python -m pip install --user --upgrade --progress-bar off ipython "https://api.github.com/repos/sphinx-gallery/sphinx-gallery/zipball/master" memory_profiler
               python -m pip install --user -e .
@@ -87,7 +88,7 @@ jobs:
                     echo "Checking example $FNAME ...";
                     PATTERN=`basename $FNAME`"\\|"$PATTERN;
                     if [[ $(cat $FNAME | grep -x ".*datasets.*eegbci.*" | wc -l) -gt 0 ]]; then
-                      python -c "import mne; print(mne.datasets.eegbci.load_data(2, [4, 8, 12], update_path=True))";
+                      python -c "import mne; print(mne.datasets.eegbci.load_data(2, [4, 5, 6, 8, 9, 10, 12, 13, 14], update_path=True, force_update=True))";
                     fi;
                     if [[ $(cat $FNAME | grep -x ".*datasets.*sleep_physionet.*" | wc -l) -gt 0 ]]; then
                       python -c "import mne; print(mne.datasets.sleep_physionet.age.fetch_data([0, 1], recording=[1], update_path=True))";
@@ -136,12 +137,12 @@ jobs:
             paths:
               - html
 
-        # Keep these separate, maybe better in terms of size limitations (?)
-        - save_cache:
-            key: data-cache-0
-            paths:
-              - ~/mne_data/MNE-eegbci-data
-              - ~/mne_data/physionet-sleep-data
+        # # Keep these separate, maybe better in terms of size limitations (?)
+        # - save_cache:
+        #     key: data-cache-0
+        #     paths:
+        #       - ~/mne_data/MNE-eegbci-data
+        #       - ~/mne_data/physionet-sleep-data
 
     # deploy:
     #   docker:
