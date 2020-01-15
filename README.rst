@@ -8,6 +8,10 @@ Braindecode
 .. image:: https://travis-ci.org/braindecode/braindecode.svg?branch=master
    :target: https://travis-ci.org/braindecode/braindecode
 
+.. image:: https://circleci.com/gh/braindecode/braindecode.svg?style=svg
+   :target: https://circleci.com/gh/braindecode/braindecode
+   :alt: Doc build on CircleCI
+
 .. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
    :target: https://codecov.io/gh/braindecode/braindecode
    :alt: Code Coverage
