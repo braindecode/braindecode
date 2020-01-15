@@ -87,7 +87,7 @@ jobs:
                     echo "Checking example $FNAME ...";
                     PATTERN=`basename $FNAME`"\\|"$PATTERN;
                     if [[ $(cat $FNAME | grep -x ".*datasets.*eegbci.*" | wc -l) -gt 0 ]]; then
-                      python -c "import mne; print(mne.datasets.eegbci.load_data(2, [4, 8, 12], update_path=True, force_update=True))";
+                      python -c "import mne; print(mne.datasets.eegbci.load_data(2, [4, 5, 6, 8, 9, 10, 12, 13, 14], update_path=True, force_update=True))";
                     fi;
                     if [[ $(cat $FNAME | grep -x ".*datasets.*sleep_physionet.*" | wc -l) -gt 0 ]]; then
                       python -c "import mne; print(mne.datasets.sleep_physionet.age.fetch_data([0, 1], recording=[1], update_path=True))";
