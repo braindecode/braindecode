@@ -7,12 +7,10 @@ Braindecode
 
 .. image:: https://travis-ci.org/braindecode/braindecode.svg?branch=master
    :target: https://travis-ci.org/braindecode/braindecode
-.. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
-   :target: https://codecov.io/gh/braindecode/braindecode
-	:alt: Code Coverage
 
 .. image:: https://codecov.io/gh/braindecode/braindecode/branch/master/graph/badge.svg
-    :target: https://codecov.io/gh/braindecode/braindecode
+   :target: https://codecov.io/gh/braindecode/braindecode
+   :alt: Code Coverage
 
 A deep learning toolbox to decode raw time-domain EEG.
 
