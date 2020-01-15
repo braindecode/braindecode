@@ -5,7 +5,8 @@ import torch
 from skorch.callbacks.scoring import EpochScoring
 
 from braindecode.experiments.monitors import (
-    compute_trial_labels_from_crop_preds)
+    compute_trial_labels_from_crop_preds,
+)
 
 
 @contextmanager
@@ -33,27 +34,25 @@ def _cache_net_forward_iter(net, use_caching, y_preds):
         # `forward_iter` that precedes the bound method
         # `forward_iter`. By deleting the entry from the attribute
         # dict we undo this.
-        del net.__dict__['forward_iter']
+        del net.__dict__["forward_iter"]
 
 
 class CroppedTrialEpochScoring(EpochScoring):
     """
     Class to compute scores for trials from a model that predicts (super)crops.
     """
-    def on_epoch_end(
-            self,
-            net,
-            dataset_train,
-            dataset_valid,
-            **kwargs):
+
+    def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         X_test, y_test, y_pred = self.get_test_data(
-            dataset_train, dataset_valid)
+            dataset_train, dataset_valid
+        )
         if X_test is None:
             return
 
         # Acquire loader to know input_time_length
         input_time_length = net.get_iterator(
-            X_test, training=False).input_time_length
+            X_test, training=False
+        ).input_time_length
 
         # This assumes X_test is a dataset with X and y :(
         trial_X = X_test.X
@@ -62,14 +61,15 @@ class CroppedTrialEpochScoring(EpochScoring):
         y_pred_np = [old_y_pred.cpu().numpy() for old_y_pred in y_pred]
 
         y_preds_per_trial = compute_trial_labels_from_crop_preds(
-            y_pred_np, input_time_length, trial_X)
+            y_pred_np, input_time_length, trial_X
+        )
 
         # Move into format expected by skorch (list of torch tensors)
-        y_preds_per_trial = [
-            torch.tensor(np.array(y_preds_per_trial))]
+        y_preds_per_trial = [torch.tensor(np.array(y_preds_per_trial))]
 
-        with _cache_net_forward_iter(net, self.use_caching,
-                                     y_preds_per_trial) as cached_net:
+        with _cache_net_forward_iter(
+            net, self.use_caching, y_preds_per_trial
+        ) as cached_net:
             current_score = self._scoring(cached_net, trial_X, trial_y)
 
         self._record_score(net.history, current_score)

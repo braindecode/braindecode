@@ -129,8 +129,11 @@ class TrainTestSplit(object):
             n_train_samples = int(self.train_size * len(dataset))
 
         X, y = dataset.X, dataset.y
-        return (EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
-                EEGDataSet(X[n_train_samples:], y[n_train_samples:]))
+        return (
+            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
+            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
+        )
+
 
 set_random_seeds(20200114, True)
 
@@ -139,7 +142,8 @@ model = ShallowFBCSPNet(
     in_chans=in_chans,
     n_classes=n_classes,
     input_time_length=train_set.X.shape[2],
-    final_conv_length="auto").create_network()
+    final_conv_length="auto",
+).create_network()
 to_dense_prediction_model(model)
 if cuda:
     model.cuda()
@@ -148,16 +152,21 @@ input_time_length = X.shape[2]
 
 # Perform forward pass to determine how many outputs per input
 with torch.no_grad():
-    dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device='cpu')
+    dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device="cpu")
     n_preds_per_input = model(dummy_input).shape[2]
+
 
 class CroppedNLLLoss:
     def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(
-            torch.mean(preds, dim=1), targets)
+        return torch.nn.functional.nll_loss(torch.mean(preds, dim=1), targets)
+
 
 cropped_cb = CroppedTrialEpochScoring(
-    'accuracy', on_train=False, name='valid_trial_accuracy', lower_is_better=False)
+    "accuracy",
+    on_train=False,
+    name="valid_trial_accuracy",
+    lower_is_better=False,
+)
 
 clf = NeuralNet(
     model,
@@ -173,9 +182,7 @@ clf = NeuralNet(
     iterator_train__n_preds_per_input=n_preds_per_input,
     iterator_valid__input_time_length=input_time_length,
     iterator_valid__n_preds_per_input=n_preds_per_input,
-    callbacks=[
-        ('trial_accuracy', cropped_cb)
-    ]
+    callbacks=[("trial_accuracy", cropped_cb)],
 )
 
 clf.fit(train_set, y=None, epochs=4)
