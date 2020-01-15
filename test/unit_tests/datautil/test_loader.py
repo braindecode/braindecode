@@ -7,7 +7,7 @@
 import numpy as np
 from torch.utils.data import Dataset
 
-from braindecode.datautil import CropsDataLoader
+from braindecode.datautil.loader import CropsDataLoader
 from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.datautil.signal_target import SignalAndTarget
 
