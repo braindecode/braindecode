@@ -7,6 +7,7 @@ Creating Datasets
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
+#          David Sabbagh <dav.sabbagh@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -22,6 +23,7 @@ from sklearn.pipeline import Pipeline
 from braindecode.datautil.signalproc import (bandpass_cnt,
                                              exponential_running_standardize)
 from braindecode.preprocessors import FilteringTransformer, ZscoreTransformer
+from braindecode.windowers import Windower
 
 
 try:
@@ -142,13 +144,14 @@ class BNCI2014001Dataset(ConcatDataset):
         [description], by default None
     """      
     def __init__(self, subject, path=None, force_update=False, 
-                 preprocessor=None):  
+                 preprocessor=None, windower=None):
         """
         0- Check whether files exist given path 
         1- Download files if they don't exist
         """
 
         self.preprocessor = preprocessor
+        self.windower = windower
 
         # Preprocessing parameters
         input_time_length = 1000
@@ -190,14 +193,17 @@ class BNCI2014001Dataset(ConcatDataset):
                     # 1- Apply preprocessing
                     raw = self.preprocessor.fit_transform(raw)
 
-                    1/0
-                    # raw.apply_function(lambda a: a * 1e6)
-                    # raw.apply_function(lambda a: bandpass_cnt(a, low_cut_hz, high_cut_hz, raw.info['sfreq'],
-                    #                                           filt_order=3, axis=1))
-                    # raw.apply_function(lambda a: exponential_running_standardize(a.T, factor_new=factor_new,
-                    #                                                              init_block_size=init_block_size,
-                    #                                                              eps=1e-4))
+                    windows = self.windower.fit_transform(raw)
+
                     # 2- Epoch
+
+                    ## ideas
+                    # -mne.raw to braindecode.dataset
+                    # -transformers
+                    # -epoching params on dataset init
+
+
+                    1/0
                     # 3- Create BaseDataset
 
                     pass
@@ -240,8 +246,10 @@ filter_ = FilteringTransformer(l_freq=4, h_freq=12)
 zscorer = ZscoreTransformer()
 prepr_pipeline = Pipeline(
     [('bandpass_filter', filter_), ('zscorer', zscorer)])
+windower = Windower(window_size_samples=None,
+                    overlap_size_samples=0)
 
-bnci = BNCI2014001Dataset([8, 9], preprocessor=prepr_pipeline)
+bnci = BNCI2014001Dataset([2], preprocessor=prepr_pipeline, windower=windower)
 
 
 
