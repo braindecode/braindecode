@@ -25,10 +25,13 @@ from torch import optim
 from torch.utils.data import Dataset
 
 from skorch.net import NeuralNet
+from skorch.callbacks.scoring import EpochScoring
 
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 from braindecode.datautil import CropsDataLoader
+from braindecode.models.util import to_dense_prediction_model
+from braindecode.experiments.scoring import CroppedTrialEpochScoring
 
 log = logging.getLogger()
 log.setLevel("INFO")
@@ -137,17 +140,28 @@ model = ShallowFBCSPNet(
     n_classes=n_classes,
     input_time_length=train_set.X.shape[2],
     final_conv_length="auto").create_network()
-
+to_dense_prediction_model(model)
 if cuda:
     model.cuda()
 
 input_time_length = X.shape[2]
-n_preds_per_input = input_time_length // 4
 
-# It can use also NeuralNetClassifier
+# Perform forward pass to determine how many outputs per input
+with torch.no_grad():
+    dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device='cpu')
+    n_preds_per_input = model(dummy_input).shape[2]
+
+class CroppedNLLLoss:
+    def __call__(self, preds, targets):
+        return torch.nn.functional.nll_loss(
+            torch.mean(preds, dim=1), targets)
+
+cropped_cb = CroppedTrialEpochScoring(
+    'accuracy', on_train=False, name='valid_trial_accuracy', lower_is_better=False)
+
 clf = NeuralNet(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,
     train_split=TrainTestSplit(train_size=40),
     optimizer__lr=0.0625 * 0.01,
@@ -159,6 +173,10 @@ clf = NeuralNet(
     iterator_train__n_preds_per_input=n_preds_per_input,
     iterator_valid__input_time_length=input_time_length,
     iterator_valid__n_preds_per_input=n_preds_per_input,
+    callbacks=[
+        ('trial_accuracy', cropped_cb)
+    ]
 )
+
 clf.fit(train_set, y=None, epochs=4)
 clf.predict(test_set)
