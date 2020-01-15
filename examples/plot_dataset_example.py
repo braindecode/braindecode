@@ -23,7 +23,7 @@ from sklearn.pipeline import Pipeline
 from braindecode.datautil.signalproc import (bandpass_cnt,
                                              exponential_running_standardize)
 from braindecode.preprocessors import FilteringTransformer, ZscoreTransformer
-from braindecode.windowers import Windower
+from braindecode.windowers import FixedLengthWindower, EventWindower
 
 
 try:
@@ -186,7 +186,8 @@ class BNCI2014001Dataset(ConcatDataset):
 
                     # 0 - Get events and remove stim channel
                     raw = self._populate_raw(raw, sess_id, run_id, mapping)
-
+                    if len(raw.annotations.onset) == 0:
+                        continue
                     picks = mne.pick_types(raw.info, meg=False, eeg=True)
                     raw = raw.pick_channels(np.array(raw.ch_names)[picks])
 
@@ -229,13 +230,21 @@ class BNCI2014001Dataset(ConcatDataset):
         -------
         [type]
             [description]
-        """        
+        """
+        fs = raw.info['sfreq']
         raw.info['session'] = sess_id
         raw.info['run'] = run_id
-        raw.info['events'] = mne.find_events(raw, stim_channel='stim')
+        events = mne.find_events(raw, stim_channel='stim')
+
+        events[:, 0] += int(2 * fs)  # start of motor movement 2s after trial onset
+
+        raw.info['events'] = events
         annots = annotations_from_events(
             raw.info['events'], raw.info['sfreq'], event_desc=mapping, 
             first_samp=raw.first_samp, orig_time=None)
+
+        annots.duration += 4.  # duration of motor task 4s
+
         raw.set_annotations(annots)
         return raw
 
@@ -246,8 +255,16 @@ filter_ = FilteringTransformer(l_freq=4, h_freq=12)
 zscorer = ZscoreTransformer()
 prepr_pipeline = Pipeline(
     [('bandpass_filter', filter_), ('zscorer', zscorer)])
-windower = Windower(window_size_samples=None,
-                    overlap_size_samples=0)
+#windower = Windower(window_size_samples=None,
+#                    overlap_size_samples=0)
+mapping = {
+    1: 'Left hand',
+    2: 'Right hand',
+    3: 'Foot',
+    4: 'Tongue'
+}
+windower = EventWindower(window_size_samples=200, tmin=0, chunk_duration_samples=200,
+                         mapping=mapping)
 
 bnci = BNCI2014001Dataset([2], preprocessor=prepr_pipeline, windower=windower)
 
