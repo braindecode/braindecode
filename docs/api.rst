@@ -46,6 +46,7 @@ Data Utils
    :toctree: generated/
 
     SignalAndTarget
+    CropsDataLoader
 
 Utils
 =====
