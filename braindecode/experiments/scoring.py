@@ -4,9 +4,7 @@ import numpy as np
 import torch
 from skorch.callbacks.scoring import EpochScoring
 
-from braindecode.experiments.monitors import (
-    compute_trial_labels_from_crop_preds,
-)
+from .monitors import compute_trial_labels_from_crop_preds
 
 
 @contextmanager
