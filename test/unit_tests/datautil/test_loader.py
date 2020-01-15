@@ -27,7 +27,7 @@ class EEGDataSet(Dataset):
         return self.X[i_trial, :, start:stop], self.y[i_trial]
 
 
-def test_crops_data_loader():
+def test_crops_data_loader_regression():
     """Test CropsDataLoader."""
 
     # Convert data from volt to millivolt
@@ -59,3 +59,28 @@ def test_crops_data_loader():
             zip(iterator.get_batches(train_set, shuffle=False), loader):
         np.testing.assert_array_equal(y1b, y2b)
         np.testing.assert_array_equal(X1b, X2b)
+
+
+def test_crops_data_loader_explicit():
+
+    X = np.arange(0, 15)
+    y = [0]
+
+    n_time_in = 10
+    n_time_out = 4
+
+    expected_crops = [np.arange(0, 10),
+                      np.arange(4, 14),
+                      np.arange(5, 15)]
+
+
+    dataset = EEGDataSet(X[None, None], y)
+    loader = CropsDataLoader(dataset, n_time_in, n_time_out,
+                             batch_size=3)
+
+    Xs, ys = zip(*list(loader))
+
+    assert len(Xs) == len(ys) == 1
+
+    for expected, actual in zip(Xs[0].squeeze(), expected_crops):
+        np.testing.assert_array_equal(expected, actual)
