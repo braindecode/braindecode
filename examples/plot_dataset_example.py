@@ -10,9 +10,14 @@ Creating Datasets
 #
 # License: BSD (3-clause)
 
+from collections import OrderedDict
 import mne
 from moabb.datasets import BNCI2014001
+from mne import find_events
 
+# preprocessing
+from braindecode.datautil.signalproc import (bandpass_cnt,
+                                             exponential_running_standardize)
 
 ###############################################################################
 # Fetching and downloading data with MOABB
@@ -24,17 +29,44 @@ class BNCI2014001Dataset():
         0- Check whether files exist given path 
         1- Download files if they don't exist
         """
+
+        ival = [-500, 4000]
+        input_time_length = 1000
+        max_epochs = 800
+        max_increase_epochs = 80
+        batch_size = 60
+        low_cut_hz = 4
+        high_cut_hz = 38
+        factor_new = 1e-3
+        init_block_size = 1000
+        valid_set_fraction = 0.2
+
         self.subject = [subject] if isinstance(subject, int) else subject
         data = BNCI2014001().get_data(self.subject)
+
+        state_def = OrderedDict([('Left Hand', [1]), ('Right Hand', [2],),
+                                  ('Foot', [3]), ('Tongue', [4])])
 
         base_datasets = list()
         for subj_id, subj_data in data.items():
             for sess_id, sess_data in subj_data.items():
                 for run_id, raw in sess_data.items():
                     # 0 - Get events and remove stim channel
+                    raw.info['session'] = sess_id
+                    raw.info['run'] = run_id
+                    raw.info['events'] = find_events(raw)
+                    raw.drop_channels(['EOG1', 'EOG2', 'EOG3', 'stim'])
+
                     # 1- Apply preprocessing
+                    raw.apply_function(lambda a: a * 1e6)
+                    raw.apply_function(lambda a: bandpass_cnt(a, low_cut_hz, high_cut_hz, raw.info['sfreq'],
+                                                              filt_order=3, axis=1))
+                    raw.apply_function(lambda a: exponential_running_standardize(a.T, factor_new=factor_new,
+                                                                                 init_block_size=init_block_size,
+                                                                                 eps=1e-4))
                     # 2- Epoch
                     # 3- Create BaseDataset
+
                     pass
 
         # Concatenate datasets
