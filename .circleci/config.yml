@@ -31,7 +31,7 @@ jobs:
         # Load our data
         - restore_cache:
             keys:
-              - data-cache-0
+              # - data-cache-0
               - pip-cache
 
         - run:
@@ -136,12 +136,12 @@ jobs:
             paths:
               - html
 
-        # Keep these separate, maybe better in terms of size limitations (?)
-        - save_cache:
-            key: data-cache-0
-            paths:
-              - ~/mne_data/MNE-eegbci-data
-              - ~/mne_data/physionet-sleep-data
+        # # Keep these separate, maybe better in terms of size limitations (?)
+        # - save_cache:
+        #     key: data-cache-0
+        #     paths:
+        #       - ~/mne_data/MNE-eegbci-data
+        #       - ~/mne_data/physionet-sleep-data
 
     # deploy:
     #   docker:
