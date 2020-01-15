@@ -1,27 +1,34 @@
 """
-Skorch Trialwise Decoding
-==================
+Skorch Crop Decoding
+=========================
 
-Example using Skorch - How do you think?
+Example using Skorch for crop decoding
 """
+
+# Authors: Lukas Gemein
+#          Robin Tibor Schirrmeister
+#          Alexandre Gramfort
+#          Maciej Sliwowski
+#
+# License: BSD-3
 
 import logging
 import sys
 
-import mne
 import numpy as np
-import torch
+
+import mne
 from mne.io import concatenate_raws
-from skorch.callbacks import EpochScoring
+
+import torch
 from torch import optim
 from torch.utils.data import Dataset
 
-from braindecode.datautil.signal_target import SignalAndTarget
+from skorch.net import NeuralNet
+
 from braindecode.models import ShallowFBCSPNet
-from braindecode.skorch_training.skorchmodels import BraindecodeClassifier
-from braindecode.torch_ext.util import (
-    set_random_seeds,
-)  # XXX : move to braindecode.util
+from braindecode.util import set_random_seeds
+from braindecode.datautil import CropsDataLoader
 
 log = logging.getLogger()
 log.setLevel("INFO")
@@ -38,14 +45,13 @@ subject_id = (
     22
 )  # carefully cherry-picked to give nice results on such limited data :)
 event_codes = [5, 6, 9, 10, 13, 14]
-# event_codes = [3,4,5,6,7,8,9,10,11,12,13,14]
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
 physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes)
 
 # Load each of the files
-parts = [
+raws = [
     mne.io.read_raw_edf(
         path, preload=True, stim_channel="auto", verbose="WARNING"
     )
@@ -53,44 +59,38 @@ parts = [
 ]
 
 # Concatenate them
-raw = concatenate_raws(parts)
+raw = concatenate_raws(raws)
+del raws
 
 # Find the events in this dataset
 events, _ = mne.events_from_annotations(raw)
 
 # Use only EEG channels
-eeg_channel_inds = mne.pick_types(
-    raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
-)
+picks = mne.pick_types(raw.info, meg=False, eeg=True, exclude="bads")
 
 # Extract trials, only using EEG channels
-epoched = mne.Epochs(
+epochs = mne.Epochs(
     raw,
     events,
-    dict(hands_or_left=2, feet_or_right=3),
+    event_id=dict(hands_or_left=2, feet_or_right=3),
     tmin=1,
     tmax=4.1,
     proj=False,
-    picks=eeg_channel_inds,
+    picks=picks,
     baseline=None,
     preload=True,
 )
 
-
-X = (epoched.get_data() * 1e6).astype(np.float32)
-y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
-
-
-# in skorch flow it is also a validation set (train-valid split set in skorch model)
-# To not shuffle data for train-valid split we need to create a splitter
-train_set = SignalAndTarget(X[:70], y=y[:70])
+X = (epochs.get_data() * 1e6).astype(np.float32)
+y = (epochs.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
+del epochs
 
 # Set if you want to use GPU
 # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
 cuda = False
 set_random_seeds(seed=20170629, cuda=cuda)
 n_classes = 2
-in_chans = train_set.X.shape[1]
+in_chans = X.shape[1]
 
 
 class EEGDataSet(Dataset):
@@ -104,10 +104,12 @@ class EEGDataSet(Dataset):
         return len(self.X)
 
     def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+        i_trial, start, stop = idx
+        return self.X[i_trial, :, start:stop], self.y[i_trial]
 
 
-train_set = EEGDataSet(train_set.X, train_set.y)
+train_set = EEGDataSet(X, y)
+test_set = EEGDataSet(X[70:], y=y[70:])
 
 
 class TrainTestSplit(object):
@@ -122,9 +124,10 @@ class TrainTestSplit(object):
             n_train_samples = self.train_size
         else:
             n_train_samples = int(self.train_size * len(dataset))
-        return EEGDataSet(dataset.X[:n_train_samples], dataset.y[:n_train_samples]),\
-               EEGDataSet(dataset.X[n_train_samples:], dataset.y[n_train_samples:])
 
+        X, y = dataset.X, dataset.y
+        return (EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
+                EEGDataSet(X[n_train_samples:], y[n_train_samples:]))
 
 set_random_seeds(20200114, True)
 
@@ -134,11 +137,15 @@ model = ShallowFBCSPNet(
     n_classes=n_classes,
     input_time_length=train_set.X.shape[2],
     final_conv_length="auto").create_network()
+
 if cuda:
     model.cuda()
 
+input_time_length = X.shape[2]
+n_preds_per_input = input_time_length // 4
+
 # It can use also NeuralNetClassifier
-skorch_model = BraindecodeClassifier(
+clf = NeuralNet(
     model,
     criterion=torch.nn.NLLLoss,
     optimizer=optim.AdamW,
@@ -146,26 +153,12 @@ skorch_model = BraindecodeClassifier(
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=64,
-    callbacks=[
-        (
-            "train_accuracy",
-            EpochScoring(
-                "accuracy",
-                on_train=True,
-                lower_is_better=False,
-                name="train_acc",
-            ),
-        )
-    ],
+    iterator_train=CropsDataLoader,
+    iterator_valid=CropsDataLoader,
+    iterator_train__input_time_length=input_time_length,
+    iterator_train__n_preds_per_input=n_preds_per_input,
+    iterator_valid__input_time_length=input_time_length,
+    iterator_valid__n_preds_per_input=n_preds_per_input,
 )
-skorch_model.fit(train_set, y=None, epochs=4)
-
-test_set = EEGDataSet(X[70:], y=y[70:])
-
-skorch_model.evaluate(test_set.X, test_set.y)
-
-skorch_model.evaluate(test_set)
-
-skorch_model.predict(test_set)
-
-skorch_model.predict_proba(test_set)
+clf.fit(train_set, y=None, epochs=4)
+clf.predict(test_set)
