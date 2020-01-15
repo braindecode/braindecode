@@ -122,7 +122,8 @@ class TrainTestSplit(object):
             n_train_samples = self.train_size
         else:
             n_train_samples = int(self.train_size * len(dataset))
-        return dataset[:n_train_samples], dataset[n_train_samples:]
+        return EEGDataSet(dataset.X[:n_train_samples], dataset.y[:n_train_samples]),\
+               EEGDataSet(dataset.X[n_train_samples:], dataset.y[n_train_samples:])
 
 
 set_random_seeds(20200114, True)
