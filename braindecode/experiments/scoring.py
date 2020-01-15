@@ -1,3 +1,9 @@
+# Authors: Maciej Sliwowski
+#          Robin Tibor Schirrmeister
+#          Alexandre Gramfort
+#
+# License: BSD-3
+
 from contextlib import contextmanager
 
 import numpy as np
