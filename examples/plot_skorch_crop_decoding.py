@@ -35,7 +35,8 @@ event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/fee
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
-physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes)
+physionet_paths = mne.datasets.eegbci.load_data(
+    subject_id, event_codes, update_path=False)
 
 # Load each of the files
 raws = [

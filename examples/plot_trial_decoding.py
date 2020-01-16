@@ -196,8 +196,10 @@ model.predict_outs(test_set.X)
 from braindecode.datautil import SignalAndTarget
 
 # First 50 subjects as train
-physionet_paths = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12])
-                   for sub_id in range(1, 51)]
+physionet_paths = [
+    mne.datasets.eegbci.load_data(
+        sub_id, [4, 8, 12], update_path=False)
+    for sub_id in range(1, 51)]
 physionet_paths = np.concatenate(physionet_paths)
 raws = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto')
         for path in physionet_paths]
@@ -217,8 +219,10 @@ epoched = mne.Epochs(raw, events, dict(hands=2, feet=3), tmin=1,
                      baseline=None, preload=True)
 
 # 51-55 as validation subjects
-physionet_paths_valid = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12], force_update=True)
-                         for sub_id in range(51, 56)]
+physionet_paths_valid = [
+    mne.datasets.eegbci.load_data(
+        sub_id, [4, 8, 12], update_path=False)
+    for sub_id in range(51, 56)]
 physionet_paths_valid = np.concatenate(physionet_paths_valid)
 raws_valid = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto')
               for path in physionet_paths_valid]
