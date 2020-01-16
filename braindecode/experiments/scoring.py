@@ -41,7 +41,7 @@ def _cache_net_forward_iter(net, use_caching, y_preds):
         del net.__dict__["forward_iter"]
 
 
-#class PostEpochScoring(EpochScoring):
+# class PostEpochScoring(EpochScoring):
 #    def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
 #        EpochScoring.on_epoch_end()
 
@@ -53,23 +53,16 @@ class CroppedTrialEpochScoring(EpochScoring):
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching == True
-        net.module_.eval()
         if self.on_train:
             # Recompute Predictions for caching outside of training loop
-            self.y_preds_ = list(net.forward_iter(dataset_train, training=False))
+            self.y_preds_ = list(
+                net.forward_iter(dataset_train, training=False)
+            )
             self.y_trues_ = [dataset_train.y]
-        # if we are on the training set,
-        # first recompute the predictions,
-        # set y_preds_
-        # maybe set y_test as well (who knows what would happen later)
-        # assert use_caching True
 
-        X_test, _, y_pred = self.get_test_data(
-            dataset_train, dataset_valid
-        )
+        X_test, _, y_pred = self.get_test_data(dataset_train, dataset_valid)
         if X_test is None:
             return
-
 
         # Acquire loader to know input_time_length
         input_time_length = net.get_iterator(
