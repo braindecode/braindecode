@@ -23,7 +23,8 @@ def test_cropped_decoding():
 
     # This will download the files if you don't have them yet,
     # and then return the paths to the files.
-    physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes, update_path=True)
+    physionet_paths = mne.datasets.eegbci.load_data(
+        subject_id, event_codes, update_path=False)
 
     # Load each of the files
     parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto',
