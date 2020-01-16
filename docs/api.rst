@@ -33,7 +33,8 @@ Models
     ShallowFBCSPNet
     Deep4Net
     EEGNetv4
-    HybridNetModule
+    HybridNet
+    EEGResNet
 
 
 Data Utils
