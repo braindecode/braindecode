@@ -2,10 +2,10 @@ import numpy as np
 from torch import nn
 from torch.nn import init
 
-from braindecode.models.base import BaseModel
-from braindecode.torch_ext.modules import Expression
-from braindecode.torch_ext.functions import safe_log, square
-from braindecode.torch_ext.util import np_to_var
+from ..util import np_to_var
+from .base import BaseModel
+from .modules import Expression
+from .functions import safe_log, square
 
 
 class ShallowFBCSPNet(BaseModel):

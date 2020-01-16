@@ -1,27 +1,28 @@
+import logging
 import time
 
 import numpy as np
 from numpy.random import RandomState
+
 import torch as th
 
-from braindecode.experiments.monitors import (
+from ..experiments.monitors import (
     LossMonitor,
     MisclassMonitor,
     RuntimeMonitor,
     CroppedTrialMisclassMonitor,
     compute_preds_per_trial_from_crops,
 )
-from braindecode.experiments.stopcriteria import MaxEpochs
-from braindecode.datautil.iterators import (
+from ..experiments.stopcriteria import MaxEpochs
+from ..datautil.iterators import (
     BalancedBatchSizeIterator,
     CropsFromTrialsIterator,
 )
-from braindecode.experiments.experiment import Experiment
-from braindecode.datautil.signal_target import SignalAndTarget
-from braindecode.models.util import to_dense_prediction_model
-from braindecode.torch_ext.schedulers import CosineAnnealing, ScheduledOptimizer
-from braindecode.torch_ext.util import np_to_var, var_to_np
-import logging
+from ..util import np_to_var, var_to_np
+from ..experiments.experiment import Experiment
+from ..datautil import SignalAndTarget
+from ..torch_ext.schedulers import CosineAnnealing, ScheduledOptimizer
+from .util import to_dense_prediction_model
 
 log = logging.getLogger(__name__)
 
@@ -97,9 +98,9 @@ class BaseModel(object):
         if cropped:
             model_already_dense = np.any(
                 [
-                    hasattr(m, "dilation")
-                    and (m.dilation != 1)
-                    and (m.dilation) != (1, 1)
+                    hasattr(m, "dilation") and
+                    (m.dilation != 1) and
+                    (m.dilation) != (1, 1)
                     for m in self.network.modules()
                 ]
             )
@@ -185,8 +186,8 @@ class BaseModel(object):
             self.network.eval()
             test_input = np_to_var(
                 np.ones(
-                    (1, train_X[0].shape[0], input_time_length)
-                    + train_X[0].shape[2:],
+                    (1, train_X[0].shape[0],
+                     input_time_length) + train_X[0].shape[2:],
                     dtype=np.float32,
                 )
             )
@@ -233,9 +234,8 @@ class BaseModel(object):
             )
         loss_function = self.loss
         if self.cropped:
-            loss_function = lambda outputs, targets: self.loss(
-                th.mean(outputs, dim=2), targets
-            )
+            def loss_function(outputs, targets):
+                return self.loss(th.mean(outputs, dim=2), targets)
         if validation_data is not None:
             valid_X = _ensure_float32(validation_data[0])
             valid_y = validation_data[1]
@@ -297,9 +297,8 @@ class BaseModel(object):
         test_set = None
         loss_function = self.loss
         if self.cropped:
-            loss_function = lambda outputs, targets: self.loss(
-                th.mean(outputs, dim=2), targets
-            )
+            def loss_function(outputs, targets):
+                return self.loss(th.mean(outputs, dim=2), targets)
 
         # reset runtime monitor if exists...
         for monitor in self.monitors:

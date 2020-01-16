@@ -3,10 +3,10 @@ from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
 
-from braindecode.models.base import BaseModel
-from braindecode.torch_ext.modules import Expression, AvgPool2dWithConv
-from braindecode.torch_ext.functions import identity
-from braindecode.torch_ext.util import np_to_var
+from .base import BaseModel
+from .modules import Expression, AvgPool2dWithConv
+from .functions import identity
+from ..util import np_to_var
 
 
 class Deep4Net(BaseModel):

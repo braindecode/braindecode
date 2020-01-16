@@ -1,7 +1,30 @@
-def test_experiment_class():
-    import mne
-    from mne.io import concatenate_raws
+import logging
+import sys
+from io import StringIO
 
+import numpy as np
+import pandas as pd
+
+from torch import optim
+import torch.nn.functional as F
+import torch as th
+
+from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds, np_to_var
+from braindecode.models.util import to_dense_prediction_model
+from braindecode.datautil import SignalAndTarget
+from braindecode.datautil.splitters import split_into_two_sets
+from braindecode.experiments.experiment import Experiment
+from braindecode.datautil.iterators import CropsFromTrialsIterator
+from braindecode.experiments.monitors import RuntimeMonitor, LossMonitor, \
+    CroppedTrialMisclassMonitor, MisclassMonitor
+from braindecode.experiments.stopcriteria import MaxEpochs
+
+import mne
+from mne.io import concatenate_raws
+
+
+def test_experiment_class():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
     event_codes = [5, 6, 9, 10, 13, 14]
@@ -30,9 +53,7 @@ def test_experiment_class():
     epoched = mne.Epochs(raw, events, dict(hands=2, feet=3), tmin=1, tmax=4.1,
                          proj=False, picks=eeg_channel_inds,
                          baseline=None, preload=True)
-    import numpy as np
-    from braindecode.datautil.signal_target import SignalAndTarget
-    from braindecode.datautil.splitters import split_into_two_sets
+
     # Convert data from volt to millivolt
     # Pytorch expects float32 for input and int64 for labels.
     X = (epoched.get_data() * 1e6).astype(np.float32)
@@ -43,10 +64,6 @@ def test_experiment_class():
 
     train_set, valid_set = split_into_two_sets(train_set,
                                                first_set_fraction=0.8)
-    from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-    from torch import nn
-    from braindecode.torch_ext.util import set_random_seeds
-    from braindecode.models.util import to_dense_prediction_model
 
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
@@ -66,11 +83,8 @@ def test_experiment_class():
     if cuda:
         model.cuda()
 
-    from torch import optim
-
     optimizer = optim.Adam(model.parameters())
 
-    from braindecode.torch_ext.util import np_to_var
     # determine output size
     test_input = np_to_var(
         np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
@@ -80,14 +94,6 @@ def test_experiment_class():
     n_preds_per_input = out.cpu().data.numpy().shape[2]
     print("{:d} predictions per input/trial".format(n_preds_per_input))
 
-    from braindecode.experiments.experiment import Experiment
-    from braindecode.datautil.iterators import CropsFromTrialsIterator
-    from braindecode.experiments.monitors import RuntimeMonitor, LossMonitor, \
-        CroppedTrialMisclassMonitor, MisclassMonitor
-    from braindecode.experiments.stopcriteria import MaxEpochs
-    import torch.nn.functional as F
-    import torch as th
-    from braindecode.torch_ext.modules import Expression
     # Iterator is used to iterate over datasets both for training
     # and evaluation
     iterator = CropsFromTrialsIterator(batch_size=32,
@@ -96,8 +102,8 @@ def test_experiment_class():
 
     # Loss function takes predictions as they come out of the network and the targets
     # and returns a loss
-    loss_function = lambda preds, targets: F.nll_loss(
-        th.mean(preds, dim=2, keepdim=False), targets)
+    def loss_function(preds, targets):
+        return F.nll_loss(th.mean(preds, dim=2, keepdim=False), targets)
 
     # Could be used to apply some constraint on the models, then should be object
     # with apply method that accepts a module
@@ -115,14 +121,10 @@ def test_experiment_class():
                      run_after_early_stop=True, batch_modifier=None, cuda=cuda)
 
     # need to setup python logging before to be able to see anything
-    import logging
-    import sys
     logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
                         level=logging.DEBUG, stream=sys.stdout)
     exp.run()
 
-    import pandas as pd
-    from io import StringIO
     compare_df = pd.read_csv(StringIO(
         'train_loss,valid_loss,test_loss,train_sample_misclass,valid_sample_misclass,'
         'test_sample_misclass,train_misclass,valid_misclass,test_misclass\n'
