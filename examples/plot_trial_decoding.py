@@ -40,7 +40,7 @@ event_codes = [5, 6, 9, 10, 13, 14]
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
-physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes, force_update=True)
+physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes)
 
 # Load each of the files
 raws = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto',
@@ -197,7 +197,7 @@ model.predict_outs(test_set.X)
 from braindecode.datautil import SignalAndTarget
 
 # First 50 subjects as train
-physionet_paths = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12], force_update=True)
+physionet_paths = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12])
                    for sub_id in range(1, 51)]
 physionet_paths = np.concatenate(physionet_paths)
 raws = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto')
