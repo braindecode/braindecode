@@ -16,19 +16,6 @@ In this example, we will use a convolutional neural network on the
 
 """
 
-# Enable logging
-
-import sys
-import logging
-import importlib
-importlib.reload(logging)  # see https://stackoverflow.com/a/21475297/1469195
-log = logging.getLogger()
-log.setLevel('INFO')
-
-logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                    level=logging.INFO, stream=sys.stdout)
-
-
 ##############################################################################
 # Load data
 # ---------
@@ -150,11 +137,10 @@ if cuda:
 #   training loop, have a look at the
 #   `Trialwise Low-Level Tutorial <./TrialWise_LowLevel.html>`_.
 
-# from braindecode.torch_ext.optimizers import AdamW
-from torch.optim import Adam
+from torch.optim import AdamW
 import torch.nn.functional as F
 # optimizer = AdamW(model.parameters(), lr=1*0.01, weight_decay=0.5*0.001) # these are good values for the deep model
-optimizer = Adam(model.parameters(), lr=0.0625 * 0.01, weight_decay=0)
+optimizer = AdamW(model.parameters(), lr=0.0625 * 0.01, weight_decay=0)
 model.compile(loss=F.nll_loss, optimizer=optimizer, iterator_seed=1)
 
 ##############################################################################

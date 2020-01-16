@@ -12,9 +12,6 @@ Example using Skorch for crop decoding
 #
 # License: BSD-3
 
-import logging
-import sys
-
 import numpy as np
 
 import mne
@@ -32,16 +29,6 @@ from braindecode.util import set_random_seeds
 from braindecode.datautil import CropsDataLoader
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.experiments.scoring import CroppedTrialEpochScoring
-
-log = logging.getLogger()
-log.setLevel("INFO")
-
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s : %(message)s",
-    level=logging.INFO,
-    stream=sys.stdout,
-)
-
 
 # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
 subject_id = (
