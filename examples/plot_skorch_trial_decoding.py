@@ -24,10 +24,14 @@ import torch
 from torch import optim
 from torch.utils.data import Dataset
 
+from sklearn.metrics import f1_score
+
 from skorch.net import NeuralNet
 
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
+from braindecode.experiments.classifier import BraindecodeClassifier
+from braindecode.experiments.scoring import PostEpochTrainScoring
 
 log = logging.getLogger()
 log.setLevel("INFO")
@@ -128,7 +132,6 @@ class TrainTestSplit(object):
         return (EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
                 EEGDataSet(X[n_train_samples:], y[n_train_samples:]))
 
-
 set_random_seeds(20200114, True)
 
 # final_conv_length = auto ensures we only get a single output in the time dimension
@@ -141,7 +144,7 @@ if cuda:
     model.cuda()
 
 # It can use also NeuralNetClassifier
-clf = NeuralNet(
+clf = BraindecodeClassifier(
     model,
     criterion=torch.nn.NLLLoss,
     optimizer=optim.AdamW,
@@ -149,21 +152,27 @@ clf = NeuralNet(
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=64,
-    # callbacks=[
-    #     (
-    #         "train_accuracy",
-    #         EpochScoring(
-    #             "accuracy",
-    #             on_train=True,
-    #             lower_is_better=False,
-    #             name="train_acc",
-    #         ),
-    #     )
-    # ],
+    callbacks=[
+         (
+             "train_accuracy",
+             PostEpochTrainScoring(
+                 "accuracy",
+                 lower_is_better=False,
+                 name="train_acc",
+             ),
+         ),
+        (
+             "train_f1_score",
+             PostEpochTrainScoring(
+                 "f1",
+                 lower_is_better=False,
+                 name="train_f1",
+             ),
+         ),
+    ],
 )
 clf.fit(train_set, y=None, epochs=4)
 
-# clf.evaluate(test_set.X, test_set.y)
-# clf.evaluate(test_set)
-clf.predict(test_set)
-clf.predict_proba(test_set)
+preds = clf.predict(test_set.X)
+y_true = test_set.y
+f1_score(y_true, preds)
