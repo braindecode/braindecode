@@ -29,7 +29,8 @@ script:
 
 after_script:
   # Need to run from source dir to execute "git" commands
-  - cd ${SRC_DIR};
+  - pwd;
+  - ls -a;
   - ls -a braindecode
   - ls -a test
   - codecov;
