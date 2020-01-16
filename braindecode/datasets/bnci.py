@@ -136,8 +136,9 @@ class BNCI2014001Dataset(ConcatDataset):
         self.transform_online = transform_online
         self.subject = [subject] if isinstance(subject, int) else subject
 
-        from moabb.datasets import BNCI2014001  # soft dependency on moabb
-        data = BNCI2014001(update_path).get_data(self.subject)
+        from moabb.datasets.bnci import _load_data_001_2014  # soft dependency on moabb
+
+        data = [_load_data_001_2014(subj, update_path=update_path) for subj in self.subject]
 
         mapping = {
             1: 'Left hand',
