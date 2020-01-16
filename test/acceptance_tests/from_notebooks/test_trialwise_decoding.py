@@ -1,7 +1,20 @@
-def test_trialwise_decoding():
-    import mne
-    from mne.io import concatenate_raws
+import numpy as np
+from numpy.random import RandomState
 
+from torch import optim
+import torch.nn.functional as F
+
+import mne
+from mne.io import concatenate_raws
+
+from braindecode.util import np_to_var, var_to_np
+from braindecode.datautil.iterators import get_balanced_batches
+from braindecode.datautil import SignalAndTarget
+from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
+
+
+def test_trialwise_decoding():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
     event_codes = [5, 6, 9, 10, 13, 14]
@@ -30,21 +43,13 @@ def test_trialwise_decoding():
                          proj=False, picks=eeg_channel_inds,
                          baseline=None, preload=True)
 
-    import numpy as np
-
     # Convert data from volt to millivolt
     # Pytorch expects float32 for input and int64 for labels.
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 
-    from braindecode.datautil.signal_target import SignalAndTarget
-
     train_set = SignalAndTarget(X[:60], y=y[:60])
     test_set = SignalAndTarget(X[60:], y=y[60:])
-
-    from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-    from torch import nn
-    from braindecode.torch_ext.util import set_random_seeds
 
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
@@ -59,14 +64,7 @@ def test_trialwise_decoding():
     if cuda:
         model.cuda()
 
-    from torch import optim
-
     optimizer = optim.Adam(model.parameters())
-
-    from braindecode.torch_ext.util import np_to_var, var_to_np
-    from braindecode.datautil.iterators import get_balanced_batches
-    import torch.nn.functional as F
-    from numpy.random import RandomState
 
     rng = RandomState((2017, 6, 30))
     losses = []

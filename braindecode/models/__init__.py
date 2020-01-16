@@ -2,6 +2,7 @@
 Some predefined network architectures for EEG decoding.
 """
 
-from .shallow_fbcsp import ShallowFBCSPNet
-from .deep4 import AvgPool2dWithConv, Deep4Net
+from .deep4 import Deep4Net
+from .eegnet import EEGNetv4
 from .hybrid import HybridNetModule
+from .shallow_fbcsp import ShallowFBCSPNet

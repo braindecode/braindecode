@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .util import np_to_var
+from ..util import np_to_var
 
 
 class Expression(torch.nn.Module):
