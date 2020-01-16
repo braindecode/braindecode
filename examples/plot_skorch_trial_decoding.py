@@ -107,7 +107,8 @@ class EEGDataSet(Dataset):
         return self.X[idx], self.y[idx]
 
 
-train_set = EEGDataSet(X, y)
+train_set = EEGDataSet(X[:70], y[:70])
+test_set = EEGDataSet(X[70:], y=y[70:])
 
 
 class TrainTestSplit(object):
@@ -162,7 +163,6 @@ clf = NeuralNet(
 )
 clf.fit(train_set, y=None, epochs=4)
 
-test_set = EEGDataSet(X[70:], y=y[70:])
 # clf.evaluate(test_set.X, test_set.y)
 # clf.evaluate(test_set)
 clf.predict(test_set)
