@@ -54,6 +54,9 @@ jobs:
               python -m pip install --user --upgrade --progress-bar off torch
               python -m pip install --user --upgrade --progress-bar off -r docs/requirements.txt
               python -m pip install --user --upgrade --progress-bar off ipython "https://api.github.com/repos/sphinx-gallery/sphinx-gallery/zipball/master" memory_profiler
+              python -m pip install --user --upgrade --progress-bar off coloredlogs
+              python -m pip install --user --upgrade --progress-bar off pyyaml
+              python -m pip install --user --upgrade --progress-bar off git+https://github.com/NeuroTechX/moabb
               python -m pip install --user -e .
 
         - save_cache:

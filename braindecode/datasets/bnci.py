@@ -128,7 +128,8 @@ class BNCI2014001Dataset(ConcatDataset):
         if True, apply window transformers on the fly. Otherwise apply on loaded data.
     """
 
-    def __init__(self, subject, raw_transformer=None, windower=None, window_transformer=None, transform_online=False):
+    def __init__(self, subject, raw_transformer=None, windower=None, window_transformer=None, transform_online=False,
+                 update_path=False):
         self.raw_transformer = raw_transformer
         self.windower = windower
         self.window_transformer = window_transformer
@@ -136,7 +137,7 @@ class BNCI2014001Dataset(ConcatDataset):
         self.subject = [subject] if isinstance(subject, int) else subject
 
         from moabb.datasets import BNCI2014001  # soft dependency on moabb
-        data = BNCI2014001().get_data(self.subject)
+        data = BNCI2014001(update_path).get_data(self.subject)
 
         mapping = {
             1: 'Left hand',

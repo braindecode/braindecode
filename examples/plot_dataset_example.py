@@ -96,7 +96,7 @@ transform_window_pipeline = Pipeline(
 #
 #
 bnci2014001 = BNCI2014001Dataset(subject=2, raw_transformer=prepr_pipeline, windower=event_windower,
-                                 window_transformer=transform_window_pipeline, transform_online=True)
+                                 window_transformer=transform_window_pipeline, transform_online=True, update_path=True)
 
 print(f'As expected, the number of epochs is {len(bnci2014001)}\n'
       f'(12 repetitions of 4 motor imagery tasks with 5 windows each)\n')
