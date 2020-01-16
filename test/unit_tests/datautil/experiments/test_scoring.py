@@ -40,12 +40,55 @@ class MockSkorchNet:
 
 
 def test_cropped_trial_epoch_scoring():
-    dataset_train = EEGDataSet(np.zeros((2, 1, 10)), np.array([0, 1]))
-    dataset_valid = EEGDataSet(np.zeros((4, 1, 10)), np.array([0, 0, 1, 1]))
+    dataset_train = None
+    # Definition of test cases
+    predictions_cases = [
+        # Exepected redictions classification results: [1, 0, 0, 0]
+        np.array(
+            [[[0.2, 0.1, 0.1, 0.1],
+              [0.8, 0.9, 0.9, 0.9]],
+             [[1., 1., 1., 1.],
+              [0., 0., 0., 0.]],
+             [[1., 1., 1., 0.2],
+              [0., 0., 0., 0.8]],
+             [[0.9, 0.8, 0.9, 1.],
+              [0.1, 0.2, 0.1, 0.]]]),
+        # Expected predictions classification results: [1, 1, 1, 0]
+        np.array(
+            [[[0.2, 0.1, 0.1, 0.1],
+              [0.8, 0.9, 0.9, 0.9]],
+             [[0., 0., 0., 0.],
+              [1., 1., 1., 1.]],
+             [[0., 0., 0., 0.2],
+              [1., 1., 1., 0.8]],
+             [[0.9, 0.8, 0.9, 1.],
+              [0.1, 0.2, 0.1, 0.]]]),
+    ]
+    y_true_cases = [
+        [np.array([0, 0]), np.array([1, 1])],
+        [np.array([1, 1]), np.array([1, 1])]
+    ]
+    expected_accuracies_cases = [0.25, 0.75]
 
-    cropped_trial_epoch_scoring = CroppedTrialEpochScoring('accuracy')
-    cropped_trial_epoch_scoring.initialize()
+    for predictions, y_true, accuracy in zip(predictions_cases, y_true_cases, expected_accuracies_cases):
+        dataset_valid = EEGDataSet(np.zeros((4, 1, 10)), np.concatenate(y_true))
+        mock_skorch_net = MockSkorchNet()
+        cropped_trial_epoch_scoring = CroppedTrialEpochScoring('accuracy')
+        cropped_trial_epoch_scoring.initialize()
+        cropped_trial_epoch_scoring.y_preds_ = [
+            to_tensor(predictions[:2], device='cpu'),
+            to_tensor(predictions[2:], device='cpu')
+        ]
+        cropped_trial_epoch_scoring.y_trues_ = y_true
 
+        cropped_trial_epoch_scoring.on_epoch_end(mock_skorch_net, dataset_train, dataset_valid)
+
+        np.testing.assert_almost_equal(mock_skorch_net.history[0]['accuracy'], accuracy)
+
+
+def test_cropped_trial_epoch_scoring_none_x_test():
+    dataset_train = None
+    dataset_valid = None
     predictions = np.array(
         [[[0., 0., 0., 0.],
           [1., 1., 1., 1.]],
@@ -55,13 +98,16 @@ def test_cropped_trial_epoch_scoring():
           [0., 0., 0., 1.]],
          [[1., 1., 1., 1.],
           [0., 0., 0., 0.]]])
+    y_true = [np.array([0, 0]), np.array([1, 1])]
+    cropped_trial_epoch_scoring = CroppedTrialEpochScoring('accuracy')
+    cropped_trial_epoch_scoring.initialize()
     cropped_trial_epoch_scoring.y_preds_ = [
         to_tensor(predictions[:2], device='cpu'),
         to_tensor(predictions[2:], device='cpu')
     ]
-    cropped_trial_epoch_scoring.y_trues_ = [np.array([0, 0]), np.array([1, 1])]
+    cropped_trial_epoch_scoring.y_trues_ = y_true
 
     mock_skorch_net = MockSkorchNet()
 
-    cropped_trial_epoch_scoring.on_epoch_end(mock_skorch_net, dataset_train, dataset_valid)
-    assert mock_skorch_net.history[0]['accuracy'] == 0.25
+    output = cropped_trial_epoch_scoring.on_epoch_end(mock_skorch_net, dataset_train, dataset_valid)
+    assert output is None
