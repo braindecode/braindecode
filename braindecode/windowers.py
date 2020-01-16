@@ -4,6 +4,7 @@
 import numpy as np
 from sklearn.base import TransformerMixin
 import mne
+import pandas as pd
 
 
 class BaseWindower(TransformerMixin):
@@ -71,15 +72,17 @@ class FixedLengthWindower(BaseWindower):
             duration = self.window_size_samples / fs
 
         overlap = self.overlap_size_samples / fs
-        events = mne.make_fixed_length_events(X, id=id_holder, duration=duration, overlap=overlap, stop=None)
+        events = mne.make_fixed_length_events(
+            X, id=id_holder, duration=duration, overlap=overlap, stop=None)
 
         if not self.drop_last_samples:
             last_valid_window_start = X.n_times - self.window_size_samples
             if events[-1, 0] < last_valid_window_start:
                 events = np.concatenate((events, [[last_valid_window_start, 0, id_holder]]))
 
-        windows = mne.Epochs(X, events, tmin=self.tmin, tmax=(self.window_size_samples - 1) / fs,
-                             baseline=None, preload=False)
+        windows = mne.Epochs(
+            X, events, tmin=self.tmin, tmax=(self.window_size_samples - 1) / fs,
+            baseline=None, preload=False)
 
         return windows
 
@@ -98,7 +101,6 @@ class EventWindower(BaseWindower):
         whether to drop the last samples when they don't fit into window
 
     """
-
     def __init__(self, window_size_samples, tmin=0, chunk_duration_samples=None,
                  mapping=None):
         super().__init__(window_size_samples, None, tmin=tmin)
@@ -108,7 +110,8 @@ class EventWindower(BaseWindower):
     def transform(self, X):
         """[summary]
         ToDo: id=1???
-        ToDo: plus epsilon 1e-6 on duration; otherwise perfect fitting chunk_durations will SOMETIMES(!!!) not fit
+        ToDo: plus epsilon 1e-6 on duration; otherwise perfect fitting 
+              chunk_durations will SOMETIMES(!!!) not fit
 
         Parameters
         ----------
@@ -120,9 +123,19 @@ class EventWindower(BaseWindower):
 
         X.annotations.duration += 1e-6  # see ToDo
 
-        events, _ = mne.events_from_annotations(X, self.mapping_rev, chunk_duration=self.chunk_duration_samples / fs)
+        events, events_ids = mne.events_from_annotations(
+            X, self.mapping_rev, chunk_duration=self.chunk_duration_samples / fs)
 
-        windows = mne.Epochs(X, events, tmin=self.tmin, tmax=(self.window_size_samples - 1) / fs,
-                             baseline=None, preload=False)
+        metadata = {
+            'event_onset_idx': events[:, 0],
+            'trial_number': range(len(events)),
+            'target': events[:, -1]
+        }
+        metadata = pd.DataFrame(metadata)
+        # metadata['subject'] = 
+
+        windows = mne.Epochs(
+            X, events, tmin=self.tmin, tmax=(self.window_size_samples - 1) / fs,
+            baseline=None, preload=False, metadata=metadata)
 
         return windows
