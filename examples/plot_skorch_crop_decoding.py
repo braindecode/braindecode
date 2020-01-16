@@ -30,7 +30,7 @@ from braindecode.datautil import CropsDataLoader
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.experiments.scoring import CroppedTrialEpochScoring
 
-subject_id = [22]  # carefully cherry-picked to give nice results on such limited data :)
+subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
 event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
 
 # This will download the files if you don't have them yet,

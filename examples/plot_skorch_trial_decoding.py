@@ -25,12 +25,8 @@ from skorch.net import NeuralNet
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
-# 5,6,7,10,13,14 are codes for executed and imagined hands/feet
-subject_id = (
-    22
-)  # carefully cherry-picked to give nice results on such limited data :)
-event_codes = [5, 6, 9, 10, 13, 14]
-# event_codes = [3,4,5,6,7,8,9,10,11,12,13,14]
+subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
+event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
