@@ -29,4 +29,6 @@ script:
 
 after_script:
   # Need to run from source dir to execute "git" commands
-  - cd ..; codecov
+  - cd ${SRC_DIR};
+  - ls -a
+  - codecov;
