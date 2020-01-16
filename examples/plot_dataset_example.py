@@ -185,7 +185,8 @@ class BNCI2014001Dataset(ConcatDataset):
                 for run_id, raw in sess_data.items():
 
                     # 0 - Get events and remove stim channel
-                    raw = self._populate_raw(raw, sess_id, run_id, mapping)
+                    raw = self._populate_raw(
+                        raw, subj_id, sess_id, run_id, mapping)
                     if len(raw.annotations.onset) == 0:
                         continue
                     picks = mne.pick_types(raw.info, meg=False, eeg=True)
@@ -194,25 +195,18 @@ class BNCI2014001Dataset(ConcatDataset):
                     # 1- Apply preprocessing
                     raw = self.preprocessor.fit_transform(raw)
 
+                    # 2- Epoch
                     windows = self.windower.fit_transform(raw)
 
-                    # 2- Epoch
-
-                    ## ideas
-                    # -mne.raw to braindecode.dataset
-                    # -transformers
-                    # -epoching params on dataset init
-
-
-                    1/0
                     # 3- Create BaseDataset
-
-                    pass
+                    base_datasets.append(WindowsDataset(windows))
 
         # Concatenate datasets
-        # self.super().__init__(list of datasets)
+        super().__init__(base_datasets)
 
-    def _populate_raw(self, raw, sess_id, run_id, mapping):
+        
+
+    def _populate_raw(self, raw, subj_id, sess_id, run_id, mapping):
         """TO CLEAN UP/REMOVE?
         
         Parameters
@@ -232,6 +226,16 @@ class BNCI2014001Dataset(ConcatDataset):
             [description]
         """
         fs = raw.info['sfreq']
+        raw.info['subject_info'] = {
+            'id': subj_id,
+            'his_id': None,
+            'last_name': None,
+            'first_name': None,
+            'middle_name': None,
+            'birthday': None,
+            'sex': None,
+            'hand': None
+        }
         raw.info['session'] = sess_id
         raw.info['run'] = run_id
         events = mne.find_events(raw, stim_channel='stim')
@@ -248,6 +252,68 @@ class BNCI2014001Dataset(ConcatDataset):
         raw.set_annotations(annots)
         return raw
 
+
+class BaseDataset(Dataset):
+    """[summary]
+    
+    Parameters
+    ----------
+    Dataset : [type]
+        [description]
+    """
+    def __init__(self):
+        pass
+
+    def __getitem__(self, index):
+        pass
+
+    def __len__(self):
+        pass
+
+
+class WindowsDataset(Dataset):
+    """[summary]
+    
+    Parameters
+    ----------
+    Dataset : [type]
+        [description]
+    """
+    def __init__(self, windows, target='target'):
+        self.windows = windows
+        self.target = target
+        if self.target != 'target':
+            assert self.target in self.windows.info['subject_info'].keys()
+        # XXX Handle multitarget case
+            
+    def __getitem__(self, index):
+        """[summary]
+        
+        Parameters
+        ----------
+        index : [type]
+            [description]
+        
+        Returns
+        -------
+        [type]
+            [description]
+        """
+        X = np.squeeze(self.windows[index].get_data())
+        if self.target == 'target':
+            y = self.windows.metadata.iloc[index]['target']
+        else:
+            y = self.windows.info['subject_info'][self.target]
+            
+        return X, y
+
+    def __len__(self):
+        return self.windows.metadata.shape[0]
+        # XXX: The following would fail if data has not been preloaded yet:
+        # return len(self.windows)
+
+
+
 # ###############################################################################
 # # Let's create a dataset!
 
@@ -263,16 +329,14 @@ mapping = {
     3: 'Foot',
     4: 'Tongue'
 }
-windower = EventWindower(window_size_samples=200, tmin=0, chunk_duration_samples=200,
-                         mapping=mapping)
+event_windower = EventWindower(
+    window_size_samples=200, tmin=0, chunk_duration_samples=200, mapping=mapping)
+# fixed_length_windower = FixedLengthWindower(
+#     window_size_samples=200, tmin=0, chunk_duration_samples=200, mapping=mapping)
 
-bnci = BNCI2014001Dataset([2], preprocessor=prepr_pipeline, windower=windower)
+bnci = BNCI2014001Dataset([2], preprocessor=prepr_pipeline, windower=event_windower)
 
 
-
-# data_path = sample.data_path()
-# raw_fname = data_path + '/MEG/sample/sample_audvis_raw.fif'
-# raw = mne.io.read_raw_fif(raw_fname).crop(120, 240).load_data()
 
 # ###############################################################################
 # # Since downsampling reduces the timing precision of events, we recommend
@@ -284,43 +348,3 @@ bnci = BNCI2014001Dataset([2], preprocessor=prepr_pipeline, windower=windower)
 # print('Original sampling rate:', epochs.info['sfreq'], 'Hz')
 # epochs_resampled = epochs.copy().resample(100, npad='auto')
 # print('New sampling rate:', epochs_resampled.info['sfreq'], 'Hz')
-
-# # Plot a piece of data to see the effects of downsampling
-# plt.figure(figsize=(7, 3))
-
-# n_samples_to_plot = int(0.5 * epochs.info['sfreq'])  # plot 0.5 seconds of data
-# plt.plot(epochs.times[:n_samples_to_plot],
-#          epochs.get_data()[0, 0, :n_samples_to_plot], color='black')
-
-# n_samples_to_plot = int(0.5 * epochs_resampled.info['sfreq'])
-# plt.plot(epochs_resampled.times[:n_samples_to_plot],
-#          epochs_resampled.get_data()[0, 0, :n_samples_to_plot],
-#          '-o', color='red')
-
-# plt.xlabel('time (s)')
-# plt.legend(['original', 'downsampled'], loc='best')
-# plt.title('Effect of downsampling')
-# mne.viz.tight_layout()
-
-
-# ###############################################################################
-# # When resampling epochs is unwanted or impossible, for example when the data
-# # doesn't fit into memory or your analysis pipeline doesn't involve epochs at
-# # all, the alternative approach is to resample the continuous data. This
-# # can only be done on loaded or pre-loaded data.
-
-# # Resample to 300 Hz
-# raw_resampled_300 = raw.copy().resample(300, npad='auto')
-
-
-
-# # Resample to 100 Hz (suppress the warning that would be emitted)
-# raw_resampled_100 = raw.copy().resample(100, npad='auto', verbose='error')
-# print('Number of events after resampling:',
-#       len(mne.find_events(raw_resampled_100)))
-
-# # To avoid losing events, jointly resample the data and event matrix
-# events = mne.find_events(raw)
-# raw_resampled, events_resampled = raw.copy().resample(
-#     100, npad='auto', events=events)
-# print('Number of events after resampling:', len(events_resampled))
