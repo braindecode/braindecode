@@ -1,8 +1,8 @@
 """
-Pytorch-compatible braindecode dataset
+PyTorch-compatible braindecode dataset
 ======================================
 
-In this example we show how to create a pytorch compatible braindecode dataset along with preprocessing and windowing
+In this example we show how to create a PyTorch-compatible Braindecode dataset along with preprocessing and windowing
 steps. More specifically we introduce two types of transformers:
 
 1. raw transformers, that work on raw objects
