@@ -23,7 +23,7 @@ install:
 
 # command to run tests
 script:
-  - pytest --cov=./
+  - pytest --cov=braindecode test/
   # Use Sphinx to make the html docs
   # - cd docs; pip install -r requirements.txt; make html  # we build the doc on circleci now
 
