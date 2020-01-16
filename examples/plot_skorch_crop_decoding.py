@@ -111,7 +111,7 @@ class EEGDataSet(Dataset):
         return self.X[i_trial, :, start:stop], self.y[i_trial]
 
 
-train_set = EEGDataSet(X, y)
+train_set = EEGDataSet(X[:70], y[:70])
 test_set = EEGDataSet(X[70:], y=y[70:])
 
 
@@ -157,11 +157,22 @@ with torch.no_grad():
 
 
 class CroppedNLLLoss:
+    """Compute NLL Loss after averaging predictions across time.
+    Assumes predictions are in shape:
+    n_batch size x n_classes x n_predictions (in time)"""
+
     def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(torch.mean(preds, dim=1), targets)
+        return torch.nn.functional.nll_loss(torch.mean(preds, dim=2), targets)
 
 
-cropped_cb = CroppedTrialEpochScoring(
+cropped_cb_train = CroppedTrialEpochScoring(
+    "accuracy",
+    on_train=True,
+    name="train_trial_accuracy",
+    lower_is_better=False,
+)
+
+cropped_cb_valid = CroppedTrialEpochScoring(
     "accuracy",
     on_train=False,
     name="valid_trial_accuracy",
@@ -182,7 +193,10 @@ clf = NeuralNet(
     iterator_train__n_preds_per_input=n_preds_per_input,
     iterator_valid__input_time_length=input_time_length,
     iterator_valid__n_preds_per_input=n_preds_per_input,
-    callbacks=[("trial_accuracy", cropped_cb)],
+    callbacks=[
+        ("train_trial_accuracy", cropped_cb_train),
+        ("valid_trial_accuracy", cropped_cb_valid),
+    ],
 )
 
 clf.fit(train_set, y=None, epochs=4)
