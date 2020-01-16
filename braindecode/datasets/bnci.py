@@ -138,7 +138,7 @@ class BNCI2014001Dataset(ConcatDataset):
 
         from moabb.datasets.bnci import _load_data_001_2014  # soft dependency on moabb
 
-        data = [_load_data_001_2014(subj, update_path=update_path) for subj in self.subject]
+        data = {subj: _load_data_001_2014(subj, update_path=update_path) for subj in self.subject}
 
         mapping = {
             1: 'Left hand',
