@@ -144,7 +144,8 @@ class BNCI2014001Dataset(ConcatDataset):
         [description], by default None
     """      
     def __init__(self, subject, path=None, force_update=False, 
-                 preprocessor=None, windower=None):
+                 preprocessor=None, windower=None, transformer=None,
+                 transform_online=False):
         """
         0- Check whether files exist given path 
         1- Download files if they don't exist
@@ -152,6 +153,8 @@ class BNCI2014001Dataset(ConcatDataset):
 
         self.preprocessor = preprocessor
         self.windower = windower
+        self.transformer = transformer
+        self.transform_online = transform_online
 
         # Preprocessing parameters
         input_time_length = 1000
@@ -197,9 +200,15 @@ class BNCI2014001Dataset(ConcatDataset):
 
                     # 2- Epoch
                     windows = self.windower.fit_transform(raw)
+                    if self.transform_online:
+                        transformer = self.transformer
+                    else:
+                        # XXX: Apply transformer
+                        transformer = None
 
                     # 3- Create BaseDataset
-                    base_datasets.append(WindowsDataset(windows))
+                    base_datasets.append(WindowsDataset(
+                        windows, transformer=transformer))
 
         # Concatenate datasets
         super().__init__(base_datasets)
@@ -279,7 +288,7 @@ class WindowsDataset(Dataset):
     Dataset : [type]
         [description]
     """
-    def __init__(self, windows, target='target'):
+    def __init__(self, windows, target='target', transformer=None):
         self.windows = windows
         self.target = target
         if self.target != 'target':
