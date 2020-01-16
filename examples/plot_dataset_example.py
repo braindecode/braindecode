@@ -12,6 +12,7 @@ steps. More specifically we introduce two types of transformers:
     This code will download subject 2 of the BCI competition IV 2a dataset via moabb
 
 """
+
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
@@ -23,7 +24,7 @@ from sklearn.pipeline import Pipeline
 
 from braindecode.datautil.transformers import FilterRawTransformer, ZscoreRawTransformer,\
     ZscoreWindowTransformer, FilterWindowTransformer
-from braindecode.windowers import EventWindower
+from braindecode.datautil.windowers import EventWindower
 from braindecode.datasets.bnci import BNCI2014001Dataset
 
 ##############################################################################

@@ -1,6 +1,13 @@
 """Get epochs from mne.Raw
 """
 
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
+#          Simon Brandt <simonbrandt@protonmail.com>
+#          David Sabbagh <dav.sabbagh@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 from sklearn.base import TransformerMixin
 import mne

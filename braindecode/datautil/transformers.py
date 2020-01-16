@@ -3,6 +3,13 @@ ToDo: decide whether window transformers should work on mne.Epochs or numpy.Arra
 ToDo: should transformer also transform y (e.g. cutting continuous labelled data)?
 """
 
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
+#          Simon Brandt <simonbrandt@protonmail.com>
+#          David Sabbagh <dav.sabbagh@gmail.com>
+#
+# License: BSD (3-clause)
+
 from sklearn.base import TransformerMixin
 import mne
 

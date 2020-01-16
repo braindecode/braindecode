@@ -1,6 +1,14 @@
 """
 BCI competition IV 2a dataset
 """
+
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
+#          Simon Brandt <simonbrandt@protonmail.com>
+#          David Sabbagh <dav.sabbagh@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 import mne
 mne.set_log_level('WARNING')
