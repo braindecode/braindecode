@@ -15,7 +15,7 @@ class WindowsDataset(Dataset):
         epoched data to wrap
     target : str
         target specified by user to be decoded
-    transformer : sklearn.base.TransformerMixin
+    transformer : list of sklearn.base.TransformerMixin
         preprocessor function applied on windowed data
     """
 
@@ -24,7 +24,8 @@ class WindowsDataset(Dataset):
         self.target = target
         if self.target != 'target':
             assert self.target in self.windows.info['subject_info'].keys()
-        self.transformer = transformer
+        self.transformer = transformer if isinstance(transformer, list)\
+            else [transformer]
         # XXX Handle multitarget case
 
     def __getitem__(self, index):
@@ -49,7 +50,8 @@ class WindowsDataset(Dataset):
             y = self.windows.info['subject_info'][self.target]
 
         if self.transformer:
-            x = self.transformer.fit_transform(x)
+            for transformer in self.transformer:
+                x = transformer.fit_transform(x)
 
         return x, y
 

@@ -22,11 +22,13 @@ class BaseWindower(TransformerMixin):
 
     """
 
-    def __init__(self, window_size_samples, overlap_size_samples, drop_last_samples=True, tmin=0):
+    def __init__(self, window_size_samples, overlap_size_samples,
+                 drop_last_samples=True, tmin=0, mapping=None):
         self.window_size_samples = window_size_samples
         self.overlap_size_samples = overlap_size_samples
         self.drop_last_samples = drop_last_samples
         self.tmin = tmin
+        self.mapping = mapping
 
     def fit(self, X, y=None):
         return self
@@ -50,8 +52,10 @@ class FixedLengthWindower(BaseWindower):
 
     """
 
-    def __init__(self, window_size_samples, overlap_size_samples, drop_last_samples=True, tmin=0):
-        super().__init__(window_size_samples, overlap_size_samples, drop_last_samples, tmin)
+    def __init__(self, window_size_samples, overlap_size_samples,
+                 drop_last_samples=True, tmin=0):
+        super().__init__(window_size_samples, overlap_size_samples,
+                         drop_last_samples, tmin)
 
     def transform(self, X):
         """[summary]
@@ -78,7 +82,8 @@ class FixedLengthWindower(BaseWindower):
         if not self.drop_last_samples:
             last_valid_window_start = X.n_times - self.window_size_samples
             if events[-1, 0] < last_valid_window_start:
-                events = np.concatenate((events, [[last_valid_window_start, 0, id_holder]]))
+                events = np.concatenate((events, [[last_valid_window_start, 0,
+                                                  id_holder]]))
 
         windows = mne.Epochs(
             X, events, tmin=self.tmin, tmax=(self.window_size_samples - 1) / fs,
@@ -103,9 +108,11 @@ class EventWindower(BaseWindower):
     """
     def __init__(self, window_size_samples, tmin=0, chunk_duration_samples=None,
                  mapping=None):
-        super().__init__(window_size_samples, None, tmin=tmin)
+        super().__init__(window_size_samples, overlap_size_samples=None,
+                         tmin=tmin)
         self.chunk_duration_samples = chunk_duration_samples
-        self.mapping_rev = {v: k for k, v in mapping.items()}
+        if mapping is not None:
+            self.mapping = mapping
 
     def transform(self, X):
         """[summary]
@@ -124,7 +131,7 @@ class EventWindower(BaseWindower):
         X.annotations.duration += 1e-6  # see ToDo
 
         events, events_ids = mne.events_from_annotations(
-            X, self.mapping_rev, chunk_duration=self.chunk_duration_samples / fs)
+            X, self.mapping, chunk_duration=self.chunk_duration_samples / fs)
 
         metadata = {
             'event_onset_idx': events[:, 0],
