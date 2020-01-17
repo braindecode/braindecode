@@ -33,7 +33,7 @@ def test_shallow_fbcsp_net():
 def test_deep4net():
     rng = np.random.RandomState(42)
     n_channels = 18
-    n_in_times = 300
+    n_in_times = 600
     n_classes = 2
     n_samples = 7
     X = rng.randn(n_samples, n_channels, n_in_times, 1)
@@ -50,7 +50,7 @@ def test_deep4net():
 def test_eegresnet():
     rng = np.random.RandomState(42)
     n_channels = 18
-    n_in_times = 300
+    n_in_times = 600
     n_classes = 2
     n_samples = 7
     X = rng.randn(n_samples, n_channels, n_in_times, 1)
@@ -62,13 +62,13 @@ def test_eegresnet():
                       n_first_filters=2,
                       ).create_network()
     y_pred = model(X)
-    assert y_pred.shape == (n_samples, n_classes)
+    assert y_pred.shape[:2] == (n_samples, n_classes)
 
 
 def test_hybridnet():
     rng = np.random.RandomState(42)
     n_channels = 18
-    n_in_times = 300
+    n_in_times = 600
     n_classes = 2
     n_samples = 7
     X = rng.randn(n_samples, n_channels, n_in_times, 1)
@@ -78,20 +78,20 @@ def test_hybridnet():
                       n_in_times
                       ).create_network()
     y_pred = model(X)
-    assert y_pred.shape == (n_samples, n_classes)
+    assert y_pred.shape[:2] == (n_samples, n_classes)
 
 
 def test_eegnet_v4():
     rng = np.random.RandomState(42)
     n_channels = 18
-    n_in_times = 300
+    n_in_times = 500
     n_classes = 2
     n_samples = 7
     X = rng.randn(n_samples, n_channels, n_in_times, 1)
     X = th.Tensor(X.astype(np.float32))
     model = EEGNetv4(n_channels,
                      n_classes,
-                     n_in_times
+                     input_time_length=n_in_times
                      ).create_network()
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
