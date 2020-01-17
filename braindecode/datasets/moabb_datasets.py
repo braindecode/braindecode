@@ -136,10 +136,6 @@ class MOABBDataset(ConcatDataset):
             raw_transformer if isinstance(raw_transformer, list)\
                 else [raw_transformer]
 
-        # conveniently the mapping is already contained in MOABB
-        if windower.mapping is None:
-            windower.mapping = self.dataset.event_id
-
         self.windower = windower
         self.transformer = transformer if isinstance(transformer, list)\
             else [transformer]
@@ -173,10 +169,10 @@ class MOABBDataset(ConcatDataset):
 
                     # 1- Apply preprocessing
                     for transformer in self.raw_transformer:
-                        raw = transformer.fit_transform(raw)
+                        raw = transformer(raw)
 
                     # 2- Epoch
-                    windows = self.windower.fit_transform(raw)
+                    windows = self.windower(raw, self.dataset.event_id)
                     if self.transform_online:
                         transformer = self.transformer
                     else:
@@ -186,7 +182,7 @@ class MOABBDataset(ConcatDataset):
 
                     # 3- Create BaseDataset
                     base_datasets.append(WindowsDataset(
-                        windows, transformer=transformer))
+                        windows, transforms=transformer))
 
         return base_datasets
 

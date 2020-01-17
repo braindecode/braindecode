@@ -23,9 +23,13 @@ types of transformers:
 
 from sklearn.pipeline import Pipeline
 
-from braindecode.datautil.transformers import FilterRawTransformer,\
-    ZscoreRawTransformer, ZscoreWindowTransformer, FilterWindowTransformer
-from braindecode.windowers import EventWindower
+from braindecode.datautil.transforms import (
+    FilterRaw,
+    ZscoreRaw,
+    ZscoreWindow,
+    FilterWindow,
+)
+from braindecode.datautil.windowers import EventWindower
 from braindecode.datasets.moabb_datasets import MOABBDataset
 ##############################################################################
 # Define transformers that operate on raw objects
@@ -47,10 +51,10 @@ from braindecode.datasets.moabb_datasets import MOABBDataset
 
 # 1. raw transformers
 # define band-pass filter to be used on raw data
-filter_raw = FilterRawTransformer(l_freq=1, h_freq=80)
+filter_raw = FilterRaw(l_freq=1, h_freq=80)
 
 # define zscore transformer for channel wise normalization
-zscorer_raw = ZscoreRawTransformer()
+zscorer_raw = ZscoreRaw()
 
 # transformers can be chained using the scikit-learn Pipeline object
 raw_transformer = [filter_raw, zscorer_raw]
@@ -59,8 +63,9 @@ raw_transformer = [filter_raw, zscorer_raw]
 # define mapping for event windower
 
 # define event windower
-event_windower = EventWindower(window_size_samples=200, tmin=0,
-                               chunk_duration_samples=200)
+event_windower = EventWindower(
+    200, 200, True, tmin=0
+)
 
 # 2nd case
 # fixed_length_windower = FixedLengthWindower(window_size_samples=200, tmin=0,
@@ -73,10 +78,10 @@ event_windower = EventWindower(window_size_samples=200, tmin=0,
 # define FIR filter for windowed data. The sampling frequency 'sfreq' has to be
 # specified by the user as there is no information contained in the
 # 'numpy.array' the filter later is applied to.
-filter_window = FilterWindowTransformer(sfreq=250, l_freq=8, h_freq=12)
+filter_window = FilterWindow(sfreq=250, l_freq=8, h_freq=12)
 
 # zscore for normalization
-zscorer_window = ZscoreWindowTransformer()
+zscorer_window = ZscoreWindow()
 
 # again, transformers can be chained using the scikit-learn Pipeline object
 array_transformer = filter_window  # [filter_window, zscorer_window]
@@ -92,9 +97,9 @@ bnci2014001 = MOABBDataset(dataset, subject=4, raw_transformer=raw_transformer,
                            transformer=array_transformer,
                            transform_online=True)
 
-print(f'As expected, the number of epochs is {len(bnci2014001)}\n'
-      f'(2 sessions of 6 runs with 12 repetitions of 4 motor imagery tasks with'
-      f'5 windows each)\n')
+print(f'As expected, the number of epochs is {len(bnci2014001)} (2 sessions\n'
+      f'of 6 runs with 12 repetitions of 4 motor imagery tasks with 5 windows\n'
+      f'each)')
 
 x, y = bnci2014001[0]
 
