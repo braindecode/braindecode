@@ -91,17 +91,17 @@ array_transformer = filter_window  # [filter_window, zscorer_window]
 # ---------------------------------------------
 #
 #
-dataset = 'BNCI2014001'
-bnci2014001 = MOABBDataset(dataset, subject=4, raw_transformer=raw_transformer,
-                           windower=event_windower,
-                           transformer=array_transformer,
-                           transform_online=True)
+dataset_name = 'BNCI2014001'
+dataset = MOABBDataset(dataset_name, subject=4, raw_transformer=raw_transformer,
+                       windower=event_windower,
+                       transformer=array_transformer,
+                       transform_online=True)
 
-print(f'As expected, the number of epochs is {len(bnci2014001)} (2 sessions\n'
+print(f'As expected, the number of epochs is {len(dataset)} (2 sessions\n'
       f'of 6 runs with 12 repetitions of 4 motor imagery tasks with 5 windows\n'
       f'each)')
 
-x, y = bnci2014001[0]
+x, y = dataset[0]
 
 print(f'As expected, the shape of the first epoch is {x.shape} and its class'
       f'label is {y}')

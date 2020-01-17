@@ -155,15 +155,17 @@ class MOABBDataset(ConcatDataset):
         data = self.dataset.get_data(self.subject)
 
         base_datasets = list()
+        trial_durations = list()
         for subj_id, subj_data in data.items():
             for sess_id, sess_data in subj_data.items():
                 for run_id, raw in sess_data.items():
-
                     # 0 - Get events and remove stim channel
                     raw = self._populate_raw_from_moabb(
                         raw, subj_id, sess_id, run_id)
                     if len(raw.annotations.onset) == 0:
                         continue
+                    trial_durations.append(raw.annotations.duration
+                                           * raw.info['sfreq'])
                     picks = mne.pick_types(raw.info, meg=False, eeg=True)
                     raw = raw.pick_channels(np.array(raw.ch_names)[picks])
 
@@ -183,8 +185,21 @@ class MOABBDataset(ConcatDataset):
                     # 3- Create BaseDataset
                     base_datasets.append(WindowsDataset(
                         windows, transforms=transformer))
+        self.trial_durations_seconds = np.concatenate(trial_durations, axis=0)
+        self.fs = raw.info['sfreq']
 
         return base_datasets
+
+    def get_trial_durations_samples(self):
+        """Returns the trial duration of experiment in samples
+
+        Returns
+        -------
+        ndarray
+            trial durations in samples
+        """
+        trial_durations_samples = self.trial_durations_seconds * self.fs
+        return trial_durations_samples.astype(int)
 
     def _populate_raw_from_moabb(self, raw, subj_id, sess_id, run_id):
         """Populate raw with subject, events, session and run information
@@ -217,23 +232,22 @@ class MOABBDataset(ConcatDataset):
         }
         raw.info['session'] = sess_id
         raw.info['run'] = run_id
+        if len(raw.annotations) == 0:
+            events = mne.find_events(raw)
+            event_onset, event_offset = self.dataset.interval  # in seconds
+            events[:, 0] += int(event_onset * fs)
 
-        events = mne.find_events(raw, stim_channel='stim')
-        event_onset, event_offset = self.dataset.interval  # in seconds
-        events[:, 0] += int(event_onset * fs)
+            raw.info['events'] = events
+            mapping = {v: k for k, v in self.dataset.event_id.items()}
 
-        raw.info['events'] = events
-        mapping = {v: k for k, v in self.dataset.event_id.items()}
+            annots = annotations_from_events(
+                raw.info['events'], raw.info['sfreq'], event_desc=mapping,
+                first_samp=raw.first_samp, orig_time=None)
 
-        annots = annotations_from_events(
-            raw.info['events'], raw.info['sfreq'], event_desc=mapping,
-            first_samp=raw.first_samp, orig_time=None)
+            annots.duration += event_offset - event_onset
 
-        annots.duration += event_offset - event_onset
-
-        raw.set_annotations(annots)
+            raw.set_annotations(annots)
         return raw
-
 
     @staticmethod
     def find_data_set(dataset_name):
