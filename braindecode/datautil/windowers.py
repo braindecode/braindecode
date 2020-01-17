@@ -8,13 +8,14 @@
 #
 # License: BSD (3-clause)
 
+import copy
+
 import numpy as np
-from sklearn.base import TransformerMixin
 import mne
 import pandas as pd
 
 
-class BaseWindower(TransformerMixin):
+class BaseWindower(object):
     """Fixed onset windower
     ToDo: samples or seconds
 
@@ -24,21 +25,36 @@ class BaseWindower(TransformerMixin):
         size of one window in samples
     overlap_size_samples : int
         size of overlap for window in samples
-    drop_last_samples : bool, default=True
-        whether to drop the last samples when they don't fit into window
+    drop_last_samples : bool
+        Whether to drop the last samples when they don't fit into window. If
+        True, there might be samples at the end of your data that is not used.
+        If False, an additional window will be extracted to include the 
+        remaining samples - this means this additional window will overlap with
+        the previous window.
 
     """
 
-    def __init__(self, window_size_samples, overlap_size_samples, drop_last_samples=True, tmin=0):
+    def __init__(
+        self,
+        window_size_samples,
+        overlap_size_samples,
+        drop_last_samples,
+        tmin=0,
+    ):
         self.window_size_samples = window_size_samples
         self.overlap_size_samples = overlap_size_samples
         self.drop_last_samples = drop_last_samples
         self.tmin = tmin
 
-    def fit(self, X, y=None):
-        return self
+    def include_last_samples(self, raw):
+        last_valid_window_start = raw.n_times - self.window_size_samples
+        if events[-1, 0] < last_valid_window_start:
+            events = np.concatenate(
+                (events, [[last_valid_window_start, 0, id_holder]])
+            )
+        return events
 
-    def transform(self, X):
+    def __call__(self, raw):
         return NotImplementedError
 
 
@@ -52,46 +68,56 @@ class FixedLengthWindower(BaseWindower):
         size of one window in samples
     overlap_size_samples : int
         size of overlap for window in samples
-    drop_last_samples : bool, default=True
-        whether to drop the last samples when they don't fit into window
+    drop_last_samples : bool
+       See BaseWindower 
 
     """
 
-    def __init__(self, window_size_samples, overlap_size_samples, drop_last_samples=True, tmin=0):
-        super().__init__(window_size_samples, overlap_size_samples, drop_last_samples, tmin)
+    def __init__(
+        self,
+        window_size_samples,
+        overlap_size_samples,
+        drop_last_samples,
+        tmin=0,
+    ):
+        super().__init__(
+            window_size_samples, overlap_size_samples, drop_last_samples, tmin
+        )
 
-    def transform(self, X):
+    def __call__(self, raw):
         """[summary]
         ToDo: id=1???
 
         Parameters
         ----------
-        X : mne.io.Raw
+        raw : mne.io.Raw
             [description]
         """
         id_holder = 1
-        fs = X.info['sfreq']
+        fs = raw.info["sfreq"]
 
         if self.window_size_samples is None:
-            self.window_size_samples = X.n_times
-            duration = X.times[-1]
+            self.window_size_samples = raw.n_times
+            duration = raw.times[-1]
         else:
             duration = self.window_size_samples / fs
 
         overlap = self.overlap_size_samples / fs
         events = mne.make_fixed_length_events(
-            X, id=id_holder, duration=duration, overlap=overlap, stop=None)
+            raw, id=id_holder, duration=duration, overlap=overlap, stop=None
+        )
 
         if not self.drop_last_samples:
-            last_valid_window_start = X.n_times - self.window_size_samples
-            if events[-1, 0] < last_valid_window_start:
-                events = np.concatenate((events, [[last_valid_window_start, 0, id_holder]]))
+            events = self.include_last_samples(raw)
 
-        windows = mne.Epochs(
-            X, events, tmin=self.tmin, tmax=(self.window_size_samples - 1) / fs,
-            baseline=None, preload=False)
-
-        return windows
+        return mne.Epochs(
+            raw,
+            events,
+            tmin=self.tmin,
+            tmax=(self.window_size_samples - 1) / fs,
+            baseline=None,
+            preload=False,
+        )
 
 
 class EventWindower(BaseWindower):
@@ -104,17 +130,45 @@ class EventWindower(BaseWindower):
         size of one window in samples
     overlap_size_samples : int
         size of overlap for window in samples
-    drop_last_samples : bool, default=True
-        whether to drop the last samples when they don't fit into window
-
+    drop_last_samples : bool
+        See BaseWindower
     """
-    def __init__(self, window_size_samples, tmin=0, chunk_duration_samples=None,
-                 mapping=None):
-        super().__init__(window_size_samples, None, tmin=tmin)
+
+    def __init__(
+        self,
+        window_size_samples,
+        chunk_duration_samples,
+        drop_last_samples,
+        tmin=0,
+        mapping=None,
+    ):
+        super().__init__(window_size_samples, None, drop_last_samples, tmin=tmin)
         self.chunk_duration_samples = chunk_duration_samples
         self.mapping_rev = {v: k for k, v in mapping.items()}
 
-    def transform(self, X):
+    def _include_last_samples(self, raw):
+        onsets, durations, descriptions = list(), list(), list()
+        for onset, duration, description in zip(
+                raw.annotations.onset, 
+                raw.annotations.duration, 
+                raw.annotations.description):
+            if onset + duration % (self.window_size_samples - 1) / fs > 0:
+                onsets.append(onset)
+                durations.append(duration)
+                descriptions.append(description)
+
+        raw.annotations = mne.Annotations(
+            onsets, durations, descriptions, 
+            orig_time=raw.annotations.orig_time)
+        last_events, _ = mne.events_from_annotations(
+            raw,
+            self.mapping_rev,
+            chunk_duration=None
+        )
+
+        return last_events
+
+    def __call__(self, raw):
         """[summary]
         ToDo: id=1???
         ToDo: plus epsilon 1e-6 on duration; otherwise perfect fitting 
@@ -122,27 +176,41 @@ class EventWindower(BaseWindower):
 
         Parameters
         ----------
-        X : mne.io.Raw
+        raw  : mne.io.Raw
             [description]
         """
 
-        fs = X.info['sfreq']
+        fs = raw.info["sfreq"]
 
-        X.annotations.duration += 1e-6  # see ToDo
+        raw.annotations.duration += 1e-6  # see ToDo
 
         events, events_ids = mne.events_from_annotations(
-            X, self.mapping_rev, chunk_duration=self.chunk_duration_samples / fs)
+            raw,
+            self.mapping_rev,
+            chunk_duration=self.chunk_duration_samples / fs,
+        )
+
+        if not self.drop_last_samples:
+            raise NotImplementedError  # TO TEST!
+    
+            last_events = self._include_last_samples(raw)
+            events = np.concatenate((events, last_events), axis=0)
+            # Reorder events
 
         metadata = {
-            'event_onset_idx': events[:, 0],
-            'trial_number': range(len(events)),
-            'target': events[:, -1]
+            "event_onset_idx": events[:, 0],
+            "trial_number": range(len(events)),
+            "target": events[:, -1],
         }
         metadata = pd.DataFrame(metadata)
-        # metadata['subject'] = 
+        # metadata['subject'] =
 
-        windows = mne.Epochs(
-            X, events, tmin=self.tmin, tmax=(self.window_size_samples - 1) / fs,
-            baseline=None, preload=False, metadata=metadata)
-
-        return windows
+        return mne.Epochs(
+            raw,
+            events,
+            tmin=self.tmin,
+            tmax=(self.window_size_samples - 1) / fs,
+            baseline=None,
+            preload=False,
+            metadata=metadata,
+        )

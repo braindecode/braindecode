@@ -1,5 +1,5 @@
 """
-Dataset classes that handle data
+Dataset classes.
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
@@ -22,16 +22,19 @@ class WindowsDataset(Dataset):
         epoched data to wrap
     target : str
         target specified by user to be decoded
-    transformer : sklearn.base.TransformerMixin
-        preprocessor function applied on windowed data
+    transforms : transform object | list of transform objects | None
+        preprocessor transform(s) applied sequentially on windowed data.
     """
 
-    def __init__(self, windows, target='target', transformer=None):
+    def __init__(self, windows, target="target", transforms=None):
         self.windows = windows
         self.target = target
-        if self.target != 'target':
-            assert self.target in self.windows.info['subject_info'].keys()
-        self.transformer = transformer
+        if self.target != "target":
+            assert self.target in self.windows.info["subject_info"].keys()
+        self.transforms = (
+            [transforms] if not isinstance(transforms, list) else transforms
+        )
+
         # XXX Handle multitarget case
 
     def __getitem__(self, index):
@@ -50,13 +53,14 @@ class WindowsDataset(Dataset):
             window target
         """
         x = np.squeeze(self.windows[index].get_data())
-        if self.target == 'target':
-            y = self.windows.metadata.iloc[index]['target']
+        if self.target == "target":
+            y = self.windows.metadata.iloc[index]["target"]
         else:
-            y = self.windows.info['subject_info'][self.target]
+            y = self.windows.info["subject_info"][self.target]
 
-        if self.transformer:
-            x = self.transformer.fit_transform(x)
+        if self.transforms is not None:
+            for transform in self.transforms:
+                x = transform(x)
 
         return x, y
 
@@ -64,4 +68,3 @@ class WindowsDataset(Dataset):
         return self.windows.metadata.shape[0]
         # XXX: The following would fail if data has not been preloaded yet:
         # return len(self.windows)
-
