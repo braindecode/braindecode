@@ -8,7 +8,7 @@ from .modules import Expression
 from .functions import safe_log, square
 
 
-class ShallowFBCSPNet(BaseModel):
+class ShallowFBCSPNet(nn.Sequential, BaseModel):
     """Shallow ConvNet model from [2]_.
 
     Parameters
@@ -44,14 +44,18 @@ class ShallowFBCSPNet(BaseModel):
         batch_norm_alpha=0.1,
         drop_prob=0.5,
     ):
+        super().__init__()
         if final_conv_length == "auto":
             assert input_time_length is not None
         self.__dict__.update(locals())
         del self.self
+        self._create_network(self)
 
     def create_network(self):
+        return self
+
+    def _create_network(self, model):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
-        model = nn.Sequential()
         if self.split_first_layer:
             model.add_module("dimshuffle", Expression(_transpose_time_to_spat))
             model.add_module(
@@ -93,7 +97,7 @@ class ShallowFBCSPNet(BaseModel):
                     n_filters_conv, momentum=self.batch_norm_alpha, affine=True
                 ),
             )
-        model.add_module("conv_nonlin", Expression(self.conv_nonlin))
+        model.add_module("conv_nonlin_exp", Expression(self.conv_nonlin))
         model.add_module(
             "pool",
             pool_class(
@@ -101,7 +105,7 @@ class ShallowFBCSPNet(BaseModel):
                 stride=(self.pool_time_stride, 1),
             ),
         )
-        model.add_module("pool_nonlin", Expression(self.pool_nonlin))
+        model.add_module("pool_nonlin_exp", Expression(self.pool_nonlin))
         model.add_module("drop", nn.Dropout(p=self.drop_prob))
         model.eval()
         if self.final_conv_length == "auto":

@@ -22,7 +22,7 @@ class Conv2dWithConstraint(nn.Conv2d):
         return super(Conv2dWithConstraint, self).forward(x)
 
 
-class EEGNetv4(BaseModel):
+class EEGNetv4(nn.Sequential, BaseModel):
     """
     EEGNet v4 model from [EEGNet4]_.
 
@@ -55,15 +55,18 @@ class EEGNetv4(BaseModel):
         third_kernel_size=(8, 4),
         drop_prob=0.25,
     ):
-
+        super().__init__()
         if final_conv_length == "auto":
             assert input_time_length is not None
         self.__dict__.update(locals())
         del self.self
+        self._create_network(self)
 
     def create_network(self):
+        return self
+
+    def _create_network(self, model):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
-        model = nn.Sequential()
         # b c 0 1
         # now to b 1 0 c
         model.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
