@@ -40,11 +40,13 @@ class BaseWindower(object):
         overlap_size_samples,
         drop_last_samples,
         tmin=0,
+        mapping=None
     ):
         self.window_size_samples = window_size_samples
         self.overlap_size_samples = overlap_size_samples
         self.drop_last_samples = drop_last_samples
         self.tmin = tmin
+        self.mapping = mapping
 
     def include_last_samples(self, raw):
         last_valid_window_start = raw.n_times - self.window_size_samples
@@ -144,9 +146,13 @@ class EventWindower(BaseWindower):
     ):
         super().__init__(window_size_samples, None, drop_last_samples, tmin=tmin)
         self.chunk_duration_samples = chunk_duration_samples
-        self.mapping_rev = {v: k for k, v in mapping.items()}
+        if mapping is not None:
+            assert all([isinstance(v, int) for v in mapping.values()]),\
+                'mapping dictionary must provided as {description: int}'
 
-    def _include_last_samples(self, raw):
+        self.mapping = mapping
+
+    def _include_last_samples(self, raw, mapping):
         onsets, durations, descriptions = list(), list(), list()
         for onset, duration, description in zip(
                 raw.annotations.onset, 
@@ -162,13 +168,13 @@ class EventWindower(BaseWindower):
             orig_time=raw.annotations.orig_time)
         last_events, _ = mne.events_from_annotations(
             raw,
-            self.mapping_rev,
+            mapping,
             chunk_duration=None
         )
 
         return last_events
 
-    def __call__(self, raw):
+    def __call__(self, raw, mapping=None):
         """[summary]
         ToDo: id=1???
         ToDo: plus epsilon 1e-6 on duration; otherwise perfect fitting 
@@ -179,21 +185,22 @@ class EventWindower(BaseWindower):
         raw  : mne.io.Raw
             [description]
         """
-
+        if mapping is None:
+            mapping = self.mapping
         fs = raw.info["sfreq"]
 
         raw.annotations.duration += 1e-6  # see ToDo
 
         events, events_ids = mne.events_from_annotations(
             raw,
-            self.mapping_rev,
+            mapping,
             chunk_duration=self.chunk_duration_samples / fs,
         )
 
         if not self.drop_last_samples:
             raise NotImplementedError  # TO TEST!
     
-            last_events = self._include_last_samples(raw)
+            last_events = self._include_last_samples(raw, mapping)
             events = np.concatenate((events, last_events), axis=0)
             # Reorder events
 
