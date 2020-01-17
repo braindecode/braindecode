@@ -32,6 +32,7 @@ Models
 
     ShallowFBCSPNet
     Deep4Net
+    EEGNetv1
     EEGNetv4
     HybridNet
     EEGResNet

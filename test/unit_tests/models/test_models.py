@@ -7,7 +7,7 @@ import numpy as np
 import torch as th
 
 from braindecode.models import Deep4Net
-from braindecode.models import EEGNetv4
+from braindecode.models import EEGNetv4, EEGNetv1
 from braindecode.models import HybridNet
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models import EEGResNet
@@ -93,5 +93,20 @@ def test_eegnet_v4():
                      n_classes,
                      input_time_length=n_in_times
                      ).create_network()
+    y_pred = model(X)
+    assert y_pred.shape == (n_samples, n_classes)
+
+
+def test_eegnet_v1():
+    rng = np.random.RandomState(42)
+    n_channels = 18
+    n_in_times = 500
+    n_classes = 2
+    n_samples = 7
+    X = rng.randn(n_samples, n_channels, n_in_times, 1)
+    X = th.Tensor(X.astype(np.float32))
+    model = EEGNetv1(n_channels,
+                     n_classes,
+                     input_time_length=n_in_times)
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
