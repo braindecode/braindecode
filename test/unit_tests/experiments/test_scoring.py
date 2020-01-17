@@ -13,7 +13,7 @@ from skorch.utils import to_numpy, to_tensor
 from torch import optim
 from torch.utils.data import Dataset
 from braindecode.datautil import CropsDataLoader
-from braindecode.experiments.classifier import BraindecodeClassifier
+from braindecode.experiments.classifier import EEGClassifier
 from braindecode.experiments.scoring import CroppedTrialEpochScoring
 from braindecode.experiments.scoring import PostEpochTrainScoring
 from braindecode.models import ShallowFBCSPNet
@@ -190,7 +190,7 @@ def test_post_epoch_train_scoring():
     if cuda:
         model.cuda()
 
-    clf = BraindecodeClassifier(
+    clf = EEGClassifier(
         model,
         criterion=torch.nn.NLLLoss,
         optimizer=optim.AdamW,

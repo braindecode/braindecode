@@ -26,7 +26,7 @@ from skorch.net import NeuralNet
 
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
-from braindecode.experiments.classifier import BraindecodeClassifier
+from braindecode.experiments.classifier import EEGClassifier
 from braindecode.experiments.scoring import PostEpochTrainScoring
 
 subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
@@ -127,7 +127,7 @@ if cuda:
     model.cuda()
 
 # It can use also NeuralNetClassifier
-clf = BraindecodeClassifier(
+clf = EEGClassifier(
     model,
     criterion=torch.nn.NLLLoss,
     optimizer=optim.AdamW,
