@@ -24,6 +24,7 @@ from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.util import set_random_seeds
+from braindecode.losses import CroppedNLLLoss
 
 
 class EEGDataSet(Dataset):
@@ -59,15 +60,6 @@ class TrainTestSplit(object):
             EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
             EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
         )
-
-
-class CroppedNLLLoss:
-    """Compute NLL Loss after averaging predictions across time.
-    Assumes predictions are in shape:
-    n_batch size x n_classes x n_predictions (in time)"""
-
-    def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(torch.mean(preds, dim=2), targets)
 
 
 data_folder = "/data/bci_competition/"

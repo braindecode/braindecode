@@ -30,6 +30,7 @@ from braindecode.datautil import CropsDataLoader
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.classifier import EEGClassifier
+from braindecode.losses import CroppedNLLLoss
 
 subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
 event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
@@ -140,15 +141,6 @@ input_time_length = X.shape[2]
 with torch.no_grad():
     dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device="cpu")
     n_preds_per_input = model(dummy_input).shape[2]
-
-
-class CroppedNLLLoss:
-    """Compute NLL Loss after averaging predictions across time.
-    Assumes predictions are in shape:
-    n_batch size x n_classes x n_predictions (in time)"""
-
-    def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(torch.mean(preds, dim=2), targets)
 
 
 cropped_cb_train = CroppedTrialEpochScoring(

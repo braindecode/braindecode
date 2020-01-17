@@ -11,12 +11,14 @@ from mne.io import concatenate_raws
 from torch import optim
 from torch.utils.data import Dataset
 
+from braindecode.losses import CroppedNLLLoss
 from braindecode.datautil.loader import CropsDataLoader
 from braindecode.classifier import EEGClassifier
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.util import set_random_seeds, np_to_var
+
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -102,15 +104,6 @@ class TrainTestSplit(object):
             EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
             EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
         )
-
-
-class CroppedNLLLoss:
-    """Compute NLL Loss after averaging predictions across time.
-    Assumes predictions are in shape:
-    n_batch size x n_classes x n_predictions (in time)"""
-
-    def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(torch.mean(preds, dim=2), targets)
 
 
 def test_eeg_classifier_cropped_training():

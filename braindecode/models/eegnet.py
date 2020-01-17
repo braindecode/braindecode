@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn.functional import elu
 
 from ..util import np_to_var
-from ..torch_ext.init import glorot_weight_zero_bias
+from ..nn_init import glorot_weight_zero_bias
 from .modules import Expression
 
 
@@ -167,7 +167,7 @@ class EEGNetv4(nn.Sequential):
                 bias=True,
             ),
         )
-        model.add_module("softmax", nn.LogSoftmax())
+        model.add_module("softmax", nn.LogSoftmax(dim=1))
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         model.add_module("permute_back", Expression(_transpose_1_0))
@@ -326,7 +326,7 @@ class EEGNetv1(nn.Sequential):
                 bias=True,
             ),
         )
-        self.add_module("softmax", nn.LogSoftmax())
+        self.add_module("softmax", nn.LogSoftmax(dim=1))
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         self.add_module(
