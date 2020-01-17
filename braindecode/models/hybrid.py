@@ -8,25 +8,7 @@ from .shallow_fbcsp import ShallowFBCSPNet
 from .util import to_dense_prediction_model
 
 
-class HybridNet(BaseModel):
-    """
-    Wrapper for HybridNetModule
-    """
-
-    def __init__(self, in_chans, n_classes, input_time_length):
-        self.in_chans = in_chans
-        self.n_classes = n_classes
-        self.input_time_length = input_time_length
-
-    def create_network(self):
-        return HybridNetModule(
-            in_chans=self.in_chans,
-            n_classes=self.n_classes,
-            input_time_length=self.input_time_length,
-        )
-
-
-class HybridNetModule(nn.Module):
+class HybridNet(nn.Module, BaseModel):
     """Hybrid ConvNet model from [3]_.
 
     Very hardcoded at the moment.
@@ -42,7 +24,7 @@ class HybridNetModule(nn.Module):
     """
 
     def __init__(self, in_chans, n_classes, input_time_length):
-        super(HybridNetModule, self).__init__()
+        super(HybridNet, self).__init__()
         deep_model = Deep4Net(
             in_chans,
             n_classes,
