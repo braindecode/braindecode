@@ -40,21 +40,13 @@ class BaseWindower(object):
         overlap_size_samples,
         drop_last_samples,
         tmin=0,
-        mapping=None
+        mapping=None,
     ):
         self.window_size_samples = window_size_samples
         self.overlap_size_samples = overlap_size_samples
         self.drop_last_samples = drop_last_samples
         self.tmin = tmin
         self.mapping = mapping
-
-    def include_last_samples(self, raw):
-        last_valid_window_start = raw.n_times - self.window_size_samples
-        if events[-1, 0] < last_valid_window_start:
-            events = np.concatenate(
-                (events, [[last_valid_window_start, 0, id_holder]])
-            )
-        return events
 
     def __call__(self, raw):
         return NotImplementedError
@@ -86,6 +78,14 @@ class FixedLengthWindower(BaseWindower):
             window_size_samples, overlap_size_samples, drop_last_samples, tmin
         )
 
+    def _include_last_samples(self, raw, events, id_holder):
+        last_valid_window_start = raw.n_times - self.window_size_samples
+        if events[-1, 0] < last_valid_window_start:
+            events = np.concatenate(
+                (events, [[last_valid_window_start, 0, id_holder]])
+            )
+        return events
+
     def __call__(self, raw):
         """[summary]
         ToDo: id=1???
@@ -110,7 +110,7 @@ class FixedLengthWindower(BaseWindower):
         )
 
         if not self.drop_last_samples:
-            events = self.include_last_samples(raw)
+            events = self._include_last_samples(raw, events, id_holder)
 
         return mne.Epochs(
             raw,
@@ -124,8 +124,11 @@ class FixedLengthWindower(BaseWindower):
 
 class EventWindower(BaseWindower):
     """Fixed onset windower
-    ToDo: samples or seconds
-
+    ToDo: id=1???
+    ToDo: plus epsilon 1e-6 on duration; otherwise perfect fitting
+          chunk_durations will SOMETIMES(!!!) not fit
+    ToDo: debug case where drop_last_samples = False and window_size fits
+          perfectly into trial length
     Parameters
     ----------
     window_size_samples : int | None
@@ -139,46 +142,51 @@ class EventWindower(BaseWindower):
     def __init__(
         self,
         window_size_samples,
-        chunk_duration_samples,
+        stride_samples,
         drop_last_samples,
         tmin=0,
         mapping=None,
     ):
-        super().__init__(window_size_samples, None, drop_last_samples, tmin=tmin)
-        self.chunk_duration_samples = chunk_duration_samples
+        super().__init__(
+            window_size_samples, None, drop_last_samples, tmin=tmin
+        )
+        self.chunk_duration_samples = stride_samples
         if mapping is not None:
-            assert all([isinstance(v, int) for v in mapping.values()]),\
-                'mapping dictionary must provided as {description: int}'
+            assert all(
+                [isinstance(v, int) for v in mapping.values()]
+            ), "mapping dictionary must provided as {description: int}"
 
         self.mapping = mapping
 
     def _include_last_samples(self, raw, mapping):
         onsets, durations, descriptions = list(), list(), list()
         for onset, duration, description in zip(
-                raw.annotations.onset, 
-                raw.annotations.duration, 
-                raw.annotations.description):
-            if onset + duration % (self.window_size_samples - 1) / fs > 0:
-                onsets.append(onset)
+            raw.annotations.onset,
+            raw.annotations.duration,
+            raw.annotations.description,
+        ):
+            fs = raw.info["sfreq"]
+            new_onset = onset + duration - (self.window_size_samples - 1) / fs
+            if new_onset not in raw.annotations.onset:
+                onsets.append(new_onset)
                 durations.append(duration)
                 descriptions.append(description)
 
-        raw.annotations = mne.Annotations(
-            onsets, durations, descriptions, 
-            orig_time=raw.annotations.orig_time)
-        last_events, _ = mne.events_from_annotations(
-            raw,
-            mapping,
-            chunk_duration=None
+        raw.set_annotations(
+            mne.Annotations(
+                onsets,
+                durations,
+                descriptions,
+                orig_time=raw.annotations.orig_time,
+            )
         )
-
+        last_events, _ = mne.events_from_annotations(
+            raw, mapping, chunk_duration=None
+        )
         return last_events
 
     def __call__(self, raw, mapping=None):
         """[summary]
-        ToDo: id=1???
-        ToDo: plus epsilon 1e-6 on duration; otherwise perfect fitting 
-              chunk_durations will SOMETIMES(!!!) not fit
 
         Parameters
         ----------
@@ -192,17 +200,14 @@ class EventWindower(BaseWindower):
         raw.annotations.duration += 1e-6  # see ToDo
 
         events, events_ids = mne.events_from_annotations(
-            raw,
-            mapping,
-            chunk_duration=self.chunk_duration_samples / fs,
+            raw, mapping, chunk_duration=self.chunk_duration_samples / fs,
         )
 
         if not self.drop_last_samples:
-            raise NotImplementedError  # TO TEST!
-    
             last_events = self._include_last_samples(raw, mapping)
             events = np.concatenate((events, last_events), axis=0)
             # Reorder events
+            events = events[np.argsort(events[:, 0], axis=0)]
 
         metadata = {
             "event_onset_idx": events[:, 0],

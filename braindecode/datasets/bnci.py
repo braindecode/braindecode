@@ -13,7 +13,7 @@ import numpy as np
 import mne
 
 from torch.utils.data import ConcatDataset
-from braindecode.datasets.dataset import WindowsDataset
+from .dataset import WindowsDataset
 
 try:
     from mne import annotations_from_events

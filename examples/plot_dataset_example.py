@@ -67,9 +67,7 @@ raw_transforms = [filter_raw, zscore_raw]
 mapping = {1: "Left hand", 2: "Right hand", 3: "Foot", 4: "Tongue"}
 
 # define event windower
-event_windower = EventWindower(
-    200, 200, True, tmin=0, mapping=mapping
-)
+event_windower = EventWindower(200, 200, True, tmin=0, mapping=mapping)
 
 # 2nd case
 # fixed_length_windower = FixedLengthWindower(

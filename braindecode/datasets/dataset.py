@@ -58,7 +58,6 @@ class WindowsDataset(Dataset):
         else:
             y = self.windows.info["subject_info"][self.target]
 
-
         if self.transforms is not None:
             for transform in self.transforms:
                 x = transform(x)

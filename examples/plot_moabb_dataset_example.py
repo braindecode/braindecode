@@ -31,6 +31,7 @@ from braindecode.datautil.transforms import (
 )
 from braindecode.datautil.windowers import EventWindower
 from braindecode.datasets.moabb_datasets import MOABBDataset
+
 ##############################################################################
 # Define transformers that operate on raw objects
 # -----------------------------------------------
@@ -64,7 +65,7 @@ raw_transformer = [filter_raw, zscorer_raw]
 
 # define event windower
 event_windower = EventWindower(
-    200, 200, True, tmin=0
+    window_size_samples=250, stride_samples=250, drop_last_samples=False, tmin=0
 )
 
 # 2nd case
@@ -91,20 +92,28 @@ array_transformer = filter_window  # [filter_window, zscorer_window]
 # ---------------------------------------------
 #
 #
-dataset = 'BNCI2014001'
-bnci2014001 = MOABBDataset(dataset, subject=4, raw_transformer=raw_transformer,
-                           windower=event_windower,
-                           transformer=array_transformer,
-                           transform_online=True)
+dataset = "BNCI2014001"
+bnci2014001 = MOABBDataset(
+    dataset,
+    subject=4,
+    raw_transformer=raw_transformer,
+    windower=event_windower,
+    transformer=array_transformer,
+    transform_online=True,
+)
 
-print(f'As expected, the number of epochs is {len(bnci2014001)} (2 sessions\n'
-      f'of 6 runs with 12 repetitions of 4 motor imagery tasks with 5 windows\n'
-      f'each)')
+print(
+    f"As expected, the number of epochs is {len(bnci2014001)} (2 sessions\n"
+    f"of 6 runs with 12 repetitions of 4 motor imagery tasks with 5 windows\n"
+    f"each)"
+)
 
 x, y = bnci2014001[0]
 
-print(f'As expected, the shape of the first epoch is {x.shape} and its class'
-      f'label is {y}')
+print(
+    f"As expected, the shape of the first epoch is {x.shape} and its class"
+    f"label is {y}"
+)
 
 # ToDo
 # - labels in FixedLength
