@@ -1,3 +1,14 @@
+"""
+Trialwise Decoding on BCIC IV 2a Competition Set
+================================================
+
+"""
+
+# Authors: Maciej Sliwowski
+#          Robin Tibor Schirrmeister
+#
+# License: BSD-3
+
 import logging
 import os.path
 import sys

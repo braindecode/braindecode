@@ -302,4 +302,4 @@ def test_eeg_classifier_cropped_training():
     history_without_dur = [
         {k: v for k, v in h.items() if k != "dur"} for h in clf.history
     ]
-    assert_deep_allclose(history_without_dur, expected)
+    assert_deep_allclose(history_without_dur, expected, atol=1e-3, rtol=1e-3)

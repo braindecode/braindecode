@@ -1,5 +1,11 @@
-# Authors: Robin Tibor Schirrmeister
-#          Maciej Sliwowski
+"""
+Cropped Decoding on BCIC IV 2a Competition Set
+==============================================
+
+"""
+
+# Authors: Maciej Sliwowski
+#          Robin Tibor Schirrmeister
 #
 # License: BSD-3
 
