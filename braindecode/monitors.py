@@ -243,9 +243,10 @@ class CroppedTrialMisclassMonitor(object):
             assert all_pred_labels.shape == dataset.y.shape
             all_trial_labels = dataset.y
         else:
-            all_trial_labels, all_pred_labels = self._compute_trial_pred_labels_from_cnt_y(
-                dataset, all_preds
-            )
+            (
+                all_trial_labels,
+                all_pred_labels,
+            ) = self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds)
         assert all_pred_labels.shape == all_trial_labels.shape
         misclass = 1 - np.mean(all_pred_labels == all_trial_labels)
         column_name = "{:s}_misclass".format(setname)

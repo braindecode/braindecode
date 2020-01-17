@@ -24,7 +24,7 @@ from braindecode.datautil.signalproc import (
 )
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
 from braindecode.classifier import EEGClassifier
-from braindecode.scoring import (CroppedTrialEpochScoring,)
+from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
@@ -93,7 +93,9 @@ test_label_filepath = test_filepath.replace(".gdf", ".mat")
 train_loader = BCICompetition4Set2A(
     train_filepath, labels_filename=train_label_filepath
 )
-test_loader = BCICompetition4Set2A(test_filepath, labels_filename=test_label_filepath)
+test_loader = BCICompetition4Set2A(
+    test_filepath, labels_filename=test_label_filepath
+)
 raw_train = train_loader.load()
 raw_test = test_loader.load()
 
@@ -105,7 +107,12 @@ assert len(raw_train.ch_names) == 22
 raw_train = mne_apply(lambda a: a * 1e6, raw_train)
 raw_train = mne_apply(
     lambda a: bandpass_cnt(
-        a, low_cut_hz, high_cut_hz, raw_train.info["sfreq"], filt_order=3, axis=1
+        a,
+        low_cut_hz,
+        high_cut_hz,
+        raw_train.info["sfreq"],
+        filt_order=3,
+        axis=1,
     ),
     raw_train,
 )
@@ -147,11 +154,17 @@ n_classes = 4
 n_chans = int(train_set.X.shape[1])
 if model == "shallow":
     model = ShallowFBCSPNet(
-        n_chans, n_classes, input_time_length=input_time_length, final_conv_length=30
+        n_chans,
+        n_classes,
+        input_time_length=input_time_length,
+        final_conv_length=30,
     )
 elif model == "deep":
     model = Deep4Net(
-        n_chans, n_classes, input_time_length=input_time_length, final_conv_length=2
+        n_chans,
+        n_classes,
+        input_time_length=input_time_length,
+        final_conv_length=2,
     )
 
 to_dense_prediction_model(model)
@@ -160,17 +173,25 @@ if cuda:
     model.cuda()
 
 with torch.no_grad():
-    dummy_input = torch.tensor(train_set.X[:1, :, :input_time_length], device="cpu")
+    dummy_input = torch.tensor(
+        train_set.X[:1, :, :input_time_length], device="cpu"
+    )
     n_preds_per_input = model(dummy_input).shape[2]
 
 out = model(dummy_input)
 
 cropped_cb_train = CroppedTrialEpochScoring(
-    "accuracy", name="train_trial_accuracy", lower_is_better=False, on_train=True
+    "accuracy",
+    name="train_trial_accuracy",
+    lower_is_better=False,
+    on_train=True,
 )
 
 cropped_cb_valid = CroppedTrialEpochScoring(
-    "accuracy", on_train=False, name="valid_trial_accuracy", lower_is_better=False,
+    "accuracy",
+    on_train=False,
+    name="valid_trial_accuracy",
+    lower_is_better=False,
 )
 # MaxNormDefaultConstraint and early stopping should be added to repeat previous braindecode
 

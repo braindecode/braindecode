@@ -319,6 +319,7 @@ def compute_amplitude_prediction_correlations(
        visualization.
        Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     """
+
     def pred_fn_new(x):
         return [pred_fn(x)]
 

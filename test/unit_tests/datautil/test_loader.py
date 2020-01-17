@@ -43,20 +43,25 @@ def test_crops_data_loader_regression():
     n_times_input = input_time_length  # size of signal passed to nn
     batch_size = 32
 
-    iterator = CropsFromTrialsIterator(batch_size=batch_size,
-                                       input_time_length=n_times_input,
-                                       n_preds_per_input=n_preds_per_input)
+    iterator = CropsFromTrialsIterator(
+        batch_size=batch_size,
+        input_time_length=n_times_input,
+        n_preds_per_input=n_preds_per_input,
+    )
 
     ds = EEGDataSet(train_set.X, train_set.y)
 
-    loader = \
-        CropsDataLoader(ds, batch_size=batch_size,
-                        input_time_length=input_time_length,
-                        n_preds_per_input=n_preds_per_input,
-                        num_workers=0)
+    loader = CropsDataLoader(
+        ds,
+        batch_size=batch_size,
+        input_time_length=input_time_length,
+        n_preds_per_input=n_preds_per_input,
+        num_workers=0,
+    )
 
-    for (X1b, y1b), (X2b, y2b) in \
-            zip(iterator.get_batches(train_set, shuffle=False), loader):
+    for (X1b, y1b), (X2b, y2b) in zip(
+        iterator.get_batches(train_set, shuffle=False), loader
+    ):
         np.testing.assert_array_equal(y1b, y2b)
         np.testing.assert_array_equal(X1b, X2b)
 
@@ -69,14 +74,10 @@ def test_crops_data_loader_explicit():
     n_time_in = 10
     n_time_out = 4
 
-    expected_crops = [np.arange(0, 10),
-                      np.arange(4, 14),
-                      np.arange(5, 15)]
-
+    expected_crops = [np.arange(0, 10), np.arange(4, 14), np.arange(5, 15)]
 
     dataset = EEGDataSet(X[None, None], y)
-    loader = CropsDataLoader(dataset, n_time_in, n_time_out,
-                             batch_size=3)
+    loader = CropsDataLoader(dataset, n_time_in, n_time_out, batch_size=3)
 
     Xs, ys = zip(*list(loader))
 

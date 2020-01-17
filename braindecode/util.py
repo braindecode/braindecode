@@ -226,9 +226,9 @@ def dict_equal(d1, d2):
     intersect_keys = d1_keys.intersection(d2_keys)
     modified = {o: (d1[o], d2[o]) for o in intersect_keys if d1[o] != d2[o]}
     return (
-        intersect_keys == d2_keys and
-        intersect_keys == d1_keys and
-        len(modified) == 0
+        intersect_keys == d2_keys
+        and intersect_keys == d1_keys
+        and len(modified) == 0
     )
 
 

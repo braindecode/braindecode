@@ -14,7 +14,8 @@ from torch.utils.data import Dataset
 
 
 class WindowsDataset(Dataset):
-    """Dataset wrapper around mne.Epochs
+    """
+    Dataset wrapper around mne.Epochs
 
     Parameters
     ----------

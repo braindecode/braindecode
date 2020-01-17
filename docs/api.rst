@@ -37,6 +37,19 @@ Models
     HybridNet
     EEGResNet
 
+Datasets
+==========
+
+:py:mod:`braindecode.datasets`:
+
+.. currentmodule:: braindecode.datasets
+
+.. autosummary::
+   :toctree: generated/
+
+    WindowsDataset
+    MOABBDataset
+
 
 Data Utils
 ==========
@@ -50,6 +63,13 @@ Data Utils
 
     SignalAndTarget
     CropsDataLoader
+    BaseWindower
+    FixedLengthWindower
+    EventWindower
+    FilterRaw
+    ZscoreRaw
+    FilterWindow
+    ZscoreWindow
 
 Utils
 =====

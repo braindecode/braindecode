@@ -17,6 +17,7 @@ import pandas as pd
 
 class BaseWindower(object):
     """Fixed onset windower
+
     ToDo: samples or seconds
 
     Parameters
@@ -54,6 +55,7 @@ class BaseWindower(object):
 
 class FixedLengthWindower(BaseWindower):
     """Fixed onset windower
+
     ToDo: samples or seconds
 
     Parameters
@@ -124,6 +126,7 @@ class FixedLengthWindower(BaseWindower):
 
 class EventWindower(BaseWindower):
     """Fixed onset windower
+
     ToDo: id=1???
     ToDo: plus epsilon 1e-6 on duration; otherwise perfect fitting
           chunk_durations will SOMETIMES(!!!) not fit
