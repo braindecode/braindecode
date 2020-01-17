@@ -146,8 +146,6 @@ class ShallowFBCSPNet(nn.Sequential, BaseModel):
         init.xavier_uniform_(model.conv_classifier.weight, gain=1)
         init.constant_(model.conv_classifier.bias, 0)
 
-        return model
-
 
 # remove empty dim at end and potentially remove empty time dim
 # do not just use squeeze as we never want to remove first dim
