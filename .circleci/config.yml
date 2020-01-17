@@ -168,7 +168,6 @@ jobs:
             command: |
               set -e;
               if [ "${CIRCLE_BRANCH}" == "master" ] || [ "debug" == "debug" ]; then
-                echo "Deploying dev docs for ${CIRCLE_BRANCH}.";
                 git config --global user.email "circle@mne.com";
                 git config --global user.name "Circle CI";
                 cd ~/braindecode.github.io;
@@ -177,6 +176,7 @@ jobs:
                 git fetch origin
                 git reset --hard origin/master
                 git clean -xdf
+                echo "Deploying dev docs for ${CIRCLE_BRANCH}.";
                 rm -Rf dev;
                 cp -a /tmp/build/html dev;
                 git add -A;
