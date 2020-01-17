@@ -1,5 +1,5 @@
-import numpy as np
-from skorch.utils import to_numpy
+from skorch.callbacks import EpochTimer, BatchScoring, PrintLog
+from skorch.utils import train_loss_score, valid_loss_score, noop
 from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 
@@ -8,6 +8,7 @@ class EEGClassifier(NeuralNetClassifier):
     """Classifier that does not assume softmax activation.
     Calls loss function directly without applying log or anything.
     """
+
     # pylint: disable=arguments-differ
     def get_loss(self, y_pred, y_true, *args, **kwargs):
         """Return the loss for this batch by calling NeuralNet get_loss.
@@ -33,3 +34,27 @@ class EEGClassifier(NeuralNetClassifier):
 
         """
         return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
+
+    # Removes default EpochScoring callback computing 'accuracy' to work properly
+    # with cropped decoding.
+    @property
+    def _default_callbacks(self):
+        return [
+            ("epoch_timer", EpochTimer()),
+            (
+                "train_loss",
+                BatchScoring(
+                    train_loss_score,
+                    name="train_loss",
+                    on_train=True,
+                    target_extractor=noop,
+                ),
+            ),
+            (
+                "valid_loss",
+                BatchScoring(
+                    valid_loss_score, name="valid_loss", target_extractor=noop,
+                ),
+            ),
+            ("print_log", PrintLog()),
+        ]
