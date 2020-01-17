@@ -58,10 +58,7 @@ class Deep4Net(nn.Sequential):
 
         self.__dict__.update(locals())
         del self.self
-        self._create_network()
 
-
-    def _create_network(self):
         if self.stride_before_pool:
             conv_stride = self.pool_time_stride
             pool_stride = 1

@@ -36,9 +36,7 @@ class EEGResNet(nn.Sequential):
         assert first_filter_length % 2 == 1
         self.__dict__.update(locals())
         del self.self
-        self._create_network()
 
-    def _create_network(self):
         if self.split_first_layer:
             self.add_module('dimshuffle', Expression(_transpose_time_to_spat))
             self.add_module('conv_time', nn.Conv2d(1, self.n_first_filters,
