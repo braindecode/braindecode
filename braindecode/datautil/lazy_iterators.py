@@ -6,8 +6,8 @@ import numpy as np
 
 from braindecode.datautil.iterators import (
     _compute_start_stop_block_inds,
-    get_balanced_batches,
 )
+from braindecode.util import get_balanced_batches
 
 
 def custom_collate(batch, rng_state=None):

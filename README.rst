@@ -59,7 +59,7 @@ Install the latest version of braindecode via pip:
 Documentation
 =============
 
-Documentation is online under https://braindecode.github.io/braindecode/
+Documentation is online under https://braindecode.github.io/
 
 
 Dataset

@@ -3,12 +3,11 @@ from torch import nn
 from torch.nn import init
 
 from ..util import np_to_var
-from .base import BaseModel
 from .modules import Expression
 from .functions import safe_log, square
 
 
-class ShallowFBCSPNet(BaseModel):
+class ShallowFBCSPNet(nn.Sequential):
     """Shallow ConvNet model from [2]_.
 
     Parameters
@@ -44,17 +43,16 @@ class ShallowFBCSPNet(BaseModel):
         batch_norm_alpha=0.1,
         drop_prob=0.5,
     ):
+        super().__init__()
         if final_conv_length == "auto":
             assert input_time_length is not None
         self.__dict__.update(locals())
         del self.self
 
-    def create_network(self):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
-        model = nn.Sequential()
         if self.split_first_layer:
-            model.add_module("dimshuffle", Expression(_transpose_time_to_spat))
-            model.add_module(
+            self.add_module("dimshuffle", Expression(_transpose_time_to_spat))
+            self.add_module(
                 "conv_time",
                 nn.Conv2d(
                     1,
@@ -63,7 +61,7 @@ class ShallowFBCSPNet(BaseModel):
                     stride=1,
                 ),
             )
-            model.add_module(
+            self.add_module(
                 "conv_spat",
                 nn.Conv2d(
                     self.n_filters_time,
@@ -75,7 +73,7 @@ class ShallowFBCSPNet(BaseModel):
             )
             n_filters_conv = self.n_filters_spat
         else:
-            model.add_module(
+            self.add_module(
                 "conv_time",
                 nn.Conv2d(
                     self.in_chans,
@@ -87,25 +85,25 @@ class ShallowFBCSPNet(BaseModel):
             )
             n_filters_conv = self.n_filters_time
         if self.batch_norm:
-            model.add_module(
+            self.add_module(
                 "bnorm",
                 nn.BatchNorm2d(
                     n_filters_conv, momentum=self.batch_norm_alpha, affine=True
                 ),
             )
-        model.add_module("conv_nonlin", Expression(self.conv_nonlin))
-        model.add_module(
+        self.add_module("conv_nonlin_exp", Expression(self.conv_nonlin))
+        self.add_module(
             "pool",
             pool_class(
                 kernel_size=(self.pool_time_length, 1),
                 stride=(self.pool_time_stride, 1),
             ),
         )
-        model.add_module("pool_nonlin", Expression(self.pool_nonlin))
-        model.add_module("drop", nn.Dropout(p=self.drop_prob))
-        model.eval()
+        self.add_module("pool_nonlin_exp", Expression(self.pool_nonlin))
+        self.add_module("drop", nn.Dropout(p=self.drop_prob))
+        self.eval()
         if self.final_conv_length == "auto":
-            out = model(
+            out = self(
                 np_to_var(
                     np.ones(
                         (1, self.in_chans, self.input_time_length, 1),
@@ -115,7 +113,7 @@ class ShallowFBCSPNet(BaseModel):
             )
             n_out_time = out.cpu().data.numpy().shape[2]
             self.final_conv_length = n_out_time
-        model.add_module(
+        self.add_module(
             "conv_classifier",
             nn.Conv2d(
                 n_filters_conv,
@@ -124,25 +122,23 @@ class ShallowFBCSPNet(BaseModel):
                 bias=True,
             ),
         )
-        model.add_module("softmax", nn.LogSoftmax(dim=1))
-        model.add_module("squeeze", Expression(_squeeze_final_output))
+        self.add_module("softmax", nn.LogSoftmax(dim=1))
+        self.add_module("squeeze", Expression(_squeeze_final_output))
 
         # Initialization, xavier is same as in paper...
-        init.xavier_uniform_(model.conv_time.weight, gain=1)
+        init.xavier_uniform_(self.conv_time.weight, gain=1)
         # maybe no bias in case of no split layer and batch norm
         if self.split_first_layer or (not self.batch_norm):
-            init.constant_(model.conv_time.bias, 0)
+            init.constant_(self.conv_time.bias, 0)
         if self.split_first_layer:
-            init.xavier_uniform_(model.conv_spat.weight, gain=1)
+            init.xavier_uniform_(self.conv_spat.weight, gain=1)
             if not self.batch_norm:
-                init.constant_(model.conv_spat.bias, 0)
+                init.constant_(self.conv_spat.bias, 0)
         if self.batch_norm:
-            init.constant_(model.bnorm.weight, 1)
-            init.constant_(model.bnorm.bias, 0)
-        init.xavier_uniform_(model.conv_classifier.weight, gain=1)
-        init.constant_(model.conv_classifier.bias, 0)
-
-        return model
+            init.constant_(self.bnorm.weight, 1)
+            init.constant_(self.bnorm.bias, 0)
+        init.xavier_uniform_(self.conv_classifier.weight, gain=1)
+        init.constant_(self.conv_classifier.bias, 0)
 
 
 # remove empty dim at end and potentially remove empty time dim
