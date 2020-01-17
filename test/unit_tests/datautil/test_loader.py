@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 
 from braindecode.datautil.loader import CropsDataLoader
 from braindecode.datautil.iterators import CropsFromTrialsIterator
-from braindecode.datautil.signal_target import SignalAndTarget
+from braindecode.datautil import SignalAndTarget
 
 
 class EEGDataSet(Dataset):

@@ -2,7 +2,6 @@ import numpy as np
 import torch as th
 
 from torch import nn
-from torch.nn import init
 from torch.nn.functional import elu
 
 from ..util import np_to_var
@@ -23,7 +22,7 @@ class Conv2dWithConstraint(nn.Conv2d):
         return super(Conv2dWithConstraint, self).forward(x)
 
 
-class EEGNetv4(BaseModel):
+class EEGNetv4(nn.Sequential, BaseModel):
     """
     EEGNet v4 model from [EEGNet4]_.
 
@@ -56,15 +55,18 @@ class EEGNetv4(BaseModel):
         third_kernel_size=(8, 4),
         drop_prob=0.25,
     ):
-
+        super().__init__()
         if final_conv_length == "auto":
             assert input_time_length is not None
         self.__dict__.update(locals())
         del self.self
+        self._create_network(self)
 
     def create_network(self):
+        return self
+
+    def _create_network(self, model):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
-        model = nn.Sequential()
         # b c 0 1
         # now to b 1 0 c
         model.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
@@ -197,7 +199,7 @@ def _squeeze_final_output(x):
     return x
 
 
-class EEGNet(object):
+class EEGNetv1(nn.Sequential):
     """
     EEGNet model from [EEGNet]_.
 
@@ -209,13 +211,12 @@ class EEGNet(object):
     References
     ----------
 
-    .. [EEGNet] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon, 
+    .. [EEGNet] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon,
        S. M., Hung, C. P., & Lance, B. J. (2016).
        EEGNet: A Compact Convolutional Network for EEG-based
        Brain-Computer Interfaces.
        arXiv preprint arXiv:1611.08024.
     """
-
     def __init__(
         self,
         in_chans,
@@ -227,31 +228,35 @@ class EEGNet(object):
         third_kernel_size=(8, 4),
         drop_prob=0.25,
     ):
-
+        super().__init__()
         if final_conv_length == "auto":
             assert input_time_length is not None
-        self.__dict__.update(locals())
-        del self.self
+        self.in_chans = in_chans
+        self.n_classes = n_classes
+        self.final_conv_length = final_conv_length
+        self.input_time_length = input_time_length
+        self.pool_mode = pool_mode
+        self.second_kernel_size = second_kernel_size
+        self.third_kernel_size = third_kernel_size
+        self.drop_prob = drop_prob
 
-    def create_network(self):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
-        model = nn.Sequential()
         n_filters_1 = 16
-        model.add_module(
+        self.add_module(
             "conv_1",
             nn.Conv2d(self.in_chans, n_filters_1, (1, 1), stride=1, bias=True),
         )
-        model.add_module(
+        self.add_module(
             "bnorm_1",
             nn.BatchNorm2d(n_filters_1, momentum=0.01, affine=True, eps=1e-3),
         )
-        model.add_module("elu_1", Expression(elu))
+        self.add_module("elu_1", Expression(elu))
         # transpose to examples x 1 x (virtual, not EEG) channels x time
-        model.add_module(
+        self.add_module(
             "permute_1", Expression(lambda x: x.permute(0, 3, 1, 2))
         )
 
-        model.add_module("drop_1", nn.Dropout(p=self.drop_prob))
+        self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
         n_filters_2 = 4
         # keras padds unequal padding more in front, so padding
@@ -259,7 +264,7 @@ class EEGNet(object):
         # Not padding in time so that croped training makes sense
         # https://stackoverflow.com/questions/43994604/padding-with-even-kernel-size-in-a-convolutional-layer-in-keras-theano
 
-        model.add_module(
+        self.add_module(
             "conv_2",
             nn.Conv2d(
                 1,
@@ -270,18 +275,18 @@ class EEGNet(object):
                 bias=True,
             ),
         )
-        model.add_module(
+        self.add_module(
             "bnorm_2",
             nn.BatchNorm2d(n_filters_2, momentum=0.01, affine=True, eps=1e-3),
         )
-        model.add_module("elu_2", Expression(elu))
-        model.add_module(
+        self.add_module("elu_2", Expression(elu))
+        self.add_module(
             "pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4))
         )
-        model.add_module("drop_2", nn.Dropout(p=self.drop_prob))
+        self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         n_filters_3 = 4
-        model.add_module(
+        self.add_module(
             "conv_3",
             nn.Conv2d(
                 n_filters_2,
@@ -292,17 +297,17 @@ class EEGNet(object):
                 bias=True,
             ),
         )
-        model.add_module(
+        self.add_module(
             "bnorm_3",
             nn.BatchNorm2d(n_filters_3, momentum=0.01, affine=True, eps=1e-3),
         )
-        model.add_module("elu_3", Expression(elu))
-        model.add_module(
+        self.add_module("elu_3", Expression(elu))
+        self.add_module(
             "pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4))
         )
-        model.add_module("drop_3", nn.Dropout(p=self.drop_prob))
+        self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
-        out = model(
+        out = self(
             np_to_var(
                 np.ones(
                     (1, self.in_chans, self.input_time_length, 1),
@@ -316,7 +321,7 @@ class EEGNet(object):
             n_out_time = out.cpu().data.numpy().shape[3]
             self.final_conv_length = n_out_time
 
-        model.add_module(
+        self.add_module(
             "conv_classifier",
             nn.Conv2d(
                 n_filters_3,
@@ -325,12 +330,11 @@ class EEGNet(object):
                 bias=True,
             ),
         )
-        model.add_module("softmax", nn.LogSoftmax())
+        self.add_module("softmax", nn.LogSoftmax())
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
-        model.add_module(
+        self.add_module(
             "permute_2", Expression(lambda x: x.permute(0, 1, 3, 2))
         )
-        model.add_module("squeeze", Expression(_squeeze_final_output))
-        glorot_weight_zero_bias(model)
-        return model
+        self.add_module("squeeze", Expression(_squeeze_final_output))
+        glorot_weight_zero_bias(self)
