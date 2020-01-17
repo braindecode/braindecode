@@ -3,21 +3,21 @@ from collections import OrderedDict
 from copy import deepcopy
 import time
 
+import numpy as np
 import pandas as pd
 import torch as th
-import numpy as np
 
-from braindecode.datautil.splitters import concatenate_sets
-from braindecode.experiments.loggers import Printer
-from braindecode.experiments.stopcriteria import MaxEpochs, ColumnBelow, Or
-from braindecode.torch_ext.util import np_to_var
+from ..util import np_to_var
+from ..datautil.splitters import concatenate_sets
+from .loggers import Printer
+from .stopcriteria import MaxEpochs, ColumnBelow, Or
 
 log = logging.getLogger(__name__)
 
 
 class RememberBest(object):
     """
-    Class to remember and restore 
+    Class to remember and restore
     the parameters of the model and the parameters of the
     optimizer at the epoch with the best performance.
 
@@ -26,7 +26,7 @@ class RememberBest(object):
     column_name: str
         The lowest value in this column should indicate the epoch with the
         best performance (e.g. misclass might make sense).
-        
+
     Attributes
     ----------
     best_epoch: int
@@ -44,7 +44,7 @@ class RememberBest(object):
         """
         Remember this epoch: Remember parameter values in case this epoch
         has the best performance so far.
-        
+
         Parameters
         ----------
         epochs_df: `pandas.Dataframe`
@@ -68,11 +68,11 @@ class RememberBest(object):
 
     def reset_to_best_model(self, epochs_df, model, optimizer):
         """
-        Reset parameters to parameters at best epoch and remove rows 
+        Reset parameters to parameters at best epoch and remove rows
         after best epoch from epochs dataframe.
-        
+
         Modifies parameters of model and optimizer, changes epochs_df in-place.
-        
+
         Parameters
         ----------
         epochs_df: `pandas.Dataframe`
@@ -91,9 +91,9 @@ class Experiment(object):
     Class that performs one experiment on training, validation and test set.
 
     It trains as follows:
-    
+
     1. Train on training set until a given stop criterion is fulfilled
-    2. Reset to the best epoch, i.e. reset parameters of the model and the 
+    2. Reset to the best epoch, i.e. reset parameters of the model and the
        optimizer to the state at the best epoch ("best" according to a given
        criterion)
     3. Continue training on the combined training + validation set until the
@@ -108,14 +108,14 @@ class Experiment(object):
     valid_set: :class:`.SignalAndTarget`
     test_set: :class:`.SignalAndTarget`
     iterator: iterator object
-    loss_function: function 
-        Function mapping predictions and targets to a loss: 
-        (predictions: `torch.autograd.Variable`, 
+    loss_function: function
+        Function mapping predictions and targets to a loss:
+        (predictions: `torch.autograd.Variable`,
         targets:`torch.autograd.Variable`)
         -> loss: `torch.autograd.Variable`
     optimizer: `torch.optim.Optimizer`
     model_constraint: object
-        Object with apply function that takes model and constraints its 
+        Object with apply function that takes model and constraints its
         parameters. `None` for no constraint.
     monitors: list of objects
         List of objects with monitor_epoch and monitor_set method, should
@@ -149,7 +149,7 @@ class Experiment(object):
         start of training.
     loggers: list of :class:`.Logger`
         How to show computed metrics.
-        
+
     Attributes
     ----------
     epochs_df: `pandas.DataFrame`
@@ -180,7 +180,7 @@ class Experiment(object):
         loggers=("print",),
     ):
         if run_after_early_stop or reset_after_second_run:
-            assert do_early_stop == True, (
+            assert do_early_stop is True, (
                 "Can only run after early stop or "
                 "reset after second run if doing an early stop"
             )
@@ -193,8 +193,8 @@ class Experiment(object):
         )
         if valid_set is None:
             self.datasets.pop("valid")
-            assert run_after_early_stop == False
-            assert do_early_stop == False
+            assert run_after_early_stop is False
+            assert do_early_stop is False
         if test_set is None:
             self.datasets.pop("test")
 
@@ -272,11 +272,11 @@ class Experiment(object):
 
     def run_until_second_stop(self):
         """
-        Run training and evaluation using combined training + validation set 
-        for training. 
-        
-        Runs until loss on validation  set decreases below loss on training set 
-        of best epoch or  until as many epochs trained after as before 
+        Run training and evaluation using combined training + validation set
+        for training.
+
+        Runs until loss on validation  set decreases below loss on training set
+        of best epoch or  until as many epochs trained after as before
         first stop.
         """
         datasets = self.datasets
@@ -290,7 +290,7 @@ class Experiment(object):
         """
         Run training and evaluation on given datasets until stop criterion is
         fulfilled.
-        
+
         Parameters
         ----------
         datasets: OrderedDict
@@ -314,7 +314,7 @@ class Experiment(object):
     def run_one_epoch(self, datasets, remember_best):
         """
         Run training and evaluation on given datasets for one epoch.
-        
+
         Parameters
         ----------
         datasets: OrderedDict
@@ -350,7 +350,7 @@ class Experiment(object):
     def train_batch(self, inputs, targets):
         """
         Train on given inputs and targets.
-        
+
         Parameters
         ----------
         inputs: `torch.autograd.Variable`
@@ -375,7 +375,7 @@ class Experiment(object):
     def eval_on_batch(self, inputs, targets):
         """
         Evaluate given inputs and targets.
-        
+
         Parameters
         ----------
         inputs: `torch.autograd.Variable`
@@ -407,9 +407,9 @@ class Experiment(object):
     def monitor_epoch(self, datasets):
         """
         Evaluate one epoch for given datasets.
-        
+
         Stores results in `epochs_df`
-        
+
         Parameters
         ----------
         datasets: OrderedDict
@@ -530,8 +530,8 @@ class Experiment(object):
 
     def setup_after_stop_training(self):
         """
-        Setup training after first stop. 
-        
+        Setup training after first stop.
+
         Resets parameters to best parameters and updates stop criterion.
         """
         # also remember old monitor chans, will be put back into

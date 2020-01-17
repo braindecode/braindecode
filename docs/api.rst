@@ -31,8 +31,9 @@ Models
    :toctree: generated/
 
     ShallowFBCSPNet
-    AvgPool2dWithConv
     Deep4Net
+    EEGNetv4
+    HybridNetModule
 
 
 Data Utils
@@ -46,6 +47,7 @@ Data Utils
    :toctree: generated/
 
     SignalAndTarget
+    CropsDataLoader
 
 Utils
 =====

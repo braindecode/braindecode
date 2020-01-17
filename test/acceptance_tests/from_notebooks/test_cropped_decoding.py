@@ -1,7 +1,22 @@
-def test_cropped_decoding():
-    import mne
-    from mne.io import concatenate_raws
+import numpy as np
 
+import torch as th
+from torch import optim
+import torch.nn.functional as F
+
+import mne
+from mne.io import concatenate_raws
+
+from braindecode.util import var_to_np, np_to_var
+from braindecode.datautil import SignalAndTarget
+from braindecode.models import ShallowFBCSPNet
+from braindecode.models.util import to_dense_prediction_model
+from braindecode.util import set_random_seeds
+from braindecode.experiments.monitors import compute_preds_per_trial_from_crops
+from braindecode.datautil.iterators import CropsFromTrialsIterator
+
+
+def test_cropped_decoding():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
     event_codes = [5, 6, 9, 10, 13, 14]
@@ -30,8 +45,6 @@ def test_cropped_decoding():
     epoched = mne.Epochs(raw, events, dict(hands=2, feet=3), tmin=1, tmax=4.1,
                          proj=False, picks=eeg_channel_inds,
                          baseline=None, preload=True)
-    import numpy as np
-    from braindecode.datautil.signal_target import SignalAndTarget
     # Convert data from volt to millivolt
     # Pytorch expects float32 for input and int64 for labels.
     X = (epoched.get_data() * 1e6).astype(np.float32)
@@ -39,10 +52,6 @@ def test_cropped_decoding():
 
     train_set = SignalAndTarget(X[:60], y=y[:60])
     test_set = SignalAndTarget(X[60:], y=y[60:])
-    from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-    from torch import nn
-    from braindecode.torch_ext.util import set_random_seeds
-    from braindecode.models.util import to_dense_prediction_model
 
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
@@ -62,10 +71,7 @@ def test_cropped_decoding():
     if cuda:
         model.cuda()
 
-    from torch import optim
-
     optimizer = optim.Adam(model.parameters())
-    from braindecode.torch_ext.util import np_to_var
     # determine output size
     test_input = np_to_var(
         np.ones((2, in_chans, input_time_length, 1), dtype=np.float32))
@@ -74,16 +80,11 @@ def test_cropped_decoding():
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
     print("{:d} predictions per input/trial".format(n_preds_per_input))
-    from braindecode.datautil.iterators import CropsFromTrialsIterator
+
     iterator = CropsFromTrialsIterator(batch_size=32,
                                        input_time_length=input_time_length,
                                        n_preds_per_input=n_preds_per_input)
-    from braindecode.torch_ext.util import np_to_var, var_to_np
-    import torch.nn.functional as F
-    from numpy.random import RandomState
-    import torch as th
-    from braindecode.experiments.monitors import compute_preds_per_trial_from_crops
-    rng = RandomState((2017, 6, 30))
+
     losses = []
     accuracies = []
     for i_epoch in range(4):

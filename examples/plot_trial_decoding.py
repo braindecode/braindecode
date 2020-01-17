@@ -16,19 +16,6 @@ In this example, we will use a convolutional neural network on the
 
 """
 
-# Enable logging
-
-import sys
-import logging
-import importlib
-importlib.reload(logging)  # see https://stackoverflow.com/a/21475297/1469195
-log = logging.getLogger()
-log.setLevel('INFO')
-
-logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
-                    level=logging.INFO, stream=sys.stdout)
-
-
 ##############################################################################
 # Load data
 # ---------
@@ -46,10 +33,8 @@ logging.basicConfig(format='%(asctime)s %(levelname)s : %(message)s',
 import mne
 from mne.io import concatenate_raws
 
-# 5,6,7,10,13,14 are codes for executed and imagined hands/feet
 subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
-event_codes = [5, 6, 9, 10, 13, 14]
-# event_codes = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
@@ -150,11 +135,10 @@ if cuda:
 #   training loop, have a look at the
 #   `Trialwise Low-Level Tutorial <./TrialWise_LowLevel.html>`_.
 
-# from braindecode.torch_ext.optimizers import AdamW
-from torch.optim import Adam
+from torch.optim import AdamW
 import torch.nn.functional as F
 # optimizer = AdamW(model.parameters(), lr=1*0.01, weight_decay=0.5*0.001) # these are good values for the deep model
-optimizer = Adam(model.parameters(), lr=0.0625 * 0.01, weight_decay=0)
+optimizer = AdamW(model.parameters(), lr=0.0625 * 0.01, weight_decay=0)
 model.compile(loss=F.nll_loss, optimizer=optimizer, iterator_seed=1)
 
 ##############################################################################
@@ -232,7 +216,7 @@ epoched = mne.Epochs(raw, events, dict(hands=2, feet=3), tmin=1,
                      baseline=None, preload=True)
 
 # 51-55 as validation subjects
-physionet_paths_valid = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12])
+physionet_paths_valid = [mne.datasets.eegbci.load_data(sub_id, [4, 8, 12], force_update=True)
                          for sub_id in range(51, 56)]
 physionet_paths_valid = np.concatenate(physionet_paths_valid)
 raws_valid = [mne.io.read_raw_edf(path, preload=False, stim_channel='auto')

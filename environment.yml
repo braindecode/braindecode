@@ -15,6 +15,7 @@ dependencies:
 - pytorch
 - pytest
 - pip
+- skorch
 - pip:
   - mne
   - https://github.com/braindecode/braindecode/zipball/master
