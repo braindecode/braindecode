@@ -9,11 +9,9 @@ from torch.nn import init
 import torch as th
 from torch.nn.functional import elu
 
-from braindecode.models.base import BaseModel
+from .base import BaseModel
+from .modules import Expression, AvgPool2dWithConv, np_to_var
 
-from braindecode.models.modules import Expression, AvgPool2dWithConv
-from braindecode.models.functions import identity
-from braindecode.models.modules import np_to_var
 
 
 class EEGResNet(BaseModel):
@@ -71,71 +69,71 @@ class EEGResNet(BaseModel):
         i_block = 1
         for i_layer in range(self.n_layers_per_block):
             model.add_module('res_{:d}_{:d}'.format(i_block, i_layer),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation))
         i_block += 1
         cur_dilation[0] *= 2
         n_out_filters = int(2* n_cur_filters)
         model.add_module('res_{:d}_{:d}'.format(i_block, 0),
-                             ResidualBlock(n_cur_filters, n_out_filters,
+                             _ResidualBlock(n_cur_filters, n_out_filters,
                                            dilation=cur_dilation,))
         n_cur_filters = n_out_filters
         for i_layer in range(1, self.n_layers_per_block):
             model.add_module('res_{:d}_{:d}'.format(i_block, i_layer),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation))
 
         i_block += 1
         cur_dilation[0] *= 2
         n_out_filters = int(1.5* n_cur_filters)
         model.add_module('res_{:d}_{:d}'.format(i_block, 0),
-                             ResidualBlock(n_cur_filters, n_out_filters,
+                             _ResidualBlock(n_cur_filters, n_out_filters,
                                            dilation=cur_dilation,))
         n_cur_filters = n_out_filters
         for i_layer in range(1, self.n_layers_per_block):
             model.add_module('res_{:d}_{:d}'.format(i_block, i_layer),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation))
 
 
         i_block += 1
         cur_dilation[0] *= 2
         model.add_module('res_{:d}_{:d}'.format(i_block, 0),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation,))
         for i_layer in range(1, self.n_layers_per_block):
             model.add_module('res_{:d}_{:d}'.format(i_block, i_layer),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation))
 
         i_block += 1
         cur_dilation[0] *= 2
         model.add_module('res_{:d}_{:d}'.format(i_block, 0),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation,))
         for i_layer in range(1, self.n_layers_per_block):
             model.add_module('res_{:d}_{:d}'.format(i_block, i_layer),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation))
 
 
         i_block += 1
         cur_dilation[0] *= 2
         model.add_module('res_{:d}_{:d}'.format(i_block, 0),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation,))
         for i_layer in range(1, self.n_layers_per_block):
             model.add_module('res_{:d}_{:d}'.format(i_block, i_layer),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation))
         i_block += 1
         cur_dilation[0] *= 2
         model.add_module('res_{:d}_{:d}'.format(i_block, 0),
-                                 ResidualBlock(n_cur_filters, n_cur_filters,
+                                 _ResidualBlock(n_cur_filters, n_cur_filters,
                                                dilation=cur_dilation, ))
         for i_layer in range(1, self.n_layers_per_block):
             model.add_module('res_{:d}_{:d}'.format(i_block, i_layer),
-                             ResidualBlock(n_cur_filters, n_cur_filters,
+                             _ResidualBlock(n_cur_filters, n_cur_filters,
                                            dilation=cur_dilation))
 
 
@@ -158,14 +156,17 @@ class EEGResNet(BaseModel):
 
 
         # Initialize all weights
-        model.apply(lambda module: weights_init(module, self.conv_weight_init_fn))
+        model.apply(lambda module: _weights_init(module, self.conv_weight_init_fn))
 
         # Start in eval mode
         model.eval()
         return model
 
 
-def weights_init(module, conv_weight_init_fn):
+def _weights_init(module, conv_weight_init_fn):
+    """
+    initialize weights
+    """
     classname = module.__class__.__name__
     if 'Conv' in classname and classname != "AvgPool2dWithConv":
         conv_weight_init_fn(module.weight)
@@ -176,9 +177,11 @@ def weights_init(module, conv_weight_init_fn):
         init.constant(module.bias, 0)
 
 
-# remove empty dim at end and potentially remove empty time dim
-# do not just use squeeze as we never want to remove first dim
 def _squeeze_final_output(x):
+    """
+    remove empty dim at end and potentially remove empty time dim
+    do not just use squeeze as we never want to remove first dim
+    """
     assert x.size()[3] == 1
     x = x[:,:,:,0]
     if x.size()[2] == 1:
@@ -190,8 +193,10 @@ def _transpose_time_to_spat(x):
     return x.permute(0, 3, 2, 1)
 
 
-# create a residual learning building block with two stacked 3x3 convlayers as in paper
-class ResidualBlock(nn.Module):
+class _ResidualBlock(nn.Module):
+    """
+    create a residual learning building block with two stacked 3x3 convlayers as in paper
+    """
     def __init__(
         self, in_filters,
             out_num_filters,
@@ -200,7 +205,7 @@ class ResidualBlock(nn.Module):
             nonlinearity=elu,
             batch_norm_alpha=0.1, batch_norm_epsilon=1e-4,
         ):
-        super(ResidualBlock, self).__init__()
+        super(_ResidualBlock, self).__init__()
         time_padding = int((filter_time_length - 1) * dilation[0])
         assert time_padding % 2 == 0
         time_padding = int(time_padding // 2)
