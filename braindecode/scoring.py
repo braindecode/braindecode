@@ -12,7 +12,7 @@ from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
 
-from .monitors import compute_trial_labels_from_crop_preds
+from .monitors import compute_preds_per_trial_from_crops
 
 
 @contextmanager
@@ -72,12 +72,16 @@ class CroppedTrialEpochScoring(EpochScoring):
 
         y_pred_np = [old_y_pred.cpu().numpy() for old_y_pred in y_pred]
 
-        y_preds_per_trial = compute_trial_labels_from_crop_preds(
+        preds_per_crop = compute_preds_per_trial_from_crops(
             y_pred_np, input_time_length, trial_X
         )
 
+        y_preds_per_trial = np.array(
+            [np.mean(p, axis=1) for p in preds_per_crop]
+        )
+
         # Move into format expected by skorch (list of torch tensors)
-        y_preds_per_trial = [torch.tensor(np.array(y_preds_per_trial))]
+        y_preds_per_trial = [torch.tensor(y_preds_per_trial)]
 
         with _cache_net_forward_iter(
             net, self.use_caching, y_preds_per_trial
@@ -111,6 +115,7 @@ class PostEpochTrainScoring(EpochScoring):
     target_extractor : callable (default=to_numpy)
       This is called on y before it is passed to scoring.
     """
+
     def __init__(
         self,
         scoring,

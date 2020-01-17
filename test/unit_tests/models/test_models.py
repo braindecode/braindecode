@@ -25,7 +25,7 @@ def test_shallow_fbcsp_net():
                             n_classes,
                             n_in_times,
                             final_conv_length='auto'
-                            ).create_network()
+                            )
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
 
@@ -42,7 +42,7 @@ def test_deep4net():
                      n_classes,
                      n_in_times,
                      final_conv_length='auto'
-                     ).create_network()
+                     )
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
 
@@ -60,7 +60,7 @@ def test_eegresnet():
                       n_in_times,
                       final_pool_length=5,
                       n_first_filters=2,
-                      ).create_network()
+                      )
     y_pred = model(X)
     assert y_pred.shape[:2] == (n_samples, n_classes)
 
@@ -76,7 +76,7 @@ def test_hybridnet():
     model = HybridNet(n_channels,
                       n_classes,
                       n_in_times
-                      ).create_network()
+                      )
     y_pred = model(X)
     assert y_pred.shape[:2] == (n_samples, n_classes)
 
@@ -92,7 +92,7 @@ def test_eegnet_v4():
     model = EEGNetv4(n_channels,
                      n_classes,
                      input_time_length=n_in_times
-                     ).create_network()
+                     )
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
 

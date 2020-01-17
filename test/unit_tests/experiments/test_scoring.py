@@ -13,9 +13,9 @@ from skorch.utils import to_numpy, to_tensor
 from torch import optim
 from torch.utils.data import Dataset
 from braindecode.datautil import CropsDataLoader
-from braindecode.experiments.classifier import BraindecodeClassifier
-from braindecode.experiments.scoring import CroppedTrialEpochScoring
-from braindecode.experiments.scoring import PostEpochTrainScoring
+from braindecode.classifier import EEGClassifier
+from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.scoring import PostEpochTrainScoring
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
@@ -31,7 +31,9 @@ class MockSkorchNet:
         return self
 
     def predict(self, X):
-        return np.concatenate([to_numpy(x) for x in self.forward_iter(X)], 0)
+        return np.concatenate(
+            [to_numpy(x.argmax(dim=1)) for x in self.forward_iter(X)], 0
+        )
 
     def get_iterator(self, X_test, training):
         return CropsDataLoader(
@@ -99,7 +101,9 @@ def test_cropped_trial_epoch_scoring():
             mock_skorch_net, dataset_train, dataset_valid
         )
 
-        np.testing.assert_almost_equal(mock_skorch_net.history[0]["accuracy"], accuracy)
+        np.testing.assert_almost_equal(
+            mock_skorch_net.history[0]["accuracy"], accuracy
+        )
 
 
 def test_cropped_trial_epoch_scoring_none_x_test():
@@ -186,11 +190,11 @@ def test_post_epoch_train_scoring():
         pool_time_stride=1,
         pool_time_length=2,
         final_conv_length="auto",
-    ).create_network()
+    )
     if cuda:
         model.cuda()
 
-    clf = BraindecodeClassifier(
+    clf = EEGClassifier(
         model,
         criterion=torch.nn.NLLLoss,
         optimizer=optim.AdamW,
@@ -207,7 +211,9 @@ def test_post_epoch_train_scoring():
             ),
             (
                 "train_f1_score",
-                PostEpochTrainScoring("f1", lower_is_better=False, name="train_f1"),
+                PostEpochTrainScoring(
+                    "f1", lower_is_better=False, name="train_f1"
+                ),
             ),
             ("test_callback", TestCallback()),
         ],

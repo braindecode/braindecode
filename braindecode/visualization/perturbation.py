@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-from ..datautil.iterators import get_balanced_batches
+from braindecode.util import get_balanced_batches
 from ..util import wrap_reshape_apply_fn, corr
 
 log = logging.getLogger(__name__)

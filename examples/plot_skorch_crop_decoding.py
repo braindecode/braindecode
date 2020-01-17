@@ -28,7 +28,9 @@ from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 from braindecode.datautil import CropsDataLoader
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.experiments.scoring import CroppedTrialEpochScoring
+from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.classifier import EEGClassifier
+from braindecode.losses import CroppedNLLLoss
 
 subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
 event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
@@ -128,7 +130,7 @@ model = ShallowFBCSPNet(
     n_classes=n_classes,
     input_time_length=train_set.X.shape[2],
     final_conv_length="auto",
-).create_network()
+)
 to_dense_prediction_model(model)
 if cuda:
     model.cuda()
@@ -139,15 +141,6 @@ input_time_length = X.shape[2]
 with torch.no_grad():
     dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device="cpu")
     n_preds_per_input = model(dummy_input).shape[2]
-
-
-class CroppedNLLLoss:
-    """Compute NLL Loss after averaging predictions across time.
-    Assumes predictions are in shape:
-    n_batch size x n_classes x n_predictions (in time)"""
-
-    def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(torch.mean(preds, dim=2), targets)
 
 
 cropped_cb_train = CroppedTrialEpochScoring(
@@ -164,7 +157,7 @@ cropped_cb_valid = CroppedTrialEpochScoring(
     lower_is_better=False,
 )
 
-clf = NeuralNet(
+clf = EEGClassifier(
     model,
     criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,

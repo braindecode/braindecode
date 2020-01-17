@@ -11,11 +11,10 @@ from torch.nn import init
 from torch.nn.functional import elu
 
 from ..util import np_to_var
-from .base import BaseModel
 from .modules import Expression, AvgPool2dWithConv
 
 
-class EEGResNet(nn.Sequential, BaseModel):
+class EEGResNet(nn.Sequential):
     """
     Residual Network for EEG.
     """
@@ -30,19 +29,14 @@ class EEGResNet(nn.Sequential, BaseModel):
                  split_first_layer=True,
                  batch_norm_alpha=0.1,
                  batch_norm_epsilon=1e-4,
-                 conv_weight_init_fn=lambda w: init.kaiming_normal(w, a=0)):
+                 conv_weight_init_fn=lambda w: init.kaiming_normal_(w, a=0)):
         super().__init__()
         if final_pool_length == 'auto':
             assert input_time_length is not None
         assert first_filter_length % 2 == 1
         self.__dict__.update(locals())
         del self.self
-        self._create_network()
 
-    def create_network(self):
-        return self
-
-    def _create_network(self):
         if self.split_first_layer:
             self.add_module('dimshuffle', Expression(_transpose_time_to_spat))
             self.add_module('conv_time', nn.Conv2d(1, self.n_first_filters,
@@ -151,7 +145,7 @@ class EEGResNet(nn.Sequential, BaseModel):
         self.add_module('conv_classifier',
                         nn.Conv2d(n_cur_filters, self.n_classes,
                                   (1, 1), bias=True))
-        self.add_module('softmax', nn.LogSoftmax())
+        self.add_module('softmax', nn.LogSoftmax(dim=1))
         self.add_module('squeeze', Expression(_squeeze_final_output))
 
         # Initialize all weights
@@ -166,10 +160,10 @@ def _weights_init(module, conv_weight_init_fn):
     if 'Conv' in classname and classname != "AvgPool2dWithConv":
         conv_weight_init_fn(module.weight)
         if module.bias is not None:
-            init.constant(module.bias, 0)
+            init.constant_(module.bias, 0)
     elif 'BatchNorm' in classname:
-        init.constant(module.weight, 1)
-        init.constant(module.bias, 0)
+        init.constant_(module.weight, 1)
+        init.constant_(module.bias, 0)
 
 
 # remove empty dim at end and potentially remove empty time dim
