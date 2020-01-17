@@ -1,6 +1,6 @@
 import numpy as np
 
-from braindecode.datautil.iterators import get_balanced_batches
+from braindecode.util import get_balanced_batches
 from braindecode.datautil.signal_target import apply_to_X_y, SignalAndTarget
 
 

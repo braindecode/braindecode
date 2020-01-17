@@ -12,7 +12,8 @@ import torch as th
 from torch.utils.data import DataLoader
 
 from .iterators import \
-    _compute_start_stop_block_inds, get_balanced_batches
+    _compute_start_stop_block_inds
+from braindecode.util import get_balanced_batches
 
 
 def _custom_collate(batch, rng_state=None):

@@ -1,3 +1,5 @@
+from collections import namedtuple
+
 import numpy as np
 from numpy.random import RandomState
 
@@ -7,9 +9,7 @@ import torch.nn.functional as F
 import mne
 from mne.io import concatenate_raws
 
-from braindecode.util import np_to_var, var_to_np
-from braindecode.datautil.iterators import get_balanced_batches
-from braindecode.datautil import SignalAndTarget
+from braindecode.util import np_to_var, var_to_np, get_balanced_batches
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
@@ -48,6 +48,8 @@ def test_trialwise_decoding():
     # Pytorch expects float32 for input and int64 for labels.
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
+
+    SignalAndTarget = namedtuple('SignalAndTarget', 'X y')
 
     train_set = SignalAndTarget(X[:60], y=y[:60])
     test_set = SignalAndTarget(X[60:], y=y[60:])
