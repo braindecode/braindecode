@@ -22,7 +22,7 @@ from sklearn.pipeline import Pipeline
 # preprocessing
 from braindecode.datautil.signalproc import (bandpass_cnt,
                                              exponential_running_standardize)
-from braindecode.preprocessors import FilteringTransformer, ZscoreTransformer
+from braindecode.preprocessors import FilteringTransformer, ZscoreTransformer,FilterBankTransformer
 from braindecode.windowers import FixedLengthWindower, EventWindower
 
 
@@ -318,7 +318,9 @@ class WindowsDataset(Dataset):
 # # Let's create a dataset!
 
 filter_ = FilteringTransformer(l_freq=4, h_freq=12)
-zscorer = ZscoreTransformer()
+# zscorer = ZscoreTransformer()
+filters_args=[{'l_freq':4, 'h_freq':12}, {'l_freq':8, 'h_freq':18}]
+zscorer = FilterBankTransformer([{'l_freq':4, 'h_freq':12}, {'l_freq':8, 'h_freq':18}])
 prepr_pipeline = Pipeline(
     [('bandpass_filter', filter_), ('zscorer', zscorer)])
 #windower = Windower(window_size_samples=None,
