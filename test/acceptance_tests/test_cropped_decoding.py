@@ -13,7 +13,7 @@ from mne.io import concatenate_raws
 from torch import optim
 
 from braindecode.datautil.iterators import CropsFromTrialsIterator
-from braindecode.experiments.monitors import compute_preds_per_trial_from_crops
+from braindecode.monitors import compute_preds_per_trial_from_crops
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.util import set_random_seeds
@@ -87,7 +87,7 @@ def test_cropped_decoding():
         n_classes=n_classes,
         input_time_length=input_time_length,
         final_conv_length=12,
-    ).create_network()
+    )
     to_dense_prediction_model(model)
 
     if cuda:

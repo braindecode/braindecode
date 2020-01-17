@@ -28,7 +28,8 @@ from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 from braindecode.datautil import CropsDataLoader
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.experiments.scoring import CroppedTrialEpochScoring
+from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.classifier import EEGClassifier
 
 subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
 event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
@@ -128,7 +129,7 @@ model = ShallowFBCSPNet(
     n_classes=n_classes,
     input_time_length=train_set.X.shape[2],
     final_conv_length="auto",
-).create_network()
+)
 to_dense_prediction_model(model)
 if cuda:
     model.cuda()
@@ -164,7 +165,7 @@ cropped_cb_valid = CroppedTrialEpochScoring(
     lower_is_better=False,
 )
 
-clf = NeuralNet(
+clf = EEGClassifier(
     model,
     criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,

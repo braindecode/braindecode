@@ -12,8 +12,8 @@ from torch import optim
 from torch.utils.data import Dataset
 
 from braindecode.datautil.loader import CropsDataLoader
-from braindecode.experiments.classifier import EEGClassifier
-from braindecode.experiments.scoring import CroppedTrialEpochScoring
+from braindecode.classifier import EEGClassifier
+from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.util import set_random_seeds, np_to_var
@@ -178,7 +178,7 @@ def test_eeg_classifier_cropped_training():
         n_classes=n_classes,
         input_time_length=input_time_length,
         final_conv_length=12,
-    ).create_network()
+    )
     to_dense_prediction_model(model)
 
     if cuda:

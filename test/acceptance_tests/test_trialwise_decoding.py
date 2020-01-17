@@ -81,7 +81,7 @@ def test_trialwise_decoding():
         n_classes=n_classes,
         input_time_length=train_set.X.shape[2],
         final_conv_length="auto",
-    ).create_network()
+    )
     if cuda:
         model.cuda()
 

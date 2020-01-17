@@ -3,13 +3,12 @@ from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
 
-from .base import BaseModel
 from .modules import Expression, AvgPool2dWithConv
 from .functions import identity
 from ..util import np_to_var
 
 
-class Deep4Net(nn.Sequential, BaseModel):
+class Deep4Net(nn.Sequential):
     """
     Deep ConvNet model from [1]_.
 
@@ -61,8 +60,6 @@ class Deep4Net(nn.Sequential, BaseModel):
         del self.self
         self._create_network()
 
-    def create_network(self):
-        return self
 
     def _create_network(self):
         if self.stride_before_pool:

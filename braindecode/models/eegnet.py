@@ -6,7 +6,6 @@ from torch.nn.functional import elu
 
 from ..util import np_to_var
 from ..torch_ext.init import glorot_weight_zero_bias
-from .base import BaseModel
 from .modules import Expression
 
 
@@ -22,7 +21,7 @@ class Conv2dWithConstraint(nn.Conv2d):
         return super(Conv2dWithConstraint, self).forward(x)
 
 
-class EEGNetv4(nn.Sequential, BaseModel):
+class EEGNetv4(nn.Sequential):
     """
     EEGNet v4 model from [EEGNet4]_.
 
@@ -61,9 +60,6 @@ class EEGNetv4(nn.Sequential, BaseModel):
         self.__dict__.update(locals())
         del self.self
         self._create_network(self)
-
-    def create_network(self):
-        return self
 
     def _create_network(self, model):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]

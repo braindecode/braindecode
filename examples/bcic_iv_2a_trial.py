@@ -16,9 +16,9 @@ from braindecode.datautil.signalproc import (
 )
 from braindecode.datautil.splitters import split_into_two_sets
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
-from braindecode.experiments.callbacks import MaxNormConstraintCallback
-from braindecode.experiments.classifier import EEGClassifier
-from braindecode.experiments.scoring import PostEpochTrainScoring
+from braindecode.callbacks import MaxNormConstraintCallback
+from braindecode.classifier import EEGClassifier
+from braindecode.scoring import PostEpochTrainScoring
 from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
@@ -163,14 +163,14 @@ if model == "shallow":
         n_classes,
         input_time_length=input_time_length,
         final_conv_length="auto",
-    ).create_network()
+    )
 elif model == "deep":
     model = Deep4Net(
         n_chans,
         n_classes,
         input_time_length=input_time_length,
         final_conv_length="auto",
-    ).create_network()
+    )
 if cuda:
     model.cuda()
 

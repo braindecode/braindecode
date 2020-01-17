@@ -2,13 +2,12 @@ import torch as th
 from torch import nn
 from torch.nn import ConstantPad2d
 
-from .base import BaseModel
 from .deep4 import Deep4Net
 from .shallow_fbcsp import ShallowFBCSPNet
 from .util import to_dense_prediction_model
 
 
-class HybridNet(nn.Module, BaseModel):
+class HybridNet(nn.Module):
     """Hybrid ConvNet model from [3]_.
 
     Very hardcoded at the moment.
@@ -35,7 +34,7 @@ class HybridNet(nn.Module, BaseModel):
             n_filters_4=60,
             input_time_length=input_time_length,
             final_conv_length=2,
-        ).create_network()
+        )
         shallow_model = ShallowFBCSPNet(
             in_chans,
             n_classes,
@@ -44,7 +43,7 @@ class HybridNet(nn.Module, BaseModel):
             n_filters_spat=40,
             filter_time_length=28,
             final_conv_length=29,
-        ).create_network()
+        )
 
         reduced_deep_model = nn.Sequential()
         for name, module in deep_model.named_children():
@@ -81,9 +80,6 @@ class HybridNet(nn.Module, BaseModel):
         self.final_conv = nn.Conv2d(
             100, n_classes, kernel_size=(1, 1), stride=1
         )
-
-    def create_network(self):
-        return self
 
     def forward(self, x):
         deep_out = self.reduced_deep_model(x)

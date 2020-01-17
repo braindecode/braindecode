@@ -11,31 +11,37 @@ Example using Skorch - How do you think?
 #
 # License: BSD-3
 
-import numpy as np
-
 import mne
-from mne.io import concatenate_raws
-
+import numpy as np
 import torch
+from mne.io import concatenate_raws
+from sklearn.metrics import f1_score
+from skorch.callbacks.scoring import EpochScoring
 from torch import optim
 from torch.utils.data import Dataset
 
-from sklearn.metrics import f1_score
-
-from skorch.net import NeuralNet
-
+from braindecode.classifier import EEGClassifier
 from braindecode.models import ShallowFBCSPNet
+from braindecode.scoring import PostEpochTrainScoring
 from braindecode.util import set_random_seeds
-from braindecode.experiments.classifier import EEGClassifier
-from braindecode.experiments.scoring import PostEpochTrainScoring
 
-subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
-event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
+subject_id = (
+    22
+)  # carefully cherry-picked to give nice results on such limited data :)
+event_codes = [
+    5,
+    6,
+    9,
+    10,
+    13,
+    14,
+]  # codes for executed and imagined hands/feet
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
 physionet_paths = mne.datasets.eegbci.load_data(
-    subject_id, event_codes, update_path=False)
+    subject_id, event_codes, update_path=False
+)
 
 # Load each of the files
 raws = [
@@ -112,8 +118,11 @@ class TrainTestSplit(object):
             n_train_samples = int(self.train_size * len(dataset))
 
         X, y = dataset.X, dataset.y
-        return (EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
-                EEGDataSet(X[n_train_samples:], y[n_train_samples:]))
+        return (
+            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
+            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
+        )
+
 
 set_random_seeds(20200114, True)
 
@@ -122,7 +131,8 @@ model = ShallowFBCSPNet(
     in_chans=in_chans,
     n_classes=n_classes,
     input_time_length=train_set.X.shape[2],
-    final_conv_length="auto").create_network()
+    final_conv_length="auto",
+)
 if cuda:
     model.cuda()
 
@@ -136,22 +146,31 @@ clf = EEGClassifier(
     optimizer__weight_decay=0,
     batch_size=64,
     callbacks=[
-         (
-             "train_accuracy",
-             PostEpochTrainScoring(
-                 "accuracy",
-                 lower_is_better=False,
-                 name="train_acc",
-             ),
-         ),
         (
-             "train_f1_score",
-             PostEpochTrainScoring(
-                 "f1",
-                 lower_is_better=False,
-                 name="train_f1",
-             ),
-         ),
+            "train_accuracy",
+            PostEpochTrainScoring(
+                "accuracy", lower_is_better=False, name="train_acc"
+            ),
+        ),
+        (
+            "train_f1_score",
+            PostEpochTrainScoring("f1", lower_is_better=False, name="train_f1"),
+        ),
+        (
+            "valid_accuracy",
+            EpochScoring(
+                "accuracy",
+                lower_is_better=False,
+                name="valid_acc",
+                on_train=False,
+            ),
+        ),
+        (
+            "valid_f1_score",
+            EpochScoring(
+                "f1", lower_is_better=False, name="valid_f1", on_train=False
+            ),
+        ),
     ],
 )
 clf.fit(train_set, y=None, epochs=4)

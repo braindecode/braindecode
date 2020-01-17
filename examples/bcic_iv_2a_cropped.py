@@ -17,10 +17,8 @@ from braindecode.datautil.signalproc import (
     exponential_running_standardize,
 )
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
-from braindecode.experiments.classifier import EEGClassifier
-from braindecode.experiments.scoring import (
-    CroppedTrialEpochScoring,
-)
+from braindecode.classifier import EEGClassifier
+from braindecode.scoring import (CroppedTrialEpochScoring,)
 from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
@@ -152,11 +150,11 @@ n_chans = int(train_set.X.shape[1])
 if model == "shallow":
     model = ShallowFBCSPNet(
         n_chans, n_classes, input_time_length=input_time_length, final_conv_length=30
-    ).create_network()
+    )
 elif model == "deep":
     model = Deep4Net(
         n_chans, n_classes, input_time_length=input_time_length, final_conv_length=2
-    ).create_network()
+    )
 
 to_dense_prediction_model(model)
 

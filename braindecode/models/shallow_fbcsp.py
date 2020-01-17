@@ -3,12 +3,11 @@ from torch import nn
 from torch.nn import init
 
 from ..util import np_to_var
-from .base import BaseModel
 from .modules import Expression
 from .functions import safe_log, square
 
 
-class ShallowFBCSPNet(nn.Sequential, BaseModel):
+class ShallowFBCSPNet(nn.Sequential):
     """Shallow ConvNet model from [2]_.
 
     Parameters
@@ -50,9 +49,6 @@ class ShallowFBCSPNet(nn.Sequential, BaseModel):
         self.__dict__.update(locals())
         del self.self
         self._create_network(self)
-
-    def create_network(self):
-        return self
 
     def _create_network(self, model):
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]

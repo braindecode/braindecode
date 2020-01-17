@@ -11,11 +11,10 @@ from torch.nn import init
 from torch.nn.functional import elu
 
 from ..util import np_to_var
-from .base import BaseModel
 from .modules import Expression, AvgPool2dWithConv
 
 
-class EEGResNet(nn.Sequential, BaseModel):
+class EEGResNet(nn.Sequential):
     """
     Residual Network for EEG.
     """
@@ -38,9 +37,6 @@ class EEGResNet(nn.Sequential, BaseModel):
         self.__dict__.update(locals())
         del self.self
         self._create_network()
-
-    def create_network(self):
-        return self
 
     def _create_network(self):
         if self.split_first_layer:
