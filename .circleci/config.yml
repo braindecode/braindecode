@@ -167,7 +167,7 @@ jobs:
             name: Deploy docs
             command: |
               set -e;
-              if [ "${CIRCLE_BRANCH}" == "master" ] || [ "debug" == "debug" ]; then
+              if [ "${CIRCLE_BRANCH}" == "master" ]; then
                 git config --global user.email "circle@mne.com";
                 git config --global user.name "Circle CI";
                 cd ~/braindecode.github.io;
@@ -198,4 +198,4 @@ workflows:
           filters:
             branches:
               only:
-                - deploy_doc
+                - master
