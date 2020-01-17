@@ -33,7 +33,9 @@ class WindowsDataset(Dataset):
         if self.target != "target":
             assert self.target in self.windows.info["subject_info"].keys()
         self.transforms = (
-            [transforms] if not isinstance(transforms, list) else transforms
+            transforms
+            if isinstance(transforms, list) or (transforms is None)
+            else [transforms]
         )
 
         # XXX Handle multitarget case
@@ -63,7 +65,7 @@ class WindowsDataset(Dataset):
             for transform in self.transforms:
                 x = transform(x)
 
-        return x, y
+        return x.astype(np.float32), y - 1 # XXX: delete this -1
 
     def __len__(self):
         return self.windows.metadata.shape[0]

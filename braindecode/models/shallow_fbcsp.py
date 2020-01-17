@@ -3,7 +3,7 @@ from torch import nn
 from torch.nn import init
 
 from ..util import np_to_var
-from .modules import Expression
+from .modules import Expression, Ensure4d
 from .functions import safe_log, square
 
 
@@ -49,6 +49,7 @@ class ShallowFBCSPNet(nn.Sequential):
         self.__dict__.update(locals())
         del self.self
 
+        self.add_module("ensuredims", Ensure4d())
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         if self.split_first_layer:
             self.add_module("dimshuffle", Expression(_transpose_time_to_spat))
