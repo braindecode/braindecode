@@ -31,7 +31,8 @@ class WindowsDataset(Dataset):
         self.windows = windows
         self.target = target
         if self.target != "target":
-            assert self.target in self.windows.info["subject_info"].keys()
+            assert self.windows.info["subject_info"] is not None and \
+                   self.target in self.windows.info["subject_info"].keys()
         self.transforms = (
             transforms
             if isinstance(transforms, list) or (transforms is None)
@@ -65,7 +66,7 @@ class WindowsDataset(Dataset):
             for transform in self.transforms:
                 x = transform(x)
 
-        return x.astype(np.float32), y - 1 # XXX: delete this -1
+        return x.astype(np.float32), y - 1  # XXX: delete this -1
 
     def __len__(self):
         return self.windows.metadata.shape[0]
