@@ -156,6 +156,9 @@ class EEGResNet(nn.Sequential):
 
 
 def _weights_init(module, conv_weight_init_fn):
+    """
+    initialize weights
+    """
     classname = module.__class__.__name__
     if 'Conv' in classname and classname != "AvgPool2dWithConv":
         conv_weight_init_fn(module.weight)
@@ -166,9 +169,11 @@ def _weights_init(module, conv_weight_init_fn):
         init.constant_(module.bias, 0)
 
 
-# remove empty dim at end and potentially remove empty time dim
-# do not just use squeeze as we never want to remove first dim
 def _squeeze_final_output(x):
+    """
+    remove empty dim at end and potentially remove empty time dim
+    do not just use squeeze as we never want to remove first dim
+    """
     assert x.size()[3] == 1
     x = x[:, :, :, 0]
     if x.size()[2] == 1:
@@ -180,8 +185,10 @@ def _transpose_time_to_spat(x):
     return x.permute(0, 3, 2, 1)
 
 
-# create a residual learning building block with two stacked 3x3 convlayers as in paper
 class _ResidualBlock(nn.Module):
+    """
+    create a residual learning building block with two stacked 3x3 convlayers as in paper
+    """
     def __init__(self, in_filters,
                  out_num_filters,
                  dilation,
