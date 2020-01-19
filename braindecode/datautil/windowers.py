@@ -74,9 +74,10 @@ class FixedLengthWindower(BaseWindower):
         window_size_samples,
         overlap_size_samples,
         drop_last_samples,
+        tmin=0,
     ):
         super().__init__(
-            window_size_samples, overlap_size_samples, drop_last_samples, tmin=0
+            window_size_samples, overlap_size_samples, drop_last_samples, tmin
         )
 
     def _include_last_samples(self, raw, events, id_holder):
