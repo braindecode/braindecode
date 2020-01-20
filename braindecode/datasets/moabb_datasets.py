@@ -5,7 +5,7 @@ import numpy as np
 import mne
 
 from torch.utils.data import ConcatDataset
-from braindecode.datasets.dataset import WindowsDataset
+from .dataset import WindowsDataset
 
 try:
     from mne import annotations_from_events
@@ -130,17 +130,18 @@ class MOABBDataset(ConcatDataset):
 
     def __init__(self, dataset_name, subject, raw_transformer=None, windower=None,
                  transformer=None, transform_online=False, path=None):
-        self.dataset = self.find_data_set(dataset_name)()
+        self.dataset = self.find_data_set(dataset_name)
         self.subject = [subject] if isinstance(subject, int) else subject
-        self.raw_transformer =\
-            raw_transformer if isinstance(raw_transformer, list)\
-                else [raw_transformer]
-
+        self.raw_transformer = (
+            raw_transformer
+            if isinstance(raw_transformer, list) or raw_transformer is None
+            else [raw_transformer])
         self.windower = windower
-        self.transformer = transformer if isinstance(transformer, list)\
-            else [transformer]
+        self.transformer = (
+            transformer
+            if isinstance(transformer, list) or transformer is None
+            else [transformer])
         self.transform_online = transform_online
-
 
         if path is not None:
             # ToDo: mne update (path)
@@ -171,8 +172,9 @@ class MOABBDataset(ConcatDataset):
                     raw = raw.pick_channels(np.array(raw.ch_names)[picks])
 
                     # 1- Apply preprocessing
-                    for transformer in self.raw_transformer:
-                        raw = transformer(raw)
+                    if self.raw_transformer is not None:
+                        for transformer in self.raw_transformer:
+                            raw = transformer(raw)
 
                     # 2- Epoch
                     windows = self.windower(raw, self.dataset.event_id)
@@ -260,5 +262,6 @@ class MOABBDataset(ConcatDataset):
         from moabb.datasets.utils import dataset_list
         for dataset in dataset_list:
             if dataset_name == dataset.__name__:
-                return dataset
+                # return an instance of the found dataset class
+                return dataset()
         raise ValueError("'dataset_name' not found in moabb datasets")

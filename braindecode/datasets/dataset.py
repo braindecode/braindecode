@@ -33,7 +33,9 @@ class WindowsDataset(Dataset):
         if self.target != "target":
             assert self.target in self.windows.info["subject_info"].keys()
         self.transforms = (
-            [transforms] if not isinstance(transforms, list) else transforms
+            transforms
+            if isinstance(transforms, list) or transforms is None
+            else [transforms]
         )
 
         # XXX Handle multitarget case
@@ -53,7 +55,7 @@ class WindowsDataset(Dataset):
         y : int | float
             window target
         """
-        x = np.squeeze(self.windows[index].get_data())
+        x = np.squeeze(self.windows[index].get_data(), axis=0)
         if self.target == "target":
             y = self.windows.metadata.iloc[index]["target"]
         else:

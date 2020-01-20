@@ -150,6 +150,7 @@ class EventWindower(BaseWindower):
         tmin=0,
         mapping=None,
     ):
+        assert stride_samples > 0, "stride has to be larger than 0"
         super().__init__(
             window_size_samples, None, drop_last_samples, tmin=tmin
         )
