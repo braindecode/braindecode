@@ -24,19 +24,20 @@ class TestFixedLengthWindower(unittest.TestCase):
         # tmin, n_windows)
         self.test_cases = [
             (100, 10, True, 0., 11),
-            # (100, 10, True, -0.5, 11),  # TODO: does using tmin have sense?
+            # (100, 10, True, -0.5, 11),  # TODO: does using trial_start_offset_samples have sense?
             (100, 50, True, 0., 19),
             (None, 50, True, 0., 1)
         ]
 
     def test_windower_results(self):
         for test_case in self.test_cases:
-            window_size, overlap_size, drop_last_samples, tmin, n_windows = test_case
+            (window_size, overlap_size, drop_last_samples,
+             trial_start_offset_samples, n_windows) = test_case
             windower = FixedLengthWindower(
                 window_size_samples=window_size,
                 overlap_size_samples=overlap_size,
                 drop_last_samples=drop_last_samples,
-                tmin=tmin)
+                trial_start_offset_samples=trial_start_offset_samples)
 
             epochs = windower(self.raw)
             epochs_data = epochs.get_data()
