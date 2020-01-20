@@ -5,7 +5,7 @@ import numpy as np
 import mne
 
 from torch.utils.data import ConcatDataset
-from braindecode.datasets.dataset import WindowsDataset
+from .dataset import WindowsDataset
 
 try:
     from mne import annotations_from_events
@@ -293,5 +293,6 @@ class MOABBDataset(ConcatDataset):
 
         for dataset in dataset_list:
             if dataset_name == dataset.__name__:
-                return dataset
+                # return an instance of the found dataset class
+                return dataset()
         raise ValueError("'dataset_name' not found in moabb datasets")

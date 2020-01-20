@@ -56,7 +56,7 @@ class WindowsDataset(Dataset):
         y : int | float
             window target
         """
-        x = np.squeeze(self.windows[index].get_data())
+        x = np.squeeze(self.windows[index].get_data(), axis=0)
         if self.target == "target":
             y = self.windows.metadata.iloc[index]["target"]
         else:
