@@ -69,6 +69,7 @@ https://web.gin.g-node.org/robintibor/high-gamma-dataset/
 
 Citing
 ======
+
 If you use this code in a scientific publication, please cite us as:
 
 .. code-block:: bibtex
@@ -84,6 +85,20 @@ If you use this code in a scientific publication, please cite us as:
   doi = {10.1002/hbm.23730},
   month = {aug},
   year = {2017},
-  keywords = {electroencephalography, EEG analysis, machine learning, end-to-end learning, brain–machine interface, 
+  keywords = {electroencephalography, EEG analysis, machine learning, end-to-end learning, brain–machine interface,
     brain–computer interface, model interpretability, brain mapping},
+  }
+
+as well as the `MNE-Python <https://mne.tools>`_` software that is used by braindecode:
+
+  @article{10.3389/fnins.2013.00267,
+  author={Gramfort, Alexandre and Luessi, Martin and Larson, Eric and Engemann, Denis and Strohmeier, Daniel and Brodbeck, Christian and Goj, Roman and Jas, Mainak and Brooks, Teon and Parkkonen, Lauri and Hämäläinen, Matti},
+  title={{MEG and EEG data analysis with MNE-Python}},
+  journal={Frontiers in Neuroscience},
+  volume={7},
+  pages={267},
+  year={2013},
+  url={https://www.frontiersin.org/article/10.3389/fnins.2013.00267},
+  doi={10.3389/fnins.2013.00267},
+  issn={1662-453X},
   }
