@@ -77,9 +77,10 @@ class CroppedTrialEpochScoring(EpochScoring):
                 net.forward_iter(dataset_train, training=False)
             )
             from copy import deepcopy # XXX: remove
+
             self.y_trues_ = deepcopy(self.y_preds_)
 
-        X_test, y_per_super_crop, y_pred = self.get_test_data(
+        X_test, _, y_pred = self.get_test_data(
             dataset_train, dataset_valid
         )
         if X_test is None:
@@ -105,11 +106,15 @@ class CroppedTrialEpochScoring(EpochScoring):
                 y_pred_np, input_time_length, trial_X
             )
         else:
-            trial_lens_samples = dataset.dataset.get_trial_durations_samples()[
-                                 :288]
+            # HACK: just fix to get BCIC IV 2a example to run
+            trial_lens_samples = dataset.dataset.get_trial_durations_samples()[:288]
             preds_per_crop = compute_preds_per_trial_from_trial_n_samples(
                 y_pred_np, self.input_time_length, trial_lens_samples
             )
+            # Let's get trial y
+            y_per_super_crop = [dataset[i][1] for i in range(len(dataset))]
+
+            # HACK: just for now to get BCIC IV 2a example to run
             n_super_crops = len(y_per_super_crop)
             n_trials = len(trial_lens_samples)
             n_super_crops_per_trial = int(n_super_crops / n_trials)

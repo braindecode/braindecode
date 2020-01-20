@@ -148,7 +148,7 @@ class MOABBDataset(ConcatDataset):
         transform_online=False,
         path=None,
     ):
-        self.dataset = self.find_data_set(dataset_name)()
+        self.dataset = self.find_data_set(dataset_name)
         self.subject = [subject] if isinstance(subject, int) else subject
 
         self.raw_transformer = (
@@ -180,6 +180,7 @@ class MOABBDataset(ConcatDataset):
         base_datasets = list()
         trial_durations = list()
         windows_fs = []
+
         for subj_id, subj_data in data.items():
             for sess_id, sess_data in subj_data.items():
                 for run_id, raw in sess_data.items():
@@ -189,8 +190,9 @@ class MOABBDataset(ConcatDataset):
                     )
                     if len(raw.annotations.onset) == 0:
                         continue
+                    tmin = self.windower.trial_start_offset_samples / raw.info['sfreq']
                     trial_durations.append(
-                        raw.annotations.duration - self.windower.tmin
+                        raw.annotations.duration - tmin
                     )
                     picks = mne.pick_types(raw.info, meg=False, eeg=True)
                     raw = raw.pick_channels(np.array(raw.ch_names)[picks])
