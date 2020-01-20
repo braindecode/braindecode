@@ -336,3 +336,13 @@ def get_balanced_batches(
         i_start_trial = i_stop_trial
     assert i_start_trial == n_trials
     return batches
+
+
+def round_list_to_int(a):
+    """
+    Round values in a and return as type int
+
+    :param a: array-like
+    :return: a with values rounded to integer
+    """
+    return np.round(a).astype(np.int)

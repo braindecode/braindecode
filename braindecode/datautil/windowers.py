@@ -8,11 +8,10 @@
 #
 # License: BSD (3-clause)
 
-import copy
-
 import numpy as np
 import mne
 import pandas as pd
+from ..util import round_list_to_int
 
 
 class BaseWindower(object):
@@ -40,13 +39,13 @@ class BaseWindower(object):
         window_size_samples,
         overlap_size_samples,
         drop_last_samples,
-        tmin=0,
+            trial_start_offset_samples=0,
         mapping=None,
     ):
         self.window_size_samples = window_size_samples
         self.overlap_size_samples = overlap_size_samples
         self.drop_last_samples = drop_last_samples
-        self.tmin = tmin
+        self.trial_start_offset_samples = trial_start_offset_samples
         self.mapping = mapping
 
     def __call__(self, raw):
@@ -74,11 +73,10 @@ class FixedLengthWindower(BaseWindower):
         window_size_samples,
         overlap_size_samples,
         drop_last_samples,
-        tmin=0,
+        trial_start_offset_samples=0,
     ):
-        super().__init__(
-            window_size_samples, overlap_size_samples, drop_last_samples, tmin
-        )
+        super().__init__(window_size_samples, overlap_size_samples,
+                         drop_last_samples, trial_start_offset_samples)
 
     def _include_last_samples(self, raw, events, id_holder):
         last_valid_window_start = raw.n_times - self.window_size_samples
@@ -117,7 +115,7 @@ class FixedLengthWindower(BaseWindower):
         return mne.Epochs(
             raw,
             events,
-            tmin=self.tmin,
+            tmin=self.trial_start_offset_samples / fs,
             tmax=(self.window_size_samples - 1) / fs,
             baseline=None,
             preload=False,
@@ -147,13 +145,12 @@ class EventWindower(BaseWindower):
         window_size_samples,
         stride_samples,
         drop_last_samples,
-        tmin=0,
+        trial_start_offset_samples=0,
         mapping=None,
     ):
         assert stride_samples > 0, "stride has to be larger than 0"
-        super().__init__(
-            window_size_samples, None, drop_last_samples, tmin=tmin
-        )
+        super().__init__(window_size_samples, None, drop_last_samples,
+                         trial_start_offset_samples)
         self.chunk_duration_samples = stride_samples
         if mapping is not None:
             assert all(
@@ -170,8 +167,11 @@ class EventWindower(BaseWindower):
             raw.annotations.description,
         ):
             fs = raw.info["sfreq"]
-            new_onset = onset + duration - (self.window_size_samples - 1) / fs
-            if new_onset not in raw.annotations.onset:
+            new_onset = round_list_to_int(
+                (onset + duration) * fs - self.window_size_samples)
+            onsets_in_samples = round_list_to_int(
+                [onset * fs for onset in raw.annotations.onset])
+            if new_onset not in onsets_in_samples:
                 onsets.append(new_onset)
                 durations.append(duration)
                 descriptions.append(description)
@@ -224,7 +224,7 @@ class EventWindower(BaseWindower):
         return mne.Epochs(
             raw,
             events,
-            tmin=self.tmin,
+            tmin=self.trial_start_offset_samples / fs,
             tmax=(self.window_size_samples - 1) / fs,
             baseline=None,
             preload=False,
