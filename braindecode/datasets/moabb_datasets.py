@@ -249,7 +249,7 @@ class MOABBDataset(ConcatDataset):
         path=None,
     ):
         self.dataset_name = dataset_name
-        self.moabb_dataset = self.find_data_set(self.dataset_name)
+        self.moabb_dataset = find_data_set(self.dataset_name)
         self.subject = [subject] if isinstance(subject, int) else subject
         self.raw_transformer = (
             raw_transformer
