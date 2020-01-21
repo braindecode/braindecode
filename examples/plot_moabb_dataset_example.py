@@ -64,12 +64,13 @@ raw_transformer = [filter_raw, zscorer_raw]
 
 # define event windower
 event_windower = EventWindower(
-    window_size_samples=250, stride_samples=250, drop_last_samples=False, tmin=0
+    window_size_samples=250, stride_samples=250, drop_last_samples=False,
+    trial_start_offset_samples=0
 )
 
 # 2nd case
-# fixed_length_windower = FixedLengthWindower(window_size_samples=200, tmin=0,
-# chunk_duration_samples=200, mapping=mapping)
+# fixed_length_windower = FixedLengthWindower(window_size_samples=200,
+# trial_start_offset_samples=0, chunk_duration_samples=200, mapping=mapping)
 # 3nd case
 # windower = FixedLengthWindower(window_size_samples=None,
 # overlap_size_samples=0)

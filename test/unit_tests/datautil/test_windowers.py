@@ -21,10 +21,11 @@ class TestFixedLengthWindower(unittest.TestCase):
 
         # test case:
         # (window_size_samples, overlap_size_samples, drop_last_samples,
-        # tmin, n_windows)
+        # trial_start_offset_samples, n_windows)
         self.test_cases = [
             (100, 10, True, 0., 11),
-            # (100, 10, True, -0.5, 11),  # TODO: does using trial_start_offset_samples have sense?
+            # TODO: does using trial_start_offset_samples have sense?
+            # (100, 10, True, -0.5, 11),
             (100, 50, True, 0., 19),
             (None, 50, True, 0., 1)
         ]
