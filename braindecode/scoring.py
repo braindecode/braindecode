@@ -12,6 +12,7 @@ from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
 
+from braindecode.monitors import compute_preds_per_trial_from_trial_n_samples
 from .monitors import compute_preds_per_trial_from_crops
 
 
@@ -48,6 +49,26 @@ class CroppedTrialEpochScoring(EpochScoring):
     Class to compute scores for trials from a model that predicts (super)crops.
     """
 
+    def __init__(
+        self,
+        scoring,
+        lower_is_better=True,
+        on_train=False,
+        name=None,
+        target_extractor=to_numpy,
+        use_caching=True,
+        input_time_length=None,
+    ):
+        self.input_time_length = input_time_length
+        super().__init__(
+            scoring=scoring,
+            lower_is_better=lower_is_better,
+            on_train=on_train,
+            name=name,
+            target_extractor=target_extractor,
+            use_caching=use_caching,
+        )
+
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching == True
         if self.on_train:
@@ -55,26 +76,49 @@ class CroppedTrialEpochScoring(EpochScoring):
             self.y_preds_ = list(
                 net.forward_iter(dataset_train, training=False)
             )
-            self.y_trues_ = [dataset_train.y]
+            from copy import deepcopy # XXX: remove
 
-        X_test, _, y_pred = self.get_test_data(dataset_train, dataset_valid)
+            self.y_trues_ = deepcopy(self.y_preds_)
+
+        X_test, _, y_pred = self.get_test_data(
+            dataset_train, dataset_valid
+        )
         if X_test is None:
             return
 
-        # Acquire loader to know input_time_length
-        input_time_length = net.get_iterator(
-            X_test, training=False
-        ).input_time_length
-
-        # This assumes X_test is a dataset with X and y :(
-        trial_X = X_test.X
-        trial_y = X_test.y
+        if self.input_time_length is None:
+            # Acquire loader to know input_time_length
+            input_time_length = net.get_iterator(
+                X_test, training=False
+            ).input_time_length
 
         y_pred_np = [old_y_pred.cpu().numpy() for old_y_pred in y_pred]
 
-        preds_per_crop = compute_preds_per_trial_from_crops(
-            y_pred_np, input_time_length, trial_X
-        )
+        if self.on_train:
+            dataset = dataset_train
+        else:
+            dataset = dataset_valid
+        if self.input_time_length is None:
+            # This assumes X_test is a dataset with X and y
+            trial_X = X_test.X
+            trial_y = X_test.y
+            preds_per_crop = compute_preds_per_trial_from_crops(
+                y_pred_np, input_time_length, trial_X
+            )
+        else:
+            # HACK: just fix to get BCIC IV 2a example to run
+            trial_lens_samples = dataset.dataset.get_trial_durations_samples()[:288]
+            preds_per_crop = compute_preds_per_trial_from_trial_n_samples(
+                y_pred_np, self.input_time_length, trial_lens_samples
+            )
+            # Let's get trial y
+            y_per_super_crop = [dataset[i][1] for i in range(len(dataset))]
+
+            # HACK: just for now to get BCIC IV 2a example to run
+            n_super_crops = len(y_per_super_crop)
+            n_trials = len(trial_lens_samples)
+            n_super_crops_per_trial = int(n_super_crops / n_trials)
+            trial_y = y_per_super_crop[::n_super_crops_per_trial]
 
         y_preds_per_trial = np.array(
             [np.mean(p, axis=1) for p in preds_per_crop]
@@ -86,7 +130,7 @@ class CroppedTrialEpochScoring(EpochScoring):
         with _cache_net_forward_iter(
             net, self.use_caching, y_preds_per_trial
         ) as cached_net:
-            current_score = self._scoring(cached_net, trial_X, trial_y)
+            current_score = self._scoring(cached_net, dataset, trial_y)
 
         self._record_score(net.history, current_score)
 

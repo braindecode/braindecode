@@ -6,6 +6,13 @@ import torch.nn.functional as F
 from ..util import np_to_var
 
 
+class Ensure4d(torch.nn.Module):
+    def forward(self, x):
+        while(len(x.shape) < 4):
+            x = x.unsqueeze(-1)
+        return x
+
+
 class Expression(torch.nn.Module):
     """Compute given expression on forward pass.
 

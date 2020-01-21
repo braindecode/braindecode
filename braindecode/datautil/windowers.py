@@ -92,7 +92,7 @@ class FixedLengthWindower(BaseWindower):
 
         Parameters
         ----------
-        raw : mne.io.Raw
+        raw : mne.io.Raw | mne.io.RawArray
             [description]
         """
         id_holder = 1
@@ -116,7 +116,8 @@ class FixedLengthWindower(BaseWindower):
             raw,
             events,
             tmin=self.trial_start_offset_samples / fs,
-            tmax=(self.window_size_samples - 1) / fs,
+            tmax=(self.trial_start_offset_samples + (
+                    self.window_size_samples - 1)) / fs,
             baseline=None,
             preload=False,
         )
@@ -134,7 +135,7 @@ class EventWindower(BaseWindower):
     ----------
     window_size_samples : int | None
         size of one window in samples
-    overlap_size_samples : int
+    stride_samples : int
         size of overlap for window in samples
     drop_last_samples : bool
         See BaseWindower

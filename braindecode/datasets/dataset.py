@@ -31,10 +31,11 @@ class WindowsDataset(Dataset):
         self.windows = windows
         self.target = target
         if self.target != "target":
-            assert self.target in self.windows.info["subject_info"].keys()
+            assert self.windows.info["subject_info"] is not None and \
+                   self.target in self.windows.info["subject_info"].keys()
         self.transforms = (
             transforms
-            if isinstance(transforms, list) or transforms is None
+            if isinstance(transforms, list) or (transforms is None)
             else [transforms]
         )
 
@@ -65,7 +66,7 @@ class WindowsDataset(Dataset):
             for transform in self.transforms:
                 x = transform(x)
 
-        return x, y  # robin wants i_trial, i_start, i_stop here
+        return x.astype(np.float32), y  # robin wants i_trial, i_start, i_stop here
 
     def __len__(self):
         return self.windows.metadata.shape[0]
