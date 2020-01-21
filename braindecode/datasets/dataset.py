@@ -65,7 +65,7 @@ class WindowsDataset(Dataset):
             for transform in self.transforms:
                 x = transform(x)
 
-        return x, y
+        return x, y  # robin wants i_trial, i_start, i_stop here
 
     def __len__(self):
         return self.windows.metadata.shape[0]

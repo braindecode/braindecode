@@ -151,7 +151,7 @@ class EventWindower(BaseWindower):
         assert stride_samples > 0, "stride has to be larger than 0"
         super().__init__(window_size_samples, None, drop_last_samples,
                          trial_start_offset_samples)
-        self.chunk_duration_samples = stride_samples
+        self.stride_samples = stride_samples
         if mapping is not None:
             assert all(
                 [isinstance(v, int) for v in mapping.values()]
@@ -201,14 +201,15 @@ class EventWindower(BaseWindower):
             mapping = self.mapping
         fs = raw.info["sfreq"]
 
-        raw.annotations.duration += 1e-6  # see ToDo
+        #raw.annotations.duration += 1e-6  # see ToDo
 
         events, events_ids = mne.events_from_annotations(
-            raw, mapping, chunk_duration=self.chunk_duration_samples / fs,
+            raw, mapping, chunk_duration=self.stride_samples / fs,
         )
-
+        print(events[:,0])
         if not self.drop_last_samples:
             last_events = self._include_last_samples(raw, mapping)
+            print("last_events", last_events)
             events = np.concatenate((events, last_events), axis=0)
             # Reorder events
             events = events[np.argsort(events[:, 0], axis=0)]
@@ -230,3 +231,125 @@ class EventWindower(BaseWindower):
             preload=False,
             metadata=metadata,
         )
+
+
+class Windower(object):
+    """
+    A windower that creates a mne Epochs objects. Therefore, it fits supercrops
+    of supercrop_size_samples in trial_start_offset_samples to
+    trial_stop_offset_samples separated by supercrop_stride_samples. If the last
+    supercrop does not end at trial_stop_offset_samples, creates another
+    overlapping supercrop that ends at trial_stop_offset_samples.
+
+    in mne: tmin (s)                    trial onset        onset + duration (s)
+    trial:  |--------------------------------|--------------------------------|
+    here:   trial_start_offset_samples                trial_stop_offset_samples
+
+    Parameters
+    ----------
+    trial_start_offset_samples: int
+        start offset from original trial onsets in samples
+    trial_stop_offset_samples: int
+        stop offset from original trial onsets in samples
+    supercrop_size_samples: int
+        supercrop size
+    supercrop_stride_samples: int
+        stride between supercrops
+    mapping: dict(str: int)
+        mapping from event description to target value
+    """
+    def __init__(self, trial_start_offset_samples, trial_stop_offset_samples,
+                 supercrop_size_samples, supercrop_stride_samples,
+                 drop_samples=False, mapping=None):
+        self.start_offset = trial_start_offset_samples
+        self.stop_offset = trial_stop_offset_samples
+        assert supercrop_size_samples > 0, (
+            "supercrop size has to be larger than 0")
+        self.size = supercrop_size_samples
+        assert supercrop_stride_samples > 0, (
+            "supercrop stride has to be larger than 0")
+        self.stride = supercrop_stride_samples
+        self.drop_samples = drop_samples
+        self.mapping = mapping
+
+    # TODO: handle case we don't get a raw
+    def __call__(self, raw):
+        # EventWindower: if annotations are given in raw, use them to get onsets
+        assert hasattr(raw, "annotations") and hasattr(raw.annotations, "onset")
+        fs = raw.info["sfreq"]
+        onsets = round_list_to_int(raw.annotations.onset*fs)
+        i_trials, starts, stops = _supercrop_starts(
+            onsets, self.start_offset, self.stop_offset, self.size, self.stride,
+            self.drop_samples)
+        description = raw.annotations.description
+        if self.mapping is not None:
+            description = [self.mapping[d] for d in description]
+
+        events = [[start, self.size, description[i_trials[i_start]]]
+                  for i_start, start in enumerate(starts)]
+
+        # TODO: FixedLengthWindower
+        # fake event onsets by equally slicing the signal
+        # offset is ignored, targets should be the same for every supercrop
+        # starts = np.arange(0, raw.n_times, self.stride)
+
+        assert (np.diff(np.array(events)[:,0]) > 0).all(), (
+            "trials overlap not implemented")
+        # supercrop size - 1, since tmax is inclusive
+        return mne.Epochs(raw, events, tmin=0, tmax=(self.size-1)/fs,
+                          baseline=None)
+
+def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
+                      drop_samples=False):
+    """
+    Create supercrop starts from trial onsets (shifted by offset) to trial end
+    separated by stride as long as supercrop size fits into trial
+
+    Parameters
+    ----------
+    onsets: array-like
+        trial onsets in samples
+    start_offset: int
+        start offset from original trial onsets in samples
+    stop_offset: int
+        stop offset from original trial onsets in samples
+    size: int
+        supercrop size
+    stride: int
+        stride between supercrops
+    drop_samples: bool
+        toggles of shifting last supercrop within range or dropping last samples
+
+    Returns
+    -------
+    starts: list
+        valid supercrop starts
+    """
+    # trial ends are defined by trial starts (onsets maybe shifted by offset)
+    # and end
+    stops = onsets + stop_offset
+    i_trials, starts = [], []
+    for onset_i, onset in enumerate(onsets):
+        # between original trial onsets (shifted by start_offset) and stops,
+        # generate possible supercrop starts with given stride
+        possible_starts = np.arange(
+            onset+start_offset, onset+stop_offset, stride)
+
+        # possible supercrop start is actually a start, if supercrop size fits
+        # in trial start and stop
+        for s in possible_starts:
+            if (s + size) <= stops[onset_i]:
+                starts.append(s)
+                i_trials.append(onset_i)
+
+        # if the last supercrop start is not the same as onset + stop_offset,
+        # create another supercrop that overlaps and stops at onset +stop_offset
+        if not drop_samples:
+            if starts[-1] + size != onset + stop_offset:
+                starts.append(onset + stop_offset - size)
+                i_trials.append(onset_i)
+
+    # update stops to now be event stops instead of trial stops
+    stops = np.array(starts) + size
+    assert len(i_trials) == len(starts) == len(stops)
+    return i_trials, np.array(starts), np.array(stops)

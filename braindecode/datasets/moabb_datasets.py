@@ -1,11 +1,20 @@
 """
 BCI competition IV 2a dataset
 """
+
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
+#          Simon Brandt <simonbrandt@protonmail.com>
+#          David Sabbagh <dav.sabbagh@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 import mne
 
 from torch.utils.data import ConcatDataset
 from .dataset import WindowsDataset
+from ..datautil.windowers import EventWindower
 
 try:
     from mne import annotations_from_events
@@ -109,8 +118,98 @@ except ImportError:
         return annots
 
 
+def find_data_set(dataset_name):
+    # soft dependency on moabb
+    from moabb.datasets.utils import dataset_list
+    for dataset in dataset_list:
+        if dataset_name == dataset.__name__:
+            # return an instance of the found dataset class
+            return dataset()
+    raise ValueError("'dataset_name' not found in moabb datasets")
+
+
+class MOABBFetcher(list):
+    """
+    Class that fetches data using moabb.
+    TODO: Should replace parts of MOABBDataset
+    """
+    def __init__(self, dataset_name, subject, path=None):
+        self.dataset = find_data_set(dataset_name)
+        self.subject = [subject] if isinstance(subject, int) else subject
+        if path is not None:
+            # ToDo: mne update (path)
+            pass
+        self._fetch_data_with_moabb()
+
+    def _fetch_data_with_moabb(self):
+        data = self.dataset.get_data(self.subject)
+        for subj_id, subj_data in data.items():
+            for sess_id, sess_data in subj_data.items():
+                for run_id, raw in sess_data.items():
+                    # 0 - Get events and remove stim channel
+                    raw = self._populate_raw_from_moabb(
+                        raw, subj_id, sess_id, run_id)
+
+                    if len(raw.annotations.onset) == 0:
+                        continue
+
+                    self.append(raw)
+
+
+    def _populate_raw_from_moabb(self, raw, subj_id, sess_id, run_id):
+        """Populate raw with subject, events, session and run information
+
+        Parameters
+        ----------
+        raw : mne.io.Raw
+            raw data to populate
+        sess_id : int
+            session id
+        run_id : int
+            run id
+
+        Returns
+        -------
+        mne.io.Raw
+            populated raw
+        """
+        fs = raw.info['sfreq']
+
+        raw.info['subject_info'] = {
+            'id': subj_id,
+            'his_id': None,
+            'last_name': None,
+            'first_name': None,
+            'middle_name': None,
+            'birthday': None,
+            'sex': None,
+            'hand': None
+        }
+        raw.info['session'] = sess_id
+        raw.info['run'] = run_id
+        if len(raw.annotations) == 0:
+            events = mne.find_events(raw)
+            event_onset, event_offset = self.dataset.interval  # in seconds
+            events[:, 0] += int(event_onset * fs)
+
+            raw.info['events'] = events
+            mapping = {v: k for k, v in self.dataset.event_id.items()}
+
+            annots = annotations_from_events(
+                raw.info['events'], raw.info['sfreq'], event_desc=mapping,
+                first_samp=raw.first_samp, orig_time=None)
+
+            annots.duration += event_offset - event_onset
+
+            raw.set_annotations(annots)
+        return raw
+
+
+
 class MOABBDataset(ConcatDataset):
-    """see moabb.datasets.bnci.BNCI2014001
+    """ Class that fetches data using moabb, applies given transformers on
+    raw data, creates mne epochs from raw and applies given transformers on
+    windows
 
     Parameters
     ----------
@@ -130,7 +229,7 @@ class MOABBDataset(ConcatDataset):
 
     def __init__(self, dataset_name, subject, raw_transformer=None, windower=None,
                  transformer=None, transform_online=False, path=None):
-        self.dataset = self.find_data_set(dataset_name)
+        self.dataset = find_data_set(dataset_name)
         self.subject = [subject] if isinstance(subject, int) else subject
         self.raw_transformer = (
             raw_transformer
@@ -257,11 +356,40 @@ class MOABBDataset(ConcatDataset):
             raw.set_annotations(annots)
         return raw
 
-    @staticmethod
-    def find_data_set(dataset_name):
-        from moabb.datasets.utils import dataset_list
-        for dataset in dataset_list:
-            if dataset_name == dataset.__name__:
-                # return an instance of the found dataset class
-                return dataset()
-        raise ValueError("'dataset_name' not found in moabb datasets")
+
+
+
+class BNCI2014001(MOABBDataset):
+    """
+    see BNCI2014001 moabb.datasets.bnci
+    """
+    def __init__(self, subject, window_size_samples, stride_samples,
+                 raw_transformer=None, transformer=None, transform_online=True,
+                 path=None):
+        windower = EventWindower(window_size_samples=window_size_samples,
+                                 stride_samples=stride_samples,
+                                 drop_last_samples=False,
+                                 trial_start_offset_samples=0,
+                                 mapping=None)
+        super().__init__(dataset_name="BNCI2014001", subject=subject,
+                         raw_transformer=raw_transformer, windower=windower,
+                         transformer=transformer,
+                         transform_online=transform_online, path=path)
+
+
+class HGD(MOABBDataset):
+    """
+    see Schirrmeister2017 in moabb.datasets.schirrmeister2017
+    """
+    def __init__(self, subject, window_size_samples, stride_samples,
+                 raw_transformer=None, transformer=None, transform_online=True,
+                 path=None):
+        windower = EventWindower(window_size_samples=window_size_samples,
+                                 stride_samples=stride_samples,
+                                 drop_last_samples=False,
+                                 trial_start_offset_samples=0,
+                                 mapping=None)
+        super().__init__(dataset_name="Schirrmeister2017", subject=subject,
+                         raw_transformer=raw_transformer, windower=windower,
+                         transformer=transformer,
+                         transform_online=transform_online, path=path)
