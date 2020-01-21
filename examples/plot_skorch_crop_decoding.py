@@ -32,13 +32,23 @@ from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.classifier import EEGClassifier
 from braindecode.losses import CroppedNLLLoss
 
-subject_id = 22  # carefully cherry-picked to give nice results on such limited data :)
-event_codes = [5, 6, 9, 10, 13, 14]  # codes for executed and imagined hands/feet
+subject_id = (
+    22  # carefully cherry-picked to give nice results on such limited data :)
+)
+event_codes = [
+    5,
+    6,
+    9,
+    10,
+    13,
+    14,
+]  # codes for executed and imagined hands/feet
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
 physionet_paths = mne.datasets.eegbci.load_data(
-    subject_id, event_codes, update_path=False)
+    subject_id, event_codes, update_path=False
+)
 
 # Load each of the files
 raws = [

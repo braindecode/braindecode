@@ -102,9 +102,7 @@ class EEGNetv4(nn.Sequential):
         )
         self.add_module("elu_1", Expression(elu))
 
-        self.add_module(
-            "pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4))
-        )
+        self.add_module("pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4)))
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
         # https://discuss.pytorch.org/t/how-to-modify-a-conv2d-to-depthwise-separable-convolution/15843/7
@@ -137,9 +135,7 @@ class EEGNetv4(nn.Sequential):
             nn.BatchNorm2d(self.F2, momentum=0.01, affine=True, eps=1e-3),
         )
         self.add_module("elu_2", Expression(elu))
-        self.add_module(
-            "pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8))
-        )
+        self.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         out = self(
@@ -210,6 +206,7 @@ class EEGNetv1(nn.Sequential):
        Brain-Computer Interfaces.
        arXiv preprint arXiv:1611.08024.
     """
+
     def __init__(
         self,
         in_chans,
@@ -273,9 +270,7 @@ class EEGNetv1(nn.Sequential):
             nn.BatchNorm2d(n_filters_2, momentum=0.01, affine=True, eps=1e-3),
         )
         self.add_module("elu_2", Expression(elu))
-        self.add_module(
-            "pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4))
-        )
+        self.add_module("pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         n_filters_3 = 4
@@ -295,9 +290,7 @@ class EEGNetv1(nn.Sequential):
             nn.BatchNorm2d(n_filters_3, momentum=0.01, affine=True, eps=1e-3),
         )
         self.add_module("elu_3", Expression(elu))
-        self.add_module(
-            "pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4))
-        )
+        self.add_module("pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
         out = self(
