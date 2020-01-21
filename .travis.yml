@@ -19,6 +19,9 @@ install:
   - pip install sphinx-gallery
   - pip install sphinx_rtd_theme
   - pip install --upgrade pytest pytest-cov codecov
+  - pip install --upgrade coloredlogs
+  - pip install --upgrade pyyaml
+  - pip install --upgrade git+https://github.com/NeuroTechX/moabb
   - pip install -e .
 
 # command to run tests
