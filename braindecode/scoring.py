@@ -16,6 +16,76 @@ from braindecode.monitors import compute_preds_per_trial_from_trial_n_samples
 from .monitors import compute_preds_per_trial_from_crops
 
 
+def trial_preds_from_supercrop_preds(
+        preds, supercrop_inds):
+    """
+    Assigning supercrop predictions to trials  while removing duplicate
+    predictions.
+
+    Parameters
+    ----------
+    preds: list of ndarrays (atleast 2darrays)
+        List of supercrop predictions, in each supercrop prediction
+         time is in axis=1
+    supercrop_inds: list of 3 lists
+        Index/number of supercrop in trial, start position of supercrop in trial
+        stop position of supercrop in trial
+
+    Returns
+    -------
+    preds_per_trial: list of ndarrays
+        Predictions in each trial, duplicates removed
+
+    """
+    # supercrop inds are list of
+    # 3 lists (i_supercrop_in_trials, i_starts, i_stops)
+    assert len(preds) == len(supercrop_inds[0])
+    assert len(supercrop_inds[1]) == len(supercrop_inds[2])
+
+    # Algorithm for assigning supercrop predictions to trials
+    # while removing duplicate predictions:
+    # Loop through supercrops:
+    # In each iteration you have predictions (assumed: #classes x #timesteps,
+    # or at least #timesteps must be in axis=1)
+    # and you have i_supercrop_in_trial, i_start_in_trial, i_stop_in_trial
+    # (i_trial removed from variable names for brevity)
+    # You first check if the i_supercrop_in_trial is 1 larger
+    # than in last iteration, then you are still in the same trial
+    # Otherwise you are in a new trial
+    # If you are in the same trial, you check for duplicate predictions
+    # Only take predictions that are after (inclusive)
+    # the stop of the last iteration (i.e., the index of final prediction
+    # in the last iteration)
+    # Then add the duplicate-removed predictions from this supercrop
+    # to predictions for current trial
+    preds_per_trial = []
+    cur_trial_preds = []
+    i_last_stop = None
+    i_last_supercrop = -1
+    # zip(*supercrop_inds) to make the three lists into
+    # a single list of 3 tuples
+    for supercrop_preds, (i_supercrop, i_start, i_stop) in zip(
+            preds, zip(*supercrop_inds)):
+        supercrop_preds = np.array(supercrop_preds)
+        if i_supercrop != (i_last_supercrop + 1):
+            assert i_supercrop == 0, (
+                "supercrop numbers in new trial should start from 0")
+            preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
+            cur_trial_preds = []
+            i_last_stop = None
+
+        if i_last_stop is not None:
+            # Remove duplicates
+            n_needed_preds = i_stop - i_last_stop
+            supercrop_preds = supercrop_preds[:, -n_needed_preds:]
+        cur_trial_preds.append(supercrop_preds)
+        i_last_supercrop = i_supercrop
+        i_last_stop = i_stop
+    # add last trial preds
+    preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
+    return preds_per_trial
+
+
 @contextmanager
 def _cache_net_forward_iter(net, use_caching, y_preds):
     """Caching context for ``skorch.NeuralNet`` instance.

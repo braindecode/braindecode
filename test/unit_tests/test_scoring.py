@@ -1,7 +1,9 @@
 # Authors: Maciej Sliwowski
+#          Lukas Gemein
 #          Robin Tibor Schirrmeister
 #
 # License: BSD-3
+
 
 import numpy as np
 import sklearn.datasets
@@ -18,6 +20,7 @@ from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.scoring import PostEpochTrainScoring
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
+from braindecode.scoring import trial_preds_from_supercrop_preds
 
 
 class MockSkorchNet:
@@ -220,3 +223,40 @@ def test_post_epoch_train_scoring():
     )
 
     clf.fit(train_set, y=None, epochs=4)
+
+
+def check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds):
+    # transform to 3 lists from tuples
+    supercrop_inds_3_lists = list(zip(*supercrop_inds))
+    trial_preds = trial_preds_from_supercrop_preds(preds, supercrop_inds_3_lists)
+    np.testing.assert_equal(len(trial_preds), len(expected_trial_preds),)
+    for expected_pred, actual_pred in zip(expected_trial_preds, trial_preds):
+        np.testing.assert_array_equal(actual_pred, expected_pred, )
+
+
+def test_two_supercrops_same_trial_with_overlap():
+    preds = [[[4,5,6,7]], [[6,7,8,9]],]
+    supercrop_inds = ((0,0,8),(1,6,10))
+    expected_trial_preds = [[[4,5,6,7,8,9]]]
+    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+
+
+def test_three_supercrops_two_trials_with_overlap():
+    preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
+    supercrop_inds = ((0, 0, 8), (1, 6, 10), (0, 0, 6,))
+    expected_trial_preds = [[[4, 5, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
+    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+
+
+def test_one_supercrop_one_trial():
+    preds = [[[4,5,6,7]]]
+    supercrop_inds = ((0,0,8),)
+    expected_trial_preds = [[[4,5,6,7]]]
+    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+
+
+def test_three_supercrops_two_trials_no_overlap():
+    preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
+    supercrop_inds = ((0, 0, 8), (1, 8, 12), (0, 0, 6,))
+    expected_trial_preds = [[[4, 5, 6, 7, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
+    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
