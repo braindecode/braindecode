@@ -236,14 +236,14 @@ def check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds):
 
 def test_two_supercrops_same_trial_with_overlap():
     preds = [[[4,5,6,7]], [[6,7,8,9]],]
-    supercrop_inds = ((0,0,8),(1,6,10))
+    supercrop_inds = ((0,0,8),(1,2,10))
     expected_trial_preds = [[[4,5,6,7,8,9]]]
     check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
 
 
 def test_three_supercrops_two_trials_with_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    supercrop_inds = ((0, 0, 8), (1, 6, 10), (0, 0, 6,))
+    supercrop_inds = ((0, 0, 8), (1, 2, 10), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
     check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
 
@@ -257,6 +257,6 @@ def test_one_supercrop_one_trial():
 
 def test_three_supercrops_two_trials_no_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    supercrop_inds = ((0, 0, 8), (1, 8, 12), (0, 0, 6,))
+    supercrop_inds = ((0, 0, 8), (1, 4, 12), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
     check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
