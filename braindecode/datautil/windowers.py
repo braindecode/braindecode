@@ -261,8 +261,8 @@ class Windower(object):
     def __init__(self, trial_start_offset_samples, trial_stop_offset_samples,
                  supercrop_size_samples, supercrop_stride_samples,
                  drop_samples=False, mapping=None, ignore_events=False):
-        self.start_offset = trial_start_offset_samples
-        self.stop_offset = trial_stop_offset_samples
+        self.trial_start_offset_samples = trial_start_offset_samples
+        self.trial_stop_offset_samples = trial_stop_offset_samples
         assert supercrop_size_samples > 0, (
             "supercrop size has to be larger than 0")
         self.size = supercrop_size_samples
@@ -303,8 +303,9 @@ class Windower(object):
                     hasattr(raw.annotations, "onset") and
                     len(raw.annotations.onset) > 0)
             onsets = round_list_to_int(raw.annotations.onset*fs)
-            i_trials, starts, stops = _supercrop_starts(
-                onsets, self.start_offset, self.stop_offset, self.size,
+            i_trials, i_supercrop_in_trials, starts, stops = _supercrop_starts(
+                onsets, self.trial_start_offset_samples,
+                self.trial_stop_offset_samples, self.size,
                 self.stride, self.drop_samples)
             description = raw.annotations.description
             if self.mapping is not None:
@@ -315,11 +316,24 @@ class Windower(object):
             events = [[start, self.size, description[i_trials[i_start]]]
                       for i_start, start in enumerate(starts)]
 
-        assert (np.diff(np.array(events)[:,0]) > 0).all(), (
+        events = np.array(events)
+
+        assert (np.diff(events[:,0]) > 0).all(), (
             "trials overlap not implemented")
         # supercrop size - 1, since tmax is inclusive
+        metadata = {
+            "event_onset_idx": events[:, 0],
+            "trial_number": range(len(events)),
+            "target": events[:, -1],
+            "supercrop_inds": list(zip(
+                i_supercrop_in_trials, starts, stops)
+            ),
+        }
+        metadata = pd.DataFrame(metadata)
+
         return mne.Epochs(raw, events, tmin=0, tmax=(self.size-1)/fs,
-                          baseline=None)
+                          baseline=None, metadata=metadata)
+
 
 def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
                       drop_samples=False):
@@ -344,13 +358,11 @@ def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
 
     Returns
     -------
-    starts: list
-        valid supercrop starts
     """
     # trial ends are defined by trial starts (onsets maybe shifted by offset)
     # and end
     stops = onsets + stop_offset
-    i_trials, starts = [], []
+    i_supercrop_in_trials, i_trials, starts = [], [], []
     for onset_i, onset in enumerate(onsets):
         # between original trial onsets (shifted by start_offset) and stops,
         # generate possible supercrop starts with given stride
@@ -359,9 +371,10 @@ def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
 
         # possible supercrop start is actually a start, if supercrop size fits
         # in trial start and stop
-        for s in possible_starts:
+        for i_supercrop, s in enumerate(possible_starts):
             if (s + size) <= stops[onset_i]:
                 starts.append(s)
+                i_supercrop_in_trials.append(i_supercrop)
                 i_trials.append(onset_i)
 
         # if the last supercrop start + supercrop size is not the same as
@@ -370,9 +383,10 @@ def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
         if not drop_samples:
             if starts[-1] + size != onset + stop_offset:
                 starts.append(onset + stop_offset - size)
+                i_supercrop_in_trials.append(i_supercrop_in_trials[-1] + 1)
                 i_trials.append(onset_i)
 
     # update stops to now be event stops instead of trial stops
     stops = np.array(starts) + size
-    assert len(i_trials) == len(starts) == len(stops)
-    return i_trials, np.array(starts), np.array(stops)
+    assert len(i_supercrop_in_trials) == len(starts) == len(stops)
+    return i_trials, i_supercrop_in_trials, np.array(starts), np.array(stops)

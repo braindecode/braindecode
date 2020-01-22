@@ -62,11 +62,15 @@ class WindowsDataset(Dataset):
         else:
             y = self.windows.info["subject_info"][self.target]
 
+        inds = self.windows.metadata.iloc[index]['supercrop_inds']
+
+        assert len(inds) == 3
+
         if self.transforms is not None:
             for transform in self.transforms:
                 x = transform(x)
 
-        return x.astype(np.float32), y  # robin wants i_trial, i_start, i_stop here
+        return x.astype(np.float32), y, inds
 
     def __len__(self):
         return self.windows.metadata.shape[0]
