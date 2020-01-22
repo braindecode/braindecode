@@ -24,8 +24,16 @@ class TestWindowsDataset(unittest.TestCase):
                                 [300, 0, 1],
                                 [400, 0, 4],
                                 [500, 0, 3]])
-        metadata = pd.DataFrame(data=self.events,
-                                columns=['sample', 'x', 'target'])
+        self.supercrop_inds = [(0, 0, 100),
+                               (0, 100, 200),
+                               (1, 0, 100),
+                               (2, 0, 100),
+                               (2, 50, 150),]
+        metadata = pd.DataFrame(
+            {'sample': self.events[:,0],
+             'x': self.events[:,1],
+             'target': self.events[:,2],
+             'supercrop_inds': self.supercrop_inds})
         self.mne_epochs = mne.Epochs(raw=self.raw, events=self.events,
                                      metadata=metadata)
         self.epochs_data = self.mne_epochs.get_data()
@@ -34,10 +42,12 @@ class TestWindowsDataset(unittest.TestCase):
 
     def test_get_item(self):
         for i in range(len(self.epochs_data)):
-            x, y = self.windows_dataset[i]
+            x, y, inds = self.windows_dataset[i]
             np.testing.assert_allclose(self.epochs_data[i], x)
             self.assertEqual(self.events[i, 2], y,
-                             msg=f'Not equal for epoch {i}')
+                             msg=f'Y not equal for epoch {i}')
+            self.assertEqual(self.supercrop_inds[i], inds,
+                             msg=f'Supercrop inds not equal for epoch {i}')
 
     def test_len(self):
         self.assertEqual(len(self.epochs_data), len(self.windows_dataset))
@@ -49,7 +59,6 @@ class TestWindowsDataset(unittest.TestCase):
     def test_target_in_subject_info(self):
         with self.assertRaises(AssertionError):
             WindowsDataset(self.mne_epochs, target='does_not_exist')
-
 
 if __name__ == '__main__':
     unittest.main()
