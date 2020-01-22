@@ -207,10 +207,8 @@ class EventWindower(BaseWindower):
         events, events_ids = mne.events_from_annotations(
             raw, mapping, chunk_duration=self.stride_samples / fs,
         )
-        print(events[:,0])
         if not self.drop_last_samples:
             last_events = self._include_last_samples(raw, mapping)
-            print("last_events", last_events)
             events = np.concatenate((events, last_events), axis=0)
             # Reorder events
             events = events[np.argsort(events[:, 0], axis=0)]

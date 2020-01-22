@@ -128,7 +128,7 @@ except ImportError:
         return annots
 
 
-def find_data_set(dataset_name):
+def _find_dataset(dataset_name):
     # soft dependency on moabb
     from moabb.datasets.utils import dataset_list
     for dataset in dataset_list:
@@ -144,7 +144,7 @@ class MOABBFetcher(list):
     TODO: Should replace parts of MOABBDataset
     """
     def __init__(self, dataset_name, subject, path=None):
-        self.dataset = find_data_set(dataset_name)
+        self.dataset = _find_dataset(dataset_name)
         self.subject = [subject] if isinstance(subject, int) else subject
         if path is not None:
             # ToDo: mne update (path)
@@ -249,7 +249,7 @@ class MOABBDataset(ConcatDataset):
         path=None,
     ):
         self.dataset_name = dataset_name
-        self.moabb_dataset = find_data_set(self.dataset_name)
+        self.moabb_dataset = _find_dataset(self.dataset_name)
         self.subject = [subject] if isinstance(subject, int) else subject
         self.raw_transformer = (
             raw_transformer
@@ -415,7 +415,7 @@ class MOABBDataset(ConcatDataset):
         dict
             sorted mapping having event id values from 0 on
         """
-        dataset = MOABBDataset.find_data_set(dataset_name)
+        dataset = _find_dataset(dataset_name)
         mapping = dataset.event_id
         # sort mapping
         mapping = {k: v for k, v in sorted(mapping.items(),
