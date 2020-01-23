@@ -10,10 +10,11 @@ BCI competition IV 2a dataset
 # License: BSD (3-clause)
 
 import numpy as np
-import mne
+import pandas as pd
 
-from torch.utils.data import ConcatDataset
-from .dataset import WindowsDataset
+from torch.utils.data import ConcatDataset, Subset
+from .dataset import WindowsDataset, BaseDataset
+from ..datautil.windowers import EventWindower, FixedLengthWindower
 
 try:
     from mne import annotations_from_events
@@ -138,291 +139,81 @@ def _find_dataset(dataset_name):
     raise ValueError("'dataset_name' not found in moabb datasets")
 
 
-class MOABBFetcher(list):
-    """
-    Class that fetches data using moabb.
-    TODO: Should replace parts of MOABBDataset
-    """
-    def __init__(self, dataset_name, subject, path=None):
-        self.dataset = _find_dataset(dataset_name)
-        self.subject = [subject] if isinstance(subject, int) else subject
-        if path is not None:
-            # ToDo: mne update (path)
-            pass
-        self._fetch_data_with_moabb()
-
-    def _fetch_data_with_moabb(self):
-        data = self.dataset.get_data(self.subject)
+def _fetch_and_unpack_moabb_data(dataset, subject_ids):
+        data = dataset.get_data(subject_ids)
+        raws, subject_ids, session_ids, run_ids = [], [], [], []
+        targets = []
         for subj_id, subj_data in data.items():
             for sess_id, sess_data in subj_data.items():
                 for run_id, raw in sess_data.items():
-                    # 0 - Get events and remove stim channel
-                    raw = self._populate_raw_from_moabb(
-                        raw, subj_id, sess_id, run_id)
+                    raws.append(raw)
+                    subject_ids.append(subj_id)
+                    session_ids.append(sess_id)
+                    run_ids.append(run_id)
+                    # TODO: adding targets is not required for moabb but for
+                    # TODO: other data sets that do not include events with
+                    # TODO: event description
+                    # TODO: REMOVE TARGET HERE!
+                    targets.append(np.random.choice(4))
+        info = pd.DataFrame(zip(subject_ids, session_ids, run_ids, targets),
+                            columns=["subject", "session", "run", "target"])
+        return raws, info
 
-                    if len(raw.annotations.onset) == 0:
-                        continue
 
-                    self.append(raw)
-
-
-    def _populate_raw_from_moabb(self, raw, subj_id, sess_id, run_id):
-        """Populate raw with subject, events, session and run information
-
-        Parameters
-        ----------
-        raw : mne.io.Raw
-            raw data to populate
-        sess_id : int
-            session id
-        run_id : int
-            run id
-
-        Returns
-        -------
-        mne.io.Raw
-            populated raw
-        """
-        fs = raw.info['sfreq']
-
-        raw.info['subject_info'] = {
-            'id': subj_id,
-            'his_id': None,
-            'last_name': None,
-            'first_name': None,
-            'middle_name': None,
-            'birthday': None,
-            'sex': None,
-            'hand': None
-        }
-        raw.info['session'] = sess_id
-        raw.info['run'] = run_id
-        if len(raw.annotations) == 0:
-            events = mne.find_events(raw)
-            event_onset, event_offset = self.dataset.interval  # in seconds
-            events[:, 0] += int(event_onset * fs)
-
-            raw.info['events'] = events
-            mapping = {v: k for k, v in self.dataset.event_id.items()}
-
-            annots = annotations_from_events(
-                raw.info['events'], raw.info['sfreq'], event_desc=mapping,
-                first_samp=raw.first_samp, orig_time=None)
-
-            annots.duration += event_offset - event_onset
-
-            raw.set_annotations(annots)
-        return raw
-
+def fetch_data_with_moabb(dataset_name, subject_ids, path=None):
+    """
+    Class that fetches data using moabb.
+    """
+    dataset = _find_dataset(dataset_name)
+    subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids
+    if path is not None:
+        # ToDo: mne update (path)
+        pass
+    return _fetch_and_unpack_moabb_data(dataset, subject_id)
 
 
 class MOABBDataset(ConcatDataset):
-    """ Class that fetches data using moabb, applies given transformers on
-    raw data, creates mne epochs from raw and applies given transformers on
-    windows
-
-    Parameters
-    ----------
-    dataset_name : str
-        name of the dataset according to moabb notation
-    subject : int | list of int
-        subject id[s]
-    raw_transformer : sklearn.base.TansformerMixim
-        raw transformers applied before windowing
-    windower : sklearn.base.TansformerMixim
-        windower transformer
-    transformer : sklearn.base.TansformerMixim
-        transformer applied after windowing
-    transform_online : bool
-        if True, apply window transformers on the fly. Otherwise apply on loaded
-        data.
-    """
-
+    # TODO: include preprocessing at different stages
     def __init__(
-        self,
-        dataset_name,
-        subject,
-        raw_transformer=None,
-        windower=None,
-        transformer=None,
-        transform_online=False,
-        path=None,
-    ):
-        self.dataset_name = dataset_name
-        self.moabb_dataset = _find_dataset(self.dataset_name)
-        self.subject = [subject] if isinstance(subject, int) else subject
-        self.raw_transformer = (
-            raw_transformer
-            if isinstance(raw_transformer, list) or raw_transformer is None
-            else [raw_transformer])
-        self.windower = windower
-        self.transformer = (
-            transformer
-            if isinstance(transformer, list) or transformer is None
-            else [transformer])
-        self.transform_online = transform_online
-
-        if path is not None:
-            # ToDo: mne update (path)
-            pass
-
-        base_datasets = self._base_datasets_from_moabb()
-
-        # Concatenate datasets
-        super().__init__(base_datasets)
-
-    def get_mapping(self):
-        """Get mapping of final events
-
-        Returns
-        -------
-        dict
-            mapping for events {key: value}
-
-        """
-        return self.mapping(self.dataset_name)
-
-    def _base_datasets_from_moabb(self):
-        data = self.moabb_dataset.get_data(self.subject)
-
-        base_datasets = list()
-        trial_durations = list()
-        windows_fs = []
-        for subj_id, subj_data in data.items():
-            for sess_id, sess_data in subj_data.items():
-                for run_id, raw in sess_data.items():
-                    # 0 - Get events and remove stim channel
-                    raw = self._populate_raw_from_moabb(
-                        raw, subj_id, sess_id, run_id)
-                    if len(raw.annotations.onset) == 0:
-                        continue
-                    tmin = self.windower.trial_start_offset_samples / raw.info['sfreq']
-                    trial_durations.append(
-                        raw.annotations.duration - tmin
-                    )
-                    picks = mne.pick_types(raw.info, meg=False, eeg=True)
-                    raw = raw.pick_channels(np.array(raw.ch_names)[picks])
-
-                    # 1- Apply preprocessing
-                    if self.raw_transformer is not None:
-                        for transformer in self.raw_transformer:
-                            raw = transformer(raw)
-
-                    # 2- Epoch
-                    if self.windower.mapping is None:
-                        self.windower.mapping = self.mapping(self.dataset_name)
-                    windows = self.windower(raw,)
-                    if self.transform_online:
-                        transformer = self.transformer
-                    else:
-                        # XXX: Apply transformer
-                        window_transformer = None
-                        raise NotImplementedError
-
-                    windows_fs.append(windows.info["sfreq"])
-                    windows.event_id = self.get_mapping()
-                    # 3- Create BaseDataset
-                    base_datasets.append(WindowsDataset(
-                        windows, transforms=transformer))
-
-        assert len(set(windows_fs)) == 1, (
-            "inconsistent sampling frequencies detected"
-        )
-        self.trial_durations_seconds = np.concatenate(trial_durations, axis=0)
-        # in the case of resampling on the fly, this might give incorrect
-        # sampling frequency
-        self.fs = windows_fs[-1]
-        return base_datasets
-
-    def get_trial_durations_samples(self):
-        """Returns the trial duration of experiment in samples
-
-        Returns
-        -------
-        ndarray
-            trial durations in samples
-        """
-        trial_durations_samples = self.trial_durations_seconds * self.fs
-        return trial_durations_samples.astype(int)
-
-    def _populate_raw_from_moabb(self, raw, subj_id, sess_id, run_id):
-        """Populate raw with subject, events, session and run information
-
-        Parameters
-        ----------
-        raw : mne.io.Raw
-            raw data to populate
-        sess_id : int
-            session id
-        run_id : int
-            run id
-
-        Returns
-        -------
-        mne.io.Raw
-            populated raw
-        """
-        fs = raw.info["sfreq"]
-
-        raw.info["subject_info"] = {
-            "id": subj_id,
-            "his_id": None,
-            "last_name": None,
-            "first_name": None,
-            "middle_name": None,
-            "birthday": None,
-            "sex": None,
-            "hand": None,
-        }
-        raw.info["session"] = sess_id
-        raw.info["run"] = run_id
-        mapping = self.moabb_dataset.event_id
-        mapping = {k: v for v, k in mapping.items()}
-        if len(raw.annotations) == 0:
-            events = mne.find_events(raw)
-            event_onset, event_offset = self.moabb_dataset.interval  # seconds
-            events[:, 0] += int(event_onset * fs)
-            raw.info["events"] = events
-
-            annots = annotations_from_events(
-                raw.info["events"],
-                raw.info["sfreq"],
-                event_desc=mapping,
-                first_samp=raw.first_samp,
-                orig_time=None,
-            )
-
-            annots.duration += event_offset - event_onset
-
-            raw.set_annotations(annots)
-        return raw
-
-    @staticmethod
-    def mapping(dataset_name, return_value_mapping=False):
-        """
-
-        Parameters
-        ----------
-        dataset_name str
-            Dataset name as used by MOABB. See MOABB for further details
-        return_value_mapping
-            bool
-            if True, the mapping of original event id's to new values (starting
-            from 0) are returned
-
-        Returns
-        -------
-        dict
-            sorted mapping having event id values from 0 on
-        """
-        dataset = _find_dataset(dataset_name)
-        mapping = dataset.event_id
-        # sort mapping
-        mapping = {k: v for k, v in sorted(mapping.items(),
-                                           key=lambda item: item[1])}
-        if return_value_mapping:
-            # reuturn mapping from old mapping values to new (starting from 0)
-            return {old: new for new, old in enumerate(mapping.values())}
+            self, dataset_name, subject_ids, trial_start_offset_samples,
+            trial_stop_offset_samples, supercrop_size_samples,
+            supercrop_stride_samples, drop_samples=False, ignore_events=False):
+        if ignore_events:
+            windower = FixedLengthWindower
         else:
-            # return new {key: value} mapping starting from 0 on
-            return {k: v for v, k in enumerate(mapping.keys())}
+            windower = EventWindower
+        windower = windower(
+            trial_start_offset_samples=trial_start_offset_samples,
+            trial_stop_offset_samples=trial_stop_offset_samples,
+            supercrop_size_samples=supercrop_size_samples,
+            supercrop_stride_samples=supercrop_stride_samples,
+            drop_samples=drop_samples)
+
+        raw_data, info = fetch_data_with_moabb(dataset_name, subject_ids)
+        all_windows_ds = []
+        for data_i, data in enumerate(raw_data):
+            base_ds = BaseDataset(data, info.iloc[data_i])
+            windows_ds = WindowsDataset(base_ds, windower)
+            all_windows_ds.append(windows_ds)
+        super().__init__(all_windows_ds)
+        self.info = info
+
+    def split(self, some_property):
+        """
+        Split dataset into subsets based on a column in info DataFrame
+        """
+        assert some_property in self.info
+        split_ids = []
+        for group_name, group in self.info.groupby(some_property):
+            split_ids.append(list(group.index))
+        return [Subset(self, split) for split in split_ids]
+
+
+class BNCI2014001(MOABBDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__("BNCI2014001", *args, **kwargs)
+
+
+class HGD(MOABBDataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__("Schirrmeister2017", *args, **kwargs)
