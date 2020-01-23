@@ -17,7 +17,7 @@ from .monitors import compute_preds_per_trial_from_crops
 
 
 def trial_preds_from_supercrop_preds(
-        preds, supercrop_inds):
+        preds, i_supercrop_in_trials, i_stop_in_trials):
     """
     Assigning supercrop predictions to trials  while removing duplicate
     predictions.
@@ -27,8 +27,9 @@ def trial_preds_from_supercrop_preds(
     preds: list of ndarrays (atleast 2darrays)
         List of supercrop predictions, in each supercrop prediction
          time is in axis=1
-    supercrop_inds: list of 3 lists
-        Index/number of supercrop in trial, start position of supercrop in trial
+    i_supercrop_in_trials: list
+        Index/number of supercrop in trial
+    i_stop_in_trials: list
         stop position of supercrop in trial
 
     Returns
@@ -37,17 +38,15 @@ def trial_preds_from_supercrop_preds(
         Predictions in each trial, duplicates removed
 
     """
-    # supercrop inds are list of
-    # 3 lists (i_supercrop_in_trials, i_starts, i_stops)
-    assert len(preds) == len(supercrop_inds[0])
-    assert len(supercrop_inds[1]) == len(supercrop_inds[2])
+    assert len(preds) == len(i_supercrop_in_trials)
+    assert len(i_supercrop_in_trials) == len(i_stop_in_trials)
 
     # Algorithm for assigning supercrop predictions to trials
     # while removing duplicate predictions:
     # Loop through supercrops:
     # In each iteration you have predictions (assumed: #classes x #timesteps,
     # or at least #timesteps must be in axis=1)
-    # and you have i_supercrop_in_trial, i_start_in_trial, i_stop_in_trial
+    # and you have i_supercrop_in_trial, i_stop_in_trial
     # (i_trial removed from variable names for brevity)
     # You first check if the i_supercrop_in_trial is 1 larger
     # than in last iteration, then you are still in the same trial
@@ -64,8 +63,8 @@ def trial_preds_from_supercrop_preds(
     i_last_supercrop = -1
     # zip(*supercrop_inds) to make the three lists into
     # a single list of 3 tuples
-    for supercrop_preds, (i_supercrop, i_start, i_stop) in zip(
-            preds, zip(*supercrop_inds)):
+    for supercrop_preds, (i_supercrop, i_stop) in zip(
+            preds, zip(i_supercrop_in_trials, i_stop_in_trials)):
         supercrop_preds = np.array(supercrop_preds)
         if i_supercrop != (i_last_supercrop + 1):
             assert i_supercrop == 0, (

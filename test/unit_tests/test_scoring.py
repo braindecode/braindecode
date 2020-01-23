@@ -226,9 +226,14 @@ def test_post_epoch_train_scoring():
 
 
 def check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds):
-    # transform to 3 lists from tuples
-    supercrop_inds_3_lists = list(zip(*supercrop_inds))
-    trial_preds = trial_preds_from_supercrop_preds(preds, supercrop_inds_3_lists)
+    # transform to 2 lists from tuples
+    i_supercrop_in_trials = []
+    i_stop_in_trials = []
+    for i_supercrop_in_trial, _, i_stop_in_trial in supercrop_inds:
+        i_supercrop_in_trials.append(i_supercrop_in_trial)
+        i_stop_in_trials.append(i_stop_in_trial)
+    trial_preds = trial_preds_from_supercrop_preds(
+        preds, i_supercrop_in_trials, i_stop_in_trials)
     np.testing.assert_equal(len(trial_preds), len(expected_trial_preds),)
     for expected_pred, actual_pred in zip(expected_trial_preds, trial_preds):
         np.testing.assert_array_equal(actual_pred, expected_pred, )
