@@ -86,8 +86,6 @@ class EventWindower(Windower):
 
 
 class FixedLengthWindower(Windower):
-    # TODO: add targets (see below)
-    # TODO: implement a TUH dataset that does not have targets in events
     """
     Fake event onsets by equally slicing the signal
     """
@@ -103,9 +101,13 @@ class FixedLengthWindower(Windower):
             if starts[-1] != base_ds.raw.n_times - self.size:
                 starts[-1] = base_ds.raw.n_times - self.size
 
-        # TODO: add actual target here!
-        description = base_ds.info["target"]
-        description = 0
+        # TODO: handle multi-target case
+        description = base_ds.info["target"].iloc[0]
+        # https://github.com/numpy/numpy/issues/2951
+        if not isinstance(description, np.integer):
+            assert self.mapping is not None, (
+                f"a mapping from '{description}' to int is required")
+            description = self.mapping[description]
         events = [[start, self.size, description]
                   for i_start, start in enumerate(starts)]
         metadata = pd.DataFrame(
@@ -169,4 +171,4 @@ def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
     # update stops to now be event stops instead of trial stops
     stops = np.array(starts) + size
     assert len(i_supercrop_in_trials) == len(starts) == len(stops)
-    return i_trials, i_supercrop_in_trials, np.array(starts), np.array(stops)
+    return i_trials, i_supercrop_in_trials, starts, stops

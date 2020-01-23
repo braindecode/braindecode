@@ -11,6 +11,7 @@ BCI competition IV 2a dataset
 
 import numpy as np
 import pandas as pd
+import mne
 
 from torch.utils.data import ConcatDataset, Subset
 from .dataset import WindowsDataset, BaseDataset
@@ -142,7 +143,6 @@ def _find_dataset(dataset_name):
 def _fetch_and_unpack_moabb_data(dataset, subject_ids):
         data = dataset.get_data(subject_ids)
         raws, subject_ids, session_ids, run_ids = [], [], [], []
-        targets = []
         for subj_id, subj_data in data.items():
             for sess_id, sess_data in subj_data.items():
                 for run_id, raw in sess_data.items():
@@ -150,13 +150,8 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
                     subject_ids.append(subj_id)
                     session_ids.append(sess_id)
                     run_ids.append(run_id)
-                    # TODO: adding targets is not required for moabb but for
-                    # TODO: other data sets that do not include events with
-                    # TODO: event description
-                    # TODO: REMOVE TARGET HERE!
-                    targets.append(np.random.choice(4))
-        info = pd.DataFrame(zip(subject_ids, session_ids, run_ids, targets),
-                            columns=["subject", "session", "run", "target"])
+        info = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
+                            columns=["subject", "session", "run"])
         return raws, info
 
 
@@ -199,14 +194,18 @@ class MOABBDataset(ConcatDataset):
         self.info = info
 
     def split(self, some_property):
-        """
-        Split dataset into subsets based on a column in info DataFrame
-        """
-        assert some_property in self.info
-        split_ids = []
-        for group_name, group in self.info.groupby(some_property):
-            split_ids.append(list(group.index))
+        split_ids = _split_ids(self.info, some_property)
         return [Subset(self, split) for split in split_ids]
+
+def _split_ids(df, some_property):
+    """
+    Split dataset into subsets based on a column in info DataFrame
+    """
+    assert some_property in df
+    split_ids = []
+    for group_name, group in df.groupby(some_property):
+        split_ids.append(list(group.index))
+    return split_ids
 
 
 class BNCI2014001(MOABBDataset):
@@ -217,3 +216,51 @@ class BNCI2014001(MOABBDataset):
 class HGD(MOABBDataset):
     def __init__(self, *args, **kwargs):
         super().__init__("Schirrmeister2017", *args, **kwargs)
+
+
+# TODO: read all edfs (sorted by time)
+all_file_paths = [
+    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf",
+    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000016/s004_2012_02_08/00000016_s004_t000.edf"]
+class TUHAbnormal(ConcatDataset):
+    def __init__(self, trial_start_offset_samples,
+                 trial_stop_offset_samples, supercrop_size_samples,
+                 supercrop_stride_samples, subject_ids=None,
+                 drop_samples=False, target="pathological", mapping=None):
+        windower = FixedLengthWindower(
+            trial_start_offset_samples=trial_start_offset_samples,
+            trial_stop_offset_samples=trial_stop_offset_samples,
+            supercrop_size_samples=supercrop_size_samples,
+            supercrop_stride_samples=supercrop_stride_samples,
+            drop_samples=drop_samples, mapping=mapping)
+
+        if subject_ids is None:
+            subject_ids = np.arange(len(all_file_paths))
+
+        all_windows_ds, all_infos = [], []
+        for subject_id in subject_ids:
+            raw = mne.io.read_raw_edf(all_file_paths[subject_id])
+            # TODO: parse age and gender from edf file header and add to info
+            path_splits = all_file_paths_sorted_by_time[subject_id].split("/")
+            if "abnormal" in path_splits:
+                pathological = True
+            else:
+                assert "normal" in path_splits
+                pathological = False
+            age, gender, session = 48, "M", "train"
+            info = pd.DataFrame(
+                [[age, pathological, gender, session, subject_id]],
+                columns=["age", "pathological", "gender",
+                "session", "subject"], index=[subject_id])
+            info = info.rename(columns={target: "target"})
+            base_ds = BaseDataset(raw, info)
+            windows_ds = WindowsDataset(base_ds, windower)
+            all_windows_ds.append(windows_ds)
+            all_infos.append(info)
+
+        super().__init__(all_windows_ds)
+        self.info = pd.concat(all_infos)
+
+    def split(self, some_property):
+        split_ids = _split_ids(self.info, some_property)
+        return [Subset(self, split) for split in split_ids]

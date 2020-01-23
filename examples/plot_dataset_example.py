@@ -2,7 +2,7 @@
 #
 # License: BSD (3-clause)
 
-from braindecode.datasets.moabb_datasets import BNCI2014001
+from braindecode.datasets.specific_datasets import BNCI2014001
 
 # create a dataset based on BCIC IV 2a fetched with moabb
 ds = BNCI2014001(subject_ids=[4], trial_start_offset_samples=0,

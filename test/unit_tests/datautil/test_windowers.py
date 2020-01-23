@@ -10,14 +10,14 @@ import unittest
 import mne
 
 from braindecode.datautil.windowers import Windower
-from braindecode.datasets.moabb_datasets import MOABBFetcher
+from braindecode.datasets.specific_datasets import fetch_data_with_moabb
 from braindecode.datautil import FixedLengthWindower
 
 
 @pytest.fixture(scope="module")
 def mapping_ds_targets():
     mapping = {"tongue": 0, "left_hand": 1, "right_hand": 2, "feet": 3}
-    ds = MOABBFetcher(dataset_name="BNCI2014001", subject=4)
+    ds = fetch_data_with_moabb(dataset_name="BNCI2014001", subject_ids=4)
     targets = [mapping[m] for m in ds[0].annotations.description]
     return mapping, ds, targets
 
@@ -155,10 +155,11 @@ class TestFixedLengthWindower(unittest.TestCase):
             (window_size, overlap_size, drop_last_samples,
              trial_start_offset_samples, n_windows) = test_case
             windower = FixedLengthWindower(
-                window_size_samples=window_size,
-                overlap_size_samples=overlap_size,
-                drop_last_samples=drop_last_samples,
-                trial_start_offset_samples=trial_start_offset_samples)
+                supercrop_size_samples=window_size,
+                supercrop_stride_samples=overlap_size,
+                drop_samples=drop_last_samples,
+                trial_start_offset_samples=trial_start_offset_samples,
+                trial_stop_offset_samples=-trial_start_offset_samples+window_size)
 
             epochs = windower(self.raw)
             epochs_data = epochs.get_data()
