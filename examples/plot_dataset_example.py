@@ -2,7 +2,7 @@
 #
 # License: BSD (3-clause)
 
-from braindecode.datasets.specific_datasets import BNCI2014001
+from braindecode.datasets.specific_datasets import BNCI2014001, TUHAbnormal
 
 # create a dataset based on BCIC IV 2a fetched with moabb
 ds = BNCI2014001(subject_ids=[4], trial_start_offset_samples=0,
@@ -30,5 +30,38 @@ print(ds.info.iloc[eval_set.indices])
 
 # again we can iterate through the subsets as through the ds
 for x, y, info in eval_set:
+    print(x.get_data().shape, y, info)
+    break
+
+# create a dataset based on TUH Abnormal EEG Corpus (v2.0.0)
+# for this dataset, no events exist but a label (pathological / non-pathological
+# is valid for the entire recording
+ds = TUHAbnormal(subject_ids=[0, 1], trial_start_offset_samples=0,
+                 trial_stop_offset_samples=1000, supercrop_size_samples=1000,
+                 supercrop_stride_samples=1000, mapping={False: 0, True: 1})
+
+# as before, we can iterate through the dataset, getting the same kind of info
+for x, y, info in ds:
+    print(x.get_data().shape, y, info)
+    break
+
+# we can change the target for this dataset to 'age'
+ds = TUHAbnormal(subject_ids=[0, 1], trial_start_offset_samples=0,
+                 trial_stop_offset_samples=1000, supercrop_size_samples=1000,
+                 supercrop_stride_samples=1000, target="age",
+                 mapping={False: 0, True: 1})
+
+for x, y, info in ds:
+    print(x.get_data().shape, y, info)
+    break
+
+# and we can split the dataset based on pathology status
+normal, abormal = ds.split("pathological")
+
+for x, y, info in ds:
+    print(x.get_data().shape, y, info)
+    break
+
+for x, y, info in ds:
     print(x.get_data().shape, y, info)
     break

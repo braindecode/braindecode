@@ -241,7 +241,7 @@ class TUHAbnormal(ConcatDataset):
         for subject_id in subject_ids:
             raw = mne.io.read_raw_edf(all_file_paths[subject_id])
             # TODO: parse age and gender from edf file header and add to info
-            path_splits = all_file_paths_sorted_by_time[subject_id].split("/")
+            path_splits = all_file_paths[subject_id].split("/")
             if "abnormal" in path_splits:
                 pathological = True
             else:
