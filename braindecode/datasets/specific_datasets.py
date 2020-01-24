@@ -156,6 +156,7 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
 
 
 def fetch_data_with_moabb(dataset_name, subject_ids):
+    # ToDo: update path to where moabb downloads / looks for the data
     """
     Fetch data using moabb.
 
@@ -174,7 +175,6 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
     """
     dataset = _find_dataset_in_moabb(dataset_name)
     subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids
-    # ToDo: mne update (path)
     return _fetch_and_unpack_moabb_data(dataset, subject_id)
 
 
@@ -343,8 +343,8 @@ class TUHAbnormal(ConcatDataset):
                 [[age, pathological, gender, session, subject_id]],
                 columns=["age", "pathological", "gender",
                 "session", "subject"], index=[subject_id])
-            info = info.rename(columns={target: "target"})
-            base_ds = BaseDataset(raw, info)
+            # info = info.rename(columns={target: "target"})
+            base_ds = BaseDataset(raw, info, target=target)
             windows = windower(base_ds)
             windows_ds = WindowsDataset(windows, base_ds.info)
             all_windows_ds.append(windows_ds)

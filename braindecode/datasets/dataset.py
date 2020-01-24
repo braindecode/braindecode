@@ -22,15 +22,15 @@ class BaseDataset(Dataset):
     info: pandas.DataFrame
         holds additional information about the raw
     """
-    def __init__(self, raw, info):
+    def __init__(self, raw, info, target=None):
         self.raw = raw
         self.info = info
+        if target is not None:
+            assert target in self.info
+        self.target = target
 
     def __getitem__(self, index):
-        target = None
-        if hasattr(self.info, "target"):
-            target = self.info["target"]
-        return self.raw, target
+        return self.raw, self.target
 
     def __len__(self):
         return len(self.raw)

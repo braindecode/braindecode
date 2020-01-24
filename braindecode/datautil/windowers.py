@@ -81,10 +81,11 @@ class EventWindower(Windower):
         events = [[start, self.size, description[i_trials[i_start]]]
                   for i_start, start in enumerate(starts)]
         metadata = pd.DataFrame(
-            zip(i_supercrop_in_trials, starts, stops),
+            zip(i_supercrop_in_trials, starts, stops, description),
             columns=["i_supercrop_in_trial", "i_start_in_trial",
-                     "i_stop_in_trial"])
-        return super().__call__(base_ds.raw, events, metadata=metadata)
+                     "i_stop_in_trial", "target"])
+        windows = super().__call__(base_ds.raw, events, metadata=metadata)
+        return windows
 
 
 class FixedLengthWindower(Windower):
@@ -120,9 +121,9 @@ class FixedLengthWindower(Windower):
                 starts[-1] = base_ds.raw.n_times - self.size
 
         # TODO: handle multi-target case
-        assert len(base_ds.info["target"]) == 1, (
+        assert len(base_ds.info[base_ds.target]) == 1, (
             "multi-target not supported")
-        description = base_ds.info["target"].iloc[0]
+        description = base_ds.info[base_ds.target].iloc[0]
         # https://github.com/numpy/numpy/issues/2951
         if not isinstance(description, np.integer):
             assert self.mapping is not None, (
@@ -131,9 +132,9 @@ class FixedLengthWindower(Windower):
         events = [[start, self.size, description]
                   for i_start, start in enumerate(starts)]
         metadata = pd.DataFrame(
-            zip(np.arange(len(events)), starts, starts + self.size),
+            zip(np.arange(len(events)), starts, starts + self.size, len(events) *[description]),
             columns=["i_supercrop_in_trial", "i_start_in_trial",
-                     "i_stop_in_trial"])
+                     "i_stop_in_trial", "target"])
         return super().__call__(base_ds.raw, events, metadata=metadata)
 
 
