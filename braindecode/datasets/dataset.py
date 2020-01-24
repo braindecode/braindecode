@@ -21,13 +21,8 @@ class BaseDataset(Dataset):
     raw: mne.Raw
     info: pandas.DataFrame
         holds additional information about the raw
-
     """
     def __init__(self, raw, info):
-        """
-
-
-        """
         self.raw = raw
         self.info = info
 
@@ -47,14 +42,15 @@ class WindowsDataset(BaseDataset):
 
     Parameters
     ----------
-    dataset: BaseDataset
-    windower: braindecode.datautil.windowers.windower
-        a windower applied to the dataset to extract windows/supercrops
-
+    windows: ConcatDataset
+        windows/supercrops obtained throiugh application of a Windower to a
+        BaseDataset
+    info: pandas.DataFrame
+        hold additional info about the windows
     """
-    def __init__(self, dataset, windower):
-        self.windows = windower(dataset)
-        self.info = dataset.info
+    def __init__(self, windows, info):
+        self.windows = windows
+        self.info = info
 
     def __getitem__(self, index):
         target = self.windows.events[:,-1]

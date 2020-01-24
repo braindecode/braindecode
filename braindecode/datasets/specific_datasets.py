@@ -223,7 +223,8 @@ class MOABBDataset(ConcatDataset):
         all_windows_ds = []
         for data_i, data in enumerate(raw_data):
             base_ds = BaseDataset(data, info.iloc[data_i])
-            windows_ds = WindowsDataset(base_ds, windower)
+            windows = windower(base_ds)
+            windows_ds = WindowsDataset(windows, base_ds.info)
             all_windows_ds.append(windows_ds)
         super().__init__(all_windows_ds)
         self.info = info
@@ -344,7 +345,8 @@ class TUHAbnormal(ConcatDataset):
                 "session", "subject"], index=[subject_id])
             info = info.rename(columns={target: "target"})
             base_ds = BaseDataset(raw, info)
-            windows_ds = WindowsDataset(base_ds, windower)
+            windows = windower(base_ds)
+            windows_ds = WindowsDataset(windows, base_ds.info)
             all_windows_ds.append(windows_ds)
             all_infos.append(info)
 
