@@ -26,7 +26,7 @@ class BaseDataset(Dataset):
         self.raw = raw
         self.info = info
         if target is not None:
-            assert target in self.info
+            assert target in self.info, f"'{target}' not in info"
         self.target = target
 
     def __getitem__(self, index):
