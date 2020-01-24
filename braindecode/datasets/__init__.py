@@ -1,5 +1,5 @@
 """
 Loader code for some datasets.
 """
-from .dataset import WindowsDataset
-from .moabb_datasets import MOABBDataset
+from .base import WindowsDataset, BaseDataset
+from .datasets import MOABBDataset, TUHAbnormal
