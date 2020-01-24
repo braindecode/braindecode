@@ -30,11 +30,11 @@ class Windower(object):
         self.stride = supercrop_stride_samples
         self.drop_samples = drop_samples
         self.mapping = mapping
+        # TODO: assert values are integers
+        # TODO: assert start < stop
 
     # TODO: handle case we don't get a raw
     def __call__(self, raw, events, metadata):
-        assert (np.diff(np.array(events)[:,0]) > 0).all(), (
-            "trials overlap not implemented")
         # supercrop size - 1, since tmax is inclusive
         return mne.Epochs(raw, events, baseline=None,
                           tmin=0, tmax=(self.size-1)/raw.info["sfreq"],
@@ -80,12 +80,15 @@ class EventWindower(Windower):
             self.drop_samples)
         events = [[start, self.size, description[i_trials[i_start]]]
                   for i_start, start in enumerate(starts)]
+        events = np.array(events)
+        assert (np.diff(events[:,0]) > 0).all(), (
+            "trials overlap not implemented")
+        description = events[:, -1]
         metadata = pd.DataFrame(
             zip(i_supercrop_in_trials, starts, stops, description),
             columns=["i_supercrop_in_trial", "i_start_in_trial",
                      "i_stop_in_trial", "target"])
-        windows = super().__call__(base_ds.raw, events, metadata=metadata)
-        return windows
+        return super().__call__(base_ds.raw, events, metadata=metadata)
 
 
 class FixedLengthWindower(Windower):
@@ -112,6 +115,7 @@ class FixedLengthWindower(Windower):
     def __call__(self, base_ds):
         # already includes last incomplete supercrop start
         starts = np.arange(0, base_ds.raw.n_times, self.stride)
+        # 1/0
         if self.drop_samples:
             starts = starts[:-1]
         else:
@@ -132,7 +136,8 @@ class FixedLengthWindower(Windower):
         events = [[start, self.size, description]
                   for i_start, start in enumerate(starts)]
         metadata = pd.DataFrame(
-            zip(np.arange(len(events)), starts, starts + self.size, len(events) *[description]),
+            zip(np.arange(len(events)), starts, starts + self.size,
+                len(events) *[description]),
             columns=["i_supercrop_in_trial", "i_start_in_trial",
                      "i_stop_in_trial", "target"])
         return super().__call__(base_ds.raw, events, metadata=metadata)

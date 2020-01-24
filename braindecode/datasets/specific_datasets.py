@@ -181,6 +181,9 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
     return _fetch_and_unpack_moabb_data(dataset, subject_id)
 
 
+# TODO: EEG / EEGDataset which has a ConcatDataset and additional info
+
+
 class MOABBDataset(ConcatDataset):
     """
     A class for moabb datasets.
@@ -222,10 +225,10 @@ class MOABBDataset(ConcatDataset):
             supercrop_stride_samples=supercrop_stride_samples,
             drop_samples=drop_samples)
 
-        raw_data, info = fetch_data_with_moabb(dataset_name, subject_ids)
+        raws, info = fetch_data_with_moabb(dataset_name, subject_ids)
         all_windows_ds = []
-        for data_i, data in enumerate(raw_data):
-            base_ds = BaseDataset(data, info.iloc[data_i])
+        for raw_i, raw in enumerate(raws):
+            base_ds = BaseDataset(raw, info.iloc[raw_i])
             windows = windower(base_ds)
             windows_ds = WindowsDataset(windows, base_ds.info)
             all_windows_ds.append(windows_ds)
@@ -233,7 +236,7 @@ class MOABBDataset(ConcatDataset):
         self.info = info
 
     # TODO: remove duplicate code here and in TUHAbnormal
-    # TODO: Create another class?
+    # TODO: Create another class 'SpecificDataset'?
     def split(self, some_property=None, split_ids=None):
         """
         Split the dataset based on some property listed in its info DataFrame
@@ -384,29 +387,26 @@ class TUHAbnormal(ConcatDataset):
         return {split_name: Subset(self, split)
                 for split_name, split in split_ids.items()}
 
-    def _session_key(self, string):
-        p = r'(s\d*)_'
-        return re.findall(p, string)
-
-    def _time_key(self, file_name):
+    def _time_key(self, file_path):
         # the splits are specific to tuh abnormal eeg data set
-        splits = file_name.split('/')
+        splits = file_path.split('/')
         p = r'(\d{4}_\d{2}_\d{2})'
         [date] = re.findall(p, splits[-2])
         date_id = [int(token) for token in date.split('_')]
         recording_id = _natural_key(splits[-1])
-        session_id = self._session_key(splits[-2])
+        session_id = re.findall(r'(s\d*)_', (splits[-2]))
         return date_id + session_id + recording_id
 
 
-def read_all_file_names(path, extension, key):
+# TODO: this is very slow. how to improve?
+def read_all_file_names(directory, extension, key):
     """
     Read all files with specified extension from given path and sorts them based
     on a given sorting key.
 
     Parameters
     ----------
-    path: str
+    directory: str
         file path on HDD
     extension: str
         file path extension, i.e. '.edf' or '.txt'
@@ -419,7 +419,7 @@ def read_all_file_names(path, extension, key):
         a list to all files found in (sub)directories of path
     """
     assert extension.startswith(".")
-    file_paths = glob.glob(path + '**/*' + extension, recursive=True)
+    file_paths = glob.glob(directory + '**/*' + extension, recursive=True)
     file_paths = sorted(file_paths, key=key)
     assert len(file_paths) > 0, (
         f"something went wrong. Found no {extension} files in {path}")
