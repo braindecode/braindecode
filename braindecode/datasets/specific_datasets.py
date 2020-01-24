@@ -9,6 +9,9 @@ BCI competition IV 2a dataset
 #
 # License: BSD (3-clause)
 
+import os
+import re
+import glob
 import numpy as np
 import pandas as pd
 import mne
@@ -285,12 +288,6 @@ class HGD(MOABBDataset):
         super().__init__("Schirrmeister2017", *args, **kwargs)
 
 
-# TODO: read all edfs (sorted by time)
-all_file_paths = [
-    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/normal/"
-    "01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf",
-    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/abnormal/"
-    "01_tcp_ar/000/00000016/s004_2012_02_08/00000016_s004_t000.edf"]
 class TUHAbnormal(ConcatDataset):
     """
     Temple University Hospital (TUH) Abnormal EEG Corpus.
@@ -314,7 +311,7 @@ class TUHAbnormal(ConcatDataset):
         maps target values to integers
     """
 
-    def __init__(self, trial_start_offset_samples,
+    def __init__(self, path, trial_start_offset_samples,
                  trial_stop_offset_samples, supercrop_size_samples,
                  supercrop_stride_samples, subject_ids=None,
                  drop_samples=False, target="pathological", mapping=None):
@@ -325,25 +322,31 @@ class TUHAbnormal(ConcatDataset):
             supercrop_stride_samples=supercrop_stride_samples,
             drop_samples=drop_samples, mapping=mapping)
 
+        all_file_paths = read_all_file_names(
+            path, extension='.edf', key=self._time_key)
         if subject_ids is None:
             subject_ids = np.arange(len(all_file_paths))
 
         all_windows_ds, all_infos = [], []
         for subject_id in subject_ids:
-            raw = mne.io.read_raw_edf(all_file_paths[subject_id])
-            # TODO: parse age and gender from edf file header and add to info
-            path_splits = all_file_paths[subject_id].split("/")
+            file_path = all_file_paths[subject_id]
+            raw = mne.io.read_raw_edf(file_path)
+            path_splits = file_path.split("/")
             if "abnormal" in path_splits:
                 pathological = True
             else:
                 assert "normal" in path_splits
                 pathological = False
-            age, gender, session = 48, "M", "train"
+            if "train" in path_splits:
+                session = "train"
+            else:
+                assert "eval" in path_splits
+                session = "eval"
+            age, gender = _parse_age_and_gender_from_edf_header(file_path)
             info = pd.DataFrame(
                 [[age, pathological, gender, session, subject_id]],
                 columns=["age", "pathological", "gender",
                 "session", "subject"], index=[subject_id])
-            # info = info.rename(columns={target: "target"})
             base_ds = BaseDataset(raw, info, target=target)
             windows = windower(base_ds)
             windows_ds = WindowsDataset(windows, base_ds.info)
@@ -380,3 +383,64 @@ class TUHAbnormal(ConcatDataset):
                          for split_i, split in enumerate(split_ids)}
         return {split_name: Subset(self, split)
                 for split_name, split in split_ids.items()}
+
+    def _session_key(self, string):
+        p = r'(s\d*)_'
+        return re.findall(p, string)
+
+    def _time_key(self, file_name):
+        # the splits are specific to tuh abnormal eeg data set
+        splits = file_name.split('/')
+        p = r'(\d{4}_\d{2}_\d{2})'
+        [date] = re.findall(p, splits[-2])
+        date_id = [int(token) for token in date.split('_')]
+        recording_id = _natural_key(splits[-1])
+        session_id = self._session_key(splits[-2])
+        return date_id + session_id + recording_id
+
+
+def read_all_file_names(path, extension, key):
+    """
+    Read all files with specified extension from given path and sorts them based
+    on a given sorting key.
+
+    Parameters
+    ----------
+    path: str
+        file path on HDD
+    extension: str
+        file path extension, i.e. '.edf' or '.txt'
+    key: calable
+        sorting key for the file paths
+
+    Returns
+    -------
+    file_paths: list(str)
+        a list to all files found in (sub)directories of path
+    """
+    assert extension.startswith(".")
+    file_paths = glob.glob(path + '**/*' + extension, recursive=True)
+    file_paths = sorted(file_paths, key=key)
+    assert len(file_paths) > 0, (
+        f"something went wrong. Found no {extension} files in {path}")
+    return file_paths
+
+
+def _natural_key(string):
+    pattern = r'(\d+)'
+    key = [int(split) if split.isdigit() else None
+           for split in re.split(pattern, string)]
+    return key
+
+
+def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
+    assert os.path.exists(file_path), f"file not found {file_path}"
+    f = open(file_path, 'rb')
+    content = f.read(88)
+    f.close()
+    if return_raw_header:
+        return content
+    patient_id = content[8:88].decode('ascii')
+    [age] = re.findall("Age:(\d+)", patient_id)
+    [gender] = re.findall("\s(\w)\s", patient_id)
+    return int(age), gender
