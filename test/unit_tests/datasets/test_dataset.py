@@ -48,8 +48,7 @@ def test_get_item(setUp):
     epochs_data, windows_dataset, events, supercrop_inds, raw, metadata, df = setUp
     for i in range(len(epochs_data)):
         x, y, inds = windows_dataset[i]
-        np.testing.assert_allclose(epochs_data[i],
-                                   np.squeeze(x.get_data(), axis=0))
+        np.testing.assert_allclose(epochs_data[i], x)
         assert events[i, 2] == y, f'Y not equal for epoch {i}'
         np.testing.assert_array_equal(supercrop_inds[i], inds,
                                       f'Supercrop inds not equal for epoch {i}')

@@ -56,7 +56,7 @@ class WindowsDataset(BaseDataset):
         target = self.windows.events[:,-1]
         keys = ['i_supercrop_in_trial', 'i_start_in_trial', 'i_stop_in_trial']
         info = self.windows.metadata.iloc[index][keys].to_list()
-        return self.windows[index], target[index], info
+        return self.windows[index].get_data().squeeze(0), target[index], info
 
     def __len__(self):
         return len(self.windows.events)
