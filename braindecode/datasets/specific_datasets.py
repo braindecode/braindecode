@@ -130,7 +130,7 @@ except ImportError:
         return annots
 
 
-def _find_dataset(dataset_name):
+def _find_dataset_in_moabb(dataset_name):
     # soft dependency on moabb
     from moabb.datasets.utils import dataset_list
     for dataset in dataset_list:
@@ -155,19 +155,54 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
         return raws, info
 
 
-def fetch_data_with_moabb(dataset_name, subject_ids, path=None):
+def fetch_data_with_moabb(dataset_name, subject_ids):
     """
-    Class that fetches data using moabb.
+    Fetch data using moabb.
+
+    Parameters
+    ----------
+    dataset_name: str
+        the name of a dataset included in moabb
+    subject_ids: list(int) | int
+        (list of) int of subject(s) to be fetched
+
+    Returns
+    -------
+    raws: mne.Raw
+    info: pandas.DataFrame
+
     """
-    dataset = _find_dataset(dataset_name)
+    dataset = _find_dataset_in_moabb(dataset_name)
     subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids
-    if path is not None:
-        # ToDo: mne update (path)
-        pass
+    # ToDo: mne update (path)
     return _fetch_and_unpack_moabb_data(dataset, subject_id)
 
 
 class MOABBDataset(ConcatDataset):
+    """
+    A class for moabb datasets.
+
+    Parameters
+    ----------
+    dataset_name: name of dataset included in moabb to be fetched
+    subject_ids: list(int) | int
+        (list of) int of subject(s) to be fetched
+    trial_start_offset_samples: int
+        start offset from original trial onsets in samples
+    trial_stop_offset_samples: int
+        stop offset from original trial onsets in samples
+    supercrop_size_samples: int
+        supercrop size
+    supercrop_stride_samples: int
+        stride between supercrops
+    drop_samples: bool
+        whether or not have a last overlapping supercrop/window, when
+        supercrops/windows do not equally devide the continuous signal
+    ignore_events: bool
+        when True, ignores events specified in mne.Raw and uses a
+        FixedLenthWindower to create supercrops/windows
+
+    """
     # TODO: include preprocessing at different stages
     def __init__(
             self, dataset_name, subject_ids, trial_start_offset_samples,
@@ -193,36 +228,91 @@ class MOABBDataset(ConcatDataset):
         super().__init__(all_windows_ds)
         self.info = info
 
-    def split(self, some_property):
-        split_ids = _split_ids(self.info, some_property)
-        return [Subset(self, split) for split in split_ids]
+    # TODO: remove duplicate code here and in TUHAbnormal
+    # TODO: Create another class?
+    def split(self, some_property=None, split_ids=None):
+        """
+        Split the dataset based on some property listed in its info DataFrame
+        or based on indices.
+
+        Parameters
+        ----------
+        some_property: str
+            some property which is listed in info DataFrame
+        split_ids: list(int)
+            list of indices to be combined in a subset
+
+        Returns
+        -------
+        splits: dict{split_name: subset}
+            mapping of split name based on property or index based on split_ids
+            to subset of the data
+
+        """
+        assert split_ids is None or some_property is None, (
+            "can split either based on ids or based on some property")
+        if split_ids is None:
+            split_ids = _split_ids(self.info, some_property)
+        else:
+            split_ids = {split_i: split
+                         for split_i, split in enumerate(split_ids)}
+        return {split_name: Subset(self, split)
+                for split_name, split in split_ids.items()}
+
 
 def _split_ids(df, some_property):
-    """
-    Split dataset into subsets based on a column in info DataFrame
-    """
     assert some_property in df
-    split_ids = []
+    split_ids = {}
     for group_name, group in df.groupby(some_property):
-        split_ids.append(list(group.index))
+        split_ids.update({group_name: list(group.index)})
     return split_ids
 
 
 class BNCI2014001(MOABBDataset):
+    """
+    see moabb.datasets.bnci.BNCI2014001
+    """
     def __init__(self, *args, **kwargs):
         super().__init__("BNCI2014001", *args, **kwargs)
 
 
 class HGD(MOABBDataset):
+    """
+    see moabb.datasets.schirrmeister2017.Schirrmeister2017
+    """
     def __init__(self, *args, **kwargs):
         super().__init__("Schirrmeister2017", *args, **kwargs)
 
 
 # TODO: read all edfs (sorted by time)
 all_file_paths = [
-    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf",
-    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000016/s004_2012_02_08/00000016_s004_t000.edf"]
+    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/normal/"
+    "01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf",
+    "/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/abnormal/"
+    "01_tcp_ar/000/00000016/s004_2012_02_08/00000016_s004_t000.edf"]
 class TUHAbnormal(ConcatDataset):
+    """
+    Temple University Hospital (TUH) Abnormal EEG Corpus.
+
+    Parameters
+    ----------
+    trial_start_offset_samples: int
+        start offset from original trial onsets in samples
+    trial_stop_offset_samples: int
+        stop offset from original trial onsets in samples
+    supercrop_size_samples: int
+        supercrop size
+    supercrop_stride_samples: int
+        stride between supercrops
+    drop_samples: bool
+        whether or not have a last overlapping supercrop/window, when
+        supercrops/windows do not equally devide the continuous signal
+    target: str
+
+    mapping: dict{target_value: int}
+        maps target values to integers
+    """
+
     def __init__(self, trial_start_offset_samples,
                  trial_stop_offset_samples, supercrop_size_samples,
                  supercrop_stride_samples, subject_ids=None,
@@ -261,6 +351,30 @@ class TUHAbnormal(ConcatDataset):
         super().__init__(all_windows_ds)
         self.info = pd.concat(all_infos)
 
-    def split(self, some_property):
-        split_ids = _split_ids(self.info, some_property)
-        return [Subset(self, split) for split in split_ids]
+    def split(self, some_property=None, split_ids=None):
+        """
+        Split the dataset based on some property listed in its info DataFrame
+        or based on indices.
+
+        Parameters
+        ----------
+        some_property: str
+            some property which is listed in info DataFrame
+        split_ids: list(int)
+            list of indices to be combined in a subset
+
+        Returns
+        -------
+        splits: dict{split_name: subset}
+            mapping of split name based on property or index based on split_ids
+            to subset of the data
+        """
+        assert split_ids is None or some_property is None, (
+            "can split either based on ids or based on some property")
+        if split_ids is None:
+            split_ids = _split_ids(self.info, some_property)
+        else:
+            split_ids = {split_i: split
+                         for split_i, split in enumerate(split_ids)}
+        return {split_name: Subset(self, split)
+                for split_name, split in split_ids.items()}

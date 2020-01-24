@@ -14,9 +14,20 @@ from torch.utils.data import Dataset
 
 class BaseDataset(Dataset):
     """
-    A base dataset
+    A base dataset.
+
+    Parameters
+    ----------
+    raw: mne.Raw
+    info: pandas.DataFrame
+        holds additional information about the raw
+
     """
     def __init__(self, raw, info):
+        """
+
+
+        """
         self.raw = raw
         self.info = info
 
@@ -32,7 +43,14 @@ class BaseDataset(Dataset):
 
 class WindowsDataset(BaseDataset):
     """
-    Applies a windower to a base dataset
+    Applies a windower to a base dataset.
+
+    Parameters
+    ----------
+    dataset: BaseDataset
+    windower: braindecode.datautil.windowers.windower
+        a windower applied to the dataset to extract windows/supercrops
+
     """
     def __init__(self, dataset, windower):
         self.windows = windower(dataset)

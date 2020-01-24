@@ -15,29 +15,7 @@ import pandas as pd
 
 class Windower(object):
     """
-    A windower that creates a mne Epochs objects. Therefore, it fits supercrops
-    of supercrop_size_samples in trial_start_offset_samples to
-    trial_stop_offset_samples separated by supercrop_stride_samples. If the last
-    supercrop does not end at trial_stop_offset_samples, creates another
-    overlapping supercrop that ends at trial_stop_offset_samples if drop_samples
-    is set to False.
-
-    in mne: tmin (s)                    trial onset        onset + duration (s)
-    trial:  |--------------------------------|--------------------------------|
-    here:   trial_start_offset_samples                trial_stop_offset_samples
-
-    Parameters
-    ----------
-    trial_start_offset_samples: int
-        start offset from original trial onsets in samples
-    trial_stop_offset_samples: int
-        stop offset from original trial onsets in samples
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
-    mapping: dict(str: int)
-        mapping from event description to target value
+    A windower that creates a mne Epochs objects.
     """
     def __init__(self, trial_start_offset_samples, trial_stop_offset_samples,
                  supercrop_size_samples, supercrop_stride_samples,
@@ -65,9 +43,33 @@ class Windower(object):
 
 class EventWindower(Windower):
     """
-    Use events as specified in the raw file
-    """
+    A Windower that creates supercrops/windows based on events in mne.Raw.
+    Therefore, it fits supercrops of supercrop_size_samples in
+    trial_start_offset_samples to trial_stop_offset_samples separated by
+    supercrop_stride_samples. If the last supercrop does not end
+    at trial_stop_offset_samples, creates another overlapping supercrop that
+    ends at trial_stop_offset_samples if drop_samples is set to False.
 
+    in mne: tmin (s)                    trial onset        onset + duration (s)
+    trial:  |--------------------------------|--------------------------------|
+    here:   trial_start_offset_samples                trial_stop_offset_samples
+
+    Parameters
+    ----------
+    trial_start_offset_samples: int
+        start offset from original trial onsets in samples
+    trial_stop_offset_samples: int
+        stop offset from original trial onsets in samples
+    supercrop_size_samples: int
+        supercrop size
+    supercrop_stride_samples: int
+        stride between supercrops
+    drop_samples: bool
+        whether or not have a last overlapping supercrop/window, when
+        supercrops/windows do not equally devide the continuous signal
+    mapping: dict(str: int)
+        mapping from event description to target value
+    """
     def __call__(self, base_ds):
         events = mne.find_events(base_ds.raw)
         onsets = events[:, 0]
@@ -87,9 +89,25 @@ class EventWindower(Windower):
 
 class FixedLengthWindower(Windower):
     """
-    Fake event onsets by equally slicing the signal
-    """
+    A Windower that creates supercrops/windows based on fake events that equally
+    divide the continuous signal.
 
+    Parameters
+    ----------
+    trial_start_offset_samples: int
+        start offset from original trial onsets in samples
+    trial_stop_offset_samples: int
+        stop offset from original trial onsets in samples
+    supercrop_size_samples: int
+        supercrop size
+    supercrop_stride_samples: int
+        stride between supercrops
+    drop_samples: bool
+        whether or not have a last overlapping supercrop/window, when
+        supercrops/windows do not equally devide the continuous signal
+    mapping: dict(str: int)
+        mapping from event description to target value
+    """
     def __call__(self, base_ds):
         # already includes last incomplete supercrop start
         starts = np.arange(0, base_ds.raw.n_times, self.stride)
@@ -102,6 +120,8 @@ class FixedLengthWindower(Windower):
                 starts[-1] = base_ds.raw.n_times - self.size
 
         # TODO: handle multi-target case
+        assert len(base_ds.info["target"]) == 1, (
+            "multi-target not supported")
         description = base_ds.info["target"].iloc[0]
         # https://github.com/numpy/numpy/issues/2951
         if not isinstance(description, np.integer):
