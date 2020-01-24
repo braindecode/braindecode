@@ -9,9 +9,9 @@ import pandas as pd
 import pytest
 import mne
 
-from braindecode.datasets.specific_datasets import fetch_data_with_moabb
+from braindecode.datasets.datasets import fetch_data_with_moabb
 from braindecode.datautil import FixedLengthWindower, EventWindower
-from braindecode.datasets.dataset import BaseDataset
+from braindecode.datasets.base import BaseDataset
 
 
 @pytest.fixture(scope="module")

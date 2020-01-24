@@ -30,7 +30,7 @@ from braindecode.datautil.transforms import (
     FilterWindow,
 )
 from braindecode.datautil.windowers import EventWindower
-from braindecode.datasets.specific_datasets import MOABBDataset
+from braindecode.datasets.datasets import MOABBDataset
 ##############################################################################
 # Define transformers that operate on raw objects
 # -----------------------------------------------

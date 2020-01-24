@@ -17,7 +17,7 @@ import pandas as pd
 import mne
 
 from torch.utils.data import ConcatDataset, Subset
-from .dataset import WindowsDataset, BaseDataset
+from .base import WindowsDataset, BaseDataset
 from ..datautil.windowers import EventWindower, FixedLengthWindower
 
 try:
