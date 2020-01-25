@@ -4,14 +4,14 @@
 #
 # License: BSD-3
 
+import mne
 import numpy as np
 import pandas as pd
 import pytest
-import mne
 
+from braindecode.datasets.base import BaseDataset
 from braindecode.datasets.datasets import fetch_data_with_moabb
 from braindecode.datautil import FixedLengthWindower, EventWindower
-from braindecode.datasets.base import BaseDataset
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +41,7 @@ def test_stride_has_no_effect(raw_info_targets):
         trial_start_offset_samples=0, trial_stop_offset_samples=1000,
         supercrop_size_samples=1000, supercrop_stride_samples=1000)
     windows = windower(base_ds)
-    description = windows.events[:,-1]
+    description = windows.events[:, -1]
     assert len(description) == len(targets)
     np.testing.assert_array_equal(description, targets)
 
@@ -53,7 +53,7 @@ def test_trial_start_offset(raw_info_targets):
         trial_start_offset_samples=-250, trial_stop_offset_samples=250,
         supercrop_size_samples=250, supercrop_stride_samples=250)
     windows = windower(base_ds)
-    description = windows.events[:,-1]
+    description = windows.events[:, -1]
     assert len(description) == len(targets) * 2
     np.testing.assert_array_equal(description[0::2], targets)
     np.testing.assert_array_equal(description[1::2], targets)
@@ -66,7 +66,7 @@ def test_shifting_last_supercrop_back_in(raw_info_targets):
         trial_start_offset_samples=-250, trial_stop_offset_samples=250,
         supercrop_size_samples=250, supercrop_stride_samples=300)
     windows = windower(base_ds)
-    description = windows.events[:,-1]
+    description = windows.events[:, -1]
     assert len(description) == len(targets) * 2
     np.testing.assert_array_equal(description[0::2], targets)
     np.testing.assert_array_equal(description[1::2], targets)
@@ -80,7 +80,7 @@ def test_dropping_last_incomplete_supercrop(raw_info_targets):
         supercrop_size_samples=250, supercrop_stride_samples=300,
         drop_samples=True)
     windows = windower(base_ds)
-    description = windows.events[:,-1]
+    description = windows.events[:, -1]
     assert len(description) == len(targets)
     np.testing.assert_array_equal(description, targets)
 
@@ -92,7 +92,7 @@ def test_maximally_overlapping_supercrops(raw_info_targets):
         trial_start_offset_samples=-2, trial_stop_offset_samples=1000,
         supercrop_size_samples=1000, supercrop_stride_samples=1)
     windows = windower(base_ds)
-    description = windows.events[:,-1]
+    description = windows.events[:, -1]
     assert len(description) == len(targets) * 3
     np.testing.assert_array_equal(description[0::3], targets)
     np.testing.assert_array_equal(description[1::3], targets)
@@ -106,7 +106,7 @@ def test_single_sample_size_supercrops(raw_info_targets):
         trial_start_offset_samples=0, trial_stop_offset_samples=1000,
         supercrop_size_samples=1, supercrop_stride_samples=1)
     windows = windower(base_ds)
-    description = windows.events[:,-1]
+    description = windows.events[:, -1]
     assert len(description) == len(targets) * 1000
     np.testing.assert_array_equal(description[::1000], targets)
     np.testing.assert_array_equal(description[999::1000], targets)
@@ -122,11 +122,10 @@ def test_overlapping_trial_offsets(raw_info_targets):
         windower(base_ds)
 
 
-@pytest.fixture(scope="module")
-def setUp():
+# TODO: add tests for case with drop_last_sample==False
+def test_fixed_length_windower():
     rng = np.random.RandomState(42)
-    sfreq = 50
-    info = mne.create_info(ch_names=['0', '1'], sfreq=sfreq, ch_types='eeg')
+    info = mne.create_info(ch_names=['0', '1'], sfreq=50, ch_types='eeg')
     data = rng.randn(2, 1000)
     raw = mne.io.RawArray(data=data, info=info)
     df = pd.DataFrame(zip([True], ["M"], [48]),
@@ -134,22 +133,15 @@ def setUp():
     base_ds = BaseDataset(raw, df, target="age")
 
     # test case:
-    # (window_size_samples, stride_size_samples, drop_last_samples,
+    # (window_size_samples, overlap_size_samples, drop_last_samples,
     # trial_start_offset_samples, n_windows)
     test_cases = [
-        (100, 100-10, True, 0., 11),
-        # TODO: does using trial_start_offset_samples have sense?
-        # no, not for FixedLengthWindower
-        # (100, 100-10, True, -0.5, 11),
-        (100, 100-50, True, 0., 19),
-        (None, 100-50, True, 0., 1)
+        (100, 90, True, 0., 11),
+        (100, 50, True, 0., 19),
+        (None, 50, True, 0., 1)
     ]
-    return base_ds, test_cases
 
-
-def test_windower_results(setUp):
-    base_ds, test_cases = setUp
-    for test_case in test_cases:
+    for i, test_case in enumerate(test_cases):
         (window_size, stride_size, drop_last_samples,
          trial_start_offset_samples, n_windows) = test_case
         if window_size is None:
@@ -169,9 +161,13 @@ def test_windower_results(setUp):
                          base_ds.raw.get_data().shape[1] - window_size + 1,
                          stride_size)
 
-        assert len(idxs) == epochs_data.shape[0]
-        assert window_size == epochs_data.shape[2]
-        for i, idx in enumerate(idxs):
+        assert len(idxs) == epochs_data.shape[0], \
+            f"Number of epochs different than expected for test case {i}"
+        assert window_size == epochs_data.shape[2], \
+            f"Window size different than expected for test case {i}"
+        for j, idx in enumerate(idxs):
             np.testing.assert_allclose(
                 base_ds.raw.get_data()[:, idx: idx + window_size],
-                epochs_data[i, :])
+                epochs_data[j, :],
+                err_msg=f"Epochs different for test case {i} for epoch {j}"
+            )
