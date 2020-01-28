@@ -149,6 +149,7 @@ class FixedLengthWindower(Windower):
         return super().__call__(base_ds.raw, events, metadata=metadata)
 
 
+# TODO: name should reflect what function is doing
 def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
                       drop_samples=False):
     """
