@@ -13,9 +13,9 @@ from skorch import History
 from skorch.callbacks import Callback
 from skorch.utils import to_numpy, to_tensor
 from torch import optim
-from torch.utils.data import Dataset
-from braindecode.datautil import CropsDataLoader
+from torch.utils.data import Dataset, DataLoader
 from braindecode.classifier import EEGClassifier
+from braindecode.datasets.croppedxy import CroppedXyDataset
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.scoring import PostEpochTrainScoring
 from braindecode.models import ShallowFBCSPNet
@@ -40,25 +40,10 @@ class MockSkorchNet:
         )
 
     def get_iterator(self, X_test, training):
-        return CropsDataLoader(
-            X_test, input_time_length=10, n_preds_per_input=4, batch_size=2
-        )
+        return DataLoader(X_test, batch_size=2)
 
 
 def test_cropped_trial_epoch_scoring():
-    class EEGDataSet(Dataset):
-        def __init__(self, X, y):
-            self.X = X
-            if self.X.ndim == 3:
-                self.X = self.X[:, :, :, None]
-            self.y = y
-
-        def __len__(self):
-            return len(self.X)
-
-        def __getitem__(self, idx):
-            i_trial, start, stop = idx
-            return self.X[i_trial, :, start:stop], self.y[i_trial]
 
     dataset_train = None
     # Definition of test cases
@@ -101,7 +86,10 @@ def test_cropped_trial_epoch_scoring():
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
     ):
-        dataset_valid = EEGDataSet(np.zeros((4, 1, 10)), np.concatenate(y_true))
+        dataset_valid = CroppedXyDataset(
+            np.zeros((4, 1, 10)), np.concatenate(y_true),
+            input_time_length=10, n_preds_per_input=4)
+
         mock_skorch_net = MockSkorchNet()
         cropped_trial_epoch_scoring = CroppedTrialEpochScoring(
             "accuracy", on_train=False)
