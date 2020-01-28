@@ -239,7 +239,7 @@ def test_post_epoch_train_scoring():
     clf.fit(train_set, y=None, epochs=4)
 
 
-def check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds):
+def _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds):
     # transform to 2 lists from tuples
     i_supercrop_in_trials = []
     i_stop_in_trials = []
@@ -257,25 +257,25 @@ def test_two_supercrops_same_trial_with_overlap():
     preds = [[[4,5,6,7]], [[6,7,8,9]],]
     supercrop_inds = ((0,0,8),(1,2,10))
     expected_trial_preds = [[[4,5,6,7,8,9]]]
-    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
 
 
 def test_three_supercrops_two_trials_with_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
     supercrop_inds = ((0, 0, 8), (1, 2, 10), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
 
 
 def test_one_supercrop_one_trial():
     preds = [[[4,5,6,7]]]
     supercrop_inds = ((0,0,8),)
     expected_trial_preds = [[[4,5,6,7]]]
-    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
 
 
 def test_three_supercrops_two_trials_no_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
     supercrop_inds = ((0, 0, 8), (1, 4, 12), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
