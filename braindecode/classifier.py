@@ -122,7 +122,9 @@ class ThrowAwayIndexLoader(object):
                 self.net._last_supercrop_inds = i
             else:
                 x,y = batch
+
             # TODO: should be on dataset side
-            x = x.type(torch.float32)
-            y = y.type(torch.int64)
+            if hasattr(x, 'type'):
+                x = x.type(torch.float32)
+                y = y.type(torch.int64)
             yield x,y
