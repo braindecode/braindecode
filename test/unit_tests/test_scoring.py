@@ -29,6 +29,7 @@ class MockSkorchNet:
         self.forward_iter = None
         self.history = History()
         self.history.new_epoch()
+        self._default_callbacks = []
 
     def fit(self, X, y=None):
         return self
@@ -62,13 +63,13 @@ def test_cropped_trial_epoch_scoring():
     dataset_train = None
     # Definition of test cases
     predictions_cases = [
-        # Exepected redictions classification results: [1, 0, 0, 0]
+        # Exepected predictions classification results: [1, 0, 0, 0]
         np.array(
             [
-                [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
-                [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
-                [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
-                [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
+                [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]], # trial 0 preds
+                [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]], # trial 1 preds
+                [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]], # trial 2 preds
+                [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]], # trial 3 preds
             ]
         ),
         # Expected predictions classification results: [1, 1, 1, 0]
@@ -82,23 +83,37 @@ def test_cropped_trial_epoch_scoring():
         ),
     ]
     y_true_cases = [
-        [np.array([0, 0]), np.array([1, 1])],
-        [np.array([1, 1]), np.array([1, 1])],
+        [torch.tensor([0, 0]), torch.tensor([1, 1])],
+        [torch.tensor([1, 1]), torch.tensor([1, 1])],
     ]
     expected_accuracies_cases = [0.25, 0.75]
+
+    supercrop_inds = [(
+            torch.tensor([0,0]), # i_supercrop_in_trials
+            [None],# won't be used
+            torch.tensor([4,4]), # i_supercrop_stops
+    ),(
+            torch.tensor([0,0]), # i_supercrop_in_trials
+            [None],# won't be used
+            torch.tensor([4,4]), # i_supercrop_stops
+    ),]
 
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
     ):
         dataset_valid = EEGDataSet(np.zeros((4, 1, 10)), np.concatenate(y_true))
         mock_skorch_net = MockSkorchNet()
-        cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy")
+        cropped_trial_epoch_scoring = CroppedTrialEpochScoring(
+            "accuracy", on_train=False)
+        mock_skorch_net.callbacks = [(
+            "", cropped_trial_epoch_scoring)]
         cropped_trial_epoch_scoring.initialize()
         cropped_trial_epoch_scoring.y_preds_ = [
             to_tensor(predictions[:2], device="cpu"),
             to_tensor(predictions[2:], device="cpu"),
         ]
         cropped_trial_epoch_scoring.y_trues_ = y_true
+        cropped_trial_epoch_scoring.supercrop_inds_ = supercrop_inds
 
         cropped_trial_epoch_scoring.on_epoch_end(
             mock_skorch_net, dataset_train, dataset_valid
@@ -120,7 +135,16 @@ def test_cropped_trial_epoch_scoring_none_x_test():
             [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
         ]
     )
-    y_true = [np.array([0, 0]), np.array([1, 1])]
+    y_true = [torch.tensor([0, 0]), torch.tensor([1, 1])]
+    supercrop_inds = [(
+        torch.tensor([0, 0]),  # i_supercrop_in_trials
+        [None],  # won't be used
+        torch.tensor([4, 4]),  # i_supercrop_stops
+    ), (
+            torch.tensor([0,0]), # i_supercrop_in_trials
+            [None],# won't be used
+            torch.tensor([4,4]), # i_supercrop_stops
+    ),]
     cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy")
     cropped_trial_epoch_scoring.initialize()
     cropped_trial_epoch_scoring.y_preds_ = [
@@ -128,9 +152,11 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         to_tensor(predictions[2:], device="cpu"),
     ]
     cropped_trial_epoch_scoring.y_trues_ = y_true
+    cropped_trial_epoch_scoring.supercrop_inds_ = supercrop_inds
 
     mock_skorch_net = MockSkorchNet()
-
+    mock_skorch_net.callbacks = [(
+        "", cropped_trial_epoch_scoring)]
     output = cropped_trial_epoch_scoring.on_epoch_end(
         mock_skorch_net, dataset_train, dataset_valid
     )
