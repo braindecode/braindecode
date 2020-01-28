@@ -13,7 +13,7 @@ ds = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[4],
 # and info as i_supercrop_in_trial, i_start_in_trial, and i_stop_in_trial
 # which is required for combining supercrop predictions in the scorer
 for x, y, info in ds:
-    print(x.get_data().shape, y, info)
+    print(x.shape, y, info)
     break
 
 # each base_ds in ds has its own info DataFrame
@@ -25,13 +25,9 @@ print(ds.info)
 subsets = ds.split("session")
 print(subsets)
 
-# quick check whether the split did what we intended
-print(ds.info.iloc[subsets["session_T"].indices])
-print(ds.info.iloc[subsets["session_E"].indices])
-
 # again we can iterate through the subsets as through the ds
 for x, y, info in subsets["session_E"]:
-    print(x.get_data().shape, y, info)
+    print(x.shape, y, info)
     break
 
 # create a dataset based on TUH Abnormal EEG Corpus (v2.0.0)
