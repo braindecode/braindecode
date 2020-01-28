@@ -213,7 +213,8 @@ class MOABBDataset(ConcatDataset):
     def __init__(
             self, dataset_name, subject_ids, trial_start_offset_samples,
             trial_stop_offset_samples, supercrop_size_samples,
-            supercrop_stride_samples, drop_samples=False, ignore_events=False):
+            supercrop_stride_samples, drop_samples=False, ignore_events=False,
+            mapping=None):
         if ignore_events:
             windower = FixedLengthWindower
         else:
@@ -223,7 +224,8 @@ class MOABBDataset(ConcatDataset):
             trial_stop_offset_samples=trial_stop_offset_samples,
             supercrop_size_samples=supercrop_size_samples,
             supercrop_stride_samples=supercrop_stride_samples,
-            drop_samples=drop_samples)
+            drop_samples=drop_samples,
+            mapping=mapping)
 
         raws, info = fetch_data_with_moabb(dataset_name, subject_ids)
         all_windows_ds = []
@@ -263,6 +265,7 @@ class MOABBDataset(ConcatDataset):
         else:
             split_ids = {split_i: split
                          for split_i, split in enumerate(split_ids)}
+
         return {split_name: Subset(self, split)
                 for split_name, split in split_ids.items()}
 
