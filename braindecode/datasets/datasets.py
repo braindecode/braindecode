@@ -181,7 +181,7 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
 
 
 # TODO: EEG / EEGDataset which has a ConcatDataset and additional info
-# TODO: BasedConcatDataset: implement split
+# TODO: BaseConcatDataset: implement split
 
 class MOABBDataset(ConcatDataset):
     """A class for moabb datasets.
