@@ -14,61 +14,25 @@ from collections import OrderedDict
 
 import torch
 from torch import optim
-from torch.utils.data import Dataset
 
+from braindecode.classifier import EEGClassifier
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
-from braindecode.datautil import CropsDataLoader
+from braindecode.datasets.croppedxy import CroppedXyDataset
 from braindecode.datautil.signalproc import (
     bandpass_cnt,
     exponential_running_standardize,
 )
+from braindecode.datautil.splitters import TrainTestSplit
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
-from braindecode.classifier import EEGClassifier
-from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.losses import CroppedNLLLoss
 from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
+from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds
-from braindecode.losses import CroppedNLLLoss
 
-
-class EEGDataSet(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        if self.X.ndim == 3:
-            self.X = self.X[:, :, :, None]
-        self.y = y
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        i_trial, start, stop = idx
-        return self.X[i_trial, :, start:stop], self.y[i_trial]
-
-
-class TrainTestSplit(object):
-    def __init__(self, train_size):
-        assert isinstance(train_size, (int, float))
-        self.train_size = train_size
-
-    def __call__(self, dataset, y, **kwargs):
-        # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
-        # or stick to same API
-        if isinstance(self.train_size, int):
-            n_train_samples = self.train_size
-        else:
-            n_train_samples = int(self.train_size * len(dataset))
-
-        X, y = dataset.X, dataset.y
-        return (
-            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
-            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
-        )
-
-
-data_folder = "/data/bci_competition/"
+data_folder =  "/data/schirrmr/schirrmr/bci-competition-iv/2a-gdf/"
 subject_id = 1  # 1-9
 low_cut_hz = 4  # 0 or 4
 model = "shallow"  # 'shallow' or 'deep'
@@ -145,8 +109,6 @@ marker_def = OrderedDict(
 train_set = create_signal_target_from_raw_mne(raw_train, marker_def, ival)
 test_set = create_signal_target_from_raw_mne(raw_test, marker_def, ival)
 
-train_set = EEGDataSet(train_set.X, train_set.y)
-test_set = EEGDataSet(test_set.X, test_set.y)
 
 set_random_seeds(seed=20190706, cuda=cuda)
 
@@ -180,6 +142,14 @@ with torch.no_grad():
 
 out = model(dummy_input)
 
+train_set = CroppedXyDataset(
+    train_set.X, train_set.y,
+    input_time_length=input_time_length,
+    n_preds_per_input=n_preds_per_input)
+test_set = CroppedXyDataset(test_set.X, test_set.y,
+    input_time_length=input_time_length,
+    n_preds_per_input=n_preds_per_input)
+
 cropped_cb_train = CroppedTrialEpochScoring(
     "accuracy",
     name="train_trial_accuracy",
@@ -199,16 +169,12 @@ clf = EEGClassifier(
     model,
     criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,
-    train_split=TrainTestSplit(train_size=1 - valid_set_fraction),
+    train_split=TrainTestSplit(train_size=1 - valid_set_fraction,
+                               input_time_length=input_time_length,
+                               n_preds_per_input=n_preds_per_input),
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=32,
-    iterator_train=CropsDataLoader,
-    iterator_valid=CropsDataLoader,
-    iterator_train__input_time_length=input_time_length,
-    iterator_train__n_preds_per_input=n_preds_per_input,
-    iterator_valid__input_time_length=input_time_length,
-    iterator_valid__n_preds_per_input=n_preds_per_input,
     callbacks=[
         ("train_trial_accuracy", cropped_cb_train),
         ("valid_trial_accuracy", cropped_cb_valid),

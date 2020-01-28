@@ -2,7 +2,7 @@
 Skorch Trialwise Decoding
 =========================
 
-Example using Skorch - How do you think?
+Example using skorch trialwise decoding on a simple dataset.
 """
 
 # Authors: Maciej Sliwowski

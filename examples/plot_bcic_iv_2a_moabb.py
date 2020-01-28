@@ -1,5 +1,5 @@
 """
-Cropped Decoding on BCIC IV 2a Competition Set
+Cropped Decoding on BCIC IV 2a Competition Set with skorch and moabb.
 ==============================================
 
 """
@@ -14,7 +14,6 @@ Cropped Decoding on BCIC IV 2a Competition Set
 
 import numpy as np
 import torch
-from skorch.callbacks import ProgressBar
 from torch import optim
 
 from braindecode.classifier import EEGClassifier
@@ -133,4 +132,4 @@ clf = EEGClassifier(
     device=device,
 )
 
-clf.fit(dataset, y=None, epochs=5)
+clf.fit(dataset, y=None, epochs=4)

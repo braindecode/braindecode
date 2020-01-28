@@ -20,6 +20,8 @@ from skorch.callbacks.scoring import EpochScoring
 from torch import optim
 from torch.utils.data import Dataset
 
+from braindecode.callbacks import MaxNormConstraintCallback
+from braindecode.classifier import EEGClassifier
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signalproc import (
     bandpass_cnt,
@@ -27,12 +29,10 @@ from braindecode.datautil.signalproc import (
 )
 from braindecode.datautil.splitters import split_into_two_sets
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
-from braindecode.callbacks import MaxNormConstraintCallback
-from braindecode.classifier import EEGClassifier
-from braindecode.scoring import PostEpochTrainScoring
 from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.scoring import PostEpochTrainScoring
 from braindecode.util import set_random_seeds
 
 log = logging.getLogger(__name__)

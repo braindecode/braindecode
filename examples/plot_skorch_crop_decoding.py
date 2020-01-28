@@ -2,7 +2,7 @@
 Skorch Crop Decoding
 =========================
 
-Example using Skorch for crop decoding
+Example using Skorch for crop decoding on a simpler dataset.
 """
 
 # Authors: Lukas Gemein
@@ -12,25 +12,20 @@ Example using Skorch for crop decoding
 #
 # License: BSD-3
 
-import numpy as np
-
 import mne
-from mne.io import concatenate_raws
-
+import numpy as np
 import torch
+from mne.io import concatenate_raws
 from torch import optim
-from torch.utils.data import Dataset
 
-from skorch.net import NeuralNet
-from skorch.callbacks.scoring import EpochScoring
-
+from braindecode.classifier import EEGClassifier
+from braindecode.datasets.croppedxy import CroppedXyDataset
+from braindecode.datautil.splitters import TrainTestSplit
+from braindecode.losses import CroppedNLLLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.util import set_random_seeds
-from braindecode.datautil import CropsDataLoader
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
-from braindecode.classifier import EEGClassifier
-from braindecode.losses import CroppedNLLLoss
+from braindecode.util import set_random_seeds
 
 subject_id = (
     22  # carefully cherry-picked to give nice results on such limited data :)
@@ -93,52 +88,14 @@ n_classes = 2
 in_chans = X.shape[1]
 
 
-class EEGDataSet(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        if self.X.ndim == 3:
-            self.X = self.X[:, :, :, None]
-        self.y = y
 
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        i_trial, start, stop = idx
-        return self.X[i_trial, :, start:stop], self.y[i_trial]
-
-
-train_set = EEGDataSet(X[:70], y[:70])
-test_set = EEGDataSet(X[70:], y=y[70:])
-
-
-class TrainTestSplit(object):
-    def __init__(self, train_size):
-        assert isinstance(train_size, (int, float))
-        self.train_size = train_size
-
-    def __call__(self, dataset, y, **kwargs):
-        # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
-        # or stick to same API
-        if isinstance(self.train_size, int):
-            n_train_samples = self.train_size
-        else:
-            n_train_samples = int(self.train_size * len(dataset))
-
-        X, y = dataset.X, dataset.y
-        return (
-            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
-            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
-        )
-
-
-set_random_seeds(20200114, True)
+set_random_seeds(20200114, cuda=False)
 
 # final_conv_length = auto ensures we only get a single output in the time dimension
 model = ShallowFBCSPNet(
     in_chans=in_chans,
     n_classes=n_classes,
-    input_time_length=train_set.X.shape[2],
+    input_time_length=X.shape[2],
     final_conv_length="auto",
 )
 to_dense_prediction_model(model)
@@ -152,6 +109,13 @@ with torch.no_grad():
     dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device="cpu")
     n_preds_per_input = model(dummy_input).shape[2]
 
+
+train_set = CroppedXyDataset(X[:70], y[:70],
+                       input_time_length=input_time_length,
+                       n_preds_per_input=n_preds_per_input)
+test_set = CroppedXyDataset(X[70:], y=y[70:],
+                      input_time_length=input_time_length,
+                      n_preds_per_input=n_preds_per_input)
 
 cropped_cb_train = CroppedTrialEpochScoring(
     "accuracy",
@@ -171,16 +135,13 @@ clf = EEGClassifier(
     model,
     criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,
-    train_split=TrainTestSplit(train_size=40),
+    train_split=TrainTestSplit(
+        train_size=40,
+        input_time_length=input_time_length,
+        n_preds_per_input=n_preds_per_input,),
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=64,
-    iterator_train=CropsDataLoader,
-    iterator_valid=CropsDataLoader,
-    iterator_train__input_time_length=input_time_length,
-    iterator_train__n_preds_per_input=n_preds_per_input,
-    iterator_valid__input_time_length=input_time_length,
-    iterator_valid__n_preds_per_input=n_preds_per_input,
     callbacks=[
         ("train_trial_accuracy", cropped_cb_train),
         ("valid_trial_accuracy", cropped_cb_valid),

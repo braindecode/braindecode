@@ -1,8 +1,15 @@
+"""
+Simple Moabb Dataset Example
+=========================
+
+Showcasing how to fetch and crop a moabb dataset.
+"""
+
 # Authors: Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD (3-clause)
 
-from braindecode.datasets import MOABBDataset, TUHAbnormal
+from braindecode.datasets import MOABBDataset
 
 # create a dataset based on BCIC IV 2a fetched with moabb
 ds = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[4],

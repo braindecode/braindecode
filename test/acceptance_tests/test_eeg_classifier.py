@@ -6,20 +6,17 @@
 
 import mne
 import numpy as np
-import torch
-import torch.nn.functional as F
 from mne.io import concatenate_raws
 from torch import optim
-from torch.utils.data import Dataset
 
-from braindecode.losses import CroppedNLLLoss
-from braindecode.datautil.loader import CropsDataLoader
 from braindecode.classifier import EEGClassifier
-from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.datasets.croppedxy import CroppedXyDataset
+from braindecode.datautil.splitters import TrainTestSplit
+from braindecode.losses import CroppedNLLLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
+from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds, np_to_var
-from braindecode.datautil.windowers import _supercrop_starts
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -120,6 +117,7 @@ def test_eeg_classifier():
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 
+
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
     cuda = False
@@ -150,91 +148,9 @@ def test_eeg_classifier():
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
 
-    class EEGDataSet(Dataset):
-        def __init__(self, X, y, input_time_length, n_preds_per_input):
-            self.X = X
-            if self.X.ndim == 3:
-                self.X = self.X[:, :, :, None]
-            self.y = y
-            self.input_time_length = input_time_length
-            self.n_preds_per_input = n_preds_per_input
-            # on init we have to generate all the supercrop indices,
-            # so we know number of supercrops (length of the dataset)
-            # and we can have a mapping:
-            # i_supercrop -> i_trial, start, stop
-            i_supercrop_to_idx = []
-            for i_trial, trial in enumerate(X):
-                idx = _supercrop_starts(
-                    np.array([0]),
-                    0,
-                    trial.shape[1],
-                    input_time_length,
-                    n_preds_per_input,
-                    drop_samples=False,
-                )
-                for _, i_supercrop_in_trial, start, stop in zip(*idx):
-                    i_supercrop_to_idx.append(
-                        dict(
-                            i_trial=i_trial,
-                            i_supercrop_in_trial=i_supercrop_in_trial,
-                            start=start,
-                            stop=stop,
-                        )
-                    )
-            self.i_supercrop_to_idx = i_supercrop_to_idx
-
-        def __len__(self):
-            return len(self.i_supercrop_to_idx)
-
-        def __getitem__(self, i):
-            supercrop_idx = self.i_supercrop_to_idx[i]
-            X = self.X[
-                supercrop_idx["i_trial"],
-                :,
-                supercrop_idx["start"]: supercrop_idx["stop"],
-                ]
-            y = self.y[supercrop_idx["i_trial"]]
-            returned_idx = (
-                supercrop_idx["i_supercrop_in_trial"],
-                supercrop_idx["start"],
-                supercrop_idx["stop"],
-            )
-            return X, y, returned_idx
-
-    class TrainTestSplit(object):
-        def __init__(self, train_size):
-            assert isinstance(train_size, (int, float))
-            self.train_size = train_size
-
-        def __call__(self, dataset, y, **kwargs):
-            # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
-            # or stick to same API
-            if isinstance(self.train_size, int):
-                n_train_samples = self.train_size
-            else:
-                n_train_samples = int(self.train_size * len(dataset))
-            X, y = dataset.X, dataset.y
-            return (
-                EEGDataSet(
-                    X[:n_train_samples],
-                    y[:n_train_samples],
-                    input_time_length=input_time_length,
-                    n_preds_per_input=n_preds_per_input,
-                ),
-                EEGDataSet(
-                    X[n_train_samples:],
-                    y[n_train_samples:],
-                    input_time_length=input_time_length,
-                    n_preds_per_input=n_preds_per_input,
-                ),
-            )
-
-    train_set = EEGDataSet(
-        X[:60],
-        y=y[:60],
-        input_time_length=input_time_length,
-        n_preds_per_input=n_preds_per_input,
-    )
+    train_set = CroppedXyDataset(
+        X[:60], y=y[:60], input_time_length=input_time_length,
+        n_preds_per_input=n_preds_per_input)
 
     cropped_cb_train = CroppedTrialEpochScoring(
         "accuracy",
@@ -254,7 +170,10 @@ def test_eeg_classifier():
         model,
         criterion=CroppedNLLLoss,
         optimizer=optim.Adam,
-        train_split=TrainTestSplit(train_size=0.8),
+        train_split=TrainTestSplit(
+            train_size=0.8,
+            input_time_length=input_time_length,
+            n_preds_per_input=n_preds_per_input,),
         batch_size=32,
         callbacks=[
             ("train_trial_accuracy", cropped_cb_train),
