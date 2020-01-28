@@ -24,6 +24,7 @@ class BaseDataset(Dataset):
     """
     def __init__(self, raw, info, target=None):
         self.raw = raw
+        # TODO: rename
         self.info = info
         if target is not None:
             assert target in self.info, f"'{target}' not in info"
