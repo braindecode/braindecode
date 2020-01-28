@@ -171,9 +171,9 @@ class CroppedTrialEpochScoring(EpochScoring):
             # A new trial starts
             # when the index of the supercrop in trials
             # does not increment by 1
-            # Add dummy 1 at start
+            # Add dummy infinity at start
             supercrop_0_per_trial_mask = np.diff(
-                pred_results['i_supercrop_in_trials'], prepend=[1]) != -1
+                pred_results['i_supercrop_in_trials'], prepend=[np.inf]) != 1
             trial_ys = pred_results['supercrop_ys'][supercrop_0_per_trial_mask]
             trial_preds = trial_preds_from_supercrop_preds(
                 pred_results['preds'],
