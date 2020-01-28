@@ -2,6 +2,9 @@ from skorch.callbacks import EpochTimer, BatchScoring, PrintLog
 from skorch.utils import train_loss_score, valid_loss_score, noop
 from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
+import torch
+from torch.utils.data.dataloader import DataLoader
+import numpy as np
 
 
 class EEGClassifier(NeuralNetClassifier):
@@ -35,6 +38,50 @@ class EEGClassifier(NeuralNetClassifier):
         """
         return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
 
+    def get_iterator(self, dataset, training=False, drop_index=True):
+        iterator = super().get_iterator(dataset, training=training)
+        if drop_index:
+            return ThrowAwayIndexLoader(self, iterator)
+        else:
+            return iterator
+
+
+    def on_batch_end(self, net, X, y, training=False, **kwargs):
+        # If training is false, assume that our loader has indices for this
+        # batch
+        if not training:
+            assert hasattr(self, '_last_supercrop_inds')
+            cbs = self._default_callbacks + self.callbacks
+            epoch_cbs = []
+            for name, cb in cbs:
+                if (cb.__class__.__name__ == 'CroppedTrialEpochScoring') and (
+                    hasattr(cb, 'supercrop_inds_')) and (cb.on_train == False):
+                    epoch_cbs.append(cb)
+
+            for cb in epoch_cbs:
+                cb.supercrop_inds_.append(self._last_supercrop_inds)
+            del self._last_supercrop_inds
+
+
+    def predict_with_supercrop_inds_and_ys(self, dataset):
+        preds = []
+        i_supercrop_in_trials = []
+        i_supercrop_stops = []
+        supercrop_ys = []
+        for X, y, i in self.get_iterator(dataset, drop_index=False):
+            i_supercrop_in_trials.append(i[0].cpu().numpy())
+            i_supercrop_stops.append(i[2].cpu().numpy())
+            preds.append(self.predict_proba(X))
+            supercrop_ys.append(y.cpu().numpy())
+        preds = np.concatenate(preds)
+        i_supercrop_in_trials = np.concatenate(i_supercrop_in_trials)
+        i_supercrop_stops = np.concatenate(i_supercrop_stops)
+        supercrop_ys = np.concatenate(supercrop_ys)
+        return dict(
+            preds=preds, i_supercrop_in_trials=i_supercrop_in_trials,
+            i_supercrop_stops=i_supercrop_stops, supercrop_ys=supercrop_ys)
+
+
     # Removes default EpochScoring callback computing 'accuracy' to work properly
     # with cropped decoding.
     @property
@@ -58,3 +105,24 @@ class EEGClassifier(NeuralNetClassifier):
             ),
             ("print_log", PrintLog()),
         ]
+
+
+class ThrowAwayIndexLoader(object):
+    def __init__(self, net, loader):
+        self.net = net
+        self.loader = loader
+        self.last_i = None
+
+    def __iter__(self, ):
+        normal_iter = self.loader.__iter__()
+        for batch in normal_iter:
+            if len(batch) == 3:
+                x,y,i = batch
+                # Store for scoring callbacks
+                self.net._last_supercrop_inds = i
+            else:
+                x,y = batch
+            # TODO: should be on dataset side
+            x = x.type(torch.float32)
+            y = y.type(torch.int64)
+            yield x,y

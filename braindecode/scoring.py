@@ -61,10 +61,8 @@ def trial_preds_from_supercrop_preds(
     cur_trial_preds = []
     i_last_stop = None
     i_last_supercrop = -1
-    # zip(*supercrop_inds) to make the three lists into
-    # a single list of 3 tuples
-    for supercrop_preds, (i_supercrop, i_stop) in zip(
-            preds, zip(i_supercrop_in_trials, i_stop_in_trials)):
+    for supercrop_preds, i_supercrop, i_stop in zip(
+            preds, i_supercrop_in_trials, i_stop_in_trials):
         supercrop_preds = np.array(supercrop_preds)
         if i_supercrop != (i_last_supercrop + 1):
             assert i_supercrop == 0, (
@@ -137,71 +135,80 @@ class CroppedTrialEpochScoring(EpochScoring):
             target_extractor=target_extractor,
             use_caching=use_caching,
         )
+        if not self.on_train:
+            self.supercrop_inds_ = []
+
+
+    def _initialize_cache(self):
+        super()._initialize_cache()
+        self.crops_to_trials_computed = False
+        self.y_trues_ = []
+        self.y_preds_ = []
+        if not self.on_train:
+            self.supercrop_inds_ = []
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching == True
-        if self.on_train:
-            # Recompute Predictions for caching outside of training loop
-            self.y_preds_ = list(
-                net.forward_iter(dataset_train, training=False)
+        if not self.crops_to_trials_computed:
+            if self.on_train:
+                pred_results = net.predict_with_supercrop_inds_and_ys(
+                    dataset_train)
+
+            else:
+                pred_results = {}
+                pred_results['i_supercrop_in_trials'] = np.concatenate(
+                    [i[0].cpu().numpy() for i in self.supercrop_inds_]
+                )
+                pred_results['i_supercrop_stops'] = np.concatenate(
+                    [i[2].cpu().numpy() for i in self.supercrop_inds_]
+                )
+                pred_results['preds'] = np.concatenate(
+                    [y_pred.cpu().numpy() for y_pred in self.y_preds_])
+                pred_results['supercrop_ys'] = np.concatenate(
+                    [y.cpu().numpy() for y in self.y_trues_])
+
+
+            # A new trial starts
+            # when the index of the supercrop in trials
+            # does not increment by 1
+            # Add dummy 1 at start
+            supercrop_0_per_trial_mask = np.diff(
+                pred_results['i_supercrop_in_trials'], prepend=[1]) != -1
+            trial_ys = pred_results['supercrop_ys'][supercrop_0_per_trial_mask]
+            trial_preds = trial_preds_from_supercrop_preds(
+                pred_results['preds'],
+                pred_results['i_supercrop_in_trials'],
+                pred_results['i_supercrop_stops'])
+            # trial preds is a list
+            # each item is an 2darray classes x time
+            y_preds_per_trial = np.array(
+                [np.mean(p, axis=1) for p in trial_preds]
             )
-            from copy import deepcopy # XXX: remove
+            # Move into format expected by skorch (list of torch tensors)
+            y_preds_per_trial = [torch.tensor(y_preds_per_trial)]
 
-            self.y_trues_ = deepcopy(self.y_preds_)
+            # Store the computed trial labels/preds for all Cropped Callbacks
+            # that are also on same set
+            cbs = net._default_callbacks + net.callbacks
+            epoch_cbs = [
+                cb for name, cb in cbs if
+                isinstance(cb, CroppedTrialEpochScoring) and (
+                    cb.on_train == self.on_train)
+            ]
+            for cb in epoch_cbs:
+                cb.y_preds_ = y_preds_per_trial
+                cb.y_trues_ = trial_ys
+                cb.crops_to_trials_computed = True
 
-        X_test, _, y_pred = self.get_test_data(
-            dataset_train, dataset_valid
-        )
-        if X_test is None:
-            return
-
-        if self.input_time_length is None:
-            # Acquire loader to know input_time_length
-            input_time_length = net.get_iterator(
-                X_test, training=False
-            ).input_time_length
-
-        y_pred_np = [old_y_pred.cpu().numpy() for old_y_pred in y_pred]
-
-        if self.on_train:
-            dataset = dataset_train
-        else:
-            dataset = dataset_valid
-        if self.input_time_length is None:
-            # This assumes X_test is a dataset with X and y
-            trial_X = X_test.X
-            trial_y = X_test.y
-            preds_per_crop = compute_preds_per_trial_from_crops(
-                y_pred_np, input_time_length, trial_X
-            )
-        else:
-            # HACK: just fix to get BCIC IV 2a example to run
-            trial_lens_samples = dataset.dataset.get_trial_durations_samples()[:288]
-            preds_per_crop = compute_preds_per_trial_from_trial_n_samples(
-                y_pred_np, self.input_time_length, trial_lens_samples
-            )
-            # Let's get trial y
-            y_per_super_crop = [dataset[i][1] for i in range(len(dataset))]
-
-            # HACK: just for now to get BCIC IV 2a example to run
-            n_super_crops = len(y_per_super_crop)
-            n_trials = len(trial_lens_samples)
-            n_super_crops_per_trial = int(n_super_crops / n_trials)
-            trial_y = y_per_super_crop[::n_super_crops_per_trial]
-
-        y_preds_per_trial = np.array(
-            [np.mean(p, axis=1) for p in preds_per_crop]
-        )
-
-        # Move into format expected by skorch (list of torch tensors)
-        y_preds_per_trial = [torch.tensor(y_preds_per_trial)]
+        dataset = dataset_train if self.on_train else dataset_valid
 
         with _cache_net_forward_iter(
-            net, self.use_caching, y_preds_per_trial
+            net, self.use_caching, self.y_preds_
         ) as cached_net:
-            current_score = self._scoring(cached_net, dataset, trial_y)
-
+            current_score = self._scoring(cached_net, dataset, self.y_trues_)
         self._record_score(net.history, current_score)
+
+        return
 
 
 class PostEpochTrainScoring(EpochScoring):

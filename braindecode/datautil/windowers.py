@@ -84,10 +84,16 @@ class EventWindower(Windower):
         assert (np.diff(events[:,0]) > 0).all(), (
             "trials overlap not implemented")
         description = events[:, -1]
+        if self.mapping is not None:
+            # Apply remapping of targets
+            description = np.array([self.mapping[d] for d in description])
+            events[:, -1] = description
+
         metadata = pd.DataFrame(
             zip(i_supercrop_in_trials, starts, stops, description),
             columns=["i_supercrop_in_trial", "i_start_in_trial",
                      "i_stop_in_trial", "target"])
+
         return super().__call__(base_ds.raw, events, metadata=metadata)
 
 
