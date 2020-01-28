@@ -50,17 +50,19 @@ class EEGClassifier(NeuralNetClassifier):
         # If training is false, assume that our loader has indices for this
         # batch
         if not training:
-            assert hasattr(self, '_last_supercrop_inds')
             cbs = self._default_callbacks + self.callbacks
             epoch_cbs = []
             for name, cb in cbs:
                 if (cb.__class__.__name__ == 'CroppedTrialEpochScoring') and (
                     hasattr(cb, 'supercrop_inds_')) and (cb.on_train == False):
                     epoch_cbs.append(cb)
-
-            for cb in epoch_cbs:
-                cb.supercrop_inds_.append(self._last_supercrop_inds)
-            del self._last_supercrop_inds
+            # for trialwise decoding stuffs it might also be we don't have
+            # cropped loader, so no indices there
+            if len(epoch_cbs) > 0:
+                assert hasattr(self, '_last_supercrop_inds')
+                for cb in epoch_cbs:
+                    cb.supercrop_inds_.append(self._last_supercrop_inds)
+                del self._last_supercrop_inds
 
 
     def predict_with_supercrop_inds_and_ys(self, dataset):
