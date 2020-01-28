@@ -89,7 +89,7 @@ If you use this code in a scientific publication, please cite us as:
     brain–computer interface, model interpretability, brain mapping},
   }
 
-as well as the `MNE-Python <https://mne.tools>`_` software that is used by braindecode:
+as well as the `MNE-Python <https://mne.tools>`_ software that is used by braindecode:
 
 .. code-block:: bibtex
 
