@@ -144,24 +144,23 @@ def _find_dataset_in_moabb(dataset_name):
 
 
 def _fetch_and_unpack_moabb_data(dataset, subject_ids):
-        data = dataset.get_data(subject_ids)
-        raws, subject_ids, session_ids, run_ids = [], [], [], []
-        for subj_id, subj_data in data.items():
-            for sess_id, sess_data in subj_data.items():
-                for run_id, raw in sess_data.items():
-                    raws.append(raw)
-                    subject_ids.append(subj_id)
-                    session_ids.append(sess_id)
-                    run_ids.append(run_id)
-        info = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
-                            columns=["subject", "session", "run"])
-        return raws, info
+    data = dataset.get_data(subject_ids)
+    raws, subject_ids, session_ids, run_ids = [], [], [], []
+    for subj_id, subj_data in data.items():
+        for sess_id, sess_data in subj_data.items():
+            for run_id, raw in sess_data.items():
+                raws.append(raw)
+                subject_ids.append(subj_id)
+                session_ids.append(sess_id)
+                run_ids.append(run_id)
+    info = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
+                        columns=["subject", "session", "run"])
+    return raws, info
 
 
 def fetch_data_with_moabb(dataset_name, subject_ids):
     # ToDo: update path to where moabb downloads / looks for the data
-    """
-    Fetch data using moabb.
+    """Fetch data using moabb.
 
     Parameters
     ----------
@@ -185,8 +184,7 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
 
 
 class MOABBDataset(ConcatDataset):
-    """
-    A class for moabb datasets.
+    """A class for moabb datasets.
 
     Parameters
     ----------
@@ -240,8 +238,7 @@ class MOABBDataset(ConcatDataset):
     # TODO: remove duplicate code here and in TUHAbnormal
     # TODO: Create another class 'SpecificDataset'?
     def split(self, some_property=None, split_ids=None):
-        """
-        Split the dataset based on some property listed in its info DataFrame
+        """Split the dataset based on some property listed in its info DataFrame
         or based on indices.
 
         Parameters
@@ -265,9 +262,30 @@ class MOABBDataset(ConcatDataset):
         else:
             split_ids = {split_i: split
                          for split_i, split in enumerate(split_ids)}
-
+        # split_ids are indices for WindowsDatasets
+        supercrop_ids = _windows_dataset_ids_to_supercrop_ids(
+            split_ids, self.cumulative_sizes)
         return {split_name: Subset(self, split)
-                for split_name, split in split_ids.items()}
+                for split_name, split in supercrop_ids.items()}
+
+
+def _windows_dataset_ids_to_supercrop_ids(dataset_ids, cumulative_sizes):
+    supercrop_ids = {}
+    for split_name, windows_is in dataset_ids.items():
+        this_supercrop_ids = _supercrop_ids_of_windows(
+            cumulative_sizes, windows_is)
+        supercrop_ids[split_name] = this_supercrop_ids
+    return supercrop_ids
+
+
+def _supercrop_ids_of_windows(cumulative_sizes, windows_is):
+    i_stops = cumulative_sizes
+    i_starts = np.insert(cumulative_sizes[:-1], 0, [0])
+    i_per_window = []
+    for i_window in windows_is:
+        i_per_window.append(list(range(i_starts[i_window], i_stops[i_window])))
+    all_i_windows = np.concatenate(i_per_window)
+    return all_i_windows
 
 
 def _split_ids(df, some_property):
@@ -279,24 +297,19 @@ def _split_ids(df, some_property):
 
 
 class BNCI2014001(MOABBDataset):
-    """
-    see moabb.datasets.bnci.BNCI2014001
-    """
+    """See moabb.datasets.bnci.BNCI2014001"""
     def __init__(self, *args, **kwargs):
         super().__init__("BNCI2014001", *args, **kwargs)
 
 
 class HGD(MOABBDataset):
-    """
-    see moabb.datasets.schirrmeister2017.Schirrmeister2017
-    """
+    """See moabb.datasets.schirrmeister2017.Schirrmeister2017"""
     def __init__(self, *args, **kwargs):
         super().__init__("Schirrmeister2017", *args, **kwargs)
 
 
 class TUHAbnormal(ConcatDataset):
-    """
-    Temple University Hospital (TUH) Abnormal EEG Corpus.
+    """Temple University Hospital (TUH) Abnormal EEG Corpus.
 
     Parameters
     ----------
@@ -363,8 +376,7 @@ class TUHAbnormal(ConcatDataset):
         self.info = pd.concat(all_infos)
 
     def split(self, some_property=None, split_ids=None):
-        """
-        Split the dataset based on some property listed in its info DataFrame
+        """Split the dataset based on some property listed in its info DataFrame
         or based on indices.
 
         Parameters
@@ -387,8 +399,11 @@ class TUHAbnormal(ConcatDataset):
         else:
             split_ids = {split_i: split
                          for split_i, split in enumerate(split_ids)}
+        # split_ids are indices for WindowsDatasets
+        supercrop_ids = _windows_dataset_ids_to_supercrop_ids(
+            split_ids, self.cumulative_sizes)
         return {split_name: Subset(self, split)
-                for split_name, split in split_ids.items()}
+                for split_name, split in supercrop_ids.items()}
 
     def _time_key(self, file_path):
         # the splits are specific to tuh abnormal eeg data set
@@ -403,9 +418,8 @@ class TUHAbnormal(ConcatDataset):
 
 # TODO: this is very slow. how to improve?
 def read_all_file_names(directory, extension, key):
-    """
-    Read all files with specified extension from given path and sorts them based
-    on a given sorting key.
+    """Read all files with specified extension from given path and sorts them
+    based on a given sorting key.
 
     Parameters
     ----------
