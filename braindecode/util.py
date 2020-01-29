@@ -226,9 +226,9 @@ def dict_equal(d1, d2):
     intersect_keys = d1_keys.intersection(d2_keys)
     modified = {o: (d1[o], d2[o]) for o in intersect_keys if d1[o] != d2[o]}
     return (
-        intersect_keys == d2_keys and
-        intersect_keys == d1_keys and
-        len(modified) == 0
+        intersect_keys == d2_keys
+        and intersect_keys == d1_keys
+        and len(modified) == 0
     )
 
 
@@ -336,3 +336,13 @@ def get_balanced_batches(
         i_start_trial = i_stop_trial
     assert i_start_trial == n_trials
     return batches
+
+
+def round_list_to_int(a):
+    """
+    Round values in a and return as type int
+
+    :param a: array-like
+    :return: a with values rounded to integer
+    """
+    return np.round(a).astype(np.int)

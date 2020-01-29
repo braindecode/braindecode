@@ -243,9 +243,10 @@ class CroppedTrialMisclassMonitor(object):
             assert all_pred_labels.shape == dataset.y.shape
             all_trial_labels = dataset.y
         else:
-            all_trial_labels, all_pred_labels = self._compute_trial_pred_labels_from_cnt_y(
-                dataset, all_preds
-            )
+            (
+                all_trial_labels,
+                all_pred_labels,
+            ) = self._compute_trial_pred_labels_from_cnt_y(dataset, all_preds)
         assert all_pred_labels.shape == all_trial_labels.shape
         misclass = 1 - np.mean(all_pred_labels == all_trial_labels)
         column_name = "{:s}_misclass".format(setname)
@@ -340,9 +341,40 @@ def compute_preds_per_trial_from_crops(all_preds, input_time_length, X):
         Predictions for each trial, without overlapping predictions.
 
     """
+    trial_n_samples = [trial.shape[1] for trial in X]
+    return compute_preds_per_trial_from_trial_n_samples(
+        all_preds, input_time_length, trial_n_samples
+    )
+
+
+def compute_preds_per_trial_from_trial_n_samples(
+    all_preds, input_time_length, trial_n_samples
+):
+    """
+        Compute predictions per trial from predictions for supercrops.
+        Collect supercrop predictions into trials the supercrops
+        were extracted from, remove duplicates.
+
+        Parameters
+        ----------
+        all_preds: list of 2darrays (classes x time)
+            All predictions for the crops.
+        input_time_length: int
+            Temporal length of one input to the model.
+        trial_n_samples: ndarray or list of int
+            Number of samples for each trial.
+
+        Returns
+        -------
+        preds_per_trial: list of 2darrays (classes x time)
+            Predictions for each trial, without overlapping predictions.
+
+        """
     n_preds_per_input = all_preds[0].shape[2]
     n_receptive_field = input_time_length - n_preds_per_input + 1
-    n_preds_per_trial = [trial.shape[1] - n_receptive_field + 1 for trial in X]
+    n_preds_per_trial = [
+        n_samples - n_receptive_field + 1 for n_samples in trial_n_samples
+    ]
     preds_per_trial = compute_preds_per_trial_from_n_preds_per_trial(
         all_preds, n_preds_per_trial
     )

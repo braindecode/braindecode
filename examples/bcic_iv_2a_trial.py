@@ -20,19 +20,19 @@ from skorch.callbacks.scoring import EpochScoring
 from torch import optim
 from torch.utils.data import Dataset
 
+from braindecode.callbacks import MaxNormConstraintCallback
+from braindecode.classifier import EEGClassifier
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
+from braindecode.datautil.signal_target import apply_to_X_y
 from braindecode.datautil.signalproc import (
     bandpass_cnt,
     exponential_running_standardize,
 )
-from braindecode.datautil.splitters import split_into_two_sets
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
-from braindecode.callbacks import MaxNormConstraintCallback
-from braindecode.classifier import EEGClassifier
-from braindecode.scoring import PostEpochTrainScoring
 from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.scoring import PostEpochTrainScoring
 from braindecode.util import set_random_seeds
 
 log = logging.getLogger(__name__)
@@ -51,6 +51,69 @@ high_cut_hz = 38
 factor_new = 1e-3
 init_block_size = 1000
 valid_set_fraction = 0.2
+
+
+def split_into_two_sets(dataset, first_set_fraction=None, n_first_set=None):
+    """
+    Split set into two sets either by fraction of first set or by number
+    of trials in first set.
+
+    Parameters
+    ----------
+    dataset: :class:`.SignalAndTarget`
+    first_set_fraction: float, optional
+        Fraction of trials in first set.
+    n_first_set: int, optional
+        Number of trials in first set
+
+    Returns
+    -------
+    first_set, second_set: :class:`.SignalAndTarget`
+        The two splitted sets.
+    """
+    assert (first_set_fraction is None) != (
+        n_first_set is None
+    ), "Pass either first_set_fraction or n_first_set"
+    if n_first_set is None:
+        n_first_set = int(round(len(dataset.X) * first_set_fraction))
+    assert n_first_set < len(dataset.X)
+    first_set = apply_to_X_y(lambda a: a[:n_first_set], dataset)
+    second_set = apply_to_X_y(lambda a: a[n_first_set:], dataset)
+    return first_set, second_set
+
+
+class EEGDataSet(Dataset):
+    def __init__(self, X, y):
+        self.X = X
+        if self.X.ndim == 3:
+            self.X = self.X[:, :, :, None]
+        self.y = y
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+        return self.X[idx], self.y[idx]
+
+
+class TrainTestSplit(object):
+    def __init__(self, train_size):
+        assert isinstance(train_size, (int, float))
+        self.train_size = train_size
+
+    def __call__(self, dataset, y, **kwargs):
+        # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
+        # or stick to same API
+        if isinstance(self.train_size, int):
+            n_train_samples = self.train_size
+        else:
+            n_train_samples = int(self.train_size * len(dataset))
+
+        X, y = dataset.X, dataset.y
+        return (
+            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
+            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
+        )
 
 train_filename = "A{:02d}T.gdf".format(subject_id)
 test_filename = "A{:02d}E.gdf".format(subject_id)
@@ -124,40 +187,6 @@ logging.basicConfig(
     level=logging.INFO,
     stream=sys.stdout,
 )
-
-
-class EEGDataSet(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        if self.X.ndim == 3:
-            self.X = self.X[:, :, :, None]
-        self.y = y
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
-
-
-class TrainTestSplit(object):
-    def __init__(self, train_size):
-        assert isinstance(train_size, (int, float))
-        self.train_size = train_size
-
-    def __call__(self, dataset, y, **kwargs):
-        # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
-        # or stick to same API
-        if isinstance(self.train_size, int):
-            n_train_samples = self.train_size
-        else:
-            n_train_samples = int(self.train_size * len(dataset))
-
-        X, y = dataset.X, dataset.y
-        return (
-            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
-            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
-        )
 
 
 # Set if you want to use GPU

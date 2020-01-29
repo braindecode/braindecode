@@ -8,7 +8,7 @@ from matplotlib import patches
 from matplotlib.path import Path
 from matplotlib import cm
 
-from braindecode.datasets.sensor_positions import (
+from .sensor_positions import (
     CHANNEL_10_20_APPROX,
     get_channelpos,
 )

@@ -1,24 +1,22 @@
 # Authors: Maciej Sliwowski
 #          Robin Tibor Schirrmeister
+#          Lukas Gemein
 #
 # License: BSD-3
 
 import mne
 import numpy as np
-import torch
-import torch.nn.functional as F
 from mne.io import concatenate_raws
 from torch import optim
-from torch.utils.data import Dataset
 
-from braindecode.losses import CroppedNLLLoss
-from braindecode.datautil.loader import CropsDataLoader
 from braindecode.classifier import EEGClassifier
-from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.datasets.croppedxy import CroppedXyDataset
+from braindecode.datautil.splitters import TrainTestSplit
+from braindecode.losses import CroppedNLLLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
+from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds, np_to_var
-
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -71,42 +69,7 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
         raise exc
 
 
-class EEGDataSet(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        if self.X.ndim == 3:
-            self.X = self.X[:, :, :, None]
-        self.y = y
-
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        i_trial, start, stop = idx
-        return self.X[i_trial, :, start:stop], self.y[i_trial]
-
-
-class TrainTestSplit(object):
-    def __init__(self, train_size):
-        assert isinstance(train_size, (int, float))
-        self.train_size = train_size
-
-    def __call__(self, dataset, y, **kwargs):
-        # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
-        # or stick to same API
-        if isinstance(self.train_size, int):
-            n_train_samples = self.train_size
-        else:
-            n_train_samples = int(self.train_size * len(dataset))
-
-        X, y = dataset.X, dataset.y
-        return (
-            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
-            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
-        )
-
-
-def test_eeg_classifier_cropped_training():
+def test_eeg_classifier():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
     event_codes = [5, 6, 9, 10, 13, 14]
@@ -154,7 +117,6 @@ def test_eeg_classifier_cropped_training():
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 
-    train_set = EEGDataSet(X[:60], y=y[:60])
 
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
@@ -164,7 +126,7 @@ def test_eeg_classifier_cropped_training():
     # This will determine how many crops are processed in parallel
     input_time_length = 450
     n_classes = 2
-    in_chans = train_set.X.shape[1]
+    in_chans = X.shape[1]
     # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
         in_chans=in_chans,
@@ -186,6 +148,10 @@ def test_eeg_classifier_cropped_training():
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
 
+    train_set = CroppedXyDataset(
+        X[:60], y=y[:60], input_time_length=input_time_length,
+        n_preds_per_input=n_preds_per_input)
+
     cropped_cb_train = CroppedTrialEpochScoring(
         "accuracy",
         name="train_trial_accuracy",
@@ -204,14 +170,11 @@ def test_eeg_classifier_cropped_training():
         model,
         criterion=CroppedNLLLoss,
         optimizer=optim.Adam,
-        train_split=TrainTestSplit(train_size=0.8),
+        train_split=TrainTestSplit(
+            train_size=0.8,
+            input_time_length=input_time_length,
+            n_preds_per_input=n_preds_per_input,),
         batch_size=32,
-        iterator_train=CropsDataLoader,
-        iterator_valid=CropsDataLoader,
-        iterator_train__input_time_length=input_time_length,
-        iterator_train__n_preds_per_input=n_preds_per_input,
-        iterator_valid__input_time_length=input_time_length,
-        iterator_valid__n_preds_per_input=n_preds_per_input,
         callbacks=[
             ("train_trial_accuracy", cropped_cb_train),
             ("valid_trial_accuracy", cropped_cb_valid),
@@ -223,17 +186,17 @@ def test_eeg_classifier_cropped_training():
     expected = [
         {
             "batches": [
-                {"train_loss": 2.0750885009765625, "train_batch_size": 32},
+                {"train_loss": 2.0750882625579834, "train_batch_size": 32},
                 {"train_loss": 3.09424090385437, "train_batch_size": 32},
-                {"train_loss": 1.079931616783142, "train_batch_size": 32},
-                {"valid_loss": 2.320780038833618, "valid_batch_size": 24},
+                {"train_loss": 1.079931378364563, "train_batch_size": 32},
+                {"valid_loss": 2.3208131790161133, "valid_batch_size": 24},
             ],
             "epoch": 1,
             "train_batch_count": 3,
             "valid_batch_count": 1,
-            "train_loss": 2.0830870072046914,
+            "train_loss": 2.083086848258972,
             "train_loss_best": True,
-            "valid_loss": 2.320780038833618,
+            "valid_loss": 2.3208131790161133,
             "valid_loss_best": True,
             "train_trial_accuracy": 0.5,
             "train_trial_accuracy_best": True,
@@ -242,17 +205,17 @@ def test_eeg_classifier_cropped_training():
         },
         {
             "batches": [
-                {"train_loss": 1.7862337827682495, "train_batch_size": 32},
-                {"train_loss": 1.410051941871643, "train_batch_size": 32},
-                {"train_loss": 1.1569499969482422, "train_batch_size": 32},
-                {"valid_loss": 1.4905306100845337, "valid_batch_size": 24},
+                {"train_loss": 1.827332615852356, "train_batch_size": 32},
+                {"train_loss": 1.4135494232177734, "train_batch_size": 32},
+                {"train_loss": 1.1295170783996582, "train_batch_size": 32},
+                {"valid_loss": 1.4291356801986694, "valid_batch_size": 24},
             ],
             "epoch": 2,
             "train_batch_count": 3,
             "valid_batch_count": 1,
-            "train_loss": 1.4510785738627117,
+            "train_loss": 1.4567997058232625,
             "train_loss_best": True,
-            "valid_loss": 1.4905306100845337,
+            "valid_loss": 1.4291356801986694,
             "valid_loss_best": True,
             "train_trial_accuracy": 0.5,
             "train_trial_accuracy_best": False,
@@ -261,17 +224,17 @@ def test_eeg_classifier_cropped_training():
         },
         {
             "batches": [
-                {"train_loss": 1.1232541799545288, "train_batch_size": 32},
-                {"train_loss": 2.304981231689453, "train_batch_size": 32},
-                {"train_loss": 0.9293400049209595, "train_batch_size": 32},
-                {"valid_loss": 2.455669641494751, "valid_batch_size": 24},
+                {"train_loss": 1.1495535373687744, "train_batch_size": 32},
+                {"train_loss": 2.356320381164551, "train_batch_size": 32},
+                {"train_loss": 0.9548418521881104, "train_batch_size": 32},
+                {"valid_loss": 2.248246908187866, "valid_batch_size": 24},
             ],
             "epoch": 3,
             "train_batch_count": 3,
             "valid_batch_count": 1,
-            "train_loss": 1.4525251388549805,
+            "train_loss": 1.4869052569071453,
             "train_loss_best": False,
-            "valid_loss": 2.455669641494751,
+            "valid_loss": 2.248246908187866,
             "valid_loss_best": False,
             "train_trial_accuracy": 0.5,
             "train_trial_accuracy_best": False,
@@ -280,17 +243,17 @@ def test_eeg_classifier_cropped_training():
         },
         {
             "batches": [
-                {"train_loss": 1.241913080215454, "train_batch_size": 32},
-                {"train_loss": 1.1696765422821045, "train_batch_size": 32},
-                {"train_loss": 0.9132626056671143, "train_batch_size": 32},
-                {"valid_loss": 0.9064457416534424, "valid_batch_size": 24},
+                {"train_loss": 1.2157528400421143, "train_batch_size": 32},
+                {"train_loss": 1.1182057857513428, "train_batch_size": 32},
+                {"train_loss": 0.9163083434104919, "train_batch_size": 32},
+                {"valid_loss": 0.9732739925384521, "valid_batch_size": 24},
             ],
             "epoch": 4,
             "train_batch_count": 3,
             "valid_batch_count": 1,
-            "train_loss": 1.1082840760548909,
+            "train_loss": 1.083422323067983,
             "train_loss_best": True,
-            "valid_loss": 0.9064457416534424,
+            "valid_loss": 0.9732739925384521,
             "valid_loss_best": True,
             "train_trial_accuracy": 0.5,
             "train_trial_accuracy_best": False,

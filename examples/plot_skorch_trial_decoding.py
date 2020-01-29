@@ -2,7 +2,7 @@
 Skorch Trialwise Decoding
 =========================
 
-Example using Skorch - How do you think?
+Example using skorch trialwise decoding on a simple dataset.
 """
 
 # Authors: Maciej Sliwowski
@@ -26,8 +26,8 @@ from braindecode.scoring import PostEpochTrainScoring
 from braindecode.util import set_random_seeds
 
 subject_id = (
-    22
-)  # carefully cherry-picked to give nice results on such limited data :)
+    22  # carefully cherry-picked to give nice results on such limited data :)
+)
 event_codes = [
     5,
     6,

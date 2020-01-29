@@ -16,4 +16,6 @@ class MaxNormConstraintCallback(Callback):
                     )
                     last_weight = module.weight
             if last_weight is not None:
-                last_weight.data = torch.renorm(last_weight.data, 2, 0, maxnorm=0.5)
+                last_weight.data = torch.renorm(
+                    last_weight.data, 2, 0, maxnorm=0.5
+                )
