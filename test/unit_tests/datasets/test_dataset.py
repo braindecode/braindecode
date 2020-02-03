@@ -62,4 +62,4 @@ def test_target_in_subject_info(set_up):
     df = pd.DataFrame(zip([True], ["M"], [48]),
                       columns=["pathological", "gender", "age"])
     with pytest.raises(AssertionError, match="'does_not_exist' not in info"):
-        BaseDataset(raw, df, target='does_not_exist')
+        BaseDataset(raw, df, target_name='does_not_exist')

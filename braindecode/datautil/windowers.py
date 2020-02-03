@@ -54,6 +54,7 @@ def create_windows_from_events(
 
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
+        # TODO: how to get events without 'stim' channel?
         events = mne.find_events(ds.raw)
         onsets = events[:, 0]
         description = events[:, -1]
