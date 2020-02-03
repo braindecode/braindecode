@@ -17,7 +17,7 @@ import pandas as pd
 import mne
 
 from torch.utils.data import ConcatDataset, Subset
-from .base import WindowsDataset, BaseDataset
+from .base import WindowsDataset, BaseDataset, BaseConcatDataset
 from ..datautil.windowers import (
     create_windows_from_events, create_fixed_length_windows)
 
@@ -181,10 +181,7 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
     return _fetch_and_unpack_moabb_data(dataset, subject_id)
 
 
-# TODO: EEG / EEGDataset which has a ConcatDataset and additional info
-# TODO: BaseConcatDataset: implement split
-
-class MOABBDataset(ConcatDataset):
+class MOABBDataset(BaseConcatDataset):
     """A class for moabb datasets.
 
     Parameters
@@ -202,66 +199,6 @@ class MOABBDataset(ConcatDataset):
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 
-    # TODO: remove duplicate code here and in TUHAbnormal
-    # TODO: Create another class 'SpecificDataset'?
-    def split(self, some_property=None, split_ids=None):
-        """Split the dataset based on some property listed in its info DataFrame
-        or based on indices.
-
-        Parameters
-        ----------
-        some_property: str
-            some property which is listed in info DataFrame
-        split_ids: list(int)
-            list of indices to be combined in a subset
-
-        Returns
-        -------
-        splits: dict{split_name: subset}
-            mapping of split name based on property or index based on split_ids
-            to subset of the data
-
-        """
-        assert split_ids is None or some_property is None, (
-            "can split either based on ids or based on some property")
-        if split_ids is None:
-            split_ids = _split_ids(self.info, some_property)
-        else:
-            split_ids = {split_i: split
-                         for split_i, split in enumerate(split_ids)}
-        # split_ids are indices for WindowsDatasets
-        supercrop_ids = _windows_dataset_ids_to_supercrop_ids(
-            split_ids, self.cumulative_sizes)
-        return {split_name: Subset(self, split)
-                for split_name, split in supercrop_ids.items()}
-
-
-def _windows_dataset_ids_to_supercrop_ids(dataset_ids, cumulative_sizes):
-    supercrop_ids = {}
-    for split_name, windows_is in dataset_ids.items():
-        this_supercrop_ids = _supercrop_ids_of_windows(
-            cumulative_sizes, windows_is)
-        supercrop_ids[split_name] = this_supercrop_ids
-    return supercrop_ids
-
-
-def _supercrop_ids_of_windows(cumulative_sizes, windows_is):
-    i_stops = cumulative_sizes
-    i_starts = np.insert(cumulative_sizes[:-1], 0, [0])
-    i_per_window = []
-    for i_window in windows_is:
-        i_per_window.append(list(range(i_starts[i_window], i_stops[i_window])))
-    all_i_windows = np.concatenate(i_per_window)
-    return all_i_windows
-
-
-def _split_ids(df, some_property):
-    assert some_property in df
-    split_ids = {}
-    for group_name, group in df.groupby(some_property):
-        split_ids.update({group_name: list(group.index)})
-    return split_ids
-
 
 class BNCI2014001(MOABBDataset):
     """See moabb.datasets.bnci.BNCI2014001"""
@@ -275,7 +212,7 @@ class HGD(MOABBDataset):
         super().__init__("Schirrmeister2017", *args, **kwargs)
 
 
-class TUHAbnormal(ConcatDataset):
+class TUHAbnormal(BaseConcatDataset):
     """Temple University Hospital (TUH) Abnormal EEG Corpus.
 
     Parameters
@@ -287,7 +224,6 @@ class TUHAbnormal(ConcatDataset):
     target_name: str
         can be 'pathological', 'gender', or 'age'
     """
-
     def __init__(self, path, subject_ids=None, target_name="pathological"):
         all_file_paths = read_all_file_names(
             path, extension='.edf', key=self._time_key)
@@ -317,36 +253,6 @@ class TUHAbnormal(ConcatDataset):
             base_ds = BaseDataset(raw, info, target=target_name)
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
-
-    def split(self, some_property=None, split_ids=None):
-        """Split the dataset based on some property listed in its info DataFrame
-        or based on indices.
-
-        Parameters
-        ----------
-        some_property: str
-            some property which is listed in info DataFrame
-        split_ids: list(int)
-            list of indices to be combined in a subset
-
-        Returns
-        -------
-        splits: dict{split_name: subset}
-            mapping of split name based on property or index based on split_ids
-            to subset of the data
-        """
-        assert split_ids is None or some_property is None, (
-            "can split either based on ids or based on some property")
-        if split_ids is None:
-            split_ids = _split_ids(self.info, some_property)
-        else:
-            split_ids = {split_i: split
-                         for split_i, split in enumerate(split_ids)}
-        # split_ids are indices for WindowsDatasets
-        supercrop_ids = _windows_dataset_ids_to_supercrop_ids(
-            split_ids, self.cumulative_sizes)
-        return {split_name: Subset(self, split)
-                for split_name, split in supercrop_ids.items()}
 
     def _time_key(self, file_path):
         # the splits are specific to tuh abnormal eeg data set
