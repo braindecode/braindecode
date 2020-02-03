@@ -13,35 +13,10 @@ import mne
 import pandas as pd
 
 
-class Windower(object):
-    """
-    A windower that creates a mne Epochs objects.
-    """
-    def __init__(self, trial_start_offset_samples, trial_stop_offset_samples,
-                 supercrop_size_samples, supercrop_stride_samples,
-                 drop_samples=False, mapping=None):
-        self.trial_start_offset_samples = trial_start_offset_samples
-        self.trial_stop_offset_samples = trial_stop_offset_samples
-        assert supercrop_size_samples > 0, (
-            "supercrop size has to be larger than 0")
-        self.size = supercrop_size_samples
-        assert supercrop_stride_samples > 0, (
-            "supercrop stride has to be larger than 0")
-        self.stride = supercrop_stride_samples
-        self.drop_samples = drop_samples
-        self.mapping = mapping
-        # TODO: assert values are integers
-        # TODO: assert start < stop
-
-    # TODO: handle case we don't get a raw
-    def __call__(self, raw, events, metadata):
-        # supercrop size - 1, since tmax is inclusive
-        return mne.Epochs(raw, events, baseline=None,
-                          tmin=0, tmax=(self.size-1)/raw.info["sfreq"],
-                          metadata=metadata)
-
-
-class EventWindower(Windower):
+def create_windows_from_events(
+        base_ds, trial_start_offset_samples, trial_stop_offset_samples,
+        supercrop_size_samples, supercrop_stride_samples, drop_samples,
+        mapping=None):
     """
     A Windower that creates supercrops/windows based on events in mne.Raw.
     Therefore, it fits supercrops of supercrop_size_samples in
@@ -70,40 +45,54 @@ class EventWindower(Windower):
     mapping: dict(str: int)
         mapping from event description to target value
     """
-    def __call__(self, base_ds):
-        events = mne.find_events(base_ds.raw)
-        onsets = events[:, 0]
-        description = events[:, -1]
-        i_trials, i_supercrop_in_trials, starts, stops = _supercrop_starts(
-            onsets, self.trial_start_offset_samples,
-            self.trial_stop_offset_samples, self.size, self.stride,
-            self.drop_samples)
-        events = [[start, self.size, description[i_trials[i_start]]]
-                  for i_start, start in enumerate(starts)]
-        events = np.array(events)
-        assert (np.diff(events[:,0]) > 0).all(), (
-            "trials overlap not implemented")
-        description = events[:, -1]
-        if self.mapping is not None:
-            # Apply remapping of targets
-            description = np.array([self.mapping[d] for d in description])
-            events[:, -1] = description
+    assert supercrop_size_samples > 0, (
+        "supercrop size has to be larger than 0")
+    assert supercrop_stride_samples > 0, (
+        "supercrop stride has to be larger than 0")
+    # TODO: assert values are integers
+    # TODO: assert start < stop
 
-        metadata = pd.DataFrame(
-            zip(i_supercrop_in_trials, starts, stops, description),
-            columns=["i_supercrop_in_trial", "i_start_in_trial",
-                     "i_stop_in_trial", "target"])
+    events = mne.find_events(base_ds.raw)
+    onsets = events[:, 0]
+    description = events[:, -1]
+    i_trials, i_supercrop_in_trials, starts, stops = _compute_supercrop_inds(
+        onsets, trial_start_offset_samples, trial_stop_offset_samples,
+        supercrop_size_samples, supercrop_stride_samples, drop_samples)
+    events = [[start, supercrop_size_samples, description[i_trials[i_start]]]
+              for i_start, start in enumerate(starts)]
+    events = np.array(events)
+    assert (np.diff(events[:,0]) > 0).all(), (
+        "trials overlap not implemented")
+    description = events[:, -1]
+    if mapping is not None:
+        # Apply remapping of targets
+        description = np.array([mapping[d] for d in description])
+        events[:, -1] = description
 
-        return super().__call__(base_ds.raw, events, metadata=metadata)
+    metadata = pd.DataFrame(
+        zip(i_supercrop_in_trials, starts, stops, description),
+        columns=["i_supercrop_in_trial", "i_start_in_trial",
+                 "i_stop_in_trial", "target"])
+
+    # supercrop size - 1, since tmax is inclusive
+    return mne.Epochs(
+        base_ds.raw, events, baseline=None, tmin=0,
+        tmax=(supercrop_size_samples - 1) / base_ds.raw.info["sfreq"],
+        metadata=metadata)
 
 
-class FixedLengthWindower(Windower):
+def create_fixed_length_windows(
+        base_ds, trial_start_offset_samples, trial_stop_offset_samples,
+        supercrop_size_samples, supercrop_stride_samples, drop_samples,
+        mapping=None):
     """
     A Windower that creates supercrops/windows based on fake events that equally
     divide the continuous signal.
 
     Parameters
     ----------
+    base_ds: BaseDataset
+        a base dataset holding raw and descpription
     trial_start_offset_samples: int
         start offset from original trial onsets in samples
     trial_stop_offset_samples: int
@@ -118,40 +107,53 @@ class FixedLengthWindower(Windower):
     mapping: dict(str: int)
         mapping from event description to target value
     """
-    def __call__(self, base_ds):
-        # already includes last incomplete supercrop start
-        starts = np.arange(0, base_ds.raw.n_times, self.stride)
-        # 1/0
-        if self.drop_samples:
-            starts = starts[:-1]
-        else:
-            # if last supercrop does not end at trial stop, make it stop
-            # there
-            if starts[-1] != base_ds.raw.n_times - self.size:
-                starts[-1] = base_ds.raw.n_times - self.size
+    assert supercrop_size_samples > 0, (
+        "supercrop size has to be larger than 0")
+    assert supercrop_stride_samples > 0, (
+        "supercrop stride has to be larger than 0")
+    # TODO: assert values are integers
+    # TODO: assert start < stop
 
-        # TODO: handle multi-target case
-        assert len(base_ds.info[base_ds.target]) == 1, (
-            "multi-target not supported")
-        description = base_ds.info[base_ds.target].iloc[0]
-        # https://github.com/numpy/numpy/issues/2951
-        if not isinstance(description, np.integer):
-            assert self.mapping is not None, (
-                f"a mapping from '{description}' to int is required")
-            description = self.mapping[description]
-        events = [[start, self.size, description]
-                  for i_start, start in enumerate(starts)]
-        metadata = pd.DataFrame(
-            zip(np.arange(len(events)), starts, starts + self.size,
-                len(events) *[description]),
-            columns=["i_supercrop_in_trial", "i_start_in_trial",
-                     "i_stop_in_trial", "target"])
-        return super().__call__(base_ds.raw, events, metadata=metadata)
+    # already includes last incomplete supercrop start
+    stop = (base_ds.raw.n_times
+            if trial_stop_offset_samples is None
+            else trial_stop_offset_samples)
+    starts = np.arange(
+        trial_start_offset_samples, stop, supercrop_stride_samples)
+    if drop_samples:
+        starts = starts[:-1]
+    else:
+        # if last supercrop does not end at trial stop, make it stop
+        # there
+        if starts[-1] != base_ds.raw.n_times - supercrop_size_samples:
+            starts[-1] = base_ds.raw.n_times - supercrop_size_samples
+
+    # TODO: handle multi-target case / non-integer target case
+    assert len(base_ds.info[base_ds.target]) == 1, (
+        "multi-target not supported")
+    description = base_ds.info[base_ds.target].iloc[0]
+    # https://github.com/numpy/numpy/issues/2951
+    if not isinstance(description, np.integer):
+        assert mapping is not None, (
+            f"a mapping from '{description}' to int is required")
+        description = mapping[description]
+    events = [[start, supercrop_size_samples, description]
+              for i_start, start in enumerate(starts)]
+    metadata = pd.DataFrame(
+        zip(np.arange(len(events)), starts, starts + supercrop_size_samples,
+            len(events) *[description]),
+        columns=["i_supercrop_in_trial", "i_start_in_trial",
+                 "i_stop_in_trial", "target"])
+    # supercrop size - 1, since tmax is inclusive
+    return mne.Epochs(
+        base_ds.raw, events, baseline=None,
+        tmin=0, tmax=(supercrop_size_samples - 1) / base_ds.raw.info["sfreq"],
+        metadata=metadata)
 
 
 # TODO: name should reflect what function is doing
-def _supercrop_starts(onsets, start_offset, stop_offset, size, stride,
-                      drop_samples=False):
+def _compute_supercrop_inds(
+        onsets, start_offset, stop_offset, size, stride, drop_samples):
     """
     Create supercrop starts from trial onsets (shifted by offset) to trial end
     separated by stride as long as supercrop size fits into trial

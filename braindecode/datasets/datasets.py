@@ -18,7 +18,8 @@ import mne
 
 from torch.utils.data import ConcatDataset, Subset
 from .base import WindowsDataset, BaseDataset
-from ..datautil.windowers import EventWindower, FixedLengthWindower
+from ..datautil.windowers import (
+    create_windows_from_events, create_fixed_length_windows)
 
 try:
     from mne import annotations_from_events
@@ -214,22 +215,22 @@ class MOABBDataset(ConcatDataset):
             supercrop_stride_samples, drop_samples=False, ignore_events=False,
             mapping=None):
         if ignore_events:
-            windower = FixedLengthWindower
+            windower = create_fixed_length_windows
         else:
-            windower = EventWindower
-        windower = windower(
-            trial_start_offset_samples=trial_start_offset_samples,
-            trial_stop_offset_samples=trial_stop_offset_samples,
-            supercrop_size_samples=supercrop_size_samples,
-            supercrop_stride_samples=supercrop_stride_samples,
-            drop_samples=drop_samples,
-            mapping=mapping)
+            windower = create_windows_from_events
 
         raws, info = fetch_data_with_moabb(dataset_name, subject_ids)
         all_windows_ds = []
         for raw_i, raw in enumerate(raws):
             base_ds = BaseDataset(raw, info.iloc[raw_i])
-            windows = windower(base_ds)
+            windows = windower(
+                base_ds=base_ds,
+                trial_start_offset_samples=trial_start_offset_samples,
+                trial_stop_offset_samples=trial_stop_offset_samples,
+                supercrop_size_samples=supercrop_size_samples,
+                supercrop_stride_samples=supercrop_stride_samples,
+                drop_samples=drop_samples,
+                mapping=mapping)
             windows_ds = WindowsDataset(windows, base_ds.info)
             all_windows_ds.append(windows_ds)
         super().__init__(all_windows_ds)
@@ -334,13 +335,6 @@ class TUHAbnormal(ConcatDataset):
                  trial_stop_offset_samples, supercrop_size_samples,
                  supercrop_stride_samples, subject_ids=None,
                  drop_samples=False, target="pathological", mapping=None):
-        windower = FixedLengthWindower(
-            trial_start_offset_samples=trial_start_offset_samples,
-            trial_stop_offset_samples=trial_stop_offset_samples,
-            supercrop_size_samples=supercrop_size_samples,
-            supercrop_stride_samples=supercrop_stride_samples,
-            drop_samples=drop_samples, mapping=mapping)
-
         all_file_paths = read_all_file_names(
             path, extension='.edf', key=self._time_key)
         if subject_ids is None:
@@ -367,7 +361,13 @@ class TUHAbnormal(ConcatDataset):
                 columns=["age", "pathological", "gender",
                 "session", "subject"], index=[subject_id])
             base_ds = BaseDataset(raw, info, target=target)
-            windows = windower(base_ds)
+            windows = create_fixed_length_windows(
+                base_ds=base_ds,
+                trial_start_offset_samples=trial_start_offset_samples,
+                trial_stop_offset_samples=trial_stop_offset_samples,
+                supercrop_size_samples=supercrop_size_samples,
+                supercrop_stride_samples=supercrop_stride_samples,
+                drop_samples=drop_samples, mapping=mapping)
             windows_ds = WindowsDataset(windows, base_ds.info)
             all_windows_ds.append(windows_ds)
             all_infos.append(info)
