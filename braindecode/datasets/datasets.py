@@ -16,10 +16,7 @@ import numpy as np
 import pandas as pd
 import mne
 
-from torch.utils.data import ConcatDataset, Subset
-from .base import WindowsDataset, BaseDataset, BaseConcatDataset
-from ..datautil.windowers import (
-    create_windows_from_events, create_fixed_length_windows)
+from .base import BaseDataset, BaseConcatDataset
 
 try:
     from mne import annotations_from_events
@@ -154,9 +151,9 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
                 run_ids.append(run_id)
-    info = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
+    description = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
                         columns=["subject", "session", "run"])
-    return raws, info
+    return raws, description
 
 
 def fetch_data_with_moabb(dataset_name, subject_ids):
@@ -192,10 +189,10 @@ class MOABBDataset(BaseConcatDataset):
     """
     def __init__(
             self, dataset_name, subject_ids):
-        raws, info = fetch_data_with_moabb(dataset_name, subject_ids)
+        raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
         all_base_ds = []
         for raw_i, raw in enumerate(raws):
-            base_ds = BaseDataset(raw, info.iloc[raw_i])
+            base_ds = BaseDataset(raw, description.iloc[raw_i])
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 
@@ -246,11 +243,11 @@ class TUHAbnormal(BaseConcatDataset):
                 assert "eval" in path_splits
                 session = "eval"
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
-            info = pd.DataFrame(
+            description = pd.DataFrame(
                 [[age, pathological, gender, session, subject_id]],
                 columns=["age", "pathological", "gender",
                 "session", "subject"], index=[subject_id])
-            base_ds = BaseDataset(raw, info, target=target_name)
+            base_ds = BaseDataset(raw, description, target_name=target_name)
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 
