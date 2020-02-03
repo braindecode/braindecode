@@ -47,6 +47,8 @@ Datasets
 .. autosummary::
    :toctree: generated/
 
+    BaseDataset
+    BaseConcatDataset
     WindowsDataset
     MOABBDataset
 
@@ -62,10 +64,8 @@ Data Utils
    :toctree: generated/
 
     SignalAndTarget
-    CropsDataLoader
-    BaseWindower
-    FixedLengthWindower
-    EventWindower
+    create_fixed_length_windows
+    create_windows_from_events
     FilterRaw
     ZscoreRaw
     FilterWindow
