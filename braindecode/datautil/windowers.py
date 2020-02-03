@@ -12,9 +12,11 @@ import numpy as np
 import mne
 import pandas as pd
 
+from ..datasets.base import WindowsDataset, BaseConcatDataset
+
 
 def create_windows_from_events(
-        base_ds, trial_start_offset_samples, trial_stop_offset_samples,
+        concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
         mapping=None):
     """A Windower that creates supercrops/windows based on events in mne.Raw.
@@ -30,6 +32,8 @@ def create_windows_from_events(
 
     Parameters
     ----------
+    concat_ds: ConcatDataset
+        a concat of base datasets each holding raw and descpription
     trial_start_offset_samples: int
         start offset from original trial onsets in samples
     trial_stop_offset_samples: int
@@ -48,37 +52,41 @@ def create_windows_from_events(
         trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples)
 
-    events = mne.find_events(base_ds.raw)
-    onsets = events[:, 0]
-    description = events[:, -1]
-    i_trials, i_supercrop_in_trials, starts, stops = _compute_supercrop_inds(
-        onsets, trial_start_offset_samples, trial_stop_offset_samples,
-        supercrop_size_samples, supercrop_stride_samples, drop_samples)
-    events = [[start, supercrop_size_samples, description[i_trials[i_start]]]
-              for i_start, start in enumerate(starts)]
-    events = np.array(events)
-    assert (np.diff(events[:,0]) > 0).all(), (
-        "trials overlap not implemented")
-    description = events[:, -1]
-    if mapping is not None:
-        # Apply remapping of targets
-        description = np.array([mapping[d] for d in description])
-        events[:, -1] = description
+    list_of_windows_ds = []
+    for ds in concat_ds:
+        events = mne.find_events(ds.raw)
+        onsets = events[:, 0]
+        description = events[:, -1]
+        i_trials, i_supercrop_in_trials, starts, stops = _compute_supercrop_inds(
+            onsets, trial_start_offset_samples, trial_stop_offset_samples,
+            supercrop_size_samples, supercrop_stride_samples, drop_samples)
+        events = [[start, supercrop_size_samples, description[i_trials[i_start]]]
+                  for i_start, start in enumerate(starts)]
+        events = np.array(events)
+        assert (np.diff(events[:,0]) > 0).all(), (
+            "trials overlap not implemented")
+        description = events[:, -1]
+        if mapping is not None:
+            # Apply remapping of targets
+            description = np.array([mapping[d] for d in description])
+            events[:, -1] = description
 
-    metadata = pd.DataFrame(
-        zip(i_supercrop_in_trials, starts, stops, description),
-        columns=["i_supercrop_in_trial", "i_start_in_trial",
-                 "i_stop_in_trial", "target"])
+        metadata = pd.DataFrame(
+            zip(i_supercrop_in_trials, starts, stops, description),
+            columns=["i_supercrop_in_trial", "i_start_in_trial",
+                     "i_stop_in_trial", "target"])
 
-    # supercrop size - 1, since tmax is inclusive
-    return mne.Epochs(
-        base_ds.raw, events, baseline=None, tmin=0,
-        tmax=(supercrop_size_samples - 1) / base_ds.raw.info["sfreq"],
-        metadata=metadata)
+        # supercrop size - 1, since tmax is inclusive
+        mne_epochs = mne.Epochs(ds.raw, events, baseline=None, tmin=0,
+            tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
+            metadata=metadata)
+        windows_ds = WindowsDataset(mne_epochs, ds.description)
+        list_of_windows_ds.append(windows_ds)
+    return BaseConcatDataset(list_of_windows_ds)
 
 
 def create_fixed_length_windows(
-        base_ds, trial_start_offset_samples, trial_stop_offset_samples,
+        concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
         mapping=None):
     """A Windower that creates supercrops/windows based on fake events that
@@ -86,8 +94,8 @@ def create_fixed_length_windows(
 
     Parameters
     ----------
-    base_ds: BaseDataset
-        a base dataset holding raw and descpription
+    concat_ds: ConcatDataset
+        a concat of base datasets each holding raw and descpription
     trial_start_offset_samples: int
         start offset from original trial onsets in samples
     trial_stop_offset_samples: int
@@ -106,41 +114,47 @@ def create_fixed_length_windows(
         trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples)
 
-    # already includes last incomplete supercrop start
-    stop = (base_ds.raw.n_times
-            if trial_stop_offset_samples is None
-            else trial_stop_offset_samples)
-    starts = np.arange(
-        trial_start_offset_samples, stop, supercrop_stride_samples)
-    if drop_samples:
-        starts = starts[:-1]
-    else:
-        # if last supercrop does not end at trial stop, make it stop
-        # there
-        if starts[-1] != base_ds.raw.n_times - supercrop_size_samples:
-            starts[-1] = base_ds.raw.n_times - supercrop_size_samples
+    list_of_windows_ds = []
+    for ds in concat_ds:
+        # already includes last incomplete supercrop start
+        stop = (ds.raw.n_times
+                if trial_stop_offset_samples is None
+                else trial_stop_offset_samples)
+        starts = np.arange(
+            trial_start_offset_samples, stop, supercrop_stride_samples)
+        if drop_samples:
+            starts = starts[:-1]
+        else:
+            # if last supercrop does not end at trial stop, make it stop
+            # there
+            if starts[-1] != ds.raw.n_times - supercrop_size_samples:
+                starts[-1] = ds.raw.n_times - supercrop_size_samples
 
-    # TODO: handle multi-target case / non-integer target case
-    assert len(base_ds.info[base_ds.target]) == 1, (
-        "multi-target not supported")
-    description = base_ds.info[base_ds.target].iloc[0]
-    # https://github.com/numpy/numpy/issues/2951
-    if not isinstance(description, np.integer):
-        assert mapping is not None, (
-            f"a mapping from '{description}' to int is required")
-        description = mapping[description]
-    events = [[start, supercrop_size_samples, description]
-              for i_start, start in enumerate(starts)]
-    metadata = pd.DataFrame(
-        zip(np.arange(len(events)), starts, starts + supercrop_size_samples,
-            len(events) *[description]),
-        columns=["i_supercrop_in_trial", "i_start_in_trial",
-                 "i_stop_in_trial", "target"])
-    # supercrop size - 1, since tmax is inclusive
-    return mne.Epochs(
-        base_ds.raw, events, baseline=None,
-        tmin=0, tmax=(supercrop_size_samples - 1) / base_ds.raw.info["sfreq"],
-        metadata=metadata)
+        # TODO: handle multi-target case / non-integer target case
+        assert len(ds.info[ds.target]) == 1, (
+            "multi-target not supported")
+        description = ds.info[ds.target].iloc[0]
+        # https://github.com/numpy/numpy/issues/2951
+        if not isinstance(description, np.integer):
+            assert mapping is not None, (
+                f"a mapping from '{description}' to int is required")
+            description = mapping[description]
+        events = [[start, supercrop_size_samples, description]
+                  for i_start, start in enumerate(starts)]
+        metadata = pd.DataFrame(
+            zip(np.arange(len(events)), starts, starts + supercrop_size_samples,
+                len(events) *[description]),
+            columns=["i_supercrop_in_trial", "i_start_in_trial",
+                     "i_stop_in_trial", "target"])
+
+        # supercrop size - 1, since tmax is inclusive
+        mne_epochs =  mne.Epochs(
+            ds.raw, events, baseline=None,
+            tmin=0, tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
+            metadata=metadata)
+        windows_ds = WindowsDataset(mne_epochs, ds.description)
+        list_of_windows_ds.append(windows_ds)
+    return BaseConcatDataset(list_of_windows_ds)
 
 
 def _compute_supercrop_inds(
