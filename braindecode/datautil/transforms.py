@@ -10,7 +10,65 @@ ToDo: should transformer also transform y (e.g. cutting continuous labelled
 #
 # License: BSD (3-clause)
 
+from collections import OrderedDict
 import mne
+
+
+def transform_concat_ds(concat_ds, transforms):
+    """Apply a number of transformers to a concat dataset.
+
+    Parameters
+    ----------
+    concat_ds: A concat of BaseDataset or WindowsDataset
+        datasets to be transformed
+    transforms: dict(str | callable: dict)
+        dict with function names of mne.raw or a custom transform and function
+        kwargs
+    Returns
+    -------
+    concat_ds:
+    """
+    assert isinstance(transforms, OrderedDict), (
+        "Order of transforms matters! Please provide an OrderedDict.")
+    for ds in concat_ds.datasets:
+        if hasattr(ds, "raw"):
+            _transform_raw(ds.raw, transforms)
+        else:
+            assert hasattr(ds, "windows"), (
+                "Can only tranform concatenation of BaseDataset or "
+                "WindowsDataset")
+            _transform_windows(ds.windows, transforms)
+
+
+def _transform_raw(raw, transforms):
+    for transform, transform_kwargs in transforms.items():
+        if callable(transform):
+            _custom_transform_raw(raw, transform, transform_kwargs)
+        else:
+            assert hasattr(raw, transform), f"raw does not have {transform}"
+            _mne_transform(raw, transform, transform_kwargs)
+
+
+def _custom_transform_raw(raw, transform, transform_kwargs):
+    transform(raw, **transform_kwargs)
+
+
+def _mne_transform(raw_or_epochs, transform, transform_kwargs):
+    getattr(raw_or_epochs.load_data(), transform)(**transform_kwargs)
+
+
+def _transform_windows(windows, transforms):
+    for transform, transform_kwargs in transforms.items():
+        if callable(transform):
+            _custom_transform_windows(windows, transform, transform_kwargs)
+        else:
+            assert hasattr(windows, transform), (
+                f"epochs does not have {transform}")
+            _mne_transform(windows, transform, transform_kwargs)
+
+
+def _custom_transform_windows(windows, transform, transform_kwargs):
+    transform(windows, **transform_kwargs)
 
 
 class FilterRaw(object):
