@@ -17,8 +17,7 @@ def create_windows_from_events(
         base_ds, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
         mapping=None):
-    """
-    A Windower that creates supercrops/windows based on events in mne.Raw.
+    """A Windower that creates supercrops/windows based on events in mne.Raw.
     Therefore, it fits supercrops of supercrop_size_samples in
     trial_start_offset_samples to trial_stop_offset_samples separated by
     supercrop_stride_samples. If the last supercrop does not end
@@ -45,12 +44,9 @@ def create_windows_from_events(
     mapping: dict(str: int)
         mapping from event description to target value
     """
-    assert supercrop_size_samples > 0, (
-        "supercrop size has to be larger than 0")
-    assert supercrop_stride_samples > 0, (
-        "supercrop stride has to be larger than 0")
-    # TODO: assert values are integers
-    # TODO: assert start < stop
+    _check_windowing_arguments(
+        trial_start_offset_samples, trial_stop_offset_samples,
+        supercrop_size_samples, supercrop_stride_samples)
 
     events = mne.find_events(base_ds.raw)
     onsets = events[:, 0]
@@ -85,9 +81,8 @@ def create_fixed_length_windows(
         base_ds, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
         mapping=None):
-    """
-    A Windower that creates supercrops/windows based on fake events that equally
-    divide the continuous signal.
+    """A Windower that creates supercrops/windows based on fake events that
+    equally divide the continuous signal.
 
     Parameters
     ----------
@@ -107,12 +102,9 @@ def create_fixed_length_windows(
     mapping: dict(str: int)
         mapping from event description to target value
     """
-    assert supercrop_size_samples > 0, (
-        "supercrop size has to be larger than 0")
-    assert supercrop_stride_samples > 0, (
-        "supercrop stride has to be larger than 0")
-    # TODO: assert values are integers
-    # TODO: assert start < stop
+    _check_windowing_arguments(
+        trial_start_offset_samples, trial_stop_offset_samples,
+        supercrop_size_samples, supercrop_stride_samples)
 
     # already includes last incomplete supercrop start
     stop = (base_ds.raw.n_times
@@ -151,12 +143,10 @@ def create_fixed_length_windows(
         metadata=metadata)
 
 
-# TODO: name should reflect what function is doing
 def _compute_supercrop_inds(
         onsets, start_offset, stop_offset, size, stride, drop_samples):
-    """
-    Create supercrop starts from trial onsets (shifted by offset) to trial end
-    separated by stride as long as supercrop size fits into trial
+    """Create supercrop starts from trial onsets (shifted by offset) to trial
+    end separated by stride as long as supercrop size fits into trial
 
     Parameters
     ----------
@@ -173,8 +163,9 @@ def _compute_supercrop_inds(
     drop_samples: bool
         toggles of shifting last supercrop within range or dropping last samples
 
-    Returns
+    Returns (list, list, list, list)
     -------
+        trial, i_supercrop_in_trial, start sample and stop sample of supercrops
     """
     # trial ends are defined by trial starts (onsets maybe shifted by offset)
     # and end
@@ -207,3 +198,14 @@ def _compute_supercrop_inds(
     stops = np.array(starts) + size
     assert len(i_supercrop_in_trials) == len(starts) == len(stops)
     return i_trials, i_supercrop_in_trials, starts, stops
+
+
+def _check_windowing_arguments(
+        trial_start_offset_samples, trial_stop_offset_samples,
+        supercrop_size_samples, supercrop_stride_samples):
+    assert supercrop_size_samples > 0, (
+        "supercrop size has to be larger than 0")
+    assert supercrop_stride_samples > 0, (
+        "supercrop stride has to be larger than 0")
+    # TODO: assert values are integers
+    # TODO: assert start < stop
