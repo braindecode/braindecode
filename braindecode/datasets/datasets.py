@@ -192,49 +192,15 @@ class MOABBDataset(ConcatDataset):
     dataset_name: name of dataset included in moabb to be fetched
     subject_ids: list(int) | int
         (list of) int of subject(s) to be fetched
-    trial_start_offset_samples: int
-        start offset from original trial onsets in samples
-    trial_stop_offset_samples: int
-        stop offset from original trial onsets in samples
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
-    drop_samples: bool
-        whether or not have a last overlapping supercrop/window, when
-        supercrops/windows do not equally devide the continuous signal
-    ignore_events: bool
-        when True, ignores events specified in mne.Raw and uses a
-        FixedLenthWindower to create supercrops/windows
-
     """
-    # TODO: include preprocessing at different stages
     def __init__(
-            self, dataset_name, subject_ids, trial_start_offset_samples,
-            trial_stop_offset_samples, supercrop_size_samples,
-            supercrop_stride_samples, drop_samples=False, ignore_events=False,
-            mapping=None):
-        if ignore_events:
-            windower = create_fixed_length_windows
-        else:
-            windower = create_windows_from_events
-
+            self, dataset_name, subject_ids):
         raws, info = fetch_data_with_moabb(dataset_name, subject_ids)
-        all_windows_ds = []
+        all_base_ds = []
         for raw_i, raw in enumerate(raws):
             base_ds = BaseDataset(raw, info.iloc[raw_i])
-            windows = windower(
-                base_ds=base_ds,
-                trial_start_offset_samples=trial_start_offset_samples,
-                trial_stop_offset_samples=trial_stop_offset_samples,
-                supercrop_size_samples=supercrop_size_samples,
-                supercrop_stride_samples=supercrop_stride_samples,
-                drop_samples=drop_samples,
-                mapping=mapping)
-            windows_ds = WindowsDataset(windows, base_ds.info)
-            all_windows_ds.append(windows_ds)
-        super().__init__(all_windows_ds)
-        self.info = info
+            all_base_ds.append(base_ds)
+        super().__init__(all_base_ds)
 
     # TODO: remove duplicate code here and in TUHAbnormal
     # TODO: Create another class 'SpecificDataset'?
@@ -314,33 +280,21 @@ class TUHAbnormal(ConcatDataset):
 
     Parameters
     ----------
-    trial_start_offset_samples: int
-        start offset from original trial onsets in samples
-    trial_stop_offset_samples: int
-        stop offset from original trial onsets in samples
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
-    drop_samples: bool
-        whether or not have a last overlapping supercrop/window, when
-        supercrops/windows do not equally devide the continuous signal
-    target: str
-
-    mapping: dict{target_value: int}
-        maps target values to integers
+    path: str
+        parent directory of the dataset
+    subject_ids: list(int) | int
+        (list of) int of subject(s) to be read
+    target_name: str
+        can be 'pathological', 'gender', or 'age'
     """
 
-    def __init__(self, path, trial_start_offset_samples,
-                 trial_stop_offset_samples, supercrop_size_samples,
-                 supercrop_stride_samples, subject_ids=None,
-                 drop_samples=False, target="pathological", mapping=None):
+    def __init__(self, path, subject_ids=None, target_name="pathological"):
         all_file_paths = read_all_file_names(
             path, extension='.edf', key=self._time_key)
         if subject_ids is None:
             subject_ids = np.arange(len(all_file_paths))
 
-        all_windows_ds, all_infos = [], []
+        all_base_ds = []
         for subject_id in subject_ids:
             file_path = all_file_paths[subject_id]
             raw = mne.io.read_raw_edf(file_path)
@@ -360,20 +314,9 @@ class TUHAbnormal(ConcatDataset):
                 [[age, pathological, gender, session, subject_id]],
                 columns=["age", "pathological", "gender",
                 "session", "subject"], index=[subject_id])
-            base_ds = BaseDataset(raw, info, target=target)
-            windows = create_fixed_length_windows(
-                base_ds=base_ds,
-                trial_start_offset_samples=trial_start_offset_samples,
-                trial_stop_offset_samples=trial_stop_offset_samples,
-                supercrop_size_samples=supercrop_size_samples,
-                supercrop_stride_samples=supercrop_stride_samples,
-                drop_samples=drop_samples, mapping=mapping)
-            windows_ds = WindowsDataset(windows, base_ds.info)
-            all_windows_ds.append(windows_ds)
-            all_infos.append(info)
-
-        super().__init__(all_windows_ds)
-        self.info = pd.concat(all_infos)
+            base_ds = BaseDataset(raw, info, target=target_name)
+            all_base_ds.append(base_ds)
+        super().__init__(all_base_ds)
 
     def split(self, some_property=None, split_ids=None):
         """Split the dataset based on some property listed in its info DataFrame
