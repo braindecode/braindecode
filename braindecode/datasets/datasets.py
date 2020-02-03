@@ -171,7 +171,6 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
     -------
     raws: mne.Raw
     info: pandas.DataFrame
-
     """
     dataset = _find_dataset_in_moabb(dataset_name)
     subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids

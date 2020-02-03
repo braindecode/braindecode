@@ -131,25 +131,23 @@ def create_fixed_length_windows(
                 starts[-1] = ds.raw.n_times - supercrop_size_samples
 
         # TODO: handle multi-target case / non-integer target case
-        assert len(ds.info[ds.target]) == 1, (
-            "multi-target not supported")
-        description = ds.info[ds.target].iloc[0]
+        target = ds.target
         # https://github.com/numpy/numpy/issues/2951
-        if not isinstance(description, np.integer):
+        if not isinstance(target, np.integer):
             assert mapping is not None, (
-                f"a mapping from '{description}' to int is required")
-            description = mapping[description]
-        events = [[start, supercrop_size_samples, description]
+                f"a mapping from '{target}' to int is required")
+            target = mapping[target]
+        fake_events = [[start, supercrop_size_samples, target]
                   for i_start, start in enumerate(starts)]
-        metadata = pd.DataFrame(
-            zip(np.arange(len(events)), starts, starts + supercrop_size_samples,
-                len(events) *[description]),
+        metadata = pd.DataFrame(zip(
+            np.arange(len(fake_events)), starts, starts + supercrop_size_samples,
+                len(fake_events) * [target]),
             columns=["i_supercrop_in_trial", "i_start_in_trial",
                      "i_stop_in_trial", "target"])
 
         # supercrop size - 1, since tmax is inclusive
         mne_epochs =  mne.Epochs(
-            ds.raw, events, baseline=None,
+            ds.raw, fake_events, baseline=None,
             tmin=0, tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata)
         windows_ds = WindowsDataset(mne_epochs, ds.description)
@@ -221,5 +219,9 @@ def _check_windowing_arguments(
         "supercrop size has to be larger than 0")
     assert supercrop_stride_samples > 0, (
         "supercrop stride has to be larger than 0")
-    # TODO: assert values are integers
-    # TODO: assert start < stop
+    # TODO: how to correctly check for integer values?
+    # assert isinstance(trial_start_offset_samples, np.integer)
+    # assert isinstance(trial_stop_offset_samples, np.integer)
+    # assert isinstance(supercrop_size_samples, np.integer)
+    # assert isinstance(supercrop_stride_samples, np.integer)
+    assert trial_start_offset_samples < trial_stop_offset_samples
