@@ -96,7 +96,7 @@ for i, (x, y, supercrop_ind) in enumerate(windows_ds):
     if i == max_i:
         break
 
-print(bcic42a_windows.datasets[0].windows.info["sfreq"])
+print(windows_ds.datasets[0].windows.info["sfreq"])
 
 ###############################################################################
 # Again, we can easily split windows_ds based on some criteria in the
