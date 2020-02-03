@@ -16,51 +16,52 @@ from torch.utils.data import Dataset, ConcatDataset, Subset
 
 
 class BaseDataset(Dataset):
-    """
-    A base dataset.
+    """A base dataset holds a mne.Raw, and a pandas.DataFrame with additional
+    description, such as subject_id, session_id, run_id, or age or gender of
+    subjects.
 
     Parameters
     ----------
     raw: mne.Raw
-    info: pandas.DataFrame
-        holds additional information about the raw
+    description: pandas.DataFrame
+        holds additional description about the continuous signal / subject
     """
-    def __init__(self, raw, info, target=None):
+    def __init__(self, raw, description, target_name=None):
         self.raw = raw
-        # TODO: rename
-        self.info = info
-        if target is not None:
-            assert target in self.info, f"'{target}' not in info"
-        self.target = target
+        self.description = description
+        if target_name is not None:
+            assert target_name in self.description, (
+                f"'{target_name}' not in info")
+            self.target = self.description[target_name].values[0]
 
     def __getitem__(self, index):
-        return self.raw, self.target
+        return self.raw[:, index][0], self.target
 
     def __len__(self):
         return len(self.raw)
 
 
 class WindowsDataset(BaseDataset):
-    """
-    Applies a windower to a base dataset.
+    """Applies a windower to a base dataset.
 
     Parameters
     ----------
     windows: ConcatDataset
         windows/supercrops obtained throiugh application of a Windower to a
         BaseDataset
-    info: pandas.DataFrame
+    description: pandas.DataFrame
         hold additional info about the windows
     """
-    def __init__(self, windows, info):
+    def __init__(self, windows, description):
         self.windows = windows
-        self.info = info
+        self.description = description
 
     def __getitem__(self, index):
-        target = self.windows.events[:,-1]
+        target = self.windows.metadata["target"]
         keys = ['i_supercrop_in_trial', 'i_start_in_trial', 'i_stop_in_trial']
-        info = self.windows.metadata.iloc[index][keys].to_list()
-        return self.windows[index].get_data().squeeze(0), target[index], info
+        supercrop_ind = self.windows.metadata.iloc[index][keys].to_list()
+        x = self.windows[index].get_data().squeeze(0)
+        return x, target[index], supercrop_ind
 
     def __len__(self):
         return len(self.windows.events)
@@ -76,7 +77,6 @@ class BaseConcatDataset(ConcatDataset):
     list_of_ds: list
         list of BaseDataset of WindowsDataset to be concatenated.
     """
-
     def __init__(self, list_of_ds):
         super().__init__(list_of_ds)
         self.description = pd.concat(ds.description for ds in list_of_ds)
