@@ -53,7 +53,7 @@ def create_windows_from_events(
         supercrop_size_samples, supercrop_stride_samples)
 
     list_of_windows_ds = []
-    for ds in concat_ds:
+    for ds in concat_ds.datasets:
         events = mne.find_events(ds.raw)
         onsets = events[:, 0]
         description = events[:, -1]
@@ -115,7 +115,7 @@ def create_fixed_length_windows(
         supercrop_size_samples, supercrop_stride_samples)
 
     list_of_windows_ds = []
-    for ds in concat_ds:
+    for ds in concat_ds.datasets:
         # already includes last incomplete supercrop start
         stop = (ds.raw.n_times
                 if trial_stop_offset_samples is None

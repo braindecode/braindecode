@@ -191,8 +191,8 @@ class MOABBDataset(BaseConcatDataset):
             self, dataset_name, subject_ids):
         raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
         all_base_ds = []
-        for raw_i, raw in enumerate(raws):
-            base_ds = BaseDataset(raw, description.iloc[raw_i])
+        for i_raw, raw in enumerate(raws):
+            base_ds = BaseDataset(raw, description.iloc[[i_raw]])
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 

@@ -29,6 +29,7 @@ class BaseDataset(Dataset):
     def __init__(self, raw, description, target_name=None):
         self.raw = raw
         self.description = description
+        self.target = target_name
         if target_name is not None:
             assert target_name in self.description, (
                 f"'{target_name}' not in info")
