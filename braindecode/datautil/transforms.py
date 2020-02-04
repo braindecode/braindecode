@@ -19,14 +19,15 @@ def transform_concat_ds(concat_ds, transforms):
 
     Parameters
     ----------
-    concat_ds: A concat of BaseDataset or WindowsDataset
-        datasets to be transformed
+    concat_ds: BaseConcatDataset
+        A concat of BaseDataset or WindowsDataset datasets to be transformed
     transforms: dict(str | callable: dict)
-        dict with function names of mne.raw or a custom transform and function
-        kwargs
+        dict with function names of mne.Raw/mne.Epochs or a custom transform
+        and function kwargs
     Returns
     -------
-    concat_ds:
+    concat_ds: BaseConcatDataset
+        A concat of transformed BaseDataset or WindowsDataset
     """
     assert isinstance(transforms, OrderedDict), (
         "Order of transforms matters! Please provide an OrderedDict.")
@@ -43,32 +44,28 @@ def transform_concat_ds(concat_ds, transforms):
 def _transform_raw(raw, transforms):
     for transform, transform_kwargs in transforms.items():
         if callable(transform):
-            _custom_transform_raw(raw, transform, transform_kwargs)
+            _custom_transform(raw, transform, transform_kwargs)
         else:
             assert hasattr(raw, transform), f"raw does not have {transform}"
             _mne_transform(raw, transform, transform_kwargs)
 
 
-def _custom_transform_raw(raw, transform, transform_kwargs):
-    transform(raw, **transform_kwargs)
+def _custom_transform(raw_or_windows, transform, transform_kwargs):
+    transform(raw_or_windows, **transform_kwargs)
 
 
-def _mne_transform(raw_or_epochs, transform, transform_kwargs):
-    getattr(raw_or_epochs.load_data(), transform)(**transform_kwargs)
+def _mne_transform(raw_or_windows, transform, transform_kwargs):
+    getattr(raw_or_windows.load_data(), transform)(**transform_kwargs)
 
 
 def _transform_windows(windows, transforms):
     for transform, transform_kwargs in transforms.items():
         if callable(transform):
-            _custom_transform_windows(windows, transform, transform_kwargs)
+            _custom_transform(windows, transform, transform_kwargs)
         else:
             assert hasattr(windows, transform), (
                 f"epochs does not have {transform}")
             _mne_transform(windows, transform, transform_kwargs)
-
-
-def _custom_transform_windows(windows, transform, transform_kwargs):
-    transform(windows, **transform_kwargs)
 
 
 class FilterRaw(object):

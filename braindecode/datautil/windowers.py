@@ -32,7 +32,7 @@ def create_windows_from_events(
 
     Parameters
     ----------
-    concat_ds: ConcatDataset
+    concat_ds: BaseConcatDataset
         a concat of base datasets each holding raw and descpription
     trial_start_offset_samples: int
         start offset from original trial onsets in samples
@@ -47,6 +47,10 @@ def create_windows_from_events(
         supercrops/windows do not equally devide the continuous signal
     mapping: dict(str: int)
         mapping from event description to target value
+    Returns
+    -------
+    concat_ds: BaseConcatDataset
+        A concat of WindowsDataset
     """
     _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
@@ -55,6 +59,8 @@ def create_windows_from_events(
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
         # TODO: how to get events without 'stim' channel?
+        # TODO: how to drop 'stim' channel afterwards?
+        # TODO: through transform on WindowsDataset?
         events = mne.find_events(ds.raw)
         onsets = events[:, 0]
         description = events[:, -1]
@@ -77,7 +83,7 @@ def create_windows_from_events(
             columns=["i_supercrop_in_trial", "i_start_in_trial",
                      "i_stop_in_trial", "target"])
 
-        # supercrop size - 1, since tmax is inclusive
+        # supercrop/window size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(ds.raw, events, baseline=None, tmin=0,
             tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata)
@@ -95,7 +101,7 @@ def create_fixed_length_windows(
 
     Parameters
     ----------
-    concat_ds: ConcatDataset
+    concat_ds: BaseConcatDataset
         a concat of base datasets each holding raw and descpription
     trial_start_offset_samples: int
         start offset from original trial onsets in samples
@@ -110,6 +116,10 @@ def create_fixed_length_windows(
         supercrops/windows do not equally devide the continuous signal
     mapping: dict(str: int)
         mapping from event description to target value
+    Returns
+    -------
+    concat_ds: BaseConcatDataset
+        A concat of WindowsDataset
     """
     _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
@@ -126,7 +136,7 @@ def create_fixed_length_windows(
         if drop_samples:
             starts = starts[:-1]
         else:
-            # if last supercrop does not end at trial stop, make it stop
+            # if last supercrop/window does not end at trial stop, make it stop
             # there
             if starts[-1] != ds.raw.n_times - supercrop_size_samples:
                 starts[-1] = ds.raw.n_times - supercrop_size_samples
@@ -158,8 +168,9 @@ def create_fixed_length_windows(
 
 def _compute_supercrop_inds(
         onsets, start_offset, stop_offset, size, stride, drop_samples):
-    """Create supercrop starts from trial onsets (shifted by offset) to trial
-    end separated by stride as long as supercrop size fits into trial
+    """Create supercrop/window starts from trial onsets (shifted by offset) to
+    trial end separated by stride as long as supercrop/window size fits into
+    trial
 
     Parameters
     ----------
@@ -170,15 +181,17 @@ def _compute_supercrop_inds(
     stop_offset: int
         stop offset from original trial onsets in samples
     size: int
-        supercrop size
+        supercrop/window size
     stride: int
         stride between supercrops
     drop_samples: bool
-        toggles of shifting last supercrop within range or dropping last samples
+        toggles of shifting last supercrop/window within range or dropping last
+        samples
 
     Returns (list, list, list, list)
     -------
-        trial, i_supercrop_in_trial, start sample and stop sample of supercrops
+        trial, i_supercrop_in_trial, start sample and stop sample of
+        supercrops/windows
     """
     # trial ends are defined by trial starts (onsets maybe shifted by offset)
     # and end
@@ -225,4 +238,5 @@ def _check_windowing_arguments(
     # assert isinstance(trial_stop_offset_samples, np.integer)
     # assert isinstance(supercrop_size_samples, np.integer)
     # assert isinstance(supercrop_stride_samples, np.integer)
-    assert trial_start_offset_samples < trial_stop_offset_samples
+    if trial_stop_offset_samples is not None:
+        assert trial_start_offset_samples < trial_stop_offset_samples

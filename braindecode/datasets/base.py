@@ -1,5 +1,5 @@
 """
-Dataset classes.
+Dataset base classes.
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
@@ -32,7 +32,7 @@ class BaseDataset(Dataset):
         self.target = target_name
         if target_name is not None:
             assert target_name in self.description, (
-                f"'{target_name}' not in info")
+                f"'{target_name}' not in description")
             self.target = self.description[target_name].values[0]
 
     def __getitem__(self, index):
@@ -47,9 +47,9 @@ class WindowsDataset(BaseDataset):
 
     Parameters
     ----------
-    windows: ConcatDataset
-        windows/supercrops obtained throiugh application of a Windower to a
-        BaseDataset
+    windows: mne.Epochs
+        windows/supercrops obtained throiugh application of a windowing
+        function to a BaseDataset
     description: pandas.DataFrame
         hold additional info about the windows
     """

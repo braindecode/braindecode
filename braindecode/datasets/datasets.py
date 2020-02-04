@@ -1,5 +1,5 @@
 """
-BCI competition IV 2a dataset
+A collection of Braindecode compatible datasets.
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
@@ -138,7 +138,7 @@ def _find_dataset_in_moabb(dataset_name):
         if dataset_name == dataset.__name__:
             # return an instance of the found dataset class
             return dataset()
-    raise ValueError("'dataset_name' not found in moabb datasets")
+    raise ValueError(f"{dataset_name} not found in moabb datasets")
 
 
 def _fetch_and_unpack_moabb_data(dataset, subject_ids):
@@ -169,8 +169,7 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
 
     Returns
     -------
-    raws: mne.Raw
-    info: pandas.DataFrame
+    tuple: (list(mne.Raw), pandas.DataFrame)
     """
     dataset = _find_dataset_in_moabb(dataset_name)
     subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids

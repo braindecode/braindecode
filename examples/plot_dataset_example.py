@@ -34,12 +34,12 @@ for x, y in ds:
 
 # we can apply preprocessing transforms which work in-place, such as resampling,
 # bandpass filtering, or electrode selection
-transform_dict = OrderedDict({
+raw_transform_dict = OrderedDict({
     "pick_types": {"eeg": True, "meg": False, "stim": True},
     "resample": {"sfreq": 100},
 })
 print(ds.datasets[0].raw.info["sfreq"])
-transform_concat_ds(ds, transform_dict)
+transform_concat_ds(ds, raw_transform_dict)
 print(ds.datasets[0].raw.info["sfreq"])
 
 ###############################################################################
@@ -76,22 +76,28 @@ for i, (x, y, supercrop_ind) in enumerate(windows_ds):
         break
 
 ###############################################################################
+# or apply further preprocessing on the supercrops/windows
 def crop_windows(windows, start_offset_samples, stop_offset_samples):
     fs = windows.info["sfreq"]
     windows.crop(tmin=start_offset_samples/fs, tmax=stop_offset_samples/fs,
                  include_tmax=False)
 
-epochs_transforms_dict = OrderedDict({
+def scale_windows(windows, factor):
+    windows.load_data()
+    windows._data *= factor
+
+windows_transforms_dict = OrderedDict({
     "pick_types": {"eeg": True, "meg": False, "stim": False},
+    scale_windows: {"factor": 1e6},
     crop_windows: {"start_offset_samples": 100, "stop_offset_samples": 900}
 })
+transform_concat_ds(windows_ds, windows_transforms_dict)
 
 max_i = 2
 fig, ax_arr = plt.subplots(1, max_i+1, figsize=((max_i+1)*7, 5),
                            sharex=True, sharey=True)
 for i, (x, y, supercrop_ind) in enumerate(windows_ds):
     ax_arr[i].plot(x.T)
-    ax_arr[i].set_ylim(-0.0002, 0.0002)
     ax_arr[i].set_title(f"label={y}")
     if i == max_i:
         break
