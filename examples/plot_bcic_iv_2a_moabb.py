@@ -16,6 +16,7 @@ import numpy as np
 import torch
 from torch import optim
 
+from braindecode.datautil.windowers import create_windows_from_events
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.losses import CroppedNLLLoss
@@ -27,11 +28,7 @@ from braindecode.util import set_random_seeds
 
 model_name = "shallow"  # 'shallow' or 'deep'
 cuda = torch.cuda.is_available()
-# cuda = False
-if cuda:
-    device = "cuda"
-else:
-    device = "cpu"
+device = 'cuda' if cuda else 'cpu'
 
 set_random_seeds(seed=20190706, cuda=cuda)
 
@@ -66,24 +63,18 @@ with torch.no_grad():
     n_preds_per_input = model(dummy_input).shape[2]
 
 
+dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 
-dataset = MOABBDataset(
-    "BNCI2014001",
-    subject_ids=[1],
-    trial_start_offset_samples=-125,
-    trial_stop_offset_samples=1000,
-    supercrop_size_samples=1000,
-    supercrop_stride_samples=n_preds_per_input,
-    drop_samples=False,
-    mapping={1:0, 2:1, 3:2, 4:3},
-)
+windows_dataset = create_windows_from_events(
+    dataset, trial_start_offset_samples=-125, trial_stop_offset_samples=1000,
+    supercrop_size_samples=1000, supercrop_stride_samples=n_preds_per_input,
+    drop_samples=False, mapping={1:0, 2:1, 3:2, 4:3})
 
 
 class TrainTestBCICIV2aSplit(object):
     def __call__(self, dataset, y, **kwargs):
         splitted = dataset.split('session')
         return splitted['session_T'], splitted['session_E']
-
 
 
 cropped_cb_train = CroppedTrialEpochScoring(
@@ -132,4 +123,4 @@ clf = EEGClassifier(
     device=device,
 )
 
-clf.fit(dataset, y=None, epochs=4)
+clf.fit(windows_dataset, y=None, epochs=1)

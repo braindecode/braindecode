@@ -152,7 +152,7 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
                 session_ids.append(sess_id)
                 run_ids.append(run_id)
     description = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
-                        columns=["subject", "session", "run"])
+                               columns=["subject", "session", "run"])
     return raws, description
 
 
@@ -186,13 +186,10 @@ class MOABBDataset(BaseConcatDataset):
     subject_ids: list(int) | int
         (list of) int of subject(s) to be fetched
     """
-    def __init__(
-            self, dataset_name, subject_ids):
+    def __init__(self, dataset_name, subject_ids):
         raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
-        all_base_ds = []
-        for i_raw, raw in enumerate(raws):
-            base_ds = BaseDataset(raw, description.iloc[[i_raw]])
-            all_base_ds.append(base_ds)
+        all_base_ds = [BaseDataset(raw, row) 
+                       for raw, (_, row) in zip(raws, description.iterrows())]
         super().__init__(all_base_ds)
 
 

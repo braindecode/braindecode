@@ -24,6 +24,7 @@ def transform_concat_ds(concat_ds, transforms):
     transforms: dict(str | callable: dict)
         dict with function names of mne.raw or a custom transform and function
         kwargs
+        
     Returns
     -------
     concat_ds:
@@ -33,11 +34,17 @@ def transform_concat_ds(concat_ds, transforms):
     for ds in concat_ds.datasets:
         if hasattr(ds, "raw"):
             _transform_raw(ds.raw, transforms)
-        else:
-            assert hasattr(ds, "windows"), (
-                "Can only tranform concatenation of BaseDataset or "
-                "WindowsDataset")
+        elif hasattr(ds, "windows"):
             _transform_windows(ds.windows, transforms)
+        else:
+            raise ValueError(
+                'Can only transform concatenation of BaseDataset or '
+                'WindowsDataset, with either a `raw` or `windows` attribute.')
+
+    # Recompute cumulative sizes as the transforms might have changed them
+    # XXX: Ultimately, the best solution would be to have cumulative_size be
+    #      a property of BaseConcatDataset.
+    concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
 
 
 def _transform_raw(raw, transforms):
