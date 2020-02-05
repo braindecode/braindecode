@@ -42,7 +42,6 @@ def set_up():
          'i_stop_in_trial': i_stop_in_trial})
 
     mne_epochs = mne.Epochs(raw=raw, events=events, metadata=metadata)
-    epochs_data = mne_epochs.get_data()
     windows_dataset = WindowsDataset(mne_epochs, metadata)
 
     return raw, base_dataset, mne_epochs, windows_dataset, events, supercrop_idxs
@@ -60,7 +59,7 @@ def concat_ds_targets():
 
 
 def test_get_item(set_up):
-    raw, _, mne_epochs, windows_dataset, events, supercrop_idxs  = set_up
+    _, _, mne_epochs, windows_dataset, events, supercrop_idxs  = set_up
     for i, epoch in enumerate(mne_epochs.get_data()):
         x, y, inds = windows_dataset[i]
         np.testing.assert_allclose(epoch, x)
@@ -87,7 +86,7 @@ def test_len_concat_dataset(concat_ds_targets):
 def test_target_in_subject_info(set_up):
     raw, _, _, _, _, _ = set_up
     desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
-    with pytest.raises(AssertionError, match="'does_not_exist' not in info"):
+    with pytest.raises(ValueError, match="'does_not_exist' not in description"):
         BaseDataset(raw, desc, target_name='does_not_exist')
 
 
@@ -100,9 +99,9 @@ def test_description_concat_dataset(concat_ds_targets):
 def test_split_concat_dataset(concat_ds_targets):
     concat_ds = concat_ds_targets[0]
     splits = concat_ds.split('run')
-    
+
     for k, v in splits.items():
         assert k == v.description['run'].values
         assert isinstance(v, BaseConcatDataset)
-    
+
     assert len(concat_ds) == sum([len(v) for v in splits.values()])

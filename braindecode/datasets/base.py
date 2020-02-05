@@ -9,10 +9,9 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
-import numpy as np
 import pandas as pd
 
-from torch.utils.data import Dataset, ConcatDataset, Subset
+from torch.utils.data import Dataset, ConcatDataset
 
 
 class BaseDataset(Dataset):
@@ -31,8 +30,8 @@ class BaseDataset(Dataset):
         self.description = description
         self.target = target_name
         if target_name is not None:
-            assert target_name in self.description, (
-                f"'{target_name}' not in info")
+            if target_name not in self.description:
+                raise ValueError(f"'{target_name}' not in description.")
             self.target = self.description[target_name]
 
     def __getitem__(self, index):
@@ -99,15 +98,15 @@ class BaseConcatDataset(ConcatDataset):
             mapping of split name based on property or index based on split_ids
             to subset of the data
         """
-        assert split_ids is None or some_property is None, (
-            "can split either based on ids or based on some property")
+        if split_ids is None and some_property is None:
+            raise ValueError('Splitting requires defining ids or a property.')
         if split_ids is None:
             split_ids = {k: list(v) for k, v in self.description.groupby(
-                some_property).groups.items()} 
+                some_property).groups.items()}
         else:
             split_ids = {split_i: split
                          for split_i, split in enumerate(split_ids)}
 
         return {split_name: BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds]) 
+            [self.datasets[ds_ind] for ds_ind in ds_inds])
             for split_name, ds_inds in split_ids.items()}

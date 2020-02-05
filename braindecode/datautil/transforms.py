@@ -1,5 +1,5 @@
 """Transforms that work on Raw or Epochs objects.
-ToDo: should transformer also transform y (e.g. cutting continuous labelled 
+ToDo: should transformer also transform y (e.g. cutting continuous labelled
       data)?
 """
 
@@ -24,13 +24,14 @@ def transform_concat_ds(concat_ds, transforms):
     transforms: dict(str | callable: dict)
         dict with function names of mne.raw or a custom transform and function
         kwargs
-        
+
     Returns
     -------
     concat_ds:
     """
-    assert isinstance(transforms, OrderedDict), (
-        "Order of transforms matters! Please provide an OrderedDict.")
+    if not isinstance(transforms, OrderedDict):
+        raise TypeError(
+            "Order of transforms matters! Please provide an OrderedDict.")
     for ds in concat_ds.datasets:
         if hasattr(ds, "raw"):
             _transform_raw(ds.raw, transforms)
@@ -52,7 +53,8 @@ def _transform_raw(raw, transforms):
         if callable(transform):
             _custom_transform_raw(raw, transform, transform_kwargs)
         else:
-            assert hasattr(raw, transform), f"raw does not have {transform}"
+            if not hasattr(raw, transform):
+                raise AttributeError(f"Raw does not have {transform}.")
             _mne_transform(raw, transform, transform_kwargs)
 
 
@@ -69,8 +71,8 @@ def _transform_windows(windows, transforms):
         if callable(transform):
             _custom_transform_windows(windows, transform, transform_kwargs)
         else:
-            assert hasattr(windows, transform), (
-                f"epochs does not have {transform}")
+            if not hasattr(windows, transform):
+                raise AttributeError(f"Epochs does not have {transform}.")
             _mne_transform(windows, transform, transform_kwargs)
 
 
@@ -92,7 +94,7 @@ class FilterRaw(object):
 
     def __call__(self, raw):
         """Apply filter
-        
+
         Parameters
         ----------
         raw : mne.io.Raw

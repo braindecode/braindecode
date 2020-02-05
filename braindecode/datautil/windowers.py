@@ -72,8 +72,9 @@ def create_windows_from_events(
         events = [[start, supercrop_size_samples, description[i_trials[i_start]]]
                    for i_start, start in enumerate(starts)]
         events = np.array(events)
-        assert (np.diff(events[:,0]) > 0).all(), (
-            "trials overlap not implemented")
+
+        if any(np.diff(events[:, 0]) <= 0):
+            raise NotImplementedError('Trial overlap not implemented.')
         description = events[:, -1]
 
         if mapping is not None:
@@ -88,7 +89,7 @@ def create_windows_from_events(
 
         # supercrop size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
-            ds.raw, events, baseline=None, tmin=0, 
+            ds.raw, events, baseline=None, tmin=0,
             tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata)
         windows_ds = WindowsDataset(mne_epochs, ds.description)
@@ -156,8 +157,9 @@ def create_fixed_length_windows(
             target = ds.target
         # https://github.com/numpy/numpy/issues/2951
         if not isinstance(target, (np.integer, int)):
-            assert mapping is not None, (
-                f"a mapping from '{target}' to int is required")
+
+            if mapping is None:
+                raise ValueError(f"Mapping from '{target}' to int is required")
             target = mapping[target]
         fake_events = [[start, supercrop_size_samples, target]
                         for i_start, start in enumerate(starts)]

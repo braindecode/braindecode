@@ -116,9 +116,10 @@ def test_single_sample_size_supercrops(concat_ds_targets):
 
 
 def test_overlapping_trial_offsets(concat_ds_targets):
-    concat_ds, targets = concat_ds_targets
-    with pytest.raises(AssertionError, match='trials overlap not implemented'):
-        windows = create_windows_from_events(
+    concat_ds, _ = concat_ds_targets
+    with pytest.raises(NotImplementedError,
+                       match='Trial overlap not implemented.'):
+        create_windows_from_events(
             concat_ds=concat_ds,
             trial_start_offset_samples=-2000, trial_stop_offset_samples=1000,
             supercrop_size_samples=1000, supercrop_stride_samples=1000,
@@ -159,8 +160,8 @@ def test_fixed_length_windower(start_offset_samples, supercrop_size_samples,
     epochs_data = epochs.datasets[0].windows.get_data()
 
     idxs = np.arange(
-        start_offset_samples, 
-        stop_offset_samples - supercrop_size_samples + 1, 
+        start_offset_samples,
+        stop_offset_samples - supercrop_size_samples + 1,
         supercrop_stride_samples)
     if not drop_samples and idxs[-1] != stop_offset_samples - supercrop_size_samples:
         idxs = np.append(idxs, stop_offset_samples - supercrop_size_samples)

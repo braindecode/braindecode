@@ -1,7 +1,7 @@
 """MOABB Dataset Example
 ========================
 
-In this example, we show how to fetch and prepare a MOABB dataset for usage 
+In this example, we show how to fetch and prepare a MOABB dataset for usage
 with Braindecode.
 """
 
@@ -38,7 +38,7 @@ for x, y in ds:
     break
 
 ##############################################################################
-# We can apply preprocessing transforms that are defined in mne and work 
+# We can apply preprocessing transforms that are defined in mne and work
 # in-place, such as resampling, bandpass filtering, or electrode selection.
 transform_dict = OrderedDict({
     "pick_types": {"eeg": True, "meg": False, "stim": True},
@@ -49,7 +49,7 @@ transform_concat_ds(ds, transform_dict)
 print(ds.datasets[0].raw.info["sfreq"])
 
 ###############################################################################
-# We can easily split ds based on a criteria applied to the description 
+# We can easily split ds based on a criteria applied to the description
 # DataFrame:
 subsets = ds.split("session")
 print({subset_name: len(subset) for subset_name, subset in subsets.items()})
@@ -63,8 +63,8 @@ windows_ds = create_windows_from_events(
 
 ###############################################################################
 # We can iterate through the windows_ds which yields a supercrop/window x,
-# a target y, and supercrop_ind (which itself contains `i_supercrop_in_trial`, 
-# `i_start_in_trial`, and `i_stop_in_trial`, which are required for combining 
+# a target y, and supercrop_ind (which itself contains `i_supercrop_in_trial`,
+# `i_start_in_trial`, and `i_stop_in_trial`, which are required for combining
 # supercrop/window predictions in the scorer).
 for x, y, supercrop_ind in windows_ds:
     print(x.shape, y, supercrop_ind)
