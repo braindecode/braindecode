@@ -126,7 +126,6 @@ def test_overlapping_trial_offsets(concat_ds_targets):
             drop_samples=False)
 
 
-# TODO: add tests for case with drop_last_sample==False
 @pytest.mark.parametrize(
     'start_offset_samples,supercrop_size_samples,supercrop_stride_samples,drop_samples',
     [(0, 100, 90, True),

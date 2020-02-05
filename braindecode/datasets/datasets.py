@@ -188,7 +188,7 @@ class MOABBDataset(BaseConcatDataset):
     """
     def __init__(self, dataset_name, subject_ids):
         raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
-        all_base_ds = [BaseDataset(raw, row) 
+        all_base_ds = [BaseDataset(raw, row)
                        for raw, (_, row) in zip(raws, description.iterrows())]
         super().__init__(all_base_ds)
 
