@@ -11,6 +11,7 @@ ToDo: should transformer also transform y (e.g. cutting continuous labelled
 # License: BSD (3-clause)
 
 from collections import OrderedDict
+
 import mne
 
 
@@ -34,9 +35,9 @@ def transform_concat_ds(concat_ds, transforms):
             "Order of transforms matters! Please provide an OrderedDict.")
     for ds in concat_ds.datasets:
         if hasattr(ds, "raw"):
-            _transform_raw(ds.raw, transforms)
+            _transform(ds.raw, transforms)
         elif hasattr(ds, "windows"):
-            _transform_windows(ds.windows, transforms)
+            _transform(ds.windows, transforms)
         else:
             raise ValueError(
                 'Can only transform concatenation of BaseDataset or '
@@ -48,36 +49,32 @@ def transform_concat_ds(concat_ds, transforms):
     concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
 
 
-def _transform_raw(raw, transforms):
+def _transform(raw_or_epochs, transforms):
+    """Apply transform(s) to Raw or Epochs object.
+
+    Parameters
+    ----------
+    raw_or_epochs: mne.io.Raw or mne.Epochs
+        Object to transform.
+    transforms: OrderedDict
+        Keys are either str or callable. If str, it represents the name of a
+        method of Raw or Epochs to be called. If callable, the callable will be
+        applied to the Raw or Epochs object.
+        Values are dictionaries of keyword arguments passed to the transform
+        function.
+
+    ..note:
+        The methods or callables that are used must modify the Raw or Epochs
+        object inplace, otherwise they won't have any effect.
+    """
     for transform, transform_kwargs in transforms.items():
         if callable(transform):
-            _custom_transform_raw(raw, transform, transform_kwargs)
+            transform(raw_or_epochs, **transform_kwargs)
         else:
-            if not hasattr(raw, transform):
-                raise AttributeError(f"Raw does not have {transform}.")
-            _mne_transform(raw, transform, transform_kwargs)
-
-
-def _custom_transform_raw(raw, transform, transform_kwargs):
-    transform(raw, **transform_kwargs)
-
-
-def _mne_transform(raw_or_epochs, transform, transform_kwargs):
-    getattr(raw_or_epochs.load_data(), transform)(**transform_kwargs)
-
-
-def _transform_windows(windows, transforms):
-    for transform, transform_kwargs in transforms.items():
-        if callable(transform):
-            _custom_transform_windows(windows, transform, transform_kwargs)
-        else:
-            if not hasattr(windows, transform):
-                raise AttributeError(f"Epochs does not have {transform}.")
-            _mne_transform(windows, transform, transform_kwargs)
-
-
-def _custom_transform_windows(windows, transform, transform_kwargs):
-    transform(windows, **transform_kwargs)
+            if not hasattr(raw_or_epochs, transform):
+                raise AttributeError(
+                    f'MNE object does not have {transform} method.')
+            getattr(raw_or_epochs.load_data(), transform)(**transform_kwargs)
 
 
 class FilterRaw(object):

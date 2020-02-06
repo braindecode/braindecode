@@ -151,16 +151,12 @@ def create_fixed_length_windows(
                 starts[-1] = last_allowed_ind
 
         # TODO: handle multi-target case / non-integer target case
-        if ds.target is None:
-            target = 1  # default target
-        else:
-            target = ds.target
-        # https://github.com/numpy/numpy/issues/2951
-        if not isinstance(target, (np.integer, int)):
-
-            if mapping is None:
-                raise ValueError(f"Mapping from '{target}' to int is required")
+        target = -1 if ds.target is None else ds.target
+        if mapping is not None:
             target = mapping[target]
+        if not isinstance(target, (np.integer, int)):
+           raise ValueError(f"Mapping from '{target}' to int is required")
+
         fake_events = [[start, supercrop_size_samples, target]
                         for i_start, start in enumerate(starts)]
         metadata = pd.DataFrame(zip(

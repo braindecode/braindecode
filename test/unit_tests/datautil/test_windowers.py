@@ -127,17 +127,17 @@ def test_overlapping_trial_offsets(concat_ds_targets):
 
 
 @pytest.mark.parametrize(
-    'start_offset_samples,supercrop_size_samples,supercrop_stride_samples,drop_samples',
-    [(0, 100, 90, True),
-     (0, 100, 50, True),
-     (0, 50, 50, True),
-     (0, 50, 50, False),
-     (0, None, 50, True),
-     (5, 10, 20, True),
-     (5, 10, 20, False)]
+    'start_offset_samples,supercrop_size_samples,supercrop_stride_samples,drop_samples,mapping',
+    [(0, 100, 90, True, None),
+     (0, 100, 50, True, {48: 0}),
+     (0, 50, 50, True, None),
+     (0, 50, 50, False, None),
+     (0, None, 50, True, None),
+     (5, 10, 20, True, None),
+     (5, 10, 20, False, None)]
 )
 def test_fixed_length_windower(start_offset_samples, supercrop_size_samples,
-                               supercrop_stride_samples, drop_samples):
+                               supercrop_stride_samples, drop_samples, mapping):
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=['0', '1'], sfreq=50, ch_types='eeg')
     data = rng.randn(2, 1000)
@@ -149,14 +149,18 @@ def test_fixed_length_windower(start_offset_samples, supercrop_size_samples,
     if supercrop_size_samples is None:
         supercrop_size_samples = base_ds.raw.n_times
     stop_offset_samples = data.shape[1] - start_offset_samples
-    epochs = create_fixed_length_windows(
+    epochs_ds = create_fixed_length_windows(
         concat_ds, start_offset_samples=start_offset_samples,
         stop_offset_samples=stop_offset_samples,
         supercrop_size_samples=supercrop_size_samples,
         supercrop_stride_samples=supercrop_stride_samples,
-        drop_samples=drop_samples)
+        drop_samples=drop_samples, mapping=mapping)
 
-    epochs_data = epochs.datasets[0].windows.get_data()
+    if mapping is not None:
+        assert base_ds.target == 48
+        assert all(epochs_ds.datasets[0].windows.metadata['target'] == 0)
+
+    epochs_data = epochs_ds.datasets[0].windows.get_data()
 
     idxs = np.arange(
         start_offset_samples,

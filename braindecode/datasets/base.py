@@ -24,15 +24,20 @@ class BaseDataset(Dataset):
     raw: mne.io.Raw
     description: pandas.Series
         holds additional description about the continuous signal / subject
+    target_name: str | None
+        name of the index in `description` that should be use to provide the
+        target (e.g., to be used in a prediction task later on).
     """
     def __init__(self, raw, description, target_name=None):
         self.raw = raw
         self.description = description
-        self.target = target_name
-        if target_name is not None:
-            if target_name not in self.description:
-                raise ValueError(f"'{target_name}' not in description.")
+
+        if target_name is None:
+            self.target = None
+        elif target_name in self.description:
             self.target = self.description[target_name]
+        else:
+            raise ValueError(f"'{target_name}' not in description.")
 
     def __getitem__(self, index):
         return self.raw[:, index][0], self.target
