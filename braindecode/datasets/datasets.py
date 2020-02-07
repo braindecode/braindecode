@@ -35,6 +35,7 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     for subj_id, subj_data in data.items():
         for sess_id, sess_data in subj_data.items():
             for run_id, raw in sess_data.items():
+                _populate_raw(raw, dataset)
                 raws.append(raw)
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
@@ -42,6 +43,29 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     description = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
                                columns=["subject", "session", "run"])
     return raws, description
+
+
+def _populate_raw(raw, dataset):
+    # find events from stim channel
+    events = mne.find_events(raw)
+
+    # get annotations from events
+    event_desc = {k: v for v, k in dataset.event_id.items()}
+    annots = annotations_from_events(events, raw.info['sfreq'], event_desc)
+
+    # set trial on and offset given by moabb
+    onset, offset = dataset.interval
+    annots.onset += onset
+    annots.duration += offset - onset
+
+    # set annotations
+    raw.set_annotations(annots)
+
+    # find stimulus channel index
+    stim_id = mne.pick_types(raw.info, meg=False, stim=True)
+
+    # discard stimulus channel
+    raw.drop_channels(raw.ch_names[stim_id[0]])
 
 
 def fetch_data_with_moabb(dataset_name, subject_ids):
