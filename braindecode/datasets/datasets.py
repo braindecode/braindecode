@@ -16,9 +16,7 @@ import numpy as np
 import pandas as pd
 import mne
 
-from torch.utils.data import ConcatDataset, Subset
-from .base import WindowsDataset, BaseDataset
-from ..datautil.windowers import EventWindower, FixedLengthWindower
+from .base import BaseDataset, BaseConcatDataset
 
 try:
     from mne import annotations_from_events
@@ -153,9 +151,9 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
                 run_ids.append(run_id)
-    info = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
-                        columns=["subject", "session", "run"])
-    return raws, info
+    description = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
+                               columns=["subject", "session", "run"])
+    return raws, description
 
 
 def fetch_data_with_moabb(dataset_name, subject_ids):
@@ -173,17 +171,13 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
     -------
     raws: mne.Raw
     info: pandas.DataFrame
-
     """
     dataset = _find_dataset_in_moabb(dataset_name)
     subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids
     return _fetch_and_unpack_moabb_data(dataset, subject_id)
 
 
-# TODO: EEG / EEGDataset which has a ConcatDataset and additional info
-# TODO: BaseConcatDataset: implement split
-
-class MOABBDataset(ConcatDataset):
+class MOABBDataset(BaseConcatDataset):
     """A class for moabb datasets.
 
     Parameters
@@ -191,109 +185,12 @@ class MOABBDataset(ConcatDataset):
     dataset_name: name of dataset included in moabb to be fetched
     subject_ids: list(int) | int
         (list of) int of subject(s) to be fetched
-    trial_start_offset_samples: int
-        start offset from original trial onsets in samples
-    trial_stop_offset_samples: int
-        stop offset from original trial onsets in samples
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
-    drop_samples: bool
-        whether or not have a last overlapping supercrop/window, when
-        supercrops/windows do not equally devide the continuous signal
-    ignore_events: bool
-        when True, ignores events specified in mne.Raw and uses a
-        FixedLenthWindower to create supercrops/windows
-
     """
-    # TODO: include preprocessing at different stages
-    def __init__(
-            self, dataset_name, subject_ids, trial_start_offset_samples,
-            trial_stop_offset_samples, supercrop_size_samples,
-            supercrop_stride_samples, drop_samples=False, ignore_events=False,
-            mapping=None):
-        if ignore_events:
-            windower = FixedLengthWindower
-        else:
-            windower = EventWindower
-        windower = windower(
-            trial_start_offset_samples=trial_start_offset_samples,
-            trial_stop_offset_samples=trial_stop_offset_samples,
-            supercrop_size_samples=supercrop_size_samples,
-            supercrop_stride_samples=supercrop_stride_samples,
-            drop_samples=drop_samples,
-            mapping=mapping)
-
-        raws, info = fetch_data_with_moabb(dataset_name, subject_ids)
-        all_windows_ds = []
-        for raw_i, raw in enumerate(raws):
-            base_ds = BaseDataset(raw, info.iloc[raw_i])
-            windows = windower(base_ds)
-            windows_ds = WindowsDataset(windows, base_ds.info)
-            all_windows_ds.append(windows_ds)
-        super().__init__(all_windows_ds)
-        self.info = info
-
-    # TODO: remove duplicate code here and in TUHAbnormal
-    # TODO: Create another class 'SpecificDataset'?
-    def split(self, some_property=None, split_ids=None):
-        """Split the dataset based on some property listed in its info DataFrame
-        or based on indices.
-
-        Parameters
-        ----------
-        some_property: str
-            some property which is listed in info DataFrame
-        split_ids: list(int)
-            list of indices to be combined in a subset
-
-        Returns
-        -------
-        splits: dict{split_name: subset}
-            mapping of split name based on property or index based on split_ids
-            to subset of the data
-
-        """
-        assert split_ids is None or some_property is None, (
-            "can split either based on ids or based on some property")
-        if split_ids is None:
-            split_ids = _split_ids(self.info, some_property)
-        else:
-            split_ids = {split_i: split
-                         for split_i, split in enumerate(split_ids)}
-        # split_ids are indices for WindowsDatasets
-        supercrop_ids = _windows_dataset_ids_to_supercrop_ids(
-            split_ids, self.cumulative_sizes)
-        return {split_name: Subset(self, split)
-                for split_name, split in supercrop_ids.items()}
-
-
-def _windows_dataset_ids_to_supercrop_ids(dataset_ids, cumulative_sizes):
-    supercrop_ids = {}
-    for split_name, windows_is in dataset_ids.items():
-        this_supercrop_ids = _supercrop_ids_of_windows(
-            cumulative_sizes, windows_is)
-        supercrop_ids[split_name] = this_supercrop_ids
-    return supercrop_ids
-
-
-def _supercrop_ids_of_windows(cumulative_sizes, windows_is):
-    i_stops = cumulative_sizes
-    i_starts = np.insert(cumulative_sizes[:-1], 0, [0])
-    i_per_window = []
-    for i_window in windows_is:
-        i_per_window.append(list(range(i_starts[i_window], i_stops[i_window])))
-    all_i_windows = np.concatenate(i_per_window)
-    return all_i_windows
-
-
-def _split_ids(df, some_property):
-    assert some_property in df
-    split_ids = {}
-    for group_name, group in df.groupby(some_property):
-        split_ids.update({group_name: list(group.index)})
-    return split_ids
+    def __init__(self, dataset_name, subject_ids):
+        raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
+        all_base_ds = [BaseDataset(raw, row)
+                       for raw, (_, row) in zip(raws, description.iterrows())]
+        super().__init__(all_base_ds)
 
 
 class BNCI2014001(MOABBDataset):
@@ -308,45 +205,25 @@ class HGD(MOABBDataset):
         super().__init__("Schirrmeister2017", *args, **kwargs)
 
 
-class TUHAbnormal(ConcatDataset):
+class TUHAbnormal(BaseConcatDataset):
     """Temple University Hospital (TUH) Abnormal EEG Corpus.
 
     Parameters
     ----------
-    trial_start_offset_samples: int
-        start offset from original trial onsets in samples
-    trial_stop_offset_samples: int
-        stop offset from original trial onsets in samples
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
-    drop_samples: bool
-        whether or not have a last overlapping supercrop/window, when
-        supercrops/windows do not equally devide the continuous signal
-    target: str
-
-    mapping: dict{target_value: int}
-        maps target values to integers
+    path: str
+        parent directory of the dataset
+    subject_ids: list(int) | int
+        (list of) int of subject(s) to be read
+    target_name: str
+        can be 'pathological', 'gender', or 'age'
     """
-
-    def __init__(self, path, trial_start_offset_samples,
-                 trial_stop_offset_samples, supercrop_size_samples,
-                 supercrop_stride_samples, subject_ids=None,
-                 drop_samples=False, target="pathological", mapping=None):
-        windower = FixedLengthWindower(
-            trial_start_offset_samples=trial_start_offset_samples,
-            trial_stop_offset_samples=trial_stop_offset_samples,
-            supercrop_size_samples=supercrop_size_samples,
-            supercrop_stride_samples=supercrop_stride_samples,
-            drop_samples=drop_samples, mapping=mapping)
-
+    def __init__(self, path, subject_ids=None, target_name="pathological"):
         all_file_paths = read_all_file_names(
             path, extension='.edf', key=self._time_key)
         if subject_ids is None:
             subject_ids = np.arange(len(all_file_paths))
 
-        all_windows_ds, all_infos = [], []
+        all_base_ds = []
         for subject_id in subject_ids:
             file_path = all_file_paths[subject_id]
             raw = mne.io.read_raw_edf(file_path)
@@ -362,48 +239,13 @@ class TUHAbnormal(ConcatDataset):
                 assert "eval" in path_splits
                 session = "eval"
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
-            info = pd.DataFrame(
+            description = pd.DataFrame(
                 [[age, pathological, gender, session, subject_id]],
                 columns=["age", "pathological", "gender",
                 "session", "subject"], index=[subject_id])
-            base_ds = BaseDataset(raw, info, target=target)
-            windows = windower(base_ds)
-            windows_ds = WindowsDataset(windows, base_ds.info)
-            all_windows_ds.append(windows_ds)
-            all_infos.append(info)
-
-        super().__init__(all_windows_ds)
-        self.info = pd.concat(all_infos)
-
-    def split(self, some_property=None, split_ids=None):
-        """Split the dataset based on some property listed in its info DataFrame
-        or based on indices.
-
-        Parameters
-        ----------
-        some_property: str
-            some property which is listed in info DataFrame
-        split_ids: list(int)
-            list of indices to be combined in a subset
-
-        Returns
-        -------
-        splits: dict{split_name: subset}
-            mapping of split name based on property or index based on split_ids
-            to subset of the data
-        """
-        assert split_ids is None or some_property is None, (
-            "can split either based on ids or based on some property")
-        if split_ids is None:
-            split_ids = _split_ids(self.info, some_property)
-        else:
-            split_ids = {split_i: split
-                         for split_i, split in enumerate(split_ids)}
-        # split_ids are indices for WindowsDatasets
-        supercrop_ids = _windows_dataset_ids_to_supercrop_ids(
-            split_ids, self.cumulative_sizes)
-        return {split_name: Subset(self, split)
-                for split_name, split in supercrop_ids.items()}
+            base_ds = BaseDataset(raw, description, target_name=target_name)
+            all_base_ds.append(base_ds)
+        super().__init__(all_base_ds)
 
     def _time_key(self, file_path):
         # the splits are specific to tuh abnormal eeg data set

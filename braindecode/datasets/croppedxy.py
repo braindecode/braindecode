@@ -6,7 +6,7 @@
 import numpy as np
 from torch.utils.data import Dataset
 
-from braindecode.datautil.windowers import _supercrop_starts
+from braindecode.datautil.windowers import _compute_supercrop_inds
 
 
 class CroppedXyDataset(Dataset):
@@ -34,7 +34,7 @@ class CroppedXyDataset(Dataset):
         # i_supercrop -> i_trial, start, stop
         i_supercrop_to_idx = []
         for i_trial, trial in enumerate(X):
-            idx = _supercrop_starts(
+            idx = _compute_supercrop_inds(
                 np.array([0]),
                 0,
                 trial.shape[1],
