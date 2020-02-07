@@ -22,6 +22,7 @@ from mne import Annotations
 from mne.utils import _validate_type
 import collections
 
+
 try:
     from mne import annotations_from_events
 except ImportError:
