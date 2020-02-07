@@ -60,9 +60,12 @@ def create_windows_from_events(
 
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
+        if mapping is None:
+            # mapping event descriptions to integers from 0 on
+            mapping = {v: k for k, v in enumerate(
+                np.unique(ds.raw.annotations.description))}
 
-        # TODO: how to get events without 'stim' channel?
-        events = mne.find_events(ds.raw)
+        events, _ = mne.events_from_annotations(ds.raw, mapping)
         onsets = events[:, 0]
         description = events[:, -1]
         i_trials, i_supercrop_in_trials, starts, stops = _compute_supercrop_inds(
@@ -75,12 +78,8 @@ def create_windows_from_events(
 
         if any(np.diff(events[:, 0]) <= 0):
             raise NotImplementedError('Trial overlap not implemented.')
-        description = events[:, -1]
 
-        if mapping is not None:
-            # Apply remapping of targets
-            description = np.array([mapping[d] for d in description])
-            events[:, -1] = description
+        description = events[:, -1]
 
         metadata = pd.DataFrame(
             zip(i_supercrop_in_trials, starts, stops, description),
@@ -89,7 +88,7 @@ def create_windows_from_events(
 
         # supercrop size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
-            ds.raw, events, baseline=None, tmin=0,
+            ds.raw, events, mapping ,baseline=None, tmin=0,
             tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata)
         windows_ds = WindowsDataset(mne_epochs, ds.description)

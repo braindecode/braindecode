@@ -68,7 +68,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 windows_dataset = create_windows_from_events(
     dataset, trial_start_offset_samples=-125, trial_stop_offset_samples=1000,
     supercrop_size_samples=1000, supercrop_stride_samples=n_preds_per_input,
-    drop_samples=False, mapping={1:0, 2:1, 3:2, 4:3})
+    drop_samples=False)
 
 
 class TrainTestBCICIV2aSplit(object):

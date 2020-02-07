@@ -19,8 +19,8 @@ from braindecode.datautil import (
 def concat_ds_targets():
     raws, description = fetch_data_with_moabb(
         dataset_name="BNCI2014001", subject_ids=4)
-    events = mne.find_events(raws[0])
-    targets = events[:, -1]
+    events, _ = mne.events_from_annotations(raws[0])
+    targets = events[:, -1] - 1
     ds = BaseDataset(raws[0], description.iloc[0])
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
