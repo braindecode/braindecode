@@ -35,7 +35,10 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     for subj_id, subj_data in data.items():
         for sess_id, sess_data in subj_data.items():
             for run_id, raw in sess_data.items():
-                _populate_raw(raw, dataset)
+                # set annotation if empty
+                if len(raw.annotations) == 0:
+                    annots = _annotations_from_raw(raw, dataset)
+                    raw.set_annotations(annots)
                 raws.append(raw)
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
@@ -45,7 +48,7 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     return raws, description
 
 
-def _populate_raw(raw, dataset):
+def _annotations_from_raw(raw, dataset):
     # find events from stim channel
     events = mne.find_events(raw)
 
@@ -58,15 +61,7 @@ def _populate_raw(raw, dataset):
     annots.onset += onset
     annots.duration += offset - onset
 
-    # set annotations
-    raw.set_annotations(annots)
-
-    # find stimulus channel index
-    stim_id = mne.pick_types(raw.info, meg=False, stim=True)
-
-    # discard stimulus channel
-    raw.drop_channels(raw.ch_names[stim_id[0]])
-
+    return annots
 
 def fetch_data_with_moabb(dataset_name, subject_ids):
     # ToDo: update path to where moabb downloads / looks for the data
