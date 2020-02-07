@@ -4,5 +4,5 @@ scipy
 resampy
 matplotlib
 h5py
-mne>=0.19.2
+git+https://github.com/mne-tools/mne-python.git
 skorch

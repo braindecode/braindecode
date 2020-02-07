@@ -18,9 +18,9 @@ Braindecode
 
 A deep learning toolbox to decode raw time-domain EEG.
 
-For EEG researchers that want to want to work with deep learning and
-deep learning researchers that want to work with EEG data.
-For now focussed on convolutional networks.
+For EEG researchers who want to work with deep learning and
+deep learning researchers who want to work with EEG data.
+For now focused on convolutional networks.
 
 
 Installation
@@ -48,6 +48,10 @@ alternatively, if you use conda, you could create a dedicated environment with t
 	conda env create -f environment.yml
 	conda activate braindecode
 
+.. note::
+  The latest development version of mne-python is currently required for
+  improvements to lazy loading performance. (commit 3989f998c5f974ed37e97fa3e6c8ead0f5a1cb2a).
+
 Install the latest version of braindecode via pip:
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -66,6 +70,7 @@ Dataset
 =======
 The high-gamma dataset used in our publication (see below), including trained models, is available under:
 https://web.gin.g-node.org/robintibor/high-gamma-dataset/
+
 
 Citing
 ======

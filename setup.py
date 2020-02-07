@@ -24,7 +24,7 @@ setup(
     long_description=long_description,
 
     # The project's main homepage.
-    url='https://github.com/robintibor/braindecode',
+    url='https://github.com/braindecode/braindecode',
 
     # Author details
     author='Robin Tibor Schirrmeister',
@@ -33,8 +33,9 @@ setup(
     # Choose your license
     license='BSD 3-Clause',
 
-    install_requires=['mne>=0.19.2', 'numpy', 'pandas', 'scipy',
-                      'resampy', 'matplotlib', 'h5py',],
+    install_requires=[
+        'mne @ git+https://github.com/mne-tools/mne-python.git',
+        'numpy', 'pandas', 'scipy', 'resampy', 'matplotlib', 'h5py',],
     #tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers
@@ -53,8 +54,7 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.5',
+        'Programming Language :: Python :: 3.7',
     ],
 
     # What does your project relate to?
