@@ -60,7 +60,6 @@ import torch
 from torch import nn, optim
 from torch.utils.data import DataLoader
 
-import mne
 import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import display
@@ -70,33 +69,55 @@ from braindecode.datautil.windowers import create_fixed_length_windows
 from braindecode.datautil.transforms import transform_concat_ds
 from braindecode.models import ShallowFBCSPNet
 
+# =============
+# Eager loading
+# =============
 
-mne.set_log_level('WARNING')  # without this, a message will be printed everytime a window is extracted
-
-# ============
-# Lazy loading
-# ============
-
-##############################################################################
-# Lazy loading
+###############################################################################
+# Eager loading
 # -------------
-# We load the same three subjects as above, but this time we specify that the
-# data should not be preloaded.
+# First, we create a dataset by loading three subjects from the TUH Abnormal
+# EEG dataset:
 path = '/storage/store/data/tuh_eeg/www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/edf/'
 subject_ids = [0, 1, 2]
 ds = TUHAbnormal(
-    path, subject_ids=subject_ids, target_name="pathological", preload=False)
+    path, subject_ids=subject_ids, target_name="pathological", preload=True)
 
 # Let's check whether the data is preloaded
 print(ds.datasets[0].raw.preload)
 
 ##############################################################################
-# As opposed to the eager loading case, it is not possible to apply transforms
-# that would require loading the continuous data into memory. All transform
-# methods have to be applied on-the-fly.
+# We apply temporal filtering on the continuous data, which could not be done
+# without loading the entire continuous recordings first.
+
+# XXX: pick_types and pick_channels don't work in place
+# XXX: can we use "apply_method" as a way to make this work?
+transform_dict = OrderedDict({
+    # 'pick_types': {"eeg": True, "meg": False, "stim": False},
+    # 'pick_channels': [],
+    # 'resample': {"sfreq": 100},
+    'filter': {
+        'l_freq': 3, 
+        'h_freq': 30, 
+        'picks': ['eeg']  # This controls which channels are filtered, but it keeps all of them.
+    }
+})
+
+# The data should have zero-mean after filtering
+print('Mean amplitude: ', ds.datasets[0].raw.get_data().mean())
+print('Number of channels: ', ds.datasets[0].raw.get_data().shape)
+transform_concat_ds(ds, transform_dict)
+print('Mean amplitude: ', ds.datasets[0].raw.get_data().mean())
+print('Number of channels: ', ds.datasets[0].raw.get_data().shape)
+
+# ###############################################################################
+# # We can easily split ds based on a criteria applied to the description
+# # DataFrame:
+# subsets = ds.split("session")
+# print({subset_name: len(subset) for subset_name, subset in subsets.items()})
 
 ###############################################################################
-# As above, we create evenly spaced 4-s windows:
+# We create evenly spaced 4-s windows:
 
 fs = ds.datasets[0].raw.info['sfreq']
 
@@ -104,20 +125,19 @@ window_len_samples = int(fs * 4)
 windows_ds = create_fixed_length_windows(
     ds, start_offset_samples=0, stop_offset_samples=None,
     supercrop_size_samples=window_len_samples, 
-    supercrop_stride_samples=window_len_samples, drop_samples=True, 
-    preload=False)
+    supercrop_stride_samples=window_len_samples, drop_samples=True, preload=True)
 
-# print(len(windows_ds))
-# for x, y, supercrop_ind in windows_ds:
-#     print(x.shape, y, supercrop_ind)
-#     break
+print(len(windows_ds))
+for x, y, supercrop_ind in windows_ds:
+    print(x.shape, y, supercrop_ind)
+    break
 
 # Let's check whether the data is preloaded
 print(windows_ds.datasets[0].windows.preload)
 
 ###############################################################################
 # We apply an additional filtering step, but this time on the windowed data.
-# THERE IS NO WAY TO INCLUDE ON-THE-FLY TRANSFORMS CURRENTLY.
+# This is an example of a step that a user might choose to perform on-the-fly.
 
 windows_transform_dict = OrderedDict({
     'filter': {
@@ -127,20 +147,21 @@ windows_transform_dict = OrderedDict({
     }
 })
 
-# transform_concat_ds(windows_ds, windows_transform_dict)  # THIS LOADS THE DATA
+print('Mean amplitude: ', windows_ds.datasets[0].windows.get_data().mean())
+print('Number of channels: ', windows_ds.datasets[0].windows.get_data().shape)
+transform_concat_ds(windows_ds, windows_transform_dict)
+print('Mean amplitude: ', windows_ds.datasets[0].windows.get_data().mean())
+print('Number of channels: ', windows_ds.datasets[0].windows.get_data().shape)
 
 # ###############################################################################
-# Before using a WindowsDataset, we must call `drop_bad` so that bad epochs
-# can be identified.
-# XXX: Could this step be performed with `transform_concat_ds` instead?
-for win_ds in windows_ds.datasets:
-    win_ds.windows.drop_bad()
+# # Again, we can easily split windows_ds based on some criteria in the
+# # description DataFrame:
+# subsets = windows_ds.split("session")
+# print({subset_name: len(subset) for subset_name, subset in subsets.items()})
 
-# Let's check whether the data is preloaded one last time:
-print(windows_ds.datasets[0].windows.preload)
 
 ###############################################################################
-# We now have a lazy-loaded dataset. We can use it to train a neural network.
+# We now have an eager-loaded dataset. We can use it to train a neural network.
 
 use_cuda = False
 n_epochs = 1
@@ -180,7 +201,6 @@ for _ in range(n_epochs):
         loss_val.backward()
         optimizer.step()
 
-start = time.time()
-duration = (time.time() - start) * 1e3 / n_minibatches  # in ms
-
-print(f'Took {duration} ms per minibatch.')
+# start = time.time()
+# duration = (time.time() - start) * 1e3 / n_minibatches  # in ms
+# print(f'Took {duration} ms per minibatch.')

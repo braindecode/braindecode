@@ -18,7 +18,7 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
-        mapping=None):
+        mapping=None, preload=False):
     """Windower that creates supercrops/windows based on events in mne.Raw.
 
     The function fits supercrops of supercrop_size_samples in
@@ -48,6 +48,8 @@ def create_windows_from_events(
         supercrops/windows do not equally divide the continuous signal
     mapping: dict(str: int)
         mapping from event description to target value
+    preload: bool
+        if True, preload the data of the Epochs objects.
 
     Returns
     -------
@@ -102,7 +104,7 @@ def create_windows_from_events(
         mne_epochs = mne.Epochs(
             ds.raw, events, mapping ,baseline=None, tmin=0,
             tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
-            metadata=metadata)
+            metadata=metadata, preload=preload)
         windows_ds = WindowsDataset(mne_epochs, ds.description)
         list_of_windows_ds.append(windows_ds)
 
@@ -112,7 +114,7 @@ def create_windows_from_events(
 def create_fixed_length_windows(
         concat_ds, start_offset_samples, stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
-        mapping=None):
+        mapping=None, preload=False):
     """Windower that creates sliding supercrops/windows.
 
     Parameters
@@ -132,6 +134,8 @@ def create_fixed_length_windows(
         supercrops/windows do not equally divide the continuous signal
     mapping: dict(str: int)
         mapping from event description to target value
+    preload: bool
+        if True, preload the data of the Epochs objects.
 
     Returns
     -------
@@ -181,7 +185,7 @@ def create_fixed_length_windows(
         mne_epochs = mne.Epochs(
             ds.raw, fake_events, baseline=None,
             tmin=0, tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
-            metadata=metadata)
+            metadata=metadata, preload=preload)
         windows_ds = WindowsDataset(mne_epochs, ds.description)
         list_of_windows_ds.append(windows_ds)
 

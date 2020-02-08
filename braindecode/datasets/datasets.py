@@ -126,6 +126,8 @@ class TUHAbnormal(BaseConcatDataset):
         (list of) int of subject(s) to be read
     target_name: str
         can be 'pathological', 'gender', or 'age'
+    preload: bool
+        if True, preload the data of the Raw objects.
     """
     def __init__(self, path, subject_ids=None, target_name="pathological",
                  preload=False):
