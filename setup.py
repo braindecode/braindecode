@@ -35,7 +35,7 @@ setup(
 
     install_requires=[
         'mne @ git+https://github.com/mne-tools/mne-python.git',
-        'numpy', 'pandas', 'scipy', 'resampy', 'matplotlib', 'h5py',],
+        'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py',],
     #tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers
