@@ -36,8 +36,9 @@ class CroppedXyDataset(Dataset):
         for i_trial, trial in enumerate(X):
             idx = _compute_supercrop_inds(
                 np.array([0]),
-                0,
                 trial.shape[1],
+                0,
+                0,
                 input_time_length,
                 n_preds_per_input,
                 drop_samples=False,

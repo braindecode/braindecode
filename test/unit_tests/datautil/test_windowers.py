@@ -30,7 +30,7 @@ def test_one_supercrop_per_original_trial(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=1000,
+        trial_start_offset_samples=0, trial_stop_offset_samples=0,
         supercrop_size_samples=1000, supercrop_stride_samples=1,
         drop_samples=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -42,7 +42,7 @@ def test_stride_has_no_effect(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=1000,
+        trial_start_offset_samples=0, trial_stop_offset_samples=0,
         supercrop_size_samples=1000, supercrop_stride_samples=1000,
         drop_samples=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -54,7 +54,7 @@ def test_trial_start_offset(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-250, trial_stop_offset_samples=250,
+        trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         supercrop_size_samples=250, supercrop_stride_samples=250,
         drop_samples=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -67,7 +67,7 @@ def test_shifting_last_supercrop_back_in(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-250, trial_stop_offset_samples=250,
+        trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         supercrop_size_samples=250, supercrop_stride_samples=300,
         drop_samples=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -80,7 +80,7 @@ def test_dropping_last_incomplete_supercrop(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-250, trial_stop_offset_samples=250,
+        trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         supercrop_size_samples=250, supercrop_stride_samples=300,
         drop_samples=True)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -92,7 +92,7 @@ def test_maximally_overlapping_supercrops(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-2, trial_stop_offset_samples=1000,
+        trial_start_offset_samples=-2, trial_stop_offset_samples=0,
         supercrop_size_samples=1000, supercrop_stride_samples=1,
         drop_samples=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -106,7 +106,7 @@ def test_single_sample_size_supercrops(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=1000,
+        trial_start_offset_samples=0, trial_stop_offset_samples=0,
         supercrop_size_samples=1, supercrop_stride_samples=1,
         drop_samples=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -121,7 +121,7 @@ def test_overlapping_trial_offsets(concat_ds_targets):
                        match='Trial overlap not implemented.'):
         create_windows_from_events(
             concat_ds=concat_ds,
-            trial_start_offset_samples=-2000, trial_stop_offset_samples=1000,
+            trial_start_offset_samples=-2000, trial_stop_offset_samples=0,
             supercrop_size_samples=1000, supercrop_stride_samples=1000,
             drop_samples=False)
 

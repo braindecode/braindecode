@@ -210,20 +210,21 @@ def _compute_supercrop_inds(
     -------
         trial, i_supercrop_in_trial, start sample and stop sample of supercrops
     """
-    # trial ends are defined by trial starts (onsets may be shifted by offset)
-    # and end
+
+    onsets = [onsets] if isinstance(onsets, int) else onsets
+    stops = [stops] if isinstance(stops, int) else stops
+
     i_supercrop_in_trials, i_trials, starts = [], [], []
-    for onset_i, onset in enumerate(onsets):
+    for onset_i, (onset, stop) in enumerate(zip(onsets, stops)):
         # between original trial onsets (shifted by start_offset) and stops,
         # generate possible supercrop starts with given stride
-        stop = stops[onset_i]
         possible_starts = np.arange(
             onset + start_offset, stop + stop_offset, stride)
 
         # possible supercrop start is actually a start, if supercrop size fits
         # in trial start and stop
         for i_supercrop, s in enumerate(possible_starts):
-            if (s + size) <= stops[onset_i]:
+            if (s + size) <= stop + stop_offset:
                 starts.append(s)
                 i_supercrop_in_trials.append(i_supercrop)
                 i_trials.append(onset_i)
