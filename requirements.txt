@@ -1,7 +1,6 @@
 numpy
 pandas
 scipy
-resampy
 matplotlib
 h5py
 git+https://github.com/mne-tools/mne-python.git
