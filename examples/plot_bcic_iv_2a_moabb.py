@@ -66,7 +66,7 @@ with torch.no_grad():
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 
 windows_dataset = create_windows_from_events(
-    dataset, trial_start_offset_samples=-125, trial_stop_offset_samples=1000,
+    dataset, trial_start_offset_samples=-125, trial_stop_offset_samples=0,
     supercrop_size_samples=1000, supercrop_stride_samples=n_preds_per_input,
     drop_samples=False)
 

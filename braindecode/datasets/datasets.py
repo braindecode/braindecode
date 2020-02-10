@@ -36,7 +36,9 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
             for run_id, raw in sess_data.items():
                 # set annotation if empty
                 if len(raw.annotations) == 0:
-                    annots = _annotations_from_raw(raw, dataset)
+                    annots = _annotations_from_moabb_stim_channel(
+                        raw, dataset
+                    )
                     raw.set_annotations(annots)
                 raws.append(raw)
                 subject_ids.append(subj_id)
@@ -47,7 +49,7 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     return raws, description
 
 
-def _annotations_from_raw(raw, dataset):
+def _annotations_from_moabb_stim_channel(raw, dataset):
     # find events from stim channel
     events = mne.find_events(raw)
 
