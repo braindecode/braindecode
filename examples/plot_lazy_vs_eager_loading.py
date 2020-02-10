@@ -69,7 +69,7 @@ from IPython.display import display
 from braindecode.datasets import TUHAbnormal
 from braindecode.datautil.windowers import create_fixed_length_windows
 from braindecode.datautil.transforms import transform_concat_ds
-from braindecode.models import ShallowFBCSPNet
+from braindecode.models import ShallowFBCSPNet, Deep4Net
 
 
 mne.set_log_level('WARNING')  # avoid messages everytime a window is extracted
@@ -78,7 +78,7 @@ CUDA = True
 TUH_PATH = '/storage/store/data/tuh_eeg/www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/edf/'
 WINDOW_LEN_S = 4
 N_EPOCHS = 5
-N_REPETITIONS = 15
+N_REPETITIONS = 10
 
 
 def load_example_data(preload):
@@ -103,16 +103,30 @@ def load_example_data(preload):
     return windows_ds
 
 
-def create_example_model(n_channels, n_classes, window_len_samples, cuda=False):
-    model = ShallowFBCSPNet(
-        n_channels, n_classes, input_time_length=window_len_samples,
-        n_filters_time=40, filter_time_length=25, n_filters_spat=40,
-        pool_time_length=75, pool_time_stride=15, final_conv_length=30,
-        split_first_layer=True, batch_norm=True, batch_norm_alpha=0.1,
-        drop_prob=0.5)
+def create_example_model(n_channels, n_classes, window_len_samples,
+                         kind='shallow', cuda=False):
+    if kind == 'shallow':
+        model = ShallowFBCSPNet(
+            n_channels, n_classes, input_time_length=window_len_samples,
+            n_filters_time=40, filter_time_length=25, n_filters_spat=40,
+            pool_time_length=75, pool_time_stride=15, final_conv_length='auto',
+            split_first_layer=True, batch_norm=True, batch_norm_alpha=0.1,
+            drop_prob=0.5)
+    elif kind == 'deep':
+        model = Deep4Net(
+            n_channels, n_classes, input_time_length=window_len_samples,
+            final_conv_length='auto', n_filters_time=25, n_filters_spat=25,
+            filter_time_length=10, pool_time_length=3, pool_time_stride=3,
+            n_filters_2=50, filter_length_2=10, n_filters_3=100,
+            filter_length_3=10, n_filters_4=200, filter_length_4=10,
+            first_pool_mode="max", later_pool_mode="max", drop_prob=0.5,
+            double_time_convs=False, split_first_layer=True, batch_norm=True,
+            batch_norm_alpha=0.1, stride_before_pool=False)
+    else:
+        raise ValueError
 
     optimizer = optim.Adam(model.parameters())
-    loss = nn.CrossEntropyLoss()
+    loss = nn.NLLLoss()
 
     if cuda:
         model.cuda()
@@ -131,8 +145,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
             if cuda:
                 X, y = X.cuda(), y.cuda()
 
-            y_hat = torch.sum(model(X), axis=-1)
-            loss_val = loss(y_hat, y)
+            loss_val = loss(model(X), y)
             loss_vals.append(loss_val.item())
 
             loss_val.backward()
@@ -160,14 +173,16 @@ for i in range(N_REPETITIONS):
 
         # Define data loader
         training_setup_start = time.time()
-        dataloader = DataLoader(dataset, batch_size=128, shuffle=False)
+        dataloader = DataLoader(
+            dataset, batch_size=256, shuffle=False, pin_memory=True,
+            num_workers=4)
 
         # Instantiate model and optimizer
         n_channels = len(dataset.datasets[0].windows.ch_names)
         window_len_samples = len(dataset.datasets[0].windows.times)
         n_classes = 2
         model, loss, optimizer = create_example_model(
-            n_channels, n_classes, window_len_samples, cuda=CUDA)
+            n_channels, n_classes, window_len_samples, kind='deep', cuda=CUDA)
         training_setup_end = time.time()
 
         model_training_start = time.time()
@@ -177,10 +192,11 @@ for i in range(N_REPETITIONS):
 
         times.append({
             'loading_type': name,
-            'data_loading': data_loading_end - data_loading_start,
+            'data_preparation': data_loading_end - data_loading_start,
             'training_setup': training_setup_end - training_setup_start,
             'model_training': model_training_end - model_training_start
         })
 
 times_df = pd.DataFrame(times)
 print(times_df.groupby('loading_type').mean())
+print(times_df.groupby('loading_type').median())
