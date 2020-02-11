@@ -126,6 +126,29 @@ def test_overlapping_trial_offsets(concat_ds_targets):
             drop_samples=False)
 
 
+def test_windows_from_events_preload_false(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    windows = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=0, trial_stop_offset_samples=1000,
+        supercrop_size_samples=1, supercrop_stride_samples=1,
+        drop_samples=False, preload=False)
+
+    # XXX: Need a dataset that can be fetched and lazy loaded
+    # assert all([not df.windows.preload for ds in windows.dataset])
+
+
+def test_windows_from_events_preload_false(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    windows = create_fixed_length_windows(
+        concat_ds=concat_ds, start_offset_samples=0, stop_offset_samples=1000,
+        supercrop_size_samples=1, supercrop_stride_samples=1, drop_samples=False,
+        preload=False)
+
+    # XXX: Need a dataset that can be fetched and lazy loaded
+    # assert all([not df.windows.preload for ds in windows.dataset])
+
+
 @pytest.mark.parametrize(
     'start_offset_samples,supercrop_size_samples,supercrop_stride_samples,drop_samples,mapping',
     [(0, 100, 90, True, None),
@@ -179,3 +202,5 @@ def test_fixed_length_windower(start_offset_samples, supercrop_size_samples,
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}"
         )
+
+
