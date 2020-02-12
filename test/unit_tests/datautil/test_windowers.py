@@ -138,7 +138,7 @@ def test_windows_from_events_preload_false(concat_ds_targets):
     # assert all([not df.windows.preload for ds in windows.dataset])
 
 
-def test_windows_from_events_preload_false(concat_ds_targets):
+def test_fixed_length_windows_preload_false(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_fixed_length_windows(
         concat_ds=concat_ds, start_offset_samples=0, stop_offset_samples=1000,
