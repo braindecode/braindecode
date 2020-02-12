@@ -113,6 +113,7 @@ def load_example_data(preload, window_len_s, n_subjects=10):
 
     # Drop bad epochs
     # XXX: This could be parallelized.
+    # XXX: Also, this could be implemented in the Dataset object itself.
     for ds in windows_ds.datasets:
         ds.windows.drop_bad()
         assert ds.windows.preload == preload
@@ -223,10 +224,10 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
 # Next, we define the different hyperparameters that we want to compare:
 
 PRELOAD = [True, False]  # True -> eager loading; False -> lazy loading
-N_SUBJECTS = [3]  # Number of recordings to load from the TUH Abnormal corpus
+N_SUBJECTS = [10]  # Number of recordings to load from the TUH Abnormal corpus
 WINDOW_LEN_S = [4]  # Window length, in seconds
 N_EPOCHS = [2]  # Number of epochs to train the model for
-BATCH_SIZE = [128, 256]  # Training minibatch size
+BATCH_SIZE = [64, 256]  # Training minibatch size
 MODEL = ['shallow', 'deep']
 
 NUM_WORKERS = [0, 8]  # number of processes used by pytorch's Dataloader
@@ -277,10 +278,10 @@ for (i, preload, n_subjects, win_len_s, n_epochs, batch_size, model_kind,
 
     # Instantiate model and optimizer
     n_channels = len(dataset.datasets[0].windows.ch_names)
-    window_len_samples = len(dataset.datasets[0].windows.times)
+-   n_times = len(dataset.datasets[0].windows.times)
     n_classes = 2
     model, loss, optimizer = create_example_model(
-        n_channels, n_classes, window_len_samples, kind=model_kind, cuda=cuda)
+        n_channels, n_classes, n_times, kind=model_kind, cuda=cuda)
     training_setup_end = time.time()
 
     # Start training loop
@@ -323,7 +324,3 @@ sns.catplot(
 # during model training, but to potentially be pretty competitive if multiple
 # workers were enabled (i.e.., `num_workers > 0`). Training on a CUDA device
 # should also yield substantial speedups.
-
-To add to the tests:
-- windowers(preload=True/False)
--
