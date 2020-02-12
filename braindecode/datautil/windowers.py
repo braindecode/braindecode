@@ -244,11 +244,12 @@ def _compute_supercrop_inds(
                 i_trials.append(start_i)
 
     # update stops to now be event stops instead of trial stops
-    stops = np.array(supercrop_starts) + size
-    if not len(i_supercrop_in_trials) == len(supercrop_starts) == len(stops):
+    supercrop_stops = np.array(supercrop_starts) + size
+    if not (len(i_supercrop_in_trials) == len(supercrop_starts) ==
+            len(supercrop_stops)):
         raise ValueError(f'{len(i_supercrop_in_trials)} == '
-                         f'{len(supercrop_starts)} == {len(stops)}')
-    return i_trials, i_supercrop_in_trials, supercrop_starts, stops
+                         f'{len(supercrop_starts)} == {len(supercrop_stops)}')
+    return i_trials, i_supercrop_in_trials, supercrop_starts, supercrop_stops
 
 
 def _check_windowing_arguments(
