@@ -208,8 +208,9 @@ def _compute_supercrop_inds(
     drop_samples: bool
         toggles of shifting last supercrop within range or dropping last samples
 
-    Returns (list, list, list, list)
+    Returns
     -------
+    result_lists: (list, list, list, list)
         trial, i_supercrop_in_trial, start sample and stop sample of supercrops
     """
 
