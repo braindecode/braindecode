@@ -245,7 +245,9 @@ def _compute_supercrop_inds(
 
     # update stops to now be event stops instead of trial stops
     stops = np.array(supercrop_starts) + size
-    assert len(i_supercrop_in_trials) == len(supercrop_starts) == len(stops)
+    if not len(i_supercrop_in_trials) == len(supercrop_starts) == len(stops):
+        raise ValueError(f'{len(i_supercrop_in_trials)} == '
+                         f'{len(supercrop_starts)} == {len(stops)}')
     return i_trials, i_supercrop_in_trials, supercrop_starts, stops
 
 
