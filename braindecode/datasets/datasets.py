@@ -28,13 +28,18 @@ def _find_dataset_in_moabb(dataset_name):
             return dataset()
     raise ValueError("'dataset_name' not found in moabb datasets")
 
-
 def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     data = dataset.get_data(subject_ids)
     raws, subject_ids, session_ids, run_ids = [], [], [], []
     for subj_id, subj_data in data.items():
         for sess_id, sess_data in subj_data.items():
             for run_id, raw in sess_data.items():
+                # set annotation if empty
+                if len(raw.annotations) == 0:
+                    annots = _annotations_from_moabb_stim_channel(
+                        raw, dataset
+                    )
+                    raw.set_annotations(annots)
                 raws.append(raw)
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
@@ -42,6 +47,22 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     description = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
                                columns=["subject", "session", "run"])
     return raws, description
+
+
+def _annotations_from_moabb_stim_channel(raw, dataset):
+    # find events from stim channel
+    events = mne.find_events(raw)
+
+    # get annotations from events
+    event_desc = {k: v for v, k in dataset.event_id.items()}
+    annots = mne.annotations_from_events(events, raw.info['sfreq'], event_desc)
+
+    # set trial on and offset given by moabb
+    onset, offset = dataset.interval
+    annots.onset += onset
+    annots.duration += offset - onset
+
+    return annots
 
 
 def fetch_data_with_moabb(dataset_name, subject_ids):

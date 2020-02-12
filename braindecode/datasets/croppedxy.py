@@ -35,11 +35,12 @@ class CroppedXyDataset(Dataset):
         i_supercrop_to_idx = []
         for i_trial, trial in enumerate(X):
             idx = _compute_supercrop_inds(
-                np.array([0]),
-                0,
-                trial.shape[1],
-                input_time_length,
-                n_preds_per_input,
+                starts=np.array([0]),
+                stops=trial.shape[1],
+                start_offset=0,
+                stop_offset=0,
+                size=input_time_length,
+                stride=n_preds_per_input,
                 drop_samples=False,
             )
             for _, i_supercrop_in_trial, start, stop in zip(*idx):
