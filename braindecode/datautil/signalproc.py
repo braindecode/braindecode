@@ -26,7 +26,7 @@ def exponential_running_standardize(
     
     Parameters
     ----------
-    data: 2darray (time, channels)
+    data: 2darray (n_channels, n_time)
     factor_new: float
     init_block_size: int
         Standardize data before to this index with regular standardization. 
@@ -35,9 +35,10 @@ def exponential_running_standardize(
 
     Returns
     -------
-    standardized: 2darray (time, channels)
+    standardized: 2darray (n_channels, n_time)
         Standardized data.
     """
+    data = data.T
     df = pd.DataFrame(data)
     meaned = df.ewm(alpha=factor_new).mean()
     demeaned = df - meaned
@@ -57,7 +58,7 @@ def exponential_running_standardize(
             data[0:init_block_size] - init_mean
         ) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
-    return standardized
+    return standardized.T
 
 
 def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
@@ -73,16 +74,17 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
 
     Parameters
     ----------
-    data: 2darray (time, channels)
+    data: 2darray (n_channels, n_time)
     factor_new: float
     init_block_size: int
         Demean data before to this index with regular demeaning. 
         
     Returns
     -------
-    demeaned: 2darray (time, channels)
+    demeaned: 2darray (n_channels, n_time)
         Demeaned data.
     """
+    data = data.T
     df = pd.DataFrame(data)
     meaned = df.ewm(alpha=factor_new).mean()
     demeaned = df - meaned
@@ -93,7 +95,7 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
             data[0:init_block_size], axis=other_axis, keepdims=True
         )
         demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
-    return demeaned
+    return demeaned.T
 
 
 def highpass_cnt(data, low_cut_hz, fs, filt_order=3, axis=0):
