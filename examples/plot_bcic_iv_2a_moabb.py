@@ -29,8 +29,8 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds
 
-from braindecode.datautil.signalproc import bandpass_cnt, exponential_running_standardize
-from braindecode.datautil.transforms import transform_concat_ds, FilterRaw
+from braindecode.datautil.signalproc import exponential_running_standardize
+from braindecode.datautil.transforms import transform_concat_ds
 
 model_name = "shallow"  # 'shallow' or 'deep'
 cuda = torch.cuda.is_available()
