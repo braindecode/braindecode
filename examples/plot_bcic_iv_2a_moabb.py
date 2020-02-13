@@ -41,14 +41,14 @@ set_random_seeds(seed=20190706, cuda=cuda)
 subject_id = 1  # 1-9
 n_classes = 4
 
-low_cut_hz = 4  # 0 or 4
+low_cut_hz = 4.  # 0 or 4
+high_cut_hz = 38.
 model = "shallow"  # 'shallow' or 'deep'
 trial_start_offset_seconds = -0.5
 input_time_length = 1000
 max_epochs = 5
 max_increase_epochs = 80
-batch_size = 60
-high_cut_hz = 38
+batch_size = 32
 factor_new = 1e-3
 init_block_size = 1000
 
@@ -81,12 +81,12 @@ with torch.no_grad():
     )
     n_preds_per_input = model(dummy_input).shape[2]
 
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 raw_transform_dict = OrderedDict([
     ("pick_types", {"eeg": True, "meg": False, "stim": False}),
     ('apply_function', {'fun': lambda x: x*1e6}),
-    ('filter', {'l_freq': 4., 'h_freq': 38.}),
+    ('filter', {'l_freq': low_cut_hz, 'h_freq': high_cut_hz}),
     ('apply_function', {'fun': lambda a: exponential_running_standardize(
        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
     ), 'channel_wise': False})
@@ -150,7 +150,7 @@ clf = EEGClassifier(
     train_split=TrainTestBCICIV2aSplit(),
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
-    batch_size=32,
+    batch_size=batch_size,
     callbacks=[
         ("train_trial_accuracy", cropped_cb_train),
         ("train_trial_f1_score", cropped_cb_train_f1_score),
