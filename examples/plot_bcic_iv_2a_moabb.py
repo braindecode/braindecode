@@ -94,9 +94,9 @@ raw_transform_dict = OrderedDict([
 
 transform_concat_ds(dataset, raw_transform_dict)
 
-fs = dataset.datasets[0].raw.info['sfreq']
+sfreq = dataset.datasets[0].raw.info['sfreq']
 
-trial_start_offset_samples = int(trial_start_offset_seconds * fs)
+trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
 windows_dataset = create_windows_from_events(
     dataset,
