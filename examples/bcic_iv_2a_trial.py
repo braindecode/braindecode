@@ -24,10 +24,7 @@ from braindecode.callbacks import MaxNormConstraintCallback
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import apply_to_X_y
-from braindecode.datautil.signalproc import (
-    bandpass_cnt,
-    exponential_running_standardize,
-)
+from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
 from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
@@ -137,37 +134,24 @@ train_cnt = train_cnt.drop_channels(["EOG-left", "EOG-central", "EOG-right"])
 assert len(train_cnt.ch_names) == 22
 # lets convert to millvolt for numerical stability of next operations
 train_cnt = mne_apply(lambda a: a * 1e6, train_cnt)
-train_cnt = mne_apply(
-    lambda a: bandpass_cnt(
-        a,
-        low_cut_hz,
-        high_cut_hz,
-        train_cnt.info["sfreq"],
-        filt_order=3,
-        axis=1,
-    ),
-    train_cnt,
-)
+train_cnt.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
+                 iir_params=dict(order=3, ftype='butter'))
 train_cnt = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     train_cnt,
 )
 
 test_cnt = test_cnt.drop_channels(["EOG-left", "EOG-central", "EOG-right"])
 assert len(test_cnt.ch_names) == 22
 test_cnt = mne_apply(lambda a: a * 1e6, test_cnt)
-test_cnt = mne_apply(
-    lambda a: bandpass_cnt(
-        a, low_cut_hz, high_cut_hz, test_cnt.info["sfreq"], filt_order=3, axis=1
-    ),
-    test_cnt,
-)
+test_cnt.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
+                iir_params=dict(order=3, ftype='butter'))
 test_cnt = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     test_cnt,
 )
 

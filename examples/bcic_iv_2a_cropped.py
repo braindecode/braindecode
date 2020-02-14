@@ -18,10 +18,7 @@ from torch import optim
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datasets.croppedxy import CroppedXyDataset
-from braindecode.datautil.signalproc import (
-    bandpass_cnt,
-    exponential_running_standardize,
-)
+from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.splitters import TrainTestSplit
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
 from braindecode.losses import CroppedNLLLoss
@@ -69,37 +66,24 @@ raw_train = raw_train.drop_channels(["EOG-left", "EOG-central", "EOG-right"])
 assert len(raw_train.ch_names) == 22
 # lets convert to millvolt for numerical stability of next operations
 raw_train = mne_apply(lambda a: a * 1e6, raw_train)
-raw_train = mne_apply(
-    lambda a: bandpass_cnt(
-        a,
-        low_cut_hz,
-        high_cut_hz,
-        raw_train.info["sfreq"],
-        filt_order=3,
-        axis=1,
-    ),
-    raw_train,
-)
+raw_train.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
+                 iir_params=dict(order=3, ftype='butter'))
 raw_train = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     raw_train,
 )
 
 raw_test = raw_test.drop_channels(["EOG-left", "EOG-central", "EOG-right"])
 assert len(raw_test.ch_names) == 22
 raw_test = mne_apply(lambda a: a * 1e6, raw_test)
-raw_test = mne_apply(
-    lambda a: bandpass_cnt(
-        a, low_cut_hz, high_cut_hz, raw_test.info["sfreq"], filt_order=3, axis=1
-    ),
-    raw_test,
-)
+raw_test.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
+                iir_params=dict(order=3, ftype='butter'))
 raw_test = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     raw_test,
 )
 marker_def = OrderedDict(
