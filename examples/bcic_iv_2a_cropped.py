@@ -4,8 +4,8 @@ Cropped Decoding on BCIC IV 2a Competition Set
 
 """
 
-# Authors: Maciej Sliwowski
-#          Robin Tibor Schirrmeister
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
 
@@ -67,7 +67,7 @@ raw_train.apply_function(fun=lambda a: a * 1e6, channel_wise=False)
 raw_train.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
                  iir_params=dict(order=3, ftype='butter'))
 raw_train.apply_function(
-    func=lambda a: exponential_running_standardize(
+    fun=lambda a: exponential_running_standardize(
         a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
     ), channel_wise=False)
 
@@ -77,7 +77,7 @@ raw_test.apply_function(fun=lambda a: a * 1e6, channel_wise=False)
 raw_test.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
                 iir_params=dict(order=3, ftype='butter'))
 raw_test.apply_function(
-    func=lambda a: exponential_running_standardize(
+    fun=lambda a: exponential_running_standardize(
         a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
     ), channel_wise=False)
 marker_def = OrderedDict(

@@ -4,8 +4,8 @@ Trialwise Decoding on BCIC IV 2a Competition Set
 
 """
 
-# Authors: Maciej Sliwowski
-#          Robin Tibor Schirrmeister
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
 
@@ -140,7 +140,7 @@ train_cnt.apply_function(fun=lambda a: a * 1e6, channel_wise=False)
 train_cnt.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
                  iir_params=dict(order=3, ftype='butter'))
 train_cnt.apply_function(
-    func=lambda a: exponential_running_standardize(
+    fun=lambda a: exponential_running_standardize(
         a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4),
     channel_wise=False)
 
@@ -149,7 +149,7 @@ assert len(test_cnt.ch_names) == 22
 test_cnt.apply_function(fun=lambda a: a * 1e6, channel_wise=False)
 test_cnt.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
                 iir_params=dict(order=3, ftype='butter'))
-test_cnt.apply_function(func=lambda a: exponential_running_standardize(
+test_cnt.apply_function(fun=lambda a: exponential_running_standardize(
         a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4),
     channel_wise=False)
 
