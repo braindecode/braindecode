@@ -82,8 +82,8 @@ raw_train = mne_apply(
 )
 raw_train = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     raw_train,
 )
 
@@ -98,8 +98,8 @@ raw_test = mne_apply(
 )
 raw_test = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     raw_test,
 )
 marker_def = OrderedDict(

@@ -150,8 +150,8 @@ train_cnt = mne_apply(
 )
 train_cnt = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     train_cnt,
 )
 
@@ -166,8 +166,8 @@ test_cnt = mne_apply(
 )
 test_cnt = mne_apply(
     lambda a: exponential_running_standardize(
-        a.T, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ).T,
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
+    ),
     test_cnt,
 )
 
