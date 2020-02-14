@@ -9,8 +9,7 @@ log = logging.getLogger(__name__)
 def exponential_running_standardize(
     data, factor_new=0.001, init_block_size=None, eps=1e-4
 ):
-    """
-    Perform exponential running standardization. 
+    """Perform exponential running standardization.
     
     Compute the exponental running mean :math:`m_t` at time `t` as 
     :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
@@ -24,7 +23,7 @@ def exponential_running_standardize(
     
     Parameters
     ----------
-    data: 2darray (n_times, n_channels)
+    data: 2darray (n_channels, n_times)
     factor_new: float
     init_block_size: int
         Standardize data before to this index with regular standardization. 
@@ -33,7 +32,7 @@ def exponential_running_standardize(
 
     Returns
     -------
-    standardized: 2darray (n_times, n_channels)
+    standardized: 2darray (n_channels, n_times)
         Standardized data.
     """
     df = pd.DataFrame(data)
@@ -59,8 +58,7 @@ def exponential_running_standardize(
 
 
 def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
-    """
-    Perform exponential running demeanining. 
+    """Perform exponential running demeanining.
 
     Compute the exponental running mean :math:`m_t` at time `t` as 
     :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
@@ -71,14 +69,14 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
 
     Parameters
     ----------
-    data: 2darray (n_times, n_channels)
+    data: 2darray (n_channels, n_times)
     factor_new: float
     init_block_size: int
         Demean data before to this index with regular demeaning. 
         
     Returns
     -------
-    demeaned: 2darray (n_times, n_channels)
+    demeaned: 2darray (n_channels, n_times)
         Demeaned data.
     """
     df = pd.DataFrame(data)
