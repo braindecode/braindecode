@@ -1,21 +1,17 @@
 """
 Cropped Decoding on BCIC IV 2a Competition Set with skorch and moabb.
-==============================================
+=====================================================================
 """
 
-# Authors: Maciej Sliwowski
-#          Robin Tibor Schirrmeister
-#          Lukas Gemein
-#          Hubert Banville
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
+#          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD-3
 from collections import OrderedDict
 
-
-import numpy as np
 import torch
-from torch import optim
-
 import mne
 mne.set_log_level('ERROR')
 
@@ -28,7 +24,6 @@ from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds
-
 from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.transforms import transform_concat_ds
 
@@ -75,10 +70,8 @@ if cuda:
     model.cuda()
 
 with torch.no_grad():
-    dummy_input = torch.tensor(
-        np.ones((1, n_chans, input_time_length, 1), dtype=np.float32),
-        device=device,
-    )
+    dummy_input = torch.ones(
+        1, n_chans, input_time_length, 1, dtype=torch.float32, device=device)
     n_preds_per_input = model(dummy_input).shape[2]
 
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
@@ -106,6 +99,7 @@ windows_dataset = create_windows_from_events(
     supercrop_stride_samples=n_preds_per_input,
     drop_samples=False
 )
+
 
 class TrainTestBCICIV2aSplit(object):
     def __call__(self, dataset, y, **kwargs):
@@ -141,12 +135,13 @@ cropped_cb_valid_f1_score = CroppedTrialEpochScoring(
     on_train=False,
     input_time_length=input_time_length,
 )
-# MaxNormDefaultConstraint and early stopping should be added to repeat previous braindecode
+# MaxNormDefaultConstraint and early stopping should be added to repeat
+# previous braindecode
 
 clf = EEGClassifier(
     model,
     criterion=CroppedNLLLoss,
-    optimizer=optim.AdamW,
+    optimizer=torch.optim.AdamW,
     train_split=TrainTestBCICIV2aSplit(),
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
