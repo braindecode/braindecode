@@ -1,16 +1,15 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
 
 from collections import OrderedDict
 
-import mne
 import numpy as np
-import pandas as pd
 import pytest
 
 from braindecode.datasets import MOABBDataset
-from braindecode.datautil.transforms import transform_concat_ds
+from braindecode.datautil.transforms import transform_concat_ds, zscore
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
@@ -71,3 +70,19 @@ def test_transform_windows_method(windows_concat_ds):
     raw_window = windows_concat_ds[0][0]
     transform_concat_ds(windows_concat_ds, transforms)
     assert not np.array_equal(raw_window, windows_concat_ds[0][0])
+
+
+def test_zscore_base_concat_ds(base_concat_ds):
+    transforms = OrderedDict([
+        ('pick_types', dict(eeg=True, meg=False, stim=False)),
+        ('apply_function', dict(fun=zscore, channel_wise=True))
+    ])
+    transform_concat_ds(base_concat_ds, transforms)
+    for ds in base_concat_ds.datasets:
+        nchan = ds.raw.info["nchan"]
+        # zero mean
+        np.testing.assert_allclose(
+            ds.raw.get_data().mean(axis=1), nchan * [0], rtol=1e-4, atol=1e-4)
+        # unit variance
+        np.testing.assert_allclose(
+            ds.raw.get_data().std(axis=1), nchan * [1], rtol=1e-4, atol=1e-4)
