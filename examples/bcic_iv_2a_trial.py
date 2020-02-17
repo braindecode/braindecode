@@ -4,8 +4,8 @@ Trialwise Decoding on BCIC IV 2a Competition Set
 
 """
 
-# Authors: Maciej Sliwowski
-#          Robin Tibor Schirrmeister
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
 
@@ -17,7 +17,6 @@ from collections import OrderedDict
 import numpy as np
 import torch
 from skorch.callbacks.scoring import EpochScoring
-from torch import optim
 from torch.utils.data import Dataset
 
 from braindecode.callbacks import MaxNormConstraintCallback
@@ -26,7 +25,6 @@ from braindecode.datasets.bcic_iv_2a import BCICompetition4Set2A
 from braindecode.datautil.signal_target import apply_to_X_y
 from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
-from braindecode.mne_ext.signalproc import mne_apply
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.scoring import PostEpochTrainScoring
@@ -38,6 +36,10 @@ data_folder = "/data/schirrmr/schirrmr/bci-competition-iv/2a-gdf/"
 subject_id = 1  # 1-9
 low_cut_hz = 4  # 0 or 4
 model = "shallow"  # 'shallow' or 'deep'
+
+# Set if you want to use GPU
+# You can also use torch.cuda.is_available() to determine if cuda is available
+# on your machine.
 cuda = True
 
 ival = [-500, 4000]
@@ -112,6 +114,7 @@ class TrainTestSplit(object):
             EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
         )
 
+
 train_filename = "A{:02d}T.gdf".format(subject_id)
 test_filename = "A{:02d}E.gdf".format(subject_id)
 train_filepath = os.path.join(data_folder, train_filename)
@@ -133,27 +136,22 @@ test_cnt = test_loader.load()
 train_cnt = train_cnt.drop_channels(["EOG-left", "EOG-central", "EOG-right"])
 assert len(train_cnt.ch_names) == 22
 # lets convert to millvolt for numerical stability of next operations
-train_cnt = mne_apply(lambda a: a * 1e6, train_cnt)
+train_cnt.apply_function(fun=lambda a: a * 1e6, channel_wise=False)
 train_cnt.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
                  iir_params=dict(order=3, ftype='butter'))
-train_cnt = mne_apply(
-    lambda a: exponential_running_standardize(
-        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ),
-    train_cnt,
-)
+train_cnt.apply_function(
+    fun=lambda a: exponential_running_standardize(
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4),
+    channel_wise=False)
 
 test_cnt = test_cnt.drop_channels(["EOG-left", "EOG-central", "EOG-right"])
 assert len(test_cnt.ch_names) == 22
-test_cnt = mne_apply(lambda a: a * 1e6, test_cnt)
+test_cnt.apply_function(fun=lambda a: a * 1e6, channel_wise=False)
 test_cnt.filter(l_freq=low_cut_hz, h_freq=high_cut_hz, method='iir',
                 iir_params=dict(order=3, ftype='butter'))
-test_cnt = mne_apply(
-    lambda a: exponential_running_standardize(
-        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ),
-    test_cnt,
-)
+test_cnt.apply_function(fun=lambda a: exponential_running_standardize(
+        a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4),
+    channel_wise=False)
 
 marker_def = OrderedDict(
     [("Left Hand", [1]), ("Right Hand", [2]), ("Foot", [3]), ("Tongue", [4])]
@@ -172,10 +170,6 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 
-
-# Set if you want to use GPU
-# You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
-cuda = True
 set_random_seeds(seed=20190706, cuda=cuda)
 
 n_classes = 4
@@ -201,7 +195,7 @@ if cuda:
 clf = EEGClassifier(
     model,
     criterion=torch.nn.NLLLoss,
-    optimizer=optim.Adam,
+    optimizer=torch.optim.Adam,
     train_split=TrainTestSplit(train_size=0.8),
     batch_size=64,
     device="cuda",
