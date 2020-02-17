@@ -1,9 +1,9 @@
-import logging
+# Authors: Robin Tibor Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD-3
 
 import pandas as pd
 import numpy as np
-
-log = logging.getLogger(__name__)
 
 
 def exponential_running_standardize(
@@ -35,6 +35,7 @@ def exponential_running_standardize(
     standardized: 2darray (n_channels, n_times)
         Standardized data.
     """
+    data = data.T
     df = pd.DataFrame(data)
     meaned = df.ewm(alpha=factor_new).mean()
     demeaned = df - meaned
@@ -54,7 +55,7 @@ def exponential_running_standardize(
             data[0:init_block_size] - init_mean
         ) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
-    return standardized
+    return standardized.T
 
 
 def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
@@ -79,6 +80,7 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
     demeaned: 2darray (n_channels, n_times)
         Demeaned data.
     """
+    data = data.T
     df = pd.DataFrame(data)
     meaned = df.ewm(alpha=factor_new).mean()
     demeaned = df - meaned
@@ -89,4 +91,4 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
             data[0:init_block_size], axis=other_axis, keepdims=True
         )
         demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
-    return demeaned
+    return demeaned.T
