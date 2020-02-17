@@ -145,33 +145,7 @@ clf = EEGClassifier(
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=64,
-    callbacks=[
-        (
-            "train_accuracy",
-            PostEpochTrainScoring(
-                "accuracy", lower_is_better=False, name="train_acc"
-            ),
-        ),
-        (
-            "train_f1_score",
-            PostEpochTrainScoring("f1", lower_is_better=False, name="train_f1"),
-        ),
-        (
-            "valid_accuracy",
-            EpochScoring(
-                "accuracy",
-                lower_is_better=False,
-                name="valid_acc",
-                on_train=False,
-            ),
-        ),
-        (
-            "valid_f1_score",
-            EpochScoring(
-                "f1", lower_is_better=False, name="valid_f1", on_train=False
-            ),
-        ),
-    ],
+    callbacks=['accuracy', 'f1', 'roc_auc']
 )
 clf.fit(train_set, y=None, epochs=4)
 

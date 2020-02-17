@@ -1,16 +1,53 @@
-from skorch.callbacks import EpochTimer, BatchScoring, PrintLog
-from skorch.utils import train_loss_score, valid_loss_score, noop
+import numpy as np
+import torch
+from sklearn.metrics import get_scorer
+from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, Callback, \
+    EpochScoring
 from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
-import torch
-from torch.utils.data.dataloader import DataLoader
-import numpy as np
+from skorch.utils import train_loss_score, valid_loss_score, noop
+
+from .scoring import PostEpochTrainScoring
 
 
 class EEGClassifier(NeuralNetClassifier):
     """Classifier that does not assume softmax activation.
     Calls loss function directly without applying log or anything.
     """
+
+    def __init__(self, *args, **kwargs):
+        callbacks = kwargs.pop('callbacks')
+        callbacks = self._parse_callbacks(callbacks)
+
+        super().__init__(*args, callbacks=callbacks, **kwargs)
+
+    @staticmethod
+    def _parse_callbacks(callbacks):
+        callbacks_list = []
+        if callbacks is not None:
+            for c in callbacks:
+                if isinstance(c, tuple):
+                    if isinstance(c[1], Callback):
+                        callbacks_list.append(c)
+                else:
+                    assert isinstance(c, str)
+                    scoring = get_scorer(c)
+                    scoring_name = scoring._score_func.__name__
+                    lower_is_better = False if scoring_name.endswith(
+                        '_score') else True
+                    train_name = 'train_' + c
+                    valid_name = 'valid_' + c
+                    callbacks_list.append(
+                        (train_name,
+                         PostEpochTrainScoring(scoring, lower_is_better,
+                                               name=train_name))
+                    )
+                    callbacks_list.append(
+                        (valid_name,
+                         EpochScoring(scoring, lower_is_better, on_train=False,
+                                      name=valid_name))
+                    )
+        return callbacks_list
 
     # pylint: disable=arguments-differ
     def get_loss(self, y_pred, y_true, *args, **kwargs):
@@ -45,7 +82,6 @@ class EEGClassifier(NeuralNetClassifier):
         else:
             return iterator
 
-
     def on_batch_end(self, net, X, y, training=False, **kwargs):
         # If training is false, assume that our loader has indices for this
         # batch
@@ -64,7 +100,6 @@ class EEGClassifier(NeuralNetClassifier):
                     cb.supercrop_inds_.append(self._last_supercrop_inds)
                 del self._last_supercrop_inds
 
-
     def predict_with_supercrop_inds_and_ys(self, dataset):
         preds = []
         i_supercrop_in_trials = []
@@ -82,7 +117,6 @@ class EEGClassifier(NeuralNetClassifier):
         return dict(
             preds=preds, i_supercrop_in_trials=i_supercrop_in_trials,
             i_supercrop_stops=i_supercrop_stops, supercrop_ys=supercrop_ys)
-
 
     # Removes default EpochScoring callback computing 'accuracy' to work properly
     # with cropped decoding.
