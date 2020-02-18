@@ -67,6 +67,7 @@ Data Utils
     create_fixed_length_windows
     create_windows_from_events
     zscore
+    scale
 
 Utils
 =====

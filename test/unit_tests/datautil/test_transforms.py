@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from braindecode.datasets import MOABBDataset
-from braindecode.datautil.transforms import transform_concat_ds, zscore
+from braindecode.datautil.transforms import transform_concat_ds, zscore, scale
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
@@ -72,17 +72,65 @@ def test_transform_windows_method(windows_concat_ds):
     assert not np.array_equal(raw_window, windows_concat_ds[0][0])
 
 
-def test_zscore_base_concat_ds(base_concat_ds):
+def test_zscore_continuous(base_concat_ds):
     transforms = OrderedDict([
         ('pick_types', dict(eeg=True, meg=False, stim=False)),
         ('apply_function', dict(fun=zscore, channel_wise=True))
     ])
     transform_concat_ds(base_concat_ds, transforms)
     for ds in base_concat_ds.datasets:
-        nchan = ds.raw.info["nchan"]
+        raw_data = ds.raw.get_data()
+        shape = raw_data.shape
         # zero mean
+        expected = np.zeros(shape[:-1])
         np.testing.assert_allclose(
-            ds.raw.get_data().mean(axis=1), nchan * [0], rtol=1e-4, atol=1e-4)
+            raw_data.mean(axis=-1), expected, rtol=1e-4, atol=1e-4)
         # unit variance
+        expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
-            ds.raw.get_data().std(axis=1), nchan * [1], rtol=1e-4, atol=1e-4)
+            raw_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
+
+
+def test_zscore_windows(windows_concat_ds):
+    transforms = OrderedDict([
+        ('pick_types', dict(eeg=True, meg=False, stim=False)),
+        (zscore, dict())
+    ])
+    transform_concat_ds(windows_concat_ds, transforms)
+    for ds in windows_concat_ds.datasets:
+        windowed_data = ds.windows.get_data()
+        shape = windowed_data.shape
+        # zero mean
+        expected = np.zeros(shape[:-1])
+        np.testing.assert_allclose(
+            windowed_data.mean(axis=-1), expected, rtol=1e-4, atol=1e-4)
+        # unit variance
+        expected = np.ones(shape[:-1])
+        np.testing.assert_allclose(
+            windowed_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
+
+
+def test_scale_continuous(base_concat_ds):
+    factor = 1e6
+    transforms = OrderedDict([
+        ('pick_types', dict(eeg=True, meg=False, stim=False)),
+        ('apply_function', dict(fun=scale, factor=factor))
+    ])
+    raw_timepoint = base_concat_ds[0][0]
+    transform_concat_ds(base_concat_ds, transforms)
+    expected = np.ones_like(raw_timepoint) * factor
+    np.testing.assert_allclose(base_concat_ds[0][0] / raw_timepoint, expected,
+                               rtol=1e-4, atol=1e-4)
+
+
+def test_scale_windows(windows_concat_ds):
+    factor = 1e6
+    transforms = OrderedDict([
+        ('pick_types', dict(eeg=True, meg=False, stim=False)),
+        (scale, dict(factor=factor))
+    ])
+    raw_window = windows_concat_ds[0][0]
+    transform_concat_ds(windows_concat_ds, transforms)
+    expected = np.ones_like(raw_window) * factor
+    np.testing.assert_allclose(windows_concat_ds[0][0] / raw_window, expected,
+                               rtol=1e-4, atol=1e-4)

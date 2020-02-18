@@ -12,6 +12,8 @@ ToDo: should transformer also transform y (e.g. cutting continuous labelled
 
 from collections import OrderedDict
 
+import numpy as np
+
 
 def transform_concat_ds(concat_ds, transforms):
     """Apply a number of transformers to a concat dataset.
@@ -67,7 +69,7 @@ def _transform(raw_or_epochs, transforms):
     """
     for transform, transform_kwargs in transforms.items():
         if callable(transform):
-            transform(raw_or_epochs, **transform_kwargs)
+            transform(raw_or_epochs.load_data(), **transform_kwargs)
         else:
             if not hasattr(raw_or_epochs, transform):
                 raise AttributeError(
@@ -75,20 +77,56 @@ def _transform(raw_or_epochs, transforms):
             getattr(raw_or_epochs.load_data(), transform)(**transform_kwargs)
 
 
-def zscore(continuous_data):
-    """Zscore raw data
+def zscore(data):
+    """Zscore continuous or windowed data in-place
 
     Parameters
     ----------
-    continuous_data: np.ndarray
-        continuous signal
+    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        continuous or windowed signal
 
     Returns
     -------
-    normalized: np.ndarray
-        normalized data
+    zscored: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        normalized continuous or windowed data
     ..note:
-        This function is supposed to be given to raw.apply_function().
+        If this function is supposed to transform continuous data, it should be
+        given to raw.apply_function().
     """
-    continuous_data = continuous_data - continuous_data.mean(axis=-1)
-    return continuous_data / continuous_data.std(axis=-1)
+    zscored = data - np.mean(data, keepdims=True, axis=-1)
+    zscored = zscored / np.std(zscored, keepdims=True, axis=-1)
+    # TODO: the overriding of protected '_data' should be implemented in the
+    # TODO: dataset when transforms are applied to windows
+    if hasattr(data, '_data'):
+        data._data = zscored
+    return zscored
+
+
+def scale(data, factor):
+    """Scale continuous or windowed data in-place
+
+    Parameters
+    ----------
+    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        continuous or windowed signal
+    factor: float
+        multiplication factor
+
+    Returns
+    -------
+    scaled: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        normalized continuous or windowed data
+    ..note:
+        If this function is supposed to transform continuous data, it should be
+        given to raw.apply_function().
+    """
+    scaled = np.multiply(data, factor)
+    # TODO: the overriding of protected '_data' should be implemented in the
+    # TODO: dataset when transforms are applied to windows
+    if hasattr(data, '_data'):
+        data._data = scaled
+    return scaled
