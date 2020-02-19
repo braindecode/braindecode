@@ -92,10 +92,11 @@ def create_windows_from_events(
 
         description = events[:, -1]
 
-        metadata = pd.DataFrame(
-            zip(i_supercrop_in_trials, starts, stops, description),
-            columns=["i_supercrop_in_trial", "i_start_in_trial",
-                     "i_stop_in_trial", "target"])
+        metadata = pd.DataFrame({
+            'i_supercrop_in_trial': i_supercrop_in_trials,
+            'i_start_in_trial': starts,
+            'i_stop_in_trial': stops,
+            'target': description})
 
         # supercrop size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
@@ -120,7 +121,7 @@ def create_fixed_length_windows(
         a concat of base datasets each holding raw and descpription
     start_offset_samples: int
         start offset from beginning of recording in samples
-    stop_offset_samples: int
+    stop_offset_samples: int | None
         stop offset from beginning of recording in samples.
     supercrop_size_samples: int
         supercrop size
@@ -165,18 +166,19 @@ def create_fixed_length_windows(
         if mapping is not None:
             target = mapping[target]
         if not isinstance(target, (np.integer, int)):
-           raise ValueError(f"Mapping from '{target}' to int is required")
+            raise ValueError(f"Mapping from '{target}' to int is required")
 
         fake_events = [[start, supercrop_size_samples, target]
                         for i_start, start in enumerate(starts)]
-        metadata = pd.DataFrame(zip(
-            np.arange(len(fake_events)), starts, starts + supercrop_size_samples,
-            len(fake_events) * [target]),
-            columns=["i_supercrop_in_trial", "i_start_in_trial",
-                     "i_stop_in_trial", "target"])
+        metadata = pd.DataFrame({
+            'i_supercrop_in_trial': np.arange(len(fake_events)),
+            'i_start_in_trial': starts,
+            'i_stop_in_trial': starts + supercrop_size_samples,
+            'target': len(fake_events) * [target]
+        })
 
         # supercrop size - 1, since tmax is inclusive
-        mne_epochs =  mne.Epochs(
+        mne_epochs = mne.Epochs(
             ds.raw, fake_events, baseline=None,
             tmin=0, tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata)

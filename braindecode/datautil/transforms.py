@@ -12,7 +12,7 @@ ToDo: should transformer also transform y (e.g. cutting continuous labelled
 
 from collections import OrderedDict
 
-import mne
+import numpy as np
 
 
 def transform_concat_ds(concat_ds, transforms):
@@ -69,7 +69,7 @@ def _transform(raw_or_epochs, transforms):
     """
     for transform, transform_kwargs in transforms.items():
         if callable(transform):
-            transform(raw_or_epochs, **transform_kwargs)
+            transform(raw_or_epochs.load_data(), **transform_kwargs)
         else:
             if not hasattr(raw_or_epochs, transform):
                 raise AttributeError(
@@ -77,103 +77,56 @@ def _transform(raw_or_epochs, transforms):
             getattr(raw_or_epochs.load_data(), transform)(**transform_kwargs)
 
 
-class FilterRaw(object):
-    """Apply mne filter on raw data
+def zscore(data):
+    """Zscore continuous or windowed data in-place
 
     Parameters
     ----------
-    mne_filter_kwargs : **kwargs
-        kwargs passed to mne.io.Raw.filter
+    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        continuous or windowed signal
+
+    Returns
+    -------
+    zscored: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        normalized continuous or windowed data
+    ..note:
+        If this function is supposed to transform continuous data, it should be
+        given to raw.apply_function().
     """
-
-    def __init__(self, **mne_filter_kwargs):
-        self.mne_filter_kwargs = mne_filter_kwargs
-
-    def __call__(self, raw):
-        """Apply filter
-
-        Parameters
-        ----------
-        raw : mne.io.Raw
-            raw data to filter
-        """
-        return raw.filter(**self.mne_filter_kwargs)
+    zscored = data - np.mean(data, keepdims=True, axis=-1)
+    zscored = zscored / np.std(zscored, keepdims=True, axis=-1)
+    # TODO: the overriding of protected '_data' should be implemented in the
+    # TODO: dataset when transforms are applied to windows
+    if hasattr(data, '_data'):
+        data._data = zscored
+    return zscored
 
 
-class ZscoreRaw(object):
-    """Zscore raw data channel wise
-    """
-
-    def __call__(self, raw):
-        """Zscore Normalize raw data channel wise
-
-        Parameters
-        ----------
-        raw : mne.io.Raw
-            raw data to normalize
-
-        Returns
-        -------
-        raw : mne.io.Raw
-            normalized raw data
-
-        """
-        raw = raw.apply_function(lambda x: x - x.mean())
-        return raw.apply_function(lambda x: x / x.std())
-
-
-class FilterWindow(object):
-    """FIR filter for windowed data.
+def scale(data, factor):
+    """Scale continuous or windowed data in-place
 
     Parameters
     ----------
-    sfreq : int | float
-        sampling frequency of data when applying filter
-    l_freq : int | float | None
-        see mne.filter.create_filter
-    h_freq : int | float | None
-        see mne.filter.create_filter
-    kwargs : **kwargs
-        see mne.filter.create_filter
-    overlap_kwargs  : **kwargs
-        see mne.filter._overlap_add_filter
+    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        continuous or windowed signal
+    factor: float
+        multiplication factor
+
+    Returns
+    -------
+    scaled: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
+    n_times)
+        normalized continuous or windowed data
+    ..note:
+        If this function is supposed to transform continuous data, it should be
+        given to raw.apply_function().
     """
-
-    def __init__(
-        self, sfreq, l_freq=None, h_freq=None, kwargs=None, overlap_kwargs=None
-    ):
-        if kwargs is None:
-            kwargs = dict()
-        if overlap_kwargs is None:
-            overlap_kwargs = dict()
-        self.filter = mne.filter.create_filter(
-            None, sfreq, l_freq=l_freq, h_freq=h_freq, method="fir", **kwargs
-        )
-        self.overlap_kwargs = overlap_kwargs
-
-    def __call__(self, windows):
-        return mne.filter._overlap_add_filter(
-            windows, self.filter, **self.overlap_kwargs
-        )
-
-
-class ZscoreWindow(object):
-    """Zscore windowed data channel wise
-    """
-
-    def __call__(self, windows):
-        """Zscore Normalize windowed data channel wise
-
-        Parameters
-        ----------
-        X : ndarray, shape (n_channels, window_size)
-            windowed data to normalize
-
-        Returns
-        -------
-        X : ndarray, shape (n_channels, window_size)
-            normalized windowed data
-
-        """
-        windows -= windows.mean(axis=-1, keepdims=True)
-        return windows / windows.std(axis=-1, keepdims=True)
+    scaled = np.multiply(data, factor)
+    # TODO: the overriding of protected '_data' should be implemented in the
+    # TODO: dataset when transforms are applied to windows
+    if hasattr(data, '_data'):
+        data._data = scaled
+    return scaled

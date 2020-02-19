@@ -66,10 +66,8 @@ Data Utils
     SignalAndTarget
     create_fixed_length_windows
     create_windows_from_events
-    FilterRaw
-    ZscoreRaw
-    FilterWindow
-    ZscoreWindow
+    zscore
+    scale
 
 Utils
 =====
