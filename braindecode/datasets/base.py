@@ -84,7 +84,7 @@ class BaseConcatDataset(ConcatDataset):
     """
     def __init__(self, list_of_ds):
         super().__init__(list_of_ds)
-        self.description = pd.DataFrame(ds.description for ds in list_of_ds)
+        self.description = pd.DataFrame([ds.description for ds in list_of_ds])
 
     def split(self, some_property=None, split_ids=None):
         """Split the dataset based on some property listed in its description

@@ -28,6 +28,7 @@ def _find_dataset_in_moabb(dataset_name):
             return dataset()
     raise ValueError("'dataset_name' not found in moabb datasets")
 
+
 def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     data = dataset.get_data(subject_ids)
     raws, subject_ids, session_ids, run_ids = [], [], [], []
@@ -36,16 +37,17 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
             for run_id, raw in sess_data.items():
                 # set annotation if empty
                 if len(raw.annotations) == 0:
-                    annots = _annotations_from_moabb_stim_channel(
-                        raw, dataset
-                    )
+                    annots = _annotations_from_moabb_stim_channel(raw, dataset)
                     raw.set_annotations(annots)
                 raws.append(raw)
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
                 run_ids.append(run_id)
-    description = pd.DataFrame(zip(subject_ids, session_ids, run_ids),
-                               columns=["subject", "session", "run"])
+    description = pd.DataFrame({
+        'subject': subject_ids,
+        'session': session_ids,
+        'run': run_ids
+    })
     return raws, description
 
 
@@ -61,7 +63,6 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
     onset, offset = dataset.interval
     annots.onset += onset
     annots.duration += offset - onset
-
     return annots
 
 
@@ -148,15 +149,19 @@ class TUHAbnormal(BaseConcatDataset):
                 assert "eval" in path_splits
                 session = "eval"
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
-            description = pd.DataFrame(
-                [[age, pathological, gender, session, subject_id]],
-                columns=["age", "pathological", "gender",
-                "session", "subject"], index=[subject_id])
+            description = pd.Series({
+                'age': age,
+                'pathological': pathological,
+                'gender': gender,
+                'session': session,
+                'subject': subject_id
+            })
             base_ds = BaseDataset(raw, description, target_name=target_name)
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 
-    def _time_key(self, file_path):
+    @staticmethod
+    def _time_key(file_path):
         # the splits are specific to tuh abnormal eeg data set
         splits = file_path.split('/')
         p = r'(\d{4}_\d{2}_\d{2})'
@@ -190,7 +195,7 @@ def read_all_file_names(directory, extension, key):
     file_paths = glob.glob(directory + '**/*' + extension, recursive=True)
     file_paths = sorted(file_paths, key=key)
     assert len(file_paths) > 0, (
-        f"something went wrong. Found no {extension} files in {path}")
+        f"something went wrong. Found no {extension} files in {directory}")
     return file_paths
 
 
