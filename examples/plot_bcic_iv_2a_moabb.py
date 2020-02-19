@@ -10,7 +10,9 @@ Cropped Decoding on BCIC IV 2a Competition Set with skorch and moabb.
 #
 # License: BSD-3
 from collections import OrderedDict
+from functools import partial
 
+import numpy as np
 import torch
 import mne
 mne.set_log_level('ERROR')
@@ -76,20 +78,20 @@ with torch.no_grad():
 
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
+standardize_func = partial(
+    exponential_running_standardize, factor_new=factor_new,
+    init_block_size=init_block_size)
 raw_transform_dict = OrderedDict([
-    ("pick_types", {"eeg": True, "meg": False, "stim": False}),
-    ('apply_function', {'fun': lambda x: x*1e6}),
-    ('filter', {'l_freq': low_cut_hz, 'h_freq': high_cut_hz}),
-    ('apply_function', {'fun': lambda a: exponential_running_standardize(
-       a, factor_new=factor_new, init_block_size=init_block_size, eps=1e-4
-    ), 'channel_wise': False})
+    ("pick_types", dict(eeg=True, meg=False, stim=False)),
+    ('apply_function', dict(fun=lambda x: x*1e6, channel_wise=False)),
+    ('filter', dict(l_freq=low_cut_hz, h_freq=high_cut_hz)),
+    ('apply_function', dict(fun=standardize_func, channel_wise=False))
 ])
-
 transform_concat_ds(dataset, raw_transform_dict)
 
-sfreq = dataset.datasets[0].raw.info['sfreq']
-
-trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
+sfreqs = [ds.raw.info['sfreq'] for ds in dataset.datasets]
+assert len(np.unique(sfreqs)) == 1
+trial_start_offset_samples = int(trial_start_offset_seconds * sfreqs[0])
 
 windows_dataset = create_windows_from_events(
     dataset,
