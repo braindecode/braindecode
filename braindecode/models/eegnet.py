@@ -1,11 +1,8 @@
-import numpy as np
 import torch as th
 
 from torch import nn
 from torch.nn.functional import elu
 
-from ..util import np_to_var
-from ..nn_init import glorot_weight_zero_bias
 from .modules import Expression
 
 
@@ -139,11 +136,9 @@ class EEGNetv4(nn.Sequential):
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            np_to_var(
-                np.ones(
-                    (1, self.in_chans, self.input_time_length, 1),
-                    dtype=np.float32,
-                )
+            th.ones(
+                (1, self.in_chans, self.input_time_length, 1),
+                dtype=th.float32
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -167,7 +162,7 @@ class EEGNetv4(nn.Sequential):
         self.add_module("permute_back", Expression(_transpose_1_0))
         self.add_module("squeeze", Expression(_squeeze_final_output))
 
-        glorot_weight_zero_bias(self)
+        _glorot_weight_zero_bias(self)
 
 
 def _transpose_to_b_1_c_0(x):
@@ -294,11 +289,9 @@ class EEGNetv1(nn.Sequential):
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            np_to_var(
-                np.ones(
+            th.ones(
                     (1, self.in_chans, self.input_time_length, 1),
-                    dtype=np.float32,
-                )
+                    dtype=th.float32,
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -323,4 +316,24 @@ class EEGNetv1(nn.Sequential):
             "permute_2", Expression(lambda x: x.permute(0, 1, 3, 2))
         )
         self.add_module("squeeze", Expression(_squeeze_final_output))
-        glorot_weight_zero_bias(self)
+        _glorot_weight_zero_bias(self)
+
+
+def _glorot_weight_zero_bias(model):
+    """Initalize parameters of all modules by initializing weights with glorot
+     uniform/xavier initialization, and setting biases to zero. Weights from
+     batch norm layers are set to 1.
+
+    Parameters
+    ----------
+    model: Module
+    """
+    for module in model.modules():
+        if hasattr(module, "weight"):
+            if not ("BatchNorm" in module.__class__.__name__):
+                nn.init.xavier_uniform_(module.weight, gain=1)
+            else:
+                nn.init.constant_(module.weight, 1)
+        if hasattr(module, "bias"):
+            if module.bias is not None:
+                nn.init.constant_(module.bias, 0)
