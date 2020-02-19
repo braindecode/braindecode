@@ -42,36 +42,6 @@ def test_exponential_running_demean(mock_data):
         demeaned_data, expected_data, rtol=1e-4, atol=1e-4)
 
 
-def test_exponential_running_standardize_dimension_fail(mock_data):
-    mock_input, expected_data, _ = mock_data
-    standardized_data = exponential_running_standardize(mock_input.T)
-    assert not standardized_data.shape == expected_data.shape
-    with pytest.raises(AssertionError):
-        np.testing.assert_allclose(
-            standardized_data, expected_data, rtol=1e-4, atol=1e-4)
-
-    standardized_data = exponential_running_standardize(mock_input).T
-    assert not standardized_data.shape == expected_data.shape
-    with pytest.raises(AssertionError):
-        np.testing.assert_allclose(
-            standardized_data, expected_data, rtol=1e-4, atol=1e-4)
-
-
-def test_exponential_running_demean_dimension_fail(mock_data):
-    mock_input, _, expected_data = mock_data
-    demeaned_data = exponential_running_demean(mock_input.T)
-    assert not demeaned_data.shape == expected_data.shape
-    with pytest.raises(AssertionError):
-        np.testing.assert_allclose(
-            demeaned_data, expected_data, rtol=1e-4, atol=1e-4)
-
-    demeaned_data = exponential_running_demean(mock_input).T
-    assert not demeaned_data.shape == expected_data.shape
-    with pytest.raises(AssertionError):
-        np.testing.assert_allclose(
-            demeaned_data, expected_data, rtol=1e-4, atol=1e-4)
-
-
 def test_exponential_running_init_block_size(mock_data):
     mock_input, _, _ = mock_data
     init_block_size = 3

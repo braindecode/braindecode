@@ -20,10 +20,10 @@ def exponential_running_standardize(
     Finally, standardize the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t) / max(\sqrt{v_t}, eps)`.
     
-    
+
     Parameters
     ----------
-    data: 2darray (n_channels, n_times)
+    data: np.ndarray (n_channels, n_times)
     factor_new: float
     init_block_size: int
         Standardize data before to this index with regular standardization. 
@@ -32,7 +32,7 @@ def exponential_running_standardize(
 
     Returns
     -------
-    standardized: 2darray (n_channels, n_times)
+    standardized: np.ndarray (n_channels, n_times)
         Standardized data.
     """
     data = data.T
@@ -70,14 +70,14 @@ def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
 
     Parameters
     ----------
-    data: 2darray (n_channels, n_times)
+    data: np.ndarray (n_channels, n_times)
     factor_new: float
     init_block_size: int
         Demean data before to this index with regular demeaning. 
         
     Returns
     -------
-    demeaned: 2darray (n_channels, n_times)
+    demeaned: np.ndarray (n_channels, n_times)
         Demeaned data.
     """
     data = data.T
