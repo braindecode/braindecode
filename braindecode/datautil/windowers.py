@@ -18,7 +18,7 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
-        mapping=None, preload=False):
+        mapping=None, preload=False, drop_bad_windows=True):
     """Windower that creates supercrops/windows based on events in mne.Raw.
 
     The function fits supercrops of supercrop_size_samples in
@@ -50,6 +50,11 @@ def create_windows_from_events(
         mapping from event description to target value
     preload: bool
         if True, preload the data of the Epochs objects.
+    drop_bad_windows: bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifiying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as otherwise
+        the BaseConcatDataset has to be updated as well.
 
     Returns
     -------
@@ -105,6 +110,10 @@ def create_windows_from_events(
             ds.raw, events, mapping ,baseline=None, tmin=0,
             tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata, preload=preload)
+
+        if drop_bad_windows:
+            mne_epochs = mne_epochs.drop_bad(reject=None, flat=None)
+
         windows_ds = WindowsDataset(mne_epochs, ds.description)
         list_of_windows_ds.append(windows_ds)
 
@@ -114,7 +123,7 @@ def create_windows_from_events(
 def create_fixed_length_windows(
         concat_ds, start_offset_samples, stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
-        mapping=None, preload=False):
+        mapping=None, preload=False, drop_bad_windows=True):
     """Windower that creates sliding supercrops/windows.
 
     Parameters
@@ -136,6 +145,11 @@ def create_fixed_length_windows(
         mapping from event description to target value
     preload: bool
         if True, preload the data of the Epochs objects.
+    drop_bad_windows: bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifiying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as otherwise
+        the BaseConcatDataset has to be updated as well.
 
     Returns
     -------
@@ -163,7 +177,7 @@ def create_fixed_length_windows(
             # if last supercrop does not end at trial stop, make it stop
             # there
             if starts[-1] < last_allowed_ind:
-                starts[-1] = last_allowed_ind
+                starts = np.append(starts, last_allowed_ind)
 
         # TODO: handle multi-target case / non-integer target case
         target = -1 if ds.target is None else ds.target
@@ -186,6 +200,10 @@ def create_fixed_length_windows(
             ds.raw, fake_events, baseline=None,
             tmin=0, tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata, preload=preload)
+
+        if drop_bad_windows:
+            mne_epochs = mne_epochs.drop_bad(reject=None, flat=None)
+
         windows_ds = WindowsDataset(mne_epochs, ds.description)
         list_of_windows_ds.append(windows_ds)
 

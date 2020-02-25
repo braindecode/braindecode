@@ -3,6 +3,8 @@ import errno
 import random
 
 import numpy as np
+import mne
+import h5py
 
 import torch as th
 
@@ -346,3 +348,69 @@ def round_list_to_int(a):
     :return: a with values rounded to integer
     """
     return np.round(a).astype(np.int)
+
+
+def create_mne_raw(n_channels, n_times, sfreq, include_anns=True, savedir=None,
+                   save_format='fif', overwrite=True):
+    """Create an mne.io.RawArray with fake data, and optionally save it.
+
+    This will overwrite already existing files.
+
+    Parameters
+    ----------
+    n_channels : int
+        Number of channels.
+    n_times : int
+        Number of samples.
+    sfreq : float
+        Sampling frequency.
+    include_anns : bool
+        If True, also create annotations.
+    savedir : str | None
+        If provided as a string, the file will be saved under that directory.
+    save_format : str | list
+        If `savedir` is provided, this specifies the file format the data should
+        be saved to. Can be 'raw' or 'hdf5', or a list containing both.
+
+    Returns
+    -------
+    raw : mne.io.Raw
+        The created Raw object.
+    save_fname : dict | None
+        Dictionary containing the name the raw data was saved to.
+    """
+    data = np.random.rand(n_channels, n_times)
+    ch_names = [f'ch{i}' for i in range(n_channels)]
+    ch_types = ['eeg'] * n_channels
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
+
+    raw = mne.io.RawArray(data, info)
+
+    if include_anns:
+        n_anns = 10
+        inds = np.linspace(
+            int(sfreq * 2), int(n_times - sfreq * 2), num=n_anns).astype(int)
+        onset = raw.times[inds]
+        duration = [1] * n_anns
+        description = ['test'] * n_anns
+        anns = mne.Annotations(onset, duration, description)
+        raw = raw.set_annotations(anns)
+
+    save_fname = dict()
+    if savedir is not None:
+        if not isinstance(save_format, list):
+            save_format = [save_format]
+        fname = os.path.join(savedir, 'fake_eeg_raw')
+
+        if 'fif' in save_format:
+            fif_fname = fname + '.fif'
+            raw.save(fif_fname, overwrite=overwrite)
+            save_fname['fif'] = fif_fname
+        if 'hdf5' in save_format:
+            h5_fname = fname + '.h5'
+            with h5py.File(h5_fname, 'w') as f:
+                dset = f.create_dataset(
+                    'fake_raw', dtype='f16', data=raw.get_data())
+            save_fname['hdf5'] = h5_fname
+
+    return raw, save_fname

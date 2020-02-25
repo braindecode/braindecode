@@ -1,5 +1,5 @@
-"""Comparing eager and lazy loading
-===================================
+"""Benchmarking eager and lazy loading
+======================================
 
 In this example, we compare the execution time and memory requirements of 1)
 eager loading, i.e., preloading the entire data into memory and 2) lazy loading,
@@ -71,13 +71,6 @@ torch.set_num_threads(N_JOBS)  # Sets the available number of threads
 # Each one of these steps will be timed, so we can report the total time taken
 # to prepare the data and train the model.
 
-def limit_n_threads(worker_id):
-    """Set the number of threads for a single worker.
-    """
-    print(f'Setting number of threads for worker {worker_id} (was {torch.get_num_threads()})')
-    torch.set_num_threads(1)
-
-
 def load_example_data(preload, window_len_s, n_subjects=10):
     """Create windowed dataset from subjects of the TUH Abnormal dataset.
 
@@ -105,11 +98,13 @@ def load_example_data(preload, window_len_s, n_subjects=10):
 
     fs = ds.datasets[0].raw.info['sfreq']
     window_len_samples = int(fs * window_len_s)
+    window_stride_samples = int(fs * 4)
+    # window_stride_samples = int(fs * window_len_s)
     windows_ds = create_fixed_length_windows(
         ds, start_offset_samples=0, stop_offset_samples=None,
         supercrop_size_samples=window_len_samples,
-        supercrop_stride_samples=window_len_samples, drop_samples=True,
-        preload=preload)
+        supercrop_stride_samples=window_stride_samples, drop_samples=True,
+        preload=preload, drop_bad_windows=True)
 
     # Drop bad epochs
     # XXX: This could be parallelized.
@@ -205,9 +200,13 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
             model.train()
             model.zero_grad()
 
-            X, y = X.float(), y.long()
+            y = y.long()
             if cuda:
                 X, y = X.cuda(), y.cuda()
+
+            X = torch.zeros_like(X).contiguous()
+            u = torch.zeros_like(y).contiguous()
+            # X = X.contiguous()  # XXX: TEST
 
             loss_val = loss(model(X), y)
             loss_vals.append(loss_val.item())
@@ -225,16 +224,16 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
 
 PRELOAD = [True, False]  # True -> eager loading; False -> lazy loading
 N_SUBJECTS = [10]  # Number of recordings to load from the TUH Abnormal corpus
-WINDOW_LEN_S = [4]  # Window length, in seconds
+WINDOW_LEN_S = [2, 4, 15]  # Window length, in seconds
 N_EPOCHS = [2]  # Number of epochs to train the model for
 BATCH_SIZE = [64, 256]  # Training minibatch size
 MODEL = ['shallow', 'deep']
 
-NUM_WORKERS = [0, 8]  # number of processes used by pytorch's Dataloader
+NUM_WORKERS = [8, 0]  # number of processes used by pytorch's Dataloader
 PIN_MEMORY = [False]  # whether to use pinned memory
-CUDA = [True, False] if torch.cuda.is_available() else [False]  # whether to use a CUDA device
+CUDA = [True] if torch.cuda.is_available() else [False]  # whether to use a CUDA device
 
-N_REPETITIONS = 3  # Number of times to repeat the experiment (to get better time estimates)
+N_REPETITIONS = 3  #3 # Number of times to repeat the experiment (to get better time estimates)
 
 ###############################################################################
 # The following path needs to be changed to your local folder containing the
@@ -278,7 +277,7 @@ for (i, preload, n_subjects, win_len_s, n_epochs, batch_size, model_kind,
 
     # Instantiate model and optimizer
     n_channels = len(dataset.datasets[0].windows.ch_names)
--   n_times = len(dataset.datasets[0].windows.times)
+    n_times = len(dataset.datasets[0].windows.times)
     n_classes = 2
     model, loss, optimizer = create_example_model(
         n_channels, n_classes, n_times, kind=model_kind, cuda=cuda)
@@ -311,8 +310,8 @@ print(f'Results saved under {fname}.')
 # We can finally summarize this information into the following plot:
 
 sns.catplot(
-    data=df, row='cuda', x='model_kind', y='model_training', hue='num_workers',
-    col='preload', kind='strip')
+    data=results_df, row='cuda', x='model_kind', y='model_training',
+    hue='num_workers', col='preload', kind='strip')
 
 ###############################################################################
 # .. warning::

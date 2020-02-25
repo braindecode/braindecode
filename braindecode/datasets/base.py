@@ -10,6 +10,7 @@ Dataset classes.
 # License: BSD (3-clause)
 
 import pandas as pd
+import numpy as np
 
 from torch.utils.data import Dataset, ConcatDataset
 
@@ -57,15 +58,16 @@ class WindowsDataset(BaseDataset):
     description: pandas.Series
         holds additional info about the windows
     """
-    md_keys = ['i_supercrop_in_trial', 'i_start_in_trial', 'i_stop_in_trial']
     def __init__(self, windows, description):
         self.windows = windows
         self.description = description
+        self.index_info_cols = [
+            'i_supercrop_in_trial', 'i_start_in_trial', 'i_stop_in_trial']
 
     def __getitem__(self, index):
-        x = self.windows.get_data(item=index)[0]
+        x = self.windows.get_data(item=index)[0].astype('float32')
         md = self.windows.metadata.iloc[index]
-        return x, md['target'], md[self.md_keys].to_list()
+        return x, md['target'], md[self.index_info_cols].to_list()
 
     def __len__(self):
         return len(self.windows.events)

@@ -1,8 +1,11 @@
 # Authors: Lukas Gemein <l.gemein@gmail.com>
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD-3
+
+import os
 
 import mne
 import numpy as np
@@ -13,6 +16,7 @@ from braindecode.datasets.base import BaseDataset, BaseConcatDataset
 from braindecode.datasets.datasets import fetch_data_with_moabb
 from braindecode.datautil import (
     create_windows_from_events, create_fixed_length_windows)
+from braindecode.util import create_mne_raw
 
 
 @pytest.fixture(scope="module")
@@ -24,6 +28,41 @@ def concat_ds_targets():
     ds = BaseDataset(raws[0], description.iloc[0])
     concat_ds = BaseConcatDataset([ds])
     return concat_ds, targets
+
+
+@pytest.fixture(scope="session")
+def lazy_loadable_dataset(tmpdir_factory):
+    """Make a dataset of fif files that can be loaded lazily.
+    """
+    _, fnames = create_mne_raw(
+        2, 10000, 100, savedir=tmpdir_factory.mktemp('data'), save_format='fif')
+    raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
+
+    base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
+    concat_ds = BaseConcatDataset([base_ds])
+
+    return concat_ds
+
+
+def test_windows_from_events_preload_false(lazy_loadable_dataset):
+    # XXX The following should be changed when windower does not need stim
+    #     channels anymore
+    with pytest.raises(ValueError, match='No stim channels found'):
+        windows = create_windows_from_events(
+            concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+            trial_stop_offset_samples=1000, supercrop_size_samples=1000,
+            supercrop_stride_samples=1000, drop_samples=False)
+
+        assert all([not ds.windows.preload for ds in windows.datasets])
+
+
+def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+        stop_offset_samples=1000, supercrop_size_samples=1000,
+        supercrop_stride_samples=1000, drop_samples=False, preload=False)
+
+    assert all([not ds.windows.preload for ds in windows.datasets])
 
 
 def test_one_supercrop_per_original_trial(concat_ds_targets):
@@ -126,27 +165,24 @@ def test_overlapping_trial_offsets(concat_ds_targets):
             drop_samples=False)
 
 
-def test_windows_from_events_preload_false(concat_ds_targets):
-    concat_ds, targets = concat_ds_targets
-    windows = create_windows_from_events(
-        concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=1000,
-        supercrop_size_samples=1, supercrop_stride_samples=1,
-        drop_samples=False, preload=False)
+@pytest.mark.parametrize('drop_bad_windows,preload', [(True, False), (True, False)])
+def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
+    concat_ds, _ = concat_ds_targets
+    windows_from_events = create_windows_from_events(
+        concat_ds=concat_ds, trial_start_offset_samples=0,
+        trial_stop_offset_samples=1000, supercrop_size_samples=1000,
+        supercrop_stride_samples=1000, drop_samples=False, preload=preload,
+        drop_bad_windows=drop_bad_windows)
 
-    # XXX: Need a dataset that can be fetched and lazy loaded
-    # assert all([not df.windows.preload for ds in windows.dataset])
-
-
-def test_fixed_length_windows_preload_false(concat_ds_targets):
-    concat_ds, targets = concat_ds_targets
-    windows = create_fixed_length_windows(
+    windows_fixed_length = create_fixed_length_windows(
         concat_ds=concat_ds, start_offset_samples=0, stop_offset_samples=1000,
-        supercrop_size_samples=1, supercrop_stride_samples=1, drop_samples=False,
-        preload=False)
+        supercrop_size_samples=1000, supercrop_stride_samples=1000,
+        drop_samples=False, preload=preload, drop_bad_windows=drop_bad_windows)
 
-    # XXX: Need a dataset that can be fetched and lazy loaded
-    # assert all([not df.windows.preload for ds in windows.dataset])
+    assert (windows_from_events.datasets[0].windows._bad_dropped ==
+                drop_bad_windows)
+    assert (windows_fixed_length.datasets[0].windows._bad_dropped ==
+                drop_bad_windows)
 
 
 @pytest.mark.parametrize(
@@ -157,7 +193,7 @@ def test_fixed_length_windows_preload_false(concat_ds_targets):
      (0, 50, 50, False, None),
      (0, None, 50, True, None),
      (5, 10, 20, True, None),
-     (5, 10, 20, False, None)]
+     (5, 10, 39, False, None)]
 )
 def test_fixed_length_windower(start_offset_samples, supercrop_size_samples,
                                supercrop_stride_samples, drop_samples, mapping):
@@ -202,5 +238,3 @@ def test_fixed_length_windower(start_offset_samples, supercrop_size_samples,
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}"
         )
-
-
