@@ -409,7 +409,7 @@ def create_mne_raw(n_channels, n_times, sfreq, include_anns=True, savedir=None,
         if 'hdf5' in save_format:
             h5_fname = fname + '.h5'
             with h5py.File(h5_fname, 'w') as f:
-                dset = f.create_dataset(
+                f.create_dataset(
                     'fake_raw', dtype='f16', data=raw.get_data())
             save_fname['hdf5'] = h5_fname
 

@@ -27,4 +27,4 @@ def test_create_mne_raw(tmp_path):
 
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
     with h5py.File(fnames['hdf5']) as hf:
-        data = np.array(hf['fake_raw'])
+        _ = np.array(hf['fake_raw'])

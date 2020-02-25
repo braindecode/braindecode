@@ -33,7 +33,6 @@ have been instantiated with parameter `preload=False`.
 # License: BSD (3-clause)
 
 from itertools import product
-from collections import OrderedDict
 import time
 
 import torch
@@ -43,13 +42,10 @@ from torch.utils.data import DataLoader
 import mne
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-from IPython.display import display
 
 from braindecode.datasets import TUHAbnormal
 from braindecode.datautil.windowers import create_fixed_length_windows
-from braindecode.datautil.transforms import transform_concat_ds
 from braindecode.models import ShallowFBCSPNet, Deep4Net
 
 
@@ -204,10 +200,6 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
             if cuda:
                 X, y = X.cuda(), y.cuda()
 
-            X = torch.zeros_like(X).contiguous()
-            u = torch.zeros_like(y).contiguous()
-            # X = X.contiguous()  # XXX: TEST
-
             loss_val = loss(model(X), y)
             loss_vals.append(loss_val.item())
 
@@ -231,7 +223,7 @@ MODEL = ['shallow', 'deep']
 
 NUM_WORKERS = [8, 0]  # number of processes used by pytorch's Dataloader
 PIN_MEMORY = [False]  # whether to use pinned memory
-CUDA = [True] if torch.cuda.is_available() else [False]  # whether to use a CUDA device
+CUDA = [True, False] if torch.cuda.is_available() else [False]  # whether to use a CUDA device
 
 N_REPETITIONS = 3  #3 # Number of times to repeat the experiment (to get better time estimates)
 

@@ -5,8 +5,6 @@
 #
 # License: BSD-3
 
-import os
-
 import mne
 import numpy as np
 import pandas as pd
