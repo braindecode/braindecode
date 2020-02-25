@@ -33,7 +33,7 @@ def lazy_loadable_dataset(tmpdir_factory):
     """Make a dataset of fif files that can be loaded lazily.
     """
     _, fnames = create_mne_raw(
-        2, 10000, 100, savedir=tmpdir_factory.mktemp('data'), save_format='fif')
+        2, 20000, 100, savedir=tmpdir_factory.mktemp('data'), save_format='fif')
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
 
     base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
@@ -43,22 +43,19 @@ def lazy_loadable_dataset(tmpdir_factory):
 
 
 def test_windows_from_events_preload_false(lazy_loadable_dataset):
-    # XXX The following should be changed when windower does not need stim
-    #     channels anymore
-    with pytest.raises(ValueError, match='No stim channels found'):
-        windows = create_windows_from_events(
-            concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
-            trial_stop_offset_samples=1000, supercrop_size_samples=1000,
-            supercrop_stride_samples=1000, drop_samples=False)
+    windows = create_windows_from_events(
+        concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, supercrop_size_samples=100,
+        supercrop_stride_samples=100, drop_samples=False)
 
-        assert all([not ds.windows.preload for ds in windows.datasets])
+    assert all([not ds.windows.preload for ds in windows.datasets])
 
 
 def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset, start_offset_samples=0,
-        stop_offset_samples=1000, supercrop_size_samples=1000,
-        supercrop_stride_samples=1000, drop_samples=False, preload=False)
+        stop_offset_samples=100, supercrop_size_samples=100,
+        supercrop_stride_samples=100, drop_samples=False, preload=False)
 
     assert all([not ds.windows.preload for ds in windows.datasets])
 
@@ -168,8 +165,8 @@ def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
     concat_ds, _ = concat_ds_targets
     windows_from_events = create_windows_from_events(
         concat_ds=concat_ds, trial_start_offset_samples=0,
-        trial_stop_offset_samples=1000, supercrop_size_samples=1000,
-        supercrop_stride_samples=1000, drop_samples=False, preload=preload,
+        trial_stop_offset_samples=0, supercrop_size_samples=100,
+        supercrop_stride_samples=100, drop_samples=False, preload=preload,
         drop_bad_windows=drop_bad_windows)
 
     windows_fixed_length = create_fixed_length_windows(
