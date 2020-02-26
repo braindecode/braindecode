@@ -166,18 +166,13 @@ def create_fixed_length_windows(
         stop = (ds.raw.n_times
                 if stop_offset_samples is None
                 else stop_offset_samples)
-        starts = np.arange(
-            start_offset_samples, stop, supercrop_stride_samples)
-
         last_allowed_ind = stop - supercrop_size_samples
+        starts = np.arange(start_offset_samples, last_allowed_ind + 1,
+                           supercrop_stride_samples)
 
-        if starts[-1] > last_allowed_ind:
-            starts = starts[:-1]
-        if not drop_samples:
-            # if last supercrop does not end at trial stop, make it stop
-            # there
-            if starts[-1] < last_allowed_ind:
-                starts = np.append(starts, last_allowed_ind)
+        if not drop_samples and starts[-1] < last_allowed_ind:
+            # if last supercrop does not end at trial stop, make it stop there
+            starts = np.append(starts, last_allowed_ind)
 
         # TODO: handle multi-target case / non-integer target case
         target = -1 if ds.target is None else ds.target
