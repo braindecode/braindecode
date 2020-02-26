@@ -8,12 +8,12 @@ import mne
 import numpy as np
 import h5py
 
-from braindecode.util import create_mne_raw
+from braindecode.util import create_mne_dummy_raw
 
 
-def test_create_mne_raw(tmp_path):
+def test_create_mne_dummy_raw(tmp_path):
     n_channels, n_times, sfreq = 2, 10000, 100
-    raw, fnames = create_mne_raw(
+    raw, fnames = create_mne_dummy_raw(
         n_channels, n_times, sfreq, savedir=tmp_path,
         save_format=['fif', 'hdf5'])
 

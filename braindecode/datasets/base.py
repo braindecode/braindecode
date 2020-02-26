@@ -60,13 +60,13 @@ class WindowsDataset(BaseDataset):
     def __init__(self, windows, description):
         self.windows = windows
         self.description = description
-        self.index_info_cols = [
-            'i_supercrop_in_trial', 'i_start_in_trial', 'i_stop_in_trial']
 
     def __getitem__(self, index):
         x = self.windows.get_data(item=index)[0].astype('float32')
         md = self.windows.metadata.iloc[index]
-        return x, md['target'], md[self.index_info_cols].to_list()
+        return x, md['target'], md[
+            ['i_supercrop_in_trial', 'i_start_in_trial',
+             'i_stop_in_trial']].to_list()
 
     def __len__(self):
         return len(self.windows.events)

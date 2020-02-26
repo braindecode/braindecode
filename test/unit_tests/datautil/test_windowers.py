@@ -14,7 +14,7 @@ from braindecode.datasets.base import BaseDataset, BaseConcatDataset
 from braindecode.datasets.datasets import fetch_data_with_moabb
 from braindecode.datautil import (
     create_windows_from_events, create_fixed_length_windows)
-from braindecode.util import create_mne_raw
+from braindecode.util import create_mne_dummy_raw
 
 
 @pytest.fixture(scope="module")
@@ -32,7 +32,7 @@ def concat_ds_targets():
 def lazy_loadable_dataset(tmpdir_factory):
     """Make a dataset of fif files that can be loaded lazily.
     """
-    _, fnames = create_mne_raw(
+    _, fnames = create_mne_dummy_raw(
         2, 20000, 100, savedir=tmpdir_factory.mktemp('data'), save_format='fif')
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
 

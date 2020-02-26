@@ -350,8 +350,8 @@ def round_list_to_int(a):
     return np.round(a).astype(np.int)
 
 
-def create_mne_raw(n_channels, n_times, sfreq, include_anns=True, savedir=None,
-                   save_format='fif', overwrite=True):
+def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
+                         savedir=None, save_format='fif', overwrite=True):
     """Create an mne.io.RawArray with fake data, and optionally save it.
 
     This will overwrite already existing files.
