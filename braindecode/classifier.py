@@ -7,7 +7,7 @@ from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop
 
-from .scoring import PostEpochTrainScoring
+from .scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
 
 
 class EEGClassifier(NeuralNetClassifier):
@@ -15,38 +15,47 @@ class EEGClassifier(NeuralNetClassifier):
     Calls loss function directly without applying log or anything.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, cropped=False, **kwargs):
+        self.cropped = cropped
         callbacks = kwargs.pop('callbacks')
         callbacks = self._parse_callbacks(callbacks)
 
         super().__init__(*args, callbacks=callbacks, **kwargs)
 
-    @staticmethod
-    def _parse_callbacks(callbacks):
+    def _parse_callbacks(self, callbacks):
         callbacks_list = []
         if callbacks is not None:
             for c in callbacks:
                 if isinstance(c, tuple):
-                    if isinstance(c[1], Callback):
-                        callbacks_list.append(c)
+                    callbacks_list.append(c)
                 else:
                     assert isinstance(c, str)
                     scoring = get_scorer(c)
                     scoring_name = scoring._score_func.__name__
-                    lower_is_better = False if scoring_name.endswith(
-                        '_score') else True
-                    train_name = 'train_' + c
-                    valid_name = 'valid_' + c
-                    callbacks_list.append(
-                        (train_name,
-                         PostEpochTrainScoring(scoring, lower_is_better,
-                                               name=train_name))
-                    )
-                    callbacks_list.append(
-                        (valid_name,
-                         EpochScoring(scoring, lower_is_better, on_train=False,
-                                      name=valid_name))
-                    )
+                    lower_is_better = False if scoring_name.endswith('_score') else True
+                    train_name = f'train_{c}'
+                    valid_name = f'valid_{c}'
+                    if self.cropped:
+                        # In case of cropped decoding we are using braindecode
+                        # specific scoring created for cropped decoding
+                        train_scoring = CroppedTrialEpochScoring(
+                            scoring, lower_is_better, name=train_name
+                        )
+                        valid_scoring = CroppedTrialEpochScoring(
+                            scoring, lower_is_better, on_train=False, name=valid_name
+                        )
+                    else:
+                        train_scoring = PostEpochTrainScoring(
+                            scoring, lower_is_better, name=train_name
+                        )
+                        valid_scoring = EpochScoring(
+                            scoring, lower_is_better, on_train=False, name=valid_name
+                        )
+                    callbacks_list.extend([
+                        (train_name, train_scoring),
+                        (valid_name, valid_scoring)
+                    ])
+
         return callbacks_list
 
     # pylint: disable=arguments-differ

@@ -133,6 +133,7 @@ cropped_cb_valid = CroppedTrialEpochScoring(
 
 clf = EEGClassifier(
     model,
+    cropped=True,
     criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,
     train_split=TrainTestSplit(
@@ -142,10 +143,7 @@ clf = EEGClassifier(
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=64,
-    callbacks=[
-        ("train_trial_accuracy", cropped_cb_train),
-        ("valid_trial_accuracy", cropped_cb_valid),
-    ],
+    callbacks=['accuracy'],
 )
 
 clf.fit(train_set, y=None, epochs=4)
