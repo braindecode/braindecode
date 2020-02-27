@@ -52,6 +52,7 @@ cover
 
 # Visual Studio Code
 .vscode
+*.code-workspace
 
 # Emacs
 *.py#
