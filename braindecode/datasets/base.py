@@ -74,13 +74,6 @@ class WindowsDataset(BaseDataset):
         # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[index])
         return X, y, crop_inds
-        # Alternative, using pandas metadata (~1.5 slower on my machine)
-        # (robintibor@gmail.com):
-        # y = self.windows.metadata.at[index, 'target']
-        # index = [self.windows.metadata.at[index, i] for i in
-        #     ['i_supercrop_in_trial', 'i_start_in_trial',
-        #      'i_stop_in_trial']]
-        # return X, y, index
 
     def __len__(self):
         return len(self.windows.events)
