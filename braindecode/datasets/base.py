@@ -6,9 +6,11 @@ Dataset classes.
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
+#          Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
 
+import numpy as np
 import pandas as pd
 
 from torch.utils.data import Dataset, ConcatDataset
@@ -60,13 +62,18 @@ class WindowsDataset(BaseDataset):
     def __init__(self, windows, description):
         self.windows = windows
         self.description = description
+        self.y = np.array(self.windows.metadata.loc[:,'target'])
+        self.crop_inds = np.array(self.windows.metadata.loc[:,
+                              ['i_supercrop_in_trial', 'i_start_in_trial',
+                               'i_stop_in_trial']])
 
     def __getitem__(self, index):
-        x = self.windows.get_data(item=index)[0].astype('float32')
-        md = self.windows.metadata.iloc[index]
-        return x, md['target'], md[
-            ['i_supercrop_in_trial', 'i_start_in_trial',
-             'i_stop_in_trial']].to_list()
+        X = self.windows.get_data(item=index)[0].astype('float32')
+        y = self.y[index]
+        # necessary to cast as list to get list of
+        # three tensors from batch, otherwise get single 2d-tensor...
+        crop_inds = list(self.crop_inds[index])
+        return X, y, crop_inds
 
     def __len__(self):
         return len(self.windows.events)
