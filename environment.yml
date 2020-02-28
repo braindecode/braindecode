@@ -4,12 +4,11 @@ channels:
   - pytorch
   - defaults
 dependencies:
-- python>=3.6
+- python>=3.7
 - numpy
 - pandas
 - scipy
 - mkl
-- resampy
 - matplotlib
 - h5py
 - pytorch
@@ -17,5 +16,5 @@ dependencies:
 - pip
 - skorch
 - pip:
-  - mne
+  - https://github.com/mne-tools/mne-python/zipball/master
   - https://github.com/braindecode/braindecode/zipball/master

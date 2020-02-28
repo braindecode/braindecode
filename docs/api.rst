@@ -31,8 +31,26 @@ Models
    :toctree: generated/
 
     ShallowFBCSPNet
-    AvgPool2dWithConv
     Deep4Net
+    EEGNetv1
+    EEGNetv4
+    HybridNet
+    EEGResNet
+
+Datasets
+==========
+
+:py:mod:`braindecode.datasets`:
+
+.. currentmodule:: braindecode.datasets
+
+.. autosummary::
+   :toctree: generated/
+
+    BaseDataset
+    BaseConcatDataset
+    WindowsDataset
+    MOABBDataset
 
 
 Data Utils
@@ -46,7 +64,10 @@ Data Utils
    :toctree: generated/
 
     SignalAndTarget
-    CropsDataLoader
+    create_fixed_length_windows
+    create_windows_from_events
+    zscore
+    scale
 
 Utils
 =====

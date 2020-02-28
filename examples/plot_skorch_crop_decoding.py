@@ -2,7 +2,7 @@
 Skorch Crop Decoding
 =========================
 
-Example using Skorch for crop decoding
+Example using Skorch for crop decoding on a simpler dataset.
 """
 
 # Authors: Lukas Gemein
@@ -12,46 +12,38 @@ Example using Skorch for crop decoding
 #
 # License: BSD-3
 
-import logging
-import sys
-
-import numpy as np
-
 import mne
-from mne.io import concatenate_raws
-
+import numpy as np
 import torch
+from mne.io import concatenate_raws
 from torch import optim
-from torch.utils.data import Dataset
 
-from skorch.net import NeuralNet
-from skorch.callbacks.scoring import EpochScoring
-
+from braindecode.classifier import EEGClassifier
+from braindecode.datasets.croppedxy import CroppedXyDataset
+from braindecode.datautil.splitters import TrainTestSplit
+from braindecode.losses import CroppedNLLLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.util import set_random_seeds
-from braindecode.datautil import CropsDataLoader
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.experiments.scoring import CroppedTrialEpochScoring
+from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.util import set_random_seeds
 
-log = logging.getLogger()
-log.setLevel("INFO")
-
-logging.basicConfig(
-    format="%(asctime)s %(levelname)s : %(message)s",
-    level=logging.INFO,
-    stream=sys.stdout,
-)
-
-
-# 5,6,7,10,13,14 are codes for executed and imagined hands/feet
 subject_id = (
-    22
-)  # carefully cherry-picked to give nice results on such limited data :)
-event_codes = [5, 6, 9, 10, 13, 14]
+    22  # carefully cherry-picked to give nice results on such limited data :)
+)
+event_codes = [
+    5,
+    6,
+    9,
+    10,
+    13,
+    14,
+]  # codes for executed and imagined hands/feet
 
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
-physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes)
+physionet_paths = mne.datasets.eegbci.load_data(
+    subject_id, event_codes, update_path=False
+)
 
 # Load each of the files
 raws = [
@@ -96,54 +88,16 @@ n_classes = 2
 in_chans = X.shape[1]
 
 
-class EEGDataSet(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        if self.X.ndim == 3:
-            self.X = self.X[:, :, :, None]
-        self.y = y
 
-    def __len__(self):
-        return len(self.X)
-
-    def __getitem__(self, idx):
-        i_trial, start, stop = idx
-        return self.X[i_trial, :, start:stop], self.y[i_trial]
-
-
-train_set = EEGDataSet(X, y)
-test_set = EEGDataSet(X[70:], y=y[70:])
-
-
-class TrainTestSplit(object):
-    def __init__(self, train_size):
-        assert isinstance(train_size, (int, float))
-        self.train_size = train_size
-
-    def __call__(self, dataset, y, **kwargs):
-        # can we directly use this https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.train_test_split.html
-        # or stick to same API
-        if isinstance(self.train_size, int):
-            n_train_samples = self.train_size
-        else:
-            n_train_samples = int(self.train_size * len(dataset))
-
-        X, y = dataset.X, dataset.y
-        return (
-            EEGDataSet(X[:n_train_samples], y[:n_train_samples]),
-            EEGDataSet(X[n_train_samples:], y[n_train_samples:]),
-        )
-
-
-set_random_seeds(20200114, True)
+set_random_seeds(20200114, cuda=False)
 
 # final_conv_length = auto ensures we only get a single output in the time dimension
 model = ShallowFBCSPNet(
     in_chans=in_chans,
     n_classes=n_classes,
-    input_time_length=train_set.X.shape[2],
+    input_time_length=X.shape[2],
     final_conv_length="auto",
-).create_network()
+)
 to_dense_prediction_model(model)
 if cuda:
     model.cuda()
@@ -156,33 +110,42 @@ with torch.no_grad():
     n_preds_per_input = model(dummy_input).shape[2]
 
 
-class CroppedNLLLoss:
-    def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(torch.mean(preds, dim=1), targets)
+train_set = CroppedXyDataset(X[:70], y[:70],
+                       input_time_length=input_time_length,
+                       n_preds_per_input=n_preds_per_input)
+test_set = CroppedXyDataset(X[70:], y=y[70:],
+                      input_time_length=input_time_length,
+                      n_preds_per_input=n_preds_per_input)
 
+cropped_cb_train = CroppedTrialEpochScoring(
+    "accuracy",
+    on_train=True,
+    name="train_trial_accuracy",
+    lower_is_better=False,
+)
 
-cropped_cb = CroppedTrialEpochScoring(
+cropped_cb_valid = CroppedTrialEpochScoring(
     "accuracy",
     on_train=False,
     name="valid_trial_accuracy",
     lower_is_better=False,
 )
 
-clf = NeuralNet(
+clf = EEGClassifier(
     model,
     criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,
-    train_split=TrainTestSplit(train_size=40),
+    train_split=TrainTestSplit(
+        train_size=40,
+        input_time_length=input_time_length,
+        n_preds_per_input=n_preds_per_input,),
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=64,
-    iterator_train=CropsDataLoader,
-    iterator_valid=CropsDataLoader,
-    iterator_train__input_time_length=input_time_length,
-    iterator_train__n_preds_per_input=n_preds_per_input,
-    iterator_valid__input_time_length=input_time_length,
-    iterator_valid__n_preds_per_input=n_preds_per_input,
-    callbacks=[("trial_accuracy", cropped_cb)],
+    callbacks=[
+        ("train_trial_accuracy", cropped_cb_train),
+        ("valid_trial_accuracy", cropped_cb_valid),
+    ],
 )
 
 clf.fit(train_set, y=None, epochs=4)

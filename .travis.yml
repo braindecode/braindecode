@@ -19,14 +19,17 @@ install:
   - pip install sphinx-gallery
   - pip install sphinx_rtd_theme
   - pip install --upgrade pytest pytest-cov codecov
+  - pip install --upgrade coloredlogs
+  - pip install --upgrade pyyaml
+  - pip install --upgrade git+https://github.com/NeuroTechX/moabb
   - pip install -e .
 
 # command to run tests
 script:
-  - pytest --cov=./
+  - pytest --cov=braindecode test/
   # Use Sphinx to make the html docs
   # - cd docs; pip install -r requirements.txt; make html  # we build the doc on circleci now
 
 after_script:
   # Need to run from source dir to execute "git" commands
-  - cd ..; codecov
+  - codecov;
