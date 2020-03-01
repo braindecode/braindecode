@@ -15,21 +15,24 @@ class EEGClassifier(NeuralNetClassifier):
 
     Parameters
     ----------
+    cropped: bool (default=False)
+        Defines whether torch model passed to this class is cropped or not.
+        Currently used for callbacks definition.
     callbacks: None or list of strings or list of Callback instances (default=None)
-      More callbacks, in addition to those returned by
-      ``get_default_callbacks``. Each callback should inherit from
-      :class:`skorch.callbacks.Callback`. If not ``None``, callbacks can be a
-      list of strings specifying `sklearn` scoring functions (for scoring
-      functions names see: https://scikit-learn.org/stable/modules/model_evaluation.html#scoring-parameter)
-      or a list of callbacks where the callback names are inferred from the
-      class name. Name conflicts are resolved by appending a count suffix
-      starting with 1, e.g. ``EpochScoring_1``. Alternatively,
-      a tuple ``(name, callback)`` can be passed, where ``name``
-      should be unique. Callbacks may or may not be instantiated.
-      The callback name can be used to set parameters on specific
-      callbacks (e.g., for the callback with name ``'print_log'``, use
-      ``net.set_params(callbacks__print_log__keys_ignored=['epoch',
-      'train_loss'])``).
+        More callbacks, in addition to those returned by
+        ``get_default_callbacks``. Each callback should inherit from
+        :class:`skorch.callbacks.Callback`. If not ``None``, callbacks can be a
+        list of strings specifying `sklearn` scoring functions (for scoring
+        functions names see: https://scikit-learn.org/stable/modules/model_evaluation.html#scoring-parameter)
+        or a list of callbacks where the callback names are inferred from the
+        class name. Name conflicts are resolved by appending a count suffix
+        starting with 1, e.g. ``EpochScoring_1``. Alternatively,
+        a tuple ``(name, callback)`` can be passed, where ``name``
+        should be unique. Callbacks may or may not be instantiated.
+        The callback name can be used to set parameters on specific
+        callbacks (e.g., for the callback with name ``'print_log'``, use
+        ``net.set_params(callbacks__print_log__keys_ignored=['epoch',
+        'train_loss'])``).
     """
     # TODO: Update docstring to use NeuralNetClassifier docstring with some
     #  imporvements
