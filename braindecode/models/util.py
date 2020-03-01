@@ -57,10 +57,10 @@ def get_output_shape(model, in_chans, input_time_length):
         shape of the network output for `batch_size==1` (1, ...)
     """
     with torch.no_grad():
-        dummy_input = torch.tensor(
-            np.ones((1, in_chans, input_time_length, 1),
-                    dtype=np.float32),
-            device=next(model.parameters()).device.type,
+        dummy_input = torch.ones(
+            1, in_chans, input_time_length, 1,
+            dtype=next(model.parameters()).dtype,
+            device=next(model.parameters()).device,
         )
         output_shape = model(dummy_input).shape
     return output_shape
