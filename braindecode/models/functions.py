@@ -1,5 +1,4 @@
 import torch
-import torch as th
 
 
 def square(x):
@@ -8,7 +7,7 @@ def square(x):
 
 def safe_log(x, eps=1e-6):
     """ Prevents :math:`log(0)` by using :math:`log(max(x, eps))`."""
-    return th.log(th.clamp(x, min=eps))
+    return torch.log(torch.clamp(x, min=eps))
 
 
 def identity(x):
