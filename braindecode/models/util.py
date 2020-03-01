@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 
 
@@ -9,7 +10,8 @@ def to_dense_prediction_model(model, axis=(2, 3)):
 
     Parameters
     ----------
-    model
+    model: torch.nn.Module
+        Model which modules will be modified
     axis: int or (int,int)
         Axis to transform (in terms of intermediate output axes)
         can either be 2, 3, or (2,3).
@@ -44,3 +46,21 @@ def to_dense_prediction_model(model, axis=(2, 3)):
             for ax in axis:
                 new_stride[ax] = 1
             module.stride = tuple(new_stride)
+
+
+def get_output_shape(model, in_chans, input_time_length):
+    """Returns shape of neural network output for batch size equal 1.
+
+    Returns
+    -------
+    output_shape: tuple
+        shape of the network output for `batch_size==1` (1, ...)
+    """
+    with torch.no_grad():
+        dummy_input = torch.tensor(
+            np.ones((1, in_chans, input_time_length, 1),
+                    dtype=np.float32),
+            device=next(model.parameters()).device.type,
+        )
+        output_shape = model(dummy_input).shape
+    return output_shape

@@ -22,8 +22,8 @@ from braindecode.datautil.splitters import TrainTestSplit
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
 from braindecode.losses import CroppedNLLLoss
 from braindecode.models.deep4 import Deep4Net
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds
 
@@ -112,13 +112,7 @@ to_dense_prediction_model(model)
 if cuda:
     model.cuda()
 
-with torch.no_grad():
-    dummy_input = torch.Tensor(
-        train_set.X[:1, :, :input_time_length], device="cpu"
-    )
-    n_preds_per_input = model(dummy_input).shape[2]
-
-out = model(dummy_input)
+n_preds_per_input = get_output_shape(model, n_chans, input_time_length)[2]
 
 train_set = CroppedXyDataset(
     train_set.X, train_set.y,
