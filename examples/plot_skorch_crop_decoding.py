@@ -109,27 +109,12 @@ with torch.no_grad():
     dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device="cpu")
     n_preds_per_input = model(dummy_input).shape[2]
 
-
 train_set = CroppedXyDataset(X[:70], y[:70],
-                       input_time_length=input_time_length,
-                       n_preds_per_input=n_preds_per_input)
+                             input_time_length=input_time_length,
+                             n_preds_per_input=n_preds_per_input)
 test_set = CroppedXyDataset(X[70:], y=y[70:],
-                      input_time_length=input_time_length,
-                      n_preds_per_input=n_preds_per_input)
-
-cropped_cb_train = CroppedTrialEpochScoring(
-    "accuracy",
-    on_train=True,
-    name="train_trial_accuracy",
-    lower_is_better=False,
-)
-
-cropped_cb_valid = CroppedTrialEpochScoring(
-    "accuracy",
-    on_train=False,
-    name="valid_trial_accuracy",
-    lower_is_better=False,
-)
+                            input_time_length=input_time_length,
+                            n_preds_per_input=n_preds_per_input)
 
 clf = EEGClassifier(
     model,

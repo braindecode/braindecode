@@ -109,50 +109,18 @@ class TrainTestBCICIV2aSplit(object):
         return splitted['session_T'], splitted['session_E']
 
 
-cropped_cb_train = CroppedTrialEpochScoring(
-    "accuracy",
-    name="train_trial_accuracy",
-    lower_is_better=False,
-    on_train=True,
-    input_time_length=input_time_length,
-)
-cropped_cb_train_f1_score = CroppedTrialEpochScoring(
-    "f1_macro",
-    name="train_f1_score",
-    lower_is_better=False,
-    on_train=True,
-    input_time_length=input_time_length,
-)
-cropped_cb_valid = CroppedTrialEpochScoring(
-    "accuracy",
-    on_train=False,
-    name="valid_trial_accuracy",
-    lower_is_better=False,
-    input_time_length=input_time_length,
-)
-cropped_cb_valid_f1_score = CroppedTrialEpochScoring(
-    "f1_macro",
-    name="valid_f1_score",
-    lower_is_better=False,
-    on_train=False,
-    input_time_length=input_time_length,
-)
 # MaxNormDefaultConstraint and early stopping should be added to repeat
 # previous braindecode
-
 clf = EEGClassifier(
     model,
+    cropped=True,
     criterion=CroppedNLLLoss,
     optimizer=torch.optim.AdamW,
     train_split=TrainTestBCICIV2aSplit(),
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=batch_size,
-    callbacks=[
-        ("train_trial_accuracy", cropped_cb_train),
-        ("train_trial_f1_score", cropped_cb_train_f1_score),
-        ("valid_trial_accuracy", cropped_cb_valid),
-    ],
+    callbacks=['accuracy', 'f1_macro'],
     device=device,
 )
 
