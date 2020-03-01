@@ -46,31 +46,31 @@ class EEGClassifier(NeuralNetClassifier):
     def _parse_callbacks(self, callbacks):
         callbacks_list = []
         if callbacks is not None:
-            for c in callbacks:
-                if isinstance(c, tuple):
-                    callbacks_list.append(c)
+            for callback in callbacks:
+                if isinstance(callback, tuple):
+                    callbacks_list.append(callback)
                 else:
-                    assert isinstance(c, str)
-                    scoring = get_scorer(c)
+                    assert isinstance(callback, str)
+                    scoring = get_scorer(callback)
                     scoring_name = scoring._score_func.__name__
                     lower_is_better = False if scoring_name.endswith('_score') else True
-                    train_name = f'train_{c}'
-                    valid_name = f'valid_{c}'
+                    train_name = f'train_{callback}'
+                    valid_name = f'valid_{callback}'
                     if self.cropped:
                         # In case of cropped decoding we are using braindecode
                         # specific scoring created for cropped decoding
                         train_scoring = CroppedTrialEpochScoring(
-                            scoring, lower_is_better, name=train_name
+                            callback, lower_is_better, name=train_name
                         )
                         valid_scoring = CroppedTrialEpochScoring(
-                            scoring, lower_is_better, on_train=False, name=valid_name
+                            callback, lower_is_better, on_train=False, name=valid_name
                         )
                     else:
                         train_scoring = PostEpochTrainScoring(
-                            scoring, lower_is_better, name=train_name
+                            callback, lower_is_better, name=train_name
                         )
                         valid_scoring = EpochScoring(
-                            scoring, lower_is_better, on_train=False, name=valid_name
+                            callback, lower_is_better, on_train=False, name=valid_name
                         )
                     callbacks_list.extend([
                         (train_name, train_scoring),
