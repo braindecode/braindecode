@@ -1,6 +1,6 @@
 """
-Trialwise Decoding on BCIC IV 2a Dataset.
-=============================================
+Trialwise Decoding on BCIC IV 2a Dataset
+========================================
 """
 
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
@@ -9,7 +9,6 @@ Trialwise Decoding on BCIC IV 2a Dataset.
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD-3
-from collections import OrderedDict
 from functools import partial
 
 import numpy as np
@@ -80,12 +79,12 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 standardize_func = partial(
     exponential_running_standardize, factor_new=factor_new,
     init_block_size=init_block_size)
-raw_transform_dict = OrderedDict([
+raw_transform_dict = [
     ("pick_types", dict(eeg=True, meg=False, stim=False)),
     ('apply_function', dict(fun=lambda x: x * 1e6, channel_wise=False)),
     ('filter', dict(l_freq=low_cut_hz, h_freq=high_cut_hz)),
     ('apply_function', dict(fun=standardize_func, channel_wise=False))
-])
+]
 transform_concat_ds(dataset, raw_transform_dict)
 
 sfreqs = [ds.raw.info['sfreq'] for ds in dataset.datasets]
@@ -171,3 +170,4 @@ handles = []
 handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
 handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles,[h.get_label() for h in handles], fontsize=14,)
+plt.tight_layout()

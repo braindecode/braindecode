@@ -11,6 +11,7 @@ ToDo: should transformer also transform y (e.g. cutting continuous labelled
 # License: BSD (3-clause)
 
 from collections import OrderedDict
+from collections.abc import Iterable
 
 import numpy as np
 
@@ -30,9 +31,11 @@ def transform_concat_ds(concat_ds, transforms):
     -------
     concat_ds:
     """
-    if not isinstance(transforms, OrderedDict):
-        raise TypeError(
-            "Order of transforms matters! Please provide an OrderedDict.")
+    assert isinstance(transforms, Iterable)
+    for elem in transforms:
+        assert isinstance(transforms, Iterable) and len(elem) == 2, (
+            "Expect transform function and keyword args per transformation "
+            f"got {elem} instead")
     for ds in concat_ds.datasets:
         if hasattr(ds, "raw"):
             _transform(ds.raw, transforms)
@@ -67,7 +70,7 @@ def _transform(raw_or_epochs, transforms):
         The methods or callables that are used must modify the Raw or Epochs
         object inplace, otherwise they won't have any effect.
     """
-    for transform, transform_kwargs in transforms.items():
+    for transform, transform_kwargs in transforms:
         if callable(transform):
             transform(raw_or_epochs.load_data(), **transform_kwargs)
         else:
