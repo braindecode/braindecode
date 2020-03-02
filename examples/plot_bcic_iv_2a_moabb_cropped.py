@@ -15,6 +15,9 @@ from functools import partial
 import numpy as np
 import torch
 import mne
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 from skorch.callbacks import LRScheduler
 mne.set_log_level('ERROR')
 
@@ -131,3 +134,47 @@ clf = EEGClassifier(
 )
 
 clf.fit(windows_dataset, y=None, epochs=n_epochs)
+
+
+###############################################################################
+# Plot Results
+
+ignore_keys = [
+        'batches', 'train_batch_count', 'valid_batch_count',
+        'train_loss_best',
+        'valid_loss_best', 'train_accuracy_best',
+        'valid_accuracy_best', 'dur']
+results = [dict([(key, val) for key, val in hist_dict.items() if
+                key not in ignore_keys])
+           for hist_dict in clf.history]
+
+df = pd.DataFrame(results).set_index('epoch')
+# get percent of misclass for better visual comparison to loss
+df = df.assign(train_misclass=100 - 100 * df.train_accuracy,
+         valid_misclass=100 - 100 * df.valid_accuracy)
+
+plt.style.use('seaborn')
+fig, ax1 = plt.subplots(figsize=(8,3))
+
+df.loc[:,['train_loss', 'valid_loss']].plot(
+    ax=ax1, style=['-',':'], marker='o',
+    color='tab:blue', legend=False, fontsize=14)
+
+ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
+ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
+
+ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+df.loc[:,['train_misclass', 'valid_misclass']].plot(
+    ax=ax2, style=['-',':'], marker='o',
+    color='tab:red', legend=False)
+ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
+ax2.set_ylabel("Misclassification Rate [%]", color='tab:red', fontsize=14)
+ax2.set_ylim(ax2.get_ylim()[0],85) # make some room for legend
+ax1.set_xlabel("Epoch", fontsize=14)
+
+# where some data has already been plotted to ax
+handles = []
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
+plt.legend(handles,[h.get_label() for h in handles], fontsize=14,)
