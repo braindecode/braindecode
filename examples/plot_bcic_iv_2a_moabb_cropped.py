@@ -1,6 +1,6 @@
 """
-Cropped Decoding on BCIC IV 2a Competition Set with skorch and moabb.
-=====================================================================
+Cropped Decoding on BCIC IV 2a Dataset.
+===========================================
 """
 
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
