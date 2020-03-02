@@ -24,8 +24,7 @@ from braindecode.datasets import MOABBDataset
 from braindecode.losses import CroppedNLLLoss
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
-from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.util import set_random_seeds
 from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.transforms import transform_concat_ds
@@ -73,16 +72,11 @@ elif model_name == "deep":
     lr = 1 * 0.01
     weight_decay = 0.5 * 0.001
 
-to_dense_prediction_model(model)
-
 if cuda:
     model.cuda()
 
-with torch.no_grad():
-    dummy_input = torch.ones(
-        1, n_chans, input_time_length, 1, dtype=torch.float32,
-        device=device)
-    n_preds_per_input = model(dummy_input).shape[2]
+to_dense_prediction_model(model)
+n_preds_per_input = get_output_shape(model, n_chans, input_time_length)[2]
 
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
@@ -118,25 +112,12 @@ class TrainTestBCICIV2aSplit(object):
         return splitted['session_T'], splitted['session_E']
 
 
-cropped_cb_train = CroppedTrialEpochScoring(
-    "accuracy",
-    name="train_trial_accuracy",
-    lower_is_better=False,
-    on_train=True,
-    input_time_length=input_time_length,
-)
-cropped_cb_valid = CroppedTrialEpochScoring(
-    "accuracy",
-    on_train=False,
-    name="valid_trial_accuracy",
-    lower_is_better=False,
-    input_time_length=input_time_length,
-)
 # MaxNormDefaultConstraint and early stopping should be added to repeat
 # previous braindecode
 
 clf = EEGClassifier(
     model,
+    cropped=True,
     criterion=CroppedNLLLoss,
     optimizer=torch.optim.AdamW,
     train_split=TrainTestBCICIV2aSplit(),
@@ -144,9 +125,7 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     iterator_train__shuffle=True,
     batch_size=batch_size,
-    callbacks=[
-        ("train_trial_accuracy", cropped_cb_train),
-        ("valid_trial_accuracy", cropped_cb_valid),
+    callbacks=["accuracy",
         # seems n_epochs -1 leads to desired behavior of lr=0 after end of training?
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],

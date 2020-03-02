@@ -24,7 +24,6 @@ from braindecode.classifier import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-from braindecode.scoring import PostEpochTrainScoring
 from braindecode.util import set_random_seeds
 from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.transforms import transform_concat_ds
@@ -106,22 +105,12 @@ class TrainTestBCICIV2aSplit(object):
         splitted = dataset.split('session')
         return splitted['session_T'], splitted['session_E']
 
-cb_train_acc = PostEpochTrainScoring(
-    "accuracy",
-    name="train_trial_accuracy",
-    lower_is_better=False,
-)
-cb_valid_acc = EpochScoring(
-    "accuracy",
-    name="valid_trial_accuracy",
-    lower_is_better=False,
-    on_train=False,
-)
 # MaxNormDefaultConstraint and early stopping should be added to repeat
 # previous braindecode
 
 clf = EEGClassifier(
     model,
+    cropped=False,
     criterion=torch.nn.NLLLoss,
     optimizer=torch.optim.AdamW,
     train_split=TrainTestBCICIV2aSplit(),
@@ -130,8 +119,7 @@ clf = EEGClassifier(
     iterator_train__shuffle=True,
     batch_size=batch_size,
     callbacks=[
-        ("train_trial_accuracy", cb_train_acc),
-        ("valid_trial_accuracy", cb_valid_acc),
+        "accuracy",
         # seems n_epochs -1 leads to desired behavior of lr=0 after end of training?
         ("lr_scheduler",
          LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
