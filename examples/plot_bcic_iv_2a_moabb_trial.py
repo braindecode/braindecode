@@ -16,7 +16,6 @@ import numpy as np
 import torch
 import mne
 from skorch.callbacks import LRScheduler
-from skorch.callbacks.scoring import EpochScoring
 mne.set_log_level('ERROR')
 
 from braindecode.datautil.windowers import create_windows_from_events
