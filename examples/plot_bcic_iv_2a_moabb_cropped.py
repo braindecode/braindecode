@@ -1,6 +1,6 @@
 """
-Cropped Decoding on BCIC IV 2a Dataset.
-===========================================
+Cropped Decoding on BCIC IV 2a Dataset
+======================================
 """
 
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>

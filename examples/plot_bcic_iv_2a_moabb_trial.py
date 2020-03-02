@@ -1,6 +1,6 @@
 """
-Trialwise Decoding on BCIC IV 2a Dataset.
-=============================================
+Trialwise Decoding on BCIC IV 2a Dataset
+========================================
 """
 
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
