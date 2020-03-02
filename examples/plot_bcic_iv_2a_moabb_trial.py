@@ -170,3 +170,4 @@ handles = []
 handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
 handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles,[h.get_label() for h in handles], fontsize=14,)
+plt.tight_layout()
