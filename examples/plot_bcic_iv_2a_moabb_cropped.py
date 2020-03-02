@@ -18,12 +18,12 @@ import mne
 from skorch.callbacks import LRScheduler
 mne.set_log_level('ERROR')
 
-from braindecode.datautil.windowers import create_windows_from_events
-from braindecode.classifier import EEGClassifier
+from braindecode import EEGClassifier
+from braindecode.datautil import create_windows_from_events
 from braindecode.datasets import MOABBDataset
 from braindecode.losses import CroppedNLLLoss
-from braindecode.models.deep4 import Deep4Net
-from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.models import Deep4Net
+from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.util import set_random_seeds
 from braindecode.datautil.signalproc import exponential_running_standardize
@@ -112,9 +112,6 @@ class TrainTestBCICIV2aSplit(object):
         return splitted['session_T'], splitted['session_E']
 
 
-# MaxNormDefaultConstraint and early stopping should be added to repeat
-# previous braindecode
-
 clf = EEGClassifier(
     model,
     cropped=True,
@@ -125,7 +122,8 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     iterator_train__shuffle=True,
     batch_size=batch_size,
-    callbacks=["accuracy",
+    callbacks=[
+        "accuracy",
         # seems n_epochs -1 leads to desired behavior of lr=0 after end of training?
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],

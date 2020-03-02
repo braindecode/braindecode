@@ -1,6 +1,6 @@
 """
 Trialwise Decoding on BCIC IV 2a Competition Set with skorch and moabb.
-=====================================================================
+=======================================================================
 """
 
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
@@ -18,11 +18,11 @@ import mne
 from skorch.callbacks import LRScheduler
 mne.set_log_level('ERROR')
 
-from braindecode.datautil.windowers import create_windows_from_events
-from braindecode.classifier import EEGClassifier
+from braindecode import EEGClassifier
+from braindecode.datautil import create_windows_from_events
 from braindecode.datasets import MOABBDataset
-from braindecode.models.deep4 import Deep4Net
-from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.models import Deep4Net
+from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.transforms import transform_concat_ds
@@ -99,13 +99,12 @@ windows_dataset = create_windows_from_events(
     preload=True,
 )
 
+
 class TrainTestBCICIV2aSplit(object):
     def __call__(self, dataset, y, **kwargs):
         splitted = dataset.split('session')
         return splitted['session_T'], splitted['session_E']
 
-# MaxNormDefaultConstraint and early stopping should be added to repeat
-# previous braindecode
 
 clf = EEGClassifier(
     model,
@@ -120,8 +119,7 @@ clf = EEGClassifier(
     callbacks=[
         "accuracy",
         # seems n_epochs -1 leads to desired behavior of lr=0 after end of training?
-        ("lr_scheduler",
-         LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
 )
