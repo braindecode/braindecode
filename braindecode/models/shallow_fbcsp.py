@@ -4,7 +4,9 @@ from torch.nn import init
 
 from ..util import np_to_var
 from .modules import Expression, Ensure4d
-from .functions import safe_log, square
+from .functions import (
+    safe_log, square, transpose_time_to_spat, squeeze_final_output
+)
 
 
 class ShallowFBCSPNet(nn.Sequential):
@@ -46,13 +48,27 @@ class ShallowFBCSPNet(nn.Sequential):
         super().__init__()
         if final_conv_length == "auto":
             assert input_time_length is not None
-        self.__dict__.update(locals())
-        del self.self
+        self.in_chans = in_chans
+        self.n_classes = n_classes
+        self.input_time_length = input_time_length
+        self.n_filters_time = n_filters_time
+        self.filter_time_length = filter_time_length
+        self.n_filters_spat = n_filters_spat
+        self.pool_time_length = pool_time_length
+        self.pool_time_stride = pool_time_stride
+        self.final_conv_length = final_conv_length
+        self.conv_nonlin = conv_nonlin
+        self.pool_mode = pool_mode
+        self.pool_nonlin = pool_nonlin
+        self.split_first_layer = split_first_layer
+        self.batch_norm = batch_norm
+        self.batch_norm_alpha = batch_norm_alpha
+        self.drop_prob = drop_prob
 
         self.add_module("ensuredims", Ensure4d())
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         if self.split_first_layer:
-            self.add_module("dimshuffle", Expression(_transpose_time_to_spat))
+            self.add_module("dimshuffle", Expression(transpose_time_to_spat))
             self.add_module(
                 "conv_time",
                 nn.Conv2d(
@@ -124,7 +140,7 @@ class ShallowFBCSPNet(nn.Sequential):
             ),
         )
         self.add_module("softmax", nn.LogSoftmax(dim=1))
-        self.add_module("squeeze", Expression(_squeeze_final_output))
+        self.add_module("squeeze", Expression(squeeze_final_output))
 
         # Initialization, xavier is same as in paper...
         init.xavier_uniform_(self.conv_time.weight, gain=1)
@@ -140,17 +156,3 @@ class ShallowFBCSPNet(nn.Sequential):
             init.constant_(self.bnorm.bias, 0)
         init.xavier_uniform_(self.conv_classifier.weight, gain=1)
         init.constant_(self.conv_classifier.bias, 0)
-
-
-# remove empty dim at end and potentially remove empty time dim
-# do not just use squeeze as we never want to remove first dim
-def _squeeze_final_output(x):
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
-    if x.size()[2] == 1:
-        x = x[:, :, 0]
-    return x
-
-
-def _transpose_time_to_spat(x):
-    return x.permute(0, 3, 2, 1)

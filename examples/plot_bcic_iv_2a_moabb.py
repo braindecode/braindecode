@@ -15,6 +15,9 @@ from functools import partial
 import numpy as np
 import torch
 import mne
+
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
+
 mne.set_log_level('ERROR')
 
 from braindecode.datautil.windowers import create_windows_from_events
@@ -23,7 +26,6 @@ from braindecode.datasets import MOABBDataset
 from braindecode.losses import CroppedNLLLoss
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds
 from braindecode.datautil.signalproc import exponential_running_standardize
@@ -66,15 +68,12 @@ elif model_name == "deep":
         final_conv_length=2,
     )
 
-to_dense_prediction_model(model)
-
 if cuda:
     model.cuda()
 
-with torch.no_grad():
-    dummy_input = torch.ones(
-        1, n_chans, input_time_length, 1, dtype=torch.float32, device=device)
-    n_preds_per_input = model(dummy_input).shape[2]
+to_dense_prediction_model(model)
+
+n_preds_per_input = get_output_shape(model, n_chans, input_time_length)[2]
 
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 

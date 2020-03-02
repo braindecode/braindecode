@@ -4,7 +4,7 @@ from torch.nn import init
 from torch.nn.functional import elu
 
 from .modules import Expression, AvgPool2dWithConv, Ensure4d
-from .functions import identity
+from .functions import identity, transpose_time_to_spat, squeeze_final_output
 from ..util import np_to_var
 
 
@@ -55,9 +55,33 @@ class Deep4Net(nn.Sequential):
         super().__init__()
         if final_conv_length == "auto":
             assert input_time_length is not None
-
-        self.__dict__.update(locals())
-        del self.self
+        self.in_chans = in_chans
+        self.n_classes = n_classes
+        self.input_time_length = input_time_length
+        self.final_conv_length = final_conv_length
+        self.n_filters_time = n_filters_time
+        self.n_filters_spat = n_filters_spat
+        self.filter_time_length = filter_time_length
+        self.pool_time_length = pool_time_length
+        self.pool_time_stride = pool_time_stride
+        self.n_filters_2 = n_filters_2
+        self.filter_length_2 = filter_length_2
+        self.n_filters_3 = n_filters_3
+        self.filter_length_3 = filter_length_3
+        self.n_filters_4 = n_filters_4
+        self.filter_length_4 = filter_length_4
+        self.first_nonlin = first_nonlin
+        self.first_pool_mode = first_pool_mode
+        self.first_pool_nonlin = first_pool_nonlin
+        self.later_nonlin = later_nonlin
+        self.later_pool_mode = later_pool_mode
+        self.later_pool_nonlin = later_pool_nonlin
+        self.drop_prob = drop_prob
+        self.double_time_convs = double_time_convs
+        self.split_first_layer = split_first_layer
+        self.batch_norm = batch_norm
+        self.batch_norm_alpha = batch_norm_alpha
+        self.stride_before_pool = stride_before_pool
 
         if self.stride_before_pool:
             conv_stride = self.pool_time_stride
@@ -70,7 +94,7 @@ class Deep4Net(nn.Sequential):
         first_pool_class = pool_class_dict[self.first_pool_mode]
         later_pool_class = pool_class_dict[self.later_pool_mode]
         if self.split_first_layer:
-            self.add_module("dimshuffle", Expression(_transpose_time_to_spat))
+            self.add_module("dimshuffle", Expression(transpose_time_to_spat))
             self.add_module(
                 "conv_time",
                 nn.Conv2d(
@@ -193,7 +217,7 @@ class Deep4Net(nn.Sequential):
             ),
         )
         self.add_module("softmax", nn.LogSoftmax(dim=1))
-        self.add_module("squeeze", Expression(_squeeze_final_output))
+        self.add_module("squeeze", Expression(squeeze_final_output))
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
@@ -226,17 +250,3 @@ class Deep4Net(nn.Sequential):
 
         # Start in eval mode
         self.eval()
-
-
-# remove empty dim at end and potentially remove empty time dim
-# do not just use squeeze as we never want to remove first dim
-def _squeeze_final_output(x):
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
-    if x.size()[2] == 1:
-        x = x[:, :, 0]
-    return x
-
-
-def _transpose_time_to_spat(x):
-    return x.permute(0, 3, 2, 1)
