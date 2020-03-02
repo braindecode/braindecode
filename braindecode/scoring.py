@@ -124,9 +124,7 @@ class CroppedTrialEpochScoring(EpochScoring):
         name=None,
         target_extractor=to_numpy,
         use_caching=True,
-        input_time_length=None,
     ):
-        self.input_time_length = input_time_length
         super().__init__(
             scoring=scoring,
             lower_is_better=lower_is_better,

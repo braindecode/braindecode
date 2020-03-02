@@ -57,7 +57,7 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
     except AssertionError as exc:
         exc.__dict__.setdefault("traces", []).append(trace)
         msg = (
-            err.message
+            exc.message
             if hasattr(exc, "message")
             else exc.args[0]
             if exc.args

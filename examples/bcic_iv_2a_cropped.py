@@ -22,8 +22,8 @@ from braindecode.datautil.splitters import TrainTestSplit
 from braindecode.datautil.trial_segment import create_signal_target_from_raw_mne
 from braindecode.losses import CroppedNLLLoss
 from braindecode.models.deep4 import Deep4Net
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds
 
@@ -112,13 +112,7 @@ to_dense_prediction_model(model)
 if cuda:
     model.cuda()
 
-with torch.no_grad():
-    dummy_input = torch.Tensor(
-        train_set.X[:1, :, :input_time_length], device="cpu"
-    )
-    n_preds_per_input = model(dummy_input).shape[2]
-
-out = model(dummy_input)
+n_preds_per_input = get_output_shape(model, n_chans, input_time_length)[2]
 
 train_set = CroppedXyDataset(
     train_set.X, train_set.y,
@@ -129,24 +123,12 @@ test_set = CroppedXyDataset(
     input_time_length=input_time_length,
     n_preds_per_input=n_preds_per_input)
 
-cropped_cb_train = CroppedTrialEpochScoring(
-    "accuracy",
-    name="train_trial_accuracy",
-    lower_is_better=False,
-    on_train=True,
-)
 
-cropped_cb_valid = CroppedTrialEpochScoring(
-    "accuracy",
-    on_train=False,
-    name="valid_trial_accuracy",
-    lower_is_better=False,
-)
 # MaxNormDefaultConstraint and early stopping should be added to repeat
 # previous braindecode
-
 clf = EEGClassifier(
     model,
+    cropped=True,
     criterion=CroppedNLLLoss,
     optimizer=torch.optim.AdamW,
     train_split=TrainTestSplit(train_size=1 - valid_set_fraction,
@@ -155,10 +137,7 @@ clf = EEGClassifier(
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=32,
-    callbacks=[
-        ("train_trial_accuracy", cropped_cb_train),
-        ("valid_trial_accuracy", cropped_cb_valid),
-    ],
+    callbacks=['accuracy'],
 )
 
 clf.fit(train_set.X, train_set.y, epochs=20)

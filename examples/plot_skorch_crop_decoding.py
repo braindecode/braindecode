@@ -14,7 +14,6 @@ Example using Skorch for crop decoding on a simpler dataset.
 
 import mne
 import numpy as np
-import torch
 from mne.io import concatenate_raws
 from torch import optim
 
@@ -23,7 +22,7 @@ from braindecode.datasets.croppedxy import CroppedXyDataset
 from braindecode.datautil.splitters import TrainTestSplit
 from braindecode.losses import CroppedNLLLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds
 
@@ -88,7 +87,6 @@ n_classes = 2
 in_chans = X.shape[1]
 
 
-
 set_random_seeds(20200114, cuda=False)
 
 # final_conv_length = auto ensures we only get a single output in the time dimension
@@ -105,34 +103,19 @@ if cuda:
 input_time_length = X.shape[2]
 
 # Perform forward pass to determine how many outputs per input
-with torch.no_grad():
-    dummy_input = torch.tensor(X[:1, :, :input_time_length, None], device="cpu")
-    n_preds_per_input = model(dummy_input).shape[2]
+n_preds_per_input = get_output_shape(model, in_chans, input_time_length)[2]
 
 
 train_set = CroppedXyDataset(X[:70], y[:70],
-                       input_time_length=input_time_length,
-                       n_preds_per_input=n_preds_per_input)
+                             input_time_length=input_time_length,
+                             n_preds_per_input=n_preds_per_input)
 test_set = CroppedXyDataset(X[70:], y=y[70:],
-                      input_time_length=input_time_length,
-                      n_preds_per_input=n_preds_per_input)
-
-cropped_cb_train = CroppedTrialEpochScoring(
-    "accuracy",
-    on_train=True,
-    name="train_trial_accuracy",
-    lower_is_better=False,
-)
-
-cropped_cb_valid = CroppedTrialEpochScoring(
-    "accuracy",
-    on_train=False,
-    name="valid_trial_accuracy",
-    lower_is_better=False,
-)
+                            input_time_length=input_time_length,
+                            n_preds_per_input=n_preds_per_input)
 
 clf = EEGClassifier(
     model,
+    cropped=True,
     criterion=CroppedNLLLoss,
     optimizer=optim.AdamW,
     train_split=TrainTestSplit(
@@ -142,10 +125,7 @@ clf = EEGClassifier(
     optimizer__lr=0.0625 * 0.01,
     optimizer__weight_decay=0,
     batch_size=64,
-    callbacks=[
-        ("train_trial_accuracy", cropped_cb_train),
-        ("valid_trial_accuracy", cropped_cb_valid),
-    ],
+    callbacks=['accuracy'],
 )
 
 clf.fit(train_set, y=None, epochs=4)

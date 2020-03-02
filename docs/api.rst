@@ -20,6 +20,18 @@ This is the reference for classes (``CamelCase`` names) and functions
    :no-members:
    :no-inherited-members:
 
+Classifier
+==========
+
+:py:mod:`braindecode.classifier`:
+
+.. currentmodule:: braindecode.classifier
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGClassifier
+
 Models
 ======
 
