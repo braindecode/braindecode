@@ -60,7 +60,7 @@ class EEGClassifier(NeuralNetClassifier):
                         # In case of cropped decoding we are using braindecode
                         # specific scoring created for cropped decoding
                         train_scoring = CroppedTrialEpochScoring(
-                            callback, lower_is_better, name=train_name
+                            callback, lower_is_better, on_train=True, name=train_name
                         )
                         valid_scoring = CroppedTrialEpochScoring(
                             callback, lower_is_better, on_train=False, name=valid_name
