@@ -26,8 +26,8 @@ def windows_concat_ds(base_concat_ds):
         drop_samples=True, mapping=None, preload=True)
 
 
-def test_not_ordered_dict():
-    with pytest.raises(TypeError):
+def test_not_list():
+    with pytest.raises(AssertionError):
         transform_concat_ds(None, {'test': 1})
 
 
@@ -37,12 +37,12 @@ def test_no_raw_or_epochs():
             self.datasets = [1, 2, 3]
 
     ds = EmptyDataset()
-    with pytest.raises(ValueError):
-        transform_concat_ds(ds, OrderedDict())
+    with pytest.raises(AssertionError):
+        transform_concat_ds(ds, ["dummy", "dummy"])
 
 
 def test_method_not_available(base_concat_ds):
-    transforms = OrderedDict([('this_method_is_not_real', {'indeed': None})])
+    transforms = [('this_method_is_not_real', {'indeed': None})]
     with pytest.raises(AttributeError):
         transform_concat_ds(base_concat_ds, transforms)
 
@@ -52,9 +52,7 @@ def test_transform_base_callable(base_concat_ds):
 
 
 def test_transform_base_method(base_concat_ds):
-    transforms = OrderedDict([
-        ("resample", {"sfreq": 50}),
-    ])
+    transforms = [("resample", {"sfreq": 50})]
     transform_concat_ds(base_concat_ds, transforms)
     assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
 
@@ -64,19 +62,17 @@ def test_transform_windows_callable(windows_concat_ds):
 
 
 def test_transform_windows_method(windows_concat_ds):
-    transforms = OrderedDict([
-        ("filter", {"l_freq": 7, "h_freq": 13}),
-    ])
+    transforms = [("filter", {"l_freq": 7, "h_freq": 13})]
     raw_window = windows_concat_ds[0][0]
     transform_concat_ds(windows_concat_ds, transforms)
     assert not np.array_equal(raw_window, windows_concat_ds[0][0])
 
 
 def test_zscore_continuous(base_concat_ds):
-    transforms = OrderedDict([
+    transforms = [
         ('pick_types', dict(eeg=True, meg=False, stim=False)),
         ('apply_function', dict(fun=zscore, channel_wise=True))
-    ])
+    ]
     transform_concat_ds(base_concat_ds, transforms)
     for ds in base_concat_ds.datasets:
         raw_data = ds.raw.get_data()
@@ -92,10 +88,10 @@ def test_zscore_continuous(base_concat_ds):
 
 
 def test_zscore_windows(windows_concat_ds):
-    transforms = OrderedDict([
+    transforms = [
         ('pick_types', dict(eeg=True, meg=False, stim=False)),
         (zscore, dict())
-    ])
+    ]
     transform_concat_ds(windows_concat_ds, transforms)
     for ds in windows_concat_ds.datasets:
         windowed_data = ds.windows.get_data()
@@ -112,10 +108,10 @@ def test_zscore_windows(windows_concat_ds):
 
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
-    transforms = OrderedDict([
+    transforms = [
         ('pick_types', dict(eeg=True, meg=False, stim=False)),
         ('apply_function', dict(fun=scale, factor=factor))
-    ])
+    ]
     raw_timepoint = base_concat_ds[0][0]
     transform_concat_ds(base_concat_ds, transforms)
     expected = np.ones_like(raw_timepoint) * factor
@@ -125,10 +121,10 @@ def test_scale_continuous(base_concat_ds):
 
 def test_scale_windows(windows_concat_ds):
     factor = 1e6
-    transforms = OrderedDict([
+    transforms = [
         ('pick_types', dict(eeg=True, meg=False, stim=False)),
         (scale, dict(factor=factor))
-    ])
+    ]
     raw_window = windows_concat_ds[0][0]
     transform_concat_ds(windows_concat_ds, transforms)
     expected = np.ones_like(raw_window) * factor

@@ -40,12 +40,12 @@ for x, y in ds:
 ##############################################################################
 # We can apply preprocessing transforms that are defined in mne and work
 # in-place, such as resampling, bandpass filtering, or electrode selection.
-transform_dict = OrderedDict([
+transform_list = [
     ("pick_types", {"eeg": True, "meg": False, "stim": True}),
     ("resample", {"sfreq": 100}),
-])
+]
 print(ds.datasets[0].raw.info["sfreq"])
-transform_concat_ds(ds, transform_dict)
+transform_concat_ds(ds, transform_list)
 print(ds.datasets[0].raw.info["sfreq"])
 
 ###############################################################################
@@ -104,14 +104,14 @@ def crop_windows(windows, start_offset_samples, stop_offset_samples):
     windows.crop(tmin=start_offset_samples / fs, tmax=stop_offset_samples / fs,
                  include_tmax=False)
 
-epochs_transform_dict = OrderedDict([
+epochs_transform_list = [
     ("pick_types", {"eeg": True, "meg": False, "stim": False}),
     (crop_windows, {"start_offset_samples": 100, "stop_offset_samples": 900}),
-])
+]
 
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
-transform_concat_ds(windows_ds, epochs_transform_dict)
+transform_concat_ds(windows_ds, epochs_transform_list)
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
 
