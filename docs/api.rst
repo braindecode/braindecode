@@ -21,7 +21,7 @@ This is the reference for classes (``CamelCase`` names) and functions
    :no-inherited-members:
 
 Classifier
-======
+==========
 
 :py:mod:`braindecode.classifier`:
 
