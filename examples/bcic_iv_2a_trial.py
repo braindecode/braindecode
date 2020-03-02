@@ -200,25 +200,7 @@ clf = EEGClassifier(
     batch_size=64,
     device="cuda",
     iterator_train__drop_last=True,
-    callbacks=[
-        (
-            "train_accuracy",
-            PostEpochTrainScoring(
-                "accuracy", lower_is_better=False, name="train_acc"
-            ),
-        ),
-        (
-            "valid_accuracy",
-            EpochScoring(
-                "accuracy",
-                lower_is_better=False,
-                name="valid_acc",
-                on_train=False,
-                use_caching=True,
-            ),
-        ),
-        ("constraint", MaxNormConstraintCallback()),
-    ],
+    callbacks=['accuracy', ("constraint", MaxNormConstraintCallback())],
 )
 
 clf.fit(
