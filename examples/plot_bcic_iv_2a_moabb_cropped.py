@@ -9,7 +9,6 @@ Cropped Decoding on BCIC IV 2a Dataset
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD-3
-from collections import OrderedDict
 from functools import partial
 
 import numpy as np
