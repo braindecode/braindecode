@@ -96,8 +96,7 @@ def _compute_preds_per_trial_from_n_preds_per_trial(
     all_preds_arr = np.concatenate(all_preds, axis=0)
     preds_per_trial = []
     i_pred_block = 0
-    for i_trial in range(len(n_preds_per_trial)):
-        n_needed_preds = n_preds_per_trial[i_trial]
+    for i_trial, n_needed_preds in enumerate(n_preds_per_trial):
         preds_this_trial = []
         while n_needed_preds > 0:
             # - n_needed_preds: only has an effect
