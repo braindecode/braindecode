@@ -1,5 +1,4 @@
 import os
-import errno
 import random
 
 import numpy as np
