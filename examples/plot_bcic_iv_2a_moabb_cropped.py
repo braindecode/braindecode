@@ -18,6 +18,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
 mne.set_log_level('ERROR')
 
 from braindecode import EEGClassifier
@@ -107,19 +108,16 @@ windows_dataset = create_windows_from_events(
     preload=True,
 )
 
-
-class TrainTestBCICIV2aSplit(object):
-    def __call__(self, dataset, y, **kwargs):
-        splitted = dataset.split('session')
-        return splitted['session_T'], splitted['session_E']
-
+splitted = windows_dataset.split('session')
+train_set = splitted['session_T']
+test_set = splitted['session_E']
 
 clf = EEGClassifier(
     model,
     cropped=True,
     criterion=CroppedNLLLoss,
     optimizer=torch.optim.AdamW,
-    train_split=TrainTestBCICIV2aSplit(),
+    train_split=predefined_split(test_set),
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
     iterator_train__shuffle=True,
@@ -132,7 +130,7 @@ clf = EEGClassifier(
     device=device,
 )
 
-clf.fit(windows_dataset, y=None, epochs=n_epochs)
+clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ###############################################################################
