@@ -19,7 +19,7 @@ from braindecode.util import set_random_seeds
 from braindecode.util import var_to_np, np_to_var
 
 
-def compute_preds_per_trial_from_crops(all_preds, input_time_length, X):
+def _compute_preds_per_trial_from_crops(all_preds, input_time_length, X):
     """
     Compute predictions per trial from predictions for crops.
 
@@ -38,12 +38,12 @@ def compute_preds_per_trial_from_crops(all_preds, input_time_length, X):
         Predictions for each trial, without overlapping predictions.
     """
     trial_n_samples = [trial.shape[1] for trial in X]
-    return compute_preds_per_trial_from_trial_n_samples(
+    return _compute_preds_per_trial_from_trial_n_samples(
         all_preds, input_time_length, trial_n_samples
     )
 
 
-def compute_preds_per_trial_from_trial_n_samples(
+def _compute_preds_per_trial_from_trial_n_samples(
     all_preds, input_time_length, trial_n_samples
 ):
     """
@@ -68,13 +68,13 @@ def compute_preds_per_trial_from_trial_n_samples(
     n_preds_per_trial = [
         n_samples - n_receptive_field + 1 for n_samples in trial_n_samples
     ]
-    preds_per_trial = compute_preds_per_trial_from_n_preds_per_trial(
+    preds_per_trial = _compute_preds_per_trial_from_n_preds_per_trial(
         all_preds, n_preds_per_trial
     )
     return preds_per_trial
 
 
-def compute_preds_per_trial_from_n_preds_per_trial(
+def _compute_preds_per_trial_from_n_preds_per_trial(
     all_preds, n_preds_per_trial
 ):
     """
@@ -266,7 +266,7 @@ def test_cropped_decoding():
             print("{:6s} Loss: {:.5f}".format(setname, loss))
             losses.append(loss)
             # Assign the predictions to the trials
-            preds_per_trial = compute_preds_per_trial_from_crops(
+            preds_per_trial = _compute_preds_per_trial_from_crops(
                 all_preds, input_time_length, dataset.X
             )
             # preds per trial are now trials x classes x timesteps/predictions
