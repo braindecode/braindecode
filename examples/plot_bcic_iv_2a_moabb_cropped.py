@@ -110,14 +110,14 @@ windows_dataset = create_windows_from_events(
 
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
-test_set = splitted['session_E']
+valid_set = splitted['session_E']
 
 clf = EEGClassifier(
     model,
     cropped=True,
     criterion=CroppedNLLLoss,
     optimizer=torch.optim.AdamW,
-    train_split=predefined_split(test_set),
+    train_split=predefined_split(valid_set),
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
     iterator_train__shuffle=True,
