@@ -1,10 +1,14 @@
 import torch
 
 
-class CroppedNLLLoss:
-    """Compute NLL Loss after averaging predictions across time.
+class CroppedLoss:
+    """Compute Loss after averaging predictions across time.
     Assumes predictions are in shape:
     n_batch size x n_classes x n_predictions (in time)"""
 
+    def __init__(self, loss_function):
+        self.loss_function = loss_function
+
     def __call__(self, preds, targets):
-        return torch.nn.functional.nll_loss(torch.mean(preds, dim=2), targets)
+        avg_preds = torch.mean(preds, dim=2).squeeze()
+        return self.loss_function(avg_preds, targets)
