@@ -1,10 +1,15 @@
+"""
+Age regression on TUH Abnormal EEG Dataset
+==========================================
+"""
+
+# Authors: Lukas Gemein <l.gemein@gmail.com>
+#
+# License: BSD-3
 import numpy as np
 import torch
-import mne
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
-
-mne.set_log_level('ERROR')
 
 from braindecode import EEGRegressor
 from braindecode.datautil import create_fixed_length_windows
@@ -128,7 +133,7 @@ splitted = windows_dataset.split(split_ids=[
 train_set = splitted[0]
 valid_set = splitted[1]
 
-clf = EEGRegressor(
+regressor = EEGRegressor(
     model,
     cropped=True,
     criterion=CroppedLoss,
@@ -147,4 +152,4 @@ clf = EEGRegressor(
     device=device,
 )
 
-clf.fit(train_set, y=None, epochs=n_epochs)
+regressor.fit(train_set, y=None, epochs=n_epochs)
