@@ -24,7 +24,7 @@ mne.set_log_level('ERROR')
 from braindecode import EEGClassifier
 from braindecode.datautil import create_windows_from_events
 from braindecode.datasets import MOABBDataset
-from braindecode.losses import CroppedNLLLoss
+from braindecode.losses import CroppedLoss
 from braindecode.models import Deep4Net
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
@@ -115,7 +115,8 @@ valid_set = splitted['session_E']
 clf = EEGClassifier(
     model,
     cropped=True,
-    criterion=CroppedNLLLoss,
+    criterion=CroppedLoss,
+    criterion__loss_function=torch.nn.functional.nll_loss,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),
     optimizer__lr=lr,
