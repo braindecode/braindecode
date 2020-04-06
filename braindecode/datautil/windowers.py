@@ -167,8 +167,10 @@ def create_fixed_length_windows(
                 if stop_offset_samples is None
                 else stop_offset_samples)
         last_allowed_ind = stop - supercrop_size_samples
-        starts = np.arange(start_offset_samples, last_allowed_ind + 1,
-                           supercrop_stride_samples)
+        starts = np.arange(
+            ds.raw.first_samp + start_offset_samples,
+            last_allowed_ind + 1,
+            supercrop_stride_samples)
 
         if not drop_samples and starts[-1] < last_allowed_ind:
             # if last supercrop does not end at trial stop, make it stop there
@@ -178,10 +180,8 @@ def create_fixed_length_windows(
         target = -1 if ds.target is None else ds.target
         if mapping is not None:
             target = mapping[target]
-        if not isinstance(target, (np.integer, int)):
-            raise ValueError(f"Mapping from '{target}' to int is required")
 
-        fake_events = [[start, supercrop_size_samples, target]
+        fake_events = [[start, supercrop_size_samples, -1]
                         for i_start, start in enumerate(starts)]
         metadata = pd.DataFrame({
             'i_supercrop_in_trial': np.arange(len(fake_events)),
