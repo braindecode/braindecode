@@ -32,6 +32,18 @@ Classifier
 
     EEGClassifier
 
+Regressor
+==========
+
+:py:mod:`braindecode.regressor`:
+
+.. currentmodule:: braindecode.regressor
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGRegressor
+
 Models
 ======
 
