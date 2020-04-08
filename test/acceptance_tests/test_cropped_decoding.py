@@ -14,10 +14,108 @@ from torch import optim
 
 from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.monitors import compute_preds_per_trial_from_crops
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 from braindecode.util import var_to_np, np_to_var
+
+
+def _compute_preds_per_trial_from_crops(all_preds, input_time_length, X):
+    """
+    Compute predictions per trial from predictions for crops.
+
+    Parameters
+    ----------
+    all_preds: list of 2darrays (classes x time)
+        All predictions for the crops.
+    input_time_length: int
+        Temporal length of one input to the model.
+    X: ndarray
+        Input tensor the crops were taken from.
+
+    Returns
+    -------
+    preds_per_trial: list of 2darrays (classes x time)
+        Predictions for each trial, without overlapping predictions.
+    """
+    trial_n_samples = [trial.shape[1] for trial in X]
+    return _compute_preds_per_trial_from_trial_n_samples(
+        all_preds, input_time_length, trial_n_samples
+    )
+
+
+def _compute_preds_per_trial_from_trial_n_samples(
+    all_preds, input_time_length, trial_n_samples
+):
+    """
+        Compute predictions per trial from predictions for supercrops.
+        Collect supercrop predictions into trials the supercrops
+        were extracted from, remove duplicates.
+        Parameters
+        ----------
+        all_preds: list of 2darrays (classes x time)
+            All predictions for the crops.
+        input_time_length: int
+            Temporal length of one input to the model.
+        trial_n_samples: ndarray or list of int
+            Number of samples for each trial.
+        Returns
+        -------
+        preds_per_trial: list of 2darrays (classes x time)
+            Predictions for each trial, without overlapping predictions.
+        """
+    n_preds_per_input = all_preds[0].shape[2]
+    n_receptive_field = input_time_length - n_preds_per_input + 1
+    n_preds_per_trial = [
+        n_samples - n_receptive_field + 1 for n_samples in trial_n_samples
+    ]
+    preds_per_trial = _compute_preds_per_trial_from_n_preds_per_trial(
+        all_preds, n_preds_per_trial
+    )
+    return preds_per_trial
+
+
+def _compute_preds_per_trial_from_n_preds_per_trial(
+    all_preds, n_preds_per_trial
+):
+    """
+    Compute predictions per trial from predictions for crops.
+    Parameters
+    ----------
+    all_preds: list of 2darrays (classes x time)
+        All predictions for the crops.
+    input_time_length: int
+        Temporal length of one input to the model.
+    n_preds_per_trial: list of int
+        Number of predictions for each trial.
+    Returns
+    -------
+    preds_per_trial: list of 2darrays (classes x time)
+        Predictions for each trial, without overlapping predictions.
+    """
+    # all_preds_arr has shape forward_passes x classes x time
+    all_preds_arr = np.concatenate(all_preds, axis=0)
+    preds_per_trial = []
+    i_pred_block = 0
+    for n_needed_preds in n_preds_per_trial:
+        preds_this_trial = []
+        while n_needed_preds > 0:
+            # - n_needed_preds: only has an effect
+            # in case there are more samples than we actually still need
+            # in the block.
+            # That can happen since final block of a trial can overlap
+            # with block before so we can have some redundant preds.
+            pred_samples = all_preds_arr[i_pred_block, :, -n_needed_preds:]
+            preds_this_trial.append(pred_samples)
+            n_needed_preds -= pred_samples.shape[1]
+            i_pred_block += 1
+
+        preds_this_trial = np.concatenate(preds_this_trial, axis=1)
+        preds_per_trial.append(preds_this_trial)
+    assert i_pred_block == len(all_preds_arr), (
+        "Expect that all prediction forward passes are needed, "
+        "used {:d}, existing {:d}".format(i_pred_block, len(all_preds_arr))
+    )
+    return preds_per_trial
 
 
 def test_cropped_decoding():
@@ -167,7 +265,7 @@ def test_cropped_decoding():
             print("{:6s} Loss: {:.5f}".format(setname, loss))
             losses.append(loss)
             # Assign the predictions to the trials
-            preds_per_trial = compute_preds_per_trial_from_crops(
+            preds_per_trial = _compute_preds_per_trial_from_crops(
                 all_preds, input_time_length, dataset.X
             )
             # preds per trial are now trials x classes x timesteps/predictions

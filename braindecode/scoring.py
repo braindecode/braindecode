@@ -12,9 +12,6 @@ from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
 
-from braindecode.monitors import compute_preds_per_trial_from_trial_n_samples
-from .monitors import compute_preds_per_trial_from_crops
-
 
 def trial_preds_from_supercrop_preds(
         preds, i_supercrop_in_trials, i_stop_in_trials):
