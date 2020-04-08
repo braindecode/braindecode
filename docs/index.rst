@@ -103,7 +103,9 @@ If you use this code in a scientific publication, please cite us as:
     brain–computer interface, model interpretability, brain mapping},
   }
 
-as well as the `MNE-Python <https://mne.tools>`_` software that is used by braindecode:
+as well as the `MNE-Python <https://mne.tools>`_ software that is used by braindecode:
+
+.. code-block:: bibtex
 
   @article{10.3389/fnins.2013.00267,
   author={Gramfort, Alexandre and Luessi, Martin and Larson, Eric and Engemann, Denis and Strohmeier, Daniel and Brodbeck, Christian and Goj, Roman and Jas, Mainak and Brooks, Teon and Parkkonen, Lauri and Hämäläinen, Matti},
