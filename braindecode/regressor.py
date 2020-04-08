@@ -51,7 +51,13 @@ class EEGRegressor(NeuralNetRegressor):
                     callbacks_list.append(callback)
                 else:
                     assert isinstance(callback, str)
-                    lower_is_better = False
+                    scoring = get_scorer(callback)
+                    scoring_name = scoring._score_func.__name__
+                    if (scoring_name.endswith('_score') or
+                        callback.startswith('neg_')):
+                        lower_is_better = False
+                    else:
+                        lower_is_better = True
                     train_name = f'train_{callback}'
                     valid_name = f'valid_{callback}'
                     if self.cropped:

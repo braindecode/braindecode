@@ -53,7 +53,11 @@ class EEGClassifier(NeuralNetClassifier):
                     assert isinstance(callback, str)
                     scoring = get_scorer(callback)
                     scoring_name = scoring._score_func.__name__
-                    lower_is_better = False if scoring_name.endswith('_score') else True
+                    if (scoring_name.endswith('_score') or
+                        callback.startswith('neg_')):
+                        lower_is_better = False
+                    else:
+                        lower_is_better = True
                     train_name = f'train_{callback}'
                     valid_name = f'valid_{callback}'
                     if self.cropped:
