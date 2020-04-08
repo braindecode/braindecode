@@ -112,9 +112,6 @@ raw_transform_dict = [
 ]
 transform_concat_ds(dataset, raw_transform_dict)
 
-sfreqs = [ds.raw.info['sfreq'] for ds in dataset.datasets]
-assert len(np.unique(sfreqs)) == 1
-
 windows_dataset = create_fixed_length_windows(
     dataset,
     start_offset_samples=0,
