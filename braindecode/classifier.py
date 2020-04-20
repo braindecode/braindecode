@@ -33,15 +33,22 @@ class EEGClassifier(NeuralNetClassifier):
         callbacks (e.g., for the callback with name ``'print_log'``, use
         ``net.set_params(callbacks__print_log__keys_ignored=['epoch',
         'train_loss'])``).
+    iterator_train__shuffle: bool (default=True)
+        Defines whether train dataset will be shuffled. As skorch does not
+        shuffle the train dataset by default this one overwrites this option.
     """
     # TODO: Update docstring to use NeuralNetClassifier docstring with some
     #  imporvements
 
-    def __init__(self, *args, cropped=False, callbacks=None, **kwargs):
+    def __init__(self, *args, cropped=False, callbacks=None,
+                 iterator_train__shuffle=True, **kwargs):
         self.cropped = cropped
         callbacks = self._parse_callbacks(callbacks)
 
-        super().__init__(*args, callbacks=callbacks, **kwargs)
+        super().__init__(*args,
+                         callbacks=callbacks,
+                         iterator_train__shuffle=iterator_train__shuffle,
+                         **kwargs)
 
     def _parse_callbacks(self, callbacks):
         callbacks_list = []
