@@ -115,6 +115,11 @@ jobs:
               echo "BUILD=$(cat build.txt)"
               ls -al ~/mne_data;
 
+        - run:
+            name: Tests
+            command: |
+              pytest
+
         # Build docs
         - run:
             name: make html
