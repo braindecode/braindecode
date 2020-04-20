@@ -105,7 +105,6 @@ def test_trialwise_decoding():
         optimizer=torch.optim.Adam,
         train_split=train_valid_split,
         optimizer__lr=0.001,
-        iterator_train__shuffle=True,
         batch_size=30,
         callbacks=["accuracy"],
         device=device,
