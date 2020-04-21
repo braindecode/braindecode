@@ -117,7 +117,6 @@ def test_eeg_classifier():
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 
-
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
     cuda = False
@@ -186,36 +185,55 @@ def test_eeg_classifier():
     expected = [
         {
             "batches": [
-                {"train_loss": 2.0750882625579834, "train_batch_size": 32},
-                {"train_loss": 3.09424090385437, "train_batch_size": 32},
-                {"train_loss": 1.079931378364563, "train_batch_size": 32},
-                {"valid_loss": 2.3208131790161133, "valid_batch_size": 24},
+                {"train_loss": 1.9391239881515503, "train_batch_size": 32},
+                {"train_loss": 2.895704507827759, "train_batch_size": 32},
+                {"train_loss": 1.0713893175125122, "train_batch_size": 32},
+                {"valid_loss": 1.1811838150024414, "valid_batch_size": 24},
             ],
             "epoch": 1,
             "train_batch_count": 3,
             "valid_batch_count": 1,
-            "train_loss": 2.083086848258972,
+            "train_loss": 1.9687392711639404,
             "train_loss_best": True,
-            "valid_loss": 2.3208131790161133,
+            "valid_loss": 1.1811838150024414,
             "valid_loss_best": True,
-            "train_trial_accuracy": 0.5,
+            "train_trial_accuracy": 0.4791666666666667,
             "train_trial_accuracy_best": True,
             "valid_trial_accuracy": 0.5,
             "valid_trial_accuracy_best": True,
         },
         {
             "batches": [
-                {"train_loss": 1.827332615852356, "train_batch_size": 32},
-                {"train_loss": 1.4135494232177734, "train_batch_size": 32},
-                {"train_loss": 1.1295170783996582, "train_batch_size": 32},
-                {"valid_loss": 1.4291356801986694, "valid_batch_size": 24},
+                {"train_loss": 1.5488793849945068, "train_batch_size": 32},
+                {"train_loss": 1.1174801588058472, "train_batch_size": 32},
+                {"train_loss": 1.1525697708129883, "train_batch_size": 32},
+                {"valid_loss": 2.202029228210449, "valid_batch_size": 24},
             ],
             "epoch": 2,
             "train_batch_count": 3,
             "valid_batch_count": 1,
-            "train_loss": 1.4567997058232625,
+            "train_loss": 1.2729764382044475,
             "train_loss_best": True,
-            "valid_loss": 1.4291356801986694,
+            "valid_loss": 2.202029228210449,
+            "valid_loss_best": False,
+            "train_trial_accuracy": 0.5,
+            "train_trial_accuracy_best": True,
+            "valid_trial_accuracy": 0.5,
+            "valid_trial_accuracy_best": False,
+        },
+        {
+            "batches": [
+                {"train_loss": 1.0049529075622559, "train_batch_size": 32},
+                {"train_loss": 1.0266971588134766, "train_batch_size": 32},
+                {"train_loss": 1.0799436569213867, "train_batch_size": 32},
+                {"valid_loss": 1.0638500452041626, "valid_batch_size": 24},
+            ],
+            "epoch": 3,
+            "train_batch_count": 3,
+            "valid_batch_count": 1,
+            "train_loss": 1.0371979077657063,
+            "train_loss_best": True,
+            "valid_loss": 1.0638500452041626,
             "valid_loss_best": True,
             "train_trial_accuracy": 0.5,
             "train_trial_accuracy_best": False,
@@ -224,36 +242,17 @@ def test_eeg_classifier():
         },
         {
             "batches": [
-                {"train_loss": 1.1495535373687744, "train_batch_size": 32},
-                {"train_loss": 2.356320381164551, "train_batch_size": 32},
-                {"train_loss": 0.9548418521881104, "train_batch_size": 32},
-                {"valid_loss": 2.248246908187866, "valid_batch_size": 24},
-            ],
-            "epoch": 3,
-            "train_batch_count": 3,
-            "valid_batch_count": 1,
-            "train_loss": 1.4869052569071453,
-            "train_loss_best": False,
-            "valid_loss": 2.248246908187866,
-            "valid_loss_best": False,
-            "train_trial_accuracy": 0.5,
-            "train_trial_accuracy_best": False,
-            "valid_trial_accuracy": 0.5,
-            "valid_trial_accuracy_best": False,
-        },
-        {
-            "batches": [
-                {"train_loss": 1.2157528400421143, "train_batch_size": 32},
-                {"train_loss": 1.1182057857513428, "train_batch_size": 32},
-                {"train_loss": 0.9163083434104919, "train_batch_size": 32},
-                {"valid_loss": 0.9732739925384521, "valid_batch_size": 24},
+                {"train_loss": 1.0052555799484253, "train_batch_size": 32},
+                {"train_loss": 0.8479514718055725, "train_batch_size": 32},
+                {"train_loss": 0.9589881300926208, "train_batch_size": 32},
+                {"valid_loss": 0.8794112801551819, "valid_batch_size": 24},
             ],
             "epoch": 4,
             "train_batch_count": 3,
             "valid_batch_count": 1,
-            "train_loss": 1.083422323067983,
+            "train_loss": 0.9373983939488729,
             "train_loss_best": True,
-            "valid_loss": 0.9732739925384521,
+            "valid_loss": 0.8794112801551819,
             "valid_loss_best": True,
             "train_trial_accuracy": 0.5,
             "train_trial_accuracy_best": False,
@@ -265,4 +264,4 @@ def test_eeg_classifier():
     history_without_dur = [
         {k: v for k, v in h.items() if k != "dur"} for h in clf.history
     ]
-    assert_deep_allclose(history_without_dur, expected, atol=1e-3, rtol=1e-3)
+    assert_deep_allclose(expected, history_without_dur, atol=1e-3, rtol=1e-3)
