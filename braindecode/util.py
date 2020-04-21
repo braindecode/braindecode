@@ -219,7 +219,8 @@ def get_balanced_batches(
 
 
 def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
-                         savedir=None, save_format='fif', overwrite=True):
+                         description=None, savedir=None, save_format='fif',
+                         overwrite=True):
     """Create an mne.io.RawArray with fake data, and optionally save it.
 
     This will overwrite already existing files.
@@ -234,6 +235,9 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
         Sampling frequency.
     include_anns : bool
         If True, also create annotations.
+    description : list | None
+        List of descriptions used for creating annotations. It should contain
+        10 elements.
     savedir : str | None
         If provided as a string, the file will be saved under that directory.
     save_format : str | list
@@ -260,7 +264,8 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
             int(sfreq * 2), int(n_times - sfreq * 2), num=n_anns).astype(int)
         onset = raw.times[inds]
         duration = [1] * n_anns
-        description = ['test'] * n_anns
+        if description is None:
+            description = ['test'] * n_anns
         anns = mne.Annotations(onset, duration, description)
         raw = raw.set_annotations(anns)
 
