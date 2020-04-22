@@ -1,28 +1,28 @@
 """
-Age regression on TUH Abnormal EEG Dataset
-==========================================
+Regression example on fake data
+===============================
 """
 
 # Authors: Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
 import numpy as np
+import pandas as pd
 import torch
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGRegressor
 from braindecode.datautil import create_fixed_length_windows
-from braindecode.datasets import TUHAbnormal
+from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.losses import CroppedLoss
 from braindecode.models import Deep4Net
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
-from braindecode.util import set_random_seeds
-from braindecode.datautil.transforms import transform_concat_ds
+from braindecode.util import set_random_seeds, create_mne_dummy_raw
 
 model_name = "shallow"  # 'shallow' or 'deep'
-n_epochs = 5
+n_epochs = 3
 seed = 20200220
 
 input_time_length = 6000
@@ -33,6 +33,7 @@ if cuda:
     torch.backends.cudnn.benchmark = True
 
 n_chans = 21
+# set to how many targets you want to regress (age -> 1, [x, y, z] -> 3)
 n_classes = 1
 
 set_random_seeds(seed=seed, cuda=cuda)
@@ -80,37 +81,26 @@ if cuda:
 to_dense_prediction_model(model)
 n_preds_per_input = get_output_shape(model, n_chans, input_time_length)[2]
 
-dataset = TUHAbnormal(
-    path="/data/schirrmr/gemeinl/tuh-abnormal-eeg/raw/v2.0.0/edf/train/",
-    subject_ids=np.arange(100),
-    target_name="age")
+def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq, fake_duration_s):
+    datasets = []
+    for i in range(n_fake_recs):
+        train_or_eval = "eval" if i == 0 else "train"
+        raw, save_fname = create_mne_dummy_raw(
+            n_channels=n_fake_chs, n_times=fake_duration_s*fake_sfreq,
+            sfreq=fake_sfreq, savedir=None)
+        target = np.random.randint(0, 100, n_classes)
+        if n_classes == 1:
+            target = target[0]
+        fake_descrition = pd.Series(
+            data=[target, train_or_eval],
+            index=["target", "session"])
+        base_ds = BaseDataset(raw, fake_descrition, target_name="target")
+        datasets.append(base_ds)
+    dataset = BaseConcatDataset(datasets)
+    return dataset
 
-sfreq = 100
-tmin = 60 * 1
-tmax = 60 * 11
-factor = 1e6
-clipping_value = 800
-ch_names = sorted([
-    'EEG FP2-REF', 'EEG FP1-REF', 'EEG F4-REF', 'EEG F3-REF', 'EEG C4-REF',
-    'EEG C3-REF', 'EEG P4-REF', 'EEG P3-REF', 'EEG O2-REF', 'EEG O1-REF',
-    'EEG F8-REF', 'EEG F7-REF', 'EEG T4-REF', 'EEG T3-REF', 'EEG T6-REF',
-    'EEG T5-REF', 'EEG A2-REF', 'EEG A1-REF', 'EEG FZ-REF', 'EEG CZ-REF',
-    'EEG PZ-REF'])
-
-
-def clip(data, clipping_value):
-    return np.clip(data, -clipping_value, clipping_value)
-
-
-raw_transform_dict = [
-    ('pick_channels', dict(ch_names=ch_names)),
-    ('reorder_channels', dict(ch_names=ch_names)),
-    ('apply_function', dict(fun=lambda x: x * factor, channel_wise=False)),
-    ('crop', dict(tmin=tmin, tmax=tmax, include_tmax=False)),
-    ('resample', dict(sfreq=sfreq)),
-    ('apply_function', dict(fun=clip, clipping_value=clipping_value))
-]
-transform_concat_ds(dataset, raw_transform_dict)
+dataset = fake_regression_dataset(
+    n_fake_recs=5, n_fake_chs=21, fake_sfreq=100, fake_duration_s=60)
 
 windows_dataset = create_fixed_length_windows(
     dataset,
@@ -122,13 +112,9 @@ windows_dataset = create_fixed_length_windows(
     drop_bad_windows=True,
 )
 
-split_i = int(.8 * len(windows_dataset.datasets))
-splitted = windows_dataset.split(split_ids=[
-    np.arange(0, split_i),
-    np.arange(split_i, len(windows_dataset.datasets))
-])
-train_set = splitted[0]
-valid_set = splitted[1]
+splits = windows_dataset.split("session")
+train_set = splits["train"]
+valid_set = splits["eval"]
 
 regressor = EEGRegressor(
     model,
