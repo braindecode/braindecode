@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 from sklearn.metrics import get_scorer
 from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
@@ -7,6 +6,7 @@ from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop
 
 from .scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
+from .util import ThrowAwayIndexLoader
 
 
 class EEGClassifier(NeuralNetClassifier):
@@ -38,7 +38,7 @@ class EEGClassifier(NeuralNetClassifier):
         shuffle the train dataset by default this one overwrites this option.
     """
     # TODO: Update docstring to use NeuralNetClassifier docstring with some
-    #  imporvements
+    #  improvements
 
     def __init__(self, *args, cropped=False, callbacks=None,
                  iterator_train__shuffle=True, **kwargs):
@@ -60,6 +60,8 @@ class EEGClassifier(NeuralNetClassifier):
                     assert isinstance(callback, str)
                     scoring = get_scorer(callback)
                     scoring_name = scoring._score_func.__name__
+                    assert scoring_name.endswith(
+                        ('_score', '_error', '_deviance', '_loss'))
                     if (scoring_name.endswith('_score') or
                         callback.startswith('neg_')):
                         lower_is_better = False
@@ -119,7 +121,7 @@ class EEGClassifier(NeuralNetClassifier):
     def get_iterator(self, dataset, training=False, drop_index=True):
         iterator = super().get_iterator(dataset, training=training)
         if drop_index:
-            return ThrowAwayIndexLoader(self, iterator)
+            return ThrowAwayIndexLoader(self, iterator, is_regression=False)
         else:
             return iterator
 
@@ -182,26 +184,3 @@ class EEGClassifier(NeuralNetClassifier):
             ),
             ("print_log", PrintLog()),
         ]
-
-
-class ThrowAwayIndexLoader(object):
-    def __init__(self, net, loader):
-        self.net = net
-        self.loader = loader
-        self.last_i = None
-
-    def __iter__(self, ):
-        normal_iter = self.loader.__iter__()
-        for batch in normal_iter:
-            if len(batch) == 3:
-                x,y,i = batch
-                # Store for scoring callbacks
-                self.net._last_supercrop_inds = i
-            else:
-                x,y = batch
-
-            # TODO: should be on dataset side
-            if hasattr(x, 'type'):
-                x = x.type(torch.float32)
-                y = y.type(torch.int64)
-            yield x,y

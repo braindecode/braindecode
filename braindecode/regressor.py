@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 from sklearn.metrics import get_scorer
 from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
@@ -7,11 +6,11 @@ from skorch.regressor import NeuralNetRegressor
 from skorch.utils import train_loss_score, valid_loss_score, noop
 
 from .scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
+from .util import ThrowAwayIndexLoader
 
 
 class EEGRegressor(NeuralNetRegressor):
-    """Regressor that does not assume softmax activation.
-    Calls loss function directly without applying log or anything.
+    """Regressor that calls loss function directly.
 
     Parameters
     ----------
@@ -35,7 +34,7 @@ class EEGRegressor(NeuralNetRegressor):
         'train_loss'])``).
     """
     # TODO: Update docstring to use NeuralNetRegressor docstring with some
-    #  imporvements
+    #  improvements
 
     def __init__(self, *args, cropped=False, callbacks=None, **kwargs):
         self.cropped = cropped
@@ -53,6 +52,8 @@ class EEGRegressor(NeuralNetRegressor):
                     assert isinstance(callback, str)
                     scoring = get_scorer(callback)
                     scoring_name = scoring._score_func.__name__
+                    assert scoring_name.endswith(
+                        ('_score', '_error', '_deviance', '_loss'))
                     if (scoring_name.endswith('_score') or
                         callback.startswith('neg_')):
                         lower_is_better = False
@@ -112,7 +113,7 @@ class EEGRegressor(NeuralNetRegressor):
     def get_iterator(self, dataset, training=False, drop_index=True):
         iterator = super().get_iterator(dataset, training=training)
         if drop_index:
-            return ThrowAwayIndexLoader(self, iterator)
+            return ThrowAwayIndexLoader(self, iterator, is_regression=True)
         else:
             return iterator
 
@@ -175,26 +176,3 @@ class EEGRegressor(NeuralNetRegressor):
             ),
             ("print_log", PrintLog()),
         ]
-
-
-class ThrowAwayIndexLoader(object):
-    def __init__(self, net, loader):
-        self.net = net
-        self.loader = loader
-        self.last_i = None
-
-    def __iter__(self, ):
-        normal_iter = self.loader.__iter__()
-        for batch in normal_iter:
-            if len(batch) == 3:
-                x,y,i = batch
-                # Store for scoring callbacks
-                self.net._last_supercrop_inds = i
-            else:
-                x,y = batch
-
-            # TODO: should be on dataset side
-            if hasattr(x, 'type'):
-                x = x.type(torch.float32)
-                y = y.type(torch.float32)
-            yield x,y
