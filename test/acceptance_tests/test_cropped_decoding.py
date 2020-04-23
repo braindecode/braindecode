@@ -132,7 +132,7 @@ def test_cropped_decoding():
             ]
         ),
         rtol=1e-4,
-        atol=1e-5,
+        atol=1e-4,
     )
     np.testing.assert_allclose(
         clf.history[:, 'train_accuracy'],
