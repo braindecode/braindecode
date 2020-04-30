@@ -52,7 +52,7 @@ def create_windows_from_events(
         if True, preload the data of the Epochs objects.
     drop_bad_windows: bool
         If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifiying e.g., windows that fall outside of the
+        step allows identifying e.g., windows that fall outside of the
         continuous recording. It is suggested to run this step here as otherwise
         the BaseConcatDataset has to be updated as well.
 
@@ -65,17 +65,29 @@ def create_windows_from_events(
         trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples)
 
+    # If user did not specify mapping, we extract all events from all datasets
+    # and map them to increasing integers starting from 0
+    infer_mapping = mapping is None
+    if infer_mapping:
+        mapping = {}
+
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
-        if mapping is None:
+        if infer_mapping:
+            unique_events = np.unique(ds.raw.annotations.description)
+            new_unique_events = [x for x in unique_events if x not in mapping]
             # mapping event descriptions to integers from 0 on
-            mapping = {v: k for k, v in enumerate(
-                np.unique(ds.raw.annotations.description))}
+            max_id_mapping = len(mapping)
+            mapping.update(
+                {v: k + max_id_mapping for k, v in enumerate(new_unique_events)}
+            )
 
-        events, _ = mne.events_from_annotations(ds.raw, mapping)
+        events, events_id = mne.events_from_annotations(ds.raw, mapping)
         onsets = events[:, 0]
-        stops = onsets + (ds.raw.annotations.duration
-                          * ds.raw.info['sfreq']).astype(int)
+        filtered_durations = np.array(
+            [a['duration'] for a in ds.raw.annotations if a['description'] in events_id]
+        )
+        stops = onsets + (filtered_durations * ds.raw.info['sfreq']).astype(int)
 
         if stops[-1] + trial_stop_offset_samples > len(ds):
             raise ValueError('"trial_stop_offset_samples" too large. Stop of '
@@ -107,7 +119,7 @@ def create_windows_from_events(
 
         # supercrop size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
-            ds.raw, events, mapping ,baseline=None, tmin=0,
+            ds.raw, events, events_id, baseline=None, tmin=0,
             tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata, preload=preload)
 
@@ -147,7 +159,7 @@ def create_fixed_length_windows(
         if True, preload the data of the Epochs objects.
     drop_bad_windows: bool
         If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifiying e.g., windows that fall outside of the
+        step allows identifying e.g., windows that fall outside of the
         continuous recording. It is suggested to run this step here as otherwise
         the BaseConcatDataset has to be updated as well.
 

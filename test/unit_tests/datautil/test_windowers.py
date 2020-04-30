@@ -17,6 +17,14 @@ from braindecode.datautil import (
 from braindecode.util import create_mne_dummy_raw
 
 
+def _get_raw(tmpdir_factory, description=None):
+    _, fnames = create_mne_dummy_raw(
+        2, 20000, 100, description=description,
+        savedir=tmpdir_factory.mktemp('data'), save_format='fif')
+    raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
+    return raw
+
+
 @pytest.fixture(scope="module")
 def concat_ds_targets():
     raws, description = fetch_data_with_moabb(
@@ -32,10 +40,7 @@ def concat_ds_targets():
 def lazy_loadable_dataset(tmpdir_factory):
     """Make a dataset of fif files that can be loaded lazily.
     """
-    _, fnames = create_mne_dummy_raw(
-        2, 20000, 100, savedir=tmpdir_factory.mktemp('data'), save_format='fif')
-    raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
-
+    raw = _get_raw(tmpdir_factory)
     base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
     concat_ds = BaseConcatDataset([base_ds])
 
@@ -49,6 +54,54 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
         supercrop_stride_samples=100, drop_samples=False)
 
     assert all([not ds.windows.preload for ds in windows.datasets])
+
+
+def test_windows_from_events_mapping_filter(tmpdir_factory):
+    raw = _get_raw(tmpdir_factory, 5 * ['T0', 'T1'])
+    base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
+    concat_ds = BaseConcatDataset([base_ds])
+
+    windows = create_windows_from_events(
+        concat_ds=concat_ds, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, supercrop_size_samples=100,
+        supercrop_stride_samples=100, drop_samples=False, mapping={'T1': 0})
+    description = windows.datasets[0].windows.metadata["target"].to_list()
+
+    assert len(description) == 5
+    np.testing.assert_array_equal(description, np.zeros(5))
+    # dataset should contain only 'T1' events
+    np.testing.assert_array_equal(
+        (raw.time_as_index(raw.annotations.onset[1::2], use_rounding=True)),
+        windows.datasets[0].windows.events[:, 0])
+
+
+def test_windows_from_events_different_events(tmpdir_factory):
+    description_expected = 5 * ['T0', 'T1'] + 4 * ['T2', 'T3'] + 2 * ['T1']
+    raw = _get_raw(tmpdir_factory, description_expected[:10])
+    base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
+
+    raw_1 = _get_raw(tmpdir_factory, description_expected[10:])
+    base_ds_1 = BaseDataset(raw_1, description=pd.Series({'file_id': 2}))
+    concat_ds = BaseConcatDataset([base_ds, base_ds_1])
+
+    windows = create_windows_from_events(
+        concat_ds=concat_ds, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, supercrop_size_samples=100,
+        supercrop_stride_samples=100, drop_samples=False)
+    description = []
+    events = []
+    for ds in windows.datasets:
+        description += ds.windows.metadata["target"].to_list()
+        events += ds.windows.events[:, 0].tolist()
+
+    assert len(description) == 20
+    np.testing.assert_array_equal(description,
+                                  5 * [0, 1] + 4 * [2, 3] + 2 * [1])
+    np.testing.assert_array_equal(
+        np.concatenate(
+            [raw.time_as_index(raw.annotations.onset, use_rounding=True),
+             raw_1.time_as_index(raw.annotations.onset, use_rounding=True)]),
+        events)
 
 
 def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
@@ -175,9 +228,22 @@ def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
         drop_samples=False, preload=preload, drop_bad_windows=drop_bad_windows)
 
     assert (windows_from_events.datasets[0].windows._bad_dropped ==
-                drop_bad_windows)
+            drop_bad_windows)
     assert (windows_fixed_length.datasets[0].windows._bad_dropped ==
-                drop_bad_windows)
+            drop_bad_windows)
+
+
+def test_windows_from_events_(lazy_loadable_dataset):
+    with pytest.raises(ValueError,
+                       match='"trial_stop_offset_samples" too large\\. Stop '
+                             'of last trial \\(19900\\) \\+ '
+                             '"trial_stop_offset_samples" \\(250\\) must be '
+                             'smaller then length of recording 20000\\.'
+                       ):
+        windows = create_windows_from_events(
+            concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+            trial_stop_offset_samples=250, supercrop_size_samples=100,
+            supercrop_stride_samples=100, drop_samples=False)
 
 
 @pytest.mark.parametrize(
