@@ -5,13 +5,14 @@
 
 import mne
 import numpy as np
+import torch
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch import optim
 
 from braindecode import EEGClassifier
 from braindecode.datasets.croppedxy import CroppedXyDataset
-from braindecode.losses import CroppedNLLLoss
+from braindecode.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.util import set_random_seeds
@@ -98,7 +99,8 @@ def test_cropped_decoding():
     clf = EEGClassifier(
         model,
         cropped=True,
-        criterion=CroppedNLLLoss,
+        criterion=CroppedLoss,
+        criterion__loss_function=torch.nn.functional.nll_loss,
         optimizer=optim.Adam,
         train_split=train_split,
         batch_size=32,
