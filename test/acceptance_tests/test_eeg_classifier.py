@@ -8,11 +8,12 @@ import mne
 import numpy as np
 from mne.io import concatenate_raws
 from torch import optim
+from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.croppedxy import CroppedXyDataset
 from braindecode.datautil.splitters import TrainTestSplit
-from braindecode.losses import CroppedNLLLoss
+from braindecode.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.scoring import CroppedTrialEpochScoring
@@ -167,7 +168,8 @@ def test_eeg_classifier():
 
     clf = EEGClassifier(
         model,
-        criterion=CroppedNLLLoss,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
         optimizer=optim.Adam,
         train_split=TrainTestSplit(
             train_size=0.8,

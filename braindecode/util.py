@@ -4,8 +4,7 @@ import random
 import numpy as np
 import mne
 import h5py
-
-import torch as th
+import torch
 
 
 def set_random_seeds(seed, cuda):
@@ -19,9 +18,9 @@ def set_random_seeds(seed, cuda):
         Whether to set cuda seed with torch.
     """
     random.seed(seed)
-    th.manual_seed(seed)
+    torch.manual_seed(seed)
     if cuda:
-        th.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
 
 
@@ -52,7 +51,7 @@ def np_to_var(
     X = np.asarray(X)
     if dtype is not None:
         X = X.astype(dtype)
-    X_tensor = th.tensor(X, requires_grad=requires_grad, **tensor_kwargs)
+    X_tensor = torch.tensor(X, requires_grad=requires_grad, **tensor_kwargs)
     if pin_memory:
         X_tensor = X_tensor.pin_memory()
     return X_tensor
@@ -282,3 +281,30 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
             save_fname['hdf5'] = h5_fname
 
     return raw, save_fname
+
+
+class ThrowAwayIndexLoader(object):
+    def __init__(self, net, loader, is_regression):
+        self.net = net
+        self.loader = loader
+        self.last_i = None
+        self.is_regression = is_regression
+
+    def __iter__(self, ):
+        normal_iter = self.loader.__iter__()
+        for batch in normal_iter:
+            if len(batch) == 3:
+                x, y, i = batch
+                # Store for scoring callbacks
+                self.net._last_supercrop_inds = i
+            else:
+                x, y = batch
+
+            # TODO: should be on dataset side
+            if hasattr(x, 'type'):
+                x = x.type(torch.float32)
+                if self.is_regression:
+                    y = y.type(torch.float32)
+                else:
+                    y = y.type(torch.int64)
+            yield x, y

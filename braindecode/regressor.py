@@ -2,16 +2,15 @@ import numpy as np
 from sklearn.metrics import get_scorer
 from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
-from skorch.classifier import NeuralNetClassifier
+from skorch.regressor import NeuralNetRegressor
 from skorch.utils import train_loss_score, valid_loss_score, noop
 
 from .scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
 from .util import ThrowAwayIndexLoader
 
 
-class EEGClassifier(NeuralNetClassifier):
-    """Classifier that does not assume softmax activation.
-    Calls loss function directly without applying log or anything.
+class EEGRegressor(NeuralNetRegressor):
+    """Regressor that calls loss function directly.
 
     Parameters
     ----------
@@ -37,7 +36,7 @@ class EEGClassifier(NeuralNetClassifier):
         Defines whether train dataset will be shuffled. As skorch does not
         shuffle the train dataset by default this one overwrites this option.
     """
-    # TODO: Update docstring to use NeuralNetClassifier docstring with some
+    # TODO: Update docstring to use NeuralNetRegressor docstring with some
     #  improvements
 
     def __init__(self, *args, cropped=False, callbacks=None,
@@ -121,7 +120,7 @@ class EEGClassifier(NeuralNetClassifier):
     def get_iterator(self, dataset, training=False, drop_index=True):
         iterator = super().get_iterator(dataset, training=training)
         if drop_index:
-            return ThrowAwayIndexLoader(self, iterator, is_regression=False)
+            return ThrowAwayIndexLoader(self, iterator, is_regression=True)
         else:
             return iterator
 
