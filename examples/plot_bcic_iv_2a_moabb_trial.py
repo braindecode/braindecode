@@ -2,17 +2,19 @@
 Trialwise Decoding on BCIC IV 2a Dataset
 ========================================
 
-This tutorial shows you how to train and test deep learning models with Braindecode. Whole procedure is performed on
-MOABB BCI IV dataset. Braindeocde supplies infrastructure for loading, transforming and splitting all MOABB datasets
-which is also briefly presented here.
+This tutorial shows you how to train and test deep learning models with Braindecode.
+Whole procedure is performed on MOABB BCI IV dataset. Braindeocde supplies infrastructure
+for loading, transforming and splitting all MOABB datasets which is also briefly presented
+here.
 
-This script presents a standard processing workflow using trialwise braindecode models. It is also compatible with
-Pytorch deep learning models created by user. There are no additional constraints on model's implementations except
-being valid Pytorch model and correct data processing (it does not have to inherit from any additional class or
+This script presents a standard processing workflow using trialwise braindecode models.
+It is also compatible with Pytorch deep learning models created by user. There are no
+additional constraints on model's implementations except being valid Pytorch model and
+correct data processing (it does not have to inherit from any additional class or
 implement any additional method).
 
-Trialwise decoding is one out of two ways of EEG signal processing implemented in Braindecode. Main of trialwise
-decoding:
+Trialwise decoding is one out of two ways of EEG signal processing implemented in
+Braindecode. Main of trialwise decoding:
 
 1. A complete trial is pushed through the network
 2. The network produces a prediction
@@ -47,7 +49,7 @@ from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.transforms import transform_concat_ds
 mne.set_log_level('ERROR')
 
-########################################################################################################################
+##########################################################################################
 # Set parameters
 # ^^^^^^^^^^^^^^^^^
 seed = 20200220
@@ -75,6 +77,7 @@ if cuda:
 # Set random seed to be able to reproduce results
 set_random_seeds(seed=seed, cuda=cuda)
 
+##########################################################################################
 # Create model
 # ^^^^^^^^^^^^^^^^^
 if model_name == "shallow":
@@ -106,20 +109,32 @@ if cuda:
 
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
-standardize_func = partial(
-    exponential_running_standardize, factor_new=factor_new,
-    init_block_size=init_block_size)
+# Define data processing
+standardize_func = partial(exponential_running_standardize, factor_new=factor_new,
+                           init_block_size=init_block_size)
+# Transform steps are defined as 2 elements tuples (str | callable, dict)
+# If the first element is string it has to be a name of mne.Raw/mne.Epochs method.
+# The second element of a tuple defines method parameters.
 raw_transform_dict = [
-    ("pick_types", dict(eeg=True, meg=False, stim=False)),
+    ('pick_types', dict(eeg=True, meg=False, stim=False)),
     ('apply_function', dict(fun=lambda x: x * 1e6, channel_wise=False)),
     ('filter', dict(l_freq=low_cut_hz, h_freq=high_cut_hz)),
     ('apply_function', dict(fun=standardize_func, channel_wise=False))
 ]
+# Transform the data
 transform_concat_ds(dataset, raw_transform_dict)
 
-# # sfreqs = [ds.raw.info['sfreq'] for ds in dataset.datasets]
-# # assert len(np.unique(sfreqs)) == 1
-# trial_start_offset_samples = int(trial_start_offset_seconds * sfreqs[0])
+##########################################################################################
+# Create windows from MOABB dataset
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Extract sampling frequency from all datasets (in general they may be different for each
+# dataset). We check that for this dataset.
+# Shouldn't we move this to the dataset class? create_windows won't work with
+# different sfreq.
+sfreqs = [ds.raw.info['sfreq'] for ds in dataset.datasets]
+assert len(np.unique(sfreqs)) == 1
+# Calculate the trial start offset in samples.
+trial_start_offset_samples = int(trial_start_offset_seconds * sfreqs[0])
 
 windows_dataset = create_windows_from_events(
     dataset,
@@ -130,20 +145,26 @@ windows_dataset = create_windows_from_events(
     drop_samples=False,
     preload=True,
 )
-
+##########################################################################################
+# Split dataset into train and valid
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Easy dataset splitting using additional info stored in the description attribute
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
 valid_set = splitted['session_E']
 
+##########################################################################################
+# EEGClassifier definition and training
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# EEGClassifier object takes all training hyperparameters, creates all callbacks and
+# performs training. Model training is based on skorch.
 clf = EEGClassifier(
     model,
-    cropped=False,
     criterion=torch.nn.NLLLoss,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
-    iterator_train__shuffle=True,
     batch_size=batch_size,
     callbacks=[
         "accuracy",
@@ -152,10 +173,10 @@ clf = EEGClassifier(
     ],
     device=device,
 )
-
+# Model training for specified number of epochs.
 clf.fit(windows_dataset, y=None, epochs=n_epochs)
 
-###############################################################################
+##########################################################################################
 # Plot Results
 
 ignore_keys = [
