@@ -17,7 +17,6 @@ import pandas as pd
 import mne
 
 from .base import BaseDataset, BaseConcatDataset
-# from ..datautil import create_fixed_length_windows
 
 
 def _find_dataset_in_moabb(dataset_name):

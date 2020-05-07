@@ -76,6 +76,8 @@ Datasets
     WindowsDataset
     MOABBDataset
     create_from_X_y
+    create_from_mne_raw
+    create_from_mne_epochs
 
 
 Data Utils
