@@ -17,6 +17,7 @@ import pandas as pd
 import mne
 
 from .base import BaseDataset, BaseConcatDataset
+from ..datautil.windowers import create_fixed_length_windows
 
 
 def _find_dataset_in_moabb(dataset_name):
@@ -217,3 +218,46 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
     [age] = re.findall("Age:(\d+)", patient_id)
     [gender] = re.findall("\s(\w)\s", patient_id)
     return int(age), gender
+
+
+def create_from_X_y(X, y, sfreq, ch_names):
+    """
+    Create a BaseConcatDataset of WindowsDatasets to be used for decoding with
+    skorch and braindecode.
+
+    Parameters
+    ----------
+    X: array-like
+        list of pre-cut trials n_trials x as n_channels x n_times, where all
+        trials have the same number of channels and time points
+    y: array-like
+        targets corresponding to the trials
+    sfreq: common sampling frequency of all trials
+    ch_names: array-like
+        channel names of the trials
+
+    Returns
+    -------
+    windows_datasets: BaseConcatDataset
+        X and y transformed to a dataset format that is compativle with skorch
+        and braindecode
+    """
+    base_datasets = []
+    for x, target in zip(X, y):
+        info = mne.create_info(ch_names=ch_names, sfreq=sfreq)
+        raw = mne.io.RawArray(x, info)
+        base_dataset = BaseDataset(raw, pd.Series({"target": target}),
+                                   target_name="target")
+        base_datasets.append(base_dataset)
+    base_datasets = BaseConcatDataset(base_datasets)
+
+    windows_datasets = create_fixed_length_windows(
+        base_datasets,
+        start_offset_samples=0,
+        stop_offset_samples=0,
+        supercrop_size_samples=x.shape[1],
+        # assumes all x in X have same number of timesteps
+        supercrop_stride_samples=x.shape[1],
+        drop_samples=False  # True should not make a difference
+    )
+    return windows_datasets
