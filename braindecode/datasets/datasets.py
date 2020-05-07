@@ -346,3 +346,66 @@ def create_from_mne_raw(
     )
     return windows_datasets
 
+
+def create_from_mne_epochs(list_of_epochs, supercrop_size_samples,
+                           supercrop_stride_samples, drop_samples):
+    """
+    Create WindowsDatasets from mne.Epochs
+
+    Parameters
+    ----------
+    list_of_epochs: array-like
+        list of mne.Epochs
+    supercrop_size_samples: int
+        supercrop size
+    supercrop_stride_samples: int
+        stride between supercrops
+    drop_samples: bool
+        whether or not have a last overlapping supercrop/window, when
+        supercrops/windows do not equally divide the continuous signal
+
+    Returns
+    -------
+    windows_datasets: BaseConcatDataset
+        X and y transformed to a dataset format that is compativle with skorch
+        and braindecode
+    """
+    from ..datautil.windowers import _compute_supercrop_inds
+    from ..datasets.base import WindowsDataset
+    windows_datasets = []
+    for epochs in list_of_epochs:
+        starts = epochs.events[:, 0]
+        stops = starts + len(epochs.times)
+
+        i_trials, i_supercrops_in_trial, starts, stops = _compute_supercrop_inds(
+            starts,
+            stops,
+            start_offset=0,
+            stop_offset=0,
+            size=supercrop_size_samples,
+            stride=supercrop_stride_samples,
+            drop_samples=drop_samples
+        )
+
+        targets = []
+        for i_trial, count in enumerate(np.bincount(i_trials)):
+            targets.extend([i_trial] * count)
+
+        d = dict(
+            i_trial=i_trials,
+            i_supercrop_in_trial=i_supercrops_in_trial,
+            i_start_in_trial=starts,
+            i_stop_in_trial=stops,
+            target=targets
+        )
+        df = pd.DataFrame(d)
+
+        epochs.events = df[["i_start_in_trial", "i_trial", "target"]].to_numpy()
+        epochs.selection = list(range(len(epochs.events)))
+        if epochs.metadata is None:
+            epochs.metadata = df
+        else:
+            epochs.metadata = pd.concat([epochs.metadata, df], axis=1)
+        windows_datasets.append(WindowsDataset(epochs))
+    return BaseConcatDataset(windows_datasets)
+
