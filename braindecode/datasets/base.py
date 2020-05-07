@@ -24,14 +24,16 @@ class BaseDataset(Dataset):
     Parameters
     ----------
     raw: mne.io.Raw
-    description: pandas.Series
+    description: dict | pandas.Series
         holds additional description about the continuous signal / subject
     target_name: str | None
         name of the index in `description` that should be use to provide the
         target (e.g., to be used in a prediction task later on).
     """
-    def __init__(self, raw, description, target_name=None):
+    def __init__(self, raw, description=None, target_name=None):
         self.raw = raw
+        if description is not None and isinstance(description, pd.Series):
+            description = pd.Series(description)
         self.description = description
 
         if target_name is None:
@@ -56,11 +58,13 @@ class WindowsDataset(BaseDataset):
     windows: mne.Epochs
         windows/supercrops obtained through the application of a windower to a
         BaseDataset
-    description: pandas.Series
+    description: dict | pandas.Series
         holds additional info about the windows
     """
-    def __init__(self, windows, description):
+    def __init__(self, windows, description=None):
         self.windows = windows
+        if description is not None and not isinstance(description, pd.Series):
+            description = pd.Series(description)
         self.description = description
         self.y = np.array(self.windows.metadata.loc[:,'target'])
         self.crop_inds = np.array(self.windows.metadata.loc[:,
@@ -113,6 +117,8 @@ class BaseConcatDataset(ConcatDataset):
         if split_ids is None and some_property is None:
             raise ValueError('Splitting requires defining ids or a property.')
         if split_ids is None:
+            if some_property not in self.description:
+                raise ValueError(f'{some_property} not found in self.description')
             split_ids = {k: list(v) for k, v in self.description.groupby(
                 some_property).groups.items()}
         else:
