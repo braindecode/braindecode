@@ -75,6 +75,7 @@ Datasets
     BaseConcatDataset
     WindowsDataset
     MOABBDataset
+    create_from_X_y
 
 
 Data Utils
