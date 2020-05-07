@@ -373,6 +373,7 @@ def create_from_mne_epochs(list_of_epochs, supercrop_size_samples,
     windows_datasets = []
     for epochs in list_of_epochs:
         starts = epochs.events[:, 0]
+        targets = epochs.events[:, 2]
         stops = starts + len(epochs.times)
 
         i_trials, i_supercrops_in_trial, starts, stops = _compute_supercrop_inds(
@@ -385,9 +386,9 @@ def create_from_mne_epochs(list_of_epochs, supercrop_size_samples,
             drop_samples=drop_samples
         )
 
-        targets = []
-        for i_trial, count in enumerate(np.bincount(i_trials)):
-            targets.extend([i_trial] * count)
+        window_targets = []
+        for y, count in zip(targets, np.bincount(i_trials)):
+            window_targets.extend([y] * count)
 
         d = dict(
             i_trial=i_trials,
