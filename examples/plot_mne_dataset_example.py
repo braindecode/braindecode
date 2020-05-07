@@ -7,10 +7,8 @@
 # License: BSD (3-clause)
 
 import mne
-import pandas as pd
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.datasets.datasets import create_from_mne_raw
 
 ###############################################################################
 # First, fetch some data using mne.
@@ -30,14 +28,13 @@ parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto', verbose='W
 
 ###############################################################################
 # Convert to data format compatible with skorch and braindecode
-base_datasets = [BaseDataset(raw, pd.Series({"subject": subject_id}))
-                 for raw in parts]
-base_datasets = BaseConcatDataset(base_datasets)
-windows_datasets = create_windows_from_events(
-    base_datasets,
+windows_datasets = create_from_mne_raw(
+    parts,
     trial_start_offset_samples=0,
     trial_stop_offset_samples=0,
     supercrop_size_samples=500,
     supercrop_stride_samples=500,
-    drop_samples=False
+    drop_samples=False,
+    description=[{"event_code": code, "subject": subject_id}
+                 for code in event_codes],
 )

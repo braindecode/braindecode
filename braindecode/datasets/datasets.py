@@ -17,8 +17,7 @@ import pandas as pd
 import mne
 
 from .base import BaseDataset, BaseConcatDataset
-from ..datautil.windowers import create_windows_from_events,\
-    create_fixed_length_windows
+# from ..datautil import create_fixed_length_windows
 
 
 def _find_dataset_in_moabb(dataset_name):
@@ -224,6 +223,7 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
 def create_from_X_y(
         X, y, sfreq, ch_names, drop_samples, supercrop_size_samples=None,
         supercrop_stride_samples=None):
+    from ..datautil.windowers import create_fixed_length_windows
     """
     Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
@@ -279,3 +279,70 @@ def create_from_X_y(
         drop_samples=drop_samples
     )
     return windows_datasets
+
+
+def create_from_mne_raw(
+        raws, trial_start_offset_samples, trial_stop_offset_samples,
+        supercrop_size_samples, supercrop_stride_samples, drop_samples,
+        description=None, mapping=None, preload=False, drop_bad_windows=True):
+    from ..datautil.windowers import create_windows_from_events
+    """
+    Create WindowsDatasets from mne.RawArrays
+
+    Parameters
+    ----------
+    raws: array-like
+        list of mne.RawArrays
+    trial_start_offset_samples: int
+        start offset from original trial onsets in samples
+    trial_stop_offset_samples: int
+        stop offset from original trial stop in samples
+    supercrop_size_samples: int
+        supercrop size
+    supercrop_stride_samples: int
+        stride between supercrops
+    drop_samples: bool
+        whether or not have a last overlapping supercrop/window, when
+        supercrops/windows do not equally divide the continuous signal
+    description: array-like
+        list of dicts or pandas.Series with additional information about the raws
+    mapping: dict(str: int)
+        mapping from event description to target value
+    preload: bool
+        if True, preload the data of the Epochs objects.
+    drop_bad_windows: bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as otherwise
+        the BaseConcatDataset has to be updated as well.
+
+    Returns
+    -------
+    windows_datasets: BaseConcatDataset
+        X and y transformed to a dataset format that is compativle with skorch
+        and braindecode
+    """
+    if description is not None:
+        if len(description) != len(raws):
+            raise ValueError(
+                f"length of 'raws' ({len(raws)}) and 'description' "
+                f"({len(description)}) has to match")
+        base_datasets = [BaseDataset(raw, desc) for raw, desc in
+                         zip(raws, description)]
+    else:
+        base_datasets = [BaseDataset(raw) for raw in raws]
+
+    base_datasets = BaseConcatDataset(base_datasets)
+    windows_datasets = create_windows_from_events(
+        base_datasets,
+        trial_start_offset_samples=trial_start_offset_samples,
+        trial_stop_offset_samples=trial_stop_offset_samples,
+        supercrop_size_samples=supercrop_size_samples,
+        supercrop_stride_samples=supercrop_stride_samples,
+        drop_samples=drop_samples,
+        mapping=mapping,
+        drop_bad_windows=drop_bad_windows,
+        preload=preload
+    )
+    return windows_datasets
+
