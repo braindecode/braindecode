@@ -176,7 +176,7 @@ def create_fixed_length_windows(
     for ds in concat_ds.datasets:
         # already includes last incomplete supercrop start
         stop = (ds.raw.n_times
-                if stop_offset_samples is None
+                if (stop_offset_samples is None or stop_offset_samples == 0)
                 else stop_offset_samples)
         last_allowed_ind = stop - supercrop_size_samples
         starts = np.arange(
@@ -193,8 +193,7 @@ def create_fixed_length_windows(
         if mapping is not None:
             target = mapping[target]
 
-        fake_events = [[start, supercrop_size_samples, -1]
-                        for i_start, start in enumerate(starts)]
+        fake_events = [[start, supercrop_size_samples, -1] for start in starts]
         metadata = pd.DataFrame({
             'i_supercrop_in_trial': np.arange(len(fake_events)),
             'i_start_in_trial': starts,
