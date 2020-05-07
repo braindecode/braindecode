@@ -1,6 +1,9 @@
 """Custom Dataset Example
 =========================
 """
+##############################################################################
+# This example shows how to convert data from X and y to a braindecode
+# compatible data format.
 
 # Authors: Lukas Gemein <l.gemein@gmail.com>
 #
@@ -11,7 +14,7 @@ import mne
 from braindecode.datasets.datasets import create_from_X_y
 
 ###############################################################################
-# To set up the example, we first fetch some data using mne.
+# To set up the example, we first fetch some data using mne:
 
 # 5, 6, 7, 10, 13, 14 are codes for executed and imagined hands/feet
 subject_id = 22
@@ -23,7 +26,7 @@ event_codes = [5, 6, 9, 10, 13, 14]
 physionet_paths = mne.datasets.eegbci.load_data(subject_id, event_codes)
 
 # Load each of the files
-parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto', verbose='WARNING')
+parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto')
          for path in physionet_paths]
 
 ###############################################################################
@@ -36,7 +39,7 @@ sfreq = parts[0].info["sfreq"]
 ch_names = parts[0].info["ch_names"]
 
 ###############################################################################
-# Convert to data format compatible with skorch and braindecode
+# Convert to data format compatible with skorch and braindecode:
 windows_dataset = create_from_X_y(
     X, y, sfreq, ch_names,
     supercrop_stride_samples=500,
