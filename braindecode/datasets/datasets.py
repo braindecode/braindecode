@@ -16,7 +16,10 @@ import numpy as np
 import pandas as pd
 import mne
 
-from .base import BaseDataset, BaseConcatDataset
+from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datautil.windowers import (
+    create_fixed_length_windows, create_windows_from_events,
+    _compute_supercrop_inds)
 
 
 def _find_dataset_in_moabb(dataset_name):
@@ -222,7 +225,6 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
 def create_from_X_y(
         X, y, sfreq, ch_names, drop_samples, supercrop_size_samples=None,
         supercrop_stride_samples=None):
-    from ..datautil.windowers import create_fixed_length_windows
     """
     Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
@@ -284,7 +286,6 @@ def create_from_mne_raw(
         raws, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
         description=None, mapping=None, preload=False, drop_bad_windows=True):
-    from ..datautil.windowers import create_windows_from_events
     """
     Create WindowsDatasets from mne.RawArrays
 
@@ -369,8 +370,6 @@ def create_from_mne_epochs(list_of_epochs, supercrop_size_samples,
         X and y transformed to a dataset format that is compativle with skorch
         and braindecode
     """
-    from ..datautil.windowers import _compute_supercrop_inds
-    from ..datasets.base import WindowsDataset
     windows_datasets = []
     for epochs in list_of_epochs:
         starts = epochs.events[:, 0]
