@@ -37,4 +37,9 @@ ch_names = parts[0].info["ch_names"]
 
 ###############################################################################
 # Convert to data format compatible with skorch and braindecode
-windows_datasets = create_from_X_y(X=X, y=y, sfreq=sfreq, ch_names=ch_names)
+windows_dataset = create_from_X_y(
+    X, y, sfreq, ch_names,
+    supercrop_stride_samples=500,
+    supercrop_size_samples=500,
+    drop_samples=False
+)
