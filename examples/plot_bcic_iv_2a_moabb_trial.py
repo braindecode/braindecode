@@ -71,7 +71,7 @@ input_time_length = 1125  # length of trial in samples
 factor_new = 1e-3
 init_block_size = 1000
 
-# Select model's name and define parameters describing training
+# Define parameters describing training
 n_epochs = 5  # number of epochs of training
 batch_size = 64
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
@@ -105,17 +105,17 @@ if cuda:
 ##########################################################################################
 # Load the dataset
 # --------------------------
-# Load `MOABB <https://github.com/NeuroTechX/moabb>`_ dataset
+# Load `MOABB <https://github.com/NeuroTechX/moabb>`_ dataset using Braindecode datasets
+# functionalities.
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 ##########################################################################################
 # Define data preprocessing and preprocess the data
-# -------------------------------------------------
+# ----------------------------
 # Transform steps are defined as 2 elements tuples of `(str | callable, dict)`
 # If the first element is string it has to be a name of
-# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`_/
-#`mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`_ method.
-# The second element of a tuple defines method parameters.
+# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`_/`mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`_
+# method. The second element of a tuple defines method parameters.
 
 standardize_func = partial(exponential_running_standardize, factor_new=factor_new,
                            init_block_size=init_block_size)
