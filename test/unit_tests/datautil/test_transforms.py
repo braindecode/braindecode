@@ -21,7 +21,7 @@ def base_concat_ds():
 @pytest.fixture(scope='module')
 def windows_concat_ds(base_concat_ds):
     return create_fixed_length_windows(
-        base_concat_ds, start_offset_samples=100, stop_offset_samples=None,
+        base_concat_ds, start_offset_samples=100, stop_offset_samples=0,
         supercrop_size_samples=1000, supercrop_stride_samples=1000,
         drop_samples=True, mapping=None, preload=True)
 

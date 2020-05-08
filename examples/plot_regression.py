@@ -105,7 +105,7 @@ dataset = fake_regression_dataset(
 windows_dataset = create_fixed_length_windows(
     dataset,
     start_offset_samples=0,
-    stop_offset_samples=None,
+    stop_offset_samples=0,
     supercrop_size_samples=input_time_length,
     supercrop_stride_samples=n_preds_per_input,
     drop_samples=False,
