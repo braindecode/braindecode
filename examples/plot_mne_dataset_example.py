@@ -32,8 +32,8 @@ parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto')
 
 ###############################################################################
 # Convert mne.RawArrays to a compatible data format:
-description = [{"event_code": code, "subject": subject_id}
-               for code in event_codes]
+descriptions = [{"event_code": code, "subject": subject_id}
+                for code in event_codes]
 windows_datasets = create_from_mne_raw(
     parts,
     trial_start_offset_samples=0,
@@ -41,7 +41,7 @@ windows_datasets = create_from_mne_raw(
     supercrop_size_samples=500,
     supercrop_stride_samples=500,
     drop_samples=False,
-    description=description,
+    descriptions=descriptions,
 )
 
 ###############################################################################

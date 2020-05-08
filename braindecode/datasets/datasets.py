@@ -225,8 +225,7 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
 def create_from_X_y(
         X, y, sfreq, ch_names, drop_samples, supercrop_size_samples=None,
         supercrop_stride_samples=None):
-    """
-    Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
+    """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
     and y are corresponding targets.
 
@@ -285,9 +284,8 @@ def create_from_X_y(
 def create_from_mne_raw(
         raws, trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples, drop_samples,
-        description=None, mapping=None, preload=False, drop_bad_windows=True):
-    """
-    Create WindowsDatasets from mne.RawArrays
+        descriptions=None, mapping=None, preload=False, drop_bad_windows=True):
+    """Create WindowsDatasets from mne.RawArrays
 
     Parameters
     ----------
@@ -304,7 +302,7 @@ def create_from_mne_raw(
     drop_samples: bool
         whether or not have a last overlapping supercrop/window, when
         supercrops/windows do not equally divide the continuous signal
-    description: array-like
+    descriptions: array-like
         list of dicts or pandas.Series with additional information about the raws
     mapping: dict(str: int)
         mapping from event description to target value
@@ -322,13 +320,13 @@ def create_from_mne_raw(
         X and y transformed to a dataset format that is compativle with skorch
         and braindecode
     """
-    if description is not None:
-        if len(description) != len(raws):
+    if descriptions is not None:
+        if len(descriptions) != len(raws):
             raise ValueError(
                 f"length of 'raws' ({len(raws)}) and 'description' "
                 f"({len(description)}) has to match")
         base_datasets = [BaseDataset(raw, desc) for raw, desc in
-                         zip(raws, description)]
+                         zip(raws, descriptions)]
     else:
         base_datasets = [BaseDataset(raw) for raw in raws]
 
@@ -349,8 +347,7 @@ def create_from_mne_raw(
 
 def create_from_mne_epochs(list_of_epochs, supercrop_size_samples,
                            supercrop_stride_samples, drop_samples):
-    """
-    Create WindowsDatasets from mne.Epochs
+    """Create WindowsDatasets from mne.Epochs
 
     Parameters
     ----------
@@ -386,21 +383,22 @@ def create_from_mne_epochs(list_of_epochs, supercrop_size_samples,
             drop_samples=drop_samples
         )
 
+        # repeat trial targets corresponding to number of windows per trial
         window_targets = []
         for y, count in zip(targets, np.bincount(i_trials)):
             window_targets.extend([y] * count)
 
-        d = dict(
+        df = pd.DataFrame(dict(
             i_trial=i_trials,
             i_supercrop_in_trial=i_supercrops_in_trial,
             i_start_in_trial=starts,
             i_stop_in_trial=stops,
-            target=targets
-        )
-        df = pd.DataFrame(d)
+            target=window_targets
+        ))
 
         epochs.events = df[["i_start_in_trial", "i_trial", "target"]].to_numpy()
-        epochs.selection = list(range(len(epochs.events)))
+        # mne requires epochs.selection to be of same length as metadata
+        epochs.selection = list(df.index)
         if epochs.metadata is None:
             epochs.metadata = df
         else:
