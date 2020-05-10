@@ -22,7 +22,7 @@ Braindecode. Main points of trialwise decoding:
 2. The network produces a prediction.
 3. The prediction is compared to the target (label) for that trial to compute the loss.
 
-In this tutorial, we supply some default parameters that we have found to work well for
+We supply some default parameters that we have found to work well for
 motor decoding, however we strongly encourage you to perform your own hyperparameter
 optimization using cross validation on your training data.
 """
@@ -56,7 +56,7 @@ mne.set_log_level('ERROR')
 
 ##########################################################################################
 # Script parameters definition
-# --------------
+# ----------------------------
 seed = 20200220  # random seed to make results reproducible
 
 # Parameters describing the dataset and transformations
@@ -111,7 +111,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 ##########################################################################################
 # Define data preprocessing and preprocess the data
-# ----------------------------
+# -------------------------------------------------
 # Transform steps are defined as 2 elements tuples of `(str | callable, dict)`
 # If the first element is string it has to be a name of
 # `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`_/`mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`_
