@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 
 from braindecode.datasets.base import BaseDataset, BaseConcatDataset
-from braindecode.datasets.datasets import fetch_data_with_moabb
+from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.datautil import (
     create_windows_from_events, create_fixed_length_windows)
 from braindecode.util import create_mne_dummy_raw

@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
-from braindecode.datasets.datasets import fetch_data_with_moabb
+from braindecode.datasets.moabb import fetch_data_with_moabb
 
 
 @pytest.fixture(scope="module")

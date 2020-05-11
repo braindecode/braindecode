@@ -11,7 +11,7 @@ from skorch.helper import predefined_split
 from torch import optim
 
 from braindecode import EEGClassifier
-from braindecode.datasets.croppedxy import CroppedXyDataset
+from braindecode.datasets.xy import create_from_X_y
 from braindecode.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
@@ -88,12 +88,17 @@ def test_cropped_decoding():
     # Perform forward pass to determine how many outputs per input
     n_preds_per_input = get_output_shape(model, in_chans, input_time_length)[2]
 
-    train_set = CroppedXyDataset(X[:60], y[:60],
-                                 input_time_length=input_time_length,
-                                 n_preds_per_input=n_preds_per_input)
-    valid_set = CroppedXyDataset(X[60:], y=y[60:],
-                                 input_time_length=input_time_length,
-                                 n_preds_per_input=n_preds_per_input)
+    train_set = create_from_X_y(X[:60], y[:60],
+                                drop_samples=False,
+                                window_size_samples=input_time_length,
+                                window_stride_samples=n_preds_per_input)
+
+    valid_set = create_from_X_y(X[60:], y[60:],
+                                drop_samples=False,
+                                window_size_samples=input_time_length,
+                                window_stride_samples=n_preds_per_input)
+
+
     train_split = predefined_split(valid_set)
 
     clf = EEGClassifier(
