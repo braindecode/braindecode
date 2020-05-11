@@ -60,7 +60,6 @@ def _transform(raw_or_epochs, transforms):
     raw_or_epochs: mne.io.Raw or mne.Epochs
         Object to transform.
     transforms: list(str | callable, dict)
-
         List of two elements iterables. First element is either str or callable.
         If str, it represents the name of a method of Raw or Epochs to be called.
         If callable, the callable will be applied to the Raw or Epochs object.
