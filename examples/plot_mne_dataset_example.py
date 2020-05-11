@@ -11,7 +11,7 @@
 
 import mne
 
-from braindecode.datasets.datasets import (
+from braindecode.datasets.mne import (
     create_from_mne_raw, create_from_mne_epochs)
 
 ###############################################################################

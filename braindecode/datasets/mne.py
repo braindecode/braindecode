@@ -1,15 +1,10 @@
-import os
-import re
-import glob
-
 import numpy as np
 import pandas as pd
 import mne
 
 from .base import BaseDataset, BaseConcatDataset, WindowsDataset
 from ..datautil.windowers import (
-    create_fixed_length_windows, create_windows_from_events,
-    _compute_supercrop_inds)
+    _check_windowing_arguments, create_windows_from_events)
 
 
 def create_from_mne_raw(
@@ -98,42 +93,44 @@ def create_from_mne_epochs(list_of_epochs, supercrop_size_samples,
         X and y transformed to a dataset format that is compativle with skorch
         and braindecode
     """
-    windows_datasets = []
+    _check_windowing_arguments(0, 0, supercrop_size_samples,
+                               supercrop_stride_samples)
+
+    list_of_windows_ds = []
     for epochs in list_of_epochs:
-        starts = epochs.events[:, 0]
-        targets = epochs.events[:, 2]
-        stops = starts + len(epochs.times)
+        event_descriptions = epochs.events[:, 2]
+        original_trial_starts = epochs.events[:, 0]
+        stop = len(epochs.times) - supercrop_size_samples
 
-        i_trials, i_supercrops_in_trial, starts, stops = _compute_supercrop_inds(
-            starts,
-            stops,
-            start_offset=0,
-            stop_offset=0,
-            size=supercrop_size_samples,
-            stride=supercrop_stride_samples,
-            drop_samples=drop_samples
-        )
+        # already includes last incomplete supercrop start
+        starts = np.arange(0, stop + 1, supercrop_stride_samples)
 
-        # repeat trial targets corresponding to number of windows per trial
-        window_targets = []
-        for y, count in zip(targets, np.bincount(i_trials)):
-            window_targets.extend([y] * count)
+        if not drop_samples and starts[-1] < stop:
+            # if last supercrop does not end at trial stop, make it stop there
+            starts = np.append(starts, stop)
 
-        df = pd.DataFrame(dict(
-            i_trial=i_trials,
-            i_supercrop_in_trial=i_supercrops_in_trial,
-            i_start_in_trial=starts,
-            i_stop_in_trial=stops,
-            target=window_targets
-        ))
+        fake_events = [[start, supercrop_size_samples, -1] for start in
+                       starts]
 
-        epochs.events = df[["i_start_in_trial", "i_trial", "target"]].to_numpy()
-        # mne requires epochs.selection to be of same length as metadata
-        epochs.selection = list(df.index)
-        if epochs.metadata is None:
-            epochs.metadata = df
-        else:
-            epochs.metadata = pd.concat([epochs.metadata, df], axis=1)
-        windows_datasets.append(WindowsDataset(epochs))
-    return BaseConcatDataset(windows_datasets)
+        for trial_i, trial in enumerate(epochs):
+            metadata = pd.DataFrame({
+                'i_supercrop_in_trial': np.arange(len(fake_events)),
+                'i_start_in_trial': starts + original_trial_starts[trial_i],
+                'i_stop_in_trial': starts + original_trial_starts[
+                    trial_i] + supercrop_size_samples,
+                'target': len(fake_events) * [event_descriptions[trial_i]]
+            })
+            # supercrop size - 1, since tmax is inclusive
+            mne_epochs = mne.Epochs(
+                mne.io.RawArray(trial, epochs.info), fake_events,
+                baseline=None,
+                tmin=0,
+                tmax=(supercrop_size_samples - 1) / epochs.info["sfreq"],
+                metadata=metadata)
 
+            mne_epochs.drop_bad(reject=None, flat=None)
+
+            windows_ds = WindowsDataset(mne_epochs)
+            list_of_windows_ds.append(windows_ds)
+
+    return BaseConcatDataset(list_of_windows_ds)
