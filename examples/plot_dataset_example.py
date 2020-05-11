@@ -58,24 +58,24 @@ print({subset_name: len(subset) for subset_name, subset in subsets.items()})
 # Next, we use a windower to extract events from the dataset based on events:
 windows_ds = create_windows_from_events(
     ds, trial_start_offset_samples=0, trial_stop_offset_samples=100,
-    supercrop_size_samples=400, supercrop_stride_samples=100,
+    window_size_samples=400, window_stride_samples=100,
     drop_samples=False)
 
 ###############################################################################
-# We can iterate through the windows_ds which yields a supercrop/window x,
-# a target y, and supercrop_ind (which itself contains `i_supercrop_in_trial`,
+# We can iterate through the windows_ds which yields a window x,
+# a target y, and window_ind (which itself contains `i_window_in_trial`,
 # `i_start_in_trial`, and `i_stop_in_trial`, which are required for combining
-# supercrop/window predictions in the scorer).
-for x, y, supercrop_ind in windows_ds:
-    print(x.shape, y, supercrop_ind)
+# window predictions in the scorer).
+for x, y, window_ind in windows_ds:
+    print(x.shape, y, window_ind)
     break
 
 ###############################################################################
-# We visually inspect the supercrops/windows:
+# We visually inspect the windows:
 max_i = 2
 fig, ax_arr = plt.subplots(1, max_i + 1, figsize=((max_i + 1) * 7, 5),
                            sharex=True, sharey=True)
-for i, (x, y, supercrop_ind) in enumerate(windows_ds):
+for i, (x, y, window_ind) in enumerate(windows_ds):
     ax_arr[i].plot(x.T)
     ax_arr[i].set_ylim(-0.0002, 0.0002)
     ax_arr[i].set_title(f"label={y}")
@@ -87,16 +87,16 @@ for i, (x, y, supercrop_ind) in enumerate(windows_ds):
 # different windower.
 sliding_windows_ds = create_fixed_length_windows(
     ds, start_offset_samples=0, stop_offset_samples=0,
-    supercrop_size_samples=1200, supercrop_stride_samples=1000,
+    window_size_samples=1200, window_stride_samples=1000,
     drop_samples=False)
 
 print(len(sliding_windows_ds))
-for x, y, supercrop_ind in sliding_windows_ds:
-    print(x.shape, y, supercrop_ind)
+for x, y, window_ind in sliding_windows_ds:
+    print(x.shape, y, window_ind)
     break
 
 ###############################################################################
-# Transforms can also be applied on supercrops/windows in the same way as shown
+# Transforms can also be applied on windows in the same way as shown
 # above on continuous data:
 
 def crop_windows(windows, start_offset_samples, stop_offset_samples):
@@ -118,7 +118,7 @@ print(windows_ds.datasets[0].windows.info["ch_names"],
 max_i = 2
 fig, ax_arr = plt.subplots(1, max_i+1, figsize=((max_i+1)*7, 5),
                            sharex=True, sharey=True)
-for i, (x, y, supercrop_ind) in enumerate(windows_ds):
+for i, (x, y, window_ind) in enumerate(windows_ds):
     ax_arr[i].plot(x.T)
     ax_arr[i].set_ylim(-0.0002, 0.0002)
     ax_arr[i].set_title(f"label={y}")

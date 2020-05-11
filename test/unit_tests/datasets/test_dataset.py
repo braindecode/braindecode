@@ -26,25 +26,25 @@ def set_up():
                        [300, 0, 1],
                        [400, 0, 4],
                        [500, 0, 3]])
-    supercrop_idxs = [(0, 0, 100),
+    window_idxs = [(0, 0, 100),
                       (0, 100, 200),
                       (1, 0, 100),
                       (2, 0, 100),
                       (2, 50, 150)]
-    i_supercrop_in_trial, i_start_in_trial, i_stop_in_trial = list(
-        zip(*supercrop_idxs))
+    i_window_in_trial, i_start_in_trial, i_stop_in_trial = list(
+        zip(*window_idxs))
     metadata = pd.DataFrame(
         {'sample': events[:, 0],
          'x': events[:, 1],
          'target': events[:, 2],
-         'i_supercrop_in_trial': i_supercrop_in_trial,
+         'i_window_in_trial': i_window_in_trial,
          'i_start_in_trial': i_start_in_trial,
          'i_stop_in_trial': i_stop_in_trial})
 
     mne_epochs = mne.Epochs(raw=raw, events=events, metadata=metadata)
     windows_dataset = WindowsDataset(mne_epochs, desc)
 
-    return raw, base_dataset, mne_epochs, windows_dataset, events, supercrop_idxs
+    return raw, base_dataset, mne_epochs, windows_dataset, events, window_idxs
 
 
 @pytest.fixture(scope="module")
@@ -59,13 +59,13 @@ def concat_ds_targets():
 
 
 def test_get_item(set_up):
-    _, _, mne_epochs, windows_dataset, events, supercrop_idxs  = set_up
+    _, _, mne_epochs, windows_dataset, events, window_idxs  = set_up
     for i, epoch in enumerate(mne_epochs.get_data()):
         x, y, inds = windows_dataset[i]
         np.testing.assert_allclose(epoch, x)
         assert events[i, 2] == y, f'Y not equal for epoch {i}'
-        np.testing.assert_array_equal(supercrop_idxs[i], inds,
-                                      f'Supercrop inds not equal for epoch {i}')
+        np.testing.assert_array_equal(window_idxs[i], inds,
+                                      f'window inds not equal for epoch {i}')
 
 
 def test_len_windows_dataset(set_up):

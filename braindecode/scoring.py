@@ -13,21 +13,21 @@ from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
 
 
-def trial_preds_from_supercrop_preds(
-        preds, i_supercrop_in_trials, i_stop_in_trials):
+def trial_preds_from_window_preds(
+        preds, i_window_in_trials, i_stop_in_trials):
     """
-    Assigning supercrop predictions to trials  while removing duplicate
+    Assigning window predictions to trials  while removing duplicate
     predictions.
 
     Parameters
     ----------
     preds: list of ndarrays (atleast 2darrays)
-        List of supercrop predictions, in each supercrop prediction
+        List of window predictions, in each window prediction
          time is in axis=1
-    i_supercrop_in_trials: list
-        Index/number of supercrop in trial
+    i_window_in_trials: list
+        Index/number of window in trial
     i_stop_in_trials: list
-        stop position of supercrop in trial
+        stop position of window in trial
 
     Returns
     -------
@@ -35,35 +35,35 @@ def trial_preds_from_supercrop_preds(
         Predictions in each trial, duplicates removed
 
     """
-    assert len(preds) == len(i_supercrop_in_trials)
-    assert len(i_supercrop_in_trials) == len(i_stop_in_trials)
+    assert len(preds) == len(i_window_in_trials)
+    assert len(i_window_in_trials) == len(i_stop_in_trials)
 
-    # Algorithm for assigning supercrop predictions to trials
+    # Algorithm for assigning window predictions to trials
     # while removing duplicate predictions:
-    # Loop through supercrops:
+    # Loop through windows:
     # In each iteration you have predictions (assumed: #classes x #timesteps,
     # or at least #timesteps must be in axis=1)
-    # and you have i_supercrop_in_trial, i_stop_in_trial
+    # and you have i_window_in_trial, i_stop_in_trial
     # (i_trial removed from variable names for brevity)
-    # You first check if the i_supercrop_in_trial is 1 larger
+    # You first check if the i_window_in_trial is 1 larger
     # than in last iteration, then you are still in the same trial
     # Otherwise you are in a new trial
     # If you are in the same trial, you check for duplicate predictions
     # Only take predictions that are after (inclusive)
     # the stop of the last iteration (i.e., the index of final prediction
     # in the last iteration)
-    # Then add the duplicate-removed predictions from this supercrop
+    # Then add the duplicate-removed predictions from this window
     # to predictions for current trial
     preds_per_trial = []
     cur_trial_preds = []
     i_last_stop = None
-    i_last_supercrop = -1
-    for supercrop_preds, i_supercrop, i_stop in zip(
-            preds, i_supercrop_in_trials, i_stop_in_trials):
-        supercrop_preds = np.array(supercrop_preds)
-        if i_supercrop != (i_last_supercrop + 1):
-            assert i_supercrop == 0, (
-                "supercrop numbers in new trial should start from 0")
+    i_last_window = -1
+    for window_preds, i_window, i_stop in zip(
+            preds, i_window_in_trials, i_stop_in_trials):
+        window_preds = np.array(window_preds)
+        if i_window != (i_last_window + 1):
+            assert i_window == 0, (
+                "window numbers in new trial should start from 0")
             preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
             cur_trial_preds = []
             i_last_stop = None
@@ -71,9 +71,9 @@ def trial_preds_from_supercrop_preds(
         if i_last_stop is not None:
             # Remove duplicates
             n_needed_preds = i_stop - i_last_stop
-            supercrop_preds = supercrop_preds[:, -n_needed_preds:]
-        cur_trial_preds.append(supercrop_preds)
-        i_last_supercrop = i_supercrop
+            window_preds = window_preds[:, -n_needed_preds:]
+        cur_trial_preds.append(window_preds)
+        i_last_window = i_window
         i_last_stop = i_stop
     # add last trial preds
     preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
@@ -131,7 +131,7 @@ class CroppedTrialEpochScoring(EpochScoring):
             use_caching=use_caching,
         )
         if not self.on_train:
-            self.supercrop_inds_ = []
+            self.window_inds_ = []
 
 
     def _initialize_cache(self):
@@ -140,40 +140,40 @@ class CroppedTrialEpochScoring(EpochScoring):
         self.y_trues_ = []
         self.y_preds_ = []
         if not self.on_train:
-            self.supercrop_inds_ = []
+            self.window_inds_ = []
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching == True
         if not self.crops_to_trials_computed:
             if self.on_train:
-                pred_results = net.predict_with_supercrop_inds_and_ys(
+                pred_results = net.predict_with_window_inds_and_ys(
                     dataset_train)
 
             else:
                 pred_results = {}
-                pred_results['i_supercrop_in_trials'] = np.concatenate(
-                    [i[0].cpu().numpy() for i in self.supercrop_inds_]
+                pred_results['i_window_in_trials'] = np.concatenate(
+                    [i[0].cpu().numpy() for i in self.window_inds_]
                 )
-                pred_results['i_supercrop_stops'] = np.concatenate(
-                    [i[2].cpu().numpy() for i in self.supercrop_inds_]
+                pred_results['i_window_stops'] = np.concatenate(
+                    [i[2].cpu().numpy() for i in self.window_inds_]
                 )
                 pred_results['preds'] = np.concatenate(
                     [y_pred.cpu().numpy() for y_pred in self.y_preds_])
-                pred_results['supercrop_ys'] = np.concatenate(
+                pred_results['window_ys'] = np.concatenate(
                     [y.cpu().numpy() for y in self.y_trues_])
 
 
             # A new trial starts
-            # when the index of the supercrop in trials
+            # when the index of the window in trials
             # does not increment by 1
             # Add dummy infinity at start
-            supercrop_0_per_trial_mask = np.diff(
-                pred_results['i_supercrop_in_trials'], prepend=[np.inf]) != 1
-            trial_ys = pred_results['supercrop_ys'][supercrop_0_per_trial_mask]
-            trial_preds = trial_preds_from_supercrop_preds(
+            window_0_per_trial_mask = np.diff(
+                pred_results['i_window_in_trials'], prepend=[np.inf]) != 1
+            trial_ys = pred_results['window_ys'][window_0_per_trial_mask]
+            trial_preds = trial_preds_from_window_preds(
                 pred_results['preds'],
-                pred_results['i_supercrop_in_trials'],
-                pred_results['i_supercrop_stops'])
+                pred_results['i_window_in_trials'],
+                pred_results['i_window_stops'])
             # trial preds is a list
             # each item is an 2darray classes x time
             y_preds_per_trial = np.array(

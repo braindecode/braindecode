@@ -20,7 +20,7 @@ from braindecode.scoring import CroppedTrialEpochScoring
 from braindecode.scoring import PostEpochTrainScoring
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
-from braindecode.scoring import trial_preds_from_supercrop_preds
+from braindecode.scoring import trial_preds_from_window_preds
 
 
 class MockSkorchNet:
@@ -73,14 +73,14 @@ def test_cropped_trial_epoch_scoring():
     ]
     expected_accuracies_cases = [0.25, 0.75]
 
-    supercrop_inds = [(
-            torch.tensor([0,0]), # i_supercrop_in_trials
+    window_inds = [(
+            torch.tensor([0,0]), # i_window_in_trials
             [None],# won't be used
-            torch.tensor([4,4]), # i_supercrop_stops
+            torch.tensor([4,4]), # i_window_stops
     ),(
-            torch.tensor([0,0]), # i_supercrop_in_trials
+            torch.tensor([0,0]), # i_window_in_trials
             [None],# won't be used
-            torch.tensor([4,4]), # i_supercrop_stops
+            torch.tensor([4,4]), # i_window_stops
     ),]
 
     for predictions, y_true, accuracy in zip(
@@ -101,7 +101,7 @@ def test_cropped_trial_epoch_scoring():
             to_tensor(predictions[2:], device="cpu"),
         ]
         cropped_trial_epoch_scoring.y_trues_ = y_true
-        cropped_trial_epoch_scoring.supercrop_inds_ = supercrop_inds
+        cropped_trial_epoch_scoring.window_inds_ = window_inds
 
         cropped_trial_epoch_scoring.on_epoch_end(
             mock_skorch_net, dataset_train, dataset_valid
@@ -124,14 +124,14 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         ]
     )
     y_true = [torch.tensor([0, 0]), torch.tensor([1, 1])]
-    supercrop_inds = [(
-        torch.tensor([0, 0]),  # i_supercrop_in_trials
+    window_inds = [(
+        torch.tensor([0, 0]),  # i_window_in_trials
         [None],  # won't be used
-        torch.tensor([4, 4]),  # i_supercrop_stops
+        torch.tensor([4, 4]),  # i_window_stops
     ), (
-            torch.tensor([0,0]), # i_supercrop_in_trials
+            torch.tensor([0,0]), # i_window_in_trials
             [None],# won't be used
-            torch.tensor([4,4]), # i_supercrop_stops
+            torch.tensor([4,4]), # i_window_stops
     ),]
     cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy")
     cropped_trial_epoch_scoring.initialize()
@@ -140,7 +140,7 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         to_tensor(predictions[2:], device="cpu"),
     ]
     cropped_trial_epoch_scoring.y_trues_ = y_true
-    cropped_trial_epoch_scoring.supercrop_inds_ = supercrop_inds
+    cropped_trial_epoch_scoring.window_inds_ = window_inds
 
     mock_skorch_net = MockSkorchNet()
     mock_skorch_net.callbacks = [(
@@ -239,43 +239,43 @@ def test_post_epoch_train_scoring():
     clf.fit(train_set, y=None, epochs=4)
 
 
-def _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds):
+def _check_preds_windows_trials(preds, window_inds, expected_trial_preds):
     # transform to 2 lists from tuples
-    i_supercrop_in_trials = []
+    i_window_in_trials = []
     i_stop_in_trials = []
-    for i_supercrop_in_trial, _, i_stop_in_trial in supercrop_inds:
-        i_supercrop_in_trials.append(i_supercrop_in_trial)
+    for i_window_in_trial, _, i_stop_in_trial in window_inds:
+        i_window_in_trials.append(i_window_in_trial)
         i_stop_in_trials.append(i_stop_in_trial)
-    trial_preds = trial_preds_from_supercrop_preds(
-        preds, i_supercrop_in_trials, i_stop_in_trials)
+    trial_preds = trial_preds_from_window_preds(
+        preds, i_window_in_trials, i_stop_in_trials)
     np.testing.assert_equal(len(trial_preds), len(expected_trial_preds),)
     for expected_pred, actual_pred in zip(expected_trial_preds, trial_preds):
         np.testing.assert_array_equal(actual_pred, expected_pred, )
 
 
-def test_two_supercrops_same_trial_with_overlap():
+def test_two_windows_same_trial_with_overlap():
     preds = [[[4,5,6,7]], [[6,7,8,9]],]
-    supercrop_inds = ((0,0,8),(1,2,10))
+    window_inds = ((0,0,8),(1,2,10))
     expected_trial_preds = [[[4,5,6,7,8,9]]]
-    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
 
-def test_three_supercrops_two_trials_with_overlap():
+def test_three_windows_two_trials_with_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    supercrop_inds = ((0, 0, 8), (1, 2, 10), (0, 0, 6,))
+    window_inds = ((0, 0, 8), (1, 2, 10), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
 
-def test_one_supercrop_one_trial():
+def test_one_window_one_trial():
     preds = [[[4,5,6,7]]]
-    supercrop_inds = ((0,0,8),)
+    window_inds = ((0,0,8),)
     expected_trial_preds = [[[4,5,6,7]]]
-    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
 
-def test_three_supercrops_two_trials_no_overlap():
+def test_three_windows_two_trials_no_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    supercrop_inds = ((0, 0, 8), (1, 4, 12), (0, 0, 6,))
+    window_inds = ((0, 0, 8), (1, 4, 12), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    _check_preds_supercrops_trials(preds, supercrop_inds, expected_trial_preds)
+    _check_preds_windows_trials(preds, window_inds, expected_trial_preds)

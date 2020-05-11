@@ -13,9 +13,9 @@ class TrainTestSplit(object):
     train_size: int or float
         Train size in number of trials or fraction of trials
     input_time_length: int
-        Input time length aka supercrop size in number of samples.
+        Input time length aka window size in number of samples.
     n_preds_per_input:
-        Number of predictions per supercrop (=> will be supercrop stride)
+        Number of predictions per window (=> will be window stride)
         in number of samples.
     """
     def __init__(

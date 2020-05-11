@@ -98,8 +98,8 @@ def load_example_data(preload, window_len_s, n_subjects=10):
     # window_stride_samples = int(fs * window_len_s)
     windows_ds = create_fixed_length_windows(
         ds, start_offset_samples=0, stop_offset_samples=None,
-        supercrop_size_samples=window_len_samples,
-        supercrop_stride_samples=window_stride_samples, drop_samples=True,
+        window_size_samples=window_len_samples,
+        window_stride_samples=window_stride_samples, drop_samples=True,
         preload=preload, drop_bad_windows=True)
 
     # Drop bad epochs

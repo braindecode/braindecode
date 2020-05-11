@@ -23,7 +23,7 @@ On the right, you see cropped decoding:
 1. Instead of a complete trial, crops are pushed through the network.
 2. For computational efficiency, multiple neighbouring crops are pushed through the network simultaneously (these
    neighbouring crops are called compute windows)
-3. Therefore, the network produces multiple predictions (one per crop in the supercrop)
+3. Therefore, the network produces multiple predictions (one per crop in the window)
 4. The individual crop predictions are averaged before computing the loss function
 
 Notes:
@@ -181,8 +181,8 @@ windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
     trial_stop_offset_samples=0,
-    supercrop_size_samples=input_time_length,
-    supercrop_stride_samples=n_preds_per_input,
+    window_size_samples=input_time_length,
+    window_stride_samples=n_preds_per_input,
     drop_samples=False,
     preload=True,
 )
