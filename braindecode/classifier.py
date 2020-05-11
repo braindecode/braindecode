@@ -6,11 +6,11 @@ from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop
 
 from .scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
-from .util import ThrowAwayIndexLoader
+from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
 class EEGClassifier(NeuralNetClassifier):
-    """Classifier that does not assume softmax activation.
+    doc = """Classifier that does not assume softmax activation.
     Calls loss function directly without applying log or anything.
 
     Parameters
@@ -18,6 +18,7 @@ class EEGClassifier(NeuralNetClassifier):
     cropped: bool (default=False)
         Defines whether torch model passed to this class is cropped or not.
         Currently used for callbacks definition.
+
     callbacks: None or list of strings or list of Callback instances (default=None)
         More callbacks, in addition to those returned by
         ``get_default_callbacks``. Each callback should inherit from
@@ -33,12 +34,13 @@ class EEGClassifier(NeuralNetClassifier):
         callbacks (e.g., for the callback with name ``'print_log'``, use
         ``net.set_params(callbacks__print_log__keys_ignored=['epoch',
         'train_loss'])``).
+
     iterator_train__shuffle: bool (default=True)
         Defines whether train dataset will be shuffled. As skorch does not
         shuffle the train dataset by default this one overwrites this option.
+
     """
-    # TODO: Update docstring to use NeuralNetClassifier docstring with some
-    #  improvements
+    __doc__ = update_estimator_docstring(NeuralNetClassifier, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
                  iterator_train__shuffle=True, **kwargs):

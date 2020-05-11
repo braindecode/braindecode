@@ -313,3 +313,17 @@ class ThrowAwayIndexLoader(object):
                 else:
                     y = y.type(torch.int64)
             yield x, y
+
+
+def update_estimator_docstring(base_class, docstring):
+    base_doc = base_class.__doc__.replace(' : ', ': ')
+    idx = base_doc.find('callbacks:')
+    idx_end = idx + base_doc[idx:].find('\n\n')
+    # remove callback descripiton already included in braindecode docstring
+    filtered_doc = base_doc[:idx] + base_doc[idx_end+6:]
+    splitted = docstring.split('Parameters\n    ----------\n    ')
+    out_docstring = splitted[0] + \
+                    filtered_doc[filtered_doc.find('Parameters'):filtered_doc.find('Attributes')] + \
+                    splitted[1] + \
+                    filtered_doc[filtered_doc.find('Attributes'):]
+    return out_docstring
