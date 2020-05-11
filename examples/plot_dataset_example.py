@@ -86,7 +86,7 @@ for i, (x, y, supercrop_ind) in enumerate(windows_ds):
 # Alternatively, we can create evenly spaced ("sliding") windows using a
 # different windower.
 sliding_windows_ds = create_fixed_length_windows(
-    ds, start_offset_samples=0, stop_offset_samples=None,
+    ds, start_offset_samples=0, stop_offset_samples=0,
     supercrop_size_samples=1200, supercrop_stride_samples=1000,
     drop_samples=False)
 

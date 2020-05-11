@@ -16,7 +16,10 @@ import numpy as np
 import pandas as pd
 import mne
 
-from .base import BaseDataset, BaseConcatDataset
+from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datautil.windowers import (
+    create_fixed_length_windows, create_windows_from_events,
+    _compute_supercrop_inds)
 
 
 def _find_dataset_in_moabb(dataset_name):

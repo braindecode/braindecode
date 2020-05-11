@@ -42,7 +42,7 @@ def set_up():
          'i_stop_in_trial': i_stop_in_trial})
 
     mne_epochs = mne.Epochs(raw=raw, events=events, metadata=metadata)
-    windows_dataset = WindowsDataset(mne_epochs, metadata)
+    windows_dataset = WindowsDataset(mne_epochs, desc)
 
     return raw, base_dataset, mne_epochs, windows_dataset, events, supercrop_idxs
 

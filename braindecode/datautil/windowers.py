@@ -174,27 +174,24 @@ def create_fixed_length_windows(
 
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
+        stop = ds.raw.n_times if stop_offset_samples == 0 else stop_offset_samples
+        stop = stop - supercrop_size_samples
         # already includes last incomplete supercrop start
-        stop = (ds.raw.n_times
-                if stop_offset_samples is None
-                else stop_offset_samples)
-        last_allowed_ind = stop - supercrop_size_samples
         starts = np.arange(
             ds.raw.first_samp + start_offset_samples,
-            last_allowed_ind + 1,
+            stop + 1,
             supercrop_stride_samples)
 
-        if not drop_samples and starts[-1] < last_allowed_ind:
+        if not drop_samples and starts[-1] < stop:
             # if last supercrop does not end at trial stop, make it stop there
-            starts = np.append(starts, last_allowed_ind)
+            starts = np.append(starts, stop)
 
         # TODO: handle multi-target case / non-integer target case
         target = -1 if ds.target is None else ds.target
         if mapping is not None:
             target = mapping[target]
 
-        fake_events = [[start, supercrop_size_samples, -1]
-                        for i_start, start in enumerate(starts)]
+        fake_events = [[start, supercrop_size_samples, -1] for start in starts]
         metadata = pd.DataFrame({
             'i_supercrop_in_trial': np.arange(len(fake_events)),
             'i_start_in_trial': starts,
@@ -287,12 +284,11 @@ def _compute_supercrop_inds(
 def _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
         supercrop_size_samples, supercrop_stride_samples):
+    assert isinstance(trial_start_offset_samples, (int, np.integer))
+    assert isinstance(trial_stop_offset_samples, (int, np.integer))
+    assert isinstance(supercrop_size_samples, (int, np.integer))
+    assert isinstance(supercrop_stride_samples, (int, np.integer))
     assert supercrop_size_samples > 0, (
         "supercrop size has to be larger than 0")
     assert supercrop_stride_samples > 0, (
         "supercrop stride has to be larger than 0")
-    assert isinstance(trial_start_offset_samples, (int, np.integer))
-    if trial_stop_offset_samples is not None:
-        assert isinstance(trial_stop_offset_samples, (int, np.integer))
-    assert isinstance(supercrop_size_samples, (int, np.integer))
-    assert isinstance(supercrop_stride_samples, (int, np.integer))

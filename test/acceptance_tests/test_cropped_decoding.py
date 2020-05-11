@@ -119,8 +119,8 @@ def test_cropped_decoding():
                 1.065806
             ]
         ),
-        rtol=1e-4,
-        atol=1e-5,
+        rtol=1e-3,
+        atol=1e-4,
     )
 
     np.testing.assert_allclose(
@@ -133,8 +133,8 @@ def test_cropped_decoding():
                 1.064355
             ]
         ),
-        rtol=1e-4,
-        atol=1e-4,
+        rtol=1e-3,
+        atol=1e-3,
     )
     np.testing.assert_allclose(
         clf.history[:, 'train_accuracy'],
@@ -146,8 +146,8 @@ def test_cropped_decoding():
                 0.533333
             ]
         ),
-        rtol=1e-4,
-        atol=1e-5,
+        rtol=1e-3,
+        atol=1e-4,
     )
     np.testing.assert_allclose(
         clf.history[:, 'valid_accuracy'],
@@ -159,6 +159,6 @@ def test_cropped_decoding():
                 0.5
             ]
         ),
-        rtol=1e-4,
-        atol=1e-5,
+        rtol=1e-3,
+        atol=1e-4,
     )
