@@ -92,7 +92,7 @@ factor_new = 1e-3
 init_block_size = 1000
 
 # Define parameters describing training
-n_epochs = 5  # number of epochs of training
+n_epochs = 4  # number of epochs of training
 batch_size = 64
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
