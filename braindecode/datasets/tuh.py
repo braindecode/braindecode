@@ -108,6 +108,6 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
     if return_raw_header:
         return content
     patient_id = content[8:88].decode('ascii')
-    [age] = re.findall("Age:(\d+)", patient_id)
-    [gender] = re.findall("\s(\w)\s", patient_id)
+    [age] = re.findall(r"Age:(\d+)", patient_id)
+    [gender] = re.findall(r"\s(\w)\s", patient_id)
     return int(age), gender

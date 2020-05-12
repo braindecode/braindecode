@@ -9,7 +9,7 @@ import numpy as np
 def exponential_running_standardize(
     data, factor_new=0.001, init_block_size=None, eps=1e-4
 ):
-    """Perform exponential running standardization.
+    r"""Perform exponential running standardization.
     
     Compute the exponental running mean :math:`m_t` at time `t` as 
     :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
@@ -59,7 +59,7 @@ def exponential_running_standardize(
 
 
 def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
-    """Perform exponential running demeanining.
+    r"""Perform exponential running demeanining.
 
     Compute the exponental running mean :math:`m_t` at time `t` as 
     :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
