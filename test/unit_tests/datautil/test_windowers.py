@@ -191,11 +191,19 @@ def test_maximally_overlapping_windows(concat_ds_targets):
 
 def test_single_sample_size_windows(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
+    # reduce dataset for faster test, only first 3 events
+    targets = targets[:3]
+    underlying_raw = concat_ds.datasets[0].raw
+    annotations = underlying_raw.annotations
+    underlying_raw.set_annotations(annotations[:3])
+    # have to supply explicit mapping as only two classes appear in first 3
+    # targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1, window_stride_samples=1,
-        drop_samples=False)
+        drop_samples=False, mapping=dict(tongue=3, left_hand=1,
+                                    right_hand=2,feet=4))
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 1000
     np.testing.assert_array_equal(description[::1000], targets)
