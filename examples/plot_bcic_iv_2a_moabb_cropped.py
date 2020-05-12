@@ -65,7 +65,7 @@ from skorch.helper import predefined_split
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil import create_windows_from_events
-from braindecode.datautil.signalproc import exponential_moving_standardize
+from braindecode.datautil.preprocess import exponential_moving_standardize
 from braindecode.datautil.preprocess import preprocess, MNEPreproc, \
     NumpyPreproc
 from braindecode.training.losses import CroppedLoss

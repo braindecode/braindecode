@@ -11,7 +11,7 @@ import pytest
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 
-
+# TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")
 # TODO: add test for transformers and case when subject_info is used
 def set_up():
