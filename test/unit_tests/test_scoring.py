@@ -203,7 +203,7 @@ def test_post_epoch_train_scoring():
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=train_set.X.shape[2],
+        input_window_samples=train_set.X.shape[2],
         pool_time_stride=1,
         pool_time_length=2,
         final_conv_length="auto",

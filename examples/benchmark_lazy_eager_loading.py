@@ -140,14 +140,14 @@ def create_example_model(n_channels, n_classes, window_len_samples,
     """
     if kind == 'shallow':
         model = ShallowFBCSPNet(
-            n_channels, n_classes, input_time_length=window_len_samples,
+            n_channels, n_classes, input_window_samples=window_len_samples,
             n_filters_time=40, filter_time_length=25, n_filters_spat=40,
             pool_time_length=75, pool_time_stride=15, final_conv_length='auto',
             split_first_layer=True, batch_norm=True, batch_norm_alpha=0.1,
             drop_prob=0.5)
     elif kind == 'deep':
         model = Deep4Net(
-            n_channels, n_classes, input_time_length=window_len_samples,
+            n_channels, n_classes, input_window_samples=window_len_samples,
             final_conv_length='auto', n_filters_time=25, n_filters_spat=25,
             filter_time_length=10, pool_time_length=3, pool_time_stride=3,
             n_filters_2=50, filter_length_2=10, n_filters_3=100,

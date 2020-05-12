@@ -25,7 +25,7 @@ model_name = "shallow"  # 'shallow' or 'deep'
 n_epochs = 3
 seed = 20200220
 
-input_time_length = 6000
+input_window_samples = 6000
 batch_size = 64
 cuda = torch.cuda.is_available()
 device = 'cuda' if cuda else 'cpu'
@@ -43,7 +43,7 @@ if model_name == "shallow":
     model = ShallowFBCSPNet(
         in_chans=n_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         n_filters_time=40,
         n_filters_spat=40,
         final_conv_length=35,
@@ -54,7 +54,7 @@ elif model_name == "deep":
     model = Deep4Net(
         in_chans=n_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         n_filters_time=25,
         n_filters_spat=25,
         stride_before_pool=True,
@@ -79,7 +79,7 @@ if cuda:
     model.cuda()
 
 to_dense_prediction_model(model)
-n_preds_per_input = get_output_shape(model, n_chans, input_time_length)[2]
+n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
 def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq, fake_duration_s):
     datasets = []
@@ -106,7 +106,7 @@ windows_dataset = create_fixed_length_windows(
     dataset,
     start_offset_samples=0,
     stop_offset_samples=0,
-    window_size_samples=input_time_length,
+    window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
     drop_bad_windows=True,

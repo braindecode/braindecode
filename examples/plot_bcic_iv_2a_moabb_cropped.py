@@ -30,7 +30,7 @@ Notes:
 
 - The network architecture implicitly defines the crop size (it is the receptive field size, i.e., the number of
   timesteps the network uses to make a single prediction)
-- The window size is a user-defined hyperparameter, called `input_time_length` in Braindecode. It mostly affects runtime
+- The window size is a user-defined hyperparameter, called `input_window_samples` in Braindecode. It mostly affects runtime
   (larger window sizes should be faster). As a rule of thumb, you can set it to two times the crop size.
 - Crop size and window size together define how many predictions the network makes per window: `#window−#crop+1=#predictions`
 
@@ -86,7 +86,7 @@ high_cut_hz = 38.  # high cut frequency for filtering
 n_classes = 4  # number of classes to predict
 n_chans = 22  # number of channels in the dataset
 trial_start_offset_seconds = -0.5  # offset between trail start in the raw data and dataset
-input_time_length = 1000  # length of trial in samples
+input_window_samples = 1000  # length of trial in samples
 # Parameters for exponential running standarization
 factor_new = 1e-3
 init_block_size = 1000
@@ -115,7 +115,7 @@ set_random_seeds(seed=seed, cuda=cuda)
 model = ShallowFBCSPNet(
     n_chans,
     n_classes,
-    input_time_length=input_time_length,
+    input_window_samples=input_window_samples,
     final_conv_length=30,
 )
 lr = 0.0625 * 0.01
@@ -134,7 +134,7 @@ to_dense_prediction_model(model)
 # We calculate the shape of model output as it depends on the input shape and model
 # architecture. We save number of predictions computed per each sample by model for
 # windowing function.
-n_preds_per_input = get_output_shape(model, n_chans, input_time_length)[2]
+n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
 ##########################################################################################
 # Load the dataset
@@ -181,7 +181,7 @@ windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
     trial_stop_offset_samples=0,
-    window_size_samples=input_time_length,
+    window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
     preload=True,

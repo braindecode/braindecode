@@ -22,7 +22,7 @@ class EEGResNet(nn.Sequential):
     def __init__(self,
                  in_chans,
                  n_classes,
-                 input_time_length,
+                 input_window_samples,
                  final_pool_length,
                  n_first_filters,
                  n_layers_per_block=2,
@@ -35,9 +35,9 @@ class EEGResNet(nn.Sequential):
         super().__init__()
         self.in_chans = in_chans
         self.n_classes = n_classes
-        self.input_time_length = input_time_length
+        self.input_window_samples = input_window_samples
         if final_pool_length == 'auto':
-            assert input_time_length is not None
+            assert input_window_samples is not None
         assert first_filter_length % 2 == 1
         self.final_pool_length = final_pool_length
         self.n_first_filters = n_first_filters
@@ -147,7 +147,7 @@ class EEGResNet(nn.Sequential):
         self.eval()
         if self.final_pool_length == 'auto':
             out = self(np_to_var(np.ones(
-                (1, self.in_chans, self.input_time_length, 1),
+                (1, self.in_chans, self.input_window_samples, 1),
                 dtype=np.float32)))
             n_out_time = out.cpu().data.numpy().shape[2]
             self.final_pool_length = n_out_time

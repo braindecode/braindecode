@@ -88,11 +88,11 @@ def test_trialwise_decoding():
     set_random_seeds(seed=20170629, cuda=cuda)
     n_classes = 2
     in_chans = train_set[0][0].shape[0]
-    input_time_length = train_set[0][0].shape[1]
+    input_window_samples = train_set[0][0].shape[1]
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         final_conv_length="auto",
     )
     if cuda:

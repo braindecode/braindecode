@@ -124,14 +124,14 @@ def test_eeg_classifier():
     set_random_seeds(seed=20170629, cuda=cuda)
 
     # This will determine how many crops are processed in parallel
-    input_time_length = 450
+    input_window_samples = 450
     n_classes = 2
     in_chans = X.shape[1]
     # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         final_conv_length=12,
     )
     to_dense_prediction_model(model)
@@ -141,7 +141,7 @@ def test_eeg_classifier():
 
     # determine output size
     test_input = np_to_var(
-        np.ones((2, in_chans, input_time_length, 1), dtype=np.float32)
+        np.ones((2, in_chans, input_window_samples, 1), dtype=np.float32)
     )
     if cuda:
         test_input = test_input.cuda()
@@ -150,12 +150,12 @@ def test_eeg_classifier():
 
     train_set = create_from_X_y(X[:48], y[:48],
                                 drop_last_window=False,
-                                window_size_samples=input_time_length,
+                                window_size_samples=input_window_samples,
                                 window_stride_samples=n_preds_per_input)
 
     valid_set = create_from_X_y(X[48:60], y[48:60],
                                 drop_last_window=False,
-                                window_size_samples=input_time_length,
+                                window_size_samples=input_window_samples,
                                 window_stride_samples=n_preds_per_input)
 
     cropped_cb_train = CroppedTrialEpochScoring(

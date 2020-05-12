@@ -48,7 +48,7 @@ def to_dense_prediction_model(model, axis=(2, 3)):
             module.stride = tuple(new_stride)
 
 
-def get_output_shape(model, in_chans, input_time_length):
+def get_output_shape(model, in_chans, input_window_samples):
     """Returns shape of neural network output for batch size equal 1.
 
     Returns
@@ -58,7 +58,7 @@ def get_output_shape(model, in_chans, input_time_length):
     """
     with torch.no_grad():
         dummy_input = torch.ones(
-            1, in_chans, input_time_length, 1,
+            1, in_chans, input_window_samples, 1,
             dtype=next(model.parameters()).dtype,
             device=next(model.parameters()).device,
         )

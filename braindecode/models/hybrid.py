@@ -22,7 +22,7 @@ class HybridNet(nn.Module):
        Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
-    def __init__(self, in_chans, n_classes, input_time_length):
+    def __init__(self, in_chans, n_classes, input_window_samples):
         super(HybridNet, self).__init__()
         deep_model = Deep4Net(
             in_chans,
@@ -32,13 +32,13 @@ class HybridNet(nn.Module):
             n_filters_2=40,
             n_filters_3=50,
             n_filters_4=60,
-            input_time_length=input_time_length,
+            input_window_samples=input_window_samples,
             final_conv_length=2,
         )
         shallow_model = ShallowFBCSPNet(
             in_chans,
             n_classes,
-            input_time_length=input_time_length,
+            input_window_samples=input_window_samples,
             n_filters_time=30,
             n_filters_spat=40,
             filter_time_length=28,

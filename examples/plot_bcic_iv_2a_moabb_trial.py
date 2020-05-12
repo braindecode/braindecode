@@ -66,7 +66,7 @@ high_cut_hz = 38.  # high cut frequency for filtering
 n_classes = 4  # number of classes to predict
 n_chans = 22  # number of channels in the dataset
 trial_start_offset_seconds = -0.5  # offset between trail start in the raw data and dataset
-input_time_length = 1125  # length of trial in samples
+input_window_samples = 1125  # length of trial in samples
 # Parameters for exponential running standarization
 factor_new = 1e-3
 init_block_size = 1000
@@ -92,9 +92,10 @@ set_random_seeds(seed=seed, cuda=cuda)
 model = ShallowFBCSPNet(
     n_chans,
     n_classes,
-    input_time_length=input_time_length,
+    input_window_samples=input_window_samples,
     final_conv_length='auto',
 )
+
 lr = 0.0625 * 0.01
 weight_decay = 0
 
@@ -147,8 +148,8 @@ windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
     trial_stop_offset_samples=0,
-    window_size_samples=input_time_length,
-    window_stride_samples=input_time_length,
+    window_size_samples=input_window_samples,
+    window_stride_samples=input_window_samples,
     drop_last_window=False,
     preload=True,
 )
