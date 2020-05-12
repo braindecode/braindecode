@@ -16,7 +16,7 @@ from collections.abc import Iterable
 import numpy as np
 
 
-def transform_concat_ds(concat_ds, transforms):
+def transform(concat_ds, transforms):
     """Apply a number of transformers to a concat dataset.
 
     Parameters

@@ -26,5 +26,5 @@ def test_create_mne_dummy_raw(tmp_path):
     assert os.path.isfile(fnames['hdf5'])
 
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
-    with h5py.File(fnames['hdf5']) as hf:
+    with h5py.File(fnames['hdf5'], 'r') as hf:
         _ = np.array(hf['fake_raw'])

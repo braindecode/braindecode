@@ -66,7 +66,7 @@ from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil import create_windows_from_events
 from braindecode.datautil.signalproc import exponential_running_standardize
-from braindecode.datautil.transforms import transform_concat_ds
+from braindecode.datautil.transforms import transform
 from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
@@ -162,7 +162,7 @@ raw_transform_dict = [
 ]
 
 # Transform the data
-transform_concat_ds(dataset, raw_transform_dict)
+transform(dataset, raw_transform_dict)
 
 ##########################################################################################
 # Create windows from MOABB dataset

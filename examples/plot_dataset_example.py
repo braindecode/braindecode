@@ -19,7 +19,7 @@ from IPython.display import display
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil.windowers import \
     create_windows_from_events, create_fixed_length_windows
-from braindecode.datautil.transforms import transform_concat_ds
+from braindecode.datautil.transforms import transform
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
@@ -45,7 +45,7 @@ transform_list = [
     ("resample", {"sfreq": 100}),
 ]
 print(ds.datasets[0].raw.info["sfreq"])
-transform_concat_ds(ds, transform_list)
+transform(ds, transform_list)
 print(ds.datasets[0].raw.info["sfreq"])
 
 ###############################################################################
@@ -111,7 +111,7 @@ epochs_transform_list = [
 
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
-transform_concat_ds(windows_ds, epochs_transform_list)
+transform(windows_ds, epochs_transform_list)
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
 
