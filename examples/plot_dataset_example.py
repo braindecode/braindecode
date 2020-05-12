@@ -19,7 +19,7 @@ from IPython.display import display
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil.windowers import \
     create_windows_from_events, create_fixed_length_windows
-from braindecode.datautil.transforms import transform
+from braindecode.datautil.transforms import transform, MNETransform
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
@@ -40,12 +40,12 @@ for x, y in ds:
 ##############################################################################
 # We can apply preprocessing transforms that are defined in mne and work
 # in-place, such as resampling, bandpass filtering, or electrode selection.
-transform_list = [
-    ("pick_types", {"eeg": True, "meg": False, "stim": True}),
-    ("resample", {"sfreq": 100}),
+transforms = [
+    MNETransform("pick_types", eeg=True, meg=False, stim=True),
+    MNETransform("resample", sfreq=100),
 ]
 print(ds.datasets[0].raw.info["sfreq"])
-transform(ds, transform_list)
+transform(ds, transforms)
 print(ds.datasets[0].raw.info["sfreq"])
 
 ###############################################################################
@@ -105,8 +105,8 @@ def crop_windows(windows, start_offset_samples, stop_offset_samples):
                  include_tmax=False)
 
 epochs_transform_list = [
-    ("pick_types", {"eeg": True, "meg": False, "stim": False}),
-    (crop_windows, {"start_offset_samples": 100, "stop_offset_samples": 900}),
+    MNETransform("pick_types", eeg=True, meg=False, stim=False),
+    MNETransform(crop_windows, start_offset_samples=100, stop_offset_samples=900),
 ]
 
 print(windows_ds.datasets[0].windows.info["ch_names"],

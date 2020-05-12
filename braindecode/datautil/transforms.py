@@ -10,10 +10,33 @@ ToDo: should transformer also transform y (e.g. cutting continuous labelled
 #
 # License: BSD (3-clause)
 
-from collections import OrderedDict
 from collections.abc import Iterable
+from functools import partial
 
 import numpy as np
+
+
+class MNETransform():
+    def __init__(self, fn, **kwargs):
+        self.fn = fn
+        self.kwargs = kwargs
+
+    def apply(self, raw_or_epochs):
+        if callable(self.fn):
+            self.fn(raw_or_epochs.load_data(), **self.kwargs)
+        else:
+            if not hasattr(raw_or_epochs, self.fn):
+                raise AttributeError(
+                    f'MNE object does not have {self.fn} method.')
+            getattr(raw_or_epochs.load_data(), self.fn)(**self.kwargs)
+
+
+class NumpyTransform(MNETransform):
+    def __init__(self, fn, channel_wise=False, **kwargs):
+        # use apply function of mne which will directly apply it to numpy array
+        partial_fn = partial(fn, **kwargs)
+        mne_kwargs = dict(fun=partial_fn, channel_wise=channel_wise)
+        super().__init__(fn='apply_function', **mne_kwargs)
 
 
 def transform(concat_ds, transforms):
@@ -33,9 +56,9 @@ def transform(concat_ds, transforms):
     """
     assert isinstance(transforms, Iterable)
     for elem in transforms:
-        assert isinstance(transforms, Iterable) and len(elem) == 2, (
-            "Expect transform function and keyword args per transformation "
-            f"got {elem} instead")
+        assert hasattr(elem, 'apply'), (
+            "Expect transform object to have apply method")
+
     for ds in concat_ds.datasets:
         if hasattr(ds, "raw"):
             _transform(ds.raw, transforms)
@@ -70,14 +93,8 @@ def _transform(raw_or_epochs, transforms):
         The methods or callables that are used must modify the Raw or Epochs
         object inplace, otherwise they won't have any effect.
     """
-    for transform, transform_kwargs in transforms:
-        if callable(transform):
-            transform(raw_or_epochs.load_data(), **transform_kwargs)
-        else:
-            if not hasattr(raw_or_epochs, transform):
-                raise AttributeError(
-                    f'MNE object does not have {transform} method.')
-            getattr(raw_or_epochs.load_data(), transform)(**transform_kwargs)
+    for transform in transforms:
+        transform.apply(raw_or_epochs)
 
 
 def zscore(data):

@@ -9,7 +9,8 @@ import numpy as np
 import pytest
 
 from braindecode.datasets import MOABBDataset
-from braindecode.datautil.transforms import transform, zscore, scale
+from braindecode.datautil.transforms import transform, zscore, scale, \
+    MNETransform, NumpyTransform
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
@@ -42,27 +43,19 @@ def test_no_raw_or_epochs():
 
 
 def test_method_not_available(base_concat_ds):
-    transforms = [('this_method_is_not_real', {'indeed': None})]
+    transforms = [MNETransform('this_method_is_not_real',)]
     with pytest.raises(AttributeError):
         transform(base_concat_ds, transforms)
 
 
-def test_transform_base_callable(base_concat_ds):
-    pass
-
-
 def test_transform_base_method(base_concat_ds):
-    transforms = [("resample", {"sfreq": 50})]
+    transforms = [MNETransform("resample", sfreq=50)]
     transform(base_concat_ds, transforms)
     assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
 
 
-def test_transform_windows_callable(windows_concat_ds):
-    pass
-
-
 def test_transform_windows_method(windows_concat_ds):
-    transforms = [("filter", {"l_freq": 7, "h_freq": 13})]
+    transforms = [MNETransform("filter", l_freq=7, h_freq=13)]
     raw_window = windows_concat_ds[0][0]
     transform(windows_concat_ds, transforms)
     assert not np.array_equal(raw_window, windows_concat_ds[0][0])
@@ -70,8 +63,8 @@ def test_transform_windows_method(windows_concat_ds):
 
 def test_zscore_continuous(base_concat_ds):
     transforms = [
-        ('pick_types', dict(eeg=True, meg=False, stim=False)),
-        ('apply_function', dict(fun=zscore, channel_wise=True))
+        MNETransform('pick_types', eeg=True, meg=False, stim=False),
+        MNETransform('apply_function', fun=zscore, channel_wise=True)
     ]
     transform(base_concat_ds, transforms)
     for ds in base_concat_ds.datasets:
@@ -89,8 +82,8 @@ def test_zscore_continuous(base_concat_ds):
 
 def test_zscore_windows(windows_concat_ds):
     transforms = [
-        ('pick_types', dict(eeg=True, meg=False, stim=False)),
-        (zscore, dict())
+        MNETransform('pick_types', eeg=True, meg=False, stim=False),
+        MNETransform(zscore,)
     ]
     transform(windows_concat_ds, transforms)
     for ds in windows_concat_ds.datasets:
@@ -109,8 +102,8 @@ def test_zscore_windows(windows_concat_ds):
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
     transforms = [
-        ('pick_types', dict(eeg=True, meg=False, stim=False)),
-        ('apply_function', dict(fun=scale, factor=factor))
+        MNETransform('pick_types', eeg=True, meg=False, stim=False),
+        NumpyTransform(scale, factor=factor)
     ]
     raw_timepoint = base_concat_ds[0][0]
     transform(base_concat_ds, transforms)
@@ -122,8 +115,8 @@ def test_scale_continuous(base_concat_ds):
 def test_scale_windows(windows_concat_ds):
     factor = 1e6
     transforms = [
-        ('pick_types', dict(eeg=True, meg=False, stim=False)),
-        (scale, dict(factor=factor))
+        MNETransform('pick_types', eeg=True, meg=False, stim=False),
+        MNETransform(scale, factor=factor)
     ]
     raw_window = windows_concat_ds[0][0]
     transform(windows_concat_ds, transforms)

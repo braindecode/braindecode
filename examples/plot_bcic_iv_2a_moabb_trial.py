@@ -48,7 +48,8 @@ from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil import create_windows_from_events
 from braindecode.datautil.signalproc import exponential_running_standardize
-from braindecode.datautil.transforms import transform
+from braindecode.datautil.transforms import transform, MNETransform, \
+    NumpyTransform
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
@@ -118,18 +119,16 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`_/`mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`_
 # method. The second element of a tuple defines method parameters.
 
-standardize_func = partial(exponential_running_standardize, factor_new=factor_new,
-                           init_block_size=init_block_size)
-
-raw_transform_dict = [
-    ('pick_types', dict(eeg=True, meg=False, stim=False)),
-    ('apply_function', dict(fun=lambda x: x * 1e6, channel_wise=False)),
-    ('filter', dict(l_freq=low_cut_hz, h_freq=high_cut_hz)),
-    ('apply_function', dict(fun=standardize_func, channel_wise=False))
+transforms = [
+    MNETransform(fn='pick_types', eeg=True, meg=False, stim=False), # keep only EEG sensors
+    NumpyTransform(fn=lambda x: x * 1e6), # convert from volt to mikrovolt, directly modifying the numpy array
+    MNETransform(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz), # bandpass filter
+    NumpyTransform(fn=exponential_running_standardize, factor_new=factor_new,
+        init_block_size=init_block_size)
 ]
 
 # Transform the data
-transform(dataset, raw_transform_dict)
+transform(dataset, transforms)
 
 ##########################################################################################
 # Create windows from MOABB dataset
