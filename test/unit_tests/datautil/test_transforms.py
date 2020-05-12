@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 
 from braindecode.datasets import MOABBDataset
-from braindecode.datautil.transforms import transform, zscore, scale, \
-    MNETransform, NumpyTransform
+from braindecode.datautil.preprocess import preprocess, zscore, scale, \
+    MNEPreproc, NumpyPreproc
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
@@ -29,7 +29,7 @@ def windows_concat_ds(base_concat_ds):
 
 def test_not_list():
     with pytest.raises(AssertionError):
-        transform(None, {'test': 1})
+        preprocess(None, {'test': 1})
 
 
 def test_no_raw_or_epochs():
@@ -39,34 +39,34 @@ def test_no_raw_or_epochs():
 
     ds = EmptyDataset()
     with pytest.raises(AssertionError):
-        transform(ds, ["dummy", "dummy"])
+        preprocess(ds, ["dummy", "dummy"])
 
 
 def test_method_not_available(base_concat_ds):
-    transforms = [MNETransform('this_method_is_not_real',)]
+    preprocessors = [MNEPreproc('this_method_is_not_real', )]
     with pytest.raises(AttributeError):
-        transform(base_concat_ds, transforms)
+        preprocess(base_concat_ds, preprocessors)
 
 
 def test_transform_base_method(base_concat_ds):
-    transforms = [MNETransform("resample", sfreq=50)]
-    transform(base_concat_ds, transforms)
+    preprocessors = [MNEPreproc("resample", sfreq=50)]
+    preprocess(base_concat_ds, preprocessors)
     assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
 
 
 def test_transform_windows_method(windows_concat_ds):
-    transforms = [MNETransform("filter", l_freq=7, h_freq=13)]
+    preprocessors = [MNEPreproc("filter", l_freq=7, h_freq=13)]
     raw_window = windows_concat_ds[0][0]
-    transform(windows_concat_ds, transforms)
+    preprocess(windows_concat_ds, preprocessors)
     assert not np.array_equal(raw_window, windows_concat_ds[0][0])
 
 
 def test_zscore_continuous(base_concat_ds):
-    transforms = [
-        MNETransform('pick_types', eeg=True, meg=False, stim=False),
-        MNETransform('apply_function', fun=zscore, channel_wise=True)
+    preprocessors = [
+        MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
+        MNEPreproc('apply_function', fun=zscore, channel_wise=True)
     ]
-    transform(base_concat_ds, transforms)
+    preprocess(base_concat_ds, preprocessors)
     for ds in base_concat_ds.datasets:
         raw_data = ds.raw.get_data()
         shape = raw_data.shape
@@ -81,11 +81,11 @@ def test_zscore_continuous(base_concat_ds):
 
 
 def test_zscore_windows(windows_concat_ds):
-    transforms = [
-        MNETransform('pick_types', eeg=True, meg=False, stim=False),
-        MNETransform(zscore,)
+    preprocessors = [
+        MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
+        MNEPreproc(zscore, )
     ]
-    transform(windows_concat_ds, transforms)
+    preprocess(windows_concat_ds, preprocessors)
     for ds in windows_concat_ds.datasets:
         windowed_data = ds.windows.get_data()
         shape = windowed_data.shape
@@ -101,12 +101,12 @@ def test_zscore_windows(windows_concat_ds):
 
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
-    transforms = [
-        MNETransform('pick_types', eeg=True, meg=False, stim=False),
-        NumpyTransform(scale, factor=factor)
+    preprocessors = [
+        MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
+        NumpyPreproc(scale, factor=factor)
     ]
     raw_timepoint = base_concat_ds[0][0]
-    transform(base_concat_ds, transforms)
+    preprocess(base_concat_ds, preprocessors)
     expected = np.ones_like(raw_timepoint) * factor
     np.testing.assert_allclose(base_concat_ds[0][0] / raw_timepoint, expected,
                                rtol=1e-4, atol=1e-4)
@@ -114,12 +114,12 @@ def test_scale_continuous(base_concat_ds):
 
 def test_scale_windows(windows_concat_ds):
     factor = 1e6
-    transforms = [
-        MNETransform('pick_types', eeg=True, meg=False, stim=False),
-        MNETransform(scale, factor=factor)
+    preprocessors = [
+        MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
+        MNEPreproc(scale, factor=factor)
     ]
     raw_window = windows_concat_ds[0][0]
-    transform(windows_concat_ds, transforms)
+    preprocess(windows_concat_ds, preprocessors)
     expected = np.ones_like(raw_window) * factor
     np.testing.assert_allclose(windows_concat_ds[0][0] / raw_window, expected,
                                rtol=1e-4, atol=1e-4)

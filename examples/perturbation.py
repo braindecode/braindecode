@@ -189,7 +189,7 @@ train_X_batches = np.concatenate(list(zip(*train_batches))[0])
 # old until before the softmax.
 
 from braindecode.util import var_to_np
-import torch as th
+import torch
 
 new_model = nn.Sequential()
 for name, module in model.network.named_children():
@@ -202,7 +202,7 @@ new_model.eval()
 
 def pred_fn(x):
     return var_to_np(
-        th.mean(
+        torch.mean(
             new_model(np_to_var(x).cuda())[:, :, :, 0], dim=2, keepdim=False
         )
     )

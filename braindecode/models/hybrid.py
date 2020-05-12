@@ -1,4 +1,4 @@
-import torch as th
+import torch
 from torch import nn
 from torch.nn import ConstantPad2d
 
@@ -96,7 +96,7 @@ class HybridNet(nn.Module):
                 shallow_out
             )
 
-        merged_out = th.cat((deep_out, shallow_out), dim=1)
+        merged_out = torch.cat((deep_out, shallow_out), dim=1)
         linear_out = self.final_conv(merged_out)
         softmaxed = nn.LogSoftmax(dim=1)(linear_out)
         squeezed = softmaxed.squeeze(3)

@@ -1,5 +1,4 @@
-import torch as th
-
+import torch
 from torch import nn
 from torch.nn.functional import elu
 
@@ -12,7 +11,7 @@ class Conv2dWithConstraint(nn.Conv2d):
         super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
 
     def forward(self, x):
-        self.weight.data = th.renorm(
+        self.weight.data = torch.renorm(
             self.weight.data, p=2, dim=0, maxnorm=self.max_norm
         )
         return super(Conv2dWithConstraint, self).forward(x)
@@ -145,9 +144,9 @@ class EEGNetv4(nn.Sequential):
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            th.ones(
+            torch.ones(
                 (1, self.in_chans, self.input_window_samples, 1),
-                dtype=th.float32
+                dtype=torch.float32
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -288,9 +287,9 @@ class EEGNetv1(nn.Sequential):
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            th.ones(
+            torch.ones(
                     (1, self.in_chans, self.input_window_samples, 1),
-                    dtype=th.float32,
+                    dtype=torch.float32,
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]

@@ -1,4 +1,4 @@
-"""Transforms that work on Raw or Epochs objects.
+"""Preprocessors that work on Raw or Epochs objects.
 ToDo: should transformer also transform y (e.g. cutting continuous labelled
       data)?
 """
@@ -16,7 +16,17 @@ from functools import partial
 import numpy as np
 
 
-class MNETransform():
+class MNEPreproc():
+    """Preprocessor for an MNE-raw/epoch.
+
+    Parameters
+    ----------
+    fn: str or callable
+        if str, the raw/epoch object must have a member function with that name.
+        if callable, directly apply the callable to the mne raw/epoch.
+    kwargs:
+        Keyword arguments will be forwarded to the mne function
+    """
     def __init__(self, fn, **kwargs):
         self.fn = fn
         self.kwargs = kwargs
@@ -31,7 +41,18 @@ class MNETransform():
             getattr(raw_or_epochs.load_data(), self.fn)(**self.kwargs)
 
 
-class NumpyTransform(MNETransform):
+class NumpyPreproc(MNEPreproc):
+    """Preprocessor that directy operates on the underlying numpy array of an mne raw/epoch.
+
+    Parameters
+    ----------
+    fn: callable
+        Function that preprocesses the numpy array
+    channel_wise: bool
+        Whether to apply the functiona
+    kwargs:
+        Keyword arguments will be forwarded to the function
+    """
     def __init__(self, fn, channel_wise=False, **kwargs):
         # use apply function of mne which will directly apply it to numpy array
         partial_fn = partial(fn, **kwargs)
@@ -39,34 +60,33 @@ class NumpyTransform(MNETransform):
         super().__init__(fn='apply_function', **mne_kwargs)
 
 
-def transform(concat_ds, transforms):
-    """Apply a number of transformers to a concat dataset.
+def preprocess(concat_ds, preprocessors):
+    """Apply several preprocessors to a concat dataset.
 
     Parameters
     ----------
     concat_ds: A concat of BaseDataset or WindowsDataset
-        datasets to be transformed
-    transforms: list(str | callable, dict)
-        dict with function names of mne.raw or a custom transform and function
-        kwargs
+        datasets to be preprocessed
+    preprocessors: list(MNEPreproc) #TODO: correct object stuffs
+        List of preprocessors to apply to the dataset
 
     Returns
     -------
     concat_ds:
     """
-    assert isinstance(transforms, Iterable)
-    for elem in transforms:
+    assert isinstance(preprocessors, Iterable)
+    for elem in preprocessors:
         assert hasattr(elem, 'apply'), (
-            "Expect transform object to have apply method")
+            "Expect preprocessor object to have apply method")
 
     for ds in concat_ds.datasets:
         if hasattr(ds, "raw"):
-            _transform(ds.raw, transforms)
+            _preprocess(ds.raw, preprocessors)
         elif hasattr(ds, "windows"):
-            _transform(ds.windows, transforms)
+            _preprocess(ds.windows, preprocessors)
         else:
             raise ValueError(
-                'Can only transform concatenation of BaseDataset or '
+                'Can only perprocess concatenation of BaseDataset or '
                 'WindowsDataset, with either a `raw` or `windows` attribute.')
 
     # Recompute cumulative sizes as the transforms might have changed them
@@ -75,26 +95,18 @@ def transform(concat_ds, transforms):
     concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
 
 
-def _transform(raw_or_epochs, transforms):
-    """Apply transform(s) to Raw or Epochs object.
+def _preprocess(raw_or_epochs, preprocessors):
+    """Apply preprocessor(s) to Raw or Epochs object.
 
     Parameters
     ----------
     raw_or_epochs: mne.io.Raw or mne.Epochs
-        Object to transform.
-    transforms: list(str | callable, dict)
-        List of two elements iterables. First element is either str or callable.
-        If str, it represents the name of a method of Raw or Epochs to be called.
-        If callable, the callable will be applied to the Raw or Epochs object.
-        Values are dictionaries of keyword arguments passed to the transform
-        function.
-
-    ..note:
-        The methods or callables that are used must modify the Raw or Epochs
-        object inplace, otherwise they won't have any effect.
+        Object to preprocess.
+    preprocessors: list(MNEPreproc) #TODO: correct object stuffs
+        List of preprocessors to apply to the dataset
     """
-    for transform in transforms:
-        transform.apply(raw_or_epochs)
+    for preproc in preprocessors:
+        preproc.apply(raw_or_epochs)
 
 
 def zscore(data):
@@ -112,7 +124,7 @@ def zscore(data):
     n_times)
         normalized continuous or windowed data
     ..note:
-        If this function is supposed to transform continuous data, it should be
+        If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
     zscored = data - np.mean(data, keepdims=True, axis=-1)
@@ -141,7 +153,7 @@ def scale(data, factor):
     n_times)
         normalized continuous or windowed data
     ..note:
-        If this function is supposed to transform continuous data, it should be
+        If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
     scaled = np.multiply(data, factor)

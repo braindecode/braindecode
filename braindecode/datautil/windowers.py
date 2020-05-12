@@ -17,7 +17,8 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples, window_stride_samples, drop_last_window,
+        window_size_samples=None, window_stride_samples=None,
+        drop_last_window=False,
         mapping=None, preload=False, drop_bad_windows=True):
     """Windower that creates windows based on events in mne.Raw.
 
@@ -71,6 +72,8 @@ def create_windows_from_events(
     if infer_mapping:
         mapping = {}
 
+    infer_window_size_stride = window_size_samples is None
+
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
         if infer_mapping:
@@ -95,6 +98,22 @@ def create_windows_from_events(
                              f'"trial_stop_offset_samples" '
                              f'({trial_stop_offset_samples}) must be smaller '
                              f'then length of recording {len(ds)}.')
+
+        if infer_window_size_stride:
+            # window size is trial size
+            if window_size_samples is None:
+                window_size_samples = stops[0] - (onsets[0] + trial_start_offset_samples)
+                window_stride_samples = window_size_samples
+            this_trial_sizes = stops - (onsets  + trial_start_offset_samples)
+            # Maybe actually this is not necessary?
+            # We could also just say we just assume window size= trial size
+            # in case not given, without this condition...
+            # but then would have to change functions overall
+            # to deal with varying window sizes hmmhmh
+            assert np.all(this_trial_sizes == window_size_samples), (
+                "All trial sizes should be the same if you do not supply"
+                "a window size")
+
 
         description = events[:, -1]
         i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
@@ -286,9 +305,11 @@ def _check_windowing_arguments(
         window_size_samples, window_stride_samples):
     assert isinstance(trial_start_offset_samples, (int, np.integer))
     assert isinstance(trial_stop_offset_samples, (int, np.integer))
-    assert isinstance(window_size_samples, (int, np.integer))
-    assert isinstance(window_stride_samples, (int, np.integer))
-    assert window_size_samples > 0, (
-        "window size has to be larger than 0")
-    assert window_stride_samples > 0, (
-        "window stride has to be larger than 0")
+    assert isinstance(window_size_samples, (int, np.integer, type(None)))
+    assert isinstance(window_stride_samples, (int, np.integer, type(None)))
+    assert (window_size_samples is None) == (window_stride_samples is None)
+    if window_size_samples is not None:
+        assert window_size_samples > 0, (
+            "window size has to be larger than 0")
+        assert window_stride_samples > 0, (
+            "window stride has to be larger than 0")
