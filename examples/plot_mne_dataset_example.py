@@ -41,7 +41,7 @@ windows_datasets = create_from_mne_raw(
     trial_stop_offset_samples=0,
     window_size_samples=500,
     window_stride_samples=500,
-    drop_samples=False,
+    drop_last_window=False,
     descriptions=descriptions,
 )
 
@@ -53,5 +53,5 @@ windows_datasets = create_from_mne_epochs(
     list_of_epochs,
     window_size_samples=50,
     window_stride_samples=50,
-    drop_samples=False
+    drop_last_window=False
 )

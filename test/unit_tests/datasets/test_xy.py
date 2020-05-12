@@ -22,7 +22,7 @@ def test_crops_data_loader_explicit():
         X[None, None], y,
         window_size_samples=n_time_in,
         window_stride_samples=n_time_out,
-        drop_samples=False
+        drop_last_window=False
     )
 
     Xs, ys, i_s = zip(*list(dataset))

@@ -13,10 +13,10 @@ from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
-from braindecode.losses import CroppedLoss
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.training.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds, np_to_var
 
 
@@ -149,12 +149,12 @@ def test_eeg_classifier():
     n_preds_per_input = out.cpu().data.numpy().shape[2]
 
     train_set = create_from_X_y(X[:48], y[:48],
-                                drop_samples=False,
+                                drop_last_window=False,
                                 window_size_samples=input_time_length,
                                 window_stride_samples=n_preds_per_input)
 
     valid_set = create_from_X_y(X[48:60], y[48:60],
-                                drop_samples=False,
+                                drop_last_window=False,
                                 window_size_samples=input_time_length,
                                 window_stride_samples=n_preds_per_input)
 

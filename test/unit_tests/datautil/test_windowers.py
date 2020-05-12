@@ -51,7 +51,7 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
     windows = create_windows_from_events(
         concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
-        window_stride_samples=100, drop_samples=False)
+        window_stride_samples=100, drop_last_window=False)
 
     assert all([not ds.windows.preload for ds in windows.datasets])
 
@@ -64,7 +64,7 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
     windows = create_windows_from_events(
         concat_ds=concat_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
-        window_stride_samples=100, drop_samples=False, mapping={'T1': 0})
+        window_stride_samples=100, drop_last_window=False, mapping={'T1': 0})
     description = windows.datasets[0].windows.metadata["target"].to_list()
 
     assert len(description) == 5
@@ -87,7 +87,7 @@ def test_windows_from_events_different_events(tmpdir_factory):
     windows = create_windows_from_events(
         concat_ds=concat_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
-        window_stride_samples=100, drop_samples=False)
+        window_stride_samples=100, drop_last_window=False)
     description = []
     events = []
     for ds in windows.datasets:
@@ -108,7 +108,7 @@ def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset, start_offset_samples=0,
         stop_offset_samples=100, window_size_samples=100,
-        window_stride_samples=100, drop_samples=False, preload=False)
+        window_stride_samples=100, drop_last_window=False, preload=False)
 
     assert all([not ds.windows.preload for ds in windows.datasets])
 
@@ -119,7 +119,7 @@ def test_one_window_per_original_trial(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1,
-        drop_samples=False)
+        drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets)
     np.testing.assert_array_equal(description, targets)
@@ -131,7 +131,7 @@ def test_stride_has_no_effect(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1000,
-        drop_samples=False)
+        drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets)
     np.testing.assert_array_equal(description, targets)
@@ -143,7 +143,7 @@ def test_trial_start_offset(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=250,
-        drop_samples=False)
+        drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 2
     np.testing.assert_array_equal(description[0::2], targets)
@@ -156,7 +156,7 @@ def test_shifting_last_window_back_in(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=300,
-        drop_samples=False)
+        drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 2
     np.testing.assert_array_equal(description[0::2], targets)
@@ -169,7 +169,7 @@ def test_dropping_last_incomplete_window(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=300,
-        drop_samples=True)
+        drop_last_window=True)
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets)
     np.testing.assert_array_equal(description, targets)
@@ -181,7 +181,7 @@ def test_maximally_overlapping_windows(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=-2, trial_stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1,
-        drop_samples=False)
+        drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 3
     np.testing.assert_array_equal(description[0::3], targets)
@@ -202,7 +202,7 @@ def test_single_sample_size_windows(concat_ds_targets):
         concat_ds=concat_ds,
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1, window_stride_samples=1,
-        drop_samples=False, mapping=dict(tongue=3, left_hand=1,
+        drop_last_window=False, mapping=dict(tongue=3, left_hand=1,
                                     right_hand=2,feet=4))
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 1000
@@ -218,7 +218,7 @@ def test_overlapping_trial_offsets(concat_ds_targets):
             concat_ds=concat_ds,
             trial_start_offset_samples=-2000, trial_stop_offset_samples=0,
             window_size_samples=1000, window_stride_samples=1000,
-            drop_samples=False)
+            drop_last_window=False)
 
 
 @pytest.mark.parametrize('drop_bad_windows,preload', [(True, False), (True, False)])
@@ -227,13 +227,13 @@ def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
     windows_from_events = create_windows_from_events(
         concat_ds=concat_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
-        window_stride_samples=100, drop_samples=False, preload=preload,
+        window_stride_samples=100, drop_last_window=False, preload=preload,
         drop_bad_windows=drop_bad_windows)
 
     windows_fixed_length = create_fixed_length_windows(
         concat_ds=concat_ds, start_offset_samples=0, stop_offset_samples=1000,
         window_size_samples=1000, window_stride_samples=1000,
-        drop_samples=False, preload=preload, drop_bad_windows=drop_bad_windows)
+        drop_last_window=False, preload=preload, drop_bad_windows=drop_bad_windows)
 
     assert (windows_from_events.datasets[0].windows._bad_dropped ==
             drop_bad_windows)
@@ -251,11 +251,11 @@ def test_windows_from_events_(lazy_loadable_dataset):
         windows = create_windows_from_events(
             concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
             trial_stop_offset_samples=250, window_size_samples=100,
-            window_stride_samples=100, drop_samples=False)
+            window_stride_samples=100, drop_last_window=False)
 
 
 @pytest.mark.parametrize(
-    'start_offset_samples,window_size_samples,window_stride_samples,drop_samples,mapping',
+    'start_offset_samples,window_size_samples,window_stride_samples,drop_last_window,mapping',
     [(0, 100, 90, True, None),
      (0, 100, 50, True, {48: 0}),
      (0, 50, 50, True, None),
@@ -265,7 +265,7 @@ def test_windows_from_events_(lazy_loadable_dataset):
      (5, 10, 39, False, None)]
 )
 def test_fixed_length_windower(start_offset_samples, window_size_samples,
-                               window_stride_samples, drop_samples, mapping):
+                               window_stride_samples, drop_last_window, mapping):
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=['0', '1'], sfreq=50, ch_types='eeg')
     data = rng.randn(2, 1000)
@@ -282,7 +282,7 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         stop_offset_samples=stop_offset_samples,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        drop_samples=drop_samples, mapping=mapping)
+        drop_last_window=drop_last_window, mapping=mapping)
 
     if mapping is not None:
         assert base_ds.target == 48
@@ -294,7 +294,7 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         start_offset_samples,
         stop_offset_samples - window_size_samples + 1,
         window_stride_samples)
-    if not drop_samples and idxs[-1] != stop_offset_samples - window_size_samples:
+    if not drop_last_window and idxs[-1] != stop_offset_samples - window_size_samples:
         idxs = np.append(idxs, stop_offset_samples - window_size_samples)
 
     assert len(idxs) == epochs_data.shape[0], (

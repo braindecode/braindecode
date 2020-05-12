@@ -99,7 +99,7 @@ def load_example_data(preload, window_len_s, n_subjects=10):
     windows_ds = create_fixed_length_windows(
         ds, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=window_len_samples,
-        window_stride_samples=window_stride_samples, drop_samples=True,
+        window_stride_samples=window_stride_samples, drop_last_window=True,
         preload=preload, drop_bad_windows=True)
 
     # Drop bad epochs

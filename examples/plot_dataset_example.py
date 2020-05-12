@@ -59,7 +59,7 @@ print({subset_name: len(subset) for subset_name, subset in subsets.items()})
 windows_ds = create_windows_from_events(
     ds, trial_start_offset_samples=0, trial_stop_offset_samples=100,
     window_size_samples=400, window_stride_samples=100,
-    drop_samples=False)
+    drop_last_window=False)
 
 ###############################################################################
 # We can iterate through the windows_ds which yields a window x,
@@ -88,7 +88,7 @@ for i, (x, y, window_ind) in enumerate(windows_ds):
 sliding_windows_ds = create_fixed_length_windows(
     ds, start_offset_samples=0, stop_offset_samples=0,
     window_size_samples=1200, window_stride_samples=1000,
-    drop_samples=False)
+    drop_last_window=False)
 
 print(len(sliding_windows_ds))
 for x, y, window_ind in sliding_windows_ds:

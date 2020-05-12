@@ -67,7 +67,7 @@ from braindecode.datasets import MOABBDataset
 from braindecode.datautil import create_windows_from_events
 from braindecode.datautil.signalproc import exponential_running_standardize
 from braindecode.datautil.transforms import transform_concat_ds
-from braindecode.losses import CroppedLoss
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.util import set_random_seeds
@@ -183,7 +183,7 @@ windows_dataset = create_windows_from_events(
     trial_stop_offset_samples=0,
     window_size_samples=input_time_length,
     window_stride_samples=n_preds_per_input,
-    drop_samples=False,
+    drop_last_window=False,
     preload=True,
 )
 

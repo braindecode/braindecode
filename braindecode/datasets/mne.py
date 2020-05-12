@@ -9,7 +9,7 @@ from ..datautil.windowers import (
 
 def create_from_mne_raw(
         raws, trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples, window_stride_samples, drop_samples,
+        window_size_samples, window_stride_samples, drop_last_window,
         descriptions=None, mapping=None, preload=False, drop_bad_windows=True):
     """Create WindowsDatasets from mne.RawArrays
 
@@ -25,7 +25,7 @@ def create_from_mne_raw(
         window size
     window_stride_samples: int
         stride between windows
-    drop_samples: bool
+    drop_last_window: bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
     descriptions: array-like
@@ -63,7 +63,7 @@ def create_from_mne_raw(
         trial_stop_offset_samples=trial_stop_offset_samples,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
-        drop_samples=drop_samples,
+        drop_last_window=drop_last_window,
         mapping=mapping,
         drop_bad_windows=drop_bad_windows,
         preload=preload
@@ -72,7 +72,7 @@ def create_from_mne_raw(
 
 
 def create_from_mne_epochs(list_of_epochs, window_size_samples,
-                           window_stride_samples, drop_samples):
+                           window_stride_samples, drop_last_window):
     """Create WindowsDatasets from mne.Epochs
 
     Parameters
@@ -83,7 +83,7 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
         window size
     window_stride_samples: int
         stride between windows
-    drop_samples: bool
+    drop_last_window: bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
 
@@ -105,7 +105,7 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
         # already includes last incomplete window start
         starts = np.arange(0, stop + 1, window_stride_samples)
 
-        if not drop_samples and starts[-1] < stop:
+        if not drop_last_window and starts[-1] < stop:
             # if last window does not end at trial stop, make it stop there
             starts = np.append(starts, stop)
 

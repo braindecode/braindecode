@@ -17,7 +17,7 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples, window_stride_samples, drop_samples,
+        window_size_samples, window_stride_samples, drop_last_window,
         mapping=None, preload=False, drop_bad_windows=True):
     """Windower that creates windows based on events in mne.Raw.
 
@@ -25,7 +25,7 @@ def create_windows_from_events(
     trial_start_offset_samples to trial_stop_offset_samples separated by
     window_stride_samples. If the last window does not end
     at trial_stop_offset_samples, it creates another overlapping window that
-    ends at trial_stop_offset_samples if drop_samples is set to False.
+    ends at trial_stop_offset_samples if drop_last_window is set to False.
 
     in mne: tmin (s)                    trial onset        onset + duration (s)
     trial:  |--------------------------------|--------------------------------|
@@ -43,7 +43,7 @@ def create_windows_from_events(
         window size
     window_stride_samples: int
         stride between windows
-    drop_samples: bool
+    drop_last_window: bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
     mapping: dict(str: int)
@@ -100,7 +100,7 @@ def create_windows_from_events(
         i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
             onsets, stops, trial_start_offset_samples,
             trial_stop_offset_samples, window_size_samples,
-            window_stride_samples, drop_samples)
+            window_stride_samples, drop_last_window)
 
         events = [[start, window_size_samples, description[i_trials[i_start]]]
                    for i_start, start in enumerate(starts)]
@@ -134,7 +134,7 @@ def create_windows_from_events(
 
 def create_fixed_length_windows(
         concat_ds, start_offset_samples, stop_offset_samples,
-        window_size_samples, window_stride_samples, drop_samples,
+        window_size_samples, window_stride_samples, drop_last_window,
         mapping=None, preload=False, drop_bad_windows=True):
     """Windower that creates sliding windows.
 
@@ -150,7 +150,7 @@ def create_fixed_length_windows(
         window size
     window_stride_samples: int
         stride between windows
-    drop_samples: bool
+    drop_last_window: bool
         whether or not have a last overlapping window, when
         windows do not equally divide the continuous signal
     mapping: dict(str: int)
@@ -182,7 +182,7 @@ def create_fixed_length_windows(
             stop + 1,
             window_stride_samples)
 
-        if not drop_samples and starts[-1] < stop:
+        if not drop_last_window and starts[-1] < stop:
             # if last window does not end at trial stop, make it stop there
             starts = np.append(starts, stop)
 
@@ -215,7 +215,7 @@ def create_fixed_length_windows(
 
 
 def _compute_window_inds(
-        starts, stops, start_offset, stop_offset, size, stride, drop_samples):
+        starts, stops, start_offset, stop_offset, size, stride, drop_last_window):
     """Create window starts from trial onsets (shifted by offset) to trial
     end separated by stride as long as window size fits into trial
 
@@ -233,7 +233,7 @@ def _compute_window_inds(
         window size
     stride: int
         stride between windows
-    drop_samples: bool
+    drop_last_window: bool
         toggles of shifting last window within range or dropping last samples
 
     Returns
@@ -266,7 +266,7 @@ def _compute_window_inds(
         # if the last window start + window size is not the same as
         # stop + stop_offset, create another window that overlaps and stops
         # at onset + stop_offset
-        if not drop_samples:
+        if not drop_last_window:
             if window_starts[-1] + size != stop:
                 window_starts.append(stop - size)
                 i_window_in_trials.append(i_window_in_trials[-1] + 1)

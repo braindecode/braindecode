@@ -15,7 +15,7 @@ from skorch.helper import predefined_split
 from braindecode import EEGRegressor
 from braindecode.datautil import create_fixed_length_windows
 from braindecode.datasets import BaseDataset, BaseConcatDataset
-from braindecode.losses import CroppedLoss
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import Deep4Net
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
@@ -108,7 +108,7 @@ windows_dataset = create_fixed_length_windows(
     stop_offset_samples=0,
     window_size_samples=input_time_length,
     window_stride_samples=n_preds_per_input,
-    drop_samples=False,
+    drop_last_window=False,
     drop_bad_windows=True,
 )
 

@@ -24,7 +24,7 @@ class BaseDataset(Dataset):
     Parameters
     ----------
     raw: mne.io.Raw
-    description: dict | pandas.Series | None
+    description: dict | pandas.Series | Nonew
         holds additional description about the continuous signal / subject
     target_name: str | None
         name of the index in `description` that should be use to provide the
