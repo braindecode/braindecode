@@ -65,7 +65,7 @@ from skorch.helper import predefined_split
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil import create_windows_from_events
-from braindecode.datautil.signalproc import exponential_running_standardize
+from braindecode.datautil.signalproc import exponential_moving_standardize
 from braindecode.datautil.preprocess import preprocess, MNEPreproc, \
     NumpyPreproc
 from braindecode.training.losses import CroppedLoss
@@ -156,7 +156,7 @@ preprocessors = [
     MNEPreproc(fn='pick_types', eeg=True, meg=False, stim=False), # keep only EEG sensors
     NumpyPreproc(fn=lambda x: x * 1e6), # convert from volt to microvolt, directly modifying the numpy array
     MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz), # bandpass filter
-    NumpyPreproc(fn=exponential_running_standardize, factor_new=factor_new,
+    NumpyPreproc(fn=exponential_moving_standardize, factor_new=factor_new,
                  init_block_size=init_block_size)
 ]
 

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from braindecode.datautil.signalproc import (
-    exponential_running_demean, exponential_running_standardize)
+    exponential_moving_demean, exponential_moving_standardize)
 
 
 @pytest.fixture(scope="module")
@@ -28,7 +28,7 @@ def mock_data():
 
 def test_exponential_running_standardize(mock_data):
     mock_input, expected_data, _ = mock_data
-    standardized_data = exponential_running_standardize(mock_input)
+    standardized_data = exponential_moving_standardize(mock_input)
     assert mock_input.shape == standardized_data.shape == expected_data.shape
     np.testing.assert_allclose(
         standardized_data, expected_data, rtol=1e-4, atol=1e-4)
@@ -36,7 +36,7 @@ def test_exponential_running_standardize(mock_data):
 
 def test_exponential_running_demean(mock_data):
     mock_input, _, expected_data = mock_data
-    demeaned_data = exponential_running_demean(mock_input)
+    demeaned_data = exponential_moving_demean(mock_input)
     assert mock_input.shape == demeaned_data.shape == expected_data.shape
     np.testing.assert_allclose(
         demeaned_data, expected_data, rtol=1e-4, atol=1e-4)
@@ -45,12 +45,12 @@ def test_exponential_running_demean(mock_data):
 def test_exponential_running_init_block_size(mock_data):
     mock_input, _, _ = mock_data
     init_block_size = 3
-    standardized_data = exponential_running_standardize(
+    standardized_data = exponential_moving_standardize(
         mock_input, init_block_size=init_block_size)
     np.testing.assert_allclose(
         standardized_data[:, :init_block_size].sum(), [0], rtol=1e-4, atol=1e-4)
 
-    demeaned_data = exponential_running_demean(
+    demeaned_data = exponential_moving_demean(
         mock_input, init_block_size=init_block_size)
     np.testing.assert_allclose(
         demeaned_data[:, :init_block_size].sum(), [0], rtol=1e-4, atol=1e-4)

@@ -6,19 +6,19 @@ import pandas as pd
 import numpy as np
 
 
-def exponential_running_standardize(
+def exponential_moving_standardize(
     data, factor_new=0.001, init_block_size=None, eps=1e-4
 ):
-    r"""Perform exponential running standardization.
+    r"""Perform exponential moving standardization.
     
-    Compute the exponental running mean :math:`m_t` at time `t` as 
+    Compute the exponental moving mean :math:`m_t` at time `t` as
     :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
     
-    Then, compute exponential running variance :math:`v_t` at time `t` as 
+    Then, compute exponential moving variance :math:`v_t` at time `t` as
     :math:`v_t=\mathrm{factornew} \cdot (m_t - x_t)^2 + (1 - \mathrm{factornew}) \cdot v_{t-1}`.
     
     Finally, standardize the data point :math:`x_t` at time `t` as:
-    :math:`x'_t=(x_t - m_t) / max(\sqrt{v_t}, eps)`.
+    :math:`x'_t=(x_t - m_t) / max(\sqrt{->v_t}, eps)`.
     
 
     Parameters
@@ -58,10 +58,10 @@ def exponential_running_standardize(
     return standardized.T
 
 
-def exponential_running_demean(data, factor_new=0.001, init_block_size=None):
-    r"""Perform exponential running demeanining.
+def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
+    r"""Perform exponential moving demeanining.
 
-    Compute the exponental running mean :math:`m_t` at time `t` as 
+    Compute the exponental moving mean :math:`m_t` at time `t` as
     :math:`m_t=\mathrm{factornew} \cdot mean(x_t) + (1 - \mathrm{factornew}) \cdot m_{t-1}`.
 
     Deman the data point :math:`x_t` at time `t` as:
