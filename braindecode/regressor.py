@@ -5,7 +5,7 @@ from skorch.classifier import NeuralNet
 from skorch.regressor import NeuralNetRegressor
 from skorch.utils import train_loss_score, valid_loss_score, noop
 
-from braindecode.training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
+from .training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
