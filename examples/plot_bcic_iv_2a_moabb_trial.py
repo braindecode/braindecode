@@ -210,9 +210,14 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-
+# These values we found good for shallow network:
 lr = 0.0625 * 0.01
 weight_decay = 0
+
+# For deep4 they should be:
+# lr = 1 * 0.01
+# weight_decay = 0.5 * 0.001
+
 batch_size = 64
 n_epochs = 4
 
