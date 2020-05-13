@@ -33,9 +33,7 @@ setup(
     # Choose your license
     license='BSD 3-Clause',
 
-    install_requires=[
-        'mne @ git+https://github.com/mne-tools/mne-python.git',
-        'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py',],
+    install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch'],
     #tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers
