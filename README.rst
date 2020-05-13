@@ -28,7 +28,17 @@ Installation
 
 1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
-2. Install latest release of braindecode via pip:
+2. Install MOABB from https://github.com/NeuroTechX/moabb, needed if you want to use MOABB datasets utilities:
+
+.. code-block:: bash
+
+  pip install download
+  python -c "from download import download; download('https://raw.githubusercontent.com/NeuroTechX/moabb/master/requirements.txt', 'requirements.txt', replace=True)"
+  pip install -r requirements.txt
+  rm requirements.txt
+  pip install -U https://github.com/NeuroTechX/moabb/archive/master.zip
+
+3. Install latest release of braindecode via pip:
 
 .. code-block:: bash
 
@@ -38,16 +48,11 @@ alternatively, if you use conda, you could create a dedicated environment with t
 
 .. code-block:: bash
 
-	curl -O https://raw.githubusercontent.com/braindecode/braindecode/master/environment.yml
-	conda env create -f environment.yml
-	conda activate braindecode
+  curl -O https://raw.githubusercontent.com/braindecode/braindecode/master/environment.yml
+  conda env create -f environment.yml
+  conda activate braindecode
 
-.. note::
-  The latest development version of mne-python is currently required for
-  improvements to lazy loading performance. (commit 3989f998c5f974ed37e97fa3e6c8ead0f5a1cb2a).
-
-Install the latest version of braindecode via pip:
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+alternatively, install the latest version of braindecode via pip:
 
 .. code-block:: bash
 
