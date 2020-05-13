@@ -19,7 +19,7 @@ from IPython.display import display
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil.windowers import \
     create_windows_from_events, create_fixed_length_windows
-from braindecode.datautil.transforms import transform_concat_ds
+from braindecode.datautil.preprocess import preprocess, MNEPreproc
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
@@ -40,12 +40,12 @@ for x, y in ds:
 ##############################################################################
 # We can apply preprocessing transforms that are defined in mne and work
 # in-place, such as resampling, bandpass filtering, or electrode selection.
-transform_list = [
-    ("pick_types", {"eeg": True, "meg": False, "stim": True}),
-    ("resample", {"sfreq": 100}),
+transforms = [
+    MNEPreproc("pick_types", eeg=True, meg=False, stim=True),
+    MNEPreproc("resample", sfreq=100),
 ]
 print(ds.datasets[0].raw.info["sfreq"])
-transform_concat_ds(ds, transform_list)
+preprocess(ds, transforms)
 print(ds.datasets[0].raw.info["sfreq"])
 
 ###############################################################################
@@ -58,24 +58,24 @@ print({subset_name: len(subset) for subset_name, subset in subsets.items()})
 # Next, we use a windower to extract events from the dataset based on events:
 windows_ds = create_windows_from_events(
     ds, trial_start_offset_samples=0, trial_stop_offset_samples=100,
-    supercrop_size_samples=400, supercrop_stride_samples=100,
-    drop_samples=False)
+    window_size_samples=400, window_stride_samples=100,
+    drop_last_window=False)
 
 ###############################################################################
-# We can iterate through the windows_ds which yields a supercrop/window x,
-# a target y, and supercrop_ind (which itself contains `i_supercrop_in_trial`,
+# We can iterate through the windows_ds which yields a window x,
+# a target y, and window_ind (which itself contains `i_window_in_trial`,
 # `i_start_in_trial`, and `i_stop_in_trial`, which are required for combining
-# supercrop/window predictions in the scorer).
-for x, y, supercrop_ind in windows_ds:
-    print(x.shape, y, supercrop_ind)
+# window predictions in the scorer).
+for x, y, window_ind in windows_ds:
+    print(x.shape, y, window_ind)
     break
 
 ###############################################################################
-# We visually inspect the supercrops/windows:
+# We visually inspect the windows:
 max_i = 2
 fig, ax_arr = plt.subplots(1, max_i + 1, figsize=((max_i + 1) * 7, 5),
                            sharex=True, sharey=True)
-for i, (x, y, supercrop_ind) in enumerate(windows_ds):
+for i, (x, y, window_ind) in enumerate(windows_ds):
     ax_arr[i].plot(x.T)
     ax_arr[i].set_ylim(-0.0002, 0.0002)
     ax_arr[i].set_title(f"label={y}")
@@ -87,16 +87,16 @@ for i, (x, y, supercrop_ind) in enumerate(windows_ds):
 # different windower.
 sliding_windows_ds = create_fixed_length_windows(
     ds, start_offset_samples=0, stop_offset_samples=0,
-    supercrop_size_samples=1200, supercrop_stride_samples=1000,
-    drop_samples=False)
+    window_size_samples=1200, window_stride_samples=1000,
+    drop_last_window=False)
 
 print(len(sliding_windows_ds))
-for x, y, supercrop_ind in sliding_windows_ds:
-    print(x.shape, y, supercrop_ind)
+for x, y, window_ind in sliding_windows_ds:
+    print(x.shape, y, window_ind)
     break
 
 ###############################################################################
-# Transforms can also be applied on supercrops/windows in the same way as shown
+# Transforms can also be applied on windows in the same way as shown
 # above on continuous data:
 
 def crop_windows(windows, start_offset_samples, stop_offset_samples):
@@ -105,20 +105,20 @@ def crop_windows(windows, start_offset_samples, stop_offset_samples):
                  include_tmax=False)
 
 epochs_transform_list = [
-    ("pick_types", {"eeg": True, "meg": False, "stim": False}),
-    (crop_windows, {"start_offset_samples": 100, "stop_offset_samples": 900}),
+    MNEPreproc("pick_types", eeg=True, meg=False, stim=False),
+    MNEPreproc(crop_windows, start_offset_samples=100, stop_offset_samples=900),
 ]
 
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
-transform_concat_ds(windows_ds, epochs_transform_list)
+preprocess(windows_ds, epochs_transform_list)
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
 
 max_i = 2
 fig, ax_arr = plt.subplots(1, max_i+1, figsize=((max_i+1)*7, 5),
                            sharex=True, sharey=True)
-for i, (x, y, supercrop_ind) in enumerate(windows_ds):
+for i, (x, y, window_ind) in enumerate(windows_ds):
     ax_arr[i].plot(x.T)
     ax_arr[i].set_ylim(-0.0002, 0.0002)
     ax_arr[i].set_title(f"label={y}")

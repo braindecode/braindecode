@@ -7,16 +7,16 @@
 import mne
 import numpy as np
 from mne.io import concatenate_raws
+from skorch.helper import predefined_split
 from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
-from braindecode.datasets.croppedxy import CroppedXyDataset
-from braindecode.datautil.splitters import TrainTestSplit
-from braindecode.losses import CroppedLoss
+from braindecode.datasets.xy import create_from_X_y
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.training.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds, np_to_var
 
 
@@ -124,14 +124,14 @@ def test_eeg_classifier():
     set_random_seeds(seed=20170629, cuda=cuda)
 
     # This will determine how many crops are processed in parallel
-    input_time_length = 450
+    input_window_samples = 450
     n_classes = 2
     in_chans = X.shape[1]
     # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         final_conv_length=12,
     )
     to_dense_prediction_model(model)
@@ -141,16 +141,22 @@ def test_eeg_classifier():
 
     # determine output size
     test_input = np_to_var(
-        np.ones((2, in_chans, input_time_length, 1), dtype=np.float32)
+        np.ones((2, in_chans, input_window_samples, 1), dtype=np.float32)
     )
     if cuda:
         test_input = test_input.cuda()
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
 
-    train_set = CroppedXyDataset(
-        X[:60], y=y[:60], input_time_length=input_time_length,
-        n_preds_per_input=n_preds_per_input)
+    train_set = create_from_X_y(X[:48], y[:48],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+    valid_set = create_from_X_y(X[48:60], y[48:60],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
 
     cropped_cb_train = CroppedTrialEpochScoring(
         "accuracy",
@@ -171,10 +177,7 @@ def test_eeg_classifier():
         criterion=CroppedLoss,
         criterion__loss_function=nll_loss,
         optimizer=optim.Adam,
-        train_split=TrainTestSplit(
-            train_size=0.8,
-            input_time_length=input_time_length,
-            n_preds_per_input=n_preds_per_input,),
+        train_split=predefined_split(valid_set),
         batch_size=32,
         callbacks=[
             ("train_trial_accuracy", cropped_cb_train),
@@ -182,7 +185,7 @@ def test_eeg_classifier():
         ],
     )
 
-    clf.fit(train_set.X, train_set.y, epochs=4)
+    clf.fit(train_set, y=None, epochs=4)
 
     expected = [
         {

@@ -11,8 +11,8 @@ from skorch.helper import predefined_split
 from torch import optim
 
 from braindecode import EEGClassifier
-from braindecode.datasets.croppedxy import CroppedXyDataset
-from braindecode.losses import CroppedLoss
+from braindecode.datasets.xy import create_from_X_y
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.util import set_random_seeds
@@ -70,14 +70,14 @@ def test_cropped_decoding():
     set_random_seeds(seed=20170629, cuda=cuda)
 
     # This will determine how many crops are processed in parallel
-    input_time_length = 450
+    input_window_samples = 450
     n_classes = 2
     in_chans = X.shape[1]
     # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         final_conv_length=12,
     )
     to_dense_prediction_model(model)
@@ -86,14 +86,19 @@ def test_cropped_decoding():
         model.cuda()
 
     # Perform forward pass to determine how many outputs per input
-    n_preds_per_input = get_output_shape(model, in_chans, input_time_length)[2]
+    n_preds_per_input = get_output_shape(model, in_chans, input_window_samples)[2]
 
-    train_set = CroppedXyDataset(X[:60], y[:60],
-                                 input_time_length=input_time_length,
-                                 n_preds_per_input=n_preds_per_input)
-    valid_set = CroppedXyDataset(X[60:], y=y[60:],
-                                 input_time_length=input_time_length,
-                                 n_preds_per_input=n_preds_per_input)
+    train_set = create_from_X_y(X[:60], y[:60],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+    valid_set = create_from_X_y(X[60:], y[60:],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+
     train_split = predefined_split(valid_set)
 
     clf = EEGClassifier(

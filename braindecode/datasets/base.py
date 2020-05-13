@@ -24,7 +24,7 @@ class BaseDataset(Dataset):
     Parameters
     ----------
     raw: mne.io.Raw
-    description: dict | pandas.Series | None
+    description: dict | pandas.Series | Nonew
         holds additional description about the continuous signal / subject
     target_name: str | None
         name of the index in `description` that should be use to provide the
@@ -61,7 +61,7 @@ class WindowsDataset(BaseDataset):
     Parameters
     ----------
     windows: mne.Epochs
-        windows/supercrops obtained through the application of a windower to a
+        windows obtained through the application of a windower to a
         BaseDataset
     description: dict | pandas.Series | None
         holds additional info about the windows
@@ -78,7 +78,7 @@ class WindowsDataset(BaseDataset):
         self.description = description
         self.y = np.array(self.windows.metadata.loc[:,'target'])
         self.crop_inds = np.array(self.windows.metadata.loc[:,
-                              ['i_supercrop_in_trial', 'i_start_in_trial',
+                              ['i_window_in_trial', 'i_start_in_trial',
                                'i_stop_in_trial']])
 
     def __getitem__(self, index):

@@ -17,15 +17,16 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
-        supercrop_size_samples, supercrop_stride_samples, drop_samples,
+        window_size_samples=None, window_stride_samples=None,
+        drop_last_window=False,
         mapping=None, preload=False, drop_bad_windows=True):
-    """Windower that creates supercrops/windows based on events in mne.Raw.
+    """Windower that creates windows based on events in mne.Raw.
 
-    The function fits supercrops of supercrop_size_samples in
+    The function fits windows of window_size_samples in
     trial_start_offset_samples to trial_stop_offset_samples separated by
-    supercrop_stride_samples. If the last supercrop does not end
-    at trial_stop_offset_samples, it creates another overlapping supercrop that
-    ends at trial_stop_offset_samples if drop_samples is set to False.
+    window_stride_samples. If the last window does not end
+    at trial_stop_offset_samples, it creates another overlapping window that
+    ends at trial_stop_offset_samples if drop_last_window is set to False.
 
     in mne: tmin (s)                    trial onset        onset + duration (s)
     trial:  |--------------------------------|--------------------------------|
@@ -39,13 +40,13 @@ def create_windows_from_events(
         start offset from original trial onsets in samples
     trial_stop_offset_samples: int
         stop offset from original trial stop in samples
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
-    drop_samples: bool
-        whether or not have a last overlapping supercrop/window, when
-        supercrops/windows do not equally divide the continuous signal
+    window_size_samples: int
+        window size
+    window_stride_samples: int
+        stride between windows
+    drop_last_window: bool
+        whether or not have a last overlapping window, when
+        windows do not equally divide the continuous signal
     mapping: dict(str: int)
         mapping from event description to target value
     preload: bool
@@ -63,13 +64,15 @@ def create_windows_from_events(
     """
     _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
-        supercrop_size_samples, supercrop_stride_samples)
+        window_size_samples, window_stride_samples)
 
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
     infer_mapping = mapping is None
     if infer_mapping:
         mapping = {}
+
+    infer_window_size_stride = window_size_samples is None
 
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
@@ -96,13 +99,29 @@ def create_windows_from_events(
                              f'({trial_stop_offset_samples}) must be smaller '
                              f'then length of recording {len(ds)}.')
 
-        description = events[:, -1]
-        i_trials, i_supercrop_in_trials, starts, stops = _compute_supercrop_inds(
-            onsets, stops, trial_start_offset_samples,
-            trial_stop_offset_samples, supercrop_size_samples,
-            supercrop_stride_samples, drop_samples)
+        if infer_window_size_stride:
+            # window size is trial size
+            if window_size_samples is None:
+                window_size_samples = stops[0] - (onsets[0] + trial_start_offset_samples)
+                window_stride_samples = window_size_samples
+            this_trial_sizes = stops - (onsets  + trial_start_offset_samples)
+            # Maybe actually this is not necessary?
+            # We could also just say we just assume window size= trial size
+            # in case not given, without this condition...
+            # but then would have to change functions overall
+            # to deal with varying window sizes hmmhmh
+            assert np.all(this_trial_sizes == window_size_samples), (
+                "All trial sizes should be the same if you do not supply"
+                "a window size")
 
-        events = [[start, supercrop_size_samples, description[i_trials[i_start]]]
+
+        description = events[:, -1]
+        i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
+            onsets, stops, trial_start_offset_samples,
+            trial_stop_offset_samples, window_size_samples,
+            window_stride_samples, drop_last_window)
+
+        events = [[start, window_size_samples, description[i_trials[i_start]]]
                    for i_start, start in enumerate(starts)]
         events = np.array(events)
 
@@ -112,15 +131,15 @@ def create_windows_from_events(
         description = events[:, -1]
 
         metadata = pd.DataFrame({
-            'i_supercrop_in_trial': i_supercrop_in_trials,
+            'i_window_in_trial': i_window_in_trials,
             'i_start_in_trial': starts,
             'i_stop_in_trial': stops,
             'target': description})
 
-        # supercrop size - 1, since tmax is inclusive
+        # window size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
             ds.raw, events, events_id, baseline=None, tmin=0,
-            tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
+            tmax=(window_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata, preload=preload)
 
         if drop_bad_windows:
@@ -134,9 +153,9 @@ def create_windows_from_events(
 
 def create_fixed_length_windows(
         concat_ds, start_offset_samples, stop_offset_samples,
-        supercrop_size_samples, supercrop_stride_samples, drop_samples,
+        window_size_samples, window_stride_samples, drop_last_window,
         mapping=None, preload=False, drop_bad_windows=True):
-    """Windower that creates sliding supercrops/windows.
+    """Windower that creates sliding windows.
 
     Parameters
     ----------
@@ -146,13 +165,13 @@ def create_fixed_length_windows(
         start offset from beginning of recording in samples
     stop_offset_samples: int | None
         stop offset from beginning of recording in samples.
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
-    drop_samples: bool
-        whether or not have a last overlapping supercrop/window, when
-        supercrops/windows do not equally divide the continuous signal
+    window_size_samples: int
+        window size
+    window_stride_samples: int
+        stride between windows
+    drop_last_window: bool
+        whether or not have a last overlapping window, when
+        windows do not equally divide the continuous signal
     mapping: dict(str: int)
         mapping from event description to target value
     preload: bool
@@ -170,20 +189,20 @@ def create_fixed_length_windows(
     """
     _check_windowing_arguments(
         start_offset_samples, stop_offset_samples,
-        supercrop_size_samples, supercrop_stride_samples)
+        window_size_samples, window_stride_samples)
 
     list_of_windows_ds = []
     for ds in concat_ds.datasets:
         stop = ds.raw.n_times if stop_offset_samples == 0 else stop_offset_samples
-        stop = stop - supercrop_size_samples
-        # already includes last incomplete supercrop start
+        stop = stop - window_size_samples
+        # already includes last incomplete window start
         starts = np.arange(
             ds.raw.first_samp + start_offset_samples,
             stop + 1,
-            supercrop_stride_samples)
+            window_stride_samples)
 
-        if not drop_samples and starts[-1] < stop:
-            # if last supercrop does not end at trial stop, make it stop there
+        if not drop_last_window and starts[-1] < stop:
+            # if last window does not end at trial stop, make it stop there
             starts = np.append(starts, stop)
 
         # TODO: handle multi-target case / non-integer target case
@@ -191,18 +210,18 @@ def create_fixed_length_windows(
         if mapping is not None:
             target = mapping[target]
 
-        fake_events = [[start, supercrop_size_samples, -1] for start in starts]
+        fake_events = [[start, window_size_samples, -1] for start in starts]
         metadata = pd.DataFrame({
-            'i_supercrop_in_trial': np.arange(len(fake_events)),
+            'i_window_in_trial': np.arange(len(fake_events)),
             'i_start_in_trial': starts,
-            'i_stop_in_trial': starts + supercrop_size_samples,
+            'i_stop_in_trial': starts + window_size_samples,
             'target': len(fake_events) * [target]
         })
 
-        # supercrop size - 1, since tmax is inclusive
+        # window size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
             ds.raw, fake_events, baseline=None,
-            tmin=0, tmax=(supercrop_size_samples - 1) / ds.raw.info["sfreq"],
+            tmin=0, tmax=(window_size_samples - 1) / ds.raw.info["sfreq"],
             metadata=metadata, preload=preload)
 
         if drop_bad_windows:
@@ -214,10 +233,10 @@ def create_fixed_length_windows(
     return BaseConcatDataset(list_of_windows_ds)
 
 
-def _compute_supercrop_inds(
-        starts, stops, start_offset, stop_offset, size, stride, drop_samples):
-    """Create supercrop starts from trial onsets (shifted by offset) to trial
-    end separated by stride as long as supercrop size fits into trial
+def _compute_window_inds(
+        starts, stops, start_offset, stop_offset, size, stride, drop_last_window):
+    """Create window starts from trial onsets (shifted by offset) to trial
+    end separated by stride as long as window size fits into trial
 
     Parameters
     ----------
@@ -230,16 +249,16 @@ def _compute_supercrop_inds(
     stop_offset: int
         stop offset from original trial stop in samples
     size: int
-        supercrop size
+        window size
     stride: int
-        stride between supercrops
-    drop_samples: bool
-        toggles of shifting last supercrop within range or dropping last samples
+        stride between windows
+    drop_last_window: bool
+        toggles of shifting last window within range or dropping last samples
 
     Returns
     -------
     result_lists: (list, list, list, list)
-        trial, i_supercrop_in_trial, start sample and stop sample of supercrops
+        trial, i_window_in_trial, start sample and stop sample of windows
     """
 
     starts = np.array([starts]) if isinstance(starts, int) else starts
@@ -248,47 +267,49 @@ def _compute_supercrop_inds(
     starts += start_offset
     stops += stop_offset
 
-    i_supercrop_in_trials, i_trials, supercrop_starts = [], [], []
+    i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
         # between original trial onsets (shifted by start_offset) and stops,
-        # generate possible supercrop starts with given stride
+        # generate possible window starts with given stride
         possible_starts = np.arange(
             start, stop, stride)
 
-        # possible supercrop start is actually a start, if supercrop size fits
+        # possible window start is actually a start, if window size fits
         # in trial start and stop
-        for i_supercrop, s in enumerate(possible_starts):
+        for i_window, s in enumerate(possible_starts):
             if (s + size) <= stop:
-                supercrop_starts.append(s)
-                i_supercrop_in_trials.append(i_supercrop)
+                window_starts.append(s)
+                i_window_in_trials.append(i_window)
                 i_trials.append(start_i)
 
-        # if the last supercrop start + supercrop size is not the same as
-        # stop + stop_offset, create another supercrop that overlaps and stops
+        # if the last window start + window size is not the same as
+        # stop + stop_offset, create another window that overlaps and stops
         # at onset + stop_offset
-        if not drop_samples:
-            if supercrop_starts[-1] + size != stop:
-                supercrop_starts.append(stop - size)
-                i_supercrop_in_trials.append(i_supercrop_in_trials[-1] + 1)
+        if not drop_last_window:
+            if window_starts[-1] + size != stop:
+                window_starts.append(stop - size)
+                i_window_in_trials.append(i_window_in_trials[-1] + 1)
                 i_trials.append(start_i)
 
     # update stops to now be event stops instead of trial stops
-    supercrop_stops = np.array(supercrop_starts) + size
-    if not (len(i_supercrop_in_trials) == len(supercrop_starts) ==
-            len(supercrop_stops)):
-        raise ValueError(f'{len(i_supercrop_in_trials)} == '
-                         f'{len(supercrop_starts)} == {len(supercrop_stops)}')
-    return i_trials, i_supercrop_in_trials, supercrop_starts, supercrop_stops
+    window_stops = np.array(window_starts) + size
+    if not (len(i_window_in_trials) == len(window_starts) ==
+            len(window_stops)):
+        raise ValueError(f'{len(i_window_in_trials)} == '
+                         f'{len(window_starts)} == {len(window_stops)}')
+    return i_trials, i_window_in_trials, window_starts, window_stops
 
 
 def _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
-        supercrop_size_samples, supercrop_stride_samples):
+        window_size_samples, window_stride_samples):
     assert isinstance(trial_start_offset_samples, (int, np.integer))
     assert isinstance(trial_stop_offset_samples, (int, np.integer))
-    assert isinstance(supercrop_size_samples, (int, np.integer))
-    assert isinstance(supercrop_stride_samples, (int, np.integer))
-    assert supercrop_size_samples > 0, (
-        "supercrop size has to be larger than 0")
-    assert supercrop_stride_samples > 0, (
-        "supercrop stride has to be larger than 0")
+    assert isinstance(window_size_samples, (int, np.integer, type(None)))
+    assert isinstance(window_stride_samples, (int, np.integer, type(None)))
+    assert (window_size_samples is None) == (window_stride_samples is None)
+    if window_size_samples is not None:
+        assert window_size_samples > 0, (
+            "window size has to be larger than 0")
+        assert window_stride_samples > 0, (
+            "window stride has to be larger than 0")

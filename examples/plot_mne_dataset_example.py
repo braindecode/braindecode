@@ -39,9 +39,9 @@ windows_datasets = create_from_mne_raw(
     parts,
     trial_start_offset_samples=0,
     trial_stop_offset_samples=0,
-    supercrop_size_samples=500,
-    supercrop_stride_samples=500,
-    drop_samples=False,
+    window_size_samples=500,
+    window_stride_samples=500,
+    drop_last_window=False,
     descriptions=descriptions,
 )
 
@@ -51,7 +51,7 @@ list_of_epochs = [mne.Epochs(raw, [[0, 0, 0]], tmin=0, baseline=None)
                   for raw in parts]
 windows_datasets = create_from_mne_epochs(
     list_of_epochs,
-    supercrop_size_samples=50,
-    supercrop_stride_samples=50,
-    drop_samples=False
+    window_size_samples=50,
+    window_stride_samples=50,
+    drop_last_window=False
 )

@@ -47,8 +47,9 @@ from skorch.helper import predefined_split
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil import create_windows_from_events
-from braindecode.datautil.signalproc import exponential_running_standardize
-from braindecode.datautil.transforms import transform_concat_ds
+from braindecode.datautil.preprocess import exponential_moving_standardize
+from braindecode.datautil.preprocess import preprocess, MNEPreproc, \
+    NumpyPreproc
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
@@ -66,7 +67,7 @@ high_cut_hz = 38.  # high cut frequency for filtering
 n_classes = 4  # number of classes to predict
 n_chans = 22  # number of channels in the dataset
 trial_start_offset_seconds = -0.5  # offset between trail start in the raw data and dataset
-input_time_length = 1125  # length of trial in samples
+input_window_samples = 1125  # length of trial in samples
 # Parameters for exponential running standarization
 factor_new = 1e-3
 init_block_size = 1000
@@ -92,9 +93,10 @@ set_random_seeds(seed=seed, cuda=cuda)
 model = ShallowFBCSPNet(
     n_chans,
     n_classes,
-    input_time_length=input_time_length,
+    input_window_samples=input_window_samples,
     final_conv_length='auto',
 )
+
 lr = 0.0625 * 0.01
 weight_decay = 0
 
@@ -117,18 +119,16 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`_/`mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`_
 # method. The second element of a tuple defines method parameters.
 
-standardize_func = partial(exponential_running_standardize, factor_new=factor_new,
-                           init_block_size=init_block_size)
-
-raw_transform_dict = [
-    ('pick_types', dict(eeg=True, meg=False, stim=False)),
-    ('apply_function', dict(fun=lambda x: x * 1e6, channel_wise=False)),
-    ('filter', dict(l_freq=low_cut_hz, h_freq=high_cut_hz)),
-    ('apply_function', dict(fun=standardize_func, channel_wise=False))
+preprocessors = [
+    MNEPreproc(fn='pick_types', eeg=True, meg=False, stim=False), # keep only EEG sensors
+    NumpyPreproc(fn=lambda x: x * 1e6), # convert from volt to microvolt, directly modifying the numpy array
+    MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz), # bandpass filter
+    NumpyPreproc(fn=exponential_moving_standardize, factor_new=factor_new,
+                 init_block_size=init_block_size)
 ]
 
 # Transform the data
-transform_concat_ds(dataset, raw_transform_dict)
+preprocess(dataset, preprocessors)
 
 ##########################################################################################
 # Create windows from MOABB dataset
@@ -147,9 +147,9 @@ windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
     trial_stop_offset_samples=0,
-    supercrop_size_samples=input_time_length,
-    supercrop_stride_samples=input_time_length,
-    drop_samples=False,
+    window_size_samples=input_window_samples,
+    window_stride_samples=input_window_samples,
+    drop_last_window=False,
     preload=True,
 )
 ##########################################################################################

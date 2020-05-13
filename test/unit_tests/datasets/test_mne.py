@@ -118,9 +118,9 @@ def test_create_from_mne_epochs():
         all_epochs.append(epochs)
         datas.append(data)
 
-    windows = create_from_mne_epochs(all_epochs, supercrop_size_samples=5,
-                                     supercrop_stride_samples=2,
-                                     drop_samples=False)
+    windows = create_from_mne_epochs(all_epochs, window_size_samples=5,
+                                     window_stride_samples=2,
+                                     drop_last_window=False)
 
     # windows per trial: 0-5,2-7,4-9,6-11,...,14-19,15-20
     # and then: 0-5,2-7,4-9,5-10

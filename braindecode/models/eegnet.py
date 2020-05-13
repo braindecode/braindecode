@@ -1,5 +1,4 @@
-import torch as th
-
+import torch
 from torch import nn
 from torch.nn.functional import elu
 
@@ -12,7 +11,7 @@ class Conv2dWithConstraint(nn.Conv2d):
         super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
 
     def forward(self, x):
-        self.weight.data = th.renorm(
+        self.weight.data = torch.renorm(
             self.weight.data, p=2, dim=0, maxnorm=self.max_norm
         )
         return super(Conv2dWithConstraint, self).forward(x)
@@ -41,7 +40,7 @@ class EEGNetv4(nn.Sequential):
         self,
         in_chans,
         n_classes,
-        input_time_length=None,
+        input_window_samples=None,
         final_conv_length="auto",
         pool_mode="mean",
         F1=8,
@@ -53,10 +52,10 @@ class EEGNetv4(nn.Sequential):
     ):
         super().__init__()
         if final_conv_length == "auto":
-            assert input_time_length is not None
+            assert input_window_samples is not None
         self.in_chans = in_chans
         self.n_classes = n_classes
-        self.input_time_length = input_time_length
+        self.input_window_samples = input_window_samples
         self.final_conv_length = final_conv_length
         self.pool_mode = pool_mode
         self.F1 = F1
@@ -145,9 +144,9 @@ class EEGNetv4(nn.Sequential):
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            th.ones(
-                (1, self.in_chans, self.input_time_length, 1),
-                dtype=th.float32
+            torch.ones(
+                (1, self.in_chans, self.input_window_samples, 1),
+                dtype=torch.float32
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -205,7 +204,7 @@ class EEGNetv1(nn.Sequential):
         self,
         in_chans,
         n_classes,
-        input_time_length=None,
+        input_window_samples=None,
         final_conv_length="auto",
         pool_mode="max",
         second_kernel_size=(2, 32),
@@ -214,10 +213,10 @@ class EEGNetv1(nn.Sequential):
     ):
         super().__init__()
         if final_conv_length == "auto":
-            assert input_time_length is not None
+            assert input_window_samples is not None
         self.in_chans = in_chans
         self.n_classes = n_classes
-        self.input_time_length = input_time_length
+        self.input_window_samples = input_window_samples
         self.final_conv_length = final_conv_length
         self.pool_mode = pool_mode
         self.second_kernel_size = second_kernel_size
@@ -288,9 +287,9 @@ class EEGNetv1(nn.Sequential):
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            th.ones(
-                    (1, self.in_chans, self.input_time_length, 1),
-                    dtype=th.float32,
+            torch.ones(
+                    (1, self.in_chans, self.input_window_samples, 1),
+                    dtype=torch.float32,
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]

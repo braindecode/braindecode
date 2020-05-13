@@ -30,7 +30,7 @@ class ShallowFBCSPNet(nn.Sequential):
         self,
         in_chans,
         n_classes,
-        input_time_length=None,
+        input_window_samples=None,
         n_filters_time=40,
         filter_time_length=25,
         n_filters_spat=40,
@@ -47,10 +47,10 @@ class ShallowFBCSPNet(nn.Sequential):
     ):
         super().__init__()
         if final_conv_length == "auto":
-            assert input_time_length is not None
+            assert input_window_samples is not None
         self.in_chans = in_chans
         self.n_classes = n_classes
-        self.input_time_length = input_time_length
+        self.input_window_samples = input_window_samples
         self.n_filters_time = n_filters_time
         self.filter_time_length = filter_time_length
         self.n_filters_spat = n_filters_spat
@@ -123,7 +123,7 @@ class ShallowFBCSPNet(nn.Sequential):
             out = self(
                 np_to_var(
                     np.ones(
-                        (1, self.in_chans, self.input_time_length, 1),
+                        (1, self.in_chans, self.input_window_samples, 1),
                         dtype=np.float32,
                     )
                 )

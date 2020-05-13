@@ -5,7 +5,7 @@
 # License: BSD-3
 
 import numpy as np
-from braindecode.datasets.croppedxy import CroppedXyDataset
+from braindecode.datasets.xy import create_from_X_y
 
 
 def test_crops_data_loader_explicit():
@@ -18,13 +18,14 @@ def test_crops_data_loader_explicit():
 
     expected_crops = [np.arange(0, 10), np.arange(4, 14), np.arange(5, 15)]
 
-    dataset = CroppedXyDataset(X[None, None], y,
-        input_time_length=n_time_in,
-        n_preds_per_input=n_time_out,
+    dataset = create_from_X_y(
+        X[None, None], y,
+        window_size_samples=n_time_in,
+        window_stride_samples=n_time_out,
+        drop_last_window=False
     )
 
     Xs, ys, i_s = zip(*list(dataset))
-    print(Xs,)
 
     assert len(Xs) == len(ys) == 3
 

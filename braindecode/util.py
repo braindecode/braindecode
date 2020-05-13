@@ -301,7 +301,7 @@ class ThrowAwayIndexLoader(object):
             if len(batch) == 3:
                 x, y, i = batch
                 # Store for scoring callbacks
-                self.net._last_supercrop_inds = i
+                self.net._last_window_inds = i
             else:
                 x, y = batch
 

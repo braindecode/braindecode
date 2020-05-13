@@ -119,12 +119,12 @@ cuda = False
 set_random_seeds(seed=20170629, cuda=cuda)
 
 # This will determine how many crops are processed in parallel
-input_time_length = 450
+input_window_samples = 450
 # final_conv_length determines the size of the receptive field of the ConvNet
 model = Deep4Net(
     in_chans=64,
     n_classes=2,
-    input_time_length=input_time_length,
+    input_window_samples=input_window_samples,
     filter_length_3=5,
     filter_length_4=5,
     pool_time_stride=2,
@@ -148,14 +148,14 @@ model.compile(
 # Run the training
 # ----------------
 
-input_time_length = 450
+input_window_samples = 450
 model.fit(
     train_set.X,
     train_set.y,
     n_epochs=30,
     batch_size=64,
     scheduler="cosine",
-    input_time_length=input_time_length,
+    input_window_samples=input_window_samples,
     validation_data=(valid_set.X, valid_set.y),
 )
 
@@ -169,14 +169,14 @@ model.fit(
 from braindecode.datautil.iterators import CropsFromTrialsIterator
 from braindecode.torch_ext.util import np_to_var
 
-test_input = np_to_var(np.ones((2, 64, input_time_length, 1), dtype=np.float32))
+test_input = np_to_var(np.ones((2, 64, input_window_samples, 1), dtype=np.float32))
 if cuda:
     test_input = test_input.cuda()
 out = model.network(test_input)
 n_preds_per_input = out.cpu().data.numpy().shape[2]
 iterator = CropsFromTrialsIterator(
     batch_size=32,
-    input_time_length=input_time_length,
+    input_window_samples=input_window_samples,
     n_preds_per_input=n_preds_per_input,
 )
 
@@ -189,7 +189,7 @@ train_X_batches = np.concatenate(list(zip(*train_batches))[0])
 # old until before the softmax.
 
 from braindecode.util import var_to_np
-import torch as th
+import torch
 
 new_model = nn.Sequential()
 for name, module in model.network.named_children():
@@ -202,7 +202,7 @@ new_model.eval()
 
 def pred_fn(x):
     return var_to_np(
-        th.mean(
+        torch.mean(
             new_model(np_to_var(x).cuda())[:, :, :, 0], dim=2, keepdim=False
         )
     )

@@ -5,7 +5,7 @@ from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop
 
-from .scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
+from braindecode.training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
@@ -135,33 +135,33 @@ class EEGClassifier(NeuralNetClassifier):
             epoch_cbs = []
             for name, cb in cbs:
                 if (cb.__class__.__name__ == 'CroppedTrialEpochScoring') and (
-                    hasattr(cb, 'supercrop_inds_')) and (cb.on_train == False):
+                    hasattr(cb, 'window_inds_')) and (cb.on_train == False):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
             if len(epoch_cbs) > 0:
-                assert hasattr(self, '_last_supercrop_inds')
+                assert hasattr(self, '_last_window_inds')
                 for cb in epoch_cbs:
-                    cb.supercrop_inds_.append(self._last_supercrop_inds)
-                del self._last_supercrop_inds
+                    cb.window_inds_.append(self._last_window_inds)
+                del self._last_window_inds
 
-    def predict_with_supercrop_inds_and_ys(self, dataset):
+    def predict_with_window_inds_and_ys(self, dataset):
         preds = []
-        i_supercrop_in_trials = []
-        i_supercrop_stops = []
-        supercrop_ys = []
+        i_window_in_trials = []
+        i_window_stops = []
+        window_ys = []
         for X, y, i in self.get_iterator(dataset, drop_index=False):
-            i_supercrop_in_trials.append(i[0].cpu().numpy())
-            i_supercrop_stops.append(i[2].cpu().numpy())
+            i_window_in_trials.append(i[0].cpu().numpy())
+            i_window_stops.append(i[2].cpu().numpy())
             preds.append(self.predict_proba(X))
-            supercrop_ys.append(y.cpu().numpy())
+            window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
-        i_supercrop_in_trials = np.concatenate(i_supercrop_in_trials)
-        i_supercrop_stops = np.concatenate(i_supercrop_stops)
-        supercrop_ys = np.concatenate(supercrop_ys)
+        i_window_in_trials = np.concatenate(i_window_in_trials)
+        i_window_stops = np.concatenate(i_window_stops)
+        window_ys = np.concatenate(window_ys)
         return dict(
-            preds=preds, i_supercrop_in_trials=i_supercrop_in_trials,
-            i_supercrop_stops=i_supercrop_stops, supercrop_ys=supercrop_ys)
+            preds=preds, i_window_in_trials=i_window_in_trials,
+            i_window_stops=i_window_stops, window_ys=window_ys)
 
     # Removes default EpochScoring callback computing 'accuracy' to work properly
     # with cropped decoding.

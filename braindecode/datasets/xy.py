@@ -1,20 +1,18 @@
-import os
-import re
-import glob
-
 import numpy as np
 import pandas as pd
+import logging
 import mne
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from .base import BaseDataset, BaseConcatDataset
 from ..datautil.windowers import (
-    create_fixed_length_windows, create_windows_from_events,
-    _compute_supercrop_inds)
+    create_fixed_length_windows,)
+
+log = logging.getLogger(__name__)
 
 
 def create_from_X_y(
-        X, y, sfreq, ch_names, drop_samples, supercrop_size_samples=None,
-        supercrop_stride_samples=None):
+        X, y, drop_last_window, sfreq=None, ch_names=None,  window_size_samples=None,
+        window_stride_samples=None):
     """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
     and y are corresponding targets.
@@ -28,13 +26,13 @@ def create_from_X_y(
     sfreq: common sampling frequency of all trials
     ch_names: array-like
         channel names of the trials
-    drop_samples: bool
-        whether or not have a last overlapping supercrop/window, when
-        supercrops/windows do not equally divide the continuous signal
-    supercrop_size_samples: int
-        supercrop size
-    supercrop_stride_samples: int
-        stride between supercrops
+    drop_last_window: bool
+        whether or not have a last overlapping window, when
+        windows/windows do not equally divide the continuous signal
+    window_size_samples: int
+        window size
+    window_stride_samples: int
+        stride between windows
 
     Returns
     -------
@@ -42,10 +40,18 @@ def create_from_X_y(
         X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """
-    x_times = []
+    n_samples_per_x = []
     base_datasets = []
+    if sfreq is None:
+        sfreq = 100
+        log.info("No sampling frequency given, set to 100 Hz.")
+    if ch_names is None:
+        ch_names = [str(i) for i in range(X.shape[1])]
+        log.info(f"No channel names given, set to 0-{X.shape[1]}).")
+
+
     for x, target in zip(X, y):
-        x_times.append(x.shape[1])
+        n_samples_per_x.append(x.shape[1])
         info = mne.create_info(ch_names=ch_names, sfreq=sfreq)
         raw = mne.io.RawArray(x, info)
         base_dataset = BaseDataset(raw, pd.Series({"target": target}),
@@ -53,19 +59,19 @@ def create_from_X_y(
         base_datasets.append(base_dataset)
     base_datasets = BaseConcatDataset(base_datasets)
 
-    if supercrop_size_samples is None and supercrop_stride_samples is None:
-        if not len(np.unique(x_times)) == 1:
-            raise ValueError(f"if 'supercrop_size_samples' and "
-                             f"'supercrop_stride_samples' are None, "
+    if window_size_samples is None and window_stride_samples is None:
+        if not len(np.unique(n_samples_per_x)) == 1:
+            raise ValueError(f"if 'window_size_samples' and "
+                             f"'window_stride_samples' are None, "
                              f"all trials have to have the same length")
-        supercrop_size_samples = x_times[0]
-        supercrop_stride_samples = x_times[0]
+        window_size_samples = n_samples_per_x[0]
+        window_stride_samples = n_samples_per_x[0]
     windows_datasets = create_fixed_length_windows(
         base_datasets,
         start_offset_samples=0,
         stop_offset_samples=0,
-        supercrop_size_samples=supercrop_size_samples,
-        supercrop_stride_samples=supercrop_stride_samples,
-        drop_samples=drop_samples
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window
     )
     return windows_datasets
