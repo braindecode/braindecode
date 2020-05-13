@@ -39,9 +39,9 @@ def calc_receptive_field_size(
         if isinstance(child, torch.nn.Sequential):
             receptive_field = calc_receptive_field(child, -1)
         elif (
-            isinstance(child, torch.nn.Conv2d)
-            or isinstance(child, torch.nn.MaxPool2d)
-            or isinstance(child, torch.nn.AvgPool2d)
+            isinstance(child, torch.nn.Conv2d) or
+            isinstance(child, torch.nn.MaxPool2d) or
+            isinstance(child, torch.nn.AvgPool2d)
         ):
             receptive_field = calc_Hin(
                 receptive_field,
@@ -136,8 +136,8 @@ def get_input_windows_from_units_2d(inputs, units, receptive_field_size):
         windows[i] = inputs[
             unit[0],
             :,
-            unit[2] : unit[2] + receptive_field_size[0],
-            unit[3] : unit[3] + receptive_field_size[1],
+            unit[2]: unit[2] + receptive_field_size[0],
+            unit[3]: unit[3] + receptive_field_size[1],
         ]
     return windows
 

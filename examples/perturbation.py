@@ -19,6 +19,25 @@ First we will do some cross-subject decoding, again using the [Physiobank EEG Mo
 # Load data
 # ---------
 
+from braindecode.visualization.plot import ax_scalp
+from matplotlib import cm
+import matplotlib.pyplot as plt
+from braindecode.datasets.sensor_positions import (
+    get_channelpos,
+    CHANNEL_10_20_APPROX,
+)
+from braindecode.visualization.perturbation import (
+    compute_amplitude_prediction_correlations,
+)
+import torch
+from braindecode.util import var_to_np
+from braindecode.torch_ext.util import np_to_var
+from braindecode.datautil.iterators import CropsFromTrialsIterator
+import torch.nn.functional as F
+from torch.optim import AdamW
+from braindecode.util import set_random_seeds
+from torch import nn
+from braindecode.models.deep4 import Deep4Net
 import mne
 import numpy as np
 from mne.io import concatenate_raws
@@ -108,9 +127,6 @@ valid_set = SignalAndTarget(valid_X, y=valid_y)
 # We use the deep ConvNet from [Deep learning with convolutional neural
 # networks for EEG decoding and visualization](https://arxiv.org/abs/1703.05051) (Section 2.4.2).
 
-from braindecode.models.deep4 import Deep4Net
-from torch import nn
-from braindecode.util import set_random_seeds
 
 # Set if you want to use GPU
 # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
@@ -134,8 +150,6 @@ model = Deep4Net(
 if cuda:
     model.cuda()
 
-from torch.optim import AdamW
-import torch.nn.functional as F
 
 optimizer = AdamW(
     model.parameters(), lr=0.01, weight_decay=0.5 * 0.001
@@ -166,8 +180,6 @@ model.fit(
 #
 # First collect all batches and concatenate them into one array of examples:
 
-from braindecode.datautil.iterators import CropsFromTrialsIterator
-from braindecode.torch_ext.util import np_to_var
 
 test_input = np_to_var(np.ones((2, 64, input_window_samples, 1), dtype=np.float32))
 if cuda:
@@ -188,8 +200,6 @@ train_X_batches = np.concatenate(list(zip(*train_batches))[0])
 # before the softmax, so we create a new module with all the layers of the
 # old until before the softmax.
 
-from braindecode.util import var_to_np
-import torch
 
 new_model = nn.Sequential()
 for name, module in model.network.named_children():
@@ -207,10 +217,6 @@ def pred_fn(x):
         )
     )
 
-
-from braindecode.visualization.perturbation import (
-    compute_amplitude_prediction_correlations,
-)
 
 amp_pred_corrs = compute_amplitude_prediction_correlations(
     pred_fn, train_X_batches, n_iterations=12, batch_size=30
@@ -238,10 +244,6 @@ freq_corr = np.mean(amp_pred_corrs[:, i_start:i_stop], axis=1)
 
 # Now get approximate positions of the channels in the 10-20 system.
 
-from braindecode.datasets.sensor_positions import (
-    get_channelpos,
-    CHANNEL_10_20_APPROX,
-)
 
 ch_names = [s.strip(".") for s in epochs.ch_names]
 positions = [get_channelpos(name, CHANNEL_10_20_APPROX) for name in ch_names]
@@ -251,8 +253,6 @@ positions = np.array(positions)
 # Plot with MNE
 # -------------
 
-import matplotlib.pyplot as plt
-from matplotlib import cm
 
 max_abs_val = np.max(np.abs(freq_corr))
 
@@ -276,7 +276,6 @@ for i_class in range(2):
 # Plot with Braindecode
 # ---------------------
 
-from braindecode.visualization.plot import ax_scalp
 
 fig, axes = plt.subplots(1, 2)
 class_names = ["Left Hand", "Right Hand"]

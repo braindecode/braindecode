@@ -28,6 +28,7 @@ class MNEPreproc():
     kwargs:
         Keyword arguments will be forwarded to the mne function
     """
+
     def __init__(self, fn, **kwargs):
         self.fn = fn
         self.kwargs = kwargs
@@ -54,6 +55,7 @@ class NumpyPreproc(MNEPreproc):
     kwargs:
         Keyword arguments will be forwarded to the function
     """
+
     def __init__(self, fn, channel_wise=False, **kwargs):
         # use apply function of mne which will directly apply it to numpy array
         partial_fn = partial(fn, **kwargs)
@@ -156,8 +158,8 @@ def exponential_moving_standardize(
             data[0:init_block_size], axis=other_axis, keepdims=True
         )
         init_block_standardized = (
-                                          data[0:init_block_size] - init_mean
-                                  ) / np.maximum(eps, init_std)
+            data[0:init_block_size] - init_mean
+        ) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 

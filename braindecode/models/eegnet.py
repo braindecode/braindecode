@@ -5,6 +5,7 @@ from torch.nn.functional import elu
 from .modules import Expression
 from .functions import squeeze_final_output
 
+
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
         self.max_norm = max_norm
@@ -288,8 +289,8 @@ class EEGNetv1(nn.Sequential):
 
         out = self(
             torch.ones(
-                    (1, self.in_chans, self.input_window_samples, 1),
-                    dtype=torch.float32,
+                (1, self.in_chans, self.input_window_samples, 1),
+                dtype=torch.float32,
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -315,6 +316,7 @@ class EEGNetv1(nn.Sequential):
         )
         self.add_module("squeeze", Expression(squeeze_final_output))
         _glorot_weight_zero_bias(self)
+
 
 def _glorot_weight_zero_bias(model):
     """Initalize parameters of all modules by initializing weights with

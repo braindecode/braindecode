@@ -19,6 +19,7 @@ class EEGResNet(nn.Sequential):
     """
     Residual Network for EEG.
     """
+
     def __init__(self,
                  in_chans,
                  n_classes,
@@ -185,6 +186,7 @@ class _ResidualBlock(nn.Module):
     """
     create a residual learning building block with two stacked 3x3 convlayers as in paper
     """
+
     def __init__(self, in_filters,
                  out_num_filters,
                  dilation,
@@ -225,7 +227,7 @@ class _ResidualBlock(nn.Module):
         if self.n_pad_chans != 0:
             zeros_for_padding = torch.autograd.Variable(
                 torch.zeros(x.size()[0], self.n_pad_chans // 2,
-                         x.size()[2], x.size()[3]))
+                            x.size()[2], x.size()[3]))
             if x.is_cuda:
                 zeros_for_padding = zeros_for_padding.cuda()
             x = torch.cat((zeros_for_padding, x, zeros_for_padding), dim=1)

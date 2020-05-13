@@ -81,12 +81,13 @@ if cuda:
 to_dense_prediction_model(model)
 n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
+
 def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq, fake_duration_s):
     datasets = []
     for i in range(n_fake_recs):
         train_or_eval = "eval" if i == 0 else "train"
         raw, save_fname = create_mne_dummy_raw(
-            n_channels=n_fake_chs, n_times=fake_duration_s*fake_sfreq,
+            n_channels=n_fake_chs, n_times=fake_duration_s * fake_sfreq,
             sfreq=fake_sfreq, savedir=None)
         target = np.random.randint(0, 100, n_classes)
         if n_classes == 1:
@@ -98,6 +99,7 @@ def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq, fake_duration_s
         datasets.append(base_ds)
     dataset = BaseConcatDataset(datasets)
     return dataset
+
 
 dataset = fake_regression_dataset(
     n_fake_recs=5, n_fake_chs=21, fake_sfreq=100, fake_duration_s=60)

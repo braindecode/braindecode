@@ -99,10 +99,12 @@ for x, y, window_ind in sliding_windows_ds:
 # Transforms can also be applied on windows in the same way as shown
 # above on continuous data:
 
+
 def crop_windows(windows, start_offset_samples, stop_offset_samples):
     fs = windows.info["sfreq"]
     windows.crop(tmin=start_offset_samples / fs, tmax=stop_offset_samples / fs,
                  include_tmax=False)
+
 
 epochs_transform_list = [
     MNEPreproc("pick_types", eeg=True, meg=False, stim=False),
@@ -116,7 +118,7 @@ print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
 
 max_i = 2
-fig, ax_arr = plt.subplots(1, max_i+1, figsize=((max_i+1)*7, 5),
+fig, ax_arr = plt.subplots(1, max_i + 1, figsize=((max_i + 1) * 7, 5),
                            sharex=True, sharey=True)
 for i, (x, y, window_ind) in enumerate(windows_ds):
     ax_arr[i].plot(x.T)
@@ -130,4 +132,3 @@ for i, (x, y, window_ind) in enumerate(windows_ds):
 # description DataFrame:
 subsets = windows_ds.split("session")
 print({subset_name: len(subset) for subset_name, subset in subsets.items()})
-

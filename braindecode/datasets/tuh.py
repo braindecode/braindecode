@@ -23,6 +23,7 @@ class TUHAbnormal(BaseConcatDataset):
     preload: bool
         if True, preload the data of the Raw objects.
     """
+
     def __init__(self, path, subject_ids=None, target_name="pathological",
                  preload=False):
         all_file_paths = read_all_file_names(
@@ -48,7 +49,7 @@ class TUHAbnormal(BaseConcatDataset):
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
             description = pd.Series(
                 {'age': age, 'pathological': pathological, 'gender': gender,
-                'session': session, 'subject': subject_id}, name=subject_id)
+                 'session': session, 'subject': subject_id}, name=subject_id)
             base_ds = BaseDataset(raw, description, target_name=target_name)
             all_base_ds.append(base_ds)
 

@@ -133,7 +133,6 @@ class CroppedTrialEpochScoring(EpochScoring):
         if not self.on_train:
             self.window_inds_ = []
 
-
     def _initialize_cache(self):
         super()._initialize_cache()
         self.crops_to_trials_computed = False
@@ -161,7 +160,6 @@ class CroppedTrialEpochScoring(EpochScoring):
                     [y_pred.cpu().numpy() for y_pred in self.y_preds_])
                 pred_results['window_ys'] = np.concatenate(
                     [y.cpu().numpy() for y in self.y_trues_])
-
 
             # A new trial starts
             # when the index of the window in trials

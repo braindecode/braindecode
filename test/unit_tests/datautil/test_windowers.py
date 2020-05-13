@@ -203,7 +203,7 @@ def test_single_sample_size_windows(concat_ds_targets):
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1, window_stride_samples=1,
         drop_last_window=False, mapping=dict(tongue=3, left_hand=1,
-                                    right_hand=2,feet=4))
+                                             right_hand=2, feet=4))
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 1000
     np.testing.assert_array_equal(description[::1000], targets)

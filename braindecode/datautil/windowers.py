@@ -104,7 +104,7 @@ def create_windows_from_events(
             if window_size_samples is None:
                 window_size_samples = stops[0] - (onsets[0] + trial_start_offset_samples)
                 window_stride_samples = window_size_samples
-            this_trial_sizes = stops - (onsets  + trial_start_offset_samples)
+            this_trial_sizes = stops - (onsets + trial_start_offset_samples)
             # Maybe actually this is not necessary?
             # We could also just say we just assume window size= trial size
             # in case not given, without this condition...
@@ -114,7 +114,6 @@ def create_windows_from_events(
                 "All trial sizes should be the same if you do not supply"
                 "a window size")
 
-
         description = events[:, -1]
         i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
             onsets, stops, trial_start_offset_samples,
@@ -122,7 +121,7 @@ def create_windows_from_events(
             window_stride_samples, drop_last_window)
 
         events = [[start, window_size_samples, description[i_trials[i_start]]]
-                   for i_start, start in enumerate(starts)]
+                  for i_start, start in enumerate(starts)]
         events = np.array(events)
 
         if any(np.diff(events[:, 0]) <= 0):

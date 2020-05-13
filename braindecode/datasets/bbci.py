@@ -97,10 +97,10 @@ class BBCIDataset(object):
             )
             eeg_sensor_names = list(eeg_sensor_names)
             assert (
-                len(eeg_sensor_names) == 128
-                or len(eeg_sensor_names) == 64
-                or len(eeg_sensor_names) == 32
-                or len(eeg_sensor_names) == 16
+                len(eeg_sensor_names) == 128 or
+                len(eeg_sensor_names) == 64 or
+                len(eeg_sensor_names) == 32 or
+                len(eeg_sensor_names) == 16
             ), "Recheck this code if you have different sensors..."
             self.load_sensor_names = eeg_sensor_names
         chan_inds = self._determine_chan_inds(
@@ -131,7 +131,7 @@ class BBCIDataset(object):
     def get_all_sensors(filename, pattern=None):
         """
         Get all sensors that exist in the given file.
-        
+
         Parameters
         ----------
         filename: str
@@ -188,8 +188,8 @@ class BBCIDataset(object):
                         i_sample,
                         event_classes[i_event - 1],
                         event_classes[i_event],
-                    )
-                    + "Marker codes will be summed."
+                    ) +
+                    "Marker codes will be summed."
                 )
             previous_i_sample = i_sample
 
@@ -215,9 +215,9 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
     """
     Checks if the class names are part of some known class names used in
     translational neurotechnology lab, AG Ball, Freiburg.
-    
+
     Logs warning in case class names are not known. 
-    
+
     Parameters
     ----------
     all_class_names: list of str
@@ -229,8 +229,8 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         pass
     elif (
         (
-            all_class_names
-            == [
+            all_class_names ==
+            [
                 "1",
                 "10",
                 "11",
@@ -249,10 +249,10 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
                 "44",
                 "99",
             ]
-        )
-        or (
-            all_class_names
-            == [
+        ) or
+        (
+            all_class_names ==
+            [
                 "1",
                 "10",
                 "11",
@@ -270,8 +270,8 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
                 "44",
                 "99",
             ]
-        )
-        or (all_class_names == ["1", "2", "3", "4"])
+        ) or
+        (all_class_names == ["1", "2", "3", "4"])
     ):
         pass  # Semantic classes
     elif all_class_names == ["Rest", "Feet", "Left Hand", "Right Hand"]:
@@ -636,7 +636,7 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
 def load_bbci_sets_from_folder(folder, runs="all"):
     """
     Load bbci datasets from files in given folder.
-    
+
     Parameters
     ----------
     folder: str

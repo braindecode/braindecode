@@ -120,9 +120,9 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # method. The second element of a tuple defines method parameters.
 
 preprocessors = [
-    MNEPreproc(fn='pick_types', eeg=True, meg=False, stim=False), # keep only EEG sensors
-    NumpyPreproc(fn=lambda x: x * 1e6), # convert from volt to microvolt, directly modifying the numpy array
-    MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz), # bandpass filter
+    MNEPreproc(fn='pick_types', eeg=True, meg=False, stim=False),  # keep only EEG sensors
+    NumpyPreproc(fn=lambda x: x * 1e6),  # convert from volt to microvolt, directly modifying the numpy array
+    MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # bandpass filter
     NumpyPreproc(fn=exponential_moving_standardize, factor_new=factor_new,
                  init_block_size=init_block_size)
 ]

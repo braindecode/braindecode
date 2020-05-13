@@ -30,11 +30,12 @@ class BaseDataset(Dataset):
         name of the index in `description` that should be use to provide the
         target (e.g., to be used in a prediction task later on).
     """
+
     def __init__(self, raw, description=None, target_name=None):
         self.raw = raw
         if description is not None:
-            if (not isinstance(description, pd.Series)
-                and not isinstance(description, dict)):
+            if (not isinstance(description, pd.Series) and
+                    not isinstance(description, dict)):
                 raise ValueError(
                     f"'{description}' has to be either a pandas.Series or a dict")
             if isinstance(description, dict):
@@ -66,20 +67,21 @@ class WindowsDataset(BaseDataset):
     description: dict | pandas.Series | None
         holds additional info about the windows
     """
+
     def __init__(self, windows, description=None):
         self.windows = windows
         if description is not None:
-            if (not isinstance(description, pd.Series)
-                and not isinstance(description, dict)):
+            if (not isinstance(description, pd.Series) and
+                    not isinstance(description, dict)):
                 raise ValueError(
                     f"'{description}' has to be either a pandas.Series or a dict")
             if isinstance(description, dict):
                 description = pd.Series(description)
         self.description = description
-        self.y = np.array(self.windows.metadata.loc[:,'target'])
+        self.y = np.array(self.windows.metadata.loc[:, 'target'])
         self.crop_inds = np.array(self.windows.metadata.loc[:,
-                              ['i_window_in_trial', 'i_start_in_trial',
-                               'i_stop_in_trial']])
+                                                            ['i_window_in_trial', 'i_start_in_trial',
+                                                             'i_stop_in_trial']])
 
     def __getitem__(self, index):
         X = self.windows.get_data(item=index)[0].astype('float32')
@@ -103,6 +105,7 @@ class BaseConcatDataset(ConcatDataset):
     list_of_ds: list
         list of BaseDataset of WindowsDataset to be concatenated.
     """
+
     def __init__(self, list_of_ds):
         super().__init__(list_of_ds)
         self.description = pd.DataFrame([ds.description for ds in list_of_ds])
