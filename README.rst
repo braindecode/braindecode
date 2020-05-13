@@ -32,10 +32,11 @@ Installation
 
 .. code-block:: bash
 
-  git clone https://github.com/NeuroTechX/moabb.git
-  pip install -r moabb/requirements.txt
-  pip install moabb/
-  rm -r moabb/
+  pip install download
+  python -c "from download import download; download('https://raw.githubusercontent.com/NeuroTechX/moabb/master/requirements.txt', 'requirements.txt', replace=True)"
+  pip install -r requirements.txt
+  rm requirements.txt
+  pip install -U https://github.com/NeuroTechX/moabb/archive/master.zip
 
 3. Install latest release of braindecode via pip:
 
