@@ -2,178 +2,218 @@
 Cropped Decoding on BCIC IV 2a Dataset
 ======================================
 
-This tutorial shows how to train a deep learning model on `MOABB BCI IV <http://moabb.neurotechx.com/docs/generated/moabb.datasets.BNCI2014001.html>`_
-dataset in the cropped decoding setup, for details see
-`Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_.
-
-In Braindecode, there are two supported configurations created for training models: trialwise decoding and cropped
-decoding. We will explain this visually by comparing trialwise to cropped decoding.
-
-.. image:: ../_static/trialwise_explanation.png
-.. image:: ../_static/cropped_explanation.png
-
-On the left, you see trialwise decoding:
-
-1. A complete trial is pushed through the network.
-2. The network produces a prediction.
-3. The prediction is compared to the target (label) for that trial to compute the loss.
-
-On the right, you see cropped decoding:
-
-1. Instead of a complete trial, crops are pushed through the network.
-2. For computational efficiency, multiple neighbouring crops are pushed through the network simultaneously (these
-   neighbouring crops are called compute windows)
-3. Therefore, the network produces multiple predictions (one per crop in the window)
-4. The individual crop predictions are averaged before computing the loss function
-
-Notes:
-
-- The network architecture implicitly defines the crop size (it is the receptive field size, i.e., the number of
-  timesteps the network uses to make a single prediction)
-- The window size is a user-defined hyperparameter, called `input_window_samples` in Braindecode. It mostly affects runtime
-  (larger window sizes should be faster). As a rule of thumb, you can set it to two times the crop size.
-- Crop size and window size together define how many predictions the network makes per window: `#window−#crop+1=#predictions`
-
-For cropped decoding, the above training setup is mathematically identical to sampling crops in your dataset, pushing
-them through the network and training directly on the individual crops. At the same time, the above training setup is
-much faster as it avoids redundant computations by using dilated convolutions, see our paper
-`Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_.
-However, the two setups are only mathematically identical in case (1) your network does not use any padding and (2)
-your loss function leads to the same gradients when using the averaged output. The first is true for our shallow and
-deep ConvNet models and the second is true for the log-softmax outputs and negative log likelihood loss that is
-typically used for classification in PyTorch.
-
 """
 
-# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
-#          Robin Tibor Schirrmeister <robintibor@gmail.com>
-#          Lukas Gemein <l.gemein@gmail.com>
-#          Hubert Banville <hubert.jbanville@gmail.com>
+
+######################################################################
+# Building on the `Trialwise decoding
+# tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__, we now do more
+# data-efficient cropped decoding!
 #
-# License: BSD-3
-from functools import partial
 
-import matplotlib.pyplot as plt
+
+######################################################################
+# In Braindecode, there are two supported configurations created for
+# training models: trialwise decoding and cropped decoding. We will
+# explain this visually by comparing trialwise to cropped decoding.
+#
+# .. image:: ../_static/trialwise_explanation.png
+# .. image:: ../_static/cropped_explanation.png
+#
+# On the left, you see trialwise decoding:
+#
+# 1. A complete trial is pushed through the network.
+# 2. The network produces a prediction.
+# 3. The prediction is compared to the target (label) for that trial to
+#    compute the loss.
+#
+# On the right, you see cropped decoding:
+#
+# 1. Instead of a complete trial, crops are pushed through the network.
+# 2. For computational efficiency, multiple neighbouring crops are pushed
+#    through the network simultaneously (these neighbouring crops are
+#    called compute windows)
+# 3. Therefore, the network produces multiple predictions (one per crop in
+#    the window)
+# 4. The individual crop predictions are averaged before computing the
+#    loss function
+#
+# .. note::
+#
+#     -  The network architecture implicitly defines the crop size (it is the
+#        receptive field size, i.e., the number of timesteps the network uses
+#        to make a single prediction)
+#     -  The window size is a user-defined hyperparameter, called
+#        ``input_window_samples`` in Braindecode. It mostly affects runtime
+#        (larger window sizes should be faster). As a rule of thumb, you can
+#        set it to two times the crop size.
+#     -  Crop size and window size together define how many predictions the
+#        network makes per window: ``#window−#crop+1=#predictions``
+#
+
+
+######################################################################
+# .. note::
+#     For cropped decoding, the above training setup is mathematically
+#     identical to sampling crops in your dataset, pushing them through the
+#     network and training directly on the individual crops. At the same time,
+#     the above training setup is much faster as it avoids redundant
+#     computations by using dilated convolutions, see our paper
+#     `Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_.
+#     However, the two setups are only mathematically identical in case (1)
+#     your network does not use any padding or only left padding and
+#     (2) your loss function leads
+#     to the same gradients when using the averaged output. The first is true
+#     for our shallow and deep ConvNet models and the second is true for the
+#     log-softmax outputs and negative log likelihood loss that is typically
+#     used for classification in PyTorch.
+#
+
+
+######################################################################
+# Loading and preprocessing the dataset
+# -------------------------------------
+#
+
+
+######################################################################
+# Loading and preprocessing stays the same as in the `Trialwise decoding
+# tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__.
+#
+
+from braindecode.datasets.moabb import MOABBDataset
 import mne
-import numpy as np
-import pandas as pd
-import torch
-from matplotlib.lines import Line2D
-from skorch.callbacks import LRScheduler
-from skorch.helper import predefined_split
 
-from braindecode import EEGClassifier
-from braindecode.datasets import MOABBDataset
-from braindecode.datautil import create_windows_from_events
+subject_id = 3
+dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+
 from braindecode.datautil.preprocess import exponential_moving_standardize
-from braindecode.datautil.preprocess import preprocess, MNEPreproc, \
-    NumpyPreproc
-from braindecode.training.losses import CroppedLoss
-from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
-from braindecode.util import set_random_seeds
+from braindecode.datautil.preprocess import MNEPreproc, NumpyPreproc, preprocess
 
-mne.set_log_level('ERROR')
-
-##########################################################################################
-# Script parameters definition
-# ----------------------------
-seed = 20200220  # random seed to make results reproducible
-
-# Parameters describing the dataset and transformations
-subject_id = 3  # 1-9
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
-n_classes = 4  # number of classes to predict
-n_chans = 22  # number of channels in the dataset
-trial_start_offset_seconds = -0.5  # offset between trail start in the raw data and dataset
-input_window_samples = 1000  # length of trial in samples
-# Parameters for exponential running standarization
+# Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
 
-# Define parameters describing training
-n_epochs = 4  # number of epochs of training
-batch_size = 64
-cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
-device = 'cuda' if cuda else 'cpu'
-if cuda:
-    torch.backends.cudnn.benchmark = True
-
-# Set random seed to be able to reproduce results
-set_random_seeds(seed=seed, cuda=cuda)
-#########################################################################################
-# Create model
-# ------------
-# Braindecode comes with some predefined convolutional neural network architectures for
-# raw time-domain EEG. Here, we use the shallow ConvNet model from
-# `Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_.
-
-# For cropped decoding, we now transform the model into a model that outputs a dense
-# time series of predictions. For this, we manually set the length of the finalconvolution
-# layer to some length that makes the receptive field of the ConvNet smaller than the
-# number of samples in a trial (see `final_conv_length=30` in the model definition).
-model = ShallowFBCSPNet(
-    n_chans,
-    n_classes,
-    input_window_samples=input_window_samples,
-    final_conv_length=30,
-)
-lr = 0.0625 * 0.01
-weight_decay = 0
-
-# Send model to GPU
-if cuda:
-    model.cuda()
-
-#########################################################################################
-# Prepare model for cropped decoding
-# ----------------------------------
-# First we transform model with strides to a model that outputs dense prediction, so we
-# can use it to obtain properly predictions for all crops.
-to_dense_prediction_model(model)
-# We calculate the shape of model output as it depends on the input shape and model
-# architecture. We save number of predictions computed per each sample by model for
-# windowing function.
-n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
-
-##########################################################################################
-# Load the dataset
-# --------------------------
-# Load `MOABB <https://github.com/NeuroTechX/moabb>`_ dataset using Braindecode datasets
-# functionalities.
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
-
-##########################################################################################
-# Define data preprocessing and preprocess the data
-# -------------------------------------------------
-# Transform steps are defined as 2 elements tuples of `(str | callable, dict)`
-# If the first element is string it has to be a name of
-# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`_/`mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`_
-# method. The second element of a tuple defines method parameters.
-
 preprocessors = [
-    MNEPreproc(fn='pick_types', eeg=True, meg=False, stim=False), # keep only EEG sensors
-    NumpyPreproc(fn=lambda x: x * 1e6), # convert from volt to microvolt, directly modifying the numpy array
-    MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz), # bandpass filter
+    # keep only EEG sensors
+    MNEPreproc(fn='pick_types', eeg=True, meg=False, stim=False),
+    # convert from volt to microvolt, directly modifying the numpy array
+    NumpyPreproc(fn=lambda x: x * 1e6),
+    # bandpass filter
+    MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz),
+    # exponential moving standardization
     NumpyPreproc(fn=exponential_moving_standardize, factor_new=factor_new,
-                 init_block_size=init_block_size)
+        init_block_size=init_block_size)
 ]
 
 # Transform the data
 preprocess(dataset, preprocessors)
 
 
-##########################################################################################
-# Create windows from MOABB dataset
-# ---------------------------------
+######################################################################
+# Create model and compute windowing parameters
+# ---------------------------------------------
+#
 
-# Extract sampling frequency from all datasets (in general they may be different for each
-# dataset).
-sfreqs = [ds.raw.info['sfreq'] for ds in dataset.datasets]
-assert len(np.unique(sfreqs)) == 1
+
+######################################################################
+# In contrast to trialwise decoding, we first have to create the model
+# before we can cut the dataset into windows. This is because we need to
+# know the receptive field of the network to know how large the window
+# stride should be.
+#
+
+
+######################################################################
+# We first choose the compute/input window size that will be fed to the
+# network during training This has to be larger than the networks
+# receptive field size and can otherwise be chosen for computational
+# efficiency (see explanations in the beginning of this tutorial). Here we
+# choose 1000 samples, which are 4 seconds for the 250 Hz sampling rate.
+#
+
+input_window_samples = 1000
+
+
+######################################################################
+# Now we create the model. To enable it to be used in cropped decoding
+# efficiently, we manually set the length of the final convolution layer
+# to some length that makes the receptive field of the ConvNet smaller
+# than ``input_window_samples`` (see ``final_conv_length=30`` in the model
+# definition).
+#
+
+import torch
+from braindecode.util import set_random_seeds
+from braindecode.models import ShallowFBCSPNet
+
+
+cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
+device = 'cuda' if cuda else 'cpu'
+if cuda:
+    torch.backends.cudnn.benchmark = True
+seed = 20200220  # random seed to make results reproducible
+# Set random seed to be able to reproduce results
+set_random_seeds(seed=seed, cuda=cuda)
+
+n_classes=4
+# Extract number of chans from dataset
+n_chans = dataset[0][0].shape[0]
+
+model = ShallowFBCSPNet(
+    n_chans,
+    n_classes,
+    input_window_samples=input_window_samples,
+    final_conv_length=30,
+)
+
+# Send model to GPU
+if cuda:
+    model.cuda()
+
+
+
+######################################################################
+# And now we transform model with strides to a model that outputs dense
+# prediction, so we can use it to obtain predictions for all
+# crops.
+#
+
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
+to_dense_prediction_model(model)
+
+
+######################################################################
+# To know the models’ receptive field, we calculate the shape of model
+# output for a dummy input.
+#
+
+n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
+
+
+######################################################################
+# Cut the data into windows
+# -------------------------
+#
+
+
+######################################################################
+# In contrast to trialwise decoding, we have to supply an explicit window size and window stride to the
+# ``create_windows_from_events`` function.
+#
+
+import numpy as np
+from braindecode.datautil.windowers import create_windows_from_events
+
+trial_start_offset_seconds = -0.5
+# Extract sampling frequency, check that they are same in all datasets
+sfreq = dataset.datasets[0].raw.info['sfreq']
+assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
+
 # Calculate the trial start offset in samples.
-trial_start_offset_samples = int(trial_start_offset_seconds * sfreqs[0])
+trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
 # Create windows using braindecode function for this. It needs parameters to define how
 # trials should be used.
@@ -187,30 +227,58 @@ windows_dataset = create_windows_from_events(
     preload=True,
 )
 
-##########################################################################################
-# Split dataset into train and valid
-# ----------------------------------
-# We can easily split the dataset using additional info stored in the description
-# attribute, in this case `session` column. We select `session_T` for training and
-# `session_E` for validation.
+
+######################################################################
+# Split the dataset
+# -----------------
+#
+# This code is the same as in trialwise decoding.
+#
+
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
 valid_set = splitted['session_E']
 
-##########################################################################################
-# EEGClassifier definition and training
-# -------------------------------------
-# EEGClassifier is a Braindecode object responsible for managing the training of neural
-# networks. It inherits from `skorch.NeuralNetClassifier`, so the training logic is the
-# same as in `skorch <https://skorch.readthedocs.io/en/stable/index.html>`_.
-# EEGClassifier object takes all training hyperparameters, creates all callbacks and
-# performs training. Model supplied to this class has to be a PyTorch model.
+
+######################################################################
+# Training
+# --------
 #
-# For cropped decoding, we have to supply EEGClassifier with `cropped=True` to modify
-# behavior of model (e.g. callbacks definition). One more difference between cropped
-# decoding and trialwise decoding is the `criterion` parameter specifying loss function.
-# For cropped decoding, loss function has to be modified to handle multiple predictions
-# made by a model.
+
+
+######################################################################
+# In difference to trialwise decoding, we now should supply
+# ``cropped=True`` to the EEGClassifier, and ``CroppedLoss`` as the
+# criterion, as well as ``criterion__loss_function`` as the loss function
+# applied to the meaned predictions.
+#
+
+
+######################################################################
+# .. note::
+#    In this tutorial, we use some default parameters that we
+#    have found to work well for motor decoding, however we strongly
+#    encourage you to perform your own hyperparameter optimization using
+#    cross validation on your training data.
+#
+
+from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
+
+from braindecode import EEGClassifier
+from braindecode.training.losses import CroppedLoss
+
+# These values we found good for shallow network:
+lr = 0.0625 * 0.01
+weight_decay = 0
+
+# For deep4 they should be:
+# lr = 1 * 0.01
+# weight_decay = 0.5 * 0.001
+
+batch_size = 64
+n_epochs = 4
+
 clf = EEGClassifier(
     model,
     cropped=True,
@@ -231,10 +299,24 @@ clf = EEGClassifier(
 # in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
-##########################################################################################
-# Plot Results
-# -------------
 
+######################################################################
+# Plot Results
+# ------------
+#
+
+
+######################################################################
+# This is again the same code as in trialwise decoding.
+#
+# .. note::
+#     Note that we drop further in the classification error and
+#     loss as in the trialwise decoding tutorial.
+#
+
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import pandas as pd
 # Extract loss and accuracy values for plotting from history object
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
 df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns,

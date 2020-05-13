@@ -7,7 +7,6 @@ For EEG researchers that want to work with deep learning and
 deep learning researchers that want to work with EEG data.
 For now focussed on convolutional networks.
 
-
 Installation
 ============
 
@@ -34,6 +33,19 @@ Install the latest version of braindecode via pip:
   pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master
 
 
+Get Started
+===========
+
+Learn how to use braindecode for ...
+
+.. toctree::
+   :maxdepth: 1
+
+    Basic trialwise decoding <auto_examples/plot_bcic_iv_2a_moabb_trial.rst>
+    More data-efficient "cropped decoding" <auto_examples/plot_bcic_iv_2a_moabb_cropped.rst>
+    Your own datasets through MNE <auto_examples/plot_mne_dataset_example.rst>
+    Your own datasets through Numpy <auto_examples/plot_custom_dataset_example.rst>
+
 Examples
 ========
 .. toctree::
@@ -50,17 +62,6 @@ Public API
    api
 
 
-.. Tutorials
-.. =========
-.. .. toctree::
-..    :maxdepth: 1
-
-..    notebooks/Trialwise_Decoding.ipynb
-..    notebooks/Cropped_Decoding.ipynb
-..    notebooks/Trialwise_Manual_Training_Loop.ipynb
-..    notebooks/Cropped_Manual_Training_Loop.ipynb
-..    notebooks/visualization/Perturbation.ipynb
-
 
 Troubleshooting
 ===============
@@ -68,18 +69,6 @@ Troubleshooting
 Please report any issues on github: https://github.com/braindecode/braindecode/issues
 
 
-.. API
-.. ===
-
-.. .. autosummary::
-..    :toctree: source
-
-..    braindecode.datasets
-..    braindecode.experiments
-..    braindecode.mne_ext
-..    braindecode.models
-..    braindecode.torch_ext
-..    braindecode.visualization
 
 Citing
 ======
