@@ -7,7 +7,6 @@ For EEG researchers that want to work with deep learning and
 deep learning researchers that want to work with EEG data.
 For now focussed on convolutional networks.
 
-
 Installation
 ============
 
@@ -43,12 +42,9 @@ Learn how to use braindecode for ...
    :maxdepth: 1
 
     Basic trialwise decoding <auto_examples/plot_bcic_iv_2a_moabb_trial.rst>
-    More data-efficient "cropped training" <auto_examples/plot_bcic_iv_2a_moabb_cropped.rst>
+    More data-efficient "cropped decoding" <auto_examples/plot_bcic_iv_2a_moabb_cropped.rst>
     Your own datasets through MNE <auto_examples/plot_mne_dataset_example.rst>
     Your own datasets through Numpy <auto_examples/plot_custom_dataset_example.rst>
-
-
-
 
 Examples
 ========
