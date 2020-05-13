@@ -71,13 +71,10 @@ Training
 .. autosummary::
    :toctree: generated/
 
-    BaseDataset
-    BaseConcatDataset
-    WindowsDataset
-    MOABBDataset
-    create_from_X_y
-    create_from_mne_raw
-    create_from_mne_epochs
+    CroppedLoss
+    CroppedTrialEpochScoring
+    PostEpochTrainScoring
+    trial_preds_from_window_preds
 
 Datasets
 ==========
@@ -108,9 +105,10 @@ Data Utils
 .. autosummary::
    :toctree: generated/
 
-    SignalAndTarget
     create_fixed_length_windows
     create_windows_from_events
+    exponential_moving_demean
+    exponential_moving_standardize
     zscore
     scale
 

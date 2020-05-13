@@ -69,18 +69,6 @@ Troubleshooting
 Please report any issues on github: https://github.com/braindecode/braindecode/issues
 
 
-.. API
-.. ===
-
-.. .. autosummary::
-..    :toctree: source
-
-..    braindecode.datasets
-..    braindecode.experiments
-..    braindecode.mne_ext
-..    braindecode.models
-..    braindecode.torch_ext
-..    braindecode.visualization
 
 Citing
 ======
