@@ -148,12 +148,12 @@ def exponential_moving_standardize(
     standardized = demeaned / np.maximum(eps, np.sqrt(np.array(square_ewmed)))
     standardized = np.array(standardized)
     if init_block_size is not None:
-        other_axis = tuple(range(1, len(data.shape)))
+        i_time_axis = 0
         init_mean = np.mean(
-            data[0:init_block_size], axis=other_axis, keepdims=True
+            data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
         init_std = np.std(
-            data[0:init_block_size], axis=other_axis, keepdims=True
+            data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
         init_block_standardized = (
                                           data[0:init_block_size] - init_mean
@@ -190,9 +190,9 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     demeaned = df - meaned
     demeaned = np.array(demeaned)
     if init_block_size is not None:
-        other_axis = tuple(range(1, len(data.shape)))
+        i_time_axis = 0
         init_mean = np.mean(
-            data[0:init_block_size], axis=other_axis, keepdims=True
+            data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
         demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
     return demeaned.T
