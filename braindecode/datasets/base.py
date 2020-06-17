@@ -66,11 +66,11 @@ class WindowsDataset(BaseDataset):
     description: dict | pandas.Series | None
         holds additional info about the windows
     """
-    def __init__(self, windows, description=None):
+    def __init__(self, windows, description=None, transform=None):
         self.windows = windows
         if description is not None:
-            if (not isinstance(description, pd.Series)
-                and not isinstance(description, dict)):
+            if (not isinstance(description, pd.Series) and 
+                not isinstance(description, dict)):
                 raise ValueError(
                     f"'{description}' has to be either a pandas.Series or a dict")
             if isinstance(description, dict):
@@ -80,9 +80,12 @@ class WindowsDataset(BaseDataset):
         self.crop_inds = np.array(self.windows.metadata.loc[:,
                               ['i_window_in_trial', 'i_start_in_trial',
                                'i_stop_in_trial']])
+        self.transform = transform
 
     def __getitem__(self, index):
         X = self.windows.get_data(item=index)[0].astype('float32')
+        if self.transform:
+            X = self.transform(X)
         y = self.y[index]
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
