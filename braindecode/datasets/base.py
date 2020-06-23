@@ -77,6 +77,7 @@ class WindowsDataset(BaseDataset):
                 description = pd.Series(description)
         self.description = description
         self.y = np.array(self.windows.metadata.loc[:,'target'])
+        
         self.crop_inds = np.array(self.windows.metadata.loc[:,
                               ['i_window_in_trial', 'i_start_in_trial',
                                'i_stop_in_trial']])

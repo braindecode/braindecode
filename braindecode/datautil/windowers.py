@@ -15,6 +15,21 @@ import pandas as pd
 from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 
+def _check_windowing_arguments(
+        trial_start_offset_samples, trial_stop_offset_samples,
+        window_size_samples, window_stride_samples):
+    assert isinstance(trial_start_offset_samples, (int, np.integer))
+    assert isinstance(trial_stop_offset_samples, (int, np.integer))
+    assert isinstance(window_size_samples, (int, np.integer, type(None)))
+    assert isinstance(window_stride_samples, (int, np.integer, type(None)))
+    assert (window_size_samples is None) == (window_stride_samples is None)
+    if window_size_samples is not None:
+        assert window_size_samples > 0, (
+            "window size has to be larger than 0")
+        assert window_stride_samples > 0, (
+            "window stride has to be larger than 0")
+
+
 def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples=None, window_stride_samples=None,
@@ -300,16 +315,3 @@ def _compute_window_inds(
     return i_trials, i_window_in_trials, window_starts, window_stops
 
 
-def _check_windowing_arguments(
-        trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples, window_stride_samples):
-    assert isinstance(trial_start_offset_samples, (int, np.integer))
-    assert isinstance(trial_stop_offset_samples, (int, np.integer))
-    assert isinstance(window_size_samples, (int, np.integer, type(None)))
-    assert isinstance(window_stride_samples, (int, np.integer, type(None)))
-    assert (window_size_samples is None) == (window_stride_samples is None)
-    if window_size_samples is not None:
-        assert window_size_samples > 0, (
-            "window size has to be larger than 0")
-        assert window_stride_samples > 0, (
-            "window stride has to be larger than 0")

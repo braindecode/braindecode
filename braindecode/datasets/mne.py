@@ -3,8 +3,7 @@ import pandas as pd
 import mne
 
 from .base import BaseDataset, BaseConcatDataset, WindowsDataset
-from ..datautil.windowers import (
-    _check_windowing_arguments, create_windows_from_events)
+from ..datautil.windowers import (_check_windowing_arguments, create_windows_from_events)
 
 
 def create_from_mne_raw(
@@ -67,7 +66,7 @@ def create_from_mne_raw(
         mapping=mapping,
         drop_bad_windows=drop_bad_windows,
         preload=preload
-    )
+    ) #TODO : rajouter transform
     return windows_datasets
 
 
