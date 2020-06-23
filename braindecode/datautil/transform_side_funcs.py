@@ -1,4 +1,4 @@
-from torchaudio.functional import sparse_image_warp
+# from torchaudio import sparse_image_warp
 from torch import Tensor, tensor
 
 
@@ -17,8 +17,8 @@ def warp_along_axis(spec, points_to_warp, dist_to_warp, axis):
 
     src_pts, dest_pts = (tensor([[[y, point_to_warp]]], device=device),
                          tensor([[[y, point_to_warp + dist_to_warp]]], device=device))
-    warped_spectro, dense_flows = sparse_image_warp(spec, src_pts, dest_pts)
-    return warped_spectro.squeeze(3)
+    # warped_spectro, dense_flows = sparse_image_warp(spec, src_pts, dest_pts)
+    # return warped_spectro.squeeze(3)
 
 
 def mask_along_axis(
