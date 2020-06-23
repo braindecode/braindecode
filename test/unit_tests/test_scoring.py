@@ -15,7 +15,7 @@ from skorch.utils import to_numpy, to_tensor
 from torch import optim
 from torch.utils.data import Dataset, DataLoader
 from braindecode.classifier import EEGClassifier
-from braindecode.datasets.xy import create_from_X_y
+from braindecode.datautil.xy import create_from_X_y
 from braindecode.training.scoring import CroppedTrialEpochScoring
 from braindecode.training.scoring import PostEpochTrainScoring
 from braindecode.models import ShallowFBCSPNet

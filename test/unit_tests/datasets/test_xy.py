@@ -5,7 +5,7 @@
 # License: BSD-3
 
 import numpy as np
-from braindecode.datasets.xy import create_from_X_y
+from braindecode.datautil.xy import create_from_X_y
 
 
 def test_crops_data_loader_explicit():
