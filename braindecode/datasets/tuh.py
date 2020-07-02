@@ -16,23 +16,23 @@ class TUHAbnormal(BaseConcatDataset):
     ----------
     path: str
         parent directory of the dataset
-    subject_ids: list(int) | int
-        (list of) int of subject(s) to be read
+    recording_ids: list(int) | int
+        (list of) int of recording(s) to be read
     target_name: str
         can be 'pathological', 'gender', or 'age'
     preload: bool
         if True, preload the data of the Raw objects.
     """
-    def __init__(self, path, subject_ids=None, target_name="pathological",
+    def __init__(self, path, recording_ids=None, target_name="pathological",
                  preload=False):
         all_file_paths = read_all_file_names(
             path, extension='.edf', key=self._time_key)
-        if subject_ids is None:
-            subject_ids = np.arange(len(all_file_paths))
+        if recording_ids is None:
+            recording_ids = np.arange(len(all_file_paths))
 
         all_base_ds = []
-        for subject_id in subject_ids:
-            file_path = all_file_paths[subject_id]
+        for recording_id in recording_ids:
+            file_path = all_file_paths[recording_id]
             raw = mne.io.read_raw_edf(file_path, preload=preload)
             path_splits = file_path.split("/")
             if "abnormal" in path_splits:
@@ -46,9 +46,11 @@ class TUHAbnormal(BaseConcatDataset):
                 assert "eval" in path_splits
                 session = "eval"
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
+            # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
+            subject_id = path_splits[-3]
             description = pd.Series(
                 {'age': age, 'pathological': pathological, 'gender': gender,
-                'session': session, 'subject': subject_id}, name=subject_id)
+                'session': session, 'subject': subject_id}, name=recording_id)
             base_ds = BaseDataset(raw, description, target_name=target_name)
             all_base_ds.append(base_ds)
 
