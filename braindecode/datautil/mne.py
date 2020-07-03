@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import mne
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 from ..datautil.windowers import (
     _check_windowing_arguments, create_windows_from_events)
 
@@ -50,7 +50,7 @@ def create_from_mne_raw(
         if len(descriptions) != len(raws):
             raise ValueError(
                 f"length of 'raws' ({len(raws)}) and 'description' "
-                f"({len(description)}) has to match")
+                f"({len(descriptions)}) has to match")
         base_datasets = [BaseDataset(raw, desc) for raw, desc in
                          zip(raws, descriptions)]
     else:

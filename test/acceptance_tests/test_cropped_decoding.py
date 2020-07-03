@@ -11,7 +11,7 @@ from skorch.helper import predefined_split
 from torch import optim
 
 from braindecode import EEGClassifier
-from braindecode.datasets.xy import create_from_X_y
+from braindecode.datautil.xy import create_from_X_y
 from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
