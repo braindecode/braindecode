@@ -166,10 +166,16 @@ def test_exponential_running_init_block_size(mock_data):
     init_block_size = 3
     standardized_data = exponential_moving_standardize(
         mock_input, init_block_size=init_block_size)
+    # mean over time axis (1!) should give 0 per channel
     np.testing.assert_allclose(
-        standardized_data[:, :init_block_size].sum(), [0], rtol=1e-4, atol=1e-4)
+        standardized_data[:, :init_block_size].mean(axis=1), 0,
+        rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(
+        standardized_data[:, :init_block_size].std(axis=1), 1,
+        rtol=1e-4, atol=1e-4)
 
+    # mean over time axis (1!) should give 0 per channel
     demeaned_data = exponential_moving_demean(
         mock_input, init_block_size=init_block_size)
     np.testing.assert_allclose(
-        demeaned_data[:, :init_block_size].sum(), [0], rtol=1e-4, atol=1e-4)
+        demeaned_data[:, :init_block_size].mean(axis=1), 0, rtol=1e-4, atol=1e-4)
