@@ -15,17 +15,17 @@ from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, concat_of_raws, overwrite):
-    """Store a BaseConcatDataset of BaseDatasets or WindowsDatasets to files
+    """Save a BaseConcatDataset of BaseDatasets or WindowsDatasets to files
 
     Parameters
     ----------
     path: str
         directory to which .fif and .json files are stored
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
-        dataset to save
+        to save to files
     concat_of_raws: bool
-        set to true to store a BaseConcatDataset of BaseDatasets, to false to
-        store a BaseConcatDataset of WindowsDatasets
+        if true assumes that concat_dataset contains raws, if false assumes
+        that concat_dataset contains epochs
     overwrite: bool
         whether to overwrite existing files
     """
@@ -51,14 +51,14 @@ def load_concat_dataset(path, preload, concat_of_raws, ids_to_load=None):
     preload: bool
         whether to preload the data
     concat_of_raws: bool
-        set to true to load a BaseConcatDataset of BaseDatasets, to false to
-        load a BaseConcatDataset of WindowsDatasets
+        if true assumes that stored data are raws, if false assumes
+        that stored data are epochs
     ids_to_load: None | list(int)
-        ids of specific windows datasets to load
+        ids of specific signals to load
 
     Returns
     -------
-    windows_datasets: BaseConcatDataset of WindowsDataset
+    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
     """
     datasets = []
     if concat_of_raws:
