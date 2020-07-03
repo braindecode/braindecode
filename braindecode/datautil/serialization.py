@@ -11,33 +11,48 @@ import os
 import mne
 import pandas as pd
 
-from ..datasets.base import BaseConcatDataset, WindowsDataset
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
-def store_windows_dataset(path, windows_dataset, overwrite):
-    """Store braindecode WindowsDatasets to files
+def save_concat_dataset(path, concat_dataset, concat_of_raws, overwrite):
+    """Store a BaseConcatDataset of BaseDatasets or WindowsDatasets to files
 
     Parameters
     ----------
     path: str
         directory to which .fif and .json files are stored
-    dataset: BaseConcatDataset of WindowsDatasets
+    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+        dataset to save
+    concat_of_raws: bool
+        set to true to store a BaseConcatDataset of BaseDatasets, to false to
+        store a BaseConcatDataset of WindowsDatasets
     overwrite: bool
         whether to overwrite existing files
     """
-    for ds_i, ds in enumerate(windows_dataset.datasets):
-        ds.windows.save(os.path.join(path, "{}-epo.fif".format(ds_i)),
+    file_name = "{}-raw.fif" if concat_of_raws else "{}-epo.fif"
+    for ds_i, ds in enumerate(concat_dataset.datasets):
+        if concat_of_raws:
+            ds.raw.save(os.path.join(path, file_name.format(ds_i)),
                         overwrite=overwrite)
-    windows_dataset.description.to_json(os.path.join(path, "description.json"))
+        else:
+            ds.windows.save(os.path.join(path, file_name.format(ds_i)),
+                            overwrite=overwrite)
+    concat_dataset.description.to_json(os.path.join(path, "description.json"))
 
 
-def recover_windows_dataset(path, ids_to_load=None):
-    """Recover a stored windows dataset from files
+def load_concat_dataset(path, preload, concat_of_raws, ids_to_load=None):
+    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    files
 
     Parameters
     ----------
     path: str
         path to the directory of the .fif and .json files
+    preload: bool
+        whether to preload the data
+    concat_of_raws: bool
+        set to true to load a BaseConcatDataset of BaseDatasets, to false to
+        load a BaseConcatDataset of WindowsDatasets
     ids_to_load: None | list(int)
         ids of specific windows datasets to load
 
@@ -45,41 +60,42 @@ def recover_windows_dataset(path, ids_to_load=None):
     -------
     windows_datasets: BaseConcatDataset of WindowsDataset
     """
-    epochs, description = _load_epochs_and_description(path, ids_to_load)
-    windows_datasets = []
-    for windows_i, windows in enumerate(epochs):
-        windows_datasets.append(WindowsDataset(
-            windows, description.iloc[windows_i]))
-    return BaseConcatDataset(windows_datasets)
+    datasets = []
+    if concat_of_raws:
+        all_raws, description = _load_signals_and_description(
+            path=path, preload=preload, raws=True, ids_to_load=ids_to_load)
+        for raw_i, raw in enumerate(all_raws):
+            datasets.append(BaseDataset(raw, description.iloc[raw_i]))
+    else:
+        all_epochs, description = _load_signals_and_description(
+            path=path, preload=preload, raws=False, ids_to_load=ids_to_load)
+        for epochs_i, epochs in enumerate(all_epochs):
+            datasets.append(WindowsDataset(epochs, description.iloc[epochs_i]))
+    return BaseConcatDataset(datasets)
 
 
-def _load_epochs_and_description(path, ids_to_load=None):
-    """Load mne.Epochs and their description from files
-
-    Parameters
-    ----------
-    path: str
-        directory from which .fif and .json files are loaded
-    ids_to_load: None | list(int)
-        ids of specific windows datasets to load
-
-    Returns
-    -------
-    epochs, description: mne.Epochs, pandas.DataFrame
-    """
-    all_mne_epochs = []
-    fif_file_name = "{}-epo.fif"
+def _load_signals_and_description(path, preload, raws, ids_to_load=None):
+    all_signals = []
+    file_name = "{}-raw.fif" if raws else "{}-epo.fif"
     description_df = pd.read_json(os.path.join(path, "description.json"))
     if ids_to_load is None:
         i = 0
-        fif_file = os.path.join(path, fif_file_name.format(i))
+        fif_file = os.path.join(path, file_name.format(i))
         while os.path.exists(fif_file):
-            all_mne_epochs.append(mne.read_epochs(fif_file))
+            all_signals.append(_load_signals(fif_file, preload, raws))
             i += 1
-            fif_file = os.path.join(path, fif_file_name.format(i))
+            fif_file = os.path.join(path, file_name.format(i))
     else:
         for i in ids_to_load:
-            fif_file = os.path.join(path, fif_file_name.format(i))
-            all_mne_epochs.append(mne.read_epochs(fif_file))
+            fif_file = os.path.join(path, file_name.format(i))
+            all_signals.append(_load_signals(fif_file, preload, raws))
         description_df = description_df.iloc[ids_to_load]
-    return all_mne_epochs, description_df
+    return all_signals, description_df
+
+
+def _load_signals(fif_file, preload, raws):
+    if raws:
+        signals = mne.io.read_raw_fif(fif_file, preload=preload)
+    else:
+        signals = mne.read_epochs(fif_file, preload=preload)
+    return signals

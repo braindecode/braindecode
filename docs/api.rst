@@ -111,8 +111,8 @@ Data Utils
     exponential_moving_standardize
     zscore
     scale
-    store_windows_dataset
-    recover_windows_dataset
+    save_concat_dataset
+    load_concat_dataset
 
 Utils
 =====
