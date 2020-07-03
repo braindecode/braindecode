@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import mne
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
-from braindecode.datautil.windowers import (
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datautil.windowers import (
     _check_windowing_arguments, create_windows_from_events)
 
 
