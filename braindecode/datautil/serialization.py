@@ -14,8 +14,8 @@ import pandas as pd
 from ..datasets.base import BaseConcatDataset, WindowsDataset
 
 
-def store_windows_dataset(path, dataset, overwrite):
-    """Store a braindecode WindowsDatasets to files
+def store_windows_dataset(path, windows_dataset, overwrite):
+    """Store braindecode WindowsDatasets to files
 
     Parameters
     ----------
@@ -25,10 +25,10 @@ def store_windows_dataset(path, dataset, overwrite):
     overwrite: bool
         whether to overwrite existing files
     """
-    for ds_i, ds in enumerate(dataset.datasets):
+    for ds_i, ds in enumerate(windows_dataset.datasets):
         ds.windows.save(os.path.join(path, "{}-epo.fif".format(ds_i)),
                         overwrite=overwrite)
-    dataset.description.to_json(os.path.join(path, "description.json"))
+    windows_dataset.description.to_json(os.path.join(path, "description.json"))
 
 
 def recover_windows_dataset(path, ids_to_load=None):
@@ -46,10 +46,11 @@ def recover_windows_dataset(path, ids_to_load=None):
     windows_datasets: BaseConcatDataset of WindowsDataset
     """
     epochs, description = _load_epochs_and_description(path, ids_to_load)
-    datasets = []
+    windows_datasets = []
     for windows_i, windows in enumerate(epochs):
-        datasets.append(WindowsDataset(windows, description.iloc[windows_i]))
-    return BaseConcatDataset(datasets)
+        windows_datasets.append(WindowsDataset(
+            windows, description.iloc[windows_i]))
+    return BaseConcatDataset(windows_datasets)
 
 
 def _load_epochs_and_description(path, ids_to_load=None):
