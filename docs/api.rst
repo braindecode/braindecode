@@ -60,6 +60,7 @@ Models
     EEGNetv4
     HybridNet
     EEGResNet
+    TCN
 
 Training
 ==========
