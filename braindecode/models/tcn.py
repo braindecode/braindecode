@@ -1,4 +1,4 @@
-# Authors: Patryk Chrabaszs
+# Authors: Patryk Chrabaszcz
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
