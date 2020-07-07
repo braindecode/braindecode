@@ -31,8 +31,7 @@ def setup_concat_windows_dataset(setup_concat_raw_dataset):
 def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
-    save_concat_dataset(path=tmpdir, concat_dataset=concat_raw_dataset,
-                        concat_of_raws=True,overwrite=False)
+    save_concat_dataset(path=tmpdir, concat_dataset=concat_raw_dataset, overwrite=False)
     assert os.path.exists(tmpdir.join(f"description.json"))
     for raw_i in range(n_raw_datasets):
         assert os.path.exists(tmpdir.join(f"{raw_i}-raw.fif"))
@@ -42,8 +41,7 @@ def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
 def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
-    save_concat_dataset(path=tmpdir, concat_dataset=concat_windows_dataset,
-                        concat_of_raws=False, overwrite=False)
+    save_concat_dataset(path=tmpdir, concat_dataset=concat_windows_dataset, overwrite=False)
     assert os.path.exists(tmpdir.join(f"description.json"))
     for windows_i in range(n_windows_datasets):
         assert os.path.exists(tmpdir.join(f"{windows_i}-epo.fif"))
@@ -54,9 +52,9 @@ def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
     save_concat_dataset(path=tmpdir, concat_dataset=concat_raw_dataset,
-                        concat_of_raws=True,overwrite=False)
+                        overwrite=False)
     loaded_concat_raw_dataset = load_concat_dataset(
-        path=tmpdir, preload=False, concat_of_raws=True)
+        path=tmpdir, preload=False)
     assert len(concat_raw_dataset) == len(loaded_concat_raw_dataset)
     assert (len(concat_raw_dataset.datasets) ==
             len(loaded_concat_raw_dataset.datasets))
@@ -74,9 +72,9 @@ def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     save_concat_dataset(path=tmpdir, concat_dataset=concat_windows_dataset,
-                        concat_of_raws=False, overwrite=False)
+                        overwrite=False)
     loaded_concat_windows_dataset = load_concat_dataset(
-        path=tmpdir, preload=False, concat_of_raws=False)
+        path=tmpdir, preload=False)
     assert len(concat_windows_dataset) == len(loaded_concat_windows_dataset)
     assert (len(concat_windows_dataset.datasets) ==
             len(loaded_concat_windows_dataset.datasets))
