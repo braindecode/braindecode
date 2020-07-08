@@ -26,7 +26,7 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
         to save to files
     overwrite: bool
-        whether to overwrite existing files (will delete old fif files)
+        whether to overwrite existing files (will delete old fif files in specified directory)
     """
     assert len(concat_dataset.datasets) > 0, "Expect at least one dataset"
     assert (hasattr(concat_dataset.datasets[0], 'raw') + hasattr(
