@@ -72,6 +72,7 @@ class TCN(nn.Module):
     def forward(self, x):
         # x is in format: B x C x T x 1
         (batch_size, _, time_size, _) = x.size()
+        assert time_size >= self.min_len
         # remove empty trailing dimension
         x = x.squeeze(3)
         x = self.temporal_blocks(x)

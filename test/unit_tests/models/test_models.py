@@ -106,14 +106,14 @@ def test_eegnet_v1():
 def test_tcn():
     rng = np.random.RandomState(42)
     n_channels = 18
-    n_in_times = 19
     n_classes = 2
     n_samples = 7
-    X = rng.randn(n_samples, n_channels, n_in_times, 1)
-    X = torch.Tensor(X.astype(np.float32))
     model = TCN(
         n_channels, n_classes,
         n_filters=5, n_blocks=2, kernel_size=4, drop_prob=.5,
         add_log_softmax=True)
+    n_in_times = model.min_len
+    X = rng.randn(n_samples, n_channels, n_in_times, 1)
+    X = torch.Tensor(X.astype(np.float32))
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
