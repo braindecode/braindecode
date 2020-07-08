@@ -15,16 +15,16 @@ class TUHAbnormal(BaseConcatDataset):
     ----------
     path: str
         parent directory of the dataset
-    recording_ids: list(int) | int
-        (list of) int of recording(s) to be read
+    recording_ids: list(int)
+        list of int of recording(s) to be read
     target_name: str
-        can be 'pathological', 'gender', or 'age'
+        can be "pathological", "gender", or "age"
     preload: bool
-        if True, preload the data of the Raw objects.
+        if True, preload the data of the Raw objects
     """
     def __init__(self, path, recording_ids=None, target_name="pathological",
                  preload=False):
-        all_file_paths = read_all_file_names(path, extension='.edf')
+        all_file_paths = read_all_file_names(path, extension=".edf")
         all_file_paths = self.sort_chronologically(all_file_paths)
         if recording_ids is None:
             recording_ids = np.arange(len(all_file_paths))
@@ -37,8 +37,8 @@ class TUHAbnormal(BaseConcatDataset):
                 self._parse_properties_from_file_path(file_path))
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
             description = pd.Series(
-                {'age': age, 'pathological': pathological, 'gender': gender,
-                'session': train_or_eval, 'subject': subject_id},
+                {"age": age, "pathological": pathological, "gender": gender,
+                "session": train_or_eval, "subject": subject_id},
                 name=recording_id)
             base_ds = BaseDataset(raw, description, target_name=target_name)
             all_base_ds.append(base_ds)
@@ -47,7 +47,7 @@ class TUHAbnormal(BaseConcatDataset):
 
     @staticmethod
     def sort_chronologically(file_paths):
-        """ Use pandas groupby to sort the recordings chronologically
+        """Use pandas groupby to sort the recordings chronologically.
 
         Parameters
         ----------
@@ -90,7 +90,6 @@ class TUHAbnormal(BaseConcatDataset):
         return pathological == "abnormal", train_or_eval, int(subject_id)
 
 
-# TODO: this is very slow. how to improve?
 def read_all_file_names(directory, extension):
     """Read all files with specified extension from given path and sorts them
     based on a given sorting key.
@@ -98,9 +97,9 @@ def read_all_file_names(directory, extension):
     Parameters
     ----------
     directory: str
-        file path on HDD
+        parent directory to be searched for files of the specified type
     extension: str
-        file path extension, i.e. '.edf' or '.txt'
+        file extension, i.e. ".edf" or ".txt"
 
     Returns
     -------
@@ -108,21 +107,21 @@ def read_all_file_names(directory, extension):
         a list to all files found in (sub)directories of path
     """
     assert extension.startswith(".")
-    file_paths = glob.glob(directory + '**/*' + extension, recursive=True)
+    file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
     assert len(file_paths) > 0, (
         f"something went wrong. Found no {extension} files in {directory}")
     return file_paths
 
 
 def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
-    f = open(file_path, 'rb')
+    f = open(file_path, "rb")
     content = f.read(88)
     f.close()
     if return_raw_header:
         return content
     # bytes 8 to 88 contain ascii local patient identification
     # see https://www.teuniz.net/edfbrowser/edf%20format%20description.html
-    patient_id = content[8:].decode('ascii')
+    patient_id = content[8:].decode("ascii")
     assert "F" in patient_id or "M" in patient_id
     assert "Age" in patient_id
     [age] = re.findall(r"Age:(\d+)", patient_id)
