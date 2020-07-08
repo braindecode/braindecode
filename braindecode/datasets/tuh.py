@@ -57,17 +57,20 @@ class TUHAbnormal(BaseConcatDataset):
         -------
             sorted_file_paths: list(str)
             a list of all file paths sorted chronologically
-
         """
         # expect filenames as v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf
         #              version/file type/data_split/label/EEG reference/subset/subject/recording session/file
         # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
+        path_splits = [fp.split("/") for fp in file_paths]
+        identifiers = [[path_split[-3]] +
+                       path_split[-2].split("_") +
+                       [path_split[-1].split("_")[-1].split(".")[0]]
+                       for path_split in path_splits]
         df = pd.DataFrame(
-            [fp.split("/")[-2].split("_") + [fp.split("/")[-3]]
-             for fp in file_paths],
-            columns=["session", "year", "month", "day", "subject"])
+            identifiers,
+            columns=["subject", "session", "year", "month", "day", "token"])
         df = pd.concat([group for name, group in df.groupby(
-            ["year", "month", "day", "session", "subject"])])
+            ["year", "month", "day", "subject", "session", "token"])])
         return [file_paths[i] for i in df.index]
 
 
