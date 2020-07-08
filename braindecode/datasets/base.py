@@ -41,6 +41,8 @@ class BaseDataset(Dataset):
                 description = pd.Series(description)
         self.description = description
 
+        # save target name for load/save later
+        self.target_name = target_name
         if target_name is None:
             self.target = None
         elif target_name in self.description:
