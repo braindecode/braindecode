@@ -2,9 +2,7 @@ import numpy as np
 import pandas as pd
 import mne
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
-from ..datautil.windowers import (_check_windowing_arguments, create_windows_from_events)
-
+from .base import BaseDataset, BaseConcatDataset, WindowsDataset, TransformDataset
 
 def create_from_mne_raw(
         raws, trial_start_offset_samples, trial_stop_offset_samples,
@@ -45,6 +43,8 @@ def create_from_mne_raw(
         X and y transformed to a dataset format that is compativle with skorch
         and braindecode
     """
+    from ..datautil.windowers import (
+        _check_windowing_arguments, create_windows_from_events)
     if descriptions is not None:
         if len(descriptions) != len(raws):
             raise ValueError(
@@ -89,9 +89,11 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
     Returns
     -------
     windows_datasets: BaseConcatDataset
-        X and y transformed to a dataset format that is compativle with skorch
+        X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """
+    from ..datautil.windowers import (
+        _check_windowing_arguments, create_windows_from_events)
     _check_windowing_arguments(0, 0, window_size_samples,
                                window_stride_samples)
 
@@ -125,11 +127,11 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
                 baseline=None,
                 tmin=0,
                 tmax=(window_size_samples - 1) / epochs.info["sfreq"],
-                metadata=metadata)
+                metadata=metadata).load_data()
 
             mne_epochs.drop_bad(reject=None, flat=None)
 
-            windows_ds = WindowsDataset(mne_epochs)
+            windows_ds = TransformDataset(mne_epochs)
             list_of_windows_ds.append(windows_ds)
 
     return BaseConcatDataset(list_of_windows_ds)
