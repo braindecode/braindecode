@@ -16,6 +16,7 @@ install:
   - conda env create -f environment.yml 
   - conda info --envs
   - source activate braindecode
+  - conda install -c conda-forge certifi
   - pip install sphinx-gallery
   - pip install sphinx_rtd_theme
   - pip install --upgrade pytest pytest-cov codecov
