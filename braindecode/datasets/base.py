@@ -99,40 +99,41 @@ class BaseConcatDataset(ConcatDataset):
     """A base class for concatenated datasets. Holds either mne.Raw or
     mne.Epoch in self.datasets and has a pandas DataFrame with additional
     description.
-
     Parameters
     ----------
     list_of_ds: list
-        list of BaseDataset of WindowsDataset to be concatenated.
+        list of BaseDataset, BaseConcatDataset or WindowsDataset
     """
     def __init__(self, list_of_ds):
+        # if we get a list of BaseConcatDataset, get all the individual datasets
+        if isinstance(list_of_ds[0], BaseConcatDataset):
+            list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
         self.description = pd.DataFrame([ds.description for ds in list_of_ds])
+        self.description.reset_index(inplace=True, drop=True)
 
-    def split(self, some_property=None, split_ids=None):
+    def split(self, property=None, split_ids=None):
         """Split the dataset based on some property listed in its description
         DataFrame or based on indices.
-
         Parameters
         ----------
-        some_property: str
+        property: str
             some property which is listed in info DataFrame
         split_ids: list(int)
             list of indices to be combined in a subset
-
         Returns
         -------
         splits: dict{split_name: BaseConcatDataset}
             mapping of split name based on property or index based on split_ids
             to subset of the data
         """
-        if split_ids is None and some_property is None:
+        if split_ids is None and property is None:
             raise ValueError('Splitting requires defining ids or a property.')
         if split_ids is None:
-            if some_property not in self.description:
-                raise ValueError(f'{some_property} not found in self.description')
+            if property not in self.description:
+                raise ValueError(f'{property} not found in self.description')
             split_ids = {k: list(v) for k, v in self.description.groupby(
-                some_property).groups.items()}
+                property).groups.items()}
         else:
             split_ids = {split_i: split
                          for split_i, split in enumerate(split_ids)}
