@@ -12,7 +12,7 @@ from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
-from braindecode.datautil.xy import create_from_X_y
+from braindecode.datautil.xy import create_windows_from_X_y
 from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
@@ -148,15 +148,17 @@ def test_eeg_classifier():
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
 
-    train_set = create_from_X_y(X[:48], y[:48],
-                                drop_last_window=False,
-                                window_size_samples=input_window_samples,
-                                window_stride_samples=n_preds_per_input)
+    train_set = create_windows_from_X_y(X[:48], y[:48],
+                                        sfreq=raw.info["sfreq"],
+                                        drop_last_window=False,
+                                        window_size_samples=input_window_samples,
+                                        window_stride_samples=n_preds_per_input)
 
-    valid_set = create_from_X_y(X[48:60], y[48:60],
-                                drop_last_window=False,
-                                window_size_samples=input_window_samples,
-                                window_stride_samples=n_preds_per_input)
+    valid_set = create_windows_from_X_y(X[48:60], y[48:60],
+                                        sfreq=raw.info["sfreq"],
+                                        drop_last_window=False,
+                                        window_size_samples=input_window_samples,
+                                        window_stride_samples=n_preds_per_input)
 
     cropped_cb_train = CroppedTrialEpochScoring(
         "accuracy",

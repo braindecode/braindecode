@@ -15,7 +15,7 @@ from skorch.utils import to_numpy, to_tensor
 from torch import optim
 from torch.utils.data import Dataset, DataLoader
 from braindecode.classifier import EEGClassifier
-from braindecode.datautil.xy import create_from_X_y
+from braindecode.datautil.xy import create_windows_from_X_y
 from braindecode.training.scoring import CroppedTrialEpochScoring
 from braindecode.training.scoring import PostEpochTrainScoring
 from braindecode.models import ShallowFBCSPNet
@@ -86,9 +86,10 @@ def test_cropped_trial_epoch_scoring():
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
     ):
-        dataset_valid = create_from_X_y(
+        dataset_valid = create_windows_from_X_y(
             np.zeros((4, 1, 10)), np.concatenate(y_true),
-            window_size_samples=10, window_stride_samples=4, drop_last_window=False)
+            sfreq=100, window_size_samples=10, window_stride_samples=4,
+            drop_last_window=False)
 
         mock_skorch_net = MockSkorchNet()
         cropped_trial_epoch_scoring = CroppedTrialEpochScoring(

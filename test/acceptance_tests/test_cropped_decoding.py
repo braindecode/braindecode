@@ -11,7 +11,7 @@ from skorch.helper import predefined_split
 from torch import optim
 
 from braindecode import EEGClassifier
-from braindecode.datautil.xy import create_from_X_y
+from braindecode.datautil.xy import create_windows_from_X_y
 from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
@@ -88,15 +88,17 @@ def test_cropped_decoding():
     # Perform forward pass to determine how many outputs per input
     n_preds_per_input = get_output_shape(model, in_chans, input_window_samples)[2]
 
-    train_set = create_from_X_y(X[:60], y[:60],
-                                drop_last_window=False,
-                                window_size_samples=input_window_samples,
-                                window_stride_samples=n_preds_per_input)
+    train_set = create_windows_from_X_y(X[:60], y[:60],
+                                        sfreq=raw.info["sfreq"],
+                                        drop_last_window=False,
+                                        window_size_samples=input_window_samples,
+                                        window_stride_samples=n_preds_per_input)
 
-    valid_set = create_from_X_y(X[60:], y[60:],
-                                drop_last_window=False,
-                                window_size_samples=input_window_samples,
-                                window_stride_samples=n_preds_per_input)
+    valid_set = create_windows_from_X_y(X[60:], y[60:],
+                                        sfreq=raw.info["sfreq"],
+                                        drop_last_window=False,
+                                        window_size_samples=input_window_samples,
+                                        window_stride_samples=n_preds_per_input)
 
 
     train_split = predefined_split(valid_set)

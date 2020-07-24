@@ -102,7 +102,8 @@ Data Utils
 .. autosummary::
    :toctree: generated/
 
-    create_from_X_y
+    create_raws_from_X_y
+    create_windows_from_X_y
     create_from_mne_raw
     create_from_mne_epochs
     create_fixed_length_windows
