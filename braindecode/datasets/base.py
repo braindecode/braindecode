@@ -96,6 +96,7 @@ class BaseConcatDataset(ConcatDataset):
     """A base class for concatenated datasets. Holds either mne.Raw or
     mne.Epoch in self.datasets and has a pandas DataFrame with additional
     description.
+
     Parameters
     ----------
     list_of_ds: list
@@ -109,32 +110,37 @@ class BaseConcatDataset(ConcatDataset):
         self.description = pd.DataFrame([ds.description for ds in list_of_ds])
         self.description.reset_index(inplace=True, drop=True)
 
-    def split(self, property=None, split_ids=None):
-        """Split the dataset based on some property listed in its description
+    def split(self, by):
+        """Split the dataset based on information listed in its description
         DataFrame or based on indices.
+
         Parameters
         ----------
-        property: str
-            some property which is listed in info DataFrame
-        split_ids: list(int)
-            list of indices to be combined in a subset
+        by: str | list(int) | list(list(int))
+            if by is a string, splitting is performed based on the description
+            DataFrame column with this name.
+            if by is a (list of) list of integers, the position in the first
+            list corresponds to the split id and the integers to the
+            datapoints of that split
+
         Returns
         -------
-        splits: dict{split_name: BaseConcatDataset}
-            mapping of split name based on property or index based on split_ids
-            to subset of the data
+        splits: dict{str: BaseConcatDataset}
+            dictionary with the name of the split as key and the dataset as
+            value
         """
-        if split_ids is None and property is None:
-            raise ValueError('Splitting requires defining ids or a property.')
-        if split_ids is None:
-            if property not in self.description:
-                raise ValueError(f'{property} not found in self.description')
-            split_ids = {k: list(v) for k, v in self.description.groupby(
-                property).groups.items()}
+        if isinstance(by, str):
+            split_ids = {
+                k: list(v)
+                for k, v in self.description.groupby(by).groups.items()
+            }
         else:
-            split_ids = {split_i: split
-                         for split_i, split in enumerate(split_ids)}
+            # assume list(int)
+            if not isinstance(by[0], list):
+                by = [by]
+            # assume list(list(int))
+            split_ids = {split_i: split for split_i, split in enumerate(by)}
 
-        return {split_name: BaseConcatDataset(
+        return {str(split_name): BaseConcatDataset(
             [self.datasets[ds_ind] for ds_ind in ds_inds])
             for split_name, ds_inds in split_ids.items()}
