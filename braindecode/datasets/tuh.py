@@ -38,7 +38,7 @@ class TUHAbnormal(BaseConcatDataset):
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
             description = pd.Series(
                 {"age": age, "pathological": pathological, "gender": gender,
-                "session": train_or_eval, "subject": subject_id},
+                "train_or_eval": train_or_eval, "subject": subject_id},
                 name=recording_id)
             base_ds = BaseDataset(raw, description, target_name=target_name)
             all_base_ds.append(base_ds)
