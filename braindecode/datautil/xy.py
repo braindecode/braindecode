@@ -10,7 +10,7 @@ from braindecode.datautil.windowers import (
 log = logging.getLogger(__name__)
 
 
-def create_raws_from_X_y(X, y, sfreq, ch_names=None):
+def create_trials_from_X_y(X, y, sfreq, ch_names=None):
     """Create a BaseConcatDataset of BaseDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
     and y are corresponding targets.
@@ -77,7 +77,7 @@ def create_windows_from_X_y(X, y, drop_last_window, sfreq=None, ch_names=None,
         X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """
-    base_datasets = create_raws_from_X_y(
+    base_datasets = create_trials_from_X_y(
         X=X, y=y, sfreq=sfreq, ch_names=ch_names)
     n_samples_per_x = [x.shape[1] for x in X]
     if window_size_samples is None and window_stride_samples is None:

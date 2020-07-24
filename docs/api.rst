@@ -102,7 +102,7 @@ Data Utils
 .. autosummary::
    :toctree: generated/
 
-    create_raws_from_X_y
+    create_trials_from_X_y
     create_windows_from_X_y
     create_from_mne_raw
     create_from_mne_epochs

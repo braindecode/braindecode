@@ -11,7 +11,7 @@
 
 import mne
 
-from braindecode.datautil import create_from_X_y
+from braindecode.datautil import create_windows_from_X_y
 
 ###############################################################################
 # To set up the example, we first fetch some data using mne:
@@ -41,7 +41,7 @@ ch_names = parts[0].info["ch_names"]
 
 ###############################################################################
 # Convert to data format compatible with skorch and braindecode:
-windows_dataset = create_from_X_y(
+windows_dataset = create_windows_from_X_y(
     X, y, drop_last_window=False, sfreq=sfreq, ch_names=ch_names,
     window_stride_samples=500,
     window_size_samples=500,
