@@ -2,12 +2,22 @@ import numpy as np
 import pandas as pd
 import logging
 import mne
+from mne.utils import deprecated
 
 from braindecode.datasets.base import BaseDataset, BaseConcatDataset
-from braindecode.datautil.windowers import (
-    create_fixed_length_windows,)
+from braindecode.datautil.windowers import create_fixed_length_windows
 
 log = logging.getLogger(__name__)
+
+
+@deprecated("Use 'create_windows_from_X_y' instead (or also consider "
+            "'create_trials_from_X_y').")
+def create_from_X_y(X, y, drop_last_window, sfreq, ch_names=None,
+        window_size_samples=None, window_stride_samples=None):
+    return create_windows_from_X_y(X=X, y=y, drop_last_window=drop_last_window,
+                                   sfreq=sfreq, ch_names=ch_names,
+                                   window_size_samples=window_size_samples,
+                                   window_stride_samples=window_stride_samples)
 
 
 def create_trials_from_X_y(X, y, sfreq, ch_names=None):
@@ -21,8 +31,9 @@ def create_trials_from_X_y(X, y, sfreq, ch_names=None):
         list of pre-cut trials as n_trials x n_channels x n_times
     y: array-like
         targets corresponding to the trials
-    sfreq: common sampling frequency of all trials
-    ch_names: array-like
+    sfreq: float
+        common sampling frequency of all trials
+    ch_names: list of str
         channel names of the trials
 
     Returns
@@ -48,7 +59,7 @@ def create_trials_from_X_y(X, y, sfreq, ch_names=None):
     return base_datasets
 
 
-def create_windows_from_X_y(X, y, drop_last_window, sfreq=None, ch_names=None,
+def create_windows_from_X_y(X, y, drop_last_window, sfreq, ch_names=None,
         window_size_samples=None, window_stride_samples=None):
     """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
@@ -60,8 +71,9 @@ def create_windows_from_X_y(X, y, drop_last_window, sfreq=None, ch_names=None,
         list of pre-cut trials as n_trials x n_channels x n_times
     y: array-like
         targets corresponding to the trials
-    sfreq: common sampling frequency of all trials
-    ch_names: array-like
+    sfreq: float
+        common sampling frequency of all trials
+    ch_names: list of str
         channel names of the trials
     drop_last_window: bool
         whether or not have a last overlapping window, when
