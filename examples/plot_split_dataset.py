@@ -1,7 +1,7 @@
 """Split Dataset Example
 ========================
 
-In this example, we show multiple ways of how to split a BaseConcatDataset.
+In this example, we show multiple ways of how to split datasets.
 """
 
 # Authors: Lukas Gemein <l.gemein@gmail.com>
@@ -11,6 +11,7 @@ In this example, we show multiple ways of how to split a BaseConcatDataset.
 from IPython.display import display
 
 from braindecode.datasets import MOABBDataset
+from braindecode.datautil.windowers import create_windows_from_events
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
@@ -25,12 +26,8 @@ display(ds.description)
 # based on different runs. The returned dictionary will have string keys
 # corresponding to unique entries in the description DataFrame column
 splits = ds.split("run")
-display(splits["run_0"].description)
-display(splits["run_1"].description)
-display(splits["run_2"].description)
-display(splits["run_3"].description)
+display(splits)
 display(splits["run_4"].description)
-display(splits["run_5"].description)
 
 ###############################################################################
 # We can also split the dataset based on a list of integers corresponding to
@@ -47,7 +44,15 @@ display(splits["0"].description)
 # integers
 splits = ds.split([[0, 1, 5], [2, 3, 4], [6, 7, 8, 9, 10, 11]])
 display(splits)
-display(splits["0"].description)
-display(splits["1"].description)
 display(splits["2"].description)
 
+###############################################################################
+# Similarly, we can split datasets after creating windows
+windows = create_windows_from_events(
+    ds, trial_start_offset_samples=0, trial_stop_offset_samples=0)
+splits = windows.split("run")
+display(splits)
+splits = windows.split([4, 8])
+display(splits)
+splits = windows.split([[4, 8], [5, 9, 11]])
+display(splits)
