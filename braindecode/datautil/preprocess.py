@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 
-class MNEPreproc():
+class MNEPreproc(object):
     """Preprocessor for an MNE-raw/epoch.
 
     Parameters
@@ -43,7 +43,7 @@ class MNEPreproc():
 
 
 class NumpyPreproc(MNEPreproc):
-    """Preprocessor that directy operates on the underlying numpy array of an mne raw/epoch.
+    """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
 
     Parameters
     ----------
