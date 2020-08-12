@@ -8,3 +8,4 @@ from .hybrid import HybridNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .eegresnet import EEGResNet
 from .tcn import TCN
+from .sleep_stager import ChambonSleepStager
