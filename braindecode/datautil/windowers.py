@@ -21,7 +21,8 @@ def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
-        drop_bad_windows=True, **epochs_kwargs):
+        drop_bad_windows=True, picks=None, reject=None, flat=None,
+        on_missing='error'):
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
@@ -62,9 +63,18 @@ def create_windows_from_events(
         step allows identifying e.g., windows that fall outside of the
         continuous recording. It is suggested to run this step here as otherwise
         the BaseConcatDataset has to be updated as well.
-    epochs_kwargs: dict
-        Other keyword arguments to be passed to mne.Epochs. E.g., `picks`,
-        `reject`, `flat`, `on_missing`,
+    picks: str | list | slice | None
+        Channels to include. If None, all available channels are used. See
+        mne.Epochs.
+    reject: dict | None
+        Epoch rejection parameters based on peak-to-peak amplitude. If None, no
+        rejection is done based on peak-to-peak amplitude. See mne.Epochs.
+    flat: dict | None
+        Epoch rejection parameters based on flatness of signals. If None, no
+        rejection based on flatness is done. See mne.Epochs.
+    on_missing: str
+        What to do if one or several event ids are not found in the recording.
+        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
 
     Returns
     -------
@@ -150,11 +160,11 @@ def create_windows_from_events(
             'target': description})
 
         # window size - 1, since tmax is inclusive
-        epochs_kwargs = {'reject': None, 'flat': None, **epochs_kwargs}
         mne_epochs = mne.Epochs(
             ds.raw, events, events_id, baseline=None, tmin=0,
             tmax=(window_size_samples - 1) / ds.raw.info['sfreq'],
-            metadata=metadata, preload=preload, **epochs_kwargs)
+            metadata=metadata, preload=preload, picks=picks, reject=reject,
+            flat=flat, on_missing=on_missing)
 
         if drop_bad_windows:
             mne_epochs.drop_bad()
@@ -168,7 +178,8 @@ def create_windows_from_events(
 def create_fixed_length_windows(
         concat_ds, start_offset_samples, stop_offset_samples,
         window_size_samples, window_stride_samples, drop_last_window,
-        mapping=None, preload=False, drop_bad_windows=True, **epochs_kwargs):
+        mapping=None, preload=False, drop_bad_windows=True, picks=None,
+        reject=None, flat=None, on_missing='error'):
     """Windower that creates sliding windows.
 
     Parameters
@@ -196,9 +207,18 @@ def create_fixed_length_windows(
         step allows identifying e.g., windows that fall outside of the
         continuous recording. It is suggested to run this step here as otherwise
         the BaseConcatDataset has to be updated as well.
-    epochs_kwargs: dict
-        Other keyword arguments to be passed to mne.Epochs. E.g., `picks`,
-        `reject`, `flat`, `on_missing`,
+    picks: str | list | slice | None
+        Channels to include. If None, all available channels are used. See
+        mne.Epochs.
+    reject: dict | None
+        Epoch rejection parameters based on peak-to-peak amplitude. If None, no
+        rejection is done based on peak-to-peak amplitude. See mne.Epochs.
+    flat: dict | None
+        Epoch rejection parameters based on flatness of signals. If None, no
+        rejection based on flatness is done. See mne.Epochs.
+    on_missing: str
+        What to do if one or several event ids are not found in the recording.
+        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
 
     Returns
     -------
@@ -242,11 +262,11 @@ def create_fixed_length_windows(
         })
 
         # window size - 1, since tmax is inclusive
-        epochs_kwargs = {'reject': None, 'flat': None, **epochs_kwargs}
         mne_epochs = mne.Epochs(
             ds.raw, fake_events, baseline=None, tmin=0,
             tmax=(window_size_samples - 1) / ds.raw.info['sfreq'],
-            metadata=metadata, preload=preload, **epochs_kwargs)
+            metadata=metadata, preload=preload, picks=picks, reject=reject,
+            flat=flat, on_missing=on_missing)
 
         if drop_bad_windows:
             mne_epochs.drop_bad()

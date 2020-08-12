@@ -5,6 +5,7 @@ import numpy as np
 import mne
 import h5py
 import torch
+from sklearn.utils import check_random_state
 
 
 def set_random_seeds(seed, cuda):
@@ -252,9 +253,7 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
     save_fname : dict | None
         Dictionary containing the name the raw data was saved to.
     """
-    if random_state is None or isinstance(random_state, int):
-        random_state = np.random.RandomState(random_state)
-
+    random_state = check_random_state(random_state)
     data = random_state.rand(n_channels, n_times)
     ch_names = [f'ch{i}' for i in range(n_channels)]
     ch_types = ['eeg'] * n_channels

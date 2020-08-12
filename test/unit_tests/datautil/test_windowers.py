@@ -354,18 +354,29 @@ def test_windows_cropped(lazy_loadable_dataset):
 
 
 def test_epochs_kwargs(lazy_loadable_dataset):
+    picks = ['ch0']
+    on_missing = 'warning'
+    flat = {'eeg': 3e-6}
+    reject = {'eeg': 43e-6}
+
     windows = create_windows_from_events(
         concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
-        window_stride_samples=100, drop_last_window=False, picks=['ch0'],
-        on_missing='warning', flat={'eeg': 1e-6})
+        window_stride_samples=100, drop_last_window=False, picks=picks,
+        on_missing=on_missing, flat=flat, reject=reject)
 
-    assert len(windows.datasets[0].windows.info['chs']) == 1
+    epochs = windows.datasets[0].windows
+    assert epochs.ch_names == picks
+    assert epochs.reject == reject
+    assert epochs.flat == flat
 
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset, start_offset_samples=0,
         stop_offset_samples=None, window_size_samples=100,
-        window_stride_samples=100, drop_last_window=True, picks=['ch0'],
-        on_missing='warning', flat={'eeg': 1e-6})
+        window_stride_samples=100, drop_last_window=False, picks=picks,
+        on_missing=on_missing, flat=flat, reject=reject)
 
-    assert len(windows.datasets[0].windows.info['chs']) == 1
+    epochs = windows.datasets[0].windows
+    assert epochs.ch_names == picks
+    assert epochs.reject == reject
+    assert epochs.flat == flat
