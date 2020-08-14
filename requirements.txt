@@ -4,4 +4,4 @@ scipy
 matplotlib
 h5py
 mne
-skorch==0.7
+skorch

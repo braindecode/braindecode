@@ -146,9 +146,12 @@ class CroppedTrialEpochScoring(EpochScoring):
         assert self.use_caching == True
         if not self.crops_to_trials_computed:
             if self.on_train:
+                # Prevent that rng state of torch is changed by
+                # creation+usage of iterator
+                rng_state = torch.random.get_rng_state()
                 pred_results = net.predict_with_window_inds_and_ys(
                     dataset_train)
-
+                torch.random.set_rng_state(rng_state)
             else:
                 pred_results = {}
                 pred_results['i_window_in_trials'] = np.concatenate(
@@ -250,6 +253,12 @@ class PostEpochTrainScoring(EpochScoring):
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         if len(self.y_preds_) == 0:
             dataset = net.get_dataset(dataset_train)
+            # Prevent that rng state of torch is changed by
+            # creation+usage of iterator
+            # Unfortunatenly calling __iter__() of a pytorch
+            # DataLoader will change the random state
+            # Note line below setting rng state back
+            rng_state = torch.random.get_rng_state()
             iterator = net.get_iterator(dataset, training=False)
             y_preds = []
             y_test = []
@@ -260,6 +269,7 @@ class PostEpochTrainScoring(EpochScoring):
                 y_test.append(self.target_extractor(batch_y))
                 y_preds.append(yp)
             y_test = np.concatenate(y_test)
+            torch.random.set_rng_state(rng_state)
 
             # Adding the recomputed preds to all other
             # instances of PostEpochTrainScoring of this
@@ -273,8 +283,9 @@ class PostEpochTrainScoring(EpochScoring):
             for cb in epoch_cbs:
                 cb.y_preds_ = y_preds
                 cb.y_trues_ = y_test
-
         # y pred should be same as self.y_preds_
+        # robintibor@gmail.com: Unclear if this also leads to any
+        # random generator call?
         with _cache_net_forward_iter(
             net, use_caching=True, y_preds=self.y_preds_
         ) as cached_net:
