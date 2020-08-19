@@ -284,7 +284,7 @@ class PostEpochTrainScoring(EpochScoring):
                 cb.y_preds_ = y_preds
                 cb.y_trues_ = y_test
         # y pred should be same as self.y_preds_
-        # robintibor@gmail.com: Unclear if this also leads to any
+        # Unclear if this also leads to any
         # random generator call?
         with _cache_net_forward_iter(
             net, use_caching=True, y_preds=self.y_preds_
