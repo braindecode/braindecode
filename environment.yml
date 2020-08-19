@@ -14,7 +14,7 @@ dependencies:
 - pytorch
 - pytest
 - pip
-- skorch==0.7
+- skorch
 - mne
 - pip:
   - https://github.com/braindecode/braindecode/zipball/master
