@@ -149,7 +149,7 @@ class BaseConcatDataset(ConcatDataset):
 
 class TransformDataset(WindowsDataset):
 
-    def __init__(self, windows, description=None, transform_list=[TransformSignal(identity)]):
+    def __init__(self, windows, description=None, transform_list=[[TransformSignal(identity)]]):
         super(TransformDataset, self).__init__(windows, description)
         self.transform_list = transform_list
         self.len_tf_list = len(transform_list)
@@ -160,11 +160,12 @@ class TransformDataset(WindowsDataset):
         tf_index = index % self.len_tf_list
         X = self.windows.get_data(item=img_index)[0].astype('float32')
         y = self.y[index]
-        X = self.transform_list[tf_index].transform(X)
+        for transform in self.transform_list[tf_index]:
+            X = transform.transform(X)
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[index])
         return X, y, crop_inds
 
     def __len__(self):
-        return len(self.windows.events)*len(self.transform_list)
+        return len(self.windows.events) * len(self.transform_list)
