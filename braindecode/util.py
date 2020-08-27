@@ -329,5 +329,5 @@ def update_estimator_docstring(base_class, docstring):
     return out_docstring
 
 
-def identity(x):
+def identity(x, params={}):
     return(x)

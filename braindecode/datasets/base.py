@@ -12,7 +12,7 @@ Dataset classes.
 
 import numpy as np
 import pandas as pd
-
+import torch
 from torch.utils.data import Dataset, ConcatDataset
 from .transform_classes import TransformSignal
 from ..util import identity
@@ -114,6 +114,12 @@ class BaseConcatDataset(ConcatDataset):
         self.description = pd.DataFrame([ds.description for ds in list_of_ds])
         self.transform_list = list_of_ds[0].transform_list
 
+    def change_transform_list(self, newlist):
+        for i in range(len(self.datasets)):
+            self.datasets[i].transform_list = newlist
+        self.cumulative_sizes = self.cumsum(self.datasets)
+        self.transform_list = newlist
+
     def split(self, some_property=None, split_ids=None):
         """Split the dataset based on some property listed in its description
         DataFrame or based on indices.
@@ -152,20 +158,21 @@ class TransformDataset(WindowsDataset):
     def __init__(self, windows, description=None, transform_list=[[TransformSignal(identity)]]):
         super(TransformDataset, self).__init__(windows, description)
         self.transform_list = transform_list
-        self.len_tf_list = len(transform_list)
 
     def __getitem__(self, index):
         
-        img_index = index // self.len_tf_list
-        tf_index = index % self.len_tf_list
-        X = self.windows.get_data(item=img_index)[0].astype('float32')
-        y = self.y[index]
+        img_index = index // len(self.transform_list)
+        print(img_index)
+        tf_index = index % len(self.transform_list)
+        print(tf_index)
+        X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
+        y = self.y[img_index]
         for transform in self.transform_list[tf_index]:
             X = transform.transform(X)
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
-        crop_inds = list(self.crop_inds[index])
-        return X, y, crop_inds
+        crop_inds = list(self.crop_inds[img_index])
+        return X, y, crop_inds #TODO : modifier getitem de base sur la version gitté
 
     def __len__(self):
         return len(self.windows.events) * len(self.transform_list)
