@@ -162,9 +162,7 @@ class TransformDataset(WindowsDataset):
     def __getitem__(self, index):
         
         img_index = index // len(self.transform_list)
-        print(img_index)
         tf_index = index % len(self.transform_list)
-        print(tf_index)
         X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
         y = self.y[img_index]
         for transform in self.transform_list[tf_index]:
