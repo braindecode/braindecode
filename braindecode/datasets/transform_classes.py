@@ -3,10 +3,11 @@ import torch
 
 class TransformFFT:
 
-    def __init__(self, policy,
+    def __init__(self, policy, params={},
                  fft_args={"n_fft": 512, "hop_length": 256,
                            "win_length": 512}):
         self.policy = policy
+        self.params = params
         self.n_fft = fft_args["n_fft"]
         self.hop_length = fft_args["hop_length"]
         self.win_length = fft_args["win_length"]
@@ -24,16 +25,17 @@ class TransformFFT:
                            win_length=self.win_length,
                            window=torch.hann_window(self.n_fft))
 
-        return self.policy(X)
+        return self.policy(X, self.params)
         # if type = "axis_warp":
         #    return(warp_along_axis())
 
 
 class TransformSignal:
 
-    def __init__(self, policy,
+    def __init__(self, policy, params={},
                  fft_args={"n_fft": 512, "hop_length": 256,
                            "win_length": 512}):
+        self.params = params
         self.policy = policy
         self.n_fft = fft_args["n_fft"]
         self.hop_length = fft_args["hop_length"]
@@ -49,4 +51,4 @@ class TransformSignal:
                             hop_length=self.hop_length,
                             win_length=self.n_fft,
                             window=torch.hann_window(self.n_fft))
-        return self.policy(X)
+        return self.policy(X, self.params)
