@@ -16,6 +16,7 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+import mne
 
 
 class MNEPreproc():
@@ -260,15 +261,14 @@ def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
     """Applies multiple bandpass filters to the signals in raw. Raw will be
     modified in-place and number of channels in raw will be updated to
     len(frequency_bands) * len(raw.ch_names) (-len(raw.ch_names) if
-    drop_original_signals). For filtering arguments please refer to
-    mne.filter.filter_data().
+    drop_original_signals).
 
-    Params
-    ------
-    raw: mne.Raw
-        The raw singnals to be filtered
+    Parameters
+    ----------
+    raw: Instance of mne.io.Raw
+        The raw signals to be filtered
     frequency_bands: list(tuple)
-        The frequency bands to be fitlered for (e.g. [(4, 8), (8, 13)])
+        The frequency bands to be filtered for (e.g. [(4, 8), (8, 13)])
     drop_original_signals: bool
         Whether to drop the original unfiltered signals
     """
@@ -283,10 +283,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
     all_filtered = []
     for (l_freq, h_freq) in frequency_bands:
         filtered = raw.copy()
-        filtered.filter(
-            l_freq=l_freq, h_freq=h_freq, picks="all", n_jobs=n_jobs,
-            method=method, iir_params=iir_params,  phase=phase,
-            fir_window=fir_window, fir_design=fir_design, **filter_kwargs)
+        filtered.filter(l_freq=l_freq, h_freq=h_freq, **filter_kwargs)
         filtered.info["highpass"] = raw.info["highpass"]
         filtered.info["lowpass"] = raw.info["lowpass"]
         # add frequency band annotation to channel names
@@ -303,3 +300,9 @@ def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
     raw.reorder_channels(chs_by_freq_band)
     if drop_original_signals:
         raw.drop_channels(original_ch_names)
+
+
+# copy docstring from mne to here
+filterbank.__doc__ += mne.io.Raw.filter.__doc__[
+        mne.io.Raw.filter.__doc__.find("picks : "):
+        mne.io.Raw.filter.__doc__.find("Returns")].replace(8 * " ", 4 * " ")
