@@ -284,6 +284,10 @@ def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
     for (l_freq, h_freq) in frequency_bands:
         filtered = raw.copy()
         filtered.filter(l_freq=l_freq, h_freq=h_freq, **filter_kwargs)
+        # mne automatically changes the highpass/lowpass info values
+        # when applying filters and channels cant be added if they have
+        # different such parameters. Not needed when making picks as
+        # high pass is not modified by filter if pick is specified
         filtered.info["highpass"] = raw.info["highpass"]
         filtered.info["lowpass"] = raw.info["lowpass"]
         # add frequency band annotation to channel names
