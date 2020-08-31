@@ -12,6 +12,7 @@ ToDo: should transformer also transform y (e.g. cutting continuous labelled
 
 from collections.abc import Iterable
 from functools import partial
+from warnings import warn
 
 import numpy as np
 import pandas as pd
@@ -251,3 +252,54 @@ def scale(data, factor):
     if hasattr(data, '_data'):
         data._data = scaled
     return scaled
+
+
+def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
+               method='fir', iir_params=None, phase='zero', fir_window='hamming',
+               fir_design='firwin', **filter_kwargs):
+    """Applies multiple bandpass filters to the signals in raw. Raw will be
+    modified in-place and number of channels in raw will be updated to
+    len(frequency_bands) * len(raw.ch_names) (-len(raw.ch_names) if
+    drop_original_signals). For filtering arguments please refer to
+    mne.filter.filter_data().
+
+    Params
+    ------
+    raw: mne.Raw
+        The raw singnals to be filtered
+    frequency_bands: list(tuple)
+        The frequency bands to be fitlered for (e.g. [(4, 8), (8, 13)])
+    drop_original_signals: bool
+        Whether to drop the original unfiltered signals
+    """
+    if not frequency_bands:
+        raise ValueError(f"Expected at least one frequency band, got"
+                         f" {frequency_bands}")
+    if not all([len(ch_name) < 8 for ch_name in raw.ch_names]):
+        warn("Try to use shorter channel names, since frequency band "
+             "annotation requires an estimated 4-8 chars depending on the "
+             "frequency ranges. Will truncate to 15 chars (mne max).")
+    original_ch_names = raw.ch_names
+    all_filtered = []
+    for (l_freq, h_freq) in frequency_bands:
+        filtered = raw.copy()
+        filtered.filter(
+            l_freq=l_freq, h_freq=h_freq, picks="all", n_jobs=n_jobs,
+            method=method, iir_params=iir_params,  phase=phase,
+            fir_window=fir_window, fir_design=fir_design, **filter_kwargs)
+        filtered.info["highpass"] = raw.info["highpass"]
+        filtered.info["lowpass"] = raw.info["lowpass"]
+        # add frequency band annotation to channel names
+        # truncate to a max of 15 characters, since mne does not allow for more
+        filtered.rename_channels({
+            old_name: (old_name + f"_{l_freq}-{h_freq}")[-15:]
+            for old_name in filtered.ch_names})
+        all_filtered.append(filtered)
+    raw.add_channels(all_filtered)
+    # reorder channels by frequency band
+    chs_by_freq_band = [
+        ch for i in range(len(original_ch_names))
+        for ch in raw.ch_names[i::len(original_ch_names)]]
+    raw.reorder_channels(chs_by_freq_band)
+    if drop_original_signals:
+        raw.drop_channels(original_ch_names)
