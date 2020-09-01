@@ -160,14 +160,16 @@ def test_split_dataset(concat_ds_targets):
     assert len(splits) == 1
     assert len(splits["0"].datasets) == 1
 
-    splits = concat_ds.split([[0], [1, 2]])
+    original_ids = [1, 2]
+    splits = concat_ds.split([[0], original_ids])
     assert len(splits) == 2
     assert list(splits["0"].description.index) == [0]
     assert len(splits["0"].datasets) == 1
-    split_ids = [1, 2]
+    # when creating new BaseConcatDataset, index is reset
+    split_ids = [0, 1]
     assert list(splits["1"].description.index) == split_ids
     assert len(splits["1"].datasets) == 2
 
     for i, ds in enumerate(splits["1"].datasets):
         np.testing.assert_array_equal(
-            ds.raw.get_data(), concat_ds.datasets[split_ids[i]].raw.get_data())
+            ds.raw.get_data(), concat_ds.datasets[original_ids[i]].raw.get_data())
