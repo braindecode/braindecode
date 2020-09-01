@@ -255,10 +255,9 @@ def scale(data, factor):
     return scaled
 
 
-def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
-               method='fir', iir_params=None, phase='zero', fir_window='hamming',
-               fir_design='firwin', **filter_kwargs):
-    """Applies multiple bandpass filters to the signals in raw. Raw will be
+def filterbank(raw, frequency_bands, drop_original_signals=True,
+               **mne_filter_kwargs):
+    """Applies multiple bandpass filters to the signals in raw. The raw will be
     modified in-place and number of channels in raw will be updated to
     len(frequency_bands) * len(raw.ch_names) (-len(raw.ch_names) if
     drop_original_signals).
@@ -271,6 +270,9 @@ def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
         The frequency bands to be filtered for (e.g. [(4, 8), (8, 13)])
     drop_original_signals: bool
         Whether to drop the original unfiltered signals
+    mne_filter_kwargs: dict
+        Keyworkd arguments for filtering supported by mne.io.Raw.filter().
+        Please refer to mne for a detailed explanation.
     """
     if not frequency_bands:
         raise ValueError(f"Expected at least one frequency band, got"
@@ -283,10 +285,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
     all_filtered = []
     for (l_freq, h_freq) in frequency_bands:
         filtered = raw.copy()
-        filtered.filter(
-            l_freq=l_freq, h_freq=h_freq, picks="all", n_jobs=n_jobs,
-            method=method, iir_params=iir_params,  phase=phase,
-            fir_window=fir_window, fir_design=fir_design, **filter_kwargs)
+        filtered.filter(l_freq=l_freq, h_freq=h_freq, **mne_filter_kwargs)
         # mne automatically changes the highpass/lowpass info values
         # when applying filters and channels cant be added if they have
         # different such parameters. Not needed when making picks as
@@ -307,9 +306,3 @@ def filterbank(raw, frequency_bands, drop_original_signals=True, n_jobs=1,
     raw.reorder_channels(chs_by_freq_band)
     if drop_original_signals:
         raw.drop_channels(original_ch_names)
-
-
-# copy docstring from mne to here
-filterbank.__doc__ += mne.io.Raw.filter.__doc__[
-        mne.io.Raw.filter.__doc__.find("picks : "):
-        mne.io.Raw.filter.__doc__.find("Returns")].replace(8 * " ", 4 * " ")
