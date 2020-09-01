@@ -10,6 +10,8 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
@@ -110,25 +112,39 @@ class BaseConcatDataset(ConcatDataset):
         self.description = pd.DataFrame([ds.description for ds in list_of_ds])
         self.description.reset_index(inplace=True, drop=True)
 
-    def split(self, by):
+    def split(self, by=None, some_property=None, split_ids=None):
         """Split the dataset based on information listed in its description
         DataFrame or based on indices.
 
         Parameters
         ----------
         by: str | list(int) | list(list(int))
-            if by is a string, splitting is performed based on the description
+            If by is a string, splitting is performed based on the description
             DataFrame column with this name.
-            if by is a (list of) list of integers, the position in the first
+            If by is a (list of) list of integers, the position in the first
             list corresponds to the split id and the integers to the
-            datapoints of that split
+            datapoints of that split.
+        some_property: str
+            Some property which is listed in info DataFrame.
+        split_ids: list(int) | list(list(int))
+            List of indices to be combined in a subset.
 
         Returns
         -------
         splits: dict{str: BaseConcatDataset}
-            dictionary with the name of the split as key and the dataset as
-            value
+            A dictionary with the name of the split (a string) as key and the
+            dataset as value.
         """
+        args_not_none = [
+            by is not None, some_property is not None, split_ids is not None]
+        if sum(args_not_none) != 1:
+            raise ValueError("Splitting requires exactly one argument.")
+
+        if some_property is not None or split_ids is not None:
+            warnings.warn("Keyword arguments `some_property` and `split_ids` "
+                          "are deprecated and will be removed in the future. "
+                          "Use `by` instead.")
+            by = some_property if some_property is not None else split_ids
         if isinstance(by, str):
             split_ids = {
                 k: list(v)
