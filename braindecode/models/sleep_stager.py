@@ -3,8 +3,38 @@ from torch import nn
 
 
 class ChambonSleepStager(nn.Module):
-    """
-    XXX: Write docstring
+    """Sleep staging architecture from [1]_.
+
+    Convolutional neural network for sleep staging described in [1]_.
+
+    Parameters
+    ----------
+    n_channels : int
+        Number of EEG channels.
+    sfreq : float
+        EEG sampling frequency.
+    n_conv_chs : int
+        Number of convolutional channels. Set to 8 in [1]_.
+    time_conv_size_s : float
+        Size of filters in temporal convolution layers, in seconds. Set to 0.5
+        in [1]_ (64 samples at sfreq=128).
+    max_pool_size_s : float
+        Max pooling size, in seconds. Set to 0.125 in [1]_ (16 samples at
+        sfreq=128).
+    n_classes : int
+        Number of classes.
+    input_size_s : float
+        Size of the input, in seconds.
+    dropout : float
+        Dropout rate before the output dense layer.
+
+    References
+    ----------
+    .. [1] Chambon, S., Galtier, M. N., Arnal, P. J., Wainrib, G., &
+           Gramfort, A. (2018). A deep learning architecture for temporal sleep
+           stage classification using multivariate and multimodal time series.
+           IEEE Transactions on Neural Systems and Rehabilitation Engineering,
+           26(4), 758-769.
     """
     def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, n_classes=5, input_size_s=30,
@@ -43,8 +73,9 @@ class ChambonSleepStager(nn.Module):
         return n_channels * (input_size // (max_pool_size ** 2)) * n_conv_chs
 
     def forward(self, x):
-        """
-        Arguments
+        """Forward pass.
+
+        Parameters
         ---------
         x: torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).

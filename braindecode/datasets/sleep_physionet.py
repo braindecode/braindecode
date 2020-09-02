@@ -11,8 +11,8 @@ from .base import BaseDataset, BaseConcatDataset
 class SleepPhysionet(BaseConcatDataset):
     """Sleep Physionet dataset.
 
-    Sleep dataset from https://physionet.org/content/sleep-edfx/1.0.0/. Contains
-    overnight recordings from 20 healthy subjects.
+    Sleep dataset from https://physionet.org/content/sleep-edfx/1.0.0/.
+    Contains overnight recordings from 78 healthy subjects.
 
     See [MNE example](https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html).
 
@@ -28,15 +28,15 @@ class SleepPhysionet(BaseConcatDataset):
     load_eeg_only: bool
         If True, only load the EEG channels and discard the others (EOG, EMG,
         temperature, respiration) to avoid resampling the other signals.
-
-    TODO:
-    - Include all recordings from extended version (PR to MNE?)
-    - Crop before and after each file
+    crop_wake_mins: float
+        Number of minutes of wake time to keep before the first sleep event
+        and after the last sleep event. Used to reduce the imbalance in this
+        dataset. Ignore if
     """
     def __init__(self, subject_ids=None, recording_ids=None, preload=False,
-                 load_eeg_only=True):
+                 load_eeg_only=True, crop_wake_mins=0):
         if subject_ids is None:
-            subject_ids = range(20)
+            subject_ids = range(83)
         if recording_ids is None:
             recording_ids = [1, 2]
 
@@ -45,13 +45,15 @@ class SleepPhysionet(BaseConcatDataset):
         all_base_ds = list()
         for p in paths:
             raw, desc = self._load_raw(
-                p[0], p[1], preload=preload, load_eeg_only=load_eeg_only)
+                p[0], p[1], preload=preload, load_eeg_only=load_eeg_only,
+                crop_wake_mins=crop_wake_mins)
             base_ds = BaseDataset(raw, desc)
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 
     @staticmethod
-    def _load_raw(raw_fname, ann_fname, preload, load_eeg_only=True):
+    def _load_raw(raw_fname, ann_fname, preload, load_eeg_only=True,
+                  crop_wake_mins=False):
         ch_mapping = {
             'EOG horizontal': 'eog',
             'Resp oro-nasal': 'misc',
@@ -64,6 +66,19 @@ class SleepPhysionet(BaseConcatDataset):
         raw = mne.io.read_raw_edf(raw_fname, preload=preload, exclude=exclude)
         annots = mne.read_annotations(ann_fname)
         raw.set_annotations(annots, emit_warning=False)
+
+        if crop_wake_mins > 0:
+            # Find first and last sleep stages
+            mask = [
+                x[-1] in ['1', '2', '3', '4', 'R'] for x in annots.description]
+            sleep_event_inds = np.where(mask)[0]
+
+            # Crop raw
+            tmin = annots[int(sleep_event_inds[0])]['onset'] - \
+                   crop_wake_mins * 60
+            tmax = annots[int(sleep_event_inds[-1])]['onset'] + \
+                   crop_wake_mins * 60
+            raw.crop(tmin=tmin, tmax=tmax)
 
         # Rename EEG channels
         ch_names = {
