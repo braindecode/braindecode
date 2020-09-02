@@ -3,7 +3,16 @@ Sleep staging on Sleep Physionet dataset
 ========================================
 
 This tutorial shows how to train and test a sleep staging neural network with
-Braindecode on the Sleep Physionet dataset.
+Braindecode. We follow the approach of [1]_, but on the openly accessible Sleep
+Physionet dataset.
+
+References
+----------
+.. [1] Chambon, S., Galtier, M. N., Arnal, P. J., Wainrib, G., &
+        Gramfort, A. (2018). A deep learning architecture for temporal sleep
+        stage classification using multivariate and multimodal time series.
+        IEEE Transactions on Neural Systems and Rehabilitation Engineering,
+        26(4), 758-769.
 """
 
 
@@ -34,7 +43,9 @@ Braindecode on the Sleep Physionet dataset.
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
-dataset = SleepPhysionet(subject_ids=[0, 1], recording_ids=[1])
+dataset = SleepPhysionet(
+    subject_ids=[0, 1], recording_ids=[1], crop_wake_mins=0)
+# XXX Enable crop_wake_mins once MNE handles cropped files
 
 
 ######################################################################
@@ -44,12 +55,13 @@ dataset = SleepPhysionet(subject_ids=[0, 1], recording_ids=[1])
 
 
 ######################################################################
-# Next, we preprocess the dataset. We apply a lowpass filter and normalize the
-# data channel-wise.
+# Next, we preprocess the raw data. We apply a lowpass filter and normalize the
+# data channel-wise. We omit the downsampling step of Chambon et al. (2018) as
+# the Sleep Physionet data is already sampled at a lower 100 Hz.
 #
 
-from braindecode.datautil.preprocess import zscore
-from braindecode.datautil.preprocess import MNEPreproc, NumpyPreproc
+from braindecode.datautil.preprocess import (
+    MNEPreproc, NumpyPreproc, preprocess)
 
 high_cut_hz = 30  # high cut frequency for filtering
 
@@ -57,15 +69,11 @@ preprocessors = [
     # convert from volt to microvolt, directly modifying the numpy array
     NumpyPreproc(fn=lambda x: x * 1e6),
     # bandpass filter
-    MNEPreproc(fn='filter', h_freq=high_cut_hz),
-    # channel-wise z-score normalization
-    NumpyPreproc(fn=zscore)
+    MNEPreproc(fn='filter', l_freq=None, h_freq=high_cut_hz),
 ]
 
 # Transform the data
 preprocess(dataset, preprocessors)
-
-# XXX MAKE SURE THE DATA IS PREPROCESSED AS EXPECTED!!!
 
 
 ######################################################################
@@ -81,17 +89,39 @@ from braindecode.datautil.windowers import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    'Sleep stage W': 1,
-    'Sleep stage 1': 2,
-    'Sleep stage 2': 3,
-    'Sleep stage 3': 4,
-    'Sleep stage 4': 4,
-    'Sleep stage R': 5
+    'Sleep stage W': 0,
+    'Sleep stage 1': 1,
+    'Sleep stage 2': 2,
+    'Sleep stage 3': 3,
+    'Sleep stage 4': 3,
+    'Sleep stage R': 4
 }
+
+window_size_s = 30
+sfreq = 100
+window_size_samples = window_size_s * sfreq
 
 windows_dataset = create_windows_from_events(
     dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0,
-    preload=True, mapping=mapping)
+    window_size_samples=window_size_samples,
+    window_stride_samples=window_size_samples, preload=True, mapping=mapping)
+
+
+######################################################################
+# Window preprocessing
+# ~~~~~~~~~~~~~~~~~~~
+#
+
+
+######################################################################
+# We also preprocess the windows by applying channel-wise z-score normalization
+# in each window.
+#
+
+from braindecode.datautil.preprocess import zscore
+
+# preprocess(windows_dataset, [NumpyPreproc(fn=zscore)])
+# XXX This currently fails! We need a way to preprocess Epochs too.
 
 
 ######################################################################
@@ -106,9 +136,13 @@ windows_dataset = create_windows_from_events(
 #
 
 splitted = windows_dataset.split('subject')
-train_set = splitted['0']
-valid_set = splitted['1']
-# XXX Make sure this works!
+train_set = splitted[0]
+valid_set = splitted[1]
+
+# Print number of examples per class
+print(train_set.datasets[0].windows)
+print(valid_set.datasets[0].windows)
+# XXX Format in a table?
 
 
 ######################################################################
@@ -125,31 +159,31 @@ valid_set = splitted['1']
 
 import torch
 from braindecode.util import set_random_seeds
-from braindecode.models import ChambonStagerNet
+from braindecode.models import ChambonSleepStager
 
+cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
-seed = 87  # random seed to make results reproducible
+seed = 87
 # Set random seed to be able to reproduce results
 set_random_seeds(seed=seed, cuda=cuda)
 
-n_classes=4
-# Extract number of chans and time steps from dataset
-n_chans = train_set[0][0].shape[0]
-input_window_samples = train_set[0][0].shape[1]
+n_classes = 5
+# Extract number of channels and time steps from dataset
+n_channels = train_set[0][0].shape[0]
+input_size_samples = train_set[0][0].shape[1]
 
-model = ShallowFBCSPNet(
-    n_chans,
-    n_classes,
-    input_window_samples=input_window_samples,
-    final_conv_length='auto',
+model = ChambonSleepStager(
+    n_channels,
+    sfreq,
+    n_classes=n_classes,
+    input_size_s=input_size_samples / sfreq
 )
 
 # Send model to GPU
 if cuda:
     model.cuda()
-
 
 
 ######################################################################
@@ -159,7 +193,7 @@ if cuda:
 
 
 ######################################################################
-# Now we train the network! EEGClassifier is a Braindecode object
+# We can now train our network. EEGClassifier is a Braindecode object that is
 # responsible for managing the training of neural networks. It inherits
 # from skorch.NeuralNetClassifier, so the training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
@@ -167,42 +201,42 @@ if cuda:
 
 
 ######################################################################
-#    **Note**: In this tutorial, we use some default parameters that we
-#    have found to work well for motor decoding, however we strongly
-#    encourage you to perform your own hyperparameter optimization using
-#    cross validation on your training data.
+#    **Note**: We use the hyperparameters of Chambon et al. (2018), however
+#    these hyperparameters were optimized on a different dataset (MASS SS3) and
+#    with a different number of recordings. Therefore, it would make sense to
+#    perform hyperparameter optimization if reusing this code on a different
+#    dataset.
 #
 
-from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
-
+from skorch.callbacks import EpochScoring
 from braindecode import EEGClassifier
-# These values we found good for shallow network:
-lr = 0.0625 * 0.01
-weight_decay = 0
 
-# For deep4 they should be:
-# lr = 1 * 0.01
-# weight_decay = 0.5 * 0.001
+lr = 1e-3
+batch_size = 128
+n_epochs = 3
 
-batch_size = 64
-n_epochs = 4
+train_bal_acc = EpochScoring(
+    scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
+    lower_is_better=False)
+valid_bal_acc = EpochScoring(
+    scoring='balanced_accuracy', on_train=True, name='valid_bal_acc',
+    lower_is_better=False)
+callbacks = [('train_bal_acc', train_bal_acc),
+             ('valid_bal_acc', valid_bal_acc)]
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
-    optimizer=torch.optim.AdamW,
+    criterion=torch.nn.CrossEntropyLoss,
+    optimizer=torch.optim.Adam,
     train_split=predefined_split(valid_set),  # using valid_set for validation
     optimizer__lr=lr,
-    optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
-    callbacks=[
-        "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
-    ],
-    device=device,
+    callbacks=callbacks,
+    device=device
 )
-# Model training for a specified number of epochs. `y` is None as it is already supplied
-# in the dataset.
+# Model training for a specified number of epochs. `y` is None as it is already
+# supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
 
@@ -213,42 +247,41 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
-# Now we use the history stored by Skorch throughout training to plot
-# accuracy and loss curves.
+# We use the history stored by Skorch during training to plot the accuracy and
+# loss curves.
 #
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import pandas as pd
+
 # Extract loss and accuracy values for plotting from history object
-results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
-df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns,
-                  index=clf.history[:, 'epoch'])
+df = pd.DataFrame(clf.history.to_list())
 
 # get percent of misclass for better visual comparison to loss
-df = df.assign(train_misclass=100 - 100 * df.train_accuracy,
-               valid_misclass=100 - 100 * df.valid_accuracy)
-
 plt.style.use('seaborn')
 fig, ax1 = plt.subplots(figsize=(8, 3))
 df.loc[:, ['train_loss', 'valid_loss']].plot(
-    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14)
+    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False,
+    fontsize=14)
 
 ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
 ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
 
 ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
-df.loc[:, ['train_misclass', 'valid_misclass']].plot(
+df.loc[:, ['train_bal_acc', 'valid_bal_acc']].plot(
     ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
 ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
-ax2.set_ylabel("Misclassification Rate [%]", color='tab:red', fontsize=14)
+ax2.set_ylabel('Balanced accuracy [%]', color='tab:red', fontsize=14)
 ax2.set_ylim(ax2.get_ylim()[0], 85)  # make some room for legend
-ax1.set_xlabel("Epoch", fontsize=14)
+ax1.set_xlabel('Epoch', fontsize=14)
 
 # where some data has already been plotted to ax
 handles = []
-handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
-handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
+handles.append(
+    Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
+handles.append(
+    Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()

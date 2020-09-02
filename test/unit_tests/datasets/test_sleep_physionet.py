@@ -12,3 +12,11 @@ def test_all_signals():
     sp = SleepPhysionet(
         subject_ids=[0], recording_ids=[1], preload=True, load_eeg_only=False)
     assert len(sp.datasets[0].raw.ch_names) == 7
+
+
+def test_crop_wake():
+    sp = SleepPhysionet(
+        subject_ids=[0], recording_ids=[1], preload=True, load_eeg_only=True,
+        crop_wake_mins=30)
+    sfreq = sp.datasets[0].raw.info['sfreq']
+    assert len(sp) / (3600 * sfreq) < 7

@@ -3,16 +3,14 @@
 #
 # License: BSD-3
 
+
 import numpy as np
-
 import torch
+import pytest
 
-from braindecode.models import Deep4Net
-from braindecode.models import EEGNetv4, EEGNetv1
-from braindecode.models import HybridNet
-from braindecode.models import ShallowFBCSPNet
-from braindecode.models import EEGResNet
-from braindecode.models import TCN
+from braindecode.models import (
+    Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
+    ChambonSleepStager)
 
 
 def test_shallow_fbcsp_net():
@@ -117,3 +115,23 @@ def test_tcn():
     X = torch.Tensor(X.astype(np.float32))
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
+
+
+@pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
+                         [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
+def test_chambon_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
+    rng = np.random.RandomState(42)
+    time_conv_size_s = 0.5
+    max_pool_size_s = 0.125
+    n_examples = 10
+
+    model = ChambonSleepStager(
+        n_channels, sfreq, n_conv_chs=8, time_conv_size_s=time_conv_size_s,
+        max_pool_size_s=max_pool_size_s, n_classes=n_classes,
+        input_size_s=input_size_s, dropout=0.25)
+
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred = model(X)
+    assert y_pred.shape == (n_examples, n_classes)

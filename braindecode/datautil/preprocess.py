@@ -50,7 +50,7 @@ class NumpyPreproc(MNEPreproc):
     fn: callable
         Function that preprocesses the numpy array
     channel_wise: bool
-        Whether to apply the functiona
+        Whether to apply the function
     kwargs:
         Keyword arguments will be forwarded to the function
     """
