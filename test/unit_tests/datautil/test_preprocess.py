@@ -180,7 +180,7 @@ def test_exponential_running_init_block_size(mock_data):
 
 
 def test_filterbank(base_concat_ds):
-    base_concat_ds = base_concat_ds.split(split_ids=[[0]])[0]
+    base_concat_ds = base_concat_ds.split([[0]])["0"]
     preprocessors = [
         MNEPreproc('pick_channels', ch_names=sorted(["C4", "Cz"]), ordered=True),
         MNEPreproc(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
