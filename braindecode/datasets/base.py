@@ -32,7 +32,7 @@ class BaseDataset(Dataset):
     """
     def __init__(self, raw, description=None, target_name=None):
         self.raw = raw
-        self.description = self._create_description(description)
+        self.description = _create_description(description)
 
         # save target name for load/save later
         self.target_name = target_name
@@ -49,15 +49,16 @@ class BaseDataset(Dataset):
     def __len__(self):
         return len(self.raw)
 
-    def _create_description(self, description):
-        if description is not None:
-            if (not isinstance(description, pd.Series)
-                    and not isinstance(description, dict)):
-                raise ValueError(f"'{description}' has to be either a "
-                                 f"pandas.Series or a dict")
-            if isinstance(description, dict):
-                description = pd.Series(description)
-        return description
+
+def _create_description(description):
+    if description is not None:
+        if (not isinstance(description, pd.Series)
+                and not isinstance(description, dict)):
+            raise ValueError(f"'{description}' has to be either a "
+                             f"pandas.Series or a dict")
+        if isinstance(description, dict):
+            description = pd.Series(description)
+    return description
 
 
 class WindowsDataset(BaseDataset):
@@ -73,7 +74,7 @@ class WindowsDataset(BaseDataset):
     """
     def __init__(self, windows, description=None):
         self.windows = windows
-        self.description = self._create_description(description)
+        self.description = _create_description(description)
         self.y = np.array(self.windows.metadata.loc[:, 'target'])
         self.crop_inds = np.array(self.windows.metadata.loc[:,
                                   ['i_window_in_trial', 'i_start_in_trial',
