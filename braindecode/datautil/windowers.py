@@ -26,15 +26,21 @@ def create_windows_from_events(
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
-    [trial_start_offset_samples, trial_stop_offset_samples] around each event,
-    with a separation of window_stride_samples between consecutive windows. If
-    the last window around an event does not end at trial_stop_offset_samples
-    and drop_last_window is set to False, an additional overlapping window that
+    [trial onset + trial_start_offset_samples, trial onset + trial duration +
+    trial_stop_offset_samples] around each trial, with a separation of
+    window_stride_samples between consecutive windows. If the last window
+    around an event does not end at trial_stop_offset_samples and
+    drop_last_window is set to False, an additional overlapping window that
     ends at trial_stop_offset_samples is created.
 
-    in mne: tmin (s)                    trial onset        onset + duration (s)
-    trial:  |--------------------------------|--------------------------------|
-    here:   trial_start_offset_samples                trial_stop_offset_samples
+    Windows are extracted from the interval defined by the following:
+
+                                                  trial onset +
+                    trial onset                     duration
+    |--------------------|------------------------------|---------------------|
+    trial onset -                                                 trial onset +
+    trial_start_offset_samples                                       duration +
+                                                      trial_stop_offset_samples
 
     Parameters
     ----------
@@ -44,10 +50,14 @@ def create_windows_from_events(
         Start offset from original trial onsets, in samples.
     trial_stop_offset_samples: int
         Stop offset from original trial stop, in samples.
-    window_size_samples: int
-        Window size.
-    window_stride_samples: int
-        Stride between windows, in samples.
+    window_size_samples: int | None
+        Window size. If None, the window size is inferred from the original
+        trial size of the first trial and trial_start_offset_samples and
+        trial_stop_offset_samples.
+    window_stride_samples: int | None
+        Stride between windows, in samples. If None, the window size is
+        inferred from the original trial size of the first trial and
+        trial_start_offset_samples and trial_stop_offset_samples.
     drop_last_window: bool
         If True, an additional overlapping window that ends at
         trial_stop_offset_samples will be extracted around each event when the
@@ -105,6 +115,7 @@ def create_windows_from_events(
 
         events, events_id = mne.events_from_annotations(ds.raw, mapping)
         onsets = events[:, 0] - ds.raw.first_samp
+        # Onsets are relative to the beginning of the recording
         filtered_durations = np.array(
             [a['duration'] for a in ds.raw.annotations
              if a['description'] in events_id]
@@ -113,29 +124,29 @@ def create_windows_from_events(
         # XXX This could probably be simplified by using chunk_duration in
         #     `events_from_annotations`
 
-        if (stops[-1] + trial_stop_offset_samples >
-                ds.raw.n_times + ds.raw.first_samp):
-            raise ValueError('"trial_stop_offset_samples" too large. Stop of '
-                             f'last trial ({stops[-1]}) + '
-                             f'"trial_stop_offset_samples" '
-                             f'({trial_stop_offset_samples}) must be smaller '
-                             f'then length of recording ({len(ds)}).')
+        last_samp = ds.raw.first_samp + ds.raw.n_times
+        if stops[-1] + trial_stop_offset_samples > last_samp:
+            raise ValueError(
+                '"trial_stop_offset_samples" too large. Stop of last trial '
+                f'({stops[-1]}) + "trial_stop_offset_samples" '
+                f'({trial_stop_offset_samples}) must be smaller than length of'
+                f' recording ({len(ds)}).')
 
         if infer_window_size_stride:
             # window size is trial size
             if window_size_samples is None:
-                window_size_samples = stops[0] - (
+                window_size_samples = stops[0] + trial_stop_offset_samples - (
                     onsets[0] + trial_start_offset_samples)
                 window_stride_samples = window_size_samples
             this_trial_sizes = stops - (onsets  + trial_start_offset_samples)
             # Maybe actually this is not necessary?
-            # We could also just say we just assume window size= trial size
+            # We could also just say we just assume window size=trial size
             # in case not given, without this condition...
             # but then would have to change functions overall
             # to deal with varying window sizes hmmhmh
             assert np.all(this_trial_sizes == window_size_samples), (
-                "All trial sizes should be the same if you do not supply"
-                "a window size.")
+                'All trial sizes should be the same if you do not supply '
+                'a window size.')
 
         description = events[:, -1]
 
@@ -185,28 +196,28 @@ def create_fixed_length_windows(
     Parameters
     ----------
     concat_ds: ConcatDataset
-        a concat of base datasets each holding raw and descpription
+        A concat of base datasets each holding raw and descpription.
     start_offset_samples: int
-        start offset from beginning of recording in samples
+        Start offset from beginning of recording in samples.
     stop_offset_samples: int | None
-        stop offset from beginning of recording in samples. If None, set to be
+        Stop offset from beginning of recording in samples. If None, set to be
         the end of the recording.
     window_size_samples: int
-        window size
+        Window size.
     window_stride_samples: int
-        stride between windows
+        Stride between windows.
     drop_last_window: bool
-        whether or not have a last overlapping window, when
-        windows do not equally divide the continuous signal
+        Whether or not have a last overlapping window, when windows do not
+        equally divide the continuous signal.
     mapping: dict(str: int)
-        mapping from event description to target value
+        Mapping from event description to target value.
     preload: bool
-        if True, preload the data of the Epochs objects.
+        If True, preload the data of the Epochs objects.
     drop_bad_windows: bool
         If True, call `.drop_bad()` on the resulting mne.Epochs object. This
         step allows identifying e.g., windows that fall outside of the
-        continuous recording. It is suggested to run this step here as otherwise
-        the BaseConcatDataset has to be updated as well.
+        continuous recording. It is suggested to run this step here as
+        otherwise the BaseConcatDataset has to be updated as well.
     picks: str | list | slice | None
         Channels to include. If None, all available channels are used. See
         mne.Epochs.
@@ -282,30 +293,31 @@ def _compute_window_inds(
         drop_last_window):
     """Compute window start and stop indices.
 
-    Create window starts from trial onsets (shifted by offset) to trial end
-    separated by stride as long as window size fits into trial.
+    Create window starts from trial onsets (shifted by start_offset) to trial
+    end (shifted by stop_offset) separated by stride, as long as window size
+    fits into trial.
 
     Parameters
     ----------
     starts: array-like
-        trial starts in samples
+        Trial starts in samples.
     stops: array-like
-        trial stops in samples
+        Trial stops in samples.
     start_offset: int
-        start offset from original trial onsets in samples
+        Start offset from original trial onsets in samples.
     stop_offset: int
-        stop offset from original trial stop in samples
+        Stop offset from original trial stop in samples.
     size: int
-        window size
+        Window size.
     stride: int
-        stride between windows
+        Stride between windows.
     drop_last_window: bool
-        toggles of shifting last window within range or dropping last samples
+        Toggles of shifting last window within range or dropping last samples.
 
     Returns
     -------
     result_lists: (list, list, list, list)
-        trial, i_window_in_trial, start sample and stop sample of windows
+        Trial, i_window_in_trial, start sample and stop sample of windows.
     """
     starts = np.array([starts]) if isinstance(starts, int) else starts
     stops = np.array([stops]) if isinstance(stops, int) else stops
@@ -315,11 +327,11 @@ def _compute_window_inds(
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
-        # between original trial onsets (shifted by start_offset) and stops,
-        # generate possible window starts with given stride
+        # Generate possible window starts with given stride between original
+        # trial onsets (shifted by start_offset) and stops
         possible_starts = np.arange(start, stop, stride)
 
-        # possible window start is actually a start, if window size fits in
+        # Possible window start is actually a start, if window size fits in
         # trial start and stop
         for i_window, s in enumerate(possible_starts):
             if (s + size) <= stop:
@@ -327,7 +339,7 @@ def _compute_window_inds(
                 i_window_in_trials.append(i_window)
                 i_trials.append(start_i)
 
-        # if the last window start + window size is not the same as
+        # If the last window start + window size is not the same as
         # stop + stop_offset, create another window that overlaps and stops
         # at onset + stop_offset
         if not drop_last_window:
@@ -336,7 +348,7 @@ def _compute_window_inds(
                 i_window_in_trials.append(i_window_in_trials[-1] + 1)
                 i_trials.append(start_i)
 
-    # update stops to now be event stops instead of trial stops
+    # Update stops to now be event stops instead of trial stops
     window_stops = np.array(window_starts) + size
     if not (len(i_window_in_trials) == len(window_starts) == len(window_stops)):
         raise ValueError(f'{len(i_window_in_trials)} == '

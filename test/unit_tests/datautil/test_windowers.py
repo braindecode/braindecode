@@ -250,7 +250,7 @@ def test_windows_from_events_(lazy_loadable_dataset):
                        match='"trial_stop_offset_samples" too large\\. Stop '
                              'of last trial \\(19900\\) \\+ '
                              '"trial_stop_offset_samples" \\(250\\) must be '
-                             'smaller then length of recording \\(20000\\)\\.'
+                             'smaller than length of recording \\(20000\\)\\.'
                        ):
         windows = create_windows_from_events(
             concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
@@ -324,7 +324,7 @@ def test_windows_cropped(lazy_loadable_dataset):
     ds = copy.deepcopy(lazy_loadable_dataset)
     ds.datasets[0].raw.annotations.crop(tmin, tmax)
 
-    crop_transform = MNEPreproc('crop', tmin=100, tmax=120)
+    crop_transform = MNEPreproc('crop', tmin=tmin, tmax=tmax)
     preprocess(lazy_loadable_dataset, [crop_transform])
 
     # From events
@@ -337,6 +337,20 @@ def test_windows_cropped(lazy_loadable_dataset):
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
     assert (windows1[0][0] == windows2[0][0]).all()
+
+    # Make sure events that fall outside of recording will trigger an error
+    with pytest.raises(
+            ValueError, match='"trial_stop_offset_samples" too large'):
+        create_windows_from_events(
+            concat_ds=ds, trial_start_offset_samples=0,
+            trial_stop_offset_samples=10000, window_size_samples=100,
+            window_stride_samples=100, drop_last_window=False)
+    with pytest.raises(
+            ValueError, match='"trial_stop_offset_samples" too large'):
+        create_windows_from_events(
+            concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+            trial_stop_offset_samples=2001, window_size_samples=100,
+            window_stride_samples=100, drop_last_window=False)
 
     # Fixed length windows
     sfreq = ds.datasets[0].raw.info['sfreq']
