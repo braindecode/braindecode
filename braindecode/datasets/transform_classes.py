@@ -50,7 +50,8 @@ class TransformSignal:
                             n_fft=self.n_fft,
                             hop_length=self.hop_length,
                             win_length=self.n_fft,
-                            window=torch.hann_window(self.n_fft))
+                            window=torch.hann_window(self.n_fft),
+                            length=3000)
         else:
             X = torch.tensor(X)
         return self.policy(X, self.params)
