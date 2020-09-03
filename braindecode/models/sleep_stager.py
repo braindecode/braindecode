@@ -88,13 +88,3 @@ class ChambonSleepStager(nn.Module):
 
         x = self.feature_extractor(x)
         return self.fc(x.flatten(start_dim=1))
-
-
-if __name__ == '__main__':
-
-    n_channels = 2
-    sfreq = 128
-    x = torch.rand(1, n_channels, sfreq * 30)
-
-    net = ChambonSleepStager(n_channels, sfreq)
-    y = net(x)
