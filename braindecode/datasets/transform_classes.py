@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 
 class TransformFFT:
@@ -53,5 +54,6 @@ class TransformSignal:
                             window=torch.hann_window(self.n_fft),
                             length=3000)
         else:
-            X = torch.tensor(X)
+            if type(X).__module__ == np.__name__:
+                X = torch.tensor(X)
         return self.policy(X, self.params)
