@@ -120,8 +120,7 @@ windows_dataset = create_windows_from_events(
 
 from braindecode.datautil.preprocess import zscore
 
-# preprocess(windows_dataset, [NumpyPreproc(fn=zscore)])
-# XXX This currently fails! We need a way to preprocess Epochs too.
+preprocess(windows_dataset, [MNEPreproc(fn=zscore)])
 
 
 ######################################################################
