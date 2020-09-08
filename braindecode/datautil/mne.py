@@ -2,7 +2,14 @@ import numpy as np
 import pandas as pd
 import mne
 
+<<<<<<< HEAD:braindecode/datasets/mne.py
 from .base import BaseDataset, BaseConcatDataset, WindowsDataset, TransformDataset
+=======
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datautil.windowers import (
+    _check_windowing_arguments, create_windows_from_events)
+
+>>>>>>> master:braindecode/datautil/mne.py
 
 def create_from_mne_raw(
         raws, trial_start_offset_samples, trial_stop_offset_samples,
@@ -49,7 +56,7 @@ def create_from_mne_raw(
         if len(descriptions) != len(raws):
             raise ValueError(
                 f"length of 'raws' ({len(raws)}) and 'description' "
-                f"({len(description)}) has to match")
+                f"({len(descriptions)}) has to match")
         base_datasets = [BaseDataset(raw, desc) for raw, desc in
                          zip(raws, descriptions)]
     else:

@@ -105,3 +105,24 @@ def test_split_concat_dataset(concat_ds_targets):
         assert isinstance(v, BaseConcatDataset)
 
     assert len(concat_ds) == sum([len(v) for v in splits.values()])
+
+
+def test_concat_concat_dataset(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    concat_ds1 = BaseConcatDataset(concat_ds.datasets[:2])
+    concat_ds2 = BaseConcatDataset(concat_ds.datasets[2:])
+    list_of_concat_ds = [concat_ds1, concat_ds2]
+    descriptions = pd.concat([ds.description for ds in list_of_concat_ds])
+    descriptions.reset_index(inplace=True, drop=True)
+    lens = [0] + [len(ds) for ds in list_of_concat_ds]
+    cumsums = [ds.cumulative_sizes for ds in list_of_concat_ds]
+    cumsums = [l
+               for i, cumsum in enumerate(cumsums)
+               for l in np.array(cumsum) + lens[i]]
+    concat_concat_ds = BaseConcatDataset(list_of_concat_ds)
+    assert len(concat_concat_ds) == sum(lens)
+    assert len(concat_concat_ds) == concat_concat_ds.cumulative_sizes[-1]
+    assert len(concat_concat_ds.datasets) == len(descriptions)
+    assert len(concat_concat_ds.description) == len(descriptions)
+    np.testing.assert_array_equal(cumsums, concat_concat_ds.cumulative_sizes)
+    pd.testing.assert_frame_equal(descriptions, concat_concat_ds.description)

@@ -3,8 +3,8 @@ import pandas as pd
 import logging
 import mne
 
-from .base import BaseDataset, BaseConcatDataset
-from ..datautil.windowers import (
+from braindecode.datasets.base import BaseDataset, BaseConcatDataset
+from braindecode.datautil.windowers import (
     create_fixed_length_windows,)
 
 log = logging.getLogger(__name__)
