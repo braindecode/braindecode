@@ -14,6 +14,9 @@ References
         IEEE Transactions on Neural Systems and Rehabilitation Engineering,
         26(4), 758-769.
 """
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#
+# License: BSD (3-clause)
 
 
 ######################################################################
@@ -44,7 +47,7 @@ References
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
-    subject_ids=[0, 1], recording_ids=[1], crop_wake_mins=0)
+    subject_ids=[0, 1], recording_ids=[1], crop_wake_mins=30)
 # XXX Enable crop_wake_mins once MNE handles cropped files
 
 
@@ -158,7 +161,7 @@ print(valid_set.datasets[0].windows)
 
 import torch
 from braindecode.util import set_random_seeds
-from braindecode.models import ChambonSleepStager
+from braindecode.models import SleepStager
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -173,7 +176,7 @@ n_classes = 5
 n_channels = train_set[0][0].shape[0]
 input_size_samples = train_set[0][0].shape[1]
 
-model = ChambonSleepStager(
+model = SleepStager(
     n_channels,
     sfreq,
     n_classes=n_classes,
@@ -200,26 +203,26 @@ if cuda:
 
 
 ######################################################################
-#    **Note**: We use the hyperparameters of Chambon et al. (2018), however
+#    **Note**: We use different hyperparameters from Chambon et al. (2018), as
 #    these hyperparameters were optimized on a different dataset (MASS SS3) and
-#    with a different number of recordings. Therefore, it would make sense to
-#    perform hyperparameter optimization if reusing this code on a different
-#    dataset.
+#    with a different number of recordings. Generally speaking, it is
+#    recommended to perform hyperparameter optimization if reusing this code on
+#    a different dataset.
 #
 
 from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
 from braindecode import EEGClassifier
 
-lr = 1e-3
-batch_size = 128
-n_epochs = 3
+lr = 5e-4
+batch_size = 16
+n_epochs = 5
 
 train_bal_acc = EpochScoring(
     scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
     lower_is_better=False)
 valid_bal_acc = EpochScoring(
-    scoring='balanced_accuracy', on_train=True, name='valid_bal_acc',
+    scoring='balanced_accuracy', on_train=False, name='valid_bal_acc',
     lower_is_better=False)
 callbacks = [('train_bal_acc', train_bal_acc),
              ('valid_bal_acc', valid_bal_acc)]
@@ -256,6 +259,7 @@ import pandas as pd
 
 # Extract loss and accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
+df[['train_bal_acc', 'valid_bal_acc']] *= 100
 
 # get percent of misclass for better visual comparison to loss
 plt.style.use('seaborn')
@@ -284,3 +288,19 @@ handles.append(
     Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()
+
+
+
+######################################################################
+# Finally, we also plot the confusion matrix and classification report:
+#
+
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+
+y_true = valid_set.datasets[0].windows.metadata['target'].values
+y_pred = clf.predict(valid_set)
+
+print(confusion_matrix(y_true, y_pred))
+
+print(classification_report(y_true, y_pred))

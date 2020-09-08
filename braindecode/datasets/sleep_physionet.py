@@ -1,3 +1,8 @@
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#
+# License: BSD (3-clause)
+
+
 import os
 
 import numpy as np
@@ -31,10 +36,10 @@ class SleepPhysionet(BaseConcatDataset):
     crop_wake_mins: float
         Number of minutes of wake time to keep before the first sleep event
         and after the last sleep event. Used to reduce the imbalance in this
-        dataset. Ignore if
+        dataset. Default of 30 mins.
     """
     def __init__(self, subject_ids=None, recording_ids=None, preload=False,
-                 load_eeg_only=True, crop_wake_mins=0):
+                 load_eeg_only=True, crop_wake_mins=30):
         if subject_ids is None:
             subject_ids = range(83)
         if recording_ids is None:

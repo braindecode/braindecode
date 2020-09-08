@@ -1,8 +1,13 @@
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#
+# License: BSD (3-clause)
+
+
 import torch
 from torch import nn
 
 
-class ChambonSleepStager(nn.Module):
+class SleepStager(nn.Module):
     """Sleep staging architecture from [1]_.
 
     Convolutional neural network for sleep staging described in [1]_.
