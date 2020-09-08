@@ -48,7 +48,6 @@ from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
     subject_ids=[0, 1], recording_ids=[1], crop_wake_mins=30)
-# XXX Enable crop_wake_mins once MNE handles cropped files
 
 
 ######################################################################
@@ -144,7 +143,6 @@ valid_set = splitted[1]
 # Print number of examples per class
 print(train_set.datasets[0].windows)
 print(valid_set.datasets[0].windows)
-# XXX Format in a table?
 
 
 ######################################################################
