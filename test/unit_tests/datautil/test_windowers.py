@@ -313,8 +313,8 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         )
 
 
-def test_windows_cropped(lazy_loadable_dataset):
-    """Test windowing on cropped data.
+def test_windows_from_events_cropped(lazy_loadable_dataset):
+    """Test windowing from events on cropped data.
 
     Cropping raw data changes the `first_samp` attribute of the Raw object, and
     so it is important to test this is taken into account by the windowers.
@@ -324,16 +324,17 @@ def test_windows_cropped(lazy_loadable_dataset):
     ds = copy.deepcopy(lazy_loadable_dataset)
     ds.datasets[0].raw.annotations.crop(tmin, tmax)
 
+    crop_ds = copy.deepcopy(lazy_loadable_dataset)
     crop_transform = MNEPreproc('crop', tmin=tmin, tmax=tmax)
-    preprocess(lazy_loadable_dataset, [crop_transform])
+    preprocess(crop_ds, [crop_transform])
 
-    # From events
+    # Extract windows
     windows1 = create_windows_from_events(
         concat_ds=ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=100, window_stride_samples=100,
         drop_last_window=False)
     windows2 = create_windows_from_events(
-        concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+        concat_ds=crop_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
     assert (windows1[0][0] == windows2[0][0]).all()
@@ -348,11 +349,27 @@ def test_windows_cropped(lazy_loadable_dataset):
     with pytest.raises(
             ValueError, match='"trial_stop_offset_samples" too large'):
         create_windows_from_events(
-            concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+            concat_ds=crop_ds, trial_start_offset_samples=0,
             trial_stop_offset_samples=2001, window_size_samples=100,
             window_stride_samples=100, drop_last_window=False)
 
-    # Fixed length windows
+
+def test_windows_fixed_length_cropped(lazy_loadable_dataset):
+    """Test fixed length windowing on cropped data.
+
+    Cropping raw data changes the `first_samp` attribute of the Raw object, and
+    so it is important to test this is taken into account by the windowers.
+    """
+    tmin, tmax = 100, 120
+
+    ds = copy.deepcopy(lazy_loadable_dataset)
+    ds.datasets[0].raw.annotations.crop(tmin, tmax)
+
+    crop_ds = copy.deepcopy(lazy_loadable_dataset)
+    crop_transform = MNEPreproc('crop', tmin=tmin, tmax=tmax)
+    preprocess(crop_ds, [crop_transform])
+
+    # Extract windows
     sfreq = ds.datasets[0].raw.info['sfreq']
     tmin_samples, tmax_samples = int(tmin * sfreq), int(tmax * sfreq)
 
@@ -361,7 +378,7 @@ def test_windows_cropped(lazy_loadable_dataset):
         stop_offset_samples=tmax_samples, window_size_samples=100,
         window_stride_samples=100, drop_last_window=True)
     windows2 = create_fixed_length_windows(
-        concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+        concat_ds=crop_ds, start_offset_samples=0,
         stop_offset_samples=None, window_size_samples=100,
         window_stride_samples=100, drop_last_window=True)
     assert (windows1[0][0] == windows2[0][0]).all()
