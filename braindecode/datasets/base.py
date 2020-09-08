@@ -55,8 +55,7 @@ class BaseDataset(Dataset):
 
 def _create_description(description):
     if description is not None:
-        if (not isinstance(description, pd.Series)
-                and not isinstance(description, dict)):
+        if (not isinstance(description, pd.Series) and not isinstance(description, dict)):
             raise ValueError(f"'{description}' has to be either a "
                              f"pandas.Series or a dict")
         if isinstance(description, dict):

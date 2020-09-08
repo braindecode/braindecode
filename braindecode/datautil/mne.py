@@ -2,14 +2,8 @@ import numpy as np
 import pandas as pd
 import mne
 
-<<<<<<< HEAD:braindecode/datasets/mne.py
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset, TransformDataset
-=======
-from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
-from ..datautil.windowers import (
-    _check_windowing_arguments, create_windows_from_events)
+from ..datasets.base import BaseDataset, BaseConcatDataset, TransformDataset
 
->>>>>>> master:braindecode/datautil/mne.py
 
 def create_from_mne_raw(
         raws, trial_start_offset_samples, trial_stop_offset_samples,
@@ -50,8 +44,7 @@ def create_from_mne_raw(
         X and y transformed to a dataset format that is compativle with skorch
         and braindecode
     """
-    from ..datautil.windowers import (
-        _check_windowing_arguments, create_windows_from_events)
+    from ..datautil.windowers import (create_windows_from_events)
     if descriptions is not None:
         if len(descriptions) != len(raws):
             raise ValueError(
@@ -73,7 +66,7 @@ def create_from_mne_raw(
         mapping=mapping,
         drop_bad_windows=drop_bad_windows,
         preload=preload
-    ) #TODO : rajouter transform
+    )  # TODO : rajouter transform
     return windows_datasets
 
 
@@ -100,7 +93,7 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
         and braindecode
     """
     from ..datautil.windowers import (
-        _check_windowing_arguments, create_windows_from_events)
+        _check_windowing_arguments)
     _check_windowing_arguments(0, 0, window_size_samples,
                                window_stride_samples)
 
