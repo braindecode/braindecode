@@ -10,7 +10,7 @@ import pytest
 
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
-    ChambonSleepStager)
+    SleepStager)
 
 
 def test_shallow_fbcsp_net():
@@ -119,7 +119,7 @@ def test_tcn():
 
 @pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
                          [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
-def test_chambon_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
+def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     time_conv_size_s = 0.5
     max_pool_size_s = 0.125

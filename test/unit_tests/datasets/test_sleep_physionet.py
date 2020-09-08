@@ -19,4 +19,5 @@ def test_crop_wake():
         subject_ids=[0], recording_ids=[1], preload=True, load_eeg_only=True,
         crop_wake_mins=30)
     sfreq = sp.datasets[0].raw.info['sfreq']
-    assert len(sp) / (3600 * sfreq) < 7
+    duration_h = len(sp) / (3600 * sfreq)
+    assert duration_h < 7 and duration_h > 6
