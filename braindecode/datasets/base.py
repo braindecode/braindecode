@@ -33,10 +33,10 @@ class BaseDataset(Dataset):
         target (e.g., to be used in a prediction task later on).
     """
 
-    def __init__(self, raw, description=None, target_name=None):
+    def __init__(self, raw, description=None, target_name=None, transform_list=[[TransformSignal(identity)]]):
         self.raw = raw
         self.description = _create_description(description)
-
+        self.transform_list = transform_list
         # save target name for load/save later
         self.target_name = target_name
         if target_name is None:
@@ -47,7 +47,7 @@ class BaseDataset(Dataset):
             raise ValueError(f"'{target_name}' not in description.")
 
     def __getitem__(self, index):
-        return self.raw[:, index][0], self.target
+        return self.transform_list.transform(self.raw[:, index][0]), self.target
 
     def __len__(self):
         return len(self.raw)
