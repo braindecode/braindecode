@@ -8,8 +8,4 @@ from .hybrid import HybridNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .eegresnet import EEGResNet
 from .tcn import TCN
-<<<<<<< HEAD
-from .chambonsleepstager import ChambonSleepStager
-=======
 from .sleep_stager import SleepStager
->>>>>>> braindecode_hubert/sleep-example
