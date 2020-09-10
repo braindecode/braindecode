@@ -153,6 +153,17 @@ class BaseConcatDataset(ConcatDataset):
             [self.datasets[ds_ind] for ds_ind in ds_inds])
             for split_name, ds_inds in split_ids.items()}
 
+    def tinying_dataset(self, subset_dict):
+
+        def take_dataset_subset(windows_dataset, indice_list):
+            windows_dataset.windows = windows_dataset.windows[tuple(indice_list)]
+            windows_dataset.y = windows_dataset.y[indice_list]
+            windows_dataset.crop_inds = windows_dataset.crop_inds[indice_list]
+
+        for i in subset_dict.keys():
+            take_dataset_subset(self.datasets[i], subset_dict[i])
+        self.cumulative_sizes = self.cumsum(self.datasets)
+
 
 class TransformDataset(WindowsDataset):
 
