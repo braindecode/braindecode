@@ -15,18 +15,12 @@ from .base import BaseDataset, BaseConcatDataset
 
 class SleepPhysionet(BaseConcatDataset):
     """Sleep Physionet dataset.
-<<<<<<< HEAD
-    Sleep dataset from https://physionet.org/content/sleep-edfx/1.0.0/.
-    Contains overnight recordings from 78 healthy subjects.
-    See [MNE example](https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html).
-=======
 
     Sleep dataset from https://physionet.org/content/sleep-edfx/1.0.0/.
     Contains overnight recordings from 78 healthy subjects.
 
     See [MNE example](https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html).
 
->>>>>>> braindecode_hubert/sleep-example
     Parameters
     ----------
     subject_ids: list(int) | int
@@ -44,10 +38,7 @@ class SleepPhysionet(BaseConcatDataset):
         and after the last sleep event. Used to reduce the imbalance in this
         dataset. Default of 30 mins.
     """
-<<<<<<< HEAD
 
-=======
->>>>>>> braindecode_hubert/sleep-example
     def __init__(self, subject_ids=None, recording_ids=None, preload=False,
                  load_eeg_only=True, crop_wake_mins=30):
         if subject_ids is None:
@@ -55,11 +46,7 @@ class SleepPhysionet(BaseConcatDataset):
         if recording_ids is None:
             recording_ids = [1, 2]
 
-<<<<<<< HEAD
         paths = fetch_data(subject_ids, recording=recording_ids, on_missing="warn")
-=======
-        paths = fetch_data(subject_ids, recording=recording_ids)
->>>>>>> braindecode_hubert/sleep-example
 
         all_base_ds = list()
         for p in paths:
@@ -94,15 +81,9 @@ class SleepPhysionet(BaseConcatDataset):
 
             # Crop raw
             tmin = annots[int(sleep_event_inds[0])]['onset'] - \
-<<<<<<< HEAD
                 crop_wake_mins * 60
             tmax = annots[int(sleep_event_inds[-1])]['onset'] + \
                 crop_wake_mins * 60
-=======
-                   crop_wake_mins * 60
-            tmax = annots[int(sleep_event_inds[-1])]['onset'] + \
-                   crop_wake_mins * 60
->>>>>>> braindecode_hubert/sleep-example
             raw.crop(tmin=tmin, tmax=tmax)
 
         # Rename EEG channels
