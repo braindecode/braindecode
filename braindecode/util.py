@@ -5,6 +5,7 @@ import numpy as np
 import mne
 import h5py
 import torch
+from sklearn.utils import check_random_state
 
 
 def set_random_seeds(seed, cuda):
@@ -219,7 +220,7 @@ def get_balanced_batches(
 
 def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
                          description=None, savedir=None, save_format='fif',
-                         overwrite=True):
+                         overwrite=True, random_state=None):
     """Create an mne.io.RawArray with fake data, and optionally save it.
 
     This will overwrite already existing files.
@@ -242,6 +243,8 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
     save_format : str | list
         If `savedir` is provided, this specifies the file format the data should
         be saved to. Can be 'raw' or 'hdf5', or a list containing both.
+    random_state : int | RandomState
+        Random state for the generation of random data.
 
     Returns
     -------
@@ -250,7 +253,8 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
     save_fname : dict | None
         Dictionary containing the name the raw data was saved to.
     """
-    data = np.random.rand(n_channels, n_times)
+    random_state = check_random_state(random_state)
+    data = random_state.rand(n_channels, n_times)
     ch_names = [f'ch{i}' for i in range(n_channels)]
     ch_types = ['eeg'] * n_channels
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)

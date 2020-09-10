@@ -1,9 +1,17 @@
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#
+# License: BSD (3-clause)
+
+
+import torch
 from torch import nn
 
 
-class ChambonSleepStager(nn.Module):
+class SleepStager(nn.Module):
     """Sleep staging architecture from [1]_.
+
     Convolutional neural network for sleep staging described in [1]_.
+
     Parameters
     ----------
     n_channels : int
@@ -24,6 +32,7 @@ class ChambonSleepStager(nn.Module):
         Size of the input, in seconds.
     dropout : float
         Dropout rate before the output dense layer.
+
     References
     ----------
     .. [1] Chambon, S., Galtier, M. N., Arnal, P. J., Wainrib, G., &
@@ -32,7 +41,6 @@ class ChambonSleepStager(nn.Module):
            IEEE Transactions on Neural Systems and Rehabilitation Engineering,
            26(4), 758-769.
     """
-
     def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, n_classes=5, input_size_s=30,
                  dropout=0.25):
@@ -71,6 +79,7 @@ class ChambonSleepStager(nn.Module):
 
     def forward(self, x):
         """Forward pass.
+
         Parameters
         ---------
         x: torch.Tensor
