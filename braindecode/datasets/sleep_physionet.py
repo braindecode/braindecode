@@ -46,7 +46,7 @@ class SleepPhysionet(BaseConcatDataset):
         if recording_ids is None:
             recording_ids = [1, 2]
 
-        paths = fetch_data(subject_ids, recording=recording_ids, on_missing="warn")
+        paths = fetch_data(subject_ids, recording=recording_ids, on_missing="ignore")
 
         all_base_ds = list()
         for p in paths:
