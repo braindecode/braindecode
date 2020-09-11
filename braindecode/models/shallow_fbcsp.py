@@ -139,6 +139,7 @@ class ShallowFBCSPNet(nn.Sequential):
                 bias=True,
             ),
         )
+        self.add_module("squeeze", Expression(squeeze_final_output))
 
         # Initialization, xavier is same as in paper...
         init.xavier_uniform_(self.conv_time.weight, gain=1)
