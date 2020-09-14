@@ -18,6 +18,13 @@ from .transform_classes import TransformSignal
 from ..util import identity
 
 
+class Datum:
+    def __init__(self, X, y, index) -> None:
+        self.X = X
+        self.y = y
+        self.index = index
+
+
 class BaseDataset(Dataset):
     """A base dataset holds a mne.Raw, and a pandas.DataFrame with additional
     description, such as subject_id, session_id, run_id, or age or gender of
@@ -47,7 +54,9 @@ class BaseDataset(Dataset):
             raise ValueError(f"'{target_name}' not in description.")
 
     def __getitem__(self, index):
-        return self.transform_list.transform(self.raw[:, index][0]), self.target
+        datum = Datum(self.raw[:, index][0], self.target, index)
+        datum = self.transform_list.transform(datum)
+        return datum.X, self.target
 
     def __len__(self):
         return len(self.raw)
@@ -87,8 +96,10 @@ class WindowsDataset(BaseDataset):
     def __getitem__(self, index):
         X = self.windows.get_data(item=index)[0].astype('float32')
         y = self.y[index]
+        datum = Datum(X, y, index)
         if self.transform:
-            X, _ = self.transform(X, y)
+            datum = self.transform(datum)
+            X = datum.X
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[index])
