@@ -19,7 +19,7 @@ from ..util import identity
 
 
 class Datum:
-    def __init__(self, X, y, index) -> None:
+    def __init__(self, X, y) -> None:
         self.X = X
         self.y = y
 
