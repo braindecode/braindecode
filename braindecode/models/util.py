@@ -58,7 +58,7 @@ def get_output_shape(model, in_chans, input_window_samples):
     """
     with torch.no_grad():
         dummy_input = torch.ones(
-            1, in_chans, input_window_samples, 1,
+            1, in_chans, input_window_samples,
             dtype=next(model.parameters()).dtype,
             device=next(model.parameters()).device,
         )
