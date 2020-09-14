@@ -28,7 +28,7 @@ class TransformFFT:
                            win_length=self.win_length,
                            window=torch.hann_window(self.n_fft))
 
-        return (self.policy(X, self.params), y)
+        return (self.policy(X, y, self.params), y)
         # if type = "axis_warp":
         #    return(warp_along_axis())
 
@@ -47,15 +47,17 @@ class TransformSignal:
     def fit(self, X):
         pass
 
-    def transform(self, X, y):
+    def transform(self, datum):
+        X = datum.X
         if (len(X.shape) == 4):
-            X = torch.istft(X,
-                            n_fft=self.n_fft,
-                            hop_length=self.hop_length,
-                            win_length=self.n_fft,
-                            window=torch.hann_window(self.n_fft),
-                            length=3000)
+            datum.X = torch.istft(X,
+                                  n_fft=self.n_fft,
+                                  hop_length=self.hop_length,
+                                  win_length=self.n_fft,
+                                  window=torch.hann_window(self.n_fft),
+                                  length=3000)
         else:
             if type(X).__module__ == np.__name__:
-                X = torch.tensor(X)
-        return self.policy(X, self.params)
+                datum.X = torch.tensor(X)
+        datum = self.policy(datum, self.params)
+        return datum
