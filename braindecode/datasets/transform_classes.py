@@ -16,21 +16,19 @@ class TransformFFT:
     def fit(self, X):
         pass
 
-    def transform(self, data):
-        X = data[0]
-        y = data[1]
+    def transform(self, datum):
+        X = datum.X
         if not (len(X.shape) == 4):
             # (len(X.shape) == 4) characterizes the
             # spectrogramm of an epoch with several
             # channels.
-            X = torch.stft(X, n_fft=self.n_fft,
-                           hop_length=self.hop_length,
-                           win_length=self.win_length,
-                           window=torch.hann_window(self.n_fft))
+            datum.X = torch.stft(X, n_fft=self.n_fft,
+                                 hop_length=self.hop_length,
+                                 win_length=self.win_length,
+                                 window=torch.hann_window(self.n_fft))
 
-        return (self.policy(X, y, self.params), y)
-        # if type = "axis_warp":
-        #    return(warp_along_axis())
+        datum = self.policy(datum, self.params)
+        return datum
 
 
 class TransformSignal:
