@@ -334,4 +334,4 @@ def update_estimator_docstring(base_class, docstring):
 
 
 def identity(datum, params={}):
-    return(datum.X)
+    return(datum)
