@@ -86,9 +86,9 @@ class WindowsDataset(BaseDataset):
 
     def __getitem__(self, index):
         X = self.windows.get_data(item=index)[0].astype('float32')
-        if self.transform:
-            X = self.transform(X)
         y = self.y[index]
+        if self.transform:
+            X, _ = self.transform(X, y)
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[index])

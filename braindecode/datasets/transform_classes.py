@@ -16,7 +16,9 @@ class TransformFFT:
     def fit(self, X):
         pass
 
-    def transform(self, X):
+    def transform(self, data):
+        X = data[0]
+        y = data[1]
         if not (len(X.shape) == 4):
             # (len(X.shape) == 4) characterizes the
             # spectrogramm of an epoch with several
@@ -26,7 +28,7 @@ class TransformFFT:
                            win_length=self.win_length,
                            window=torch.hann_window(self.n_fft))
 
-        return self.policy(X, self.params)
+        return (self.policy(X, self.params), y)
         # if type = "axis_warp":
         #    return(warp_along_axis())
 
@@ -45,7 +47,7 @@ class TransformSignal:
     def fit(self, X):
         pass
 
-    def transform(self, X):
+    def transform(self, X, y):
         if (len(X.shape) == 4):
             X = torch.istft(X,
                             n_fft=self.n_fft,
