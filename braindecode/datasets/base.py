@@ -22,7 +22,6 @@ class Datum:
     def __init__(self, X, y, index) -> None:
         self.X = X
         self.y = y
-        self.index = index
 
 
 class BaseDataset(Dataset):
@@ -188,12 +187,13 @@ class TransformDataset(WindowsDataset):
         tf_index = index % len(self.transform_list)
         X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
         y = self.y[img_index]
+        datum = Datum(X, y)
         for transform in self.transform_list[tf_index]:
-            X = transform.transform(X)
+            datum = transform.transform(datum)
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[img_index])
-        return X, y, crop_inds  # TODO : modifier getitem de base sur la version gitté
+        return datum.X, y, crop_inds  # TODO : modifier getitem de base sur la version gitté
 
     def __len__(self):
         return len(self.windows.events) * len(self.transform_list)
