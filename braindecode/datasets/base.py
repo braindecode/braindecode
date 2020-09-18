@@ -53,7 +53,7 @@ class BaseDataset(Dataset):
             raise ValueError(f"'{target_name}' not in description.")
 
     def __getitem__(self, index):
-        datum = Datum(self.raw[:, index][0], self.target, index)
+        datum = Datum(self.raw[:, index][0], self.target)
         datum = self.transform_list.transform(datum)
         return datum.X, self.target
 
