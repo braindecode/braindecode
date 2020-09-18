@@ -45,7 +45,7 @@ class TransformSignal:
     def fit(self, X):
         pass
 
-    def transform(self, datum):
+    def __call__(self, datum):
         X = datum.X
         if (len(X.shape) == 4):
             datum.X = torch.istft(X,
@@ -59,3 +59,4 @@ class TransformSignal:
                 datum.X = torch.tensor(X)
         datum = self.policy(datum, self.params)
         return datum
+        # TODO : update with __call__ Utilise l'objet compose de torchvision.

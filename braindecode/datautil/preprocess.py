@@ -30,6 +30,7 @@ class MNEPreproc(object):
     kwargs:
         Keyword arguments will be forwarded to the mne function
     """
+
     def __init__(self, fn, **kwargs):
         self.fn = fn
         self.kwargs = kwargs
@@ -56,6 +57,7 @@ class NumpyPreproc(MNEPreproc):
     kwargs:
         Keyword arguments will be forwarded to the function
     """
+
     def __init__(self, fn, channel_wise=False, **kwargs):
         # use apply function of mne which will directly apply it to numpy array
         partial_fn = partial(fn, **kwargs)
@@ -158,8 +160,8 @@ def exponential_moving_standardize(
             data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
         init_block_standardized = (
-                                          data[0:init_block_size] - init_mean
-                                  ) / np.maximum(eps, init_std)
+            data[0:init_block_size] - init_mean
+        ) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
@@ -227,7 +229,7 @@ def zscore(data):
     return zscored
 
 
-def scale(data, factor):
+def scale(data, factor, biais=0.0):
     """Scale continuous or windowed data in-place
 
     Parameters
@@ -237,6 +239,8 @@ def scale(data, factor):
         continuous or windowed signal
     factor: float
         multiplication factor
+    biais: float
+        biais to remove
 
     Returns
     -------
@@ -247,7 +251,7 @@ def scale(data, factor):
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
-    scaled = np.multiply(data, factor)
+    scaled = np.multiply(data, factor) - biais
     # TODO: the overriding of protected '_data' should be implemented in the
     # TODO: dataset when transforms are applied to windows
     if hasattr(data, '_data'):
