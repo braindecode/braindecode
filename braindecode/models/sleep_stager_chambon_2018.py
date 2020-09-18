@@ -3,11 +3,10 @@
 # License: BSD (3-clause)
 
 
-import torch
 from torch import nn
 
 
-class SleepStager(nn.Module):
+class SleepStagerChambon2018(nn.Module):
     """Sleep staging architecture from [1]_.
 
     Convolutional neural network for sleep staging described in [1]_.
