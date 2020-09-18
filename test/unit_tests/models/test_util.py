@@ -1,3 +1,8 @@
+# Authors: Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
+
 from braindecode.models.modules import Expression
 from braindecode.models.util import get_output_shape
 from torch import nn
