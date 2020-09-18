@@ -42,7 +42,6 @@ class BaseDataset(Dataset):
     def __init__(self, raw, description=None, target_name=None, transform_list=[[TransformSignal(identity)]]):
         self.raw = raw
         self.description = _create_description(description)
-        self.transform_list = transform_list
         # save target name for load/save later
         self.target_name = target_name
         if target_name is None:
@@ -53,9 +52,7 @@ class BaseDataset(Dataset):
             raise ValueError(f"'{target_name}' not in description.")
 
     def __getitem__(self, index):
-        datum = Datum(self.raw[:, index][0], self.target)
-        datum = self.transform_list[0][0](datum)
-        return datum.X, self.target
+        return self.raw[:, index][0], self.target
 
     def __len__(self):
         return len(self.raw)
@@ -90,15 +87,10 @@ class WindowsDataset(BaseDataset):
         self.crop_inds = np.array(self.windows.metadata.loc[:,
                                                             ['i_window_in_trial', 'i_start_in_trial',
                                                              'i_stop_in_trial']])
-        self.transform = transform
 
     def __getitem__(self, index):
         X = self.windows.get_data(item=index)[0].astype('float32')
         y = self.y[index]
-        datum = Datum(X, y, index)
-        if self.transform:
-            datum = self.transform(datum)
-            X = datum.X
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[index])
@@ -192,7 +184,7 @@ class TransformDataset(WindowsDataset):
         y = self.y[img_index]
         datum = Datum(X, y)
         for transform in self.transform_list[tf_index]:
-            datum = transform.transform(datum)
+            datum = transform(datum)
         # necessary to cast as list to get list of
         # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[img_index])
