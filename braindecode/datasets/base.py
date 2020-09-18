@@ -177,9 +177,12 @@ class BaseConcatDataset(ConcatDataset):
 
 class TransformDataset(WindowsDataset):
 
-    def __init__(self, windows, description=None, transform_list=[[TransformSignal(identity)]]):
+    def __init__(self, windows, description=None, transform_list=None):
         super(TransformDataset, self).__init__(windows, description)
-        self.transform_list = transform_list
+        if transform_list is None:
+            self.transform_list = [[TransformSignal(identity)]]
+        else:
+            self.transform_list = transform_list
 
     def __getitem__(self, index):
 
