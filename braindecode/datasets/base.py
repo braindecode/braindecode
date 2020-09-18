@@ -54,7 +54,7 @@ class BaseDataset(Dataset):
 
     def __getitem__(self, index):
         datum = Datum(self.raw[:, index][0], self.target)
-        datum = self.transform_list.transform(datum)
+        datum = self.transform_list[0][0].transform(datum)
         return datum.X, self.target
 
     def __len__(self):
