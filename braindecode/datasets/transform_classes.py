@@ -16,7 +16,7 @@ class TransformFFT:
     def fit(self, X):
         pass
 
-    def transform(self, datum):
+    def __call__(self, datum):
         X = datum.X
         if not (len(X.shape) == 4):
             # (len(X.shape) == 4) characterizes the
