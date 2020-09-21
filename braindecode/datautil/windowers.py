@@ -89,7 +89,7 @@ def create_windows_from_events(
     windows_ds: WindowsDataset
         Dataset containing the extracted windows.
     """
-    from ..datasets.base import TransformDataset, BaseConcatDataset
+    from ..datasets.base import TransformDataset, TransformConcatDataset
     _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples, window_stride_samples)
@@ -182,7 +182,7 @@ def create_windows_from_events(
         windows_ds = TransformDataset(mne_epochs, ds.description)
         list_of_windows_ds.append(windows_ds)
 
-    return BaseConcatDataset(list_of_windows_ds)
+    return TransformConcatDataset(list_of_windows_ds)
 
 
 def create_fixed_length_windows(
