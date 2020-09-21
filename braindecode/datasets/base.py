@@ -117,13 +117,6 @@ class BaseConcatDataset(ConcatDataset):
         super().__init__(list_of_ds)
         self.description = pd.DataFrame([ds.description for ds in list_of_ds])
         self.description.reset_index(inplace=True, drop=True)
-        self.transform_list = list_of_ds[0].transform_list
-
-    def change_transform_list(self, newlist):
-        for i in range(len(self.datasets)):
-            self.datasets[i].transform_list = newlist
-        self.cumulative_sizes = self.cumsum(self.datasets)
-        self.transform_list = newlist
 
     def split(self, property=None, split_ids=None):
         """Split the dataset based on some property listed in its description
@@ -165,6 +158,26 @@ class BaseConcatDataset(ConcatDataset):
         for i in subset_dict.keys():
             take_dataset_subset(self.datasets[i], subset_dict[i])
         self.cumulative_sizes = self.cumsum(self.datasets)
+
+
+class TransformConcatDataset(BaseConcatDataset):
+    """A variation of the base class that includes elements 
+    Parameters
+    ----------
+    list_of_ds: list
+        list of TransformDataset
+    """
+
+    def __init__(self, list_of_ds):
+        # if we get a list of BaseConcatDataset, get all the individual datasets
+        super().__init__(list_of_ds)
+        self.transform_list = list_of_ds[0].transform_list
+
+    def change_transform_list(self, newlist):
+        for i in range(len(self.datasets)):
+            self.datasets[i].transform_list = newlist
+        self.cumulative_sizes = self.cumsum(self.datasets)
+        self.transform_list = newlist
 
 
 class TransformDataset(WindowsDataset):
