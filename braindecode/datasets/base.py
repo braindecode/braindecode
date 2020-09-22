@@ -12,6 +12,7 @@ Dataset classes.
 
 import numpy as np
 import pandas as pd
+import bisect
 import torch
 from torch.utils.data import Dataset, ConcatDataset
 from .transform_classes import TransformSignal
@@ -39,7 +40,7 @@ class BaseDataset(Dataset):
         target (e.g., to be used in a prediction task later on).
     """
 
-    def __init__(self, raw, description=None, target_name=None, transform_list=[[TransformSignal(identity)]]):
+    def __init__(self, raw, description=None, target_name=None):
         self.raw = raw
         self.description = _create_description(description)
         # save target name for load/save later
@@ -179,6 +180,18 @@ class TransformConcatDataset(BaseConcatDataset):
         self.cumulative_sizes = self.cumsum(self.datasets)
         self.transform_list = newlist
 
+    def get_raw_data(self, idx):
+        if idx < 0:
+            if -idx > len(self):
+                raise ValueError("absolute value of index should not exceed dataset length")
+            idx = len(self) + idx
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        if dataset_idx == 0:
+            sample_idx = idx
+        else:
+            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
+        return self.datasets[dataset_idx].get_raw_data(sample_idx)
+
 
 class TransformDataset(WindowsDataset):
 
@@ -205,3 +218,10 @@ class TransformDataset(WindowsDataset):
 
     def __len__(self):
         return len(self.windows.events) * len(self.transform_list)
+
+    def get_raw_data(self, index):
+        img_index = index // len(self.transform_list)
+        X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
+        y = self.y[img_index]
+        crop_inds = list(self.crop_inds[img_index])
+        return X, y, crop_inds
