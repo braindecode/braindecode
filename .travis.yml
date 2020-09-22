@@ -23,7 +23,6 @@ install:
   - pip install --upgrade pyyaml
   - pip install --upgrade git+https://github.com/NeuroTechX/moabb
   - pip install -e .
-  - pip install -U https://github.com/mne-tools/mne-python/archive/master.zip
 
 # command to run tests
 script:
