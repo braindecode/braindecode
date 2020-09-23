@@ -117,3 +117,8 @@ def test_tcn():
     X = torch.Tensor(X.astype(np.float32))
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
+    X = rng.randn(n_samples, n_channels, n_in_times)
+    X = torch.Tensor(X.astype(np.float32))
+    y_pred = model(X)
+    assert y_pred.shape == (n_samples, n_classes)
+
