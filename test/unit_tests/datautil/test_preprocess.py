@@ -15,15 +15,15 @@ from braindecode.datautil.preprocess import preprocess, zscore, scale, \
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(scope='module')
 def base_concat_ds():
-    return MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1, 2])
+    return MOABBDataset(dataset_name='BNCI2014001', subject_ids=[1, 2])
 
 
 @pytest.fixture(scope='module')
 def windows_concat_ds(base_concat_ds):
     return create_fixed_length_windows(
-        base_concat_ds, start_offset_samples=100, stop_offset_samples=0,
+        base_concat_ds, start_offset_samples=100, stop_offset_samples=None,
         window_size_samples=1000, window_stride_samples=1000,
         drop_last_window=True, mapping=None, preload=True)
 
