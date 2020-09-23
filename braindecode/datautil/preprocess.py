@@ -35,13 +35,27 @@ class MNEPreproc(object):
         self.kwargs = kwargs
 
     def apply(self, raw_or_epochs):
+        try:
+            self._try_apply(raw_or_epochs)
+        except RuntimeError:
+            # Maybe the function needs the data to be loaded
+            # and the data was not loaded yet
+            # Not all mne functions need data to be loaded,
+            # most importantly the 'crop' function can be
+            # lazily applied without preloading data
+            # which can make overall preprocessing pipeline
+            # substantially faster
+            raw_or_epochs.load_data()
+            self._try_apply(raw_or_epochs)
+
+    def _try_apply(self, raw_or_epochs):
         if callable(self.fn):
-            self.fn(raw_or_epochs.load_data(), **self.kwargs)
+            self.fn(raw_or_epochs, **self.kwargs)
         else:
             if not hasattr(raw_or_epochs, self.fn):
                 raise AttributeError(
                     f'MNE object does not have {self.fn} method.')
-            getattr(raw_or_epochs.load_data(), self.fn)(**self.kwargs)
+            getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
 class NumpyPreproc(MNEPreproc):
