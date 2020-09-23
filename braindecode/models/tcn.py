@@ -70,6 +70,7 @@ class TCN(nn.Module):
         self.eval()
 
     def forward(self, x):
+        x = self.ensuredims(x)
         # x is in format: B x C x T x 1
         (batch_size, _, time_size, _) = x.size()
         assert time_size >= self.min_len
