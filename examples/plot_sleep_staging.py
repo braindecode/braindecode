@@ -137,8 +137,8 @@ preprocess(windows_dataset, [MNEPreproc(fn=zscore)])
 #
 
 splitted = windows_dataset.split('subject')
-train_set = splitted[0]
-valid_set = splitted[1]
+train_set = splitted['0']
+valid_set = splitted['1']
 
 # Print number of examples per class
 print(train_set.datasets[0].windows)
