@@ -126,3 +126,50 @@ def test_concat_concat_dataset(concat_ds_targets):
     assert len(concat_concat_ds.description) == len(descriptions)
     np.testing.assert_array_equal(cumsums, concat_concat_ds.cumulative_sizes)
     pd.testing.assert_frame_equal(descriptions, concat_concat_ds.description)
+
+
+def test_split_dataset_failure(concat_ds_targets):
+    concat_ds = concat_ds_targets[0]
+    with pytest.raises(KeyError):
+        concat_ds.split("test")
+
+    with pytest.raises(IndexError):
+        concat_ds.split([])
+
+    with pytest.raises(
+            AssertionError, match="datasets should not be an empty iterable"):
+        concat_ds.split([[]])
+
+    with pytest.raises(TypeError):
+        concat_ds.split([[[]]])
+
+    with pytest.raises(IndexError):
+        concat_ds.split([len(concat_ds.description)])
+
+
+def test_split_dataset(concat_ds_targets):
+    concat_ds = concat_ds_targets[0]
+    splits = concat_ds.split("run")
+    assert len(splits) == len(concat_ds.description["run"].unique())
+
+    splits = concat_ds.split([1])
+    assert len(splits) == 1
+    assert len(splits["0"].datasets) == 1
+
+    splits = concat_ds.split([[2]])
+    assert len(splits) == 1
+    assert len(splits["0"].datasets) == 1
+
+    original_ids = [1, 2]
+    splits = concat_ds.split([[0], original_ids])
+    assert len(splits) == 2
+    assert list(splits["0"].description.index) == [0]
+    assert len(splits["0"].datasets) == 1
+    # when creating new BaseConcatDataset, index is reset
+    split_ids = [0, 1]
+    assert list(splits["1"].description.index) == split_ids
+    assert len(splits["1"].datasets) == 2
+
+    for i, ds in enumerate(splits["1"].datasets):
+        np.testing.assert_array_equal(
+            ds.raw.get_data(), concat_ds.datasets[original_ids[i]].raw.get_data())

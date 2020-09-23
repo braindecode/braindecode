@@ -112,6 +112,7 @@ Data Utils
     exponential_moving_standardize
     zscore
     scale
+    filterbank
     save_concat_dataset
     load_concat_dataset
 

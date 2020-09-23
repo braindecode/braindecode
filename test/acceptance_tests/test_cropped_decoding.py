@@ -119,23 +119,22 @@ def test_cropped_decoding():
         np.array(
             [
                 1.455306,
-                1.455934,
-                1.210563,
-                1.065806
+                1.784507,
+                1.421611,
+                1.057717
             ]
         ),
         rtol=1e-3,
         atol=1e-4,
     )
-
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
         np.array(
             [
                 2.547288,
-                1.51785,
-                1.394036,
-                1.064355
+                3.051576,
+                0.711256,
+                0.839392
             ]
         ),
         rtol=1e-3,
@@ -147,8 +146,8 @@ def test_cropped_decoding():
             [
                 0.5,
                 0.5,
-                0.5,
-                0.533333
+                0.6,
+                0.516667
             ]
         ),
         rtol=1e-3,
@@ -160,7 +159,7 @@ def test_cropped_decoding():
             [
                 0.533333,
                 0.466667,
-                0.533333,
+                0.466667,
                 0.5
             ]
         ),

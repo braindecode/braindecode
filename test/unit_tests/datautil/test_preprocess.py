@@ -10,9 +10,8 @@ import pytest
 
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil.preprocess import preprocess, zscore, scale, \
-    MNEPreproc, NumpyPreproc
-from braindecode.datautil.preprocess import (
-    exponential_moving_demean, exponential_moving_standardize)
+    MNEPreproc, NumpyPreproc, filterbank, exponential_moving_demean, \
+    exponential_moving_standardize
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
@@ -127,7 +126,6 @@ def test_scale_windows(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
-
 @pytest.fixture(scope="module")
 def mock_data():
     np.random.seed(20200217)
@@ -179,3 +177,25 @@ def test_exponential_running_init_block_size(mock_data):
         mock_input, init_block_size=init_block_size)
     np.testing.assert_allclose(
         demeaned_data[:, :init_block_size].mean(axis=1), 0, rtol=1e-4, atol=1e-4)
+
+
+def test_filterbank(base_concat_ds):
+    base_concat_ds = base_concat_ds.split([[0]])["0"]
+    preprocessors = [
+        MNEPreproc('pick_channels', ch_names=sorted(["C4", "Cz"]), ordered=True),
+        MNEPreproc(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
+                   drop_original_signals=False),
+        ]
+    preprocess(base_concat_ds, preprocessors)
+    for x, y in base_concat_ds:
+        break
+    assert x.shape[0] == 8
+    freq_band_annots = [
+        ch.split("_")[-1]
+        for ch in base_concat_ds.datasets[0].raw.ch_names
+        if '_' in ch]
+    assert len(np.unique(freq_band_annots)) == 3
+    np.testing.assert_array_equal(base_concat_ds.datasets[0].raw.ch_names, [
+        "C4", "C4_0-4", "C4_4-8", "C4_8-13",
+        "Cz", "Cz_0-4", "Cz_4-8", "Cz_8-13",
+    ])
