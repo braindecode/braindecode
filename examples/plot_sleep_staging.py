@@ -144,7 +144,7 @@ preprocess(windows_dataset, [MNEPreproc(fn=zscore)])
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # `description` attribute of :class:`braindecode.datasets.BaseDataset`,
-# in this case ``session`` column. Here, we split the examples per subject.
+# in this case using the ``subject`` column. Here, we split the examples per subject.
 #
 
 splitted = windows_dataset.split('subject')
