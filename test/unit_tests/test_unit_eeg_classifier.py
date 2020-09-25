@@ -45,21 +45,8 @@ def test_trialwise_predict_and_predict_proba():
         batch_size=32
     )
     clf.initialize()
-    np.testing.assert_array_equal(
-        np.array([1, 0, 0, 0]),
-        clf.predict(MockDataset())
-    )
-    np.testing.assert_array_equal(
-        np.array(
-            [
-                [0.125, 0.875],
-                [1., 0.],
-                [0.8, 0.2],
-                [0.9, 0.1],
-            ]
-        ),
-        clf.predict_proba(MockDataset())
-    )
+    np.testing.assert_array_equal(preds.argmax(1), clf.predict(MockDataset()))
+    np.testing.assert_array_equal(preds, clf.predict_proba(MockDataset()))
 
 
 def test_cropped_predict_and_predict_proba():
