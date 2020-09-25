@@ -174,6 +174,7 @@ def test_eeg_classifier():
 
     clf = EEGClassifier(
         model,
+        cropped=True,
         criterion=CroppedLoss,
         criterion__loss_function=nll_loss,
         optimizer=optim.Adam,
