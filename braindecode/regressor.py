@@ -3,7 +3,7 @@ from sklearn.metrics import get_scorer
 from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
 from skorch.regressor import NeuralNetRegressor
-from skorch.utils import train_loss_score, valid_loss_score, noop
+from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
 
 from .training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
@@ -152,7 +152,7 @@ class EEGRegressor(NeuralNetRegressor):
         for X, y, i in self.get_iterator(dataset, drop_index=False):
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
-            preds.append(self.predict_proba(X))
+            preds.append(to_numpy(self.forward(X)))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
