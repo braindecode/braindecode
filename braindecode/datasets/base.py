@@ -9,21 +9,28 @@ Dataset classes.
 #          Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-
+from typing import Tuple
 import numpy as np
 import pandas as pd
 import bisect
 import torch
 from torch.utils.data import Dataset, ConcatDataset
-from .transform_classes import TransformSignal
+from .transform_classes import Transform
 from ..util import identity
 
 
 class Datum:
+    """The Datum class is mainly used to provide contextual informations to transforms, when they are applied on a data unitary chunk. For example, the "delay_signal" function needs to know the index of the data to find the data right before and do the shift. Similarly, the "merge_signal" function needs to know the data index, to do the merge with another signal with similar index.
+    """
     def __init__(self, X, y) -> None:
+        """Initialize one instance
+        Args:
+            X (Tensor): Tensor containing the signal
+            y (Union[Int,float]): Contains the label/value that should be predicted
+        """
         self.X = X
         self.y = y
-
+        
 
 class BaseDataset(Dataset):
     """A base dataset holds a mne.Raw, and a pandas.DataFrame with additional
@@ -162,7 +169,7 @@ class BaseConcatDataset(ConcatDataset):
 
 
 class TransformConcatDataset(BaseConcatDataset):
-    """A variation of the base class that includes elements 
+    """A variation of the base class that includes transforms 
     Parameters
     ----------
     list_of_ds: list
@@ -171,14 +178,17 @@ class TransformConcatDataset(BaseConcatDataset):
 
     def __init__(self, list_of_ds):
         # if we get a list of BaseConcatDataset, get all the individual datasets
+        def check_equal(iterator):
+            return len(set(iterator)) <= 1
         super().__init__(list_of_ds)
-        self.transform_list = list_of_ds[0].transform_list
+        assert check_equal([list_of_ds.subpolicies_list for ds in list_of_ds])
+        self.subpolicies_list = list_of_ds[0].subpolicies_list
 
-    def change_transform_list(self, newlist):
+    def update_augmentation_policy(self, newlist):
         for i in range(len(self.datasets)):
-            self.datasets[i].transform_list = newlist
+            self.datasets[i].subpolicies_list = newlist
         self.cumulative_sizes = self.cumsum(self.datasets)
-        self.transform_list = newlist
+        self.subpolicies_list = newlist
 
     def get_raw_data(self, idx):
         if idx < 0:
@@ -195,32 +205,26 @@ class TransformConcatDataset(BaseConcatDataset):
 
 class TransformDataset(WindowsDataset):
 
-    def __init__(self, windows, description=None, transform_list=None):
+    def __init__(self, windows, description=None, subpolicies_list=Tuple(Transform(identity))):
         super(TransformDataset, self).__init__(windows, description)
-        if transform_list is None:
-            self.transform_list = [[TransformSignal(identity)]]
-        else:
-            self.transform_list = transform_list
+        self.subpolicies_list = subpolicies_list
 
     def __getitem__(self, index):
 
-        img_index = index // len(self.transform_list)
-        tf_index = index % len(self.transform_list)
+        img_index = index // len(self.subpolicies_list)
+        tf_index = index % len(self.subpolicies_list)
         X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
         y = self.y[img_index]
-        datum = Datum(X, y)
-        for transform in self.transform_list[tf_index]:
+        for transform in self.subpolicies_list[tf_index]:
             datum = transform(datum)
-        # necessary to cast as list to get list of
-        # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[img_index])
         return datum.X, y, crop_inds  # TODO : modifier getitem de base sur la version gitté
 
     def __len__(self):
-        return len(self.windows.events) * len(self.transform_list)
+        return len(self.windows.events) * len(self.subpolicies_list)
 
     def get_raw_data(self, index):
-        img_index = index // len(self.transform_list)
+        img_index = index // len(self.subpolicies_list)
         X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
         y = self.y[img_index]
         crop_inds = list(self.crop_inds[img_index])
