@@ -10,9 +10,13 @@ def augmented_train(subpolicies_list, train_dataset, eeg_model, epochs):
         eeg_model (Union[EEGClassifier, EEGRegressor]): The model that will be trained on the augmented dataset
         epochs (int): Number of epochs the model will be trained on
     """
-
+    # Augments the dataset with the given policy
     train_dataset.update_augmentation_policy(subpolicies_list)
+    # Initializes variables depending on the dataset, which are needed to compute the different transforms
     global_variables_initialization(train_dataset)
+    
+    # Trains the model
     y_train = np.array([data[1] for data in iter(train_dataset)])
     eeg_model.fit(train_dataset, y=y_train, epochs=epochs)
+    
     return eeg_model
