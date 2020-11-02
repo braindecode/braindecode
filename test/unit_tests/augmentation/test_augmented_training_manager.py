@@ -10,7 +10,7 @@ from braindecode.augmentation.transforms.global_variables import fft_args
 
 def test_augmented_training_manager():
     train_sample, valid_sample, test_sample = get_dummy_sample()
-
+    
 def test_mask_along_axis():
     train_sample, _, _ = get_dummy_sample()
 

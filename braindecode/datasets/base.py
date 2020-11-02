@@ -215,6 +215,7 @@ class TransformDataset(WindowsDataset):
         tf_index = index % len(self.subpolicies_list)
         X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
         y = self.y[img_index]
+        datum = Datum(X, y)
         for transform in self.subpolicies_list[tf_index]:
             datum = transform(datum)
         crop_inds = list(self.crop_inds[img_index])
