@@ -331,7 +331,3 @@ def update_estimator_docstring(base_class, docstring):
         splitted[1] + \
         filtered_doc[filtered_doc.find('Attributes'):]
     return out_docstring
-
-
-def identity(datum, params={}):
-    return(datum)

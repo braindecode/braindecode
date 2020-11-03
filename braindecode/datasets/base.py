@@ -9,14 +9,13 @@ Dataset classes.
 #          Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-from typing import Tuple
 import numpy as np
 import pandas as pd
 import bisect
 import torch
 from torch.utils.data import Dataset, ConcatDataset
 from .transform_classes import Transform
-from ..util import identity
+from ..augmentation.transforms.identity import identity
 
 
 class Datum:
@@ -181,7 +180,7 @@ class TransformConcatDataset(BaseConcatDataset):
         def check_equal(iterator):
             return len(set(iterator)) <= 1
         super().__init__(list_of_ds)
-        assert check_equal([list_of_ds.subpolicies_list for ds in list_of_ds])
+        assert check_equal([ds.subpolicies_list for ds in list_of_ds])
         self.subpolicies_list = list_of_ds[0].subpolicies_list
 
     def update_augmentation_policy(self, newlist):
@@ -205,7 +204,7 @@ class TransformConcatDataset(BaseConcatDataset):
 
 class TransformDataset(WindowsDataset):
 
-    def __init__(self, windows, description=None, subpolicies_list=Tuple(Transform(identity))):
+    def __init__(self, windows, description=None, subpolicies_list=tuple([Transform(identity)])):
         super(TransformDataset, self).__init__(windows, description)
         self.subpolicies_list = subpolicies_list
 
@@ -216,8 +215,8 @@ class TransformDataset(WindowsDataset):
         X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
         y = self.y[img_index]
         datum = Datum(X, y)
-        for transform in self.subpolicies_list[tf_index]:
-            datum = transform(datum)
+        transform = self.subpolicies_list[tf_index]
+        datum = transform(datum)
         crop_inds = list(self.crop_inds[img_index])
         return datum.X, y, crop_inds  # TODO : modifier getitem de base sur la version gitté
 

@@ -4,7 +4,7 @@ import random
 
 class Transform:
     
-    def __init__(self, operation, probability, magnitude):
+    def __init__(self, operation, probability=1, magnitude=0):
         self.operation = operation
         self.probability = probability
         self.magnitude = magnitude
