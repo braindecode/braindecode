@@ -26,7 +26,7 @@ def compute_amplitude_gradients_for_X(model, X):
     fft_coefs = fft_coefs.squeeze(3)
 
     iffted = torch.irfft(
-        fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],)).unsqueeze(-1)
+        fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],))
 
     outs = model(iffted)
 

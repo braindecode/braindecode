@@ -1,5 +1,5 @@
 import numpy as np
-from .transforms.preliminaries import global_variables_initialization, dataset_augmentation
+from .transforms.preliminaries import global_variables_initialization, augment_dataset
 
 def augmented_train(subpolicies_list, train_dataset, eeg_model, epochs):
     """This function trains a model on an augmented dataset
@@ -14,7 +14,7 @@ def augmented_train(subpolicies_list, train_dataset, eeg_model, epochs):
     global_variables_initialization(train_dataset)
     
     # Augments the dataset with the given policy
-    train_dataset = dataset_augmentation(train_dataset, subpolicies_list)
+    train_dataset = augment_dataset(train_dataset, subpolicies_list)
     # Trains the model
     y_train = np.array([data[1] for data in iter(train_dataset)])
     eeg_model.fit(train_dataset, y=y_train, epochs=epochs)

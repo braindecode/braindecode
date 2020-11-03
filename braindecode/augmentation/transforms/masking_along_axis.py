@@ -8,7 +8,7 @@ def mask_along_axis(X, params):
     All examples will have the same mask interval.
 
     Args:
-        specgram (Tensor): Real spectrogram (channel, freq, time)
+        X (Tensor): Real spectrogram (channel, freq, time)
         mask_start (int): First column masked
         mask_end (int): First column unmasked
         mask_value (float): Value to assign to the masked columns
@@ -97,10 +97,10 @@ def signal_to_time_frequency(X):
     """Transforms a temporal signal into its time-frequency representation
 
     Args:
-        X (Tensor): a temporal signal
+        X (Tensor): Temporal signal (channel, time)
 
     Returns:
-        Tensor: a time-frequency representation
+        Tensor: Real spectrogram (channel, freq, time)
     """
     global fft_args
     X = torch.stft(X, n_fft=fft_args["n_fft"],
@@ -112,10 +112,10 @@ def signal_to_time_frequency(X):
 def time_frequency_to_signal(X):
     """Transforms a time-frequency representation back into a signal
     Args:
-        X (Tensor): a time-frequency representation
+        X (Tensor): Real spectrogram (channel, freq, time)
 
     Returns:
-        Tensor: a signal 
+        Tensor: Temporal signal (channel, time) 
     """
     global fft_args, data_size
     X = torch.istft(X, n_fft=fft_args["n_fft"],

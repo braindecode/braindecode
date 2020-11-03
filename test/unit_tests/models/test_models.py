@@ -1,5 +1,6 @@
 # Authors: Alexandre Gramfort
 #          Lukas Gemein <l.gemein@gmail.com>
+#          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD-3
 
@@ -10,7 +11,7 @@ import pytest
 
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
-    SleepStager)
+    SleepStagerChambon2018)
 
 
 def test_shallow_fbcsp_net():
@@ -111,7 +112,7 @@ def test_tcn():
         n_filters=5, n_blocks=2, kernel_size=4, drop_prob=.5,
         add_log_softmax=True)
     n_in_times = model.min_len
-    X = rng.randn(n_samples, n_channels, n_in_times, 1)
+    X = rng.randn(n_samples, n_channels, n_in_times)
     X = torch.Tensor(X.astype(np.float32))
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
@@ -125,7 +126,7 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
     max_pool_size_s = 0.125
     n_examples = 10
 
-    model = ChambonSleepStager(
+    model = SleepStagerChambon2018(
         n_channels, sfreq, n_conv_chs=8, time_conv_size_s=time_conv_size_s,
         max_pool_size_s=max_pool_size_s, n_classes=n_classes,
         input_size_s=input_size_s, dropout=0.25)

@@ -40,7 +40,6 @@ class SleepPhysionet(BaseConcatDataset):
         and after the last sleep event. Used to reduce the imbalance in this
         dataset. Default of 30 mins.
     """
-
     def __init__(self, subject_ids=None, recording_ids=None, preload=False,
                  load_eeg_only=True, crop_wake_mins=30):
         if subject_ids is None:
@@ -83,9 +82,9 @@ class SleepPhysionet(BaseConcatDataset):
 
             # Crop raw
             tmin = annots[int(sleep_event_inds[0])]['onset'] - \
-                crop_wake_mins * 60
+                   crop_wake_mins * 60
             tmax = annots[int(sleep_event_inds[-1])]['onset'] + \
-                crop_wake_mins * 60
+                   crop_wake_mins * 60
             raw.crop(tmin=tmin, tmax=tmax)
 
         # Rename EEG channels
