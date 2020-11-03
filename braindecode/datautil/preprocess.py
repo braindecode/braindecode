@@ -19,7 +19,7 @@ import pandas as pd
 import mne
 
 
-class MNEPreproc():
+class MNEPreproc(object):
     """Preprocessor for an MNE-raw/epoch.
 
     Parameters
@@ -35,24 +35,38 @@ class MNEPreproc():
         self.kwargs = kwargs
 
     def apply(self, raw_or_epochs):
+        try:
+            self._try_apply(raw_or_epochs)
+        except RuntimeError:
+            # Maybe the function needs the data to be loaded
+            # and the data was not loaded yet
+            # Not all mne functions need data to be loaded,
+            # most importantly the 'crop' function can be
+            # lazily applied without preloading data
+            # which can make overall preprocessing pipeline
+            # substantially faster
+            raw_or_epochs.load_data()
+            self._try_apply(raw_or_epochs)
+
+    def _try_apply(self, raw_or_epochs):
         if callable(self.fn):
-            self.fn(raw_or_epochs.load_data(), **self.kwargs)
+            self.fn(raw_or_epochs, **self.kwargs)
         else:
             if not hasattr(raw_or_epochs, self.fn):
                 raise AttributeError(
                     f'MNE object does not have {self.fn} method.')
-            getattr(raw_or_epochs.load_data(), self.fn)(**self.kwargs)
+            getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
 class NumpyPreproc(MNEPreproc):
-    """Preprocessor that directy operates on the underlying numpy array of an mne raw/epoch.
+    """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
 
     Parameters
     ----------
     fn: callable
         Function that preprocesses the numpy array
     channel_wise: bool
-        Whether to apply the functiona
+        Whether to apply the function
     kwargs:
         Keyword arguments will be forwarded to the function
     """
@@ -201,12 +215,11 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
 
 
 def zscore(data):
-    """Zscore continuous or windowed data in-place
+    """Zscore normalize continuous or windowed data in-place.
 
     Parameters
     ----------
-    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
+    data: np.ndarray (n_channels, n_times) or (n_windows, n_channels, n_times)
         continuous or windowed signal
 
     Returns
@@ -214,6 +227,7 @@ def zscore(data):
     zscored: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
     n_times)
         normalized continuous or windowed data
+
     ..note:
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().

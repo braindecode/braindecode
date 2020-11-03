@@ -5,6 +5,8 @@
 #
 # License: BSD-3
 
+import copy
+
 import mne
 import numpy as np
 import pandas as pd
@@ -14,13 +16,15 @@ from braindecode.datasets.base import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.datautil import (
     create_windows_from_events, create_fixed_length_windows)
+from braindecode.datautil.preprocess import MNEPreproc, preprocess
 from braindecode.util import create_mne_dummy_raw
 
 
 def _get_raw(tmpdir_factory, description=None):
     _, fnames = create_mne_dummy_raw(
         2, 20000, 100, description=description,
-        savedir=tmpdir_factory.mktemp('data'), save_format='fif')
+        savedir=tmpdir_factory.mktemp('data'), save_format='fif',
+        random_state=87)
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
     return raw
 
@@ -246,7 +250,7 @@ def test_windows_from_events_(lazy_loadable_dataset):
                        match='"trial_stop_offset_samples" too large\\. Stop '
                              'of last trial \\(19900\\) \\+ '
                              '"trial_stop_offset_samples" \\(250\\) must be '
-                             'smaller then length of recording 20000\\.'
+                             'smaller than length of recording \\(20000\\)\\.'
                        ):
         windows = create_windows_from_events(
             concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
@@ -307,3 +311,103 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}"
         )
+
+
+def test_windows_from_events_cropped(lazy_loadable_dataset):
+    """Test windowing from events on cropped data.
+
+    Cropping raw data changes the `first_samp` attribute of the Raw object, and
+    so it is important to test this is taken into account by the windowers.
+    """
+    tmin, tmax = 100, 120
+
+    ds = copy.deepcopy(lazy_loadable_dataset)
+    ds.datasets[0].raw.annotations.crop(tmin, tmax)
+
+    crop_ds = copy.deepcopy(lazy_loadable_dataset)
+    crop_transform = MNEPreproc('crop', tmin=tmin, tmax=tmax)
+    preprocess(crop_ds, [crop_transform])
+
+    # Extract windows
+    windows1 = create_windows_from_events(
+        concat_ds=ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        window_size_samples=100, window_stride_samples=100,
+        drop_last_window=False)
+    windows2 = create_windows_from_events(
+        concat_ds=crop_ds, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=False)
+    assert (windows1[0][0] == windows2[0][0]).all()
+
+    # Make sure events that fall outside of recording will trigger an error
+    with pytest.raises(
+            ValueError, match='"trial_stop_offset_samples" too large'):
+        create_windows_from_events(
+            concat_ds=ds, trial_start_offset_samples=0,
+            trial_stop_offset_samples=10000, window_size_samples=100,
+            window_stride_samples=100, drop_last_window=False)
+    with pytest.raises(
+            ValueError, match='"trial_stop_offset_samples" too large'):
+        create_windows_from_events(
+            concat_ds=crop_ds, trial_start_offset_samples=0,
+            trial_stop_offset_samples=2001, window_size_samples=100,
+            window_stride_samples=100, drop_last_window=False)
+
+
+def test_windows_fixed_length_cropped(lazy_loadable_dataset):
+    """Test fixed length windowing on cropped data.
+
+    Cropping raw data changes the `first_samp` attribute of the Raw object, and
+    so it is important to test this is taken into account by the windowers.
+    """
+    tmin, tmax = 100, 120
+
+    ds = copy.deepcopy(lazy_loadable_dataset)
+    ds.datasets[0].raw.annotations.crop(tmin, tmax)
+
+    crop_ds = copy.deepcopy(lazy_loadable_dataset)
+    crop_transform = MNEPreproc('crop', tmin=tmin, tmax=tmax)
+    preprocess(crop_ds, [crop_transform])
+
+    # Extract windows
+    sfreq = ds.datasets[0].raw.info['sfreq']
+    tmin_samples, tmax_samples = int(tmin * sfreq), int(tmax * sfreq)
+
+    windows1 = create_fixed_length_windows(
+        concat_ds=ds, start_offset_samples=tmin_samples,
+        stop_offset_samples=tmax_samples, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=True)
+    windows2 = create_fixed_length_windows(
+        concat_ds=crop_ds, start_offset_samples=0,
+        stop_offset_samples=None, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=True)
+    assert (windows1[0][0] == windows2[0][0]).all()
+
+
+def test_epochs_kwargs(lazy_loadable_dataset):
+    picks = ['ch0']
+    on_missing = 'warning'
+    flat = {'eeg': 3e-6}
+    reject = {'eeg': 43e-6}
+
+    windows = create_windows_from_events(
+        concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=False, picks=picks,
+        on_missing=on_missing, flat=flat, reject=reject)
+
+    epochs = windows.datasets[0].windows
+    assert epochs.ch_names == picks
+    assert epochs.reject == reject
+    assert epochs.flat == flat
+
+    windows = create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+        stop_offset_samples=None, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=False, picks=picks,
+        on_missing=on_missing, flat=flat, reject=reject)
+
+    epochs = windows.datasets[0].windows
+    assert epochs.ch_names == picks
+    assert epochs.reject == reject
+    assert epochs.flat == flat

@@ -69,7 +69,7 @@ def create_from_X_y(
     windows_datasets = create_fixed_length_windows(
         base_datasets,
         start_offset_samples=0,
-        stop_offset_samples=0,
+        stop_offset_samples=None,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
         drop_last_window=drop_last_window

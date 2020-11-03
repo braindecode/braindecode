@@ -13,7 +13,7 @@ install:
   - conda update -q conda
   # Useful for debugging any issues with conda
   - conda info -a
-  - conda env create -f environment.yml 
+  - conda env create -f environment.yml
   - conda info --envs
   - source activate braindecode
   - pip install sphinx-gallery
