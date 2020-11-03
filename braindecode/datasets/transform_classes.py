@@ -10,11 +10,19 @@ class Transform:
         self.magnitude = magnitude
         self.transform = partial(operation, magnitude=magnitude)
     
-    def __call__(self, X):
+    def __call__(self, datum):
+        """Apply the transform ``self.operation`` on the data X with probability ``self.probability`` and magnitude ``self.magnitude``
+
+        Args:
+            datum (Datum): Data + metadata
+
+        Returns:
+            datum: Transformed data + metadata
+        """
         rand_num = random.random()
         if rand_num <= self.probability:
-            return self.transform(X)
+            return self.transform(datum)
         else:
-            return X
+            return datum
     
     

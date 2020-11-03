@@ -203,6 +203,16 @@ class TransformConcatDataset(BaseConcatDataset):
 
 
 class TransformDataset(WindowsDataset):
+    """A variation of the base class that includes transforms 
+    Parameters
+    ----------
+    list_of_ds: list
+        list of TransformDataset
+    description: dict | pandas.Series | None
+        holds additional info about the windows
+    subpolicies_list: list
+        list of subpolicies (= Transform or Compose[list[Transform]])
+    """
 
     def __init__(self, windows, description=None, subpolicies_list=tuple([Transform(identity)])):
         super(TransformDataset, self).__init__(windows, description)
@@ -224,6 +234,17 @@ class TransformDataset(WindowsDataset):
         return len(self.windows.events) * len(self.subpolicies_list)
 
     def get_raw_data(self, index):
+        """Returns raw data, without applying any transforms
+
+        Args:
+            index (int): index of the requested data
+
+        Returns:
+            X (Tensor): data
+            y (Union[int, float]): label
+            crops_ind (List[int]): timestamps (first and last)
+            
+        """
         img_index = index // len(self.subpolicies_list)
         X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
         y = self.y[img_index]
