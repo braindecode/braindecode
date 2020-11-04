@@ -3,7 +3,7 @@ import torch
 from skorch.callbacks import LRScheduler, EarlyStopping
 from braindecode import EEGClassifier
 from braindecode.util import set_random_seeds
-from braindecode.models import ShallowFBCSPNet, SleepStager
+from braindecode.models import ShallowFBCSPNet, SleepStagerChambon2018
 from skorch.helper import predefined_split
 from braindecode.datasets.sleep_physionet import get_dummy_sample
 from braindecode.datasets.transform_class import Transform
@@ -37,7 +37,7 @@ def test_dummy_augmented_training():
     if cuda:
         torch.backends.cudnn.benchmark = True
     set_random_seeds(0, cuda=cuda)
-    nn_architecture = SleepStager(
+    nn_architecture = SleepStagerChambon2018(
         n_channels=model_args["n_chans"],
         sfreq=model_args["sfreq"],
         n_classes=model_args["n_classes"] + 1,
