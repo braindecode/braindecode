@@ -68,6 +68,21 @@ References
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
 
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+import pandas as pd
+from matplotlib.lines import Line2D
+import matplotlib.pyplot as plt
+from braindecode import EEGClassifier
+from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+from braindecode.models import SleepStagerChambon2018
+from braindecode.util import set_random_seeds
+import torch
+from braindecode.datautil.preprocess import zscore
+from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.datautil.preprocess import (
+    MNEPreproc, NumpyPreproc, preprocess)
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
@@ -86,8 +101,6 @@ dataset = SleepPhysionet(
 # Physionet data is already sampled at a lower 100 Hz.
 #
 
-from braindecode.datautil.preprocess import (
-    MNEPreproc, NumpyPreproc, preprocess)
 
 high_cut_hz = 30
 
@@ -110,8 +123,6 @@ preprocess(dataset, preprocessors)
 
 ######################################################################
 # We extract 30-s windows to be used in the classification task.
-
-from braindecode.datautil.windowers import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
@@ -144,7 +155,6 @@ windows_dataset = create_windows_from_events(
 # in each window.
 #
 
-from braindecode.datautil.preprocess import zscore
 
 preprocess(windows_dataset, [MNEPreproc(fn=zscore)])
 
@@ -180,9 +190,6 @@ print(valid_set.datasets[0].windows)
 # neural network.
 #
 
-import torch
-from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -231,9 +238,6 @@ if cuda:
 #    a different dataset or with more recordings.
 #
 
-from skorch.helper import predefined_split
-from skorch.callbacks import EpochScoring
-from braindecode import EEGClassifier
 
 lr = 5e-4
 batch_size = 16
@@ -276,9 +280,6 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # sets.
 #
 
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-import pandas as pd
 
 # Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
@@ -319,8 +320,6 @@ plt.tight_layout()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import classification_report
 
 y_true = valid_set.datasets[0].windows.metadata['target'].values
 y_pred = clf.predict(valid_set)

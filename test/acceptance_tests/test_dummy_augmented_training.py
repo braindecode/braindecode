@@ -6,7 +6,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet, SleepStager
 from skorch.helper import predefined_split
 from braindecode.datasets.sleep_physionet import get_dummy_sample
-from braindecode.datasets.transform_classes import Transform
+from braindecode.datasets.transform_class import Transform
 from braindecode.datasets.base import Datum
 from braindecode.util import set_random_seeds
 from braindecode.augmentation.augmented_training_manager import augmented_train
@@ -18,18 +18,18 @@ def test_dummy_augmented_training():
     train_sample, test_sample, valid_sample = get_dummy_sample()
     model_args = {"n_classes": len(set(
         [train_sample[i][1] for i in range(len(train_sample))])),
-                  "n_chans": int(train_sample[0][0].shape[0]),
-                  "input_window_samples": int(train_sample[0][0].shape[1]),
-                  "model_type": "SleepStager",
-                  "batch_size": 256,
-                  "seed": None,
-                  "sfreq": 100,
-                  "lr": 0.002,
-                  "weight_decay": 0,
-                  "n_epochs": 50,
-                  "n_cross_val": 3,
-                  "criterion": torch.nn.CrossEntropyLoss,
-                  "device": "cuda:2",
+        "n_chans": int(train_sample[0][0].shape[0]),
+        "input_window_samples": int(train_sample[0][0].shape[1]),
+        "model_type": "SleepStager",
+        "batch_size": 256,
+        "seed": None,
+        "sfreq": 100,
+        "lr": 0.002,
+        "weight_decay": 0,
+        "n_epochs": 50,
+        "n_cross_val": 3,
+        "criterion": torch.nn.CrossEntropyLoss,
+        "device": "cuda:2",
                   "patience": 5
     }
     cuda = torch.cuda.is_available()
@@ -38,12 +38,12 @@ def test_dummy_augmented_training():
         torch.backends.cudnn.benchmark = True
     set_random_seeds(0, cuda=cuda)
     nn_architecture = SleepStager(
-            n_channels=model_args["n_chans"],
-            sfreq=model_args["sfreq"],
-            n_classes=model_args["n_classes"] + 1,
-            input_size_s=model_args["input_window_samples"] /
-            model_args["sfreq"],
-        )
+        n_channels=model_args["n_chans"],
+        sfreq=model_args["sfreq"],
+        n_classes=model_args["n_classes"] + 1,
+        input_size_s=model_args["input_window_samples"] /
+        model_args["sfreq"],
+    )
 
     if cuda:
         nn_architecture.cuda()
@@ -70,10 +70,6 @@ def test_dummy_augmented_training():
         iterator_train__num_workers=20,
         iterator_train__pin_memory=True
     )  # torch.in torch.out
-    
+
     subpolicies_list = [Transform(identity), Compose([Transform(mask_along_frequency), Transform(mask_along_time)])]
     augmented_train(subpolicies_list=subpolicies_list, train_dataset=train_sample, eeg_model=clf, epochs=model_args["n_epochs"])
-
-
-
-    

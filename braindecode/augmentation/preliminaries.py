@@ -1,6 +1,7 @@
 from .global_variables import label_index_dict
 from torch.utils.data.dataset import Subset
 
+
 def update_label_index_dict(train_dataset):
     """Create a dictionnary, with as key the labels available in the multi-classification process, and as value for a given label all indexes of data that corresponds to its label.
 
@@ -20,6 +21,7 @@ def update_label_index_dict(train_dataset):
     for i in range(len(subset_aug_indices)):
         label_index_dict[subset_aug_labels[i]].append(subset_aug_indices[i])
 
+
 def global_variables_initialization(train_dataset):
     """Compute every global variable (label_index_dict, em_decomposition_dict, etc...)
 
@@ -27,7 +29,8 @@ def global_variables_initialization(train_dataset):
         train_dataset (Union[TransformDataset, TransformConcatDataset, Subset]): the train dataset
     """
     update_label_index_dict(train_dataset)
-    
+
+
 def augment_dataset(train_dataset, subpolicies_list):
     """Transform the raw dataset into an augmented dataset. The Transform class does most of the job, nevertheless some additional work has to be done to adapt subset
 
@@ -37,7 +40,7 @@ def augment_dataset(train_dataset, subpolicies_list):
     """
     if isinstance(train_dataset, Subset):
         train_dataset.dataset.update_augmentation_policy(subpolicies_list)
-        temp = [list(range(i, i+len(subpolicies_list))) for i in train_dataset.indices]
+        temp = [list(range(i, i + len(subpolicies_list))) for i in train_dataset.indices]
         train_dataset.indices = [item for sublist in temp for item in sublist]
     else:
         train_dataset.update_augmentation_policy(subpolicies_list)

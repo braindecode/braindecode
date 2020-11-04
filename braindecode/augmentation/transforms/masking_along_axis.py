@@ -1,5 +1,6 @@
 import torch
-from .global_variables import fft_args, data_size
+from ..global_variables import fft_args, data_size
+
 
 def mask_along_axis(X, params):
     r"""
@@ -7,7 +8,7 @@ def mask_along_axis(X, params):
     ``[v_start, v_end)``, .
     All examples will have the same mask interval.
 
-    Args:
+    Args: 
         X (Tensor): Real spectrogram (channel, freq, time)
         mask_start (int): First column masked
         mask_end (int): First column unmasked
@@ -44,7 +45,7 @@ def mask_along_axis_random(X, params):
     Returns:
         Tensor: Masked data
     """
-    
+
     specgram = X
     value = torch.rand(1) \
         * params['magnitude'] * specgram.size(params["axis"])
@@ -108,7 +109,8 @@ def signal_to_time_frequency(X):
                    win_length=fft_args["win_length"],
                    window=torch.hann_window(fft_args["n_fft"]))
     return X
-    
+
+
 def time_frequency_to_signal(X):
     """Transforms a time-frequency representation back into a signal
     Args:
