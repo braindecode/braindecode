@@ -15,6 +15,7 @@ from .base import BaseDataset, BaseConcatDataset
 cachedir = 'cache_dir'
 memory = Memory(cachedir, verbose=0)
 
+
 class SleepPhysionet(BaseConcatDataset):
     """Sleep Physionet dataset.
 
@@ -82,9 +83,9 @@ class SleepPhysionet(BaseConcatDataset):
 
             # Crop raw
             tmin = annots[int(sleep_event_inds[0])]['onset'] - \
-                   crop_wake_mins * 60
+                crop_wake_mins * 60
             tmax = annots[int(sleep_event_inds[-1])]['onset'] + \
-                   crop_wake_mins * 60
+                crop_wake_mins * 60
             raw.crop(tmin=tmin, tmax=tmax)
 
         # Rename EEG channels
@@ -171,8 +172,8 @@ def get_sample(train_dataset, transform_list, sample_size, random_state=None):
                  len_aug_dataset /
                  tf_list_len),
         replace=False)
-    subset_aug_sample = np.array([(np.arange(i * tf_list_len, i * tf_list_len
-                                             + tf_list_len))
+    subset_aug_sample = np.array([(np.arange(i * tf_list_len, i * tf_list_len +
+                                             tf_list_len))
                                   for i in subset_sample]).flatten()
     subset_aug_labels = np.array([(np.full(tf_list_len, train_dataset[i][1]))
                                   for i in subset_sample]).flatten()

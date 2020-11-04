@@ -3,12 +3,10 @@ import torch
 from skorch.callbacks import LRScheduler, EarlyStopping
 from braindecode import EEGClassifier
 from braindecode.util import set_random_seeds
-from braindecode.models import ShallowFBCSPNet, SleepStagerChambon2018
+from braindecode.models import SleepStagerChambon2018
 from skorch.helper import predefined_split
 from braindecode.datasets.sleep_physionet import get_dummy_sample
 from braindecode.datasets.transform_class import Transform
-from braindecode.datasets.base import Datum
-from braindecode.util import set_random_seeds
 from braindecode.augmentation.augmented_training_manager import augmented_train
 from braindecode.augmentation.transforms.identity import identity
 from torchvision.transforms import Compose

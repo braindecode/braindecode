@@ -8,7 +8,7 @@ def mask_along_axis(X, params):
     ``[v_start, v_end)``, .
     All examples will have the same mask interval.
 
-    Args: 
+    Args:
         X (Tensor): Real spectrogram (channel, freq, time)
         mask_start (int): First column masked
         mask_end (int): First column unmasked
@@ -63,7 +63,7 @@ def mask_along_time(datum, magnitude):
 
     Args:
         datum (Datum): A wrapper containing the data to transform, plus metadata informations useful for certain transforms
-        magnitude (float): a ``[0, 1] float, harmonized between transforms, characterizing how much the transform will alter the data 
+        magnitude (float): a ``[0, 1] float, harmonized between transforms, characterizing how much the transform will alter the data
 
     Returns:
         Datum: A wrapper containing the transformed data.
@@ -81,7 +81,7 @@ def mask_along_frequency(datum, magnitude):
 
     Args:
         datum (Datum): A wrapper containing the data to transform, plus metadata informations useful for certain transforms
-        magnitude (float): a ``[0, 1] float, harmonized between transforms, characterizing how much the transform will alter the data 
+        magnitude (float): a ``[0, 1] float, harmonized between transforms, characterizing how much the transform will alter the data
 
     Returns:
         Datum: A wrapper containing the transformed data.
@@ -117,7 +117,7 @@ def time_frequency_to_signal(X):
         X (Tensor): Real spectrogram (channel, freq, time)
 
     Returns:
-        Tensor: Temporal signal (channel, time) 
+        Tensor: Temporal signal (channel, time)
     """
     global fft_args, data_size
     X = torch.istft(X, n_fft=fft_args["n_fft"],
