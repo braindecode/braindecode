@@ -31,6 +31,9 @@ class SleepStagerChambon2018(nn.Module):
         Size of the input, in seconds.
     dropout : float
         Dropout rate before the output dense layer.
+    apply_batch_norm : bool
+        If True, apply batch normalization after both temporal convolutional
+        layers.
 
     References
     ----------
@@ -42,7 +45,7 @@ class SleepStagerChambon2018(nn.Module):
     """
     def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, n_classes=5, input_size_s=30,
-                 dropout=0.25):
+                 dropout=0.25, apply_batch_norm=False):
         super().__init__()
 
         time_conv_size = int(time_conv_size_s * sfreq)
@@ -56,14 +59,18 @@ class SleepStagerChambon2018(nn.Module):
         if n_channels > 1:
             self.spatial_conv = nn.Conv2d(1, n_channels, (n_channels, 1))
 
+        batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
+
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(
                 1, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
+            batch_norm(n_conv_chs),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chs, n_conv_chs, (1, time_conv_size),
                 padding=(0, pad_size)),
+            batch_norm(n_conv_chs),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size))
         )
