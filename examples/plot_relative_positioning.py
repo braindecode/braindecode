@@ -78,8 +78,6 @@ from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
     subject_ids=[0, 1, 2], recording_ids=[1], crop_wake_mins=30)
-# dataset = SleepPhysionet(
-    # subject_ids=range(41), recording_ids=[1], crop_wake_mins=30)
 
 
 ######################################################################

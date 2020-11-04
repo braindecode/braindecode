@@ -24,7 +24,7 @@ class RecordingSampler(Sampler):
 
     Attributes
     ----------
-    info : pd.Series
+    info : pd.DataFrame
         Series with multiindex, which contains the subject, session, run and
         window indices information in an easily accessible structure for
         quickly sampling.
@@ -39,8 +39,8 @@ class RecordingSampler(Sampler):
                 if k in self.metadata.columns]
         if not keys:
             raise ValueError(
-                'metadata must contains at least one of the following columns:'
-                ' subject, session or run.')
+                'metadata must contain at least one of the following columns: '
+                'subject, session or run.')
 
         self.metadata = self.metadata.reset_index().rename(
             columns={'index': 'window_index'})
