@@ -9,7 +9,6 @@ from braindecode.datasets.sleep_physionet import get_dummy_sample
 from braindecode.datasets.transform_class import Transform
 from braindecode.augmentation.augmented_training_manager import augmented_train
 from braindecode.augmentation.transforms.identity import identity
-from torchvision.transforms import Compose
 
 
 def test_dummy_augmented_training():
@@ -69,5 +68,5 @@ def test_dummy_augmented_training():
         iterator_train__pin_memory=True
     )  # torch.in torch.out
 
-    subpolicies_list = [Transform(identity), Compose([Transform(mask_along_frequency), Transform(mask_along_time)])]
+    subpolicies_list = [Transform(identity), Transform(mask_along_frequency), Transform(mask_along_time)]
     augmented_train(subpolicies_list=subpolicies_list, train_dataset=train_sample, eeg_model=clf, epochs=model_args["n_epochs"])
