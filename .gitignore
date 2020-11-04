@@ -34,6 +34,7 @@ docs/auto_tutorials/
 docs/modules/generated/
 docs/sphinxext/cachedir
 docs/source
+cache_dir/
 pip-log.txt
 .coverage*
 tags
