@@ -24,6 +24,7 @@ from ..augmentation.transforms.identity import identity
 class Datum:
     """The Datum class is mainly used to provide contextual informations to transforms, when they are applied on a data unitary chunk. For example, the "delay_signal" function needs to know the index of the data to find the data right before and do the shift. Similarly, the "merge_signal" function needs to know the data index, to do the merge with another signal with similar index.
     """
+
     def __init__(self, X, y) -> None:
         """Initialize one instance
         Args:
@@ -32,7 +33,7 @@ class Datum:
         """
         self.X = X
         self.y = y
-        
+
 
 class BaseDataset(Dataset):
     """A base dataset holds a mne.Raw, and a pandas.DataFrame with additional
@@ -90,24 +91,47 @@ class WindowsDataset(BaseDataset):
         holds additional info about the windows
     """
 
-    def __init__(self, windows, description=None, transform=None):
+    def __init__(self, windows, description=None, subpolicies_list=tuple([Transform(identity)])):
         self.windows = windows
         self.description = _create_description(description)
         self.y = np.array(self.windows.metadata.loc[:, 'target'])
         self.crop_inds = np.array(self.windows.metadata.loc[:,
                                                             ['i_window_in_trial', 'i_start_in_trial',
                                                              'i_stop_in_trial']])
+        self.subpolicies_list = subpolicies_list
 
     def __getitem__(self, index):
-        X = self.windows.get_data(item=index)[0].astype('float32')
-        y = self.y[index]
-        # necessary to cast as list to get list of
-        # three tensors from batch, otherwise get single 2d-tensor...
-        crop_inds = list(self.crop_inds[index])
-        return X, y, crop_inds
+
+        X_index = index // len(self.subpolicies_list)
+        tf_index = index % len(self.subpolicies_list)
+        X = torch.from_numpy(self.windows.get_data(item=X_index)[0].astype('float32'))
+        y = self.y[X_index]
+        datum = Datum(X, y)
+        transform = self.subpolicies_list[tf_index]
+        datum = transform(datum)
+        crop_inds = list(self.crop_inds[X_index])
+        return datum.X, y, crop_inds
 
     def __len__(self):
-        return len(self.windows.events)
+        return len(self.windows.events) * len(self.subpolicies_list)
+
+    def get_raw_data(self, index):
+        """Returns raw data, without applying any transforms
+
+        Args:
+            index (int): index of the requested data
+
+        Returns:
+            X (Tensor): data
+            y (Union[int, float]): label
+            crops_ind (List[int]): timestamps (first and last)
+
+        """
+        img_index = index // len(self.subpolicies_list)
+        X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
+        y = self.y[img_index]
+        crop_inds = list(self.crop_inds[img_index])
+        return X, y, crop_inds
 
 
 class BaseConcatDataset(ConcatDataset):
@@ -190,8 +214,8 @@ class BaseConcatDataset(ConcatDataset):
         self.cumulative_sizes = self.cumsum(self.datasets)
 
 
-class TransformConcatDataset(BaseConcatDataset):
-    """A variation of the base class that includes transforms 
+class WindowsConcatDataset(BaseConcatDataset):
+    """A variation of the base class that includes transforms
     Parameters
     ----------
     list_of_ds: list
@@ -223,53 +247,3 @@ class TransformConcatDataset(BaseConcatDataset):
         else:
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
         return self.datasets[dataset_idx].get_raw_data(sample_idx)
-
-
-class TransformDataset(WindowsDataset):
-    """A variation of the base class that includes transforms 
-    Parameters
-    ----------
-    list_of_ds: list
-        list of TransformDataset
-    description: dict | pandas.Series | None
-        holds additional info about the windows
-    subpolicies_list: list
-        list of subpolicies (= Transform or Compose[list[Transform]])
-    """
-
-    def __init__(self, windows, description=None, subpolicies_list=tuple([Transform(identity)])):
-        super(TransformDataset, self).__init__(windows, description)
-        self.subpolicies_list = subpolicies_list
-
-    def __getitem__(self, index):
-
-        img_index = index // len(self.subpolicies_list)
-        tf_index = index % len(self.subpolicies_list)
-        X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
-        y = self.y[img_index]
-        datum = Datum(X, y)
-        transform = self.subpolicies_list[tf_index]
-        datum = transform(datum)
-        crop_inds = list(self.crop_inds[img_index])
-        return datum.X, y, crop_inds  # TODO : modifier getitem de base sur la version gitté
-
-    def __len__(self):
-        return len(self.windows.events) * len(self.subpolicies_list)
-
-    def get_raw_data(self, index):
-        """Returns raw data, without applying any transforms
-
-        Args:
-            index (int): index of the requested data
-
-        Returns:
-            X (Tensor): data
-            y (Union[int, float]): label
-            crops_ind (List[int]): timestamps (first and last)
-            
-        """
-        img_index = index // len(self.subpolicies_list)
-        X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
-        y = self.y[img_index]
-        crop_inds = list(self.crop_inds[img_index])
-        return X, y, crop_inds

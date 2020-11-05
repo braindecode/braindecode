@@ -4,7 +4,7 @@ import random
 
 class Transform:
 
-    def __init__(self, operation, probability=1, magnitude=0):
+    def __init__(self, operation, probability=None, magnitude=0):
         self.operation = operation
         self.probability = probability
         self.magnitude = magnitude
@@ -19,8 +19,8 @@ class Transform:
         Returns:
             datum: Transformed data + metadata
         """
-        rand_num = random.random()
-        if rand_num <= self.probability:
-            return self.transform(datum)
-        else:
-            return datum
+        if self.probability is not None:
+            rand_num = random.random()
+            if rand_num <= self.probability:
+                return self.transform(datum)
+        return datum

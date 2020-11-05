@@ -11,9 +11,9 @@ log = logging.getLogger(__name__)
 
 
 def create_from_X_y(
-        X, y, drop_last_window, sfreq=None, ch_names=None,  window_size_samples=None,
+        X, y, drop_last_window, sfreq=None, ch_names=None, window_size_samples=None,
         window_stride_samples=None):
-    """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
+    """Create a WindowsConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
     and y are corresponding targets.
 
@@ -48,7 +48,6 @@ def create_from_X_y(
     if ch_names is None:
         ch_names = [str(i) for i in range(X.shape[1])]
         log.info(f"No channel names given, set to 0-{X.shape[1]}).")
-
 
     for x, target in zip(X, y):
         n_samples_per_x.append(x.shape[1])

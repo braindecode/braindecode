@@ -11,7 +11,7 @@
 import pandas as pd
 import mne
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from .base import BaseDataset, BaseConcatDataset
 
 
 def _find_dataset_in_moabb(dataset_name):
@@ -91,6 +91,7 @@ class MOABBDataset(BaseConcatDataset):
     subject_ids: list(int) | int
         (list of) int of subject(s) to be fetched
     """
+
     def __init__(self, dataset_name, subject_ids):
         raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
         all_base_ds = [BaseDataset(raw, row)
@@ -100,11 +101,13 @@ class MOABBDataset(BaseConcatDataset):
 
 class BNCI2014001(MOABBDataset):
     """See moabb.datasets.bnci.BNCI2014001"""
+
     def __init__(self, *args, **kwargs):
         super().__init__("BNCI2014001", *args, **kwargs)
 
 
 class HGD(MOABBDataset):
     """See moabb.datasets.schirrmeister2017.Schirrmeister2017"""
+
     def __init__(self, *args, **kwargs):
         super().__init__("Schirrmeister2017", *args, **kwargs)

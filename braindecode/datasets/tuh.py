@@ -29,6 +29,7 @@ class TUHAbnormal(BaseConcatDataset):
         if True, the physician reports will be read from disk and added to the
         description
     """
+
     def __init__(self, path, recording_ids=None, target_name="pathological",
                  preload=False, add_physician_reports=False):
         all_file_paths = read_all_file_names(path, extension=".edf")
@@ -57,7 +58,6 @@ class TUHAbnormal(BaseConcatDataset):
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 
-
     @staticmethod
     def sort_chronologically(file_paths):
         """Use pandas groupby to sort the recordings chronologically.
@@ -85,7 +85,6 @@ class TUHAbnormal(BaseConcatDataset):
         df = pd.concat([group for name, group in df.groupby(
             ["year", "month", "day", "subject", "session", "token"])])
         return [file_paths[i] for i in df.index]
-
 
     @staticmethod
     def _parse_properties_from_file_path(file_path):
