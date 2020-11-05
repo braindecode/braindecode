@@ -17,7 +17,7 @@ import pandas as pd
 import bisect
 import torch
 from torch.utils.data import Dataset, ConcatDataset
-from .transform_class import Transform
+from ..augmentation.transform_class import Transform
 from ..augmentation.transforms.identity import identity
 
 
