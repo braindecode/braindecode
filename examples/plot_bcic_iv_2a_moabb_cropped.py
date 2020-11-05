@@ -81,14 +81,25 @@ Cropped Decoding on BCIC IV 2a Dataset
 # tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__.
 #
 
+import pandas as pd
+from matplotlib.lines import Line2D
+import matplotlib.pyplot as plt
+from braindecode.training.losses import CroppedLoss
+from braindecode import EEGClassifier
+from skorch.helper import predefined_split
+from skorch.callbacks import LRScheduler
+from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
+import torch
+from braindecode.datautil.preprocess import MNEPreproc, NumpyPreproc, preprocess
+from braindecode.datautil.preprocess import exponential_moving_standardize
 from braindecode.datasets.moabb import MOABBDataset
-import mne
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
-from braindecode.datautil.preprocess import exponential_moving_standardize
-from braindecode.datautil.preprocess import MNEPreproc, NumpyPreproc, preprocess
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -105,7 +116,7 @@ preprocessors = [
     MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz),
     # exponential moving standardization
     NumpyPreproc(fn=exponential_moving_standardize, factor_new=factor_new,
-        init_block_size=init_block_size)
+                 init_block_size=init_block_size)
 ]
 
 # Transform the data
@@ -145,10 +156,6 @@ input_window_samples = 1000
 # definition).
 #
 
-import torch
-from braindecode.util import set_random_seeds
-from braindecode.models import ShallowFBCSPNet
-
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -158,7 +165,7 @@ seed = 20200220  # random seed to make results reproducible
 # Set random seed to be able to reproduce results
 set_random_seeds(seed=seed, cuda=cuda)
 
-n_classes=4
+n_classes = 4
 # Extract number of chans from dataset
 n_chans = dataset[0][0].shape[0]
 
@@ -174,14 +181,12 @@ if cuda:
     model.cuda()
 
 
-
 ######################################################################
 # And now we transform model with strides to a model that outputs dense
 # prediction, so we can use it to obtain predictions for all
 # crops.
 #
 
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
 to_dense_prediction_model(model)
 
 
@@ -204,8 +209,6 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 # ``create_windows_from_events`` function.
 #
 
-import numpy as np
-from braindecode.datautil.windowers import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -262,11 +265,6 @@ valid_set = splitted['session_E']
 #    cross validation on your training data.
 #
 
-from skorch.callbacks import LRScheduler
-from skorch.helper import predefined_split
-
-from braindecode import EEGClassifier
-from braindecode.training.losses import CroppedLoss
 
 # These values we found good for shallow network:
 lr = 0.0625 * 0.01
@@ -314,9 +312,6 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 #     loss as in the trialwise decoding tutorial.
 #
 
-import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
-import pandas as pd
 # Extract loss and accuracy values for plotting from history object
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
 df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns,

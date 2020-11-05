@@ -8,12 +8,12 @@ def update_label_index_dict(train_dataset):
     Args:
         train_dataset (Union[TransformDataset, TransformConcatDataset, Subset]): the train dataset.
     """
+    global label_index_dict
     if isinstance(train_dataset, Subset):
         subset_aug_indices = train_dataset.indices
     else:
         subset_aug_indices = list(range(len(train_dataset)))
     subset_aug_labels = [train_dataset[indice][1] for indice in subset_aug_indices]
-    global label_index_dict
     list_labels = list(set(subset_aug_labels))
     label_index_dict = {}
     for label in list_labels:
@@ -35,7 +35,7 @@ def augment_dataset(train_dataset, subpolicies_list):
     """Transform the raw dataset into an augmented dataset. The Transform class does most of the job, nevertheless some additional work has to be done to adapt subset
 
     Args:
-        train_dataset (Union[TransformDataset, TransformConcatDataset, Subset]): 
+        train_dataset (Union[TransformDataset, TransformConcatDataset, Subset]):
         subpolicies_list (List[Union(Transforms, Compose)]): List of transforms/subpolicies (= composition of transforms) that should be applied on the dataset.
     """
     if isinstance(train_dataset, Subset):

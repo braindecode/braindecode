@@ -17,11 +17,14 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
+import os
+import inspect
+import sphinx_rtd_theme
+import braindecode
 import sys
 
 import matplotlib
 matplotlib.use('agg')
-
 import sphinx_gallery  # noqa
 from numpydoc import numpydoc, docscrape  # noqa
 
@@ -121,8 +124,8 @@ def linkcode_resolve(domain, info):
         kind = 'master'
     else:
         kind = 'maint/%s' % ('.'.join(mne.__version__.split('.')[:2]))
-    return "http://github.com/braindecode/braindecode/blob/%s/braindecode/%s%s" % (  # noqa
-       kind, fn, linespec)
+    return "http://github.com/braindecode/braindecode/blob/%s/braindecode/%s%s" % \
+       (kind, fn, linespec)  # noqa
 
 
 autosummary_generate = True
@@ -152,7 +155,6 @@ author = 'Braindecode developers'
 # built documents.
 #
 # The short X.Y version.
-import braindecode
 version = braindecode.__version__
 # The full version, including alpha/beta/rc tags.
 release = version
@@ -204,7 +206,6 @@ sphinx_gallery_conf = {
 #
 # html_theme = 'alabaster'
 
-import sphinx_rtd_theme
 html_theme = "sphinx_rtd_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 

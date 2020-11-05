@@ -6,7 +6,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerChambon2018
 from skorch.helper import predefined_split
 from braindecode.datasets.sleep_physionet import get_dummy_sample
-from braindecode.datasets.transform_class import Transform
+from braindecode.augmentation.transform_class import Transform
 from braindecode.augmentation.augmented_training_manager import augmented_train
 from braindecode.augmentation.transforms.identity import identity
 

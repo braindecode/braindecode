@@ -51,10 +51,10 @@ def test_cropped_trial_epoch_scoring():
         # Exepected predictions classification results: [1, 0, 0, 0]
         np.array(
             [
-                [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]], # trial 0 preds
-                [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]], # trial 1 preds
-                [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]], # trial 2 preds
-                [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]], # trial 3 preds
+                [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],  # trial 0 preds
+                [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],  # trial 1 preds
+                [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],  # trial 2 preds
+                [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],  # trial 3 preds
             ]
         ),
         # Expected predictions classification results: [1, 1, 1, 0]
@@ -74,14 +74,14 @@ def test_cropped_trial_epoch_scoring():
     expected_accuracies_cases = [0.25, 0.75]
 
     window_inds = [(
-            torch.tensor([0,0]), # i_window_in_trials
-            [None],# won't be used
-            torch.tensor([4,4]), # i_window_stops
-    ),(
-            torch.tensor([0,0]), # i_window_in_trials
-            [None],# won't be used
-            torch.tensor([4,4]), # i_window_stops
-    ),]
+        torch.tensor([0, 0]),  # i_window_in_trials
+        [None],  # won't be used
+        torch.tensor([4, 4]),  # i_window_stops
+    ), (
+        torch.tensor([0, 0]),  # i_window_in_trials
+        [None],  # won't be used
+        torch.tensor([4, 4]),  # i_window_stops
+    ), ]
 
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
@@ -129,10 +129,10 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         [None],  # won't be used
         torch.tensor([4, 4]),  # i_window_stops
     ), (
-            torch.tensor([0,0]), # i_window_in_trials
-            [None],# won't be used
-            torch.tensor([4,4]), # i_window_stops
-    ),]
+        torch.tensor([0, 0]),  # i_window_in_trials
+        [None],  # won't be used
+        torch.tensor([4, 4]),  # i_window_stops
+    ), ]
     cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy")
     cropped_trial_epoch_scoring.initialize()
     cropped_trial_epoch_scoring.y_preds_ = [
@@ -254,9 +254,9 @@ def _check_preds_windows_trials(preds, window_inds, expected_trial_preds):
 
 
 def test_two_windows_same_trial_with_overlap():
-    preds = [[[4,5,6,7]], [[6,7,8,9]],]
-    window_inds = ((0,0,8),(1,2,10))
-    expected_trial_preds = [[[4,5,6,7,8,9]]]
+    preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], ]
+    window_inds = ((0, 0, 8), (1, 2, 10))
+    expected_trial_preds = [[[4, 5, 6, 7, 8, 9]]]
     _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
 
@@ -268,9 +268,9 @@ def test_three_windows_two_trials_with_overlap():
 
 
 def test_one_window_one_trial():
-    preds = [[[4,5,6,7]]]
-    window_inds = ((0,0,8),)
-    expected_trial_preds = [[[4,5,6,7]]]
+    preds = [[[4, 5, 6, 7]]]
+    window_inds = ((0, 0, 8),)
+    expected_trial_preds = [[[4, 5, 6, 7]]]
     _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
 

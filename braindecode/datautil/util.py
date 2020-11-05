@@ -1,7 +1,7 @@
 def ms_to_samples(ms, fs):
     """
     Compute milliseconds to number of samples.
-    
+
     Parameters
     ----------
     ms: number
@@ -21,7 +21,7 @@ def ms_to_samples(ms, fs):
 def samples_to_ms(n_samples, fs):
     """
     Compute milliseconds to number of samples.
-    
+
     Parameters
     ----------
     n_samples: number
