@@ -12,7 +12,7 @@ from braindecode.augmentation.transforms.identity import identity
 
 
 def test_dummy_augmented_training():
-    train_sample, test_sample, valid_sample = get_dummy_sample()
+    train_sample, _, _ = get_dummy_sample()
     model_args = {"n_classes": len(set(
         [train_sample[i][1] for i in range(len(train_sample))])),
         "n_chans": int(train_sample[0][0].shape[0]),
@@ -49,8 +49,6 @@ def test_dummy_augmented_training():
         nn_architecture,
         criterion=model_args["criterion"],
         optimizer=torch.optim.AdamW,
-        # using test_sample for validation
-        train_split=predefined_split(valid_sample),
         optimizer__lr=model_args["lr"],
         optimizer__weight_decay=model_args["weight_decay"],
         batch_size=model_args["batch_size"],
