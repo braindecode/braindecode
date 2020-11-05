@@ -6,18 +6,21 @@ This example shows how to train a neural network with self-supervision on sleep
 EEG data. We follow the relative positioning approach of [1]_ on the openly
 accessible Sleep Physionet dataset [2]_ [3]_.
 
-Self-supervised learning (SSL) is a learning paradigm that leverages unlabelled
-data to train neural networks. First, neural networks are trained on a "pretext
-task" which uses unlabelled data only. The pretext task is designed based on a
-prior understanding of the data under study (e.g., EEG has an underlying
-autocorrelation struture) and such that the processing required to
-perform well on this pretext task should be related to the processing required
-to perform well on another task of interest. Once trained, these neural
-networks can be reused as feature extractors or weight initialization in a
-"downstream task", which is the task that we are actually interested in (e.g.,
-sleep staging). The pretext task step can help reduce the quantity of labelled
-data needed to perform well on the downstream task and/or improve downstream
-performance as compared to a strictly supervised approach [1]_.
+.. topic:: Self-supervised learning
+
+    Self-supervised learning (SSL) is a learning paradigm that leverages
+    unlabelled data to train neural networks. First, neural networks are
+    trained on a "pretext task" which uses unlabelled data only. The pretext
+    task is designed based on a prior understanding of the data under study
+    (e.g., EEG has an underlying autocorrelation struture) and such that the
+    processing required to perform well on this pretext task is related to the
+    processing required to perform well on another task of interest.
+    Once trained, these neural networks can be reused as feature extractors or
+    weight initialization in a "downstream task", which is the task that we are
+    actually interested in (e.g., sleep staging). The pretext task step can
+    help reduce the quantity of labelled data needed to perform well on the
+    downstream task and/or improve downstream performance as compared to a
+    strictly supervised approach [1]_.
 
 Here, we use relative positioning (RP) as our pretext task, and perform sleep
 staging as our downstream task. RP is a simple SSL task, in which a neural
@@ -26,27 +29,9 @@ close or far apart in time. This method was shown to yield physiologically- and
 clinically-relevant features and to boost classification performance in
 low-labels data regimes [1]_.
 
-References
-----------
-.. [1] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A.
-      (2020). Uncovering the structure of clinical EEG signals with
-      self-supervised learning. arXiv preprint arXiv:2007.16104.
-
-.. [2] Kemp, B., Zwinderman, A. H., Tuk, B., Kamphuisen, H. A., & Oberye, J. J.
-       (2000). Analysis of a sleep-dependent neuronal feedback loop: the
-       slow-wave microcontinuity of the EEG. IEEE Transactions on Biomedical
-       Engineering, 47(9), 1185-1194.
-
-.. [3] Goldberger, A. L., Amaral, L. A., Glass, L., Hausdorff, J. M., Ivanov,
-       P. C., Mark, R. G., ... & Stanley, H. E. (2000). PhysioBank,
-       PhysioToolkit, and PhysioNet: components of a new research resource for
-       complex physiologic signals. circulation, 101(23), e215-e220.
-
-.. [4] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
-      (2018)A Deep Learning Architecture for Temporal Sleep Stage
-      Classification Using Multivariate and Multimodal Time Series.
-      IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
-      (758-769)
+.. contents:: This example covers:
+   :local:
+   :depth: 2
 
 """
 
@@ -64,8 +49,8 @@ n_jobs = 1
 #
 
 ######################################################################
-# Loading
-# ~~~~~~~
+# Loading the raw recordings
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 ######################################################################
@@ -109,8 +94,8 @@ preprocess(dataset, preprocessors)
 
 
 ######################################################################
-# Extract windows
-# ~~~~~~~~~~~~~~~
+# Extracting windows
+# ~~~~~~~~~~~~~~~~~~
 #
 
 
@@ -119,8 +104,8 @@ preprocess(dataset, preprocessors)
 # As RP (and SSL in general) don't require labelled data, the pretext task
 # could be performed using unlabelled windows extracted with
 # :func:`braindecode.datautil.windower.create_fixed_length_window`.
-# Here however, purely for convenience, we directly extract labelled windows to
-# be reused in the sleep staging downstream task later.
+# Here however, purely for convenience, we directly extract labelled windows so
+# that we can reuse them in the sleep staging downstream task later.
 #
 
 from braindecode.datautil.windowers import create_windows_from_events
@@ -145,8 +130,8 @@ windows_dataset = create_windows_from_events(
 
 
 ######################################################################
-# Window preprocessing
-# ~~~~~~~~~~~~~~~~~~~
+# Preprocessing windows
+# ~~~~~~~~~~~~~~~~~~~~~
 #
 
 
@@ -160,14 +145,14 @@ preprocess(windows_dataset, [MNEPreproc(fn=zscore)])
 
 
 ######################################################################
-# Split dataset into train, valid and test sets
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Splitting dataset into train, valid and test sets
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 ######################################################################
 # We randomly split the recordings by subject into train, validation and
 # testing sets. We further define a new Dataset class which can receive a pair
-# of indices and return the corresponding windows, which will be needed when
+# of indices and return the corresponding windows. This will be needed when
 # training and evaluating on the pretext task.
 #
 
@@ -215,8 +200,8 @@ for name, values in split_ids.items():
 
 
 ######################################################################
-# Create samplers
-# ~~~~~~~~~~~~~~~
+# Creating samplers
+# ~~~~~~~~~~~~~~~~~
 #
 
 ######################################################################
@@ -234,15 +219,15 @@ for name, values in split_ids.items():
 # The samplers also control the number of pairs to be sampled (defined with
 # `n_examples`). This number can be large to help regularize the pretext task
 # training, for instance 2,000 pairs per recording as in [1]_. Here, we use a
-# lower number of 250 pairs per recording to accelerate training.
+# lower number of 250 pairs per recording to reduce training time.
 #
 
 from braindecode.samplers.ssl import RelativePositioningSampler
 
 tau_pos, tau_neg = int(sfreq * 60), int(sfreq * 15 * 60)
-n_examples_train = 250 * len(subj_train)
-n_examples_valid = 250 * len(subj_valid)
-n_examples_test = 250 * len(subj_test)
+n_examples_train = 250 * len(splitted['train'].datasets)
+n_examples_valid = 250 * len(splitted['valid'].datasets)
+n_examples_test = 250 * len(splitted['test'].datasets)
 
 train_sampler = RelativePositioningSampler(
     splitted['train'].metadata, tau_pos=tau_pos, tau_neg=tau_neg,
@@ -258,20 +243,21 @@ test_sampler = RelativePositioningSampler(
 
 
 ######################################################################
-# Create model
-# ------------
+# Creating the model
+# ------------------
 #
 
 ######################################################################
 # We can now create the deep learning model. In this tutorial, we use a
-# modified version of the sleep staging architecture introduced in [4]_, which
-# is a four-layer convolutional neural network, as our embedder.
+# modified version of the sleep staging architecture introduced in [4]_ -
+# a four-layer convolutional neural network - as our embedder.
 # We change the dimensionality of the last layer to obtain a 100-dimension
-# embedding and use 16 convolutional channels instead of 8, and add batch
+# embedding, use 16 convolutional channels instead of 8, and add batch
 # normalization after both temporal convolution layers.
-# We further combine the two models into a siamese architecture using the
-# :class:`ContrastiveNet` class defined below, so that the feature extractor
-# can be trained end-to-end.
+#
+# We further wrap the model into a siamese architecture using the
+# # :class:`ContrastiveNet` class defined below. This allows us to train the
+# feature extractor end-to-end.
 #
 
 import torch
@@ -337,8 +323,8 @@ model = ContrastiveNet(emb, emb_size).to(device)
 
 ######################################################################
 # We can now train our network on the pretext task. We use similar
-# hyperparameters as in [1]_, but reduce the number of epochs and learning rate
-# to account for the smaller setting of this example.
+# hyperparameters as in [1]_, but reduce the number of epochs and increase the
+# learning rate to account for the smaller setting of this example.
 #
 
 from skorch.helper import predefined_split
@@ -384,10 +370,14 @@ clf.fit(splitted['train'], y=None)
 
 
 ######################################################################
-# Plot results
-# ------------
+# Visualizing the results
+# -----------------------
 #
 
+######################################################################
+# Inspecting pretext task performance
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
 
 ######################################################################
 # We plot the loss and pretext task performance for the training and validation
@@ -400,6 +390,9 @@ import pandas as pd
 
 # Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
+
+df['train_acc'] *= 100
+df['valid_acc'] *= 100
 
 ys1 = ['train_loss', 'valid_loss']
 ys2 = ['train_acc', 'valid_acc']
@@ -448,7 +441,7 @@ print(classification_report(y_true, y_pred))
 
 ######################################################################
 # Using the learned representation for sleep staging
-# ~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 ######################################################################
@@ -499,9 +492,9 @@ print(confusion_matrix(data['test'][1], test_y_pred))
 print(classification_report(data['test'][1], test_y_pred))
 
 ######################################################################
-# The balanced accuracy is much higher than chance-level (20% for our 5-class
-# classification problem). Finally, we perform a quick 2D visualization of the
-# feature space using a PCA:
+# The balanced accuracy is much higher than chance-level (i.e., 20% for our
+# 5-class classification problem). Finally, we perform a quick 2D visualization
+# of the feature space using a PCA:
 #
 
 from sklearn.decomposition import PCA
@@ -526,14 +519,14 @@ ax.legend()
 
 ######################################################################
 # We see that there is sleep stage-related structure in the embedding. A
-# nonlinear project method (e.g., tSNE, UMAP) might yield more insightful
-# visualizations. Using a similar approach, the embedding space could be
-# explored with respect to subject-level features as well, e.g., age and sex.
+# nonlinear projection method (e.g., tSNE, UMAP) might yield more insightful
+# visualizations. Using a similar approach, the embedding space could also be
+# explored with respect to subject-level features, e.g., age and sex.
 #
 
 ######################################################################
 # Conclusion
-# ~~~~~~~
+# ----------
 #
 
 ######################################################################
@@ -541,13 +534,37 @@ ax.legend()
 # representations from unlabelled raw EEG data. Specifically, we used the
 # relative positioning (RP) pretext task to train a feature extractor on a
 # subset of the Sleep Physionet dataset. We then reused these features in a
-# downstream sleep staging task. We achieved reasonable performance and further
-# showed with a 2D projection that the learned embedding space contains
-# sleep-related structure.
+# downstream sleep staging task. We achieved reasonable downstream performance
+# and further showed with a 2D projection that the learned embedding space
+# contained sleep-related structure.
 #
 # Many avenues could be taken to improve on these results. For instance, using
 # the entire Sleep Physionet dataset or training on larger datasets should help
 # the feature extractor learn better representations during the pretext task.
 # Other SSL tasks such as those described in [1]_ could further help discover
 # more powerful features.
+#
+#
+# References
+# ----------
+#
+# .. [1] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A.
+#       (2020). Uncovering the structure of clinical EEG signals with
+#       self-supervised learning. arXiv preprint arXiv:2007.16104.
+#
+# .. [2] Kemp, B., Zwinderman, A. H., Tuk, B., Kamphuisen, H. A., & Oberye, J. J.
+#        (2000). Analysis of a sleep-dependent neuronal feedback loop: the
+#        slow-wave microcontinuity of the EEG. IEEE Transactions on Biomedical
+#        Engineering, 47(9), 1185-1194.
+#
+# .. [3] Goldberger, A. L., Amaral, L. A., Glass, L., Hausdorff, J. M., Ivanov,
+#        P. C., Mark, R. G., ... & Stanley, H. E. (2000). PhysioBank,
+#        PhysioToolkit, and PhysioNet: components of a new research resource for
+#        complex physiologic signals. circulation, 101(23), e215-e220.
+#
+# .. [4] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
+#       (2018)A Deep Learning Architecture for Temporal Sleep Stage
+#       Classification Using Multivariate and Multimodal Time Series.
+#       IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
+#       (758-769)
 #
