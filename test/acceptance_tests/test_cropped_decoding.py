@@ -19,6 +19,11 @@ from braindecode.util import set_random_seeds
 
 
 def test_cropped_decoding():
+    """
+    Test if the cross - encoder is a - 10.
+
+    Args:
+    """
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
     event_codes = [5, 6, 9, 10, 13, 14]

@@ -17,11 +17,22 @@ from braindecode.datautil.windowers import create_fixed_length_windows
 
 @pytest.fixture(scope='module')
 def base_concat_ds():
+    """
+    Concatenate base dataset.
+
+    Args:
+    """
     return MOABBDataset(dataset_name='BNCI2014001', subject_ids=[1, 2])
 
 
 @pytest.fixture(scope='module')
 def windows_concat_ds(base_concat_ds):
+    """
+    Concatenate windows.
+
+    Args:
+        base_concat_ds: (todo): write your description
+    """
     return create_fixed_length_windows(
         base_concat_ds, start_offset_samples=100, stop_offset_samples=None,
         window_size_samples=1000, window_stride_samples=1000,
@@ -29,13 +40,29 @@ def windows_concat_ds(base_concat_ds):
 
 
 def test_not_list():
+    """
+    Returns a list of the test test.
+
+    Args:
+    """
     with pytest.raises(AssertionError):
         preprocess(None, {'test': 1})
 
 
 def test_no_raw_or_epochs():
+    """
+    Test for test test test test test test.
+
+    Args:
+    """
     class EmptyDataset(object):
         def __init__(self):
+            """
+            Initialize all datasets.
+
+            Args:
+                self: (todo): write your description
+            """
             self.datasets = [1, 2, 3]
 
     ds = EmptyDataset()
@@ -44,18 +71,36 @@ def test_no_raw_or_epochs():
 
 
 def test_method_not_available(base_concat_ds):
+    """
+    Determine if the concatenated.
+
+    Args:
+        base_concat_ds: (todo): write your description
+    """
     preprocessors = [MNEPreproc('this_method_is_not_real', )]
     with pytest.raises(AttributeError):
         preprocess(base_concat_ds, preprocessors)
 
 
 def test_transform_base_method(base_concat_ds):
+    """
+    Transform the base_concatenames.
+
+    Args:
+        base_concat_ds: (todo): write your description
+    """
     preprocessors = [MNEPreproc("resample", sfreq=50)]
     preprocess(base_concat_ds, preprocessors)
     assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
 
 
 def test_transform_windows_method(windows_concat_ds):
+    """
+    Transform windows method over windows.
+
+    Args:
+        windows_concat_ds: (todo): write your description
+    """
     preprocessors = [MNEPreproc("filter", l_freq=7, h_freq=13)]
     raw_window = windows_concat_ds[0][0]
     preprocess(windows_concat_ds, preprocessors)
@@ -63,6 +108,12 @@ def test_transform_windows_method(windows_concat_ds):
 
 
 def test_zscore_continuous(base_concat_ds):
+    """
+    Calculate the raw data.
+
+    Args:
+        base_concat_ds: (bool): write your description
+    """
     preprocessors = [
         MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
         MNEPreproc('apply_function', fun=zscore, channel_wise=True)
@@ -82,6 +133,12 @@ def test_zscore_continuous(base_concat_ds):
 
 
 def test_zscore_windows(windows_concat_ds):
+    """
+    R calculate the z - score.
+
+    Args:
+        windows_concat_ds: (todo): write your description
+    """
     preprocessors = [
         MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
         MNEPreproc(zscore, )
@@ -101,6 +158,12 @@ def test_zscore_windows(windows_concat_ds):
 
 
 def test_scale_continuous(base_concat_ds):
+    """
+    Scale continuous continuous scale.
+
+    Args:
+        base_concat_ds: (todo): write your description
+    """
     factor = 1e6
     preprocessors = [
         MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
@@ -114,6 +177,12 @@ def test_scale_continuous(base_concat_ds):
 
 
 def test_scale_windows(windows_concat_ds):
+    """
+    Scale window to see http : // www.
+
+    Args:
+        windows_concat_ds: (todo): write your description
+    """
     factor = 1e6
     preprocessors = [
         MNEPreproc('pick_types', eeg=True, meg=False, stim=False),
@@ -128,6 +197,11 @@ def test_scale_windows(windows_concat_ds):
 
 @pytest.fixture(scope="module")
 def mock_data():
+    """
+    Generate a mock data.
+
+    Args:
+    """
     np.random.seed(20200217)
     mock_input = np.random.rand(2, 10).reshape(2, 10)
     expected_standardized = np.array(
@@ -144,6 +218,12 @@ def mock_data():
 
 
 def test_exponential_running_standardize(mock_data):
+    """
+    Standardize the state of the mock.
+
+    Args:
+        mock_data: (todo): write your description
+    """
     mock_input, expected_data, _ = mock_data
     standardized_data = exponential_moving_standardize(mock_input)
     assert mock_input.shape == standardized_data.shape == expected_data.shape
@@ -152,6 +232,12 @@ def test_exponential_running_standardize(mock_data):
 
 
 def test_exponential_running_demean(mock_data):
+    """
+    Test if the state of the running state is running.
+
+    Args:
+        mock_data: (todo): write your description
+    """
     mock_input, _, expected_data = mock_data
     demeaned_data = exponential_moving_demean(mock_input)
     assert mock_input.shape == demeaned_data.shape == expected_data.shape
@@ -160,6 +246,12 @@ def test_exponential_running_demean(mock_data):
 
 
 def test_exponential_running_init_block_size(mock_data):
+    """
+    Initialize the pid of a running process size.
+
+    Args:
+        mock_data: (todo): write your description
+    """
     mock_input, _, _ = mock_data
     init_block_size = 3
     standardized_data = exponential_moving_standardize(
@@ -180,6 +272,12 @@ def test_exponential_running_init_block_size(mock_data):
 
 
 def test_filterbank(base_concat_ds):
+    """
+    Concat datasets in datasets.
+
+    Args:
+        base_concat_ds: (str): write your description
+    """
     base_concat_ds = base_concat_ds.split([[0]])["0"]
     preprocessors = [
         MNEPreproc('pick_channels', ch_names=sorted(["C4", "Cz"]), ordered=True),

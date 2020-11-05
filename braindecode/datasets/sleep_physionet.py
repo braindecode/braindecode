@@ -40,6 +40,17 @@ class SleepPhysionet(BaseConcatDataset):
     """
     def __init__(self, subject_ids=None, recording_ids=None, preload=False,
                  load_eeg_only=True, crop_wake_mins=30):
+        """
+        Initialize a recording.
+
+        Args:
+            self: (todo): write your description
+            subject_ids: (str): write your description
+            recording_ids: (str): write your description
+            preload: (todo): write your description
+            load_eeg_only: (bool): write your description
+            crop_wake_mins: (todo): write your description
+        """
         if subject_ids is None:
             subject_ids = range(83)
         if recording_ids is None:
@@ -59,6 +70,16 @@ class SleepPhysionet(BaseConcatDataset):
     @staticmethod
     def _load_raw(raw_fname, ann_fname, preload, load_eeg_only=True,
                   crop_wake_mins=False):
+        """
+        Load raw annotations object
+
+        Args:
+            raw_fname: (str): write your description
+            ann_fname: (str): write your description
+            preload: (str): write your description
+            load_eeg_only: (bool): write your description
+            crop_wake_mins: (todo): write your description
+        """
         ch_mapping = {
             'EOG horizontal': 'eog',
             'Resp oro-nasal': 'misc',

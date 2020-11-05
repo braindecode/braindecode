@@ -15,6 +15,12 @@ from .base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def _find_dataset_in_moabb(dataset_name):
+    """
+    Find the dataset in - place.
+
+    Args:
+        dataset_name: (str): write your description
+    """
     # soft dependency on moabb
     from moabb.datasets.utils import dataset_list
     for dataset in dataset_list:
@@ -25,6 +31,13 @@ def _find_dataset_in_moabb(dataset_name):
 
 
 def _fetch_and_unpack_moabb_data(dataset, subject_ids):
+    """
+    Fetch and unpack data.
+
+    Args:
+        dataset: (todo): write your description
+        subject_ids: (str): write your description
+    """
     data = dataset.get_data(subject_ids)
     raws, subject_ids, session_ids, run_ids = [], [], [], []
     for subj_id, subj_data in data.items():
@@ -47,6 +60,13 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
 
 
 def _annotations_from_moabb_stim_channel(raw, dataset):
+    """
+    Creates events from raw events.
+
+    Args:
+        raw: (bool): write your description
+        dataset: (todo): write your description
+    """
     # find events from stim channel
     events = mne.find_events(raw)
 
@@ -92,6 +112,14 @@ class MOABBDataset(BaseConcatDataset):
         (list of) int of subject(s) to be fetched
     """
     def __init__(self, dataset_name, subject_ids):
+        """
+        Initialize a row from a dataset.
+
+        Args:
+            self: (todo): write your description
+            dataset_name: (str): write your description
+            subject_ids: (str): write your description
+        """
         raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
         all_base_ds = [BaseDataset(raw, row)
                        for raw, (_, row) in zip(raws, description.iterrows())]
@@ -101,10 +129,22 @@ class MOABBDataset(BaseConcatDataset):
 class BNCI2014001(MOABBDataset):
     """See moabb.datasets.bnci.BNCI2014001"""
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the init.
+
+        Args:
+            self: (todo): write your description
+        """
         super().__init__("BNCI2014001", *args, **kwargs)
 
 
 class HGD(MOABBDataset):
     """See moabb.datasets.schirrmeister2017.Schirrmeister2017"""
     def __init__(self, *args, **kwargs):
+        """
+        Initialize the init.
+
+        Args:
+            self: (todo): write your description
+        """
         super().__init__("Schirrmeister2017", *args, **kwargs)

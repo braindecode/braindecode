@@ -94,6 +94,14 @@ def _cache_net_forward_iter(net, use_caching, y_preds):
 
     # pylint: disable=unused-argument
     def cached_forward_iter(*args, device=net.device, **kwargs):
+        """
+        Return an iterator over cached devices.
+
+        Args:
+            device: (todo): write your description
+            net: (todo): write your description
+            device: (todo): write your description
+        """
         for yp in y_preds:
             yield yp.to(device=device)
 
@@ -122,6 +130,19 @@ class CroppedTrialEpochScoring(EpochScoring):
         target_extractor=to_numpy,
         use_caching=True,
     ):
+        """
+        Initialize the window.
+
+        Args:
+            self: (todo): write your description
+            scoring: (todo): write your description
+            lower_is_better: (bool): write your description
+            on_train: (str): write your description
+            name: (str): write your description
+            target_extractor: (todo): write your description
+            to_numpy: (int): write your description
+            use_caching: (bool): write your description
+        """
         super().__init__(
             scoring=scoring,
             lower_is_better=lower_is_better,
@@ -135,6 +156,12 @@ class CroppedTrialEpochScoring(EpochScoring):
 
 
     def _initialize_cache(self):
+        """
+        Initialize the cache.
+
+        Args:
+            self: (todo): write your description
+        """
         super()._initialize_cache()
         self.crops_to_trials_computed = False
         self.y_trues_ = []
@@ -143,6 +170,15 @@ class CroppedTrialEpochScoring(EpochScoring):
             self.window_inds_ = []
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
+        """
+        Perform training.
+
+        Args:
+            self: (todo): write your description
+            net: (todo): write your description
+            dataset_train: (todo): write your description
+            dataset_valid: (str): write your description
+        """
         assert self.use_caching == True
         if not self.crops_to_trials_computed:
             if self.on_train:
@@ -241,6 +277,17 @@ class PostEpochTrainScoring(EpochScoring):
         name=None,
         target_extractor=to_numpy,
     ):
+        """
+        Initialize the target.
+
+        Args:
+            self: (todo): write your description
+            scoring: (todo): write your description
+            lower_is_better: (bool): write your description
+            name: (str): write your description
+            target_extractor: (todo): write your description
+            to_numpy: (int): write your description
+        """
         super().__init__(
             scoring=scoring,
             lower_is_better=lower_is_better,
@@ -251,6 +298,15 @@ class PostEpochTrainScoring(EpochScoring):
         )
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
+        """
+        Perform training on training.
+
+        Args:
+            self: (todo): write your description
+            net: (todo): write your description
+            dataset_train: (todo): write your description
+            dataset_valid: (str): write your description
+        """
         if len(self.y_preds_) == 0:
             dataset = net.get_dataset(dataset_train)
             # Prevent that rng state of torch is changed by

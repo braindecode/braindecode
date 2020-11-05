@@ -12,6 +12,12 @@ from braindecode.util import create_mne_dummy_raw
 
 
 def test_create_mne_dummy_raw(tmp_path):
+    """
+    Create a numpy array of the test.
+
+    Args:
+        tmp_path: (todo): write your description
+    """
     n_channels, n_times, sfreq = 2, 10000, 100
     raw, fnames = create_mne_dummy_raw(
         n_channels, n_times, sfreq, savedir=tmp_path,

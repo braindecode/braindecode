@@ -17,20 +17,45 @@ from braindecode.util import set_random_seeds
 
 class EpochsDataset(Dataset):
     def __init__(self, windows):
+        """
+        Initialize windows.
+
+        Args:
+            self: (todo): write your description
+            windows: (int): write your description
+        """
         self.windows = windows
         self.y = np.array(self.windows.events[:, -1])
         self.y = self.y - self.y.min()
 
     def __getitem__(self, index):
+        """
+        Return the item at the given index.
+
+        Args:
+            self: (todo): write your description
+            index: (int): write your description
+        """
         X = self.windows.get_data(item=index)[0].astype('float32')[:, :, None]
         y = self.y[index]
         return X, y
 
     def __len__(self):
+        """
+        Returns the number of the events.
+
+        Args:
+            self: (todo): write your description
+        """
         return len(self.windows.events)
 
 
 def test_trialwise_decoding():
+    """
+    Test if the trialwise trialwise.
+
+    Args:
+    """
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
     event_codes = [5, 6, 9, 10, 13, 14]

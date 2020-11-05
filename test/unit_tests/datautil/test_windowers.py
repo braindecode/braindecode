@@ -21,6 +21,13 @@ from braindecode.util import create_mne_dummy_raw
 
 
 def _get_raw(tmpdir_factory, description=None):
+    """
+    Create a raw raw raw dataset.
+
+    Args:
+        tmpdir_factory: (todo): write your description
+        description: (str): write your description
+    """
     _, fnames = create_mne_dummy_raw(
         2, 20000, 100, description=description,
         savedir=tmpdir_factory.mktemp('data'), save_format='fif',
@@ -31,6 +38,11 @@ def _get_raw(tmpdir_factory, description=None):
 
 @pytest.fixture(scope="module")
 def concat_ds_targets():
+    """
+    Concatenate concatenated datasets.
+
+    Args:
+    """
     raws, description = fetch_data_with_moabb(
         dataset_name="BNCI2014001", subject_ids=4)
     events, _ = mne.events_from_annotations(raws[0])
@@ -52,6 +64,12 @@ def lazy_loadable_dataset(tmpdir_factory):
 
 
 def test_windows_from_events_preload_false(lazy_loadable_dataset):
+    """
+    Test if all datasets in the windows.
+
+    Args:
+        lazy_loadable_dataset: (todo): write your description
+    """
     windows = create_windows_from_events(
         concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
@@ -61,6 +79,12 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
 
 
 def test_windows_from_events_mapping_filter(tmpdir_factory):
+    """
+    Return a filter of events that filter.
+
+    Args:
+        tmpdir_factory: (str): write your description
+    """
     raw = _get_raw(tmpdir_factory, 5 * ['T0', 'T1'])
     base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
     concat_ds = BaseConcatDataset([base_ds])
@@ -80,6 +104,12 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
 
 
 def test_windows_from_events_different_events(tmpdir_factory):
+    """
+    Generate a new events.
+
+    Args:
+        tmpdir_factory: (str): write your description
+    """
     description_expected = 5 * ['T0', 'T1'] + 4 * ['T2', 'T3'] + 2 * ['T1']
     raw = _get_raw(tmpdir_factory, description_expected[:10])
     base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
@@ -109,6 +139,12 @@ def test_windows_from_events_different_events(tmpdir_factory):
 
 
 def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
+    """
+    Determine the number of the loadable.
+
+    Args:
+        lazy_loadable_dataset: (todo): write your description
+    """
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset, start_offset_samples=0,
         stop_offset_samples=100, window_size_samples=100,
@@ -118,6 +154,12 @@ def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
 
 
 def test_one_window_per_original_trial(concat_ds_targets):
+    """
+    Concat - one - wise targets.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
@@ -130,6 +172,12 @@ def test_one_window_per_original_trial(concat_ds_targets):
 
 
 def test_stride_has_no_effect(concat_ds_targets):
+    """
+    Check if there is_ds_targets.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
@@ -142,6 +190,12 @@ def test_stride_has_no_effect(concat_ds_targets):
 
 
 def test_trial_start_offset(concat_ds_targets):
+    """
+    Determine the trial offset.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
@@ -155,6 +209,12 @@ def test_trial_start_offset(concat_ds_targets):
 
 
 def test_shifting_last_window_back_in(concat_ds_targets):
+    """
+    Concat window for each window.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
@@ -168,6 +228,12 @@ def test_shifting_last_window_back_in(concat_ds_targets):
 
 
 def test_dropping_last_incomplete_window(concat_ds_targets):
+    """
+    Concat window - wise window.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
@@ -180,6 +246,12 @@ def test_dropping_last_incomplete_window(concat_ds_targets):
 
 
 def test_maximally_overlapping_windows(concat_ds_targets):
+    """
+    Test for maximally over the same length.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
@@ -194,6 +266,12 @@ def test_maximally_overlapping_windows(concat_ds_targets):
 
 
 def test_single_sample_size_windows(concat_ds_targets):
+    """
+    Concatenate all the sample size.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     # reduce dataset for faster test, only first 3 events
     targets = targets[:3]
@@ -215,6 +293,12 @@ def test_single_sample_size_windows(concat_ds_targets):
 
 
 def test_overlapping_trial_offsets(concat_ds_targets):
+    """
+    Test for trial offsets.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, _ = concat_ds_targets
     with pytest.raises(NotImplementedError,
                        match='Trial overlap not implemented.'):
@@ -227,6 +311,14 @@ def test_overlapping_trial_offsets(concat_ds_targets):
 
 @pytest.mark.parametrize('drop_bad_windows,preload', [(True, False), (True, False)])
 def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
+    """
+    Concaten_drop_ds_targets.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+        drop_bad_windows: (todo): write your description
+        preload: (str): write your description
+    """
     concat_ds, _ = concat_ds_targets
     windows_from_events = create_windows_from_events(
         concat_ds=concat_ds, trial_start_offset_samples=0,
@@ -246,6 +338,12 @@ def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
 
 
 def test_windows_from_events_(lazy_loadable_dataset):
+    """
+    Return a window of windows.
+
+    Args:
+        lazy_loadable_dataset: (todo): write your description
+    """
     with pytest.raises(ValueError,
                        match='"trial_stop_offset_samples" too large\\. Stop '
                              'of last trial \\(19900\\) \\+ '
@@ -270,6 +368,16 @@ def test_windows_from_events_(lazy_loadable_dataset):
 )
 def test_fixed_length_windower(start_offset_samples, window_size_samples,
                                window_stride_samples, drop_last_window, mapping):
+    """
+    Generate a fixed length dataset.
+
+    Args:
+        start_offset_samples: (int): write your description
+        window_size_samples: (int): write your description
+        window_stride_samples: (int): write your description
+        drop_last_window: (todo): write your description
+        mapping: (dict): write your description
+    """
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=['0', '1'], sfreq=50, ch_types='eeg')
     data = rng.randn(2, 1000)
@@ -385,6 +493,12 @@ def test_windows_fixed_length_cropped(lazy_loadable_dataset):
 
 
 def test_epochs_kwargs(lazy_loadable_dataset):
+    """
+    Rejects the keyword arguments for the keyword arguments.
+
+    Args:
+        lazy_loadable_dataset: (todo): write your description
+    """
     picks = ['ch0']
     on_missing = 'warning'
     flat = {'eeg': 3e-6}

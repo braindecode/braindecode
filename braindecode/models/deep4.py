@@ -52,6 +52,43 @@ class Deep4Net(nn.Sequential):
         batch_norm_alpha=0.1,
         stride_before_pool=False,
     ):
+        """
+        Initialize the network.
+
+        Args:
+            self: (todo): write your description
+            in_chans: (int): write your description
+            n_classes: (todo): write your description
+            input_window_samples: (todo): write your description
+            final_conv_length: (int): write your description
+            n_filters_time: (float): write your description
+            n_filters_spat: (str): write your description
+            filter_time_length: (float): write your description
+            pool_time_length: (int): write your description
+            pool_time_stride: (int): write your description
+            n_filters_2: (int): write your description
+            filter_length_2: (int): write your description
+            n_filters_3: (str): write your description
+            filter_length_3: (int): write your description
+            n_filters_4: (int): write your description
+            filter_length_4: (int): write your description
+            first_nonlin: (bool): write your description
+            elu: (todo): write your description
+            first_pool_mode: (str): write your description
+            first_pool_nonlin: (todo): write your description
+            identity: (todo): write your description
+            later_nonlin: (todo): write your description
+            elu: (todo): write your description
+            later_pool_mode: (todo): write your description
+            later_pool_nonlin: (todo): write your description
+            identity: (todo): write your description
+            drop_prob: (int): write your description
+            double_time_convs: (str): write your description
+            split_first_layer: (str): write your description
+            batch_norm: (str): write your description
+            batch_norm_alpha: (todo): write your description
+            stride_before_pool: (int): write your description
+        """
         super().__init__()
         if final_conv_length == "auto":
             assert input_window_samples is not None
@@ -149,6 +186,16 @@ class Deep4Net(nn.Sequential):
         def add_conv_pool_block(
             model, n_filters_before, n_filters, filter_length, block_nr
         ):
+            """
+            Add a convolution block.
+
+            Args:
+                model: (todo): write your description
+                n_filters_before: (str): write your description
+                n_filters: (int): write your description
+                filter_length: (str): write your description
+                block_nr: (todo): write your description
+            """
             suffix = "_{:d}".format(block_nr)
             self.add_module("drop" + suffix, nn.Dropout(p=self.drop_prob))
             self.add_module(

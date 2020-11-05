@@ -106,6 +106,14 @@ def cov(a, b):
 
 
 def _cov_to_corr(this_cov, a, b):
+    """
+    Convert a correlation matrix to a correlation matrix.
+
+    Args:
+        this_cov: (bool): write your description
+        a: (array): write your description
+        b: (array): write your description
+    """
     # computing "unbiased" corr
     # ddof=1 for unbiased..
     var_a = np.var(a, axis=1, ddof=1)
@@ -114,6 +122,14 @@ def _cov_to_corr(this_cov, a, b):
 
 
 def _cov_and_var_to_corr(this_cov, var_a, var_b):
+    """
+    Convert a correlation matrix to a correlation matrix.
+
+    Args:
+        this_cov: (bool): write your description
+        var_a: (array): write your description
+        var_b: (array): write your description
+    """
     divisor = np.outer(np.sqrt(var_a), np.sqrt(var_b))
     return this_cov / divisor
 
@@ -294,12 +310,27 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
 
 class ThrowAwayIndexLoader(object):
     def __init__(self, net, loader, is_regression):
+        """
+        Initialize the network. network.
+
+        Args:
+            self: (todo): write your description
+            net: (todo): write your description
+            loader: (todo): write your description
+            is_regression: (bool): write your description
+        """
         self.net = net
         self.loader = loader
         self.last_i = None
         self.is_regression = is_regression
 
     def __iter__(self, ):
+        """
+        Iterate over the window.
+
+        Args:
+            self: (todo): write your description
+        """
         normal_iter = self.loader.__iter__()
         for batch in normal_iter:
             if len(batch) == 3:
@@ -320,6 +351,13 @@ class ThrowAwayIndexLoader(object):
 
 
 def update_estimator_docstring(base_class, docstring):
+    """
+    Update the docstring of a docstring.
+
+    Args:
+        base_class: (todo): write your description
+        docstring: (str): write your description
+    """
     base_doc = base_class.__doc__.replace(' : ', ': ')
     idx = base_doc.find('callbacks:')
     idx_end = idx + base_doc[idx:].find('\n\n')

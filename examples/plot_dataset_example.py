@@ -100,6 +100,14 @@ for x, y, window_ind in sliding_windows_ds:
 # above on continuous data:
 
 def crop_windows(windows, start_offset_samples, stop_offset_samples):
+    """
+    Crop the windows.
+
+    Args:
+        windows: (int): write your description
+        start_offset_samples: (todo): write your description
+        stop_offset_samples: (todo): write your description
+    """
     fs = windows.info["sfreq"]
     windows.crop(tmin=start_offset_samples / fs, tmax=stop_offset_samples / fs,
                  include_tmax=False)

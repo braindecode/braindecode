@@ -82,6 +82,15 @@ to_dense_prediction_model(model)
 n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
 def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq, fake_duration_s):
+    """
+    Generate a regression dataset.
+
+    Args:
+        n_fake_recs: (str): write your description
+        n_fake_chs: (str): write your description
+        fake_sfreq: (str): write your description
+        fake_duration_s: (todo): write your description
+    """
     datasets = []
     for i in range(n_fake_recs):
         train_or_eval = "eval" if i == 0 else "train"

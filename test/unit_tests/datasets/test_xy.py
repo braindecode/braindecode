@@ -9,6 +9,11 @@ from braindecode.datautil.xy import create_from_X_y
 
 
 def test_crops_data_loader_explicit():
+    """
+    Crops the data set of the data set.
+
+    Args:
+    """
 
     X = np.arange(0, 15)
     y = [0]

@@ -5,6 +5,11 @@ from braindecode.datautil.mne import  (
     create_from_mne_raw, create_from_mne_epochs)
 
 def test_create_from_single_raw():
+    """
+    Generate a test set of the test.
+
+    Args:
+    """
     n_channels = 50
     n_times = 500
     sfreq = 100
@@ -38,6 +43,11 @@ def test_create_from_single_raw():
 
 
 def test_create_from_two_raws_with_varying_trial_lengths():
+    """
+    Generate a set of raw bag.
+
+    Args:
+    """
     n_channels = 50
     n_times = 500
     sfreq = 100
@@ -86,6 +96,11 @@ def test_create_from_two_raws_with_varying_trial_lengths():
 
 
 def test_create_from_mne_epochs():
+    """
+    Create a set of - channel events.
+
+    Args:
+    """
     n_channels = 50
     n_times = 500
     sfreq = 100

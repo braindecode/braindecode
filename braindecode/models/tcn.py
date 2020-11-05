@@ -40,6 +40,19 @@ class TCN(nn.Module):
     """
     def __init__(self, n_in_chans, n_outputs, n_blocks, n_filters, kernel_size,
                  drop_prob, add_log_softmax):
+        """
+        Initialize the network.
+
+        Args:
+            self: (todo): write your description
+            n_in_chans: (int): write your description
+            n_outputs: (str): write your description
+            n_blocks: (int): write your description
+            n_filters: (int): write your description
+            kernel_size: (int): write your description
+            drop_prob: (int): write your description
+            add_log_softmax: (int): write your description
+        """
         super().__init__()
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
@@ -70,6 +83,13 @@ class TCN(nn.Module):
         self.eval()
 
     def forward(self, x):
+        """
+        Forward computation.
+
+        Args:
+            self: (todo): write your description
+            x: (todo): write your description
+        """
         x = self.ensuredims(x)
         # x is in format: B x C x T x 1
         (batch_size, _, time_size, _) = x.size()
@@ -94,6 +114,19 @@ class TCN(nn.Module):
 class TemporalBlock(nn.Module):
     def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation,
                  padding, drop_prob):
+        """
+        Initialize the network.
+
+        Args:
+            self: (todo): write your description
+            n_inputs: (int): write your description
+            n_outputs: (str): write your description
+            kernel_size: (int): write your description
+            stride: (int): write your description
+            dilation: (todo): write your description
+            padding: (str): write your description
+            drop_prob: (int): write your description
+        """
         super().__init__()
         self.conv1 = weight_norm(nn.Conv1d(
             n_inputs, n_outputs, kernel_size,
@@ -119,6 +152,13 @@ class TemporalBlock(nn.Module):
             init.normal_(self.downsample.weight, 0, 0.01)
 
     def forward(self, x):
+        """
+        Forward computation of the layer.
+
+        Args:
+            self: (todo): write your description
+            x: (todo): write your description
+        """
         out = self.conv1(x)
         out = self.chomp1(out)
         out = self.relu1(out)
@@ -133,11 +173,31 @@ class TemporalBlock(nn.Module):
 
 class Chomp1d(nn.Module):
     def __init__(self, chomp_size):
+        """
+        Initialize the chunk
+
+        Args:
+            self: (todo): write your description
+            chomp_size: (int): write your description
+        """
         super().__init__()
         self.chomp_size = chomp_size
 
     def extra_repr(self):
+        """
+        Return a human - readable string.
+
+        Args:
+            self: (todo): write your description
+        """
         return 'chomp_size={}'.format(self.chomp_size)
 
     def forward(self, x):
+        """
+        Return the next chunk.
+
+        Args:
+            self: (todo): write your description
+            x: (todo): write your description
+        """
         return x[:, :, :-self.chomp_size].contiguous()

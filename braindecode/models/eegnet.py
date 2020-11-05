@@ -7,10 +7,24 @@ from .functions import squeeze_final_output
 
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
+        """
+        Initialize the gradient of the network.
+
+        Args:
+            self: (todo): write your description
+            max_norm: (int): write your description
+        """
         self.max_norm = max_norm
         super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
 
     def forward(self, x):
+        """
+        Forward computation.
+
+        Args:
+            self: (todo): write your description
+            x: (todo): write your description
+        """
         self.weight.data = torch.renorm(
             self.weight.data, p=2, dim=0, maxnorm=self.max_norm
         )
@@ -50,6 +64,23 @@ class EEGNetv4(nn.Sequential):
         third_kernel_size=(8, 4),
         drop_prob=0.25,
     ):
+        """
+        Initialize the module.
+
+        Args:
+            self: (todo): write your description
+            in_chans: (int): write your description
+            n_classes: (todo): write your description
+            input_window_samples: (todo): write your description
+            final_conv_length: (int): write your description
+            pool_mode: (str): write your description
+            F1: (int): write your description
+            D: (int): write your description
+            F2: (int): write your description
+            kernel_length: (int): write your description
+            third_kernel_size: (int): write your description
+            drop_prob: (int): write your description
+        """
         super().__init__()
         if final_conv_length == "auto":
             assert input_window_samples is not None
@@ -174,10 +205,22 @@ class EEGNetv4(nn.Sequential):
 
 
 def _transpose_to_b_1_c_0(x):
+    """
+    Transpose a 3d point to a 3x3 matrix
+
+    Args:
+        x: (todo): write your description
+    """
     return x.permute(0, 3, 1, 2)
 
 
 def _transpose_1_0(x):
+    """
+    Transpose a 3d matrix.
+
+    Args:
+        x: (todo): write your description
+    """
     return x.permute(0, 1, 3, 2)
 
 
@@ -211,6 +254,20 @@ class EEGNetv1(nn.Sequential):
         third_kernel_size=(8, 4),
         drop_prob=0.25,
     ):
+        """
+        Initialize the module.
+
+        Args:
+            self: (todo): write your description
+            in_chans: (int): write your description
+            n_classes: (todo): write your description
+            input_window_samples: (todo): write your description
+            final_conv_length: (int): write your description
+            pool_mode: (str): write your description
+            second_kernel_size: (int): write your description
+            third_kernel_size: (int): write your description
+            drop_prob: (int): write your description
+        """
         super().__init__()
         if final_conv_length == "auto":
             assert input_window_samples is not None

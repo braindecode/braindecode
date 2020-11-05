@@ -45,6 +45,30 @@ class ShallowFBCSPNet(nn.Sequential):
         batch_norm_alpha=0.1,
         drop_prob=0.5,
     ):
+        """
+        Initialize the module.
+
+        Args:
+            self: (todo): write your description
+            in_chans: (int): write your description
+            n_classes: (todo): write your description
+            input_window_samples: (todo): write your description
+            n_filters_time: (float): write your description
+            filter_time_length: (float): write your description
+            n_filters_spat: (str): write your description
+            pool_time_length: (int): write your description
+            pool_time_stride: (int): write your description
+            final_conv_length: (int): write your description
+            conv_nonlin: (todo): write your description
+            square: (todo): write your description
+            pool_mode: (str): write your description
+            pool_nonlin: (todo): write your description
+            safe_log: (todo): write your description
+            split_first_layer: (str): write your description
+            batch_norm: (str): write your description
+            batch_norm_alpha: (todo): write your description
+            drop_prob: (int): write your description
+        """
         super().__init__()
         if final_conv_length == "auto":
             assert input_window_samples is not None

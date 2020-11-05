@@ -4,6 +4,14 @@ import torch
 
 
 def compute_amplitude_gradients(model, dataset, batch_size):
+    """
+    Compute the gradients of the given model.
+
+    Args:
+        model: (todo): write your description
+        dataset: (todo): write your description
+        batch_size: (int): write your description
+    """
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size,
                                          drop_last=False, shuffle=False)
     all_amp_grads = []
@@ -15,6 +23,13 @@ def compute_amplitude_gradients(model, dataset, batch_size):
 
 
 def compute_amplitude_gradients_for_X(model, X):
+    """
+    Compute the gradients of the gradients
+
+    Args:
+        model: (todo): write your description
+        X: (todo): write your description
+    """
     ffted = np.fft.rfft(X, axis=2)
     amps = np.abs(ffted)
     phases = np.angle(ffted)

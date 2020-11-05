@@ -15,6 +15,11 @@ from braindecode.datasets.moabb import fetch_data_with_moabb
 @pytest.fixture(scope="module")
 # TODO: add test for transformers and case when subject_info is used
 def set_up():
+    """
+    Set up up a new dataset
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=['0', '1'], sfreq=50, ch_types='eeg')
     raw = mne.io.RawArray(data=rng.randn(2, 1000), info=info)
@@ -49,6 +54,11 @@ def set_up():
 
 @pytest.fixture(scope="module")
 def concat_ds_targets():
+    """
+    Concatenate concatenated datasets.
+
+    Args:
+    """
     raws, description = fetch_data_with_moabb(
         dataset_name="BNCI2014001", subject_ids=4)
     events, _ = mne.events_from_annotations(raws[0])
@@ -59,6 +69,12 @@ def concat_ds_targets():
 
 
 def test_get_item(set_up):
+    """
+    Test for a set of the samples.
+
+    Args:
+        set_up: (str): write your description
+    """
     _, _, mne_epochs, windows_dataset, events, window_idxs  = set_up
     for i, epoch in enumerate(mne_epochs.get_data()):
         x, y, inds = windows_dataset[i]
@@ -69,21 +85,45 @@ def test_get_item(set_up):
 
 
 def test_len_windows_dataset(set_up):
+    """
+    Test if the test dataset.
+
+    Args:
+        set_up: (todo): write your description
+    """
     _, _, mne_epochs, windows_dataset, _, _  = set_up
     assert len(mne_epochs.events) == len(windows_dataset)
 
 
 def test_len_base_dataset(set_up):
+    """
+    Test if the dataset is the base.
+
+    Args:
+        set_up: (todo): write your description
+    """
     raw, base_dataset, _, _, _, _ = set_up
     assert len(raw) == len(base_dataset)
 
 
 def test_len_concat_dataset(concat_ds_targets):
+    """
+    Concatenate the concatenation of the concatenated dataset.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds = concat_ds_targets[0]
     assert len(concat_ds) == sum([len(c) for c in concat_ds.datasets])
 
 
 def test_target_in_subject_info(set_up):
+    """
+    Test if the test set.
+
+    Args:
+        set_up: (todo): write your description
+    """
     raw, _, _, _, _, _ = set_up
     desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
     with pytest.raises(ValueError, match="'does_not_exist' not in description"):
@@ -91,12 +131,24 @@ def test_target_in_subject_info(set_up):
 
 
 def test_description_concat_dataset(concat_ds_targets):
+    """
+    Test for concatenated concatenation of the concatenation.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds = concat_ds_targets[0]
     assert isinstance(concat_ds.description, pd.DataFrame)
     assert concat_ds.description.shape[0] == len(concat_ds.datasets)
 
 
 def test_split_concat_dataset(concat_ds_targets):
+    """
+    Test for split dataset into two - ds.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds = concat_ds_targets[0]
     splits = concat_ds.split('run')
 
@@ -108,6 +160,12 @@ def test_split_concat_dataset(concat_ds_targets):
 
 
 def test_concat_concat_dataset(concat_ds_targets):
+    """
+    Test for concatenated concatenation of concatenating_ds.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds, targets = concat_ds_targets
     concat_ds1 = BaseConcatDataset(concat_ds.datasets[:2])
     concat_ds2 = BaseConcatDataset(concat_ds.datasets[2:])
@@ -129,6 +187,12 @@ def test_concat_concat_dataset(concat_ds_targets):
 
 
 def test_split_dataset_failure(concat_ds_targets):
+    """
+    Concatenate test dataset.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds = concat_ds_targets[0]
     with pytest.raises(KeyError):
         concat_ds.split("test")
@@ -148,6 +212,12 @@ def test_split_dataset_failure(concat_ds_targets):
 
 
 def test_split_dataset(concat_ds_targets):
+    """
+    Concatenames dataset.
+
+    Args:
+        concat_ds_targets: (todo): write your description
+    """
     concat_ds = concat_ds_targets[0]
     splits = concat_ds.split("run")
     assert len(splits) == len(concat_ds.description["run"].unique())

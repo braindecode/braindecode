@@ -71,6 +71,11 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
 
 
 def test_eeg_classifier():
+    """
+    Test for classifier.
+
+    Args:
+    """
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
     event_codes = [5, 6, 9, 10, 13, 14]

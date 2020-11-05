@@ -15,6 +15,11 @@ from braindecode.models import (
 
 
 def test_shallow_fbcsp_net():
+    """
+    Test if the model with the model.
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 200
@@ -30,6 +35,11 @@ def test_shallow_fbcsp_net():
 
 
 def test_deep4net():
+    """
+    Test if the model.
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 600
@@ -45,6 +55,11 @@ def test_deep4net():
 
 
 def test_eegresnet():
+    """
+    Test if the model isochastic model.
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 600
@@ -64,6 +79,11 @@ def test_eegresnet():
 
 
 def test_hybridnet():
+    """
+    Test if the model of the model isochrone.
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 600
@@ -77,6 +97,11 @@ def test_hybridnet():
 
 
 def test_eegnet_v4():
+    """
+    Test if the model isgnet with random variables.
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 500
@@ -90,6 +115,11 @@ def test_eegnet_v4():
 
 
 def test_eegnet_v1():
+    """
+    Generate the random variable isgnet model.
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 500
@@ -103,6 +133,11 @@ def test_eegnet_v1():
 
 
 def test_tcn():
+    """
+    Test if the model is a random variables.
+
+    Args:
+    """
     rng = np.random.RandomState(42)
     n_channels = 18
     n_classes = 2
@@ -121,6 +156,15 @@ def test_tcn():
 @pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
                          [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
 def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
+    """
+    Test if n_stager.
+
+    Args:
+        n_channels: (int): write your description
+        sfreq: (float): write your description
+        n_classes: (int): write your description
+        input_size_s: (int): write your description
+    """
     rng = np.random.RandomState(42)
     time_conv_size_s = 0.5
     max_pool_size_s = 0.125

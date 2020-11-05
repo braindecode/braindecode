@@ -11,6 +11,11 @@ from braindecode.util import set_random_seeds
 
 
 def test_tcn():
+    """
+    Return a random noise.
+
+    Args:
+    """
     set_random_seeds(0, False)
     tcn = TCN(
         n_in_chans=21,

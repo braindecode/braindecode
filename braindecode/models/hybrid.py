@@ -23,6 +23,15 @@ class HybridNet(nn.Module):
     """
 
     def __init__(self, in_chans, n_classes, input_window_samples):
+        """
+        Initialize the module.
+
+        Args:
+            self: (todo): write your description
+            in_chans: (int): write your description
+            n_classes: (todo): write your description
+            input_window_samples: (todo): write your description
+        """
         super(HybridNet, self).__init__()
         deep_model = Deep4Net(
             in_chans,
@@ -82,6 +91,13 @@ class HybridNet(nn.Module):
         )
 
     def forward(self, x):
+        """
+        Forward computation.
+
+        Args:
+            self: (todo): write your description
+            x: (todo): write your description
+        """
         deep_out = self.reduced_deep_model(x)
         shallow_out = self.reduced_shallow_model(x)
 

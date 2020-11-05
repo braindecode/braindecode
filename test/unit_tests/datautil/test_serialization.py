@@ -16,11 +16,22 @@ from braindecode.datautil.serialization import (
 
 @pytest.fixture(scope="module")
 def setup_concat_raw_dataset():
+    """
+    Concatenaset.
+
+    Args:
+    """
     return MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 
 
 @pytest.fixture(scope="module")
 def setup_concat_windows_dataset(setup_concat_raw_dataset):
+    """
+    Setup raw dataset.
+
+    Args:
+        setup_concat_raw_dataset: (todo): write your description
+    """
     moabb_dataset = setup_concat_raw_dataset
     return create_windows_from_events(
         concat_ds=moabb_dataset,
@@ -29,6 +40,13 @@ def setup_concat_windows_dataset(setup_concat_raw_dataset):
 
 
 def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
+    """
+    Test if the raw dataset exists.
+
+    Args:
+        setup_concat_raw_dataset: (todo): write your description
+        tmpdir: (str): write your description
+    """
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
     save_concat_dataset(path=tmpdir, concat_dataset=concat_raw_dataset, overwrite=False)
@@ -39,6 +57,13 @@ def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
 
 
 def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
+    """
+    Concatenate_windows dataset.
+
+    Args:
+        setup_concat_windows_dataset: (todo): write your description
+        tmpdir: (str): write your description
+    """
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     save_concat_dataset(path=tmpdir, concat_dataset=concat_windows_dataset, overwrite=False)
@@ -49,6 +74,13 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
 
 
 def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
+    """
+    Test for raw dataset.
+
+    Args:
+        setup_concat_raw_dataset: (todo): write your description
+        tmpdir: (str): write your description
+    """
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
     save_concat_dataset(path=tmpdir, concat_dataset=concat_raw_dataset,
@@ -69,6 +101,13 @@ def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
 
 
 def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
+    """
+    Test if a test datasets.
+
+    Args:
+        setup_concat_windows_dataset: (todo): write your description
+        tmpdir: (str): write your description
+    """
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     save_concat_dataset(path=tmpdir, concat_dataset=concat_windows_dataset,

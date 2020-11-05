@@ -32,6 +32,30 @@ class EEGResNet(nn.Sequential):
                  batch_norm_alpha=0.1,
                  batch_norm_epsilon=1e-4,
                  conv_weight_init_fn=lambda w: init.kaiming_normal_(w, a=0)):
+        """
+        Initialize the module.
+
+        Args:
+            self: (todo): write your description
+            in_chans: (int): write your description
+            n_classes: (todo): write your description
+            input_window_samples: (todo): write your description
+            final_pool_length: (todo): write your description
+            n_first_filters: (str): write your description
+            n_layers_per_block: (todo): write your description
+            first_filter_length: (str): write your description
+            nonlinearity: (bool): write your description
+            elu: (todo): write your description
+            split_first_layer: (str): write your description
+            batch_norm_alpha: (todo): write your description
+            batch_norm_epsilon: (int): write your description
+            conv_weight_init_fn: (float): write your description
+            w: (int): write your description
+            init: (str): write your description
+            kaiming_normal_: (todo): write your description
+            w: (int): write your description
+            a: (int): write your description
+        """
         super().__init__()
         self.in_chans = in_chans
         self.n_classes = n_classes
@@ -191,6 +215,20 @@ class _ResidualBlock(nn.Module):
                  filter_time_length=3,
                  nonlinearity=elu,
                  batch_norm_alpha=0.1, batch_norm_epsilon=1e-4):
+        """
+        Initialize the convolution.
+
+        Args:
+            self: (todo): write your description
+            in_filters: (int): write your description
+            out_num_filters: (int): write your description
+            dilation: (todo): write your description
+            filter_time_length: (float): write your description
+            nonlinearity: (bool): write your description
+            elu: (todo): write your description
+            batch_norm_alpha: (todo): write your description
+            batch_norm_epsilon: (int): write your description
+        """
         super(_ResidualBlock, self).__init__()
         time_padding = int((filter_time_length - 1) * dilation[0])
         assert time_padding % 2 == 0
@@ -220,6 +258,13 @@ class _ResidualBlock(nn.Module):
         self.nonlinearity = nonlinearity
 
     def forward(self, x):
+        """
+        Forward computation.
+
+        Args:
+            self: (todo): write your description
+            x: (todo): write your description
+        """
         stack_1 = self.nonlinearity(self.bn1(self.conv_1(x)))
         stack_2 = self.bn2(self.conv_2(stack_1))  # next nonlin after sum
         if self.n_pad_chans != 0:

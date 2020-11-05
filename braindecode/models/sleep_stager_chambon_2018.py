@@ -43,6 +43,20 @@ class SleepStagerChambon2018(nn.Module):
     def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, n_classes=5, input_size_s=30,
                  dropout=0.25):
+        """
+        Initialize the convolutional layer.
+
+        Args:
+            self: (todo): write your description
+            n_channels: (int): write your description
+            sfreq: (float): write your description
+            n_conv_chs: (todo): write your description
+            time_conv_size_s: (int): write your description
+            max_pool_size_s: (int): write your description
+            n_classes: (todo): write your description
+            input_size_s: (int): write your description
+            dropout: (str): write your description
+        """
         super().__init__()
 
         time_conv_size = int(time_conv_size_s * sfreq)
@@ -74,6 +88,15 @@ class SleepStagerChambon2018(nn.Module):
 
     @staticmethod
     def _len_last_layer(n_channels, input_size, max_pool_size, n_conv_chs):
+        """
+        : param n_channels of the last layer.
+
+        Args:
+            n_channels: (int): write your description
+            input_size: (int): write your description
+            max_pool_size: (int): write your description
+            n_conv_chs: (int): write your description
+        """
         return n_channels * (input_size // (max_pool_size ** 2)) * n_conv_chs
 
     def forward(self, x):

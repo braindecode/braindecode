@@ -31,6 +31,17 @@ class TUHAbnormal(BaseConcatDataset):
     """
     def __init__(self, path, recording_ids=None, target_name="pathological",
                  preload=False, add_physician_reports=False):
+        """
+        Initialize a report.
+
+        Args:
+            self: (todo): write your description
+            path: (str): write your description
+            recording_ids: (str): write your description
+            target_name: (str): write your description
+            preload: (todo): write your description
+            add_physician_reports: (todo): write your description
+        """
         all_file_paths = read_all_file_names(path, extension=".edf")
         all_file_paths = self.sort_chronologically(all_file_paths)
         if recording_ids is None:
@@ -89,6 +100,12 @@ class TUHAbnormal(BaseConcatDataset):
 
     @staticmethod
     def _parse_properties_from_file_path(file_path):
+        """
+        Parses file_properties_from_file.
+
+        Args:
+            file_path: (str): write your description
+        """
         # expect filenames as v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf
         #              version/file type/data_split/label/EEG reference/subset/subject/recording session/file
         # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
@@ -127,6 +144,13 @@ def read_all_file_names(directory, extension):
 
 
 def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
+    """
+    Parse the particle id and raw id.
+
+    Args:
+        file_path: (str): write your description
+        return_raw_header: (bool): write your description
+    """
     f = open(file_path, "rb")
     content = f.read(88)
     f.close()

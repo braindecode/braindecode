@@ -31,10 +31,24 @@ class MNEPreproc(object):
         Keyword arguments will be forwarded to the mne function
     """
     def __init__(self, fn, **kwargs):
+        """
+        Initialize a function.
+
+        Args:
+            self: (todo): write your description
+            fn: (int): write your description
+        """
         self.fn = fn
         self.kwargs = kwargs
 
     def apply(self, raw_or_epochs):
+        """
+        Apply raw data to raw data.
+
+        Args:
+            self: (todo): write your description
+            raw_or_epochs: (todo): write your description
+        """
         try:
             self._try_apply(raw_or_epochs)
         except RuntimeError:
@@ -49,6 +63,13 @@ class MNEPreproc(object):
             self._try_apply(raw_or_epochs)
 
     def _try_apply(self, raw_or_epochs):
+        """
+        Try to call callable function.
+
+        Args:
+            self: (todo): write your description
+            raw_or_epochs: (todo): write your description
+        """
         if callable(self.fn):
             self.fn(raw_or_epochs, **self.kwargs)
         else:
@@ -71,6 +92,14 @@ class NumpyPreproc(MNEPreproc):
         Keyword arguments will be forwarded to the function
     """
     def __init__(self, fn, channel_wise=False, **kwargs):
+        """
+        Initialize the channel.
+
+        Args:
+            self: (todo): write your description
+            fn: (int): write your description
+            channel_wise: (todo): write your description
+        """
         # use apply function of mne which will directly apply it to numpy array
         partial_fn = partial(fn, **kwargs)
         mne_kwargs = dict(fun=partial_fn, channel_wise=channel_wise)

@@ -4,6 +4,14 @@ import torch
 
 class MaxNormConstraintCallback(Callback):
     def on_batch_end(self, net, training, *args, **kwargs):
+        """
+        Renames end of batch.
+
+        Args:
+            self: (todo): write your description
+            net: (todo): write your description
+            training: (todo): write your description
+        """
         if training:
             model = net.module_
             last_weight = None

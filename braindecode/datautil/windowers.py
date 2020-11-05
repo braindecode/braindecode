@@ -360,6 +360,15 @@ def _compute_window_inds(
 def _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples, window_stride_samples):
+    """
+    Checks the arguments are valid.
+
+    Args:
+        trial_start_offset_samples: (todo): write your description
+        trial_stop_offset_samples: (bool): write your description
+        window_size_samples: (int): write your description
+        window_stride_samples: (int): write your description
+    """
     assert isinstance(trial_start_offset_samples, (int, np.integer))
     assert (isinstance(trial_stop_offset_samples, (int, np.integer))
         or (trial_stop_offset_samples is None))

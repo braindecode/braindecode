@@ -31,15 +31,36 @@ class BBCIDataset(object):
     def __init__(
         self, filename, load_sensor_names=None, check_class_names=False
     ):
+        """
+        Initialize a class.
+
+        Args:
+            self: (todo): write your description
+            filename: (str): write your description
+            load_sensor_names: (str): write your description
+            check_class_names: (str): write your description
+        """
         self.__dict__.update(locals())
         del self.self
 
     def load(self):
+        """
+        Load a list of the continuous marker markers.
+
+        Args:
+            self: (todo): write your description
+        """
         cnt = self._load_continuous_signal()
         cnt = self._add_markers(cnt)
         return cnt
 
     def _load_continuous_signal(self):
+        """
+        Load the continuous continuous signal.
+
+        Args:
+            self: (todo): write your description
+        """
         wanted_chan_inds, wanted_sensor_names = self._determine_sensors()
         fs = self._determine_samplingrate()
         with h5py.File(self.filename, "r") as h5file:
@@ -75,6 +96,12 @@ class BBCIDataset(object):
         return cnt
 
     def _determine_sensors(self):
+        """
+        Determine all sensors.
+
+        Args:
+            self: (todo): write your description
+        """
         all_sensor_names = self.get_all_sensors(self.filename, pattern=None)
         if self.load_sensor_names is None:
 
@@ -109,6 +136,12 @@ class BBCIDataset(object):
         return chan_inds, self.load_sensor_names
 
     def _determine_samplingrate(self):
+        """
+        Determine the sampling sampling rate.
+
+        Args:
+            self: (todo): write your description
+        """
         with h5py.File(self.filename, "r") as h5file:
             fs = h5file["nfo"]["fs"][0, 0]
             assert isinstance(fs, int) or fs.is_integer()
@@ -117,6 +150,13 @@ class BBCIDataset(object):
 
     @staticmethod
     def _determine_chan_inds(all_sensor_names, sensor_names):
+        """
+        Determine the indices of all tensors.
+
+        Args:
+            all_sensor_names: (str): write your description
+            sensor_names: (str): write your description
+        """
         assert sensor_names is not None
         chan_inds = [all_sensor_names.index(s) for s in sensor_names]
         assert len(chan_inds) == len(sensor_names), (
@@ -155,6 +195,13 @@ class BBCIDataset(object):
         return all_sensor_names
 
     def _add_markers(self, cnt):
+        """
+        Add markers to the hdf5 file.
+
+        Args:
+            self: (todo): write your description
+            cnt: (todo): write your description
+        """
         with h5py.File(self.filename, "r") as h5file:
             event_times_in_ms = h5file["mrk"]["time"][:].squeeze()
             event_classes = (

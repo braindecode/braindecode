@@ -2,6 +2,12 @@ import torch
 
 
 def square(x):
+    """
+    Returns the square of x.
+
+    Args:
+        x: (float): write your description
+    """
     return x * x
 
 
@@ -11,6 +17,12 @@ def safe_log(x, eps=1e-6):
 
 
 def identity(x):
+    """
+    Return the identity of x.
+
+    Args:
+        x: (array): write your description
+    """
     return x
 
 

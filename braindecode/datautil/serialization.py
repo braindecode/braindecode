@@ -102,6 +102,15 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
 
 
 def _load_signals_and_description(path, preload, raws, ids_to_load=None):
+    """
+    Load a list of a list of dict.
+
+    Args:
+        path: (str): write your description
+        preload: (str): write your description
+        raws: (todo): write your description
+        ids_to_load: (str): write your description
+    """
     all_signals = []
     file_name = "{}-raw.fif" if raws else "{}-epo.fif"
     description_df = pd.read_json(os.path.join(path, "description.json"))
@@ -120,6 +129,14 @@ def _load_signals_and_description(path, preload, raws, ids_to_load=None):
 
 
 def _load_signals(fif_file, preload, raws):
+    """
+    Load signals from raw file.
+
+    Args:
+        fif_file: (str): write your description
+        preload: (str): write your description
+        raws: (str): write your description
+    """
     if raws:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
     else:

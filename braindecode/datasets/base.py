@@ -33,6 +33,15 @@ class BaseDataset(Dataset):
         target (e.g., to be used in a prediction task later on).
     """
     def __init__(self, raw, description=None, target_name=None):
+        """
+        Initialize the target.
+
+        Args:
+            self: (todo): write your description
+            raw: (str): write your description
+            description: (str): write your description
+            target_name: (str): write your description
+        """
         self.raw = raw
         self.description = _create_description(description)
 
@@ -46,13 +55,32 @@ class BaseDataset(Dataset):
             raise ValueError(f"'{target_name}' not in description.")
 
     def __getitem__(self, index):
+        """
+        Return the item at index.
+
+        Args:
+            self: (todo): write your description
+            index: (int): write your description
+        """
         return self.raw[:, index][0], self.target
 
     def __len__(self):
+        """
+        Returns the number of bytes in bytes.
+
+        Args:
+            self: (todo): write your description
+        """
         return len(self.raw)
 
 
 def _create_description(description):
+    """
+    Create a description object.
+
+    Args:
+        description: (str): write your description
+    """
     if description is not None:
         if (not isinstance(description, pd.Series)
                 and not isinstance(description, dict)):
@@ -75,6 +103,14 @@ class WindowsDataset(BaseDataset):
         holds additional info about the windows
     """
     def __init__(self, windows, description=None):
+        """
+        Initialize metadata.
+
+        Args:
+            self: (todo): write your description
+            windows: (int): write your description
+            description: (str): write your description
+        """
         self.windows = windows
         self.description = _create_description(description)
         self.y = np.array(self.windows.metadata.loc[:, 'target'])
@@ -83,6 +119,13 @@ class WindowsDataset(BaseDataset):
                                    'i_stop_in_trial']])
 
     def __getitem__(self, index):
+        """
+        Get the item from y
+
+        Args:
+            self: (todo): write your description
+            index: (int): write your description
+        """
         X = self.windows.get_data(item=index)[0].astype('float32')
         y = self.y[index]
         # necessary to cast as list to get list of
@@ -91,6 +134,12 @@ class WindowsDataset(BaseDataset):
         return X, y, crop_inds
 
     def __len__(self):
+        """
+        Returns the number of the events.
+
+        Args:
+            self: (todo): write your description
+        """
         return len(self.windows.events)
 
 
@@ -105,6 +154,13 @@ class BaseConcatDataset(ConcatDataset):
         list of BaseDataset, BaseConcatDataset or WindowsDataset
     """
     def __init__(self, list_of_ds):
+        """
+        Initialize the list.
+
+        Args:
+            self: (todo): write your description
+            list_of_ds: (list): write your description
+        """
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]

@@ -25,6 +25,12 @@ from braindecode.training.scoring import trial_preds_from_window_preds
 
 class MockSkorchNet:
     def __init__(self):
+        """
+        Initialize the forward history.
+
+        Args:
+            self: (todo): write your description
+        """
         self.device = "cpu"
         self.forward_iter = None
         self.history = History()
@@ -32,18 +38,46 @@ class MockSkorchNet:
         self._default_callbacks = []
 
     def fit(self, X, y=None):
+        """
+        Fit the model.
+
+        Args:
+            self: (todo): write your description
+            X: (array): write your description
+            y: (array): write your description
+        """
         return self
 
     def predict(self, X):
+        """
+        Predict the model.
+
+        Args:
+            self: (todo): write your description
+            X: (array): write your description
+        """
         return np.concatenate(
             [to_numpy(x.argmax(dim=1)) for x in self.forward_iter(X)], 0
         )
 
     def get_iterator(self, X_test, training):
+        """
+        Returns an iterator of a test.
+
+        Args:
+            self: (todo): write your description
+            X_test: (todo): write your description
+            training: (bool): write your description
+        """
         return DataLoader(X_test, batch_size=2)
 
 
 def test_cropped_trial_epoch_scoring():
+    """
+    Test for the trial.
+
+    Args:
+    """
 
     dataset_train = None
     # Definition of test cases
@@ -113,6 +147,11 @@ def test_cropped_trial_epoch_scoring():
 
 
 def test_cropped_trial_epoch_scoring_none_x_test():
+    """
+    Test for the trial.
+
+    Args:
+    """
     dataset_train = None
     dataset_valid = None
     predictions = np.array(
@@ -152,6 +191,11 @@ def test_cropped_trial_epoch_scoring_none_x_test():
 
 
 def test_post_epoch_train_scoring():
+    """
+    Generate - test test test test test.
+
+    Args:
+    """
     cuda = False
     set_random_seeds(seed=20170629, cuda=cuda)
 
@@ -159,15 +203,36 @@ def test_post_epoch_train_scoring():
 
     class EEGDataSet(Dataset):
         def __init__(self, X, y):
+            """
+            Initialize inputs.
+
+            Args:
+                self: (todo): write your description
+                X: (int): write your description
+                y: (int): write your description
+            """
             self.X = X
             if self.X.ndim == 3:
                 self.X = self.X[:, :, :, None]
             self.y = y
 
         def __len__(self):
+            """
+            The length of the length of the data.
+
+            Args:
+                self: (todo): write your description
+            """
             return len(self.X)
 
         def __getitem__(self, idx):
+            """
+            Return the item at indexx.
+
+            Args:
+                self: (todo): write your description
+                idx: (list): write your description
+            """
             return self.X[idx], self.y[idx]
 
     X, y = sklearn.datasets.make_classification(
@@ -181,6 +246,13 @@ def test_post_epoch_train_scoring():
 
     class TestCallback(Callback):
         def on_epoch_end(self, net, *args, **kwargs):
+            """
+            Perform a model.
+
+            Args:
+                self: (todo): write your description
+                net: (todo): write your description
+            """
             preds = net.predict(train_set.X)
             y_true = train_set.y
             np.testing.assert_allclose(
@@ -240,6 +312,14 @@ def test_post_epoch_train_scoring():
 
 
 def _check_preds_windows_trials(preds, window_inds, expected_trial_preds):
+    """
+    Check that all trial_predals.
+
+    Args:
+        preds: (todo): write your description
+        window_inds: (int): write your description
+        expected_trial_preds: (todo): write your description
+    """
     # transform to 2 lists from tuples
     i_window_in_trials = []
     i_stop_in_trials = []
@@ -254,6 +334,11 @@ def _check_preds_windows_trials(preds, window_inds, expected_trial_preds):
 
 
 def test_two_windows_same_trial_with_overlap():
+    """
+    Test if two iterators are identical.
+
+    Args:
+    """
     preds = [[[4,5,6,7]], [[6,7,8,9]],]
     window_inds = ((0,0,8),(1,2,10))
     expected_trial_preds = [[[4,5,6,7,8,9]]]
@@ -261,6 +346,11 @@ def test_two_windows_same_trial_with_overlap():
 
 
 def test_three_windows_two_trials_with_overlap():
+    """
+    Test if all intersections between two windows are identical.
+
+    Args:
+    """
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
     window_inds = ((0, 0, 8), (1, 2, 10), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
@@ -268,6 +358,11 @@ def test_three_windows_two_trials_with_overlap():
 
 
 def test_one_window_one_trial():
+    """
+    Test if one single trial.
+
+    Args:
+    """
     preds = [[[4,5,6,7]]]
     window_inds = ((0,0,8),)
     expected_trial_preds = [[[4,5,6,7]]]
@@ -275,6 +370,11 @@ def test_one_window_one_trial():
 
 
 def test_three_windows_two_trials_no_overlap():
+    """
+    Test if all intersections between two populations.
+
+    Args:
+    """
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
     window_inds = ((0, 0, 8), (1, 4, 12), (0, 0, 6,))
     expected_trial_preds = [[[4, 5, 6, 7, 6, 7, 8, 9]], [[0, 1, 2, 3]]]

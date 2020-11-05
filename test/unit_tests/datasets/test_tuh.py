@@ -2,6 +2,11 @@ from braindecode.datasets.tuh import TUHAbnormal
 
 
 def test_parse_from_file_path():
+    """
+    Parse the test file and returns a. hdf file.
+
+    Args:
+    """
     # expect filenames as v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf
     #              version/file type/data_split/label/EEG reference/subset/subject/recording session/file
     # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
@@ -20,6 +25,11 @@ def test_parse_from_file_path():
 
 
 def test_sort_chronologically():
+    """
+    Test for sort_chronologically
+
+    Args:
+    """
     file_paths = [
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/00010831_s002_t001.edf",
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000068/s009_2011_09_12/00000068_s009_t000.edf",

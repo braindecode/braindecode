@@ -44,6 +44,15 @@ class EEGClassifier(NeuralNetClassifier):
 
     def __init__(self, *args, cropped=False, callbacks=None,
                  iterator_train__shuffle=True, **kwargs):
+        """
+        Initialize the callbacks.
+
+        Args:
+            self: (todo): write your description
+            cropped: (todo): write your description
+            callbacks: (list): write your description
+            iterator_train__shuffle: (bool): write your description
+        """
         self.cropped = cropped
         callbacks = self._parse_callbacks(callbacks)
 
@@ -53,6 +62,13 @@ class EEGClassifier(NeuralNetClassifier):
                          **kwargs)
 
     def _parse_callbacks(self, callbacks):
+        """
+        Parse callbacks.
+
+        Args:
+            self: (todo): write your description
+            callbacks: (callable): write your description
+        """
         callbacks_list = []
         if callbacks is not None:
             for callback in callbacks:
@@ -121,6 +137,15 @@ class EEGClassifier(NeuralNetClassifier):
         return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
 
     def get_iterator(self, dataset, training=False, drop_index=True):
+        """
+        Return an iterator over the training dataset.
+
+        Args:
+            self: (todo): write your description
+            dataset: (todo): write your description
+            training: (bool): write your description
+            drop_index: (int): write your description
+        """
         iterator = super().get_iterator(dataset, training=training)
         if drop_index:
             return ThrowAwayIndexLoader(self, iterator, is_regression=False)
@@ -128,6 +153,16 @@ class EEGClassifier(NeuralNetClassifier):
             return iterator
 
     def on_batch_end(self, net, X, y, training=False, **kwargs):
+        """
+        Perform training on training is received.
+
+        Args:
+            self: (todo): write your description
+            net: (todo): write your description
+            X: (todo): write your description
+            y: (todo): write your description
+            training: (todo): write your description
+        """
         # If training is false, assume that our loader has indices for this
         # batch
         if not training:
@@ -146,6 +181,13 @@ class EEGClassifier(NeuralNetClassifier):
                 del self._last_window_inds
 
     def predict_with_window_inds_and_ys(self, dataset):
+        """
+        Predict window indices.
+
+        Args:
+            self: (todo): write your description
+            dataset: (todo): write your description
+        """
         preds = []
         i_window_in_trials = []
         i_window_stops = []
@@ -167,6 +209,12 @@ class EEGClassifier(NeuralNetClassifier):
     # with cropped decoding.
     @property
     def _default_callbacks(self):
+        """
+        Default callbacks.
+
+        Args:
+            self: (todo): write your description
+        """
         return [
             ("epoch_timer", EpochTimer()),
             (
