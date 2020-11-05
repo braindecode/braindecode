@@ -19,6 +19,7 @@
 
 import os
 import inspect
+import os.path as op
 import sphinx_rtd_theme
 import braindecode
 import sys
