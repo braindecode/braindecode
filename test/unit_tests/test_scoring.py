@@ -74,16 +74,6 @@ def test_cropped_trial_epoch_scoring():
     expected_accuracies_cases = [0.25, 0.75]
 
     window_inds = [(
-<<<<<<< HEAD
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    ), (
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    ), ]
-=======
             torch.tensor([0, 0]),  # i_window_in_trials
             [None],  # won't be used
             torch.tensor([4, 4]),  # i_window_stops
@@ -92,7 +82,6 @@ def test_cropped_trial_epoch_scoring():
             [None],  # won't be used
             torch.tensor([4, 4]),  # i_window_stops
         ),]
->>>>>>> master
 
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
@@ -139,20 +128,12 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         torch.tensor([0, 0]),  # i_window_in_trials
         [None],  # won't be used
         torch.tensor([4, 4]),  # i_window_stops
-<<<<<<< HEAD
-    ), (
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    ), ]
-=======
     ),
         (
         torch.tensor([0, 0]),  # i_window_in_trials
         [None],  # won't be used
         torch.tensor([4, 4]),  # i_window_stops
     )]
->>>>>>> master
     cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy")
     cropped_trial_epoch_scoring.initialize()
     cropped_trial_epoch_scoring.y_preds_ = [

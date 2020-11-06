@@ -139,7 +139,7 @@ class ShallowFBCSPNet(nn.Sequential):
                 bias=True,
             ),
         )
-        # self.add_module("softmax", nn.LogSoftmax(dim=1))
+        self.add_module("softmax", nn.LogSoftmax(dim=1))
         self.add_module("squeeze", Expression(squeeze_final_output))
 
         # Initialization, xavier is same as in paper...
