@@ -9,8 +9,9 @@ class Transform:
         self.probability = probability
         self.magnitude = magnitude
         self.transform = partial(operation, magnitude=magnitude)
+        self.random_state = None
 
-    def __call__(self, datum):
+    def __call__(self, datum, random_state=None):
         """Apply the transform ``self.operation`` on the data X with
         probability ``self.probability`` and magnitude ``self.magnitude``
 
@@ -20,6 +21,7 @@ class Transform:
         Returns:
             datum: Transformed data + metadata
         """
+        np.random.set_state(random_state)
         if self.probability is not None:
             rand_num = np.random.random()
             if rand_num <= self.probability:

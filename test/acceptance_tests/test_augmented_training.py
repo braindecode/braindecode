@@ -1,14 +1,14 @@
-from braindecode.augmentation.transforms.masking_along_axis import mask_along_frequency, mask_along_time
+from braindecode.augmentation.transforms.masking_along_axis import \
+    mask_along_frequency, mask_along_time
 import torch
 from skorch.callbacks import LRScheduler, EarlyStopping
 from braindecode import EEGClassifier
 from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerChambon2018
-from skorch.helper import predefined_split
 from braindecode.datasets.sleep_physionet import get_dummy_sample
 from braindecode.augmentation.transform_class import Transform
-from braindecode.augmentation.augmented_training_manager import augmented_train
 from braindecode.augmentation.transforms.identity import identity
+import numpy as np
 
 
 def test_dummy_augmented_training():
@@ -66,5 +66,13 @@ def test_dummy_augmented_training():
         iterator_train__pin_memory=True
     )  # torch.in torch.out
 
-    subpolicies_list = [Transform(identity), Transform(mask_along_frequency), Transform(mask_along_time)]
-    augmented_train(subpolicies_list=subpolicies_list, train_dataset=train_sample, eeg_model=clf, epochs=model_args["n_epochs"])
+    subpolicies_list = [
+        Transform(identity),
+        Transform(mask_along_frequency),
+        Transform(mask_along_time)]
+
+    train_sample.update_augmentation_policy(subpolicies_list)
+    y_train = np.array([data[1] for data in iter(train_sample)])
+    clf.fit(train_sample, y=y_train, epochs=model_args["n_epochs"])
+
+    return clf

@@ -11,7 +11,6 @@ Dataset classes.
 # License: BSD (3-clause)
 
 from torch.utils.data.dataset import Subset
-from .global_variables import label_index_dict
 import warnings
 
 import numpy as np
@@ -293,7 +292,7 @@ class AugmentedSubset(Subset):
                 set(self.dataset.label_index_dict[key]))
             indices_in_subset = [self.indices.index(indice)
                                  for indice in indices_in_aug_dataset]
-            label_index_dict[key] = indices_in_subset
+            self.label_index_dict[key] = indices_in_subset
 
     def get_unaugmented_data(self, idx):
         return self.dataset.get_unaugmented_data(self.indices[idx])
