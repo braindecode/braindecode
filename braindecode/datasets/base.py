@@ -22,14 +22,20 @@ from ..augmentation.transforms.identity import identity
 
 
 class Datum:
-    """The Datum class is mainly used to provide contextual informations to transforms, when they are applied on a data unitary chunk. For example, the "delay_signal" function needs to know the index of the data to find the data right before and do the shift. Similarly, the "merge_signal" function needs to know the data index, to do the merge with another signal with similar index.
+    """The Datum class is mainly used to provide contextual informations to
+    transforms, when they are applied on a data unitary chunk. For example,
+    the "delay_signal" function needs to know the index of the data to find
+    the data right before and do the shift. Similarly, the "merge_signal"
+    function needs to know the data index, to do the merge with another
+    signal with similar index.
     """
 
     def __init__(self, X, y) -> None:
         """Initialize one instance
         Args:
             X (Tensor): Tensor containing the signal
-            y (Union[Int,float]): Contains the label/value that should be predicted
+            y (Union[Int,float]): Contains the label/value that should be
+                predicted
         """
         self.X = X
         self.y = y
@@ -71,7 +77,8 @@ class BaseDataset(Dataset):
 
 def _create_description(description):
     if description is not None:
-        if (not isinstance(description, pd.Series) and not isinstance(description, dict)):
+        if (not isinstance(description, pd.Series) and
+                not isinstance(description, dict)):
             raise ValueError(f"'{description}' has to be either a "
                              f"pandas.Series or a dict")
         if isinstance(description, dict):
@@ -91,20 +98,24 @@ class WindowsDataset(BaseDataset):
         holds additional info about the windows
     """
 
-    def __init__(self, windows, description=None, subpolicies_list=tuple([Transform(identity)])):
+    def __init__(self, windows, description=None,
+                 subpolicies_list=tuple([Transform(identity)])):
         self.windows = windows
         self.description = _create_description(description)
         self.y = np.array(self.windows.metadata.loc[:, 'target'])
-        self.crop_inds = np.array(self.windows.metadata.loc[:,
-                                                            ['i_window_in_trial', 'i_start_in_trial',
-                                                             'i_stop_in_trial']])
+        self.crop_inds = np.array(
+            self.windows.metadata.loc[:, ['i_window_in_trial',
+                                          'i_start_in_trial',
+                                          'i_stop_in_trial']])
         self.subpolicies_list = subpolicies_list
 
     def __getitem__(self, index):
 
         X_index = index // len(self.subpolicies_list)
         tf_index = index % len(self.subpolicies_list)
-        X = torch.from_numpy(self.windows.get_data(item=X_index)[0].astype('float32'))
+        X = torch.from_numpy(
+            self.windows.get_data(
+                item=X_index)[0].astype('float32'))
         y = self.y[X_index]
         datum = Datum(X, y)
         transform = self.subpolicies_list[tf_index]
@@ -128,7 +139,9 @@ class WindowsDataset(BaseDataset):
 
         """
         img_index = index // len(self.subpolicies_list)
-        X = torch.from_numpy(self.windows.get_data(item=img_index)[0].astype('float32'))
+        X = torch.from_numpy(
+            self.windows.get_data(
+                item=img_index)[0].astype('float32'))
         y = self.y[img_index]
         crop_inds = list(self.crop_inds[img_index])
         return X, y, crop_inds
@@ -142,7 +155,8 @@ class BaseConcatDataset(ConcatDataset):
     Parameters
     ----------
     list_of_ds: list
-        list of BaseDataset, BaseConcatDataset or WindowsDataset/TransformDataset
+        list of BaseDataset, BaseConcatDataset or
+        WindowsDataset/TransformDataset
     """
 
     def __init__(self, list_of_ds):
@@ -205,7 +219,8 @@ class BaseConcatDataset(ConcatDataset):
     def tinying_dataset(self, subset_dict):
 
         def take_dataset_subset(windows_dataset, indice_list):
-            windows_dataset.windows = windows_dataset.windows[tuple(indice_list)]
+            windows_dataset.windows = windows_dataset.windows[tuple(
+                indice_list)]
             windows_dataset.y = windows_dataset.y[indice_list]
             windows_dataset.crop_inds = windows_dataset.crop_inds[indice_list]
 
@@ -239,7 +254,8 @@ class WindowsConcatDataset(BaseConcatDataset):
     def get_raw_data(self, idx):
         if idx < 0:
             if -idx > len(self):
-                raise ValueError("absolute value of index should not exceed dataset length")
+                raise ValueError(
+                    "absolute value of index should not exceed dataset length")
             idx = len(self) + idx
         dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
         if dataset_idx == 0:

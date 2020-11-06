@@ -11,7 +11,8 @@ class Transform:
         self.transform = partial(operation, magnitude=magnitude)
 
     def __call__(self, datum):
-        """Apply the transform ``self.operation`` on the data X with probability ``self.probability`` and magnitude ``self.magnitude``
+        """Apply the transform ``self.operation`` on the data X with
+        probability ``self.probability`` and magnitude ``self.magnitude``
 
         Args:
             datum (Datum): Data + metadata
