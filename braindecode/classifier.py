@@ -3,7 +3,7 @@ from sklearn.metrics import get_scorer
 from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
-from skorch.utils import train_loss_score, valid_loss_score, noop
+from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
 
 from .training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
@@ -153,7 +153,7 @@ class EEGClassifier(NeuralNetClassifier):
         for X, y, i in self.get_iterator(dataset, drop_index=False):
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
-            preds.append(self.predict_proba(X))
+            preds.append(to_numpy(self.forward(X)))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
@@ -186,3 +186,68 @@ class EEGClassifier(NeuralNetClassifier):
             ),
             ("print_log", PrintLog()),
         ]
+
+    def predict_proba(self, X):
+        """Return the output of the module's forward method as a numpy
+        array. In case of cropped decoding returns averaged values for
+        each trial.
+
+        If the module's forward method returns multiple outputs as a
+        tuple, it is assumed that the first output contains the
+        relevant information and the other values are ignored.
+        If all values are relevant or module's output for each crop
+        is needed, consider using :func:`~skorch.NeuralNet.forward`
+        instead.
+
+        Parameters
+        ----------
+        X : input data, compatible with skorch.dataset.Dataset
+          By default, you should be able to pass:
+
+            * numpy arrays
+            * torch tensors
+            * pandas DataFrame or Series
+            * scipy sparse CSR matrices
+            * a dictionary of the former three
+            * a list/tuple of the former three
+            * a Dataset
+
+          If this doesn't work with your data, you have to pass a
+          ``Dataset`` that can deal with the data.
+
+        Returns
+        -------
+        y_proba : numpy ndarray
+
+        """
+        y_pred = super().predict_proba(X)
+        if self.cropped:
+            return y_pred.mean(axis=-1)
+        else:
+            return y_pred
+
+    def predict(self, X):
+        """Return class labels for samples in X.
+
+        Parameters
+        ----------
+        X : input data, compatible with skorch.dataset.Dataset
+          By default, you should be able to pass:
+
+            * numpy arrays
+            * torch tensors
+            * pandas DataFrame or Series
+            * scipy sparse CSR matrices
+            * a dictionary of the former three
+            * a list/tuple of the former three
+            * a Dataset
+
+          If this doesn't work with your data, you have to pass a
+          ``Dataset`` that can deal with the data.
+
+        Returns
+        -------
+        y_pred : numpy ndarray
+
+        """
+        return self.predict_proba(X).argmax(1)

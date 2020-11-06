@@ -36,7 +36,7 @@ class MockSkorchNet:
 
     def predict(self, X):
         return np.concatenate(
-            [to_numpy(x.argmax(dim=1)) for x in self.forward_iter(X)], 0
+            [to_numpy(x.mean(-1).argmax(dim=1)) for x in self.forward_iter(X)], 0
         )
 
     def get_iterator(self, X_test, training):
@@ -48,7 +48,7 @@ def test_cropped_trial_epoch_scoring():
     dataset_train = None
     # Definition of test cases
     predictions_cases = [
-        # Exepected predictions classification results: [1, 0, 0, 0]
+        # Expected predictions classification results: [1, 0, 0, 0]
         np.array(
             [
                 [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],  # trial 0 preds
@@ -74,6 +74,7 @@ def test_cropped_trial_epoch_scoring():
     expected_accuracies_cases = [0.25, 0.75]
 
     window_inds = [(
+<<<<<<< HEAD
         torch.tensor([0, 0]),  # i_window_in_trials
         [None],  # won't be used
         torch.tensor([4, 4]),  # i_window_stops
@@ -82,6 +83,16 @@ def test_cropped_trial_epoch_scoring():
         [None],  # won't be used
         torch.tensor([4, 4]),  # i_window_stops
     ), ]
+=======
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),(
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),]
+>>>>>>> master
 
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
@@ -128,11 +139,20 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         torch.tensor([0, 0]),  # i_window_in_trials
         [None],  # won't be used
         torch.tensor([4, 4]),  # i_window_stops
+<<<<<<< HEAD
     ), (
         torch.tensor([0, 0]),  # i_window_in_trials
         [None],  # won't be used
         torch.tensor([4, 4]),  # i_window_stops
     ), ]
+=======
+    ),
+        (
+        torch.tensor([0, 0]),  # i_window_in_trials
+        [None],  # won't be used
+        torch.tensor([4, 4]),  # i_window_stops
+    )]
+>>>>>>> master
     cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy")
     cropped_trial_epoch_scoring.initialize()
     cropped_trial_epoch_scoring.y_preds_ = [
