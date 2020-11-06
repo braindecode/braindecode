@@ -145,13 +145,15 @@ def get_epochs_data(num_train=None, num_test=None, num_valid=None,
                     train_subjects=tuple(range(0, 50)),
                     valid_subjects=tuple(range(50, 60)),
                     test_subjects=tuple(range(60, 83)), recording=[1, 2],
-                    preprocessing=["microvolt_scaling", "filtering"], crop_wake_mins=30,
+                    preprocessing=["microvolt_scaling", "filtering"],
+                    crop_wake_mins=30,
                     random_seed=None):
 
     if num_train is not None:
         np.random.seed(random_seed)
         rand_sub = np.random.choice(
-            tuple(range(83)), size=num_train + num_test + num_valid, replace=True, p=None)
+            tuple(range(83)), size=num_train + num_test + num_valid,
+            replace=True, p=None)
         train_subjects = rand_sub[:num_train]
         test_subjects = rand_sub[num_train:num_train + num_test]
         valid_subjects = rand_sub[num_train + num_test:]
