@@ -10,6 +10,8 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
+from torch.utils.data.dataset import Subset
+from .global_variables import label_index_dict
 import warnings
 
 import numpy as np
@@ -30,7 +32,7 @@ class Datum:
     signal with similar index.
     """
 
-    def __init__(self, X, y) -> None:
+    def __init__(self, X, y, label_index_dict, train_sample) -> None:
         """Initialize one instance
         Args:
             X (Tensor): Tensor containing the signal
@@ -39,6 +41,8 @@ class Datum:
         """
         self.X = X
         self.y = y
+        self.train_sample = train_sample
+        self.label_index_dict = label_index_dict
 
 
 class BaseDataset(Dataset):
@@ -216,18 +220,6 @@ class BaseConcatDataset(ConcatDataset):
             [self.datasets[ds_ind] for ds_ind in ds_inds])
             for split_name, ds_inds in split_ids.items()}
 
-    def tinying_dataset(self, subset_dict):
-
-        def take_dataset_subset(windows_dataset, indice_list):
-            windows_dataset.windows = windows_dataset.windows[tuple(
-                indice_list)]
-            windows_dataset.y = windows_dataset.y[indice_list]
-            windows_dataset.crop_inds = windows_dataset.crop_inds[indice_list]
-
-        for i in subset_dict.keys():
-            take_dataset_subset(self.datasets[i], subset_dict[i])
-        self.cumulative_sizes = self.cumsum(self.datasets)
-
 
 class WindowsConcatDataset(BaseConcatDataset):
     """A variation of the base class that includes transforms
@@ -244,14 +236,16 @@ class WindowsConcatDataset(BaseConcatDataset):
         super().__init__(list_of_ds)
         assert check_equal([ds.subpolicies_list for ds in list_of_ds])
         self.subpolicies_list = list_of_ds[0].subpolicies_list
+        self.label_index_dict = self.init_label_index_dict()
 
     def update_augmentation_policy(self, newlist):
         for i in range(len(self.datasets)):
             self.datasets[i].subpolicies_list = newlist
         self.cumulative_sizes = self.cumsum(self.datasets)
         self.subpolicies_list = newlist
+        # TODO : variables constantes en MAJUSCULES
 
-    def get_raw_data(self, idx):
+    def get_unaugmented_data(self, idx):
         if idx < 0:
             if -idx > len(self):
                 raise ValueError(
@@ -263,3 +257,50 @@ class WindowsConcatDataset(BaseConcatDataset):
         else:
             sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
         return self.datasets[dataset_idx].get_raw_data(sample_idx)
+
+    def init_label_index_dict(self):
+        """Create a dictionnary, with as key the labels available in the
+        multi-classification process, and as value for a given label
+        all indexes of data that corresponds to its label.
+        """
+        subset_aug_indices = list(range(len(self) / len(self.subpolicies_list)))
+        subset_aug_labels = [self.get_raw_data(indice)[1]
+                             for indice in subset_aug_indices]
+        list_labels = list(set(subset_aug_labels))
+        for label in list_labels:
+            self.label_index_dict[label] = []
+        for i in range(len(subset_aug_indices)):
+            self.label_index_dict[subset_aug_labels[i]].append(
+                subset_aug_indices[i])
+
+
+class AugmentedSubset(Subset):
+    """
+    A specific attention should be paid to how Subsets are augmented, since the
+    canonic Subset class will broke when used in the data augmentation context.
+    """
+
+    def __init__(self, unaugmented_dataset, indices, transform_list) -> None:
+        self.dataset = unaugmented_dataset.update_augmentation_policy(
+            transform_list)
+        self.indices = self.compute_augmented_indices(indices, transform_list)
+        self.label_index_dict = self.init_label_index_dict()
+
+    def init_label_index_dict(self):
+        for key in self.dataset.label_index_dict.keys():
+            indices_in_aug_dataset = list(
+                set(self.indices) &
+                set(self.dataset.label_index_dict[key]))
+            indices_in_subset = [self.indices.index(indice)
+                                 for indice in indices_in_aug_dataset]
+            label_index_dict[key] = indices_in_subset
+
+    def get_unaugmented_data(self, idx):
+        return self.dataset.get_unaugmented_data(self.indices[idx])
+
+    @staticmethod
+    def compute_augmented_indices(indices, transform_list):
+        aug_indices = np.array([np.arange(i * len(transform_list),
+                                          (i + 1) * len(transform_list))
+                                for i in indices]).flatten()
+        return aug_indices

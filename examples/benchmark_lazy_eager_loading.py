@@ -67,7 +67,6 @@ torch.set_num_threads(N_JOBS)  # Sets the available number of threads
 # Each one of these steps will be timed, so we can report the total time taken
 # to prepare the data and train the model.
 
-
 def load_example_data(preload, window_len_s, n_subjects=10):
     """Create windowed dataset from subjects of the TUH Abnormal dataset.
 
@@ -193,7 +192,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
     """
     for i in range(n_epochs):
         loss_vals = list()
-        for X, y, _ in dataloader:
+        for X, y, _  in dataloader:
             model.train()
             model.zero_grad()
 
@@ -226,7 +225,7 @@ NUM_WORKERS = [8, 0]  # number of processes used by pytorch's Dataloader
 PIN_MEMORY = [False]  # whether to use pinned memory
 CUDA = [True, False] if torch.cuda.is_available() else [False]  # whether to use a CUDA device
 
-N_REPETITIONS = 3  # 3 # Number of times to repeat the experiment (to get better time estimates)
+N_REPETITIONS = 3  #3 # Number of times to repeat the experiment (to get better time estimates)
 
 ###############################################################################
 # The following path needs to be changed to your local folder containing the
@@ -287,7 +286,7 @@ for (i, preload, n_subjects, win_len_s, n_epochs, batch_size, model_kind,
     # Record timing results
     results['data_preparation'] = data_loading_end - data_loading_start
     results['training_setup'] = training_setup_end - training_setup_start
-    results['model_training'] = model_training_end - model_training_start
+    results ['model_training'] = model_training_end - model_training_start
     all_results.append(results)
 
 ###############################################################################

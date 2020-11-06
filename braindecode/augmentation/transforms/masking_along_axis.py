@@ -1,5 +1,8 @@
 import torch
-from ..global_variables import fft_args, data_size
+
+FFT_ARGS = {"n_fft": 512, "hop_length": 256,
+            "win_length": 512}
+DATA_SIZE = 3000
 
 
 def mask_along_axis(X, params):
@@ -33,14 +36,15 @@ def mask_along_axis(X, params):
 
 
 def mask_along_axis_random(X, params):
-    """Given a magnitude and an axis, produces a masking interval ``[v_start, v_end)``
-    where
-    ``v_end - v_start`` is sampled from ``uniform(0, magnitude * v_max)`` and rounded,
+    """Given a magnitude and an axis, produces a masking interval
+    ``[v_start, v_end)`` where ``v_end - v_start`` is sampled from
+     ``uniform(0, magnitude * v_max)`` and rounded,
     and ``v_start`` from ``uniform(0, v_max - v)`` and rounded.
 
     Args:
         X (Tensor): data
-        params (dict): a dict containing the necessary parameters for applying the transform : the magnitude, the axis and the masking value.
+        params (dict): a dict containing the necessary parameters for applying
+            the transform : the magnitude, the axis and the masking value.
 
     Returns:
         Tensor: Masked data
@@ -59,11 +63,14 @@ def mask_along_axis_random(X, params):
 
 
 def mask_along_time(datum, magnitude):
-    """Given a magnitude and data, will mask a random band of data along the time axis
+    """Given a magnitude and data, will mask a random band of data along the
+       time axis
 
     Args:
-        datum (Datum): A wrapper containing the data to transform, plus metadata informations useful for certain transforms
-        magnitude (float): a ``[0, 1] float, harmonized between transforms, characterizing how much the transform will alter the data
+        datum (Datum): A wrapper containing the data to transform, plus
+        metadata informations useful for certain transforms
+        magnitude (float): a ``[0, 1] float, harmonized between transforms,
+        characterizing how much the transform will alter the data
 
     Returns:
         Datum: A wrapper containing the transformed data.
@@ -77,11 +84,14 @@ def mask_along_time(datum, magnitude):
 
 
 def mask_along_frequency(datum, magnitude):
-    """Given a magnitude and data, will mask a random band of data along the frequency axis
+    """Given a magnitude and data, will mask a random band of data along the
+    frequency axis
 
     Args:
-        datum (Datum): A wrapper containing the data to transform, plus metadata informations useful for certain transforms
-        magnitude (float): a ``[0, 1] float, harmonized between transforms, characterizing how much the transform will alter the data
+        datum (Datum): A wrapper containing the data to transform, plus
+        metadata informations useful for certain transforms
+        magnitude (float): a ``[0, 1] float, harmonized between transforms,
+        characterizing how much the transform will alter the data
 
     Returns:
         Datum: A wrapper containing the transformed data.
@@ -103,11 +113,11 @@ def signal_to_time_frequency(X):
     Returns:
         Tensor: Real spectrogram (channel, freq, time)
     """
-    global fft_args
-    X = torch.stft(X, n_fft=fft_args["n_fft"],
-                   hop_length=fft_args["hop_length"],
-                   win_length=fft_args["win_length"],
-                   window=torch.hann_window(fft_args["n_fft"]))
+    global FFT_ARGS
+    X = torch.stft(X, n_fft=FFT_ARGS["n_fft"],
+                   hop_length=FFT_ARGS["hop_length"],
+                   win_length=FFT_ARGS["win_length"],
+                   window=torch.hann_window(FFT_ARGS["n_fft"]))
     return X
 
 
@@ -119,10 +129,10 @@ def time_frequency_to_signal(X):
     Returns:
         Tensor: Temporal signal (channel, time)
     """
-    global fft_args, data_size
-    X = torch.istft(X, n_fft=fft_args["n_fft"],
-                    hop_length=fft_args["hop_length"],
-                    win_length=fft_args["win_length"],
-                    window=torch.hann_window(fft_args["n_fft"]),
-                    length=data_size)
+    global FFT_ARGS, DATA_SIZE
+    X = torch.istft(X, n_fft=FFT_ARGS["n_fft"],
+                    hop_length=FFT_ARGS["hop_length"],
+                    win_length=FFT_ARGS["win_length"],
+                    window=torch.hann_window(FFT_ARGS["n_fft"]),
+                    length=DATA_SIZE)
     return X

@@ -41,6 +41,7 @@ class SleepPhysionet(BaseConcatDataset):
         and after the last sleep event. Used to reduce the imbalance in this
         dataset. Default of 30 mins.
     """
+
     def __init__(self, subject_ids=None, recording_ids=None, preload=False,
                  load_eeg_only=True, crop_wake_mins=30):
         if subject_ids is None:
@@ -48,7 +49,10 @@ class SleepPhysionet(BaseConcatDataset):
         if recording_ids is None:
             recording_ids = [1, 2]
 
-        paths = fetch_data(subject_ids, recording=recording_ids, on_missing="ignore")
+        paths = fetch_data(
+            subject_ids,
+            recording=recording_ids,
+            on_missing="ignore")
 
         all_base_ds = list()
         for p in paths:
@@ -130,9 +134,9 @@ def get_dummy_sample(preprocessing=["microvolt_scaling", "filtering"]):
     train_tinying_dict = {0: [350, 1029, 1291, 1650, 1571]}
     test_tinying_dict = {0: valid_choice}
     valid_tinying_dict = {0: test_choice}
-    train_sample.tinying_dataset(train_tinying_dict)
-    test_sample.tinying_dataset(test_tinying_dict)
-    valid_sample.tinying_dataset(valid_tinying_dict)
+    train_sample = tinying_dataset(train_sample, train_tinying_dict)
+    test_sample = tinying_dataset(test_sample, test_tinying_dict)
+    valid_sample = tinying_dataset(valid_sample, valid_tinying_dict)
 
     return train_sample, valid_sample, test_sample
 
@@ -226,6 +230,22 @@ def build_epoch(subjects, recording, crop_wake_mins, preprocessing,
         mapping=mapping)
 
     return windows_dataset
+
+
+def tinying_dataset(concat_dataset, subset_dict):
+
+    def take_dataset_subset(windows_dataset, indice_list):
+        windows_dataset.windows = windows_dataset.windows[tuple(
+            indice_list)]
+        windows_dataset.y = windows_dataset.y[indice_list]
+        windows_dataset.crop_inds = windows_dataset.crop_inds[indice_list]
+
+    for i in subset_dict.keys():
+        take_dataset_subset(concat_dataset.datasets[i], subset_dict[i])
+    concat_dataset.cumulative_sizes = concat_dataset.cumsum(
+        concat_dataset.datasets)
+
+
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)

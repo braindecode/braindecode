@@ -1,5 +1,5 @@
 from functools import partial
-import random
+import numpy as np
 
 
 class Transform:
@@ -21,7 +21,7 @@ class Transform:
             datum: Transformed data + metadata
         """
         if self.probability is not None:
-            rand_num = random.random()
+            rand_num = np.random.random()
             if rand_num <= self.probability:
                 return self.transform(datum)
         return datum
