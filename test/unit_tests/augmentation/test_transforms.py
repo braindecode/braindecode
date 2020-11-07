@@ -5,7 +5,6 @@ from braindecode.augmentation.transforms.masking_along_axis \
     import mask_along_axis_random
 from braindecode.augmentation.transforms import identity
 from braindecode.datasets.sleep_physionet import get_dummy_sample
-from testfixtures import compare
 from braindecode.util import set_random_seeds
 
 FFT_ARGS = {"n_fft": 512, "hop_length": 256,
@@ -81,4 +80,8 @@ def test_transform_class():
     datum = {}
     datum = t(datum)
     state2 = np.random.get_state()
-    print("lol")
+    assert(state[0] == state2[0])
+    assert(all(state[1] == state2[1]))
+    assert(state[2] == state2[2])
+    assert(state[3] == state2[3])
+    assert(state[4] == state2[4])
