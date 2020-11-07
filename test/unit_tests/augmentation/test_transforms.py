@@ -1,9 +1,11 @@
 import numpy as np
 import torch
+from braindecode.augmentation.transform_class import Transform
 from braindecode.augmentation.transforms.masking_along_axis \
     import mask_along_axis_random
+from braindecode.augmentation.transforms import identity
 from braindecode.datasets.sleep_physionet import get_dummy_sample
-
+from testfixtures import compare
 from braindecode.util import set_random_seeds
 
 FFT_ARGS = {"n_fft": 512, "hop_length": 256,
@@ -70,3 +72,13 @@ def test_mask_along_axis():
                        (j not in columns_with_zeros))]
     print(where_equal)
     assert(all(where_equal))
+
+
+def test_transform_class():
+    np.random.seed(0)
+    state = np.random.get_state()
+    t = Transform(identity)
+    datum = {}
+    datum = t(datum)
+    state2 = np.random.get_state()
+    print("lol")
