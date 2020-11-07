@@ -123,6 +123,7 @@ def get_dummy_sample(preprocessing=["microvolt_scaling", "filtering"]):
     # for i in range(len(test_sample)):
     #     test_sample[i] = (test_sample[i][0][:50],
     #                       test_sample[i][1], test_sample[i][2])
+    # print("lol")
     test_choice = np.random.choice(
         range(len(test_sample)),
         size=2,
@@ -241,12 +242,14 @@ def tinying_dataset(concat_dataset, subset_dict):
             indice_list)]
         windows_dataset.y = windows_dataset.y[indice_list]
         windows_dataset.crop_inds = windows_dataset.crop_inds[indice_list]
+        return(windows_dataset)
 
     for i in subset_dict.keys():
-        take_dataset_subset(concat_dataset.datasets[i], subset_dict[i])
+        concat_dataset.datasets[i] = take_dataset_subset(
+            concat_dataset.datasets[i], subset_dict[i])
     concat_dataset.cumulative_sizes = concat_dataset.cumsum(
         concat_dataset.datasets)
-
+    return(concat_dataset)
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #

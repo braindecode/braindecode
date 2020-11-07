@@ -27,7 +27,6 @@ def test_dummy_augmented_training():
         "n_cross_val": 3,
         "criterion": torch.nn.CrossEntropyLoss,
         "device": "cuda:2",
-                  "patience": 5
     }
     cuda = torch.cuda.is_available()
     device = model_args["device"] if cuda else 'cpu'
@@ -52,14 +51,12 @@ def test_dummy_augmented_training():
         optimizer__lr=model_args["lr"],
         optimizer__weight_decay=model_args["weight_decay"],
         batch_size=model_args["batch_size"],
+        train_split=None,
         callbacks=[
             "accuracy",
             ("lr_scheduler",
              LRScheduler('CosineAnnealingLR',
-                         T_max=model_args["n_epochs"] - 1)),
-            ("early_stopping",
-             EarlyStopping(monitor='valid_loss',
-                           patience=model_args["patience"]))
+                         T_max=model_args["n_epochs"] - 1))
         ],
         device=device,
         iterator_train__num_workers=20,

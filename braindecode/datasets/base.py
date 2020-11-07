@@ -111,6 +111,8 @@ class WindowsDataset(BaseDataset):
                                           'i_start_in_trial',
                                           'i_stop_in_trial']])
         self.subpolicies_list = subpolicies_list
+        self.label_index_dict = None
+        self.train_sample = None
 
     def __getitem__(self, index):
 
@@ -120,7 +122,7 @@ class WindowsDataset(BaseDataset):
             self.windows.get_data(
                 item=X_index)[0].astype('float32'))
         y = self.y[X_index]
-        datum = Datum(X, y)
+        datum = Datum(X, y, self.label_index_dict, self.train_sample)
         transform = self.subpolicies_list[tf_index]
         datum = transform(datum)
         crop_inds = list(self.crop_inds[X_index])
@@ -129,7 +131,7 @@ class WindowsDataset(BaseDataset):
     def __len__(self):
         return len(self.windows.events) * len(self.subpolicies_list)
 
-    def get_raw_data(self, index):
+    def get_unaugmented_data(self, index):
         """Returns raw data, without applying any transforms
 
         Args:
@@ -141,12 +143,11 @@ class WindowsDataset(BaseDataset):
             crops_ind (List[int]): timestamps (first and last)
 
         """
-        img_index = index // len(self.subpolicies_list)
         X = torch.from_numpy(
             self.windows.get_data(
-                item=img_index)[0].astype('float32'))
-        y = self.y[img_index]
-        crop_inds = list(self.crop_inds[img_index])
+                item=index)[0].astype('float32'))
+        y = self.y[index]
+        crop_inds = list(self.crop_inds[index])
         return X, y, crop_inds
 
 
@@ -236,6 +237,9 @@ class WindowsConcatDataset(BaseConcatDataset):
         assert check_equal([ds.subpolicies_list for ds in list_of_ds])
         self.subpolicies_list = list_of_ds[0].subpolicies_list
         self.label_index_dict = self.init_label_index_dict()
+        for i in range(len(self.datasets)):
+            self.datasets[i].label_index_dict = self.label_index_dict
+            self.datasets[i].train_sample = self
 
     def update_augmentation_policy(self, newlist):
         for i in range(len(self.datasets)):
@@ -245,32 +249,37 @@ class WindowsConcatDataset(BaseConcatDataset):
         # TODO : variables constantes en MAJUSCULES
 
     def get_unaugmented_data(self, idx):
+        unaug_len = len(self) // len(self.subpolicies_list)
         if idx < 0:
-            if -idx > len(self):
+            if -idx > unaug_len:
                 raise ValueError(
                     "absolute value of index should not exceed dataset length")
-            idx = len(self) + idx
-        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+            idx = unaug_len + idx
+        unaug_cumulative_size = [i // len(self.subpolicies_list)
+                                 for i in self.cumulative_sizes]
+        dataset_idx = bisect.bisect_right(unaug_cumulative_size, idx)
         if dataset_idx == 0:
             sample_idx = idx
         else:
-            sample_idx = idx - self.cumulative_sizes[dataset_idx - 1]
-        return self.datasets[dataset_idx].get_raw_data(sample_idx)
+            sample_idx = idx - unaug_cumulative_size[dataset_idx - 1]
+        return self.datasets[dataset_idx].get_unaugmented_data(sample_idx)
 
     def init_label_index_dict(self):
         """Create a dictionnary, with as key the labels available in the
         multi-classification process, and as value for a given label
         all indexes of data that corresponds to its label.
         """
-        subset_aug_indices = list(range(len(self) / len(self.subpolicies_list)))
-        subset_aug_labels = [self.get_raw_data(indice)[1]
-                             for indice in subset_aug_indices]
-        list_labels = list(set(subset_aug_labels))
+        subset_unaug_indices = list(
+            range(len(self) // len(self.subpolicies_list)))
+        subset_unaug_labels = [self.get_unaugmented_data(indice)[1]
+                               for indice in subset_unaug_indices]
+        list_labels = list(set(subset_unaug_labels))
+        self.label_index_dict = {}
         for label in list_labels:
             self.label_index_dict[label] = []
-        for i in range(len(subset_aug_indices)):
-            self.label_index_dict[subset_aug_labels[i]].append(
-                subset_aug_indices[i])
+        for i in range(len(subset_unaug_indices)):
+            self.label_index_dict[subset_unaug_labels[i]].append(
+                subset_unaug_indices[i])
 
 
 class AugmentedSubset(Subset):
