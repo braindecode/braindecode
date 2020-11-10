@@ -1,4 +1,4 @@
-# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+g# Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
 
