@@ -1,3 +1,8 @@
+# Authors: Lukas Gemein <l.gemein@gmail.com>
+#
+# License: BSD-3
+
+
 import numpy as np
 import mne
 

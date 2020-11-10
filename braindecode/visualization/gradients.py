@@ -1,3 +1,7 @@
+# Authors: Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 from skorch.utils import to_numpy, to_tensor
 import torch
@@ -15,11 +19,12 @@ def compute_amplitude_gradients(model, dataset, batch_size):
 
 
 def compute_amplitude_gradients_for_X(model, X):
+    device = next(model.parameters()).device
     ffted = np.fft.rfft(X, axis=2)
     amps = np.abs(ffted)
     phases = np.angle(ffted)
-    amps_th = to_tensor(amps.astype(np.float32), device='cuda').requires_grad_(True)
-    phases_th = to_tensor(phases.astype(np.float32), device='cuda').requires_grad_(True)
+    amps_th = to_tensor(amps.astype(np.float32), device=device).requires_grad_(True)
+    phases_th = to_tensor(phases.astype(np.float32), device=device).requires_grad_(True)
 
     fft_coefs = amps_th.unsqueeze(-1) * torch.stack(
         (torch.cos(phases_th), torch.sin(phases_th)), dim=-1)
@@ -36,7 +41,8 @@ def compute_amplitude_gradients_for_X(model, X):
     for i_filter in range(n_filters):
         mean_out = torch.mean(outs[:,i_filter])
         mean_out.backward(retain_graph=True)
-        amp_grads = to_numpy(amps_th.grad)
+        amp_grads = to_numpy(amps_th.grad.clone())
         amp_grads_per_filter[i_filter] = amp_grads
+        amps_th.grad.zero_()
     assert not np.any(np.isnan(amp_grads_per_filter))
     return amp_grads_per_filter

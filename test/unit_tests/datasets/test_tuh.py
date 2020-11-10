@@ -1,3 +1,7 @@
+# Authors: Lukas Gemein <l.gemein@gmail.com>
+#
+# License: BSD-3
+
 from braindecode.datasets.tuh import TUHAbnormal
 
 
