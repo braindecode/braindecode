@@ -161,13 +161,8 @@ class BaseConcatDataset(ConcatDataset):
             [self.datasets[ds_ind] for ds_ind in ds_inds])
             for split_name, ds_inds in split_ids.items()}
 
-    @property
-    def metadata(self):
+    def get_metadata(self):
         """Concatenate the metadata and description of the wrapped Epochs.
-
-        NOTE: This is implemented as a property to avoid having to keep a very
-              large DataFrame in case the dataset contains very long or many
-              recordings.
 
         Returns
         -------
@@ -177,7 +172,7 @@ class BaseConcatDataset(ConcatDataset):
             for each window.
         """
         if not all([isinstance(ds, WindowsDataset) for ds in self.datasets]):
-            raise TypeError('Property metadata can only be computed when all '
+            raise TypeError('Metadata dataframe can only be computed when all '
                             'datasets are WindowsDataset.')
 
         all_dfs = list()

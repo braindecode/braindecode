@@ -188,7 +188,7 @@ def test_split_dataset(concat_ds_targets):
 
 
 def test_metadata(concat_windows_dataset):
-    md = concat_windows_dataset.metadata
+    md = concat_windows_dataset.get_metadata()
     assert isinstance(md, pd.DataFrame)
     assert all([c in md.columns
                 for c in concat_windows_dataset.description.columns])
@@ -196,5 +196,5 @@ def test_metadata(concat_windows_dataset):
 
 
 def test_no_metadata(concat_ds_targets):
-    with pytest.raises(TypeError, match='Property metadata can only be'):
-        concat_ds_targets[0].metadata
+    with pytest.raises(TypeError, match='Metadata dataframe can only be'):
+        concat_ds_targets[0].get_metadata()

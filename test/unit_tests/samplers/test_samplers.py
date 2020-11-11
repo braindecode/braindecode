@@ -41,7 +41,7 @@ def find_dataset_ind(windows_ds, win_ind):
 
 
 def test_recording_sampler(windows_ds):
-    sampler = RecordingSampler(windows_ds.metadata, random_state=87)
+    sampler = RecordingSampler(windows_ds.get_metadata(), random_state=87)
     assert sampler.n_recordings == windows_ds.description.shape[0]
 
     # Test info attribute
@@ -71,7 +71,7 @@ def test_relative_positioning_sampler(windows_ds, same_rec_neg):
     tau_pos, tau_neg = 2000, 3000
     n_examples = 100
     sampler = RelativePositioningSampler(
-        windows_ds.metadata, tau_pos=tau_pos, tau_neg=tau_neg,
+        windows_ds.get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
         n_examples=n_examples, tau_max=None, same_rec_neg=same_rec_neg,
         random_state=33)
 
@@ -99,7 +99,7 @@ def test_relative_positioning_sampler_presample(windows_ds):
     tau_pos, tau_neg = 2000, 3000
     n_examples = 100
     sampler = RelativePositioningSampler(
-        windows_ds.metadata, tau_pos=tau_pos, tau_neg=tau_neg,
+        windows_ds.get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
         n_examples=n_examples, tau_max=None, same_rec_neg=True,
         random_state=33)
 

@@ -230,14 +230,14 @@ n_examples_valid = 250 * len(splitted['valid'].datasets)
 n_examples_test = 250 * len(splitted['test'].datasets)
 
 train_sampler = RelativePositioningSampler(
-    splitted['train'].metadata, tau_pos=tau_pos, tau_neg=tau_neg,
+    splitted['train'].get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
     n_examples=n_examples_train, same_rec_neg=True, random_state=random_state)
 valid_sampler = RelativePositioningSampler(
-    splitted['valid'].metadata, tau_pos=tau_pos, tau_neg=tau_neg,
+    splitted['valid'].get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
     n_examples=n_examples_valid, same_rec_neg=True,
     random_state=random_state).presample()
 test_sampler = RelativePositioningSampler(
-    splitted['test'].metadata, tau_pos=tau_pos, tau_neg=tau_neg,
+    splitted['test'].get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
     n_examples=n_examples_test, same_rec_neg=True,
     random_state=random_state).presample()
 
@@ -326,9 +326,10 @@ model = ContrastiveNet(emb, emb_size).to(device)
 # hyperparameters as in [1]_, but reduce the number of epochs and increase the
 # learning rate to account for the smaller setting of this example.
 #
+import os
 
 from skorch.helper import predefined_split
-from skorch.callbacks import EpochScoring, EarlyStopping
+from skorch.callbacks import Checkpoint, EarlyStopping, EpochScoring
 from braindecode import EEGClassifier
 
 lr = 5e-3
@@ -336,6 +337,7 @@ batch_size = 256
 n_epochs = 50
 num_workers = 0 if n_jobs <= 1 else n_jobs
 
+cp = Checkpoint(dirname='', f_criterion=None, f_optimizer=None, f_history=None)
 early_stopping = EarlyStopping(patience=10)
 train_acc = EpochScoring(
     scoring='accuracy', on_train=True, name='train_acc', lower_is_better=False)
@@ -343,6 +345,7 @@ valid_acc = EpochScoring(
     scoring='accuracy', on_train=False, name='valid_acc',
     lower_is_better=False)
 callbacks = [
+    ('cp', cp),
     ('patience', early_stopping),
     ('train_acc', train_acc),
     ('valid_acc', valid_acc)
@@ -367,6 +370,9 @@ clf = EEGClassifier(
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
 clf.fit(splitted['train'], y=None)
+clf.load_params(checkpoint=cp)  # Load the model with the lowest valid_loss
+
+os.remove('./params.pt')  # Delete parameters file
 
 
 ######################################################################
@@ -464,7 +470,7 @@ for name, split in splitted.items():
     with torch.no_grad():
         feats = [emb(batch_x.to(device)).cpu().numpy()
                  for batch_x, _, _ in loader]
-    data[name] = (np.concatenate(feats), split.metadata['target'].values)
+    data[name] = (np.concatenate(feats), split.get_metadata()['target'].values)
 
 # Initialize the logistic regression model
 log_reg = LogisticRegression(

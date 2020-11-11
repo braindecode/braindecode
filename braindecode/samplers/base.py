@@ -16,19 +16,27 @@ class RecordingSampler(Sampler):
     Parameters
     ----------
     metadata : pd.DataFrame
-        DataFrame describing at least one of {subject, session, run}
-        information for each window in the BaseConcatDataset to sample examples
-        from. Normally obtained as the `metadata` property of BaseConcatDataset.
+        DataFrame with at least one of {subject, session, run} columns for each
+        window in the BaseConcatDataset to sample examples from. Normally
+        obtained with `BaseConcatDataset.get_metadata()`. For instance,
+        `metadata.head()` might look like this:
+
+           i_window_in_trial  i_start_in_trial  i_stop_in_trial  target  subject    session    run
+        0                  0                 0              500      -1        4  session_T  run_0
+        1                  1               500             1000      -1        4  session_T  run_0
+        2                  2              1000             1500      -1        4  session_T  run_0
+        3                  3              1500             2000      -1        4  session_T  run_0
+        4                  4              2000             2500      -1        4  session_T  run_0
+
     random_state : np.RandomState | int | None
         Random state.
 
     Attributes
     ----------
     info : pd.DataFrame
-        Series with multiindex, which contains the subject, session, run and
-        window indices information in an easily accessible structure for
-        quickly sampling.
-
+        Series with MultiIndex index which contains the subject, session, run
+        and window indices information in an easily accessible structure for
+        quick sampling of windows.
     """
     def __init__(self, metadata, random_state=None):
         self.metadata = metadata
