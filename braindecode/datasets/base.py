@@ -82,9 +82,10 @@ class WindowsDataset(BaseDataset):
         self.windows = windows
         self.description = _create_description(description)
         self.y = np.array(self.windows.metadata.loc[:, 'target'])
-        self.crop_inds = np.array(self.windows.metadata.loc[:,
-                                                            ['i_window_in_trial', 'i_start_in_trial',
-                                                             'i_stop_in_trial']])
+        self.crop_inds = np.array(
+            self.windows.metadata.loc[:,
+                                      ['i_window_in_trial', 'i_start_in_trial',
+                                       'i_stop_in_trial']])
 
     def __getitem__(self, index):
         X = self.windows.get_data(item=index)[0].astype('float32')
@@ -199,5 +200,5 @@ class AugmentedDataset(Dataset):
     def initialize_required_variables(self):
         for transform in self.list_of_transforms:
             for key in transform.required_variables.keys():
-                self.required_variables[key] = transform.required_variables[key](
-                    self.ds)
+                self.required_variables[key] = \
+                    transform.required_variables[key](self.ds)

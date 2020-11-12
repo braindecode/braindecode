@@ -19,7 +19,7 @@ def test_dummy_sample():
 def test_mask_along_axis():
     train_sample, _, _ = get_dummy_sample()
     set_random_seeds(0, cuda=True)
-    X = train_sample[0][0]
+    X = torch.from_numpy(train_sample[0][0])
     spec = torch.stft(X, n_fft=FFT_ARGS["n_fft"],
                       hop_length=FFT_ARGS["hop_length"],
                       win_length=FFT_ARGS["win_length"],
