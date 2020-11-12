@@ -1,3 +1,7 @@
+# Authors: Simon Freyburger
+#
+# License: BSD-3
+
 import numpy as np
 import torch
 from braindecode.augmentation.transform_class import Transform

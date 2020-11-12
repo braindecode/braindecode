@@ -1,3 +1,7 @@
+# Authors: Simon Freyburger
+#
+# License: BSD-3
+
 from braindecode.augmentation.transforms.masking_along_axis import \
     mask_along_frequency, mask_along_time
 import torch

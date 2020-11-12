@@ -7,6 +7,7 @@ Dataset classes.
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Simon Freyburger <simonfreyburger@yahoo.fr>
 #
 # License: BSD (3-clause)
 

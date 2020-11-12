@@ -1,3 +1,7 @@
+# Authors: Simon Freyburger
+#
+# License: BSD-3
+
 import torch
 
 FFT_ARGS = {"n_fft": 512, "hop_length": 256,

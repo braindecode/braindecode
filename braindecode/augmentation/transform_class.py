@@ -1,3 +1,7 @@
+# Authors: Simon Freyburger
+#
+# License: BSD-3
+
 from functools import partial
 import numpy as np
 
