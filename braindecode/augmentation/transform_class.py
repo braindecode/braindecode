@@ -4,11 +4,13 @@ import numpy as np
 
 class Transform:
 
-    def __init__(self, operation, probability=None, magnitude=0):
+    def __init__(self, operation, probability=None,
+                 magnitude=0, required_variables={}):
         self.operation = operation
         self.probability = probability
         self.magnitude = magnitude
         self.transform = partial(operation, magnitude=magnitude)
+        self.required_variables = required_variables
 
     def __call__(self, datum):
         """Apply the transform ``self.operation`` on the data X with
@@ -22,6 +24,6 @@ class Transform:
         """
         if self.probability is not None:
             rand_num = np.random.random()
-            if rand_num <= self.probability:
-                return self.transform(datum)
-        return datum
+            if rand_num >= self.probability:
+                return datum
+        return self.transform(datum)

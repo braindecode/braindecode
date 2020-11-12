@@ -13,7 +13,7 @@ log = logging.getLogger(__name__)
 def create_from_X_y(
         X, y, drop_last_window, sfreq=None, ch_names=None, window_size_samples=None,
         window_stride_samples=None):
-    """Create a WindowsConcatDataset of WindowsDatasets from X and y to be used for
+    """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
     and y are corresponding targets.
 

@@ -169,8 +169,8 @@ class BaseConcatDataset(ConcatDataset):
 
 class AugmentedDataset(Dataset):
 
-    def __init__(self, ds, list_of_transforms=Transform[(identity)]) -> None:
-        self.list_of_transforms = len(list_of_transforms)
+    def __init__(self, ds, list_of_transforms=[Transform(identity)]) -> None:
+        self.list_of_transforms = list_of_transforms
         self.ds = ds
         self.required_variables = self.initialize_required_variables()
 
@@ -180,22 +180,21 @@ class AugmentedDataset(Dataset):
     def __getitem__(self, index):
         tf_index = index % len(self.list_of_transforms)
         img_index = index // len(self.list_of_transforms)
-        x, y, crops_ind = (self.ds[img_index])
+        X, y, crops_ind = (self.ds[img_index])
 
         class Datum:
-            def __init__(self, x, y, crops_ind, ds, required_variables):
-                self.x = x
+            def __init__(self, X, y, crops_ind, ds, required_variables):
+                self.X = X
                 self.y = y
                 self.crops_ind = crops_ind
                 self.ds = ds
                 self.required_variables = required_variables
 
         transf_datum = self.list_of_transforms[tf_index](
-            Datum(x, y, crops_ind, self.ds, self.required_variables))
-        x, y, crops_ind = transf_datum.X, transf_datum.y
-        transf_datum.crop_inds
+            Datum(X, y, crops_ind, self.ds, self.required_variables))
+        X, y, crops_ind = transf_datum.X, transf_datum.y, transf_datum.crops_ind
 
-        return()
+        return X, y, crops_ind
 
     def initialize_required_variables(self):
         for transform in self.list_of_transforms:

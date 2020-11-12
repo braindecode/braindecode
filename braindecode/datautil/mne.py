@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import mne
 
-from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset, WindowsConcatDataset
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def create_from_mne_raw(
@@ -134,4 +134,4 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
             windows_ds = WindowsDataset(mne_epochs)
             list_of_windows_ds.append(windows_ds)
 
-    return WindowsConcatDataset(list_of_windows_ds)
+    return BaseConcatDataset(list_of_windows_ds)

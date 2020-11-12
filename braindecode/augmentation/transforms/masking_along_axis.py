@@ -75,11 +75,11 @@ def mask_along_time(datum, magnitude):
     Returns:
         Datum: A wrapper containing the transformed data.
     """
-    X = datum.X
+    X = torch.from_numpy(datum.X)
     params_time = {"magnitude": magnitude, "axis": 2, "mask_value": 0}
     X = signal_to_time_frequency(X)
     X = mask_along_axis_random(X, params_time)
-    datum.X = time_frequency_to_signal(X)
+    datum.X = time_frequency_to_signal(X).numpy()
     return datum
 
 
@@ -96,11 +96,11 @@ def mask_along_frequency(datum, magnitude):
     Returns:
         Datum: A wrapper containing the transformed data.
     """
-    X = datum.X
+    X = torch.from_numpy(datum.X)
     params_frequency = {"magnitude": magnitude, "axis": 1, "mask_value": 0}
     X = signal_to_time_frequency(X)
     X = mask_along_axis_random(X, params_frequency)
-    datum.X = time_frequency_to_signal(X)
+    datum.X = time_frequency_to_signal(X).numpy()
     return datum
 
 

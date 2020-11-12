@@ -13,7 +13,7 @@ from glob import glob
 import mne
 import pandas as pd
 
-from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset, WindowsConcatDataset
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
@@ -23,7 +23,7 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
     ----------
     path: str
         directory to which .fif and .json files are stored
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets or WindowsConcatDataset
+    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
         to save to files
     overwrite: bool
         whether to overwrite existing files (will delete old fif files in specified directory)
@@ -98,10 +98,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
                                         target_name=target_name))
         else:
             datasets.append(WindowsDataset(signal, description.iloc[i_signal]))
-    if concat_of_raws:
-        return BaseConcatDataset(datasets)
-    else:
-        return WindowsConcatDataset(datasets)
+    return BaseConcatDataset(datasets)
 
 
 def _load_signals_and_description(path, preload, raws, ids_to_load=None):
