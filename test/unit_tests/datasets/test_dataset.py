@@ -12,8 +12,6 @@ from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 
 # TODO: split file up into files with proper matching names
-
-
 @pytest.fixture(scope="module")
 # TODO: add test for transformers and case when subject_info is used
 def set_up():
@@ -29,10 +27,10 @@ def set_up():
                        [400, 0, 4],
                        [500, 0, 3]])
     window_idxs = [(0, 0, 100),
-                   (0, 100, 200),
-                   (1, 0, 100),
-                   (2, 0, 100),
-                   (2, 50, 150)]
+                      (0, 100, 200),
+                      (1, 0, 100),
+                      (2, 0, 100),
+                      (2, 50, 150)]
     i_window_in_trial, i_start_in_trial, i_stop_in_trial = list(
         zip(*window_idxs))
     metadata = pd.DataFrame(
@@ -61,7 +59,7 @@ def concat_ds_targets():
 
 
 def test_get_item(set_up):
-    _, _, mne_epochs, windows_dataset, events, window_idxs = set_up
+    _, _, mne_epochs, windows_dataset, events, window_idxs  = set_up
     for i, epoch in enumerate(mne_epochs.get_data()):
         x, y, inds = windows_dataset[i]
         np.testing.assert_allclose(epoch, x)
@@ -71,7 +69,7 @@ def test_get_item(set_up):
 
 
 def test_len_windows_dataset(set_up):
-    _, _, mne_epochs, windows_dataset, _, _ = set_up
+    _, _, mne_epochs, windows_dataset, _, _  = set_up
     assert len(mne_epochs.events) == len(windows_dataset)
 
 

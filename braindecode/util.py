@@ -324,10 +324,10 @@ def update_estimator_docstring(base_class, docstring):
     idx = base_doc.find('callbacks:')
     idx_end = idx + base_doc[idx:].find('\n\n')
     # remove callback descripiton already included in braindecode docstring
-    filtered_doc = base_doc[:idx] + base_doc[idx_end + 6:]
+    filtered_doc = base_doc[:idx] + base_doc[idx_end+6:]
     splitted = docstring.split('Parameters\n    ----------\n    ')
     out_docstring = splitted[0] + \
-        filtered_doc[filtered_doc.find('Parameters'):filtered_doc.find('Attributes')] + \
-        splitted[1] + \
-        filtered_doc[filtered_doc.find('Attributes'):]
+                    filtered_doc[filtered_doc.find('Parameters'):filtered_doc.find('Attributes')] + \
+                    splitted[1] + \
+                    filtered_doc[filtered_doc.find('Attributes'):]
     return out_docstring

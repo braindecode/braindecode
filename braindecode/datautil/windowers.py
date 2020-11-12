@@ -8,12 +8,13 @@
 #
 # License: BSD (3-clause)
 
-from braindecode.datasets.base import BaseConcatDataset
 import warnings
 
 import numpy as np
 import mne
 import pandas as pd
+
+from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 
 def create_windows_from_events(
@@ -90,7 +91,6 @@ def create_windows_from_events(
     windows_ds: WindowsDataset
         Dataset containing the extracted windows.
     """
-    from ..datasets.base import WindowsDataset
     _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples, window_stride_samples)
@@ -138,7 +138,7 @@ def create_windows_from_events(
                 window_size_samples = stops[0] + trial_stop_offset_samples - (
                     onsets[0] + trial_start_offset_samples)
                 window_stride_samples = window_size_samples
-            this_trial_sizes = stops - (onsets + trial_start_offset_samples)
+            this_trial_sizes = stops - (onsets  + trial_start_offset_samples)
             # Maybe actually this is not necessary?
             # We could also just say we just assume window size=trial size
             # in case not given, without this condition...
@@ -156,7 +156,7 @@ def create_windows_from_events(
             window_stride_samples, drop_last_window)
 
         events = [[start, window_size_samples, description[i_trials[i_start]]]
-                  for i_start, start in enumerate(starts)]
+                   for i_start, start in enumerate(starts)]
         events = np.array(events)
 
         if any(np.diff(events[:, 0]) <= 0):
@@ -236,7 +236,6 @@ def create_fixed_length_windows(
     windows_ds: WindowsDataset
         Dataset containing the extracted windows.
     """
-    from ..datasets.base import WindowsDataset
     _check_windowing_arguments(
         start_offset_samples, stop_offset_samples,
         window_size_samples, window_stride_samples)
@@ -362,8 +361,8 @@ def _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples, window_stride_samples):
     assert isinstance(trial_start_offset_samples, (int, np.integer))
-    assert (isinstance(trial_stop_offset_samples, (int, np.integer)) or
-            (trial_stop_offset_samples is None))
+    assert (isinstance(trial_stop_offset_samples, (int, np.integer))
+        or (trial_stop_offset_samples is None))
     assert isinstance(window_size_samples, (int, np.integer, type(None)))
     assert isinstance(window_stride_samples, (int, np.integer, type(None)))
     assert (window_size_samples is None) == (window_stride_samples is None)

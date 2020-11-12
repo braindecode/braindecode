@@ -3,6 +3,8 @@ import pandas as pd
 import mne
 
 from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datautil.windowers import (
+    _check_windowing_arguments, create_windows_from_events)
 
 
 def create_from_mne_raw(
@@ -44,7 +46,6 @@ def create_from_mne_raw(
         X and y transformed to a dataset format that is compativle with skorch
         and braindecode
     """
-    from ..datautil.windowers import (create_windows_from_events)
     if descriptions is not None:
         if len(descriptions) != len(raws):
             raise ValueError(
@@ -66,7 +67,7 @@ def create_from_mne_raw(
         mapping=mapping,
         drop_bad_windows=drop_bad_windows,
         preload=preload
-    )  # TODO : rajouter transform
+    )
     return windows_datasets
 
 
@@ -89,11 +90,9 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
     Returns
     -------
     windows_datasets: BaseConcatDataset
-        X and y transformed to a dataset format that is compatible with skorch
+        X and y transformed to a dataset format that is compativle with skorch
         and braindecode
     """
-    from ..datautil.windowers import (
-        _check_windowing_arguments)
     _check_windowing_arguments(0, 0, window_size_samples,
                                window_stride_samples)
 
@@ -127,7 +126,7 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
                 baseline=None,
                 tmin=0,
                 tmax=(window_size_samples - 1) / epochs.info["sfreq"],
-                metadata=metadata).load_data()
+                metadata=metadata)
 
             mne_epochs.drop_bad(reject=None, flat=None)
 
