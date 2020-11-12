@@ -1,3 +1,8 @@
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Simon Freyburger <simon.freyburger@yahoo.fr>
+#
+# License: BSD (3-clause)
+
 import os
 from joblib import Memory
 

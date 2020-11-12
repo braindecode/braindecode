@@ -9,11 +9,14 @@ import numpy as np
 class Transform:
 
     def __init__(self, operation, probability=None,
-                 magnitude=0, required_variables={}):
+                 magnitude=None, required_variables={}):
         self.operation = operation
         self.probability = probability
         self.magnitude = magnitude
-        self.transform = partial(operation, magnitude=magnitude)
+        if magnitude:
+            self.transform = partial(operation, magnitude=magnitude)
+        else:
+            self.transfrom = operation
         self.required_variables = required_variables
 
     def __call__(self, datum):

@@ -17,8 +17,7 @@ import numpy as np
 import pandas as pd
 
 from torch.utils.data import Dataset, ConcatDataset
-from braindecode.augmentation.transform_class import Transform
-from braindecode.augmentation.transforms import identity
+from braindecode.augment import Transform
 
 
 class BaseDataset(Dataset):
@@ -171,10 +170,12 @@ class BaseConcatDataset(ConcatDataset):
 
 class AugmentedDataset(Dataset):
 
-    def __init__(self, ds, list_of_transforms=[Transform(identity)]) -> None:
+    def __init__(self, ds,
+                 list_of_transforms=[
+                     Transform(lambda datum:datum)]) -> None:
         self.list_of_transforms = list_of_transforms
         self.ds = ds
-        self.required_variables = self.initialize_required_variables()
+        self.required_variables = self.__initialize_required_variables()
 
     def __len__(self):
         return(len(self.ds) * len(self.list_of_transforms))
@@ -198,7 +199,7 @@ class AugmentedDataset(Dataset):
 
         return X, y, crops_ind
 
-    def initialize_required_variables(self):
+    def __initialize_required_variables(self):
         for transform in self.list_of_transforms:
             for key in transform.required_variables.keys():
                 self.required_variables[key] = \

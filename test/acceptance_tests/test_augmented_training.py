@@ -2,7 +2,7 @@
 #
 # License: BSD-3
 
-from braindecode.augmentation.transforms.masking_along_axis import \
+from braindecode.augment import \
     mask_along_frequency, mask_along_time
 import torch
 from skorch.callbacks import LRScheduler
@@ -10,8 +10,7 @@ from braindecode import EEGClassifier
 from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerChambon2018
 from braindecode.datasets.sleep_physionet import get_dummy_sample
-from braindecode.augmentation.transform_class import Transform
-from braindecode.augmentation.transforms.identity import identity
+from braindecode.augment import Transform
 from braindecode.datasets.base import AugmentedDataset
 import numpy as np
 
@@ -69,9 +68,9 @@ def test_dummy_augmented_training():
     )  # torch.in torch.out
 
     subpolicies_list = [
-        Transform(identity),
-        Transform(mask_along_frequency),
-        Transform(mask_along_time)]
+        Transform(lambda datum:datum),
+        Transform(mask_along_frequency, magnitude=0.2),
+        Transform(mask_along_time, magnitude=0.2)]
 
     train_sample = AugmentedDataset(train_sample, subpolicies_list)
     y_train = np.array([data[1] for data in iter(train_sample)])

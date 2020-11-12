@@ -4,10 +4,9 @@
 
 import numpy as np
 import torch
-from braindecode.augmentation.transform_class import Transform
-from braindecode.augmentation.transforms.masking_along_axis \
+from braindecode.augment import Transform
+from braindecode.augment.transforms.masking_along_axis \
     import mask_along_axis_random
-from braindecode.augmentation.transforms import identity
 from braindecode.datasets.sleep_physionet import get_dummy_sample
 from braindecode.util import set_random_seeds
 
@@ -80,7 +79,7 @@ def test_mask_along_axis():
 def test_transform_class():
     np.random.seed(0)
     state = np.random.get_state()
-    t = Transform(identity)
+    t = Transform(lambda datum: datum)
     datum = {}
     datum = t(datum)
     state2 = np.random.get_state()
