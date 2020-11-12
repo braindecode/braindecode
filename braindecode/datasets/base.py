@@ -10,38 +10,14 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
-from torch.utils.data.dataset import Subset
 import warnings
 
 import numpy as np
 import pandas as pd
-import bisect
-import torch
+
 from torch.utils.data import Dataset, ConcatDataset
-from ..augmentation.transform_class import Transform
-from ..augmentation.transforms.identity import identity
-
-
-class Datum:
-    """The Datum class is mainly used to provide contextual informations to
-    transforms, when they are applied on a data unitary chunk. For example,
-    the "delay_signal" function needs to know the index of the data to find
-    the data right before and do the shift. Similarly, the "merge_signal"
-    function needs to know the data index, to do the merge with another
-    signal with similar index.
-    """
-
-    def __init__(self, X, y, label_index_dict, train_sample) -> None:
-        """Initialize one instance
-        Args:
-            X (Tensor): Tensor containing the signal
-            y (Union[Int,float]): Contains the label/value that should be
-                predicted
-        """
-        self.X = X
-        self.y = y
-        self.train_sample = train_sample
-        self.label_index_dict = label_index_dict
+from braindecode.augmentation.transform_class import Transform
+from braindecode.augmentation.transforms import identity
 
 
 class BaseDataset(Dataset):
@@ -62,6 +38,7 @@ class BaseDataset(Dataset):
     def __init__(self, raw, description=None, target_name=None):
         self.raw = raw
         self.description = _create_description(description)
+
         # save target name for load/save later
         self.target_name = target_name
         if target_name is None:
@@ -101,54 +78,24 @@ class WindowsDataset(BaseDataset):
         holds additional info about the windows
     """
 
-    def __init__(self, windows, description=None,
-                 subpolicies_list=tuple([Transform(identity)])):
+    def __init__(self, windows, description=None):
         self.windows = windows
         self.description = _create_description(description)
         self.y = np.array(self.windows.metadata.loc[:, 'target'])
-        self.crop_inds = np.array(
-            self.windows.metadata.loc[:, ['i_window_in_trial',
-                                          'i_start_in_trial',
-                                          'i_stop_in_trial']])
-        self.subpolicies_list = subpolicies_list
-        self.label_index_dict = None
-        self.train_sample = None
+        self.crop_inds = np.array(self.windows.metadata.loc[:,
+                                                            ['i_window_in_trial', 'i_start_in_trial',
+                                                             'i_stop_in_trial']])
 
     def __getitem__(self, index):
-
-        X_index = index // len(self.subpolicies_list)
-        tf_index = index % len(self.subpolicies_list)
-        X = torch.from_numpy(
-            self.windows.get_data(
-                item=X_index)[0].astype('float32'))
-        y = self.y[X_index]
-        datum = Datum(X, y, self.label_index_dict, self.train_sample)
-        transform = self.subpolicies_list[tf_index]
-        datum = transform(datum)
-        crop_inds = list(self.crop_inds[X_index])
-        return datum.X, y, crop_inds
-
-    def __len__(self):
-        return len(self.windows.events) * len(self.subpolicies_list)
-
-    def get_unaugmented_data(self, index):
-        """Returns raw data, without applying any transforms
-
-        Args:
-            index (int): index of the requested data
-
-        Returns:
-            X (Tensor): data
-            y (Union[int, float]): label
-            crops_ind (List[int]): timestamps (first and last)
-
-        """
-        X = torch.from_numpy(
-            self.windows.get_data(
-                item=index)[0].astype('float32'))
+        X = self.windows.get_data(item=index)[0].astype('float32')
         y = self.y[index]
+        # necessary to cast as list to get list of
+        # three tensors from batch, otherwise get single 2d-tensor...
         crop_inds = list(self.crop_inds[index])
         return X, y, crop_inds
+
+    def __len__(self):
+        return len(self.windows.events)
 
 
 class BaseConcatDataset(ConcatDataset):
@@ -159,8 +106,7 @@ class BaseConcatDataset(ConcatDataset):
     Parameters
     ----------
     list_of_ds: list
-        list of BaseDataset, BaseConcatDataset or
-        WindowsDataset/TransformDataset
+        list of BaseDataset, BaseConcatDataset or WindowsDataset
     """
 
     def __init__(self, list_of_ds):
@@ -221,94 +167,38 @@ class BaseConcatDataset(ConcatDataset):
             for split_name, ds_inds in split_ids.items()}
 
 
-class WindowsConcatDataset(BaseConcatDataset):
-    """A variation of the base class that includes transforms
-    Parameters
-    ----------
-    list_of_ds: list
-        list of TransformDataset
-    """
+class AugmentedDataset(Dataset):
 
-    def __init__(self, list_of_ds):
-        # if we get a list of BaseConcatDataset, get all the individual datasets
-        def check_equal(iterator):
-            return len(set(iterator)) <= 1
-        super().__init__(list_of_ds)
-        assert check_equal([ds.subpolicies_list for ds in list_of_ds])
-        self.subpolicies_list = list_of_ds[0].subpolicies_list
-        self.label_index_dict = self.init_label_index_dict()
-        for i in range(len(self.datasets)):
-            self.datasets[i].label_index_dict = self.label_index_dict
-            self.datasets[i].train_sample = self
+    def __init__(self, ds, list_of_transforms=Transform[(identity)]) -> None:
+        self.list_of_transforms = len(list_of_transforms)
+        self.ds = ds
+        self.required_variables = self.initialize_required_variables()
 
-    def update_augmentation_policy(self, newlist):
-        for i in range(len(self.datasets)):
-            self.datasets[i].subpolicies_list = newlist
-        self.cumulative_sizes = self.cumsum(self.datasets)
-        self.subpolicies_list = newlist
-        # TODO : variables constantes en MAJUSCULES
+    def __len__(self):
+        return(len(self.ds) * len(self.list_of_transforms))
 
-    def get_unaugmented_data(self, idx):
-        unaug_len = len(self) // len(self.subpolicies_list)
-        if idx < 0:
-            if -idx > unaug_len:
-                raise ValueError(
-                    "absolute value of index should not exceed dataset length")
-            idx = unaug_len + idx
-        unaug_cumulative_size = [i // len(self.subpolicies_list)
-                                 for i in self.cumulative_sizes]
-        dataset_idx = bisect.bisect_right(unaug_cumulative_size, idx)
-        if dataset_idx == 0:
-            sample_idx = idx
-        else:
-            sample_idx = idx - unaug_cumulative_size[dataset_idx - 1]
-        return self.datasets[dataset_idx].get_unaugmented_data(sample_idx)
+    def __getitem__(self, index):
+        tf_index = index % len(self.list_of_transforms)
+        img_index = index // len(self.list_of_transforms)
+        x, y, crops_ind = (self.ds[img_index])
 
-    def init_label_index_dict(self):
-        """Create a dictionnary, with as key the labels available in the
-        multi-classification process, and as value for a given label
-        all indexes of data that corresponds to its label.
-        """
-        subset_unaug_indices = list(
-            range(len(self) // len(self.subpolicies_list)))
-        subset_unaug_labels = [self.get_unaugmented_data(indice)[1]
-                               for indice in subset_unaug_indices]
-        list_labels = list(set(subset_unaug_labels))
-        self.label_index_dict = {}
-        for label in list_labels:
-            self.label_index_dict[label] = []
-        for i in range(len(subset_unaug_indices)):
-            self.label_index_dict[subset_unaug_labels[i]].append(
-                subset_unaug_indices[i])
+        class Datum:
+            def __init__(self, x, y, crops_ind, ds, required_variables):
+                self.x = x
+                self.y = y
+                self.crops_ind = crops_ind
+                self.ds = ds
+                self.required_variables = required_variables
 
+        transf_datum = self.list_of_transforms[tf_index](
+            Datum(x, y, crops_ind, self.ds, self.required_variables))
+        x, y, crops_ind = transf_datum.X, transf_datum.y
+        transf_datum.crop_inds
 
-class AugmentedSubset(Subset):
-    """
-    A specific attention should be paid to how Subsets are augmented, since the
-    canonic Subset class will broke when used in the data augmentation context.
-    """
+        return()
 
-    def __init__(self, unaugmented_dataset, indices, transform_list) -> None:
-        self.dataset = unaugmented_dataset.update_augmentation_policy(
-            transform_list)
-        self.indices = self.compute_augmented_indices(indices, transform_list)
-        self.label_index_dict = self.init_label_index_dict()
-
-    def init_label_index_dict(self):
-        for key in self.dataset.label_index_dict.keys():
-            indices_in_aug_dataset = list(
-                set(self.indices) &
-                set(self.dataset.label_index_dict[key]))
-            indices_in_subset = [self.indices.index(indice)
-                                 for indice in indices_in_aug_dataset]
-            self.label_index_dict[key] = indices_in_subset
-
-    def get_unaugmented_data(self, idx):
-        return self.dataset.get_unaugmented_data(self.indices[idx])
-
-    @staticmethod
-    def compute_augmented_indices(indices, transform_list):
-        aug_indices = np.array([np.arange(i * len(transform_list),
-                                          (i + 1) * len(transform_list))
-                                for i in indices]).flatten()
-        return aug_indices
+    def initialize_required_variables(self):
+        for transform in self.list_of_transforms:
+            for key in transform.required_variables.keys():
+                self.required_variables[key] = transform.required_variables[key](
+                    self.ds)
