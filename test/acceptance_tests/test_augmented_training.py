@@ -1,80 +1,180 @@
 # Authors: Simon Freyburger
+#          Maciej Sliwowski
+#          Robin Tibor Schirrmeister
 #
 # License: BSD-3
 
-from braindecode.augment import \
-    mask_along_frequency, mask_along_time
-import torch
-from skorch.callbacks import LRScheduler
-from braindecode import EEGClassifier
-from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018
-from braindecode.datasets.sleep_physionet import get_dummy_sample
-from braindecode.augment import Transform
-from braindecode.datasets.base import AugmentedDataset
+import mne
 import numpy as np
+import torch
+from mne.io import concatenate_raws
+from skorch.helper import predefined_split
+from torch import optim
+
+from braindecode import EEGClassifier
+from braindecode.datautil.xy import create_from_X_y
+from braindecode.training.losses import CroppedLoss
+from braindecode.models import ShallowFBCSPNet
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.util import set_random_seeds
+from braindecode.augment import \
+    mask_along_frequency, mask_along_time, Transform
+from braindecode.datasets.base import AugmentedDataset
 
 
-def test_dummy_augmented_training():
-    train_sample, _, _ = get_dummy_sample()
-    model_args = {"n_classes": len(set(
-        [train_sample[i][1] for i in range(len(train_sample))])),
-        "n_chans": int(train_sample[0][0].shape[0]),
-        "input_window_samples": int(train_sample[0][0].shape[1]),
-        "model_type": "SleepStager",
-        "batch_size": 256,
-        "seed": None,
-        "sfreq": 100,
-        "lr": 0.002,
-        "weight_decay": 0,
-        "n_epochs": 50,
-        "n_cross_val": 3,
-        "criterion": torch.nn.CrossEntropyLoss,
-        "device": "cuda:2",
-    }
-    cuda = torch.cuda.is_available()
-    device = model_args["device"] if cuda else 'cpu'
-    if cuda:
-        torch.backends.cudnn.benchmark = True
-    set_random_seeds(0, cuda=cuda)
-    nn_architecture = SleepStagerChambon2018(
-        n_channels=model_args["n_chans"],
-        sfreq=model_args["sfreq"],
-        n_classes=model_args["n_classes"] + 1,
-        input_size_s=model_args["input_window_samples"] /
-        model_args["sfreq"],
+def test_cropped_decoding():
+    # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
+    subject_id = 1
+    event_codes = [5, 6, 9, 10, 13, 14]
+
+    # This will download the files if you don't have them yet,
+    # and then return the paths to the files.
+    physionet_paths = mne.datasets.eegbci.load_data(
+        subject_id, event_codes, update_path=False
     )
 
+    # Load each of the files
+    parts = [
+        mne.io.read_raw_edf(
+            path, preload=True, stim_channel="auto", verbose="WARNING"
+        )
+        for path in physionet_paths
+    ]
+
+    # Concatenate them
+    raw = concatenate_raws(parts)
+
+    # Find the events in this dataset
+    events, _ = mne.events_from_annotations(raw)
+    # Use only EEG channels
+    eeg_channel_inds = mne.pick_types(
+        raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
+    )
+
+    # Extract trials, only using EEG channels
+    epoched = mne.Epochs(
+        raw,
+        events,
+        dict(hands=2, feet=3),
+        tmin=1,
+        tmax=4.1,
+        proj=False,
+        picks=eeg_channel_inds,
+        baseline=None,
+        preload=True,
+    )
+    # Convert data from volt to millivolt
+    # Pytorch expects float32 for input and int64 for labels.
+    X = (epoched.get_data() * 1e6).astype(np.float32)
+    y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
+
+    # Set if you want to use GPU
+    # You can also use torch.cuda.is_available() to determine if cuda is
+    # available on your machine.
+    cuda = False
+    set_random_seeds(seed=20170629, cuda=cuda)
+
+    # This will determine how many crops are processed in parallel
+    input_window_samples = 450
+    n_classes = 2
+    in_chans = X.shape[1]
+    # final_conv_length determines the size of the receptive field of the
+    # ConvNet
+    model = ShallowFBCSPNet(
+        in_chans=in_chans,
+        n_classes=n_classes,
+        input_window_samples=input_window_samples,
+        final_conv_length=12,
+    )
+    to_dense_prediction_model(model)
+
     if cuda:
-        nn_architecture.cuda()
+        model.cuda()
+
+    # Perform forward pass to determine how many outputs per input
+    n_preds_per_input = get_output_shape(
+        model, in_chans, input_window_samples)[2]
+
+    train_set = create_from_X_y(X[:60], y[:60],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+    valid_set = create_from_X_y(X[60:], y[60:],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+    train_split = predefined_split(valid_set)
 
     clf = EEGClassifier(
-        nn_architecture,
-        criterion=model_args["criterion"],
-        optimizer=torch.optim.AdamW,
-        optimizer__lr=model_args["lr"],
-        optimizer__weight_decay=model_args["weight_decay"],
-        batch_size=model_args["batch_size"],
-        train_split=None,
-        callbacks=[
-            "accuracy",
-            ("lr_scheduler",
-             LRScheduler('CosineAnnealingLR',
-                         T_max=model_args["n_epochs"] - 1))
-        ],
-        device=device,
-        iterator_train__num_workers=20,
-        iterator_train__pin_memory=True
-    )  # torch.in torch.out
+        model,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=torch.nn.functional.nll_loss,
+        optimizer=optim.Adam,
+        train_split=train_split,
+        batch_size=32,
+        callbacks=['accuracy'],
+    )
 
     subpolicies_list = [
         Transform(lambda datum:datum),
         Transform(mask_along_frequency, magnitude=0.2),
         Transform(mask_along_time, magnitude=0.2)]
 
-    train_sample = AugmentedDataset(train_sample, subpolicies_list)
-    y_train = np.array([data[1] for data in iter(train_sample)])
+    train_set = AugmentedDataset(train_set, subpolicies_list)
+    clf.fit(train_set, y=None, epochs=4)
 
-    clf.fit(train_sample, y=y_train, epochs=model_args["n_epochs"])
-
-    return clf
+    # np.testing.assert_allclose(
+    #     clf.history[:, 'train_loss'],
+    #     np.array(
+    #         [
+    #             1.455306,
+    #             1.784507,
+    #             1.421611,
+    #             1.057717
+    #         ]
+    #     ),
+    #     rtol=1e-3,
+    #     atol=1e-4,
+    # )
+    # np.testing.assert_allclose(
+    #     clf.history[:, 'valid_loss'],
+    #     np.array(
+    #         [
+    #             2.547288,
+    #             3.051576,
+    #             0.711256,
+    #             0.839392
+    #         ]
+    #     ),
+    #     rtol=1e-3,
+    #     atol=1e-3,
+    # )
+    # np.testing.assert_allclose(
+    #     clf.history[:, 'train_accuracy'],
+    #     np.array(
+    #         [
+    #             0.5,
+    #             0.5,
+    #             0.6,
+    #             0.516667
+    #         ]
+    #     ),
+    #     rtol=1e-3,
+    #     atol=1e-4,
+    # )
+    # np.testing.assert_allclose(
+    #     clf.history[:, 'valid_accuracy'],
+    #     np.array(
+    #         [
+    #             0.533333,
+    #             0.466667,
+    #             0.466667,
+    #             0.5
+    #         ]
+    #     ),
+    #     rtol=1e-3,
+    #     atol=1e-4,
+    # )
