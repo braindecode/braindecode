@@ -1,3 +1,8 @@
+# Authors: Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
+
 import os
 import random
 
