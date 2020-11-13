@@ -1,4 +1,4 @@
-g# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -40,6 +40,7 @@ class SleepStagerChambon2018(nn.Module):
            IEEE Transactions on Neural Systems and Rehabilitation Engineering,
            26(4), 758-769.
     """
+
     def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, n_classes=5, input_size_s=30,
                  dropout=0.25):

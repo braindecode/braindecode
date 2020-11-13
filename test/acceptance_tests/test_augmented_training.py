@@ -4,10 +4,7 @@
 #
 # License: BSD-3
 
-import mne
-import numpy as np
 import torch
-from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch import optim
 
