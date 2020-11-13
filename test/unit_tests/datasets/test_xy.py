@@ -1,6 +1,4 @@
-# Authors: Lukas Gemein
-#          Robin Tibor Schirrmeister
-#          Alexandre Gramfort
+# Authors: Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
 
