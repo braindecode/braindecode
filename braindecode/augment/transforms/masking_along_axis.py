@@ -3,7 +3,6 @@
 # License: BSD-3
 
 import torch
-
 FFT_ARGS = {"n_fft": 512, "hop_length": 256,
             "win_length": 512}
 DATA_SIZE = 3000
@@ -66,7 +65,8 @@ def mask_along_axis_random(X, params):
     return X
 
 
-def mask_along_time(datum, magnitude):
+def mask_along_time(datum, params, fft_args=FFT_ARGS, data_size=DATA_SIZE):
+    # TODO: update docstring
     """Given a magnitude and data, will mask a random band of data along the
        time axis
 
@@ -80,14 +80,17 @@ def mask_along_time(datum, magnitude):
         Datum: A wrapper containing the transformed data.
     """
     X = torch.from_numpy(datum.X)
-    params_time = {"magnitude": magnitude, "axis": 2, "mask_value": 0}
-    X = signal_to_time_frequency(X)
+    params_time = {"magnitude": params["magnitude"], "axis": 2, "mask_value": 0}
+    X = signal_to_time_frequency(X, fft_args=fft_args)
     X = mask_along_axis_random(X, params_time)
-    datum.X = time_frequency_to_signal(X).numpy()
+    datum.X = time_frequency_to_signal(
+        X, fft_args=fft_args, data_size=data_size).numpy()
     return datum
 
 
-def mask_along_frequency(datum, magnitude):
+def mask_along_frequency(
+        datum, params, fft_args=FFT_ARGS, data_size=DATA_SIZE):
+    # TODO: pareil
     """Given a magnitude and data, will mask a random band of data along the
     frequency axis
 
@@ -101,14 +104,18 @@ def mask_along_frequency(datum, magnitude):
         Datum: A wrapper containing the transformed data.
     """
     X = torch.from_numpy(datum.X)
-    params_frequency = {"magnitude": magnitude, "axis": 1, "mask_value": 0}
-    X = signal_to_time_frequency(X)
+    params_frequency = {
+        "magnitude": params["magnitude"],
+        "axis": 1,
+        "mask_value": 0}
+    X = signal_to_time_frequency(X, fft_args=fft_args)
     X = mask_along_axis_random(X, params_frequency)
-    datum.X = time_frequency_to_signal(X).numpy()
+    datum.X = time_frequency_to_signal(
+        X, fft_args=fft_args, data_size=data_size).numpy()
     return datum
 
 
-def signal_to_time_frequency(X):
+def signal_to_time_frequency(X, fft_args=FFT_ARGS):
     """Transforms a temporal signal into its time-frequency representation
 
     Args:
@@ -117,15 +124,14 @@ def signal_to_time_frequency(X):
     Returns:
         Tensor: Real spectrogram (channel, freq, time)
     """
-    global FFT_ARGS
-    X = torch.stft(X, n_fft=FFT_ARGS["n_fft"],
-                   hop_length=FFT_ARGS["hop_length"],
-                   win_length=FFT_ARGS["win_length"],
-                   window=torch.hann_window(FFT_ARGS["n_fft"]))
+    X = torch.stft(X, n_fft=fft_args["n_fft"],
+                   hop_length=fft_args["hop_length"],
+                   win_length=fft_args["win_length"],
+                   window=torch.hann_window(fft_args["n_fft"]))
     return X
 
 
-def time_frequency_to_signal(X):
+def time_frequency_to_signal(X, fft_args=FFT_ARGS, data_size=DATA_SIZE):
     """Transforms a time-frequency representation back into a signal
     Args:
         X (Tensor): Real spectrogram (channel, freq, time)
@@ -133,10 +139,9 @@ def time_frequency_to_signal(X):
     Returns:
         Tensor: Temporal signal (channel, time)
     """
-    global FFT_ARGS, DATA_SIZE
-    X = torch.istft(X, n_fft=FFT_ARGS["n_fft"],
-                    hop_length=FFT_ARGS["hop_length"],
-                    win_length=FFT_ARGS["win_length"],
-                    window=torch.hann_window(FFT_ARGS["n_fft"]),
-                    length=DATA_SIZE)
+    X = torch.istft(X, n_fft=fft_args["n_fft"],
+                    hop_length=fft_args["hop_length"],
+                    win_length=fft_args["win_length"],
+                    window=torch.hann_window(fft_args["n_fft"]),
+                    length=data_size)
     return X

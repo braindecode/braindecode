@@ -209,6 +209,7 @@ class AugmentedDataset(Dataset):
 
         # Get the unaugmented data
         X, y, crops_ind = (self.ds[img_index])
+        y = {y: 1}
 
         class Datum:
             def __init__(self, X, y, crops_ind, ds, required_variables):
@@ -230,4 +231,5 @@ class AugmentedDataset(Dataset):
         for transform in self.list_of_transforms:
             for key in transform.required_variables.keys():
                 self.required_variables[key] = \
-                    transform.required_variables[key](self.ds)
+                    transform.required_variables[key](
+                        self.ds, self.list_of_transforms)

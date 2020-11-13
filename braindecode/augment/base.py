@@ -36,13 +36,12 @@ class Transform:
 
     def __init__(self, operation, probability=None,
                  magnitude=None, required_variables={}):
-        self.operation = operation
         self.probability = probability
         self.magnitude = magnitude
         if magnitude:
-            self.transform = partial(operation, magnitude=magnitude)
+            self.operation = partial(operation, magnitude=magnitude)
         else:
-            self.transfrom = operation
+            self.operation = operation
         self.required_variables = required_variables
 
     def __call__(self, datum):
@@ -64,4 +63,4 @@ class Transform:
             rand_num = np.random.random()
             if rand_num >= self.probability:
                 return datum
-        return self.transform(datum)
+        return self.operation(datum)

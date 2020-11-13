@@ -7,7 +7,6 @@ import torch
 from braindecode.augment import Transform
 from braindecode.augment.transforms.masking_along_axis \
     import mask_along_axis_random
-from ...get_dummy_sample import get_dummy_train_valid_and_model
 from braindecode.util import set_random_seeds
 
 FFT_ARGS = {"n_fft": 512, "hop_length": 256,
@@ -16,7 +15,7 @@ DATA_SIZE = 3000
 
 
 def test_mask_along_axis():
-    train_sample, _, _ = get_dummy_train_valid_and_model()
+    train_sample, _, _ = 0, 0, 0
     set_random_seeds(0, cuda=True)
     X = torch.from_numpy(train_sample[0][0])
     spec = torch.stft(X, n_fft=FFT_ARGS["n_fft"],

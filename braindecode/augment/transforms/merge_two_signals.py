@@ -20,7 +20,7 @@ def merge_two_signals(datum, magnitude):
     return datum
 
 
-def init_label_index_dict(dataset):
+def init_label_index_dict(dataset, transform_list):
     """Create a dictionnary, with as key the labels available in the
         multi-classification process, and as value for a given label
         all indexes of data that corresponds to its label.
@@ -35,7 +35,7 @@ def init_label_index_dict(dataset):
     for i in range(len(subset_unaug_indices)):
         label_index_dict[subset_unaug_labels[i]].append(
             subset_unaug_indices[i])
-    return(label_index_dict)
+    return label_index_dict
 
 
 MERGE_TWO_SIGNALS_REQUIRED_VARIABLES = {
