@@ -169,10 +169,32 @@ class BaseConcatDataset(ConcatDataset):
 
 
 class AugmentedDataset(Dataset):
+    """An overlay (not a subclass though) to apply on a basic WindowsDataset
+    or BaseConcatDataset or a Subset of one of these two classes. Follows the
+    canonical way to augment data of Pytorch (see [this article]
+    (https://pytorch.org/tutorials/beginner/data_loading_tutorial.html) for
+    more informations.) Main point is, if you pass a list of `n` transforms and
+    a dataset of size `s`, you will obtain a dataset of size `n x s`. Note that
+    transforms are reapplied every time the `__getitem__` function is called,
+    so if you have some randomness in it, you will obtain different transformed
+    data at every epoch. Note that you can compose transforms using the Compose
+    class of torchvision.
+
+    Parameters
+    ----------
+    ds : WindowsDataset or BaseConcatDataset or a Subset of one of those.
+        The unaugmented dataset
+    list_of_transforms :
+        list(Transform or torchvision.transforms.Compose(Transform)),
+        optional. A list of transforms that will be applied to data, by
+        default identity (default=[Transform(lambda datum:datum)]).
+    """
 
     def __init__(self, ds,
                  list_of_transforms=[
                      Transform(lambda datum:datum)]) -> None:
+        # Initialize the augmented dataset, and computes required
+        # variables for applying transforms
         self.list_of_transforms = list_of_transforms
         self.ds = ds
         self.required_variables = self.__initialize_required_variables()
@@ -181,8 +203,11 @@ class AugmentedDataset(Dataset):
         return(len(self.ds) * len(self.list_of_transforms))
 
     def __getitem__(self, index):
+        # First get the indexes of the transform and of the unaugmented data
         tf_index = index % len(self.list_of_transforms)
         img_index = index // len(self.list_of_transforms)
+
+        # Get the unaugmented data
         X, y, crops_ind = (self.ds[img_index])
 
         class Datum:
@@ -192,9 +217,11 @@ class AugmentedDataset(Dataset):
                 self.crops_ind = crops_ind
                 self.ds = ds
                 self.required_variables = required_variables
-
+        # Initialize Datum object with metadata required to compute transforms,
+        # then compute the transform.
         transf_datum = self.list_of_transforms[tf_index](
             Datum(X, y, crops_ind, self.ds, self.required_variables))
+        # Returns augmented data.
         X, y, crops_ind = transf_datum.X, transf_datum.y, transf_datum.crops_ind
 
         return X, y, crops_ind
