@@ -35,11 +35,11 @@ class Transform:
     """
 
     def __init__(self, operation, probability=None,
-                 magnitude=None, required_variables={}):
+                 params={}, required_variables={}):
         self.probability = probability
-        self.magnitude = magnitude
-        if magnitude:
-            self.operation = partial(operation, magnitude=magnitude)
+        self.params = params
+        if params:
+            self.operation = partial(operation, params=params)
         else:
             self.operation = operation
         self.required_variables = required_variables

@@ -197,7 +197,8 @@ class AugmentedDataset(Dataset):
         # variables for applying transforms
         self.list_of_transforms = list_of_transforms
         self.ds = ds
-        self.required_variables = self.__initialize_required_variables()
+        self.required_variables = {}
+        self.__initialize_required_variables()
 
     def __len__(self):
         return(len(self.ds) * len(self.list_of_transforms))
@@ -228,6 +229,7 @@ class AugmentedDataset(Dataset):
         return X, y, crops_ind
 
     def __initialize_required_variables(self):
+
         for transform in self.list_of_transforms:
             for key in transform.required_variables.keys():
                 self.required_variables[key] = \

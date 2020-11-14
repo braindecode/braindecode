@@ -5,17 +5,20 @@
 import numpy as np
 
 
-def merge_two_signals(datum, magnitude):
+def merge_two_signals(datum, params):
 
     signal = datum.X
     y = datum.y
-    train_sample = datum.train_sample
-    label_index_dict = datum.label_index_dict
-    other_signal_index = np.random.choice(label_index_dict[y])
-    other_signal = train_sample.get_unaugmented_data(other_signal_index)[0]
-    final_signal = (1 - magnitude) * \
-        signal + magnitude * other_signal
-    datum.X = final_signal
+    train_sample = datum.ds
+    label_index_dict = datum.required_variables["label_index_dict"]
+    other_signal = np.zeros(datum.X.shape)
+    for label in y.keys():
+        # y[label] is the proportion of the label in y
+        other_signal_index = np.random.choice(label_index_dict[label])
+        other_signal += y[label] * train_sample[other_signal_index][0]
+
+    datum.X = (1 - params["magnitude"]) * \
+        signal + params["magnitude"] * other_signal
 
     return datum
 

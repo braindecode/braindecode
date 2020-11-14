@@ -10,12 +10,13 @@ from torch import optim
 import torch
 from functools import partial
 import mne
+from torch.nn.modules.loss import CrossEntropyLoss
 from braindecode import EEGClassifier
-from torch.nn import NLLLoss
 from braindecode.augment import \
     mask_along_frequency, mask_along_time, Transform, \
     merge_two_signals, MERGE_TWO_SIGNALS_REQUIRED_VARIABLES, \
-    mixup_beta, MIXUP_BETA_REQUIRED_VARIABLES
+    mixup_beta, MIXUP_BETA_REQUIRED_VARIABLES, \
+    general_mixup_criterion
 from braindecode.datasets.base import AugmentedDataset
 import numpy as np
 from mne.io import concatenate_raws
@@ -111,13 +112,14 @@ def test_augmented_decoding():
 
     lr = 0.0625 * 0.01
     weight_decay = 0
-
     clf = EEGClassifier(
         model,
-        criterion=NLLLoss,
+        criterion=general_mixup_criterion,
+        criterion__loss=CrossEntropyLoss,
+        iterator_train__collate_fn=lambda x: x,
         optimizer=optim.Adam,
         train_split=train_split,
-        batch_size=32,
+        batch_size=None,
         optimizer__lr=lr,
         optimizer__weight_decay=weight_decay,
         callbacks=['accuracy'],
@@ -142,12 +144,12 @@ def test_augmented_decoding():
                   params={"magnitude": 0.2},
                   required_variables=MERGE_TWO_SIGNALS_REQUIRED_VARIABLES),
         Transform(mixup_beta,
-                  params={"alpha"},
+                  params={"alpha": 0.3,
+                          "beta_per_sample": False},
                   required_variables=MIXUP_BETA_REQUIRED_VARIABLES)]
 
     sub_train_set = torch.utils.data.Subset(train_set, indices=[1, 67])
     aug_train_set = AugmentedDataset(sub_train_set, subpolicies_list)
-    print("lol")
     clf.fit(aug_train_set, y=None, epochs=4)
     print("train_loss : ", clf.history[:, 'train_loss'])
     print("valid_loss : ", clf.history[:, 'valid_loss'])
