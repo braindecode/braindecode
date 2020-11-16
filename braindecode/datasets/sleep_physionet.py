@@ -23,13 +23,14 @@ class SleepPhysionet(BaseConcatDataset):
 
     Parameters
     ----------
-    subject_ids: list(int) | int
-        (list of) int of subject(s) to be loaded.
-    recording_ids: list(int)
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be loaded. If None, load all available
+        subjects.
+    recording_ids: list(int) | None
         Recordings to load per subject (each subject except 13 has two
-        recordings). Can be [1], [2] or [1, 2].
+        recordings). Can be [1], [2] or [1, 2] (same as None).
     preload: bool
-        if True, preload the data of the Raw objects.
+        If True, preload the data of the Raw objects.
     load_eeg_only: bool
         If True, only load the EEG channels and discard the others (EOG, EMG,
         temperature, respiration) to avoid resampling the other signals.
@@ -45,7 +46,8 @@ class SleepPhysionet(BaseConcatDataset):
         if recording_ids is None:
             recording_ids = [1, 2]
 
-        paths = fetch_data(subject_ids, recording=recording_ids)
+        paths = fetch_data(
+            subject_ids, recording=recording_ids, on_missing='warn')
 
         all_base_ds = list()
         for p in paths:
