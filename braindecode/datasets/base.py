@@ -165,21 +165,3 @@ class BaseConcatDataset(ConcatDataset):
         return {str(split_name): BaseConcatDataset(
             [self.datasets[ds_ind] for ds_ind in ds_inds])
             for split_name, ds_inds in split_ids.items()}
-
-
-class Compose:
-    """Composes several transforms together.
-
-        Parameters
-        ----------
-        transforms: list(Transform)
-            list of transforms to compose.
-    """
-
-    def __init__(self, transforms):
-        self.transforms = transforms
-
-    def __call__(self, datum):
-        for t in self.transforms:
-            datum = t(datum)
-        return datum

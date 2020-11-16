@@ -6,8 +6,9 @@ import torch
 from functools import partial
 import numpy as np
 from torch.utils.data.dataset import Dataset
-
-
+# Docstring, commentaires, flake8, authoring, extra indent
+# required_variables, et le datum, args, kwargs
+# TODO : pour les classes, one liner puis description plus complexe.
 class Transform:
     """This is a framework that unifies transforms, so that they follow the
     structure used by most of the papers studying automatic data augmentation:
@@ -119,7 +120,7 @@ class AugmentedDataset(Dataset):
         class Datum:
             def __init__(self, X, y, crops_ind, ds,
                          required_variables, list_of_labels):
-                self.X = X
+                self.X = X 
                 self.y = y
                 self.crops_ind = crops_ind
                 self.ds = ds

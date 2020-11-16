@@ -11,7 +11,7 @@ DATA_SIZE = 3000
 def mask_along_axis(X, params):
     r"""
     Apply a mask along ``axis``. Mask will be applied from indices
-    ``[v_start, v_end)``, .
+    ``[v_start, v_end)``.
     All examples will have the same mask interval.
 
     Args:
