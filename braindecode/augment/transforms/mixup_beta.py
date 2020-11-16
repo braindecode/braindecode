@@ -1,5 +1,4 @@
 import numpy as np
-from torch.utils import data
 
 
 def mixup_beta(datum, params):

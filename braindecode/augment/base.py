@@ -218,3 +218,21 @@ class general_mixup_criterion:
             return ret.mean()
         else:
             return(self.loss(preds, target, reduction='mean'))
+
+
+class Compose:
+    """Composes several transforms together.
+
+        Parameters
+        ----------
+        transforms: list(Transform)
+            list of transforms to compose.
+    """
+
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, datum):
+        for t in self.transforms:
+            datum = t(datum)
+        return datum
