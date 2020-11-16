@@ -16,8 +16,7 @@ from braindecode.augment import \
     mask_along_frequency, mask_along_time, Transform, \
     merge_two_signals, MERGE_TWO_SIGNALS_REQUIRED_VARIABLES, \
     mixup_beta, MIXUP_BETA_REQUIRED_VARIABLES, \
-    general_mixup_criterion
-from braindecode.datasets.base import AugmentedDataset
+    general_mixup_criterion, AugmentedDataset, mixup_iterator
 import numpy as np
 from mne.io import concatenate_raws
 from braindecode.datautil.xy import create_from_X_y
@@ -116,7 +115,7 @@ def test_augmented_decoding():
         model,
         criterion=general_mixup_criterion,
         criterion__loss=CrossEntropyLoss,
-        iterator_train__collate_fn=lambda x: x,
+        iterator_train=mixup_iterator,
         optimizer=optim.Adam,
         train_split=train_split,
         batch_size=None,

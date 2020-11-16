@@ -22,12 +22,10 @@ def mixup_beta(datum, params):
     other_data_idx = np.random.randint(len(datum.ds))
     other_data = datum.ds[other_data_idx]
     datum.X = lam * datum.X + (1 - lam) * other_data[0]
-    for label in datum.y.keys():
-        datum.y[label] *= lam
-    if other_data[1] in datum.y.keys():
-        datum.y[other_data[1]] += (1 - lam)
-    else:
-        datum.y[other_data[1]] = (1 - lam)
+    for label_idx in range(len(datum.y)):
+        datum.y[label_idx] *= lam
+        if datum.ds.list_of_labels[other_data[1]] == label_idx:
+            datum.y[other_data[1]] += (1 - lam)
     return datum
 
 

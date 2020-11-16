@@ -17,7 +17,6 @@ import numpy as np
 import pandas as pd
 
 from torch.utils.data import Dataset, ConcatDataset
-from braindecode.augment import Transform
 
 
 class BaseDataset(Dataset):
@@ -166,75 +165,3 @@ class BaseConcatDataset(ConcatDataset):
         return {str(split_name): BaseConcatDataset(
             [self.datasets[ds_ind] for ds_ind in ds_inds])
             for split_name, ds_inds in split_ids.items()}
-
-
-class AugmentedDataset(Dataset):
-    """An overlay (not a subclass though) to apply on a basic WindowsDataset
-    or BaseConcatDataset or a Subset of one of these two classes. Follows the
-    canonical way to augment data of Pytorch (see [this article]
-    (https://pytorch.org/tutorials/beginner/data_loading_tutorial.html) for
-    more informations.) Main point is, if you pass a list of `n` transforms and
-    a dataset of size `s`, you will obtain a dataset of size `n x s`. Note that
-    transforms are reapplied every time the `__getitem__` function is called,
-    so if you have some randomness in it, you will obtain different transformed
-    data at every epoch. Note that you can compose transforms using the Compose
-    class of torchvision.
-
-    Parameters
-    ----------
-    ds : WindowsDataset or BaseConcatDataset or a Subset of one of those.
-        The unaugmented dataset
-    list_of_transforms :
-        list(Transform or torchvision.transforms.Compose(Transform)),
-        optional. A list of transforms that will be applied to data, by
-        default identity (default=[Transform(lambda datum:datum)]).
-    """
-
-    def __init__(self, ds,
-                 list_of_transforms=[
-                     Transform(lambda datum:datum)]) -> None:
-        # Initialize the augmented dataset, and computes required
-        # variables for applying transforms
-        self.list_of_transforms = list_of_transforms
-        self.ds = ds
-        self.required_variables = {}
-        self.list_of_labels = \
-            list(set([elem[1] for elem in iter(self.ds)])).sort()
-        self.__initialize_required_variables()
-
-    def __len__(self):
-        return(len(self.ds) * len(self.list_of_transforms))
-
-    def __getitem__(self, index):
-        # First get the indexes of the transform and of the unaugmented data
-        tf_index = index % len(self.list_of_transforms)
-        img_index = index // len(self.list_of_transforms)
-
-        # Get the unaugmented data
-        X, y, crops_ind = self.ds[img_index]
-        y = tuple([int(self.list_of_labels[i] == y)
-                   for i in self.list_of_labels])
-
-        class Datum:
-            def __init__(self, X, y, crops_ind, ds, required_variables):
-                self.X = X
-                self.y = y
-                self.crops_ind = crops_ind
-                self.ds = ds
-                self.required_variables = required_variables
-        # Initialize Datum object with metadata required to compute transforms,
-        # then compute the transform.
-        transf_datum = self.list_of_transforms[tf_index](
-            Datum(X, y, crops_ind, self.ds, self.required_variables))
-        # Returns augmented data.
-        X, y, crops_ind = transf_datum.X, transf_datum.y, transf_datum.crops_ind
-
-        return X, y, crops_ind
-
-    def __initialize_required_variables(self):
-
-        for transform in self.list_of_transforms:
-            for key in transform.required_variables.keys():
-                self.required_variables[key] = \
-                    transform.required_variables[key](
-                        self.ds, self.list_of_transforms)
