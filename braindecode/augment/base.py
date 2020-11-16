@@ -2,6 +2,7 @@
 #
 # License: BSD-3
 
+import torch
 from functools import partial
 import numpy as np
 
@@ -64,3 +65,43 @@ class Transform:
             if rand_num >= self.probability:
                 return datum
         return self.operation(datum)
+
+
+"""Custom iterator for training epochs
+"""
+
+# Authors: Simon Brandt <simonbrandt@protonmail.com>
+#
+# License: BSD (3-clause)
+
+
+class mixup_iterator(torch.utils.data.DataLoader):
+    """Implements Iterator for Mixup for EEG data. See [mixup].
+    Code adapted from
+    #TODO ref sbbrandt
+    Parameters
+    ----------
+    dataset: Dataset
+        dataset from which to load the data.
+    alpha: float
+        mixup hyperparameter.
+    beta_per_sample: bool (default=False)
+        by default, one mixing coefficient per batch is drawn from an beta
+        distribution. If True, one mixing coefficient per sample is drawn.
+    References
+    ----------
+    ..  [mixup] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+        mixup: Beyond Empirical Risk Minimization
+        Online: https://arxiv.org/abs/1710.09412
+    """
+
+    def __init__(self, dataset, alpha, beta_per_sample=False, **kwargs):
+        super().__init__(dataset, collate_fn=self.mixup, **kwargs)
+
+    def mixup(self, data):
+        X, y, crop_inds = data
+        x = torch.tensor(X).type(torch.float32)
+        y = torch.tensor(y).type(torch.int64)
+        crop_inds = torch.tensor(crop_inds).type(torch.int64)
+
+        return x, y, crop_inds

@@ -198,6 +198,8 @@ class AugmentedDataset(Dataset):
         self.list_of_transforms = list_of_transforms
         self.ds = ds
         self.required_variables = {}
+        self.list_of_labels = \
+            list(set([elem[1] for elem in iter(self.ds)])).sort()
         self.__initialize_required_variables()
 
     def __len__(self):
@@ -209,8 +211,9 @@ class AugmentedDataset(Dataset):
         img_index = index // len(self.list_of_transforms)
 
         # Get the unaugmented data
-        X, y, crops_ind = (self.ds[img_index])
-        y = {y: 1}
+        X, y, crops_ind = self.ds[img_index]
+        y = tuple([int(self.list_of_labels[i] == y)
+                   for i in self.list_of_labels])
 
         class Datum:
             def __init__(self, X, y, crops_ind, ds, required_variables):
