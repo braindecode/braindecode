@@ -10,7 +10,6 @@ from torch import optim
 import torch
 from functools import partial
 import mne
-from torch.nn.modules.loss import CrossEntropyLoss
 from braindecode import EEGClassifier
 from braindecode.augment import \
     mask_along_frequency, mask_along_time, Transform, \
@@ -114,11 +113,11 @@ def test_augmented_decoding():
     clf = EEGClassifier(
         model,
         criterion=general_mixup_criterion,
-        criterion__loss=CrossEntropyLoss,
+        criterion__loss=torch.nn.functional.cross_entropy,
         iterator_train=mixup_iterator,
         optimizer=optim.Adam,
         train_split=train_split,
-        batch_size=None,
+        batch_size=512,
         optimizer__lr=lr,
         optimizer__weight_decay=weight_decay,
         callbacks=['accuracy'],

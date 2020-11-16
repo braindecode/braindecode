@@ -11,6 +11,7 @@ import mne
 import h5py
 import torch
 from sklearn.utils import check_random_state
+from torch._C import Value
 
 
 def set_random_seeds(seed, cuda):
@@ -313,16 +314,17 @@ class ThrowAwayIndexLoader(object):
                 self.net._last_window_inds = i
             else:
                 x, y = batch
-
-            # TODO: should be on dataset side
-            if hasattr(x, 'type'):
-                x = x.type(torch.float32)
-                if self.is_regression:
-                    y = y.type(torch.float32)
-                elif isinstance(y, dict):
-                    pass
-                else:
-                    y = y.type(torch.int64)
+            try:
+                if self.loader.ismixed:
+                    yield x, y
+            except AttributeError:
+                # TODO: should be on dataset side
+                if hasattr(x, 'type'):
+                    x = x.type(torch.float32)
+                    if self.is_regression:
+                        y = y.type(torch.float32)
+                    else:
+                        y = y.type(torch.int64)
             yield x, y
 
 

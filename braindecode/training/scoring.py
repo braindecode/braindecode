@@ -11,6 +11,7 @@ import torch
 from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
+from braindecode.augment import AugmentedDataset
 
 
 def trial_preds_from_window_preds(
@@ -247,6 +248,8 @@ class PostEpochTrainScoring(EpochScoring):
         )
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
+        if isinstance(dataset_train, AugmentedDataset):
+            dataset_train = dataset_train.ds
         if len(self.y_preds_) == 0:
             dataset = net.get_dataset(dataset_train)
             # Prevent that rng state of torch is changed by

@@ -99,7 +99,8 @@ class AugmentedDataset(Dataset):
         self.ds = ds
         self.required_variables = {}
         self.list_of_labels = \
-            list(set([elem[1] for elem in iter(self.ds)])).sort()
+            list(set([elem[1] for elem in iter(self.ds)]))
+        self.list_of_labels.sort()
         self.__initialize_required_variables()
 
     def __len__(self):
@@ -112,20 +113,23 @@ class AugmentedDataset(Dataset):
 
         # Get the unaugmented data
         X, y, crops_ind = self.ds[img_index]
-        y = tuple([int(self.list_of_labels[i] == y)
-                   for i in self.list_of_labels])
+        y = tuple([int(elem == y)
+                   for elem in self.list_of_labels])
 
         class Datum:
-            def __init__(self, X, y, crops_ind, ds, required_variables):
+            def __init__(self, X, y, crops_ind, ds,
+                         required_variables, list_of_labels):
                 self.X = X
                 self.y = y
                 self.crops_ind = crops_ind
                 self.ds = ds
                 self.required_variables = required_variables
+                self.list_of_labels = list_of_labels
         # Initialize Datum object with metadata required to compute transforms,
         # then compute the transform.
         transf_datum = self.list_of_transforms[tf_index](
-            Datum(X, y, crops_ind, self.ds, self.required_variables))
+            Datum(X, y, crops_ind, self.ds, self.required_variables,
+                  self.list_of_labels))
         # Returns augmented data.
         X, y, crops_ind = transf_datum.X, transf_datum.y, transf_datum.crops_ind
 
@@ -143,7 +147,7 @@ class AugmentedDataset(Dataset):
 class mixup_iterator(torch.utils.data.DataLoader):
     """Implements Iterator for Mixup for EEG data. See [mixup].
     Code adapted from
-    #TODO ref sbbrandt + rewrite docstring
+    # TODO ref sbbrandt + rewrite docstring
     Parameters
     ----------
     dataset: Dataset
@@ -160,20 +164,36 @@ class mixup_iterator(torch.utils.data.DataLoader):
         Online: https://arxiv.org/abs/1710.09412
     """
 
-    def __init__(self, dataset, alpha, beta_per_sample=False, **kwargs):
+    def __init__(self, dataset, **kwargs):
         super().__init__(dataset, collate_fn=self.mixup, **kwargs)
+        self.n_labels = len(dataset.list_of_labels)
+        self.ismixed = True
 
     def mixup(self, data):
-        X, y, crop_inds = data
-        x = torch.tensor(X).type(torch.float32)
-        y = torch.tensor(y).type(torch.int64)
-        crop_inds = torch.tensor(crop_inds).type(torch.int64)
 
-        return x, y, crop_inds
+        batch_size = len(data)
+        n_channels, n_times = data[0][0].shape
+        batch_X = np.zeros((batch_size, n_channels, n_times))
+        batch_y = np.zeros((batch_size, self.n_labels))
+        batch_crop_inds = np.zeros((batch_size, 3))
+        for idx in range(batch_size):
+            batch_X[idx] = data[idx][0]
+            if len(data[idx][1]) > 1:
+                # Training
+                batch_y[idx] = data[idx][1]
+            else:
+                # Prediction
+                batch_y[idx, data[idx][1]] = 1
+            batch_crop_inds[idx] = np.array(data[idx][2])
+        batch_X = torch.tensor(batch_X).type(torch.float32)
+        batch_y = torch.tensor(batch_y).type(torch.float32)
+        batch_crop_inds = torch.tensor(batch_crop_inds).type(torch.int64)
+
+        return batch_X, batch_y, batch_crop_inds
 
 
 class general_mixup_criterion:
-
+    # TODO : probleme dans les labels.
     def __init__(self, loss=torch.nn.functional.nll_loss):
         self.loss = loss
 
@@ -182,11 +202,19 @@ class general_mixup_criterion:
 
     def loss_function(self, preds, target):
         ret = None
-        for label in target.keys():
-            prop = target[label]
-            loss_val = self.loss(preds, label, reduction='none')
-            if ret is None:
-                ret = torch.mul(prop, loss_val)
-            else:
-                ret += torch.mul(prop, loss_val)
-        return ret.mean()
+        if len(target.shape) > 1:
+            for i in range(target.shape[1]):
+                prop = target[:, i]
+                label = torch.Tensor(
+                    np.full(
+                        target.shape[0],
+                        i)).type(
+                    torch.LongTensor)
+                loss_val = self.loss(preds, label, reduction='none')
+                if ret is None:
+                    ret = torch.mul(prop, loss_val)
+                else:
+                    ret += torch.mul(prop, loss_val)
+            return ret.mean()
+        else:
+            return(self.loss(preds, target, reduction='mean'))

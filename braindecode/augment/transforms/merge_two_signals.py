@@ -15,7 +15,7 @@ def merge_two_signals(datum, params):
     for label_idx in range(len(y)):
         # y[label] is the proportion of the label in y
         other_signal_index = np.random.choice(
-            label_index_dict[train_sample.list_of_labels[label_idx]])
+            label_index_dict[datum.list_of_labels[label_idx]])
         other_signal += y[label_idx] * train_sample[other_signal_index][0]
 
     datum.X = (1 - params["magnitude"]) * \
