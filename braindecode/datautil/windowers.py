@@ -138,7 +138,8 @@ def create_windows_from_events(
                 window_size_samples = stops[0] + trial_stop_offset_samples - (
                     onsets[0] + trial_start_offset_samples)
                 window_stride_samples = window_size_samples
-            this_trial_sizes = stops - (onsets  + trial_start_offset_samples)
+            this_trial_sizes = (stops + trial_stop_offset_samples) - (
+                onsets  + trial_start_offset_samples)
             # Maybe actually this is not necessary?
             # We could also just say we just assume window size=trial size
             # in case not given, without this condition...
