@@ -10,6 +10,7 @@ import pytest
 
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
+from braindecode.datautil.windowers import create_windows_from_events
 
 # TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")
@@ -56,6 +57,17 @@ def concat_ds_targets():
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
     return concat_ds, targets
+
+
+@pytest.fixture(scope='module')
+def concat_windows_dataset(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    windows_ds = create_windows_from_events(
+        concat_ds=concat_ds, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=False)
+
+    return windows_ds
 
 
 def test_get_item(set_up):
@@ -173,3 +185,16 @@ def test_split_dataset(concat_ds_targets):
     for i, ds in enumerate(splits["1"].datasets):
         np.testing.assert_array_equal(
             ds.raw.get_data(), concat_ds.datasets[original_ids[i]].raw.get_data())
+
+
+def test_metadata(concat_windows_dataset):
+    md = concat_windows_dataset.get_metadata()
+    assert isinstance(md, pd.DataFrame)
+    assert all([c in md.columns
+                for c in concat_windows_dataset.description.columns])
+    assert md.shape[0] == len(concat_windows_dataset)
+
+
+def test_no_metadata(concat_ds_targets):
+    with pytest.raises(TypeError, match='Metadata dataframe can only be'):
+        concat_ds_targets[0].get_metadata()

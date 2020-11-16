@@ -165,7 +165,7 @@ def test_shifting_last_window_back_in(concat_ds_targets):
     assert len(description) == len(targets) * 2
     np.testing.assert_array_equal(description[0::2], targets)
     np.testing.assert_array_equal(description[1::2], targets)
-
+    
 
 def test_dropping_last_incomplete_window(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
@@ -411,3 +411,72 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.ch_names == picks
     assert epochs.reject == reject
     assert epochs.flat == flat
+
+    
+def test_window_sizes_from_events(concat_ds_targets):
+    # no fixed window size, no offsets
+    expected_n_samples = 1000
+    concat_ds, targets = concat_ds_targets
+    windows = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        drop_last_window=False)
+    x, y, ind = windows[0]
+    assert x.shape[-1] == ind[-1] - ind[-2]
+    assert x.shape[-1] == expected_n_samples
+    
+    # no fixed window size, positive trial start offset
+    expected_n_samples = 999
+    concat_ds, targets = concat_ds_targets
+    windows = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=1, trial_stop_offset_samples=0,
+        drop_last_window=False)
+    x, y, ind = windows[0]
+    assert x.shape[-1] == ind[-1] - ind[-2]
+    assert x.shape[-1] == expected_n_samples
+    
+    # no fixed window size, negative trial start offset
+    expected_n_samples = 1001
+    concat_ds, targets = concat_ds_targets
+    windows = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=-1, trial_stop_offset_samples=0,
+        drop_last_window=False)
+    x, y, ind = windows[0]
+    assert x.shape[-1] == ind[-1] - ind[-2]
+    assert x.shape[-1] == expected_n_samples
+    
+    # no fixed window size, positive trial stop offset
+    expected_n_samples = 1001
+    concat_ds, targets = concat_ds_targets
+    windows = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=0, trial_stop_offset_samples=1,
+        drop_last_window=False)
+    x, y, ind = windows[0]
+    assert x.shape[-1] == ind[-1] - ind[-2]
+    assert x.shape[-1] == expected_n_samples
+    
+    # no fixed window size, negative trial stop offset
+    expected_n_samples = 999
+    concat_ds, targets = concat_ds_targets
+    windows = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=0, trial_stop_offset_samples=-1,
+        drop_last_window=False)
+    x, y, ind = windows[0]
+    assert x.shape[-1] == ind[-1] - ind[-2]
+    assert x.shape[-1] == expected_n_samples
+
+    # fixed window size, trial offsets should not change window size
+    expected_n_samples = 250
+    concat_ds, targets = concat_ds_targets
+    windows = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=3, trial_stop_offset_samples=8,
+        window_size_samples=250, window_stride_samples=250,
+        drop_last_window=False)
+    x, y, ind = windows[0]
+    assert x.shape[-1] == ind[-1] - ind[-2]
+    assert x.shape[-1] == expected_n_samples
