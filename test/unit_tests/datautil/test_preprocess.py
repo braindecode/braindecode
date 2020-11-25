@@ -199,3 +199,17 @@ def test_filterbank(base_concat_ds):
         "C4", "C4_0-4", "C4_4-8", "C4_8-13",
         "Cz", "Cz_0-4", "Cz_4-8", "Cz_8-13",
     ])
+
+
+def test_filterbank_order_channels_by_freq(base_concat_ds):
+    base_concat_ds = base_concat_ds.split([[0]])["0"]
+    preprocessors = [
+        MNEPreproc('pick_channels', ch_names=sorted(["C4", "Cz"]), ordered=True),
+        MNEPreproc(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
+                   drop_original_signals=False, order_by_frequency_band=True),
+        ]
+    preprocess(base_concat_ds, preprocessors)
+    np.testing.assert_array_equal(base_concat_ds.datasets[0].raw.ch_names, [
+        "C4", "Cz", "C4_0-4", "Cz_0-4",
+        "C4_4-8", "Cz_4-8", "C4_8-13", "Cz_8-13"
+    ])
