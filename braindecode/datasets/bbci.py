@@ -208,6 +208,17 @@ class BBCIDataset(object):
             event_classes,
         ]
         cnt.info["events"] = np.array(event_arr).T
+
+        event_times_in_sec = event_times_in_ms / 1000.0
+        # 4 second trials
+        durations = np.full(event_times_in_ms.shape, 4)
+        # Label information for this dataset
+        # have to add 1 as class labels start from 1, not 0 (due to matlab)
+        event_desc = dict([(i+1, c) for i,c in enumerate(all_class_names)])
+        descriptions = [event_desc[y] for y in event_classes]
+        annots = mne.Annotations(event_times_in_sec, durations, descriptions)
+        cnt.set_annotations(annots)
+
         return cnt
 
 
