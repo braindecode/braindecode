@@ -12,6 +12,7 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018)
+from braindecode.util import set_random_seeds
 
 
 def test_shallow_fbcsp_net():
@@ -45,6 +46,7 @@ def test_deep4net():
 
 
 def test_eegresnet():
+    set_random_seeds(0, False)
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 600
@@ -62,6 +64,22 @@ def test_eegresnet():
     y_pred = model(X)
     assert y_pred.shape[:2] == (n_samples, n_classes)
 
+    # also try 3d
+    set_random_seeds(0, False)
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_samples, n_channels, n_in_times, )
+    X = torch.Tensor(X.astype(np.float32))
+    model = EEGResNet(
+        n_channels,
+        n_classes,
+        n_in_times,
+        final_pool_length=5,
+        n_first_filters=2,
+    )
+    y_pred_new = model(X)
+    assert y_pred_new.shape[:2] == (n_samples, n_classes)
+    np.testing.assert_allclose(y_pred.detach().cpu().numpy(), y_pred_new.detach().cpu().numpy())
+
 
 def test_hybridnet():
     rng = np.random.RandomState(42)
@@ -77,6 +95,7 @@ def test_hybridnet():
 
 
 def test_eegnet_v4():
+    set_random_seeds(0, False)
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 500
@@ -89,7 +108,19 @@ def test_eegnet_v4():
     assert y_pred.shape == (n_samples, n_classes)
 
 
+    # also try 3d
+    set_random_seeds(0, False)
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_samples, n_channels, n_in_times, )
+    X = torch.Tensor(X.astype(np.float32))
+    model = EEGNetv4(n_channels, n_classes, input_window_samples=n_in_times)
+    y_pred_new = model(X)
+    assert y_pred_new.shape[:2] == (n_samples, n_classes)
+    np.testing.assert_allclose(y_pred.detach().cpu().numpy(), y_pred_new.detach().cpu().numpy())
+
+
 def test_eegnet_v1():
+    set_random_seeds(0, False)
     rng = np.random.RandomState(42)
     n_channels = 18
     n_in_times = 500
@@ -101,6 +132,15 @@ def test_eegnet_v1():
     y_pred = model(X)
     assert y_pred.shape == (n_samples, n_classes)
 
+    # also try 3d
+    set_random_seeds(0, False)
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_samples, n_channels, n_in_times, )
+    X = torch.Tensor(X.astype(np.float32))
+    model = EEGNetv1(n_channels, n_classes, input_window_samples=n_in_times)
+    y_pred_new = model(X)
+    assert y_pred_new.shape[:2] == (n_samples, n_classes)
+    np.testing.assert_allclose(y_pred.detach().cpu().numpy(), y_pred_new.detach().cpu().numpy())
 
 def test_tcn():
     rng = np.random.RandomState(42)
