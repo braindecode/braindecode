@@ -11,9 +11,11 @@ Dataset classes.
 # License: BSD (3-clause)
 
 import warnings
+import glob
 
 import numpy as np
 import pandas as pd
+import mne
 
 from torch.utils.data import Dataset, ConcatDataset
 
@@ -183,3 +185,61 @@ class BaseConcatDataset(ConcatDataset):
             all_dfs.append(df)
 
         return pd.concat(all_dfs)
+
+
+def read_all_file_names(directory, extension):
+    """Read all files with specified extension from given path and sorts them
+    based on a given sorting key.
+
+    Parameters
+    ----------
+    directory: str
+        Parent directory to be searched for files of the specified type
+    extension: str
+        File extension, i.e. ".edf" or ".txt"
+
+    Returns
+    -------
+    file_paths: list(str)
+        A list to all files found in (sub)directories of path.
+    """
+    assert extension.startswith(".")
+    file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
+    assert len(file_paths) > 0, (
+        f"something went wrong. Found no {extension} files in {directory}")
+    return file_paths
+
+
+class LazyDataset(Dataset):
+    """A class that loads stored compute windows when getitem is called.
+
+    Params
+    ------
+    path: str
+        Parent directory of the .fif files serialized with braindecode.datautil.serialization.save_concat_dataset
+    """
+    def __init__(self, path):
+        json_files = read_all_file_names(path, ".json")
+        json_description_files = [
+            f for f in json_files if f.endswith("description.json")]
+        n_windows = pd.concat([
+            pd.read_json(f).n_windows for f in json_description_files])
+        self.window_cumsum = n_windows.to_numpy().cumsum()
+        self.file_paths = read_all_file_names(path, ".fif")
+
+    def __getitem__(self, idx):
+        # TODO: test the backtracking !
+        rec_i = (self.window_cumsum <= idx).sum()
+        epochs = mne.read_epochs(self.file_paths[rec_i], preload=False)
+        # if this is not accessing the windows of the very first recording,
+        # subtract the count of all previous windows to find the correct intra-recording window index
+        if rec_i != 0:
+            idx = idx - self.window_cumsum[max(rec_i - 1, 0)]
+        y = epochs.metadata.loc[idx, 'target']
+        crop_inds = list(
+            epochs.metadata.loc[idx, [
+                'i_window_in_trial', 'i_start_in_trial', 'i_stop_in_trial']])
+        return epochs.get_data(item=idx), y, crop_inds
+
+    def __len__(self):
+        return self.window_cumsum[-1] - 1

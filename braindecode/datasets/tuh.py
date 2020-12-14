@@ -1,11 +1,12 @@
 import re
-import glob
 
 import numpy as np
 import pandas as pd
 import mne
 
-from .base import BaseDataset, BaseConcatDataset
+from torch.utils.data import Dataset
+
+from .base import BaseDataset, BaseConcatDataset, read_all_file_names
 
 
 class TUHAbnormal(BaseConcatDataset):
@@ -103,29 +104,6 @@ class TUHAbnormal(BaseConcatDataset):
         return pathological == "abnormal", train_or_eval, int(subject_id)
 
 
-def read_all_file_names(directory, extension):
-    """Read all files with specified extension from given path and sorts them
-    based on a given sorting key.
-
-    Parameters
-    ----------
-    directory: str
-        parent directory to be searched for files of the specified type
-    extension: str
-        file extension, i.e. ".edf" or ".txt"
-
-    Returns
-    -------
-    file_paths: list(str)
-        a list to all files found in (sub)directories of path
-    """
-    assert extension.startswith(".")
-    file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
-    assert len(file_paths) > 0, (
-        f"something went wrong. Found no {extension} files in {directory}")
-    return file_paths
-
-
 def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
     f = open(file_path, "rb")
     content = f.read(88)
@@ -140,3 +118,29 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
     [age] = re.findall(r"Age:(\d+)", patient_id)
     [gender] = re.findall(r"\s([F|M])\s", patient_id)
     return int(age), gender
+
+
+class TUHIndexDataset(Dataset):
+    """A class to index the EDF files of the TUH EEG Corpus.
+
+    Params
+    ------
+    path: str
+        The parent directory of the edf files.
+    target_name: str
+        The name of the target. For now can only be 'age' or 'gender'.
+    """
+    def __init__(self, path, target_name=None):
+        self.file_paths = read_all_file_names(path, ".edf")
+        self.target_name = target_name
+
+    def __getitem__(self, idx):
+        path = self.file_paths[idx]
+        raw = mne.io.read_raw_edf(path)
+        path = self.file_paths[idx]
+        age, gender = _parse_age_and_gender_from_edf_header(path)
+        description = {"age": age, "gender": gender, "path": path}
+        return BaseConcatDataset([BaseDataset(raw, description, target_name=self.target_name)])
+
+    def __len__(self):
+        return len(self.file_paths)
