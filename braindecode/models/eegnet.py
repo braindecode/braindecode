@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn.functional import elu
 
-from .modules import Expression
+from .modules import Expression, Ensure4d
 from .functions import squeeze_final_output
 
 class Conv2dWithConstraint(nn.Conv2d):
@@ -66,6 +66,7 @@ class EEGNetv4(nn.Sequential):
         self.drop_prob = drop_prob
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
+        self.add_module("ensuredims", Ensure4d())
         # b c 0 1
         # now to b 1 0 c
         self.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
@@ -224,6 +225,7 @@ class EEGNetv1(nn.Sequential):
         self.drop_prob = drop_prob
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
+        self.add_module("ensuredims", Ensure4d())
         n_filters_1 = 16
         self.add_module(
             "conv_1",
