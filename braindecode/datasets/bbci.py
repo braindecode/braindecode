@@ -146,7 +146,7 @@ class BBCIDataset(object):
         with h5py.File(filename, "r") as h5file:
             clab_set = h5file["nfo"]["clab"][:].squeeze()
             all_sensor_names = [
-                "".join(chr(c) for c in h5file[obj_ref]) for obj_ref in clab_set
+                "".join(chr(c.item()) for c in h5file[obj_ref]) for obj_ref in clab_set
             ]
             if pattern is not None:
                 all_sensor_names = filter(
@@ -164,7 +164,7 @@ class BBCIDataset(object):
             # Check whether class names known and correct order
             class_name_set = h5file["nfo"]["className"][:].squeeze()
             all_class_names = [
-                "".join(chr(c) for c in h5file[obj_ref])
+                "".join(chr(c.item()) for c in h5file[obj_ref])
                 for obj_ref in class_name_set
             ]
 
