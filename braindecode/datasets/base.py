@@ -222,24 +222,43 @@ class LazyDataset(Dataset):
         json_files = read_all_file_names(path, ".json")
         json_description_files = [
             f for f in json_files if f.endswith("description.json")]
-        n_windows = pd.concat([
-            pd.read_json(f).n_windows for f in json_description_files])
-        self.window_cumsum = n_windows.to_numpy().cumsum()
-        self.file_paths = read_all_file_names(path, ".fif")
+        self.description = pd.concat([
+            pd.read_json(f) for f in json_description_files],
+            ignore_index=True)
+        self.use_mne = False
+        if self.use_mne:
+            self.window_cumsum = self.description.n_windows.to_numpy().cumsum()
+            self.file_paths = read_all_file_names(path, ".fif")
+        else:
+            file_paths = read_all_file_names(path, ".npy")
+            self.window_paths = [f for f in file_paths if "x-" in f]
+            self.target_paths = [f for f in file_paths if "y-" in f]
+            self.ind_paths = [f for f in file_paths if "ind-" in f]
+            assert len(self.window_paths) == len(self.target_paths) == len(self.ind_paths)
 
     def __getitem__(self, idx):
-        # TODO: test the backtracking !
-        rec_i = (self.window_cumsum <= idx).sum()
-        epochs = mne.read_epochs(self.file_paths[rec_i], preload=False)
-        # if this is not accessing the windows of the very first recording,
-        # subtract the count of all previous windows to find the correct intra-recording window index
-        if rec_i != 0:
-            idx = idx - self.window_cumsum[max(rec_i - 1, 0)]
-        y = epochs.metadata.loc[idx, 'target']
-        crop_inds = list(
-            epochs.metadata.loc[idx, [
-                'i_window_in_trial', 'i_start_in_trial', 'i_stop_in_trial']])
-        return epochs.get_data(item=idx), y, crop_inds
+        if self.use_mne:
+            # TODO: test the backtracking !
+            rec_i = (self.window_cumsum <= idx).sum()
+            # if this is not accessing the windows of the very first recording,
+            # subtract the count of all previous windows to find the correct
+            # intra-recording window index
+            if rec_i != 0:
+                idx = idx - self.window_cumsum[max(rec_i - 1, 0)]
+            epochs = mne.read_epochs(self.file_paths[rec_i], preload=False)
+            y = epochs.metadata.loc[idx, 'target']
+            crop_inds = list(
+                epochs.metadata.loc[idx, [
+                    'i_window_in_trial', 'i_start_in_trial', 'i_stop_in_trial']])
+            return epochs.get_data(item=idx), y, crop_inds
+        else:
+            x = np.load(self.window_paths[idx])
+            y = np.load(self.target_paths[idx])
+            ind = np.load(self.ind_paths[idx])
+            return x, y, ind
 
     def __len__(self):
-        return self.window_cumsum[-1] - 1
+        if self.use_mne:
+            return self.window_cumsum[-1]
+        else:
+            return len(self.window_paths)
