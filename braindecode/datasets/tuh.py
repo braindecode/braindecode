@@ -115,9 +115,15 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
     patient_id = content[8:].decode("ascii")
     assert "F" in patient_id or "M" in patient_id
     assert "Age" in patient_id
-    [age] = re.findall(r"Age:(\d+)", patient_id)
-    [gender] = re.findall(r"\s([F|M])\s", patient_id)
-    return int(age), gender
+    age = -1
+    found_age = re.findall(r"Age:(\d+)", patient_id)
+    if len(found_age) == 1:
+        age = int(found_age[0])
+    gender = "X"
+    found_gender = re.findall(r"\s([F|M])\s", patient_id)
+    if len(found_gender) == 1:
+        gender = found_gender[0]
+    return age, gender
 
 
 class TUHIndexDataset(Dataset):
@@ -131,16 +137,17 @@ class TUHIndexDataset(Dataset):
         The name of the target. For now can only be 'age' or 'gender'.
     """
     def __init__(self, path, target_name=None):
-        self.file_paths = read_all_file_names(path, ".edf")
+        file_paths = read_all_file_names(path, ".edf")
+        self.description = pd.DataFrame({"path": file_paths})
+        # TODO: build up the description based on information accessible without loading, i.e. reference, subject id etc
         self.target_name = target_name
 
     def __getitem__(self, idx):
-        path = self.file_paths[idx]
+        path = self.description.loc[idx, "path"]
         raw = mne.io.read_raw_edf(path)
-        path = self.file_paths[idx]
         age, gender = _parse_age_and_gender_from_edf_header(path)
-        description = {"age": age, "gender": gender, "path": path}
+        description = {**{"age": age, "gender": gender}, **self.description.iloc[idx].to_dict()}
         return BaseConcatDataset([BaseDataset(raw, description, target_name=self.target_name)])
 
     def __len__(self):
-        return len(self.file_paths)
+        return len(self.description)
