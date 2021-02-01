@@ -92,7 +92,8 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
         target_name = json.load(open(target_file_name, "r"))['target_name']
 
     all_signals, description = _load_signals_and_description(
-        path=path, preload=preload, raws=concat_of_raws, ids_to_load=ids_to_load)
+        path=path, preload=preload, raws=concat_of_raws, ids_to_load=ids_to_load
+    )
     datasets = []
     for i_signal, signal in enumerate(all_signals):
         if concat_of_raws:
