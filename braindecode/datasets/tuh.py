@@ -13,7 +13,7 @@ from .base import BaseDataset, BaseConcatDataset
 
 class TUH(BaseConcatDataset):
     """Temple University Hospital (TUH) EEG Corpus.
-    see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg/v1.1.0/_AAREADME.txt
+    see www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg
 
     Parameters
     ----------
@@ -94,11 +94,13 @@ def _create_file_index(path):
 
 
 def _parse_description_from_file_path(file_path):
-    # https://stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python
+    # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
     file_path = os.path.normpath(file_path)
     tokens = file_path.split(os.sep)
-    # expect file paths as tuh_eeg/version/file_type/reference/data_split/subject/recording session/file
-    #                      tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/s001_2006_04_12/00002729_s001.edf
+    # expect file paths as tuh_eeg/version/file_type/reference/data_split/
+    #                          subject/recording session/file
+    # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
+    #                          s001_2006_04_12/00002729_s001.edf
     year, month, day = tokens[-2].split('_')[1:]
     subject_id = tokens[-3]
     session = tokens[-2].split('_')[0]
@@ -150,7 +152,7 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
 
 class TUHAbnormal(TUH):
     """Temple University Hospital (TUH) Abnormal EEG Corpus.
-     see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
+    see www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tuab
 
     Parameters
     ----------
@@ -193,8 +195,10 @@ class TUHAbnormal(TUH):
     def _parse_additional_description_from_file_path(file_path):
         file_path = os.path.normpath(file_path)
         tokens = file_path.split(os.sep)
-        # expect file paths as version/file type/data_split/label/EEG reference/subset/subject/recording session/file
-        #                      v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf
+        # expect paths as version/file type/data_split/pathology status/
+        #                     reference/subset/subject/recording session/file
+        # e.g.            v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/
+        #                     s004_2013_08_15/00000021_s004_t000.edf
         assert ('abnormal' in tokens or 'normal' in tokens), (
             'No pathology labels found.')
         assert ('train' in tokens or 'eval' in tokens), (
