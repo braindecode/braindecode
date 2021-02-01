@@ -14,7 +14,6 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import mne
 
 from torch.utils.data import Dataset, ConcatDataset
 
