@@ -26,7 +26,8 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
         to save to files
     overwrite: bool
-        whether to overwrite existing files (will delete old fif files in specified directory)
+        whether to overwrite existing files (will delete old fif files in
+        specified directory)
     """
     assert len(concat_dataset.datasets) > 0, "Expect at least one dataset"
     assert (hasattr(concat_dataset.datasets[0], 'raw') + hasattr(
@@ -52,7 +53,8 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
         full_file_path = os.path.join(path, file_name.format(i_ds))
         if concat_of_raws:
             ds.raw.save(full_file_path, overwrite=overwrite)
-            assert ds.target_name == target_name, "All datasets should have same target name"
+            assert ds.target_name == target_name, (
+                "All datasets should have same target name")
         else:
             ds.windows.save(full_file_path, overwrite=overwrite)
 
@@ -125,3 +127,39 @@ def _load_signals(fif_file, preload, raws):
     else:
         signals = mne.read_epochs(fif_file, preload=preload)
     return signals
+
+
+def load_concat_datasets(path, preload, ids_to_load=None, target_name=None):
+    """Load a series of stored BaseConcatDataset of BaseDatasets or
+    WindowsDatasets from files that were stored to individual subdirectories
+    that are ascendingly numerated. This is for datasets, that do not fit
+    entirely into RAM, s.t. each recording has to be individually preprocessed
+    and stored.
+
+    Parameters
+    ----------
+    path: str
+        path to the directory of the .fif and .json files
+    preload: bool
+        whether to preload the data
+    ids_to_load: None | list(int)
+        ids of specific signals to load
+    target_name: None or str
+        Load specific column as target. If not given, take saved target name.
+
+    Returns
+    -------
+    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    """
+    path = os.path.join(path, '*', '')
+    paths = glob(path)
+    paths = sorted(paths, key=lambda p: int(p.split('/')[-2]))
+    if ids_to_load is not None:
+        paths = [paths[i] for i in ids_to_load]
+    all_concat_ds = []
+    for path in paths:
+        concat_ds = load_concat_dataset(
+            os.path.join(path), preload=preload, target_name=target_name
+        )
+        all_concat_ds.append(concat_ds)
+    return BaseConcatDataset(all_concat_ds)
