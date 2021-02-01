@@ -1,3 +1,12 @@
+"""
+Dataset classes for the Temple University Hospital (TUH) EEG Corpus and the
+TUH Abnormal EEG Corpus.
+"""
+
+# Authors: Lukas Gemein <l.gemein@gmail.com>
+#
+# License: BSD (3-clause)
+
 import re
 import os
 import glob
@@ -5,8 +14,6 @@ import glob
 import numpy as np
 import pandas as pd
 import mne
-
-from torch.utils.data import Dataset
 
 from .base import BaseDataset, BaseConcatDataset
 
