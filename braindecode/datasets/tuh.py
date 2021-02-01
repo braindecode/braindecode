@@ -1,4 +1,6 @@
 import re
+import os
+import glob
 
 import numpy as np
 import pandas as pd
@@ -6,11 +8,12 @@ import mne
 
 from torch.utils.data import Dataset
 
-from .base import BaseDataset, BaseConcatDataset, read_all_file_names
+from .base import BaseDataset, BaseConcatDataset
 
 
-class TUHAbnormal(BaseConcatDataset):
-    """Temple University Hospital (TUH) Abnormal EEG Corpus.
+class TUH(BaseConcatDataset):
+    """Temple University Hospital (TUH) EEG Corpus.
+    see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg/v1.1.0/_AAREADME.txt
 
     Parameters
     ----------
@@ -23,85 +26,104 @@ class TUHAbnormal(BaseConcatDataset):
         later then the second recording. provide recording_ids in ascending
         order to preserve chronological order)
     target_name: str
-        can be "pathological", "gender", or "age"
+        can be "gender", or "age"
     preload: bool
         if True, preload the data of the Raw objects.
     add_physician_reports: bool
         if True, the physician reports will be read from disk and added to the
         description
     """
-    def __init__(self, path, recording_ids=None, target_name="pathological",
+    def __init__(self, path, recording_ids=None, target_name=None,
                  preload=False, add_physician_reports=False):
-        all_file_paths = read_all_file_names(path, extension=".edf")
-        all_file_paths = self.sort_chronologically(all_file_paths)
-        if recording_ids is None:
-            recording_ids = np.arange(len(all_file_paths))
+        # create an index of all files and gather easily accessible info
+        # without actually touching the files
+        descriptions = _create_file_index(path)
+        # order descriptions chronologically
+        descriptions.sort_values(
+            ["year", "month", "day", "subject", "session", "segment"],
+            axis=1, inplace=True)
+        # https://stackoverflow.com/questions/42284617/reset-column-index-pandas
+        descriptions = descriptions.T.reset_index(drop=True).T
+        # limit to specified recording ids before doing slow stuff
+        if recording_ids is not None:
+            descriptions = descriptions[recording_ids]
+        # create datasets gathering more info about the files touching them
+        # reading the raws and potentially preloading the data
+        base_datasets = self._create_datasets(
+            descriptions, target_name, preload, add_physician_reports)
+        super().__init__(base_datasets)
 
-        all_base_ds = []
-        for i, recording_id in enumerate(recording_ids):
-            file_path = all_file_paths[recording_id]
-            raw = mne.io.read_raw_edf(file_path, preload=preload)
-            pathological, train_or_eval, subject_id = (
-                self._parse_properties_from_file_path(file_path))
+    @staticmethod
+    def _create_datasets(descriptions, target_name, preload,
+                         add_physician_reports):
+        # this is the second loop (slow)
+        base_datasets = []
+        for file_path_i, file_path in descriptions.loc['path'].iteritems():
+            # parse age and gender information from EDF header
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
-            # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
-            d = {'age': age, 'pathological': pathological, 'gender': gender,
-                 'train_or_eval': train_or_eval, 'subject': subject_id,
-                 'recording_id': recording_id}
+            raw = mne.io.read_raw_edf(file_path, preload=preload)
+            # read info relevant for preprocessing from raw without loading it
+            sfreq = raw.info['sfreq']
+            n_samples = raw.n_times
             if add_physician_reports:
-                report_path = "_".join(file_path.split("_")[:-1]) + ".txt"
-                with open(report_path, "r", encoding="latin-1") as f:
-                    physician_report = f.read()
-                d["physician_report"] = physician_report
-            description = pd.Series(d, name=i)
-            base_ds = BaseDataset(raw, description, target_name=target_name)
-            all_base_ds.append(base_ds)
-        super().__init__(all_base_ds)
+                physician_report = _read_physician_report(file_path)
+            additional_description = pd.Series({
+                'sfreq': float(sfreq),
+                'n_samples': int(n_samples),
+                'age': int(age),
+                'gender': gender,
+                'report': physician_report
+            })
+            description = pd.concat(
+                [descriptions.pop(file_path_i), additional_description])
+            base_dataset = BaseDataset(raw, description,
+                                       target_name=target_name)
+            base_datasets.append(base_dataset)
+        return base_datasets
 
 
-    @staticmethod
-    def sort_chronologically(file_paths):
-        """Use pandas groupby to sort the recordings chronologically.
-
-        Parameters
-        ----------
-        file_paths: list(str)
-            a list of all file paths to be sorted
-        Returns
-        -------
-            sorted_file_paths: list(str)
-            a list of all file paths sorted chronologically
-        """
-        # expect filenames as v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf
-        #              version/file type/data_split/label/EEG reference/subset/subject/recording session/file
-        # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
-        path_splits = [fp.split("/") for fp in file_paths]
-        identifiers = [[path_split[-3]] +
-                       path_split[-2].split("_") +
-                       [path_split[-1].split("_")[-1].split(".")[0]]
-                       for path_split in path_splits]
-        df = pd.DataFrame(
-            identifiers,
-            columns=["subject", "session", "year", "month", "day", "token"])
-        df = pd.concat([group for name, group in df.groupby(
-            ["year", "month", "day", "subject", "session", "token"])])
-        return [file_paths[i] for i in df.index]
+def _create_file_index(path):
+    file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
+    # this is the first loop (fast)
+    descriptions = []
+    for file_path in file_paths:
+        description = _parse_description_from_file_path(file_path)
+        descriptions.append(pd.Series(description))
+    descriptions = pd.concat(descriptions, axis=1)
+    return descriptions
 
 
-    @staticmethod
-    def _parse_properties_from_file_path(file_path):
-        # expect filenames as v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf
-        #              version/file type/data_split/label/EEG reference/subset/subject/recording session/file
-        # see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
-        path_splits = file_path.split("/")
-        pathological = path_splits[-6]
-        assert pathological in ["abnormal", "normal"]
-        train_or_eval = path_splits[-7]
-        assert train_or_eval in ["train", "eval"]
-        subject_id = path_splits[-3]
-        # subject id is string of length 8 with leading zeros
-        assert len(subject_id) == 8
-        return pathological == "abnormal", train_or_eval, int(subject_id)
+def _parse_description_from_file_path(file_path):
+    # https://stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python
+    file_path = os.path.normpath(file_path)
+    tokens = file_path.split(os.sep)
+    # expect file paths as tuh_eeg/version/file_type/reference/data_split/subject/recording session/file
+    #                      tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/s001_2006_04_12/00002729_s001.edf
+    year, month, day = tokens[-2].split('_')[1:]
+    subject_id = tokens[-3]
+    session = tokens[-2].split('_')[0]
+    segment = tokens[-1].split('_')[-1].split('.')[-2]
+    reference = tokens[-5].split('_')[2]
+    return {
+        'path': file_path,
+        'year': int(year),
+        'month': int(month),
+        'day': int(day),
+        'subject': int(subject_id),
+        'session': int(session[1:]),
+        'segment': int(segment[1:]),
+        'reference': reference,
+    }
+
+
+def _read_physician_report(file_path):
+    physician_report = np.nan
+    # check if there is a report to add to the description
+    report_path = "_".join(file_path.split("_")[:-1]) + ".txt"
+    if os.path.exists(report_path):
+        with open(report_path, "r", encoding="latin-1") as f:
+            physician_report = f.read()
+    return physician_report
 
 
 def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
@@ -126,28 +148,58 @@ def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
     return age, gender
 
 
-class TUHIndexDataset(Dataset):
-    """A class to index the EDF files of the TUH EEG Corpus.
+class TUHAbnormal(TUH):
+    """Temple University Hospital (TUH) Abnormal EEG Corpus.
+     see https://www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/_AAREADME.txt
 
-    Params
-    ------
+    Parameters
+    ----------
     path: str
-        The parent directory of the edf files.
+        parent directory of the dataset
+    recording_ids: list(int) | int
+        (list of) int of recording(s) to be read (order matters and will
+        overwrite default chronological order, e.g. if recording_ids=[1,0],
+        then the first recording returned by this class will be chronologically
+        later then the second recording. provide recording_ids in ascending
+        order to preserve chronological order)
     target_name: str
-        The name of the target. For now can only be 'age' or 'gender'.
+        can be "pathological", "gender", or "age"
+    preload: bool
+        if True, preload the data of the Raw objects.
+    add_physician_reports: bool
+        if True, the physician reports will be read from disk and added to the
+        description
     """
-    def __init__(self, path, target_name=None):
-        file_paths = read_all_file_names(path, ".edf")
-        self.description = pd.DataFrame({"path": file_paths})
-        # TODO: build up the description based on information accessible without loading, i.e. reference, subject id etc
-        self.target_name = target_name
+    def __init__(self, path, recording_ids=None, target_name='pathological',
+                 preload=False, add_physician_reports=False):
+        super().__init__(path=path, recording_ids=recording_ids,
+                         preload=preload,
+                         add_physician_reports=add_physician_reports)
+        additional_descriptions = []
+        for file_path in self.description.path:
+            additional_description = \
+                self._parse_additional_description_from_file_path(file_path)
+            additional_descriptions.append(additional_description)
+        additional_descriptions = pd.DataFrame(additional_descriptions)
+        self.description = pd.concat(
+            [self.description, additional_descriptions], axis=1)
+        # not 100% sure if this is required:
+        # set target name and target of base datasets
+        for ds_i, ds in enumerate(self.datasets):
+            ds.target_name = target_name
+            ds.target = self.description[target_name][ds_i]
 
-    def __getitem__(self, idx):
-        path = self.description.loc[idx, "path"]
-        raw = mne.io.read_raw_edf(path)
-        age, gender = _parse_age_and_gender_from_edf_header(path)
-        description = {**{"age": age, "gender": gender}, **self.description.iloc[idx].to_dict()}
-        return BaseConcatDataset([BaseDataset(raw, description, target_name=self.target_name)])
-
-    def __len__(self):
-        return len(self.description)
+    @staticmethod
+    def _parse_additional_description_from_file_path(file_path):
+        file_path = os.path.normpath(file_path)
+        tokens = file_path.split(os.sep)
+        # expect file paths as version/file type/data_split/label/EEG reference/subset/subject/recording session/file
+        #                      v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/s004_2013_08_15/00000021_s004_t000.edf
+        assert ('abnormal' in tokens or 'normal' in tokens), (
+            'No pathology labels found.')
+        assert ('train' in tokens or 'eval' in tokens), (
+            'No train or eval set information found.')
+        return {
+            'train': 'train' in tokens,
+            'pathological': 'abnormal' in tokens,
+        }
