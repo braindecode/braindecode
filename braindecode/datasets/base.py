@@ -11,7 +11,6 @@ Dataset classes.
 # License: BSD (3-clause)
 
 import warnings
-import glob
 
 import numpy as np
 import pandas as pd
