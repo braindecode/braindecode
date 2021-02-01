@@ -91,6 +91,8 @@ Datasets
     BaseConcatDataset
     WindowsDataset
     MOABBDataset
+    TUH
+    TUHAbnormal
 
 
 Data Utils
@@ -115,6 +117,7 @@ Data Utils
     filterbank
     save_concat_dataset
     load_concat_dataset
+    load_concat_datasets
 
 Utils
 =====
