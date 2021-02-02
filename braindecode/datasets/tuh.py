@@ -44,13 +44,8 @@ class TUH(BaseConcatDataset):
                  preload=False, add_physician_reports=False):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
-        descriptions = _create_file_index(path)
-        # order descriptions chronologically
-        descriptions.sort_values(
-            ["year", "month", "day", "subject", "session", "segment"],
-            axis=1, inplace=True)
-        # https://stackoverflow.com/questions/42284617/reset-column-index-pandas
-        descriptions = descriptions.T.reset_index(drop=True).T
+        file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
+        descriptions = _create_chronological_description(file_paths)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
             descriptions = descriptions[recording_ids]
@@ -89,14 +84,19 @@ class TUH(BaseConcatDataset):
         return base_datasets
 
 
-def _create_file_index(path):
-    file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
+def _create_chronological_description(file_paths):
     # this is the first loop (fast)
     descriptions = []
     for file_path in file_paths:
         description = _parse_description_from_file_path(file_path)
         descriptions.append(pd.Series(description))
     descriptions = pd.concat(descriptions, axis=1)
+    # order descriptions chronologically
+    descriptions.sort_values(
+        ["year", "month", "day", "subject", "session", "segment"],
+        axis=1, inplace=True)
+    # https://stackoverflow.com/questions/42284617/reset-column-index-pandas
+    descriptions = descriptions.T.reset_index(drop=True).T
     return descriptions
 
 
@@ -135,17 +135,18 @@ def _read_physician_report(file_path):
     return physician_report
 
 
-def _parse_age_and_gender_from_edf_header(file_path, return_raw_header=False):
+def _read_edf_header(file_path):
     f = open(file_path, "rb")
-    content = f.read(88)
+    header = f.read(88)
     f.close()
-    if return_raw_header:
-        return content
+    return header
+
+
+def _parse_age_and_gender_from_edf_header(file_path):
+    header = _read_edf_header(file_path)
     # bytes 8 to 88 contain ascii local patient identification
     # see https://www.teuniz.net/edfbrowser/edf%20format%20description.html
-    patient_id = content[8:].decode("ascii")
-    assert "F" in patient_id or "M" in patient_id
-    assert "Age" in patient_id
+    patient_id = header[8:].decode("ascii")
     age = -1
     found_age = re.findall(r"Age:(\d+)", patient_id)
     if len(found_age) == 1:
@@ -186,8 +187,8 @@ class TUHAbnormal(TUH):
                          add_physician_reports=add_physician_reports)
         additional_descriptions = []
         for file_path in self.description.path:
-            additional_description = \
-                self._parse_additional_description_from_file_path(file_path)
+            additional_description = (
+                self._parse_additional_description_from_file_path(file_path))
             additional_descriptions.append(additional_description)
         additional_descriptions = pd.DataFrame(additional_descriptions)
         self.description = pd.concat(
