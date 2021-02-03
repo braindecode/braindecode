@@ -117,7 +117,6 @@ Data Utils
     filterbank
     save_concat_dataset
     load_concat_dataset
-    load_concat_datasets
 
 Utils
 =====
