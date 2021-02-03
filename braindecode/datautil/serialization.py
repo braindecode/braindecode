@@ -64,17 +64,18 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
-    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    """Load stored BaseConcatDataset(s) of BaseDatasets or WindowsDatasets from
     files
 
     Parameters
     ----------
     path: str
-        path to the directory of the .fif and .json files
+        path to the (enumerated subdirectories of the) directory of the .fif
+        and .json files
     preload: bool
         whether to preload the data
     ids_to_load: None | list(int)
-        ids of specific signals to load
+        ids of specific datasets to load
     target_name: None or str
         Load specific column as target. If not given, take saved target name.
 
@@ -82,25 +83,44 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
     -------
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
     """
-    assert ((os.path.isfile(os.path.join(path, '0-raw.fif')) +
-             os.path.isfile(os.path.join(path, '0-epo.fif'))) == 1), (
-        "Expect either raw or epo to exist inside the directory")
+    # assume we have a single concat dataset to load
     concat_of_raws = os.path.isfile(os.path.join(path, '0-raw.fif'))
+    concat_of_epochs = os.path.isfile(os.path.join(path, '0-epo.fif'))
+    paths = [path]
+    # assume we have multiple concat datasets to load
+    if not (concat_of_raws + concat_of_epochs):
+        concat_of_raws = os.path.isfile(os.path.join(path, '0', '0-raw.fif'))
+        concat_of_epochs = os.path.isfile(os.path.join(path, '0', '0-epo.fif'))
+        path = os.path.join(path, '*', '')
+        paths = glob(path)
+        paths = sorted(paths, key=lambda p: int(p.split('/')[-2]))
+        if ids_to_load is not None:
+            paths = [paths[i] for i in ids_to_load]
+        ids_to_load = None
+    # if we have neither a single nor multiple datasets, something went wrong
+    assert concat_of_raws or concat_of_epochs, (
+        f'Expect either raw or epo to exist in {path} or in '
+        f'{os.path.join(path, "0")}')
 
-    if concat_of_raws and target_name is None:
-        target_file_name = os.path.join(path, 'target_name.json')
-        target_name = json.load(open(target_file_name, "r"))['target_name']
-
-    all_signals, description = _load_signals_and_description(
-        path=path, preload=preload, raws=concat_of_raws, ids_to_load=ids_to_load
-    )
     datasets = []
-    for i_signal, signal in enumerate(all_signals):
-        if concat_of_raws:
-            datasets.append(BaseDataset(signal, description.iloc[i_signal],
-                                        target_name=target_name))
-        else:
-            datasets.append(WindowsDataset(signal, description.iloc[i_signal]))
+    for path in paths:
+        if concat_of_raws and target_name is None:
+            target_file_name = os.path.join(path, 'target_name.json')
+            target_name = json.load(open(target_file_name, "r"))['target_name']
+
+        all_signals, description = _load_signals_and_description(
+            path=path, preload=preload, raws=concat_of_raws,
+            ids_to_load=ids_to_load
+        )
+        for i_signal, signal in enumerate(all_signals):
+            if concat_of_raws:
+                datasets.append(
+                    BaseDataset(signal, description.iloc[i_signal],
+                                target_name=target_name))
+            else:
+                datasets.append(
+                    WindowsDataset(signal, description.iloc[i_signal])
+                )
     return BaseConcatDataset(datasets)
 
 
@@ -128,39 +148,3 @@ def _load_signals(fif_file, preload, raws):
     else:
         signals = mne.read_epochs(fif_file, preload=preload)
     return signals
-
-
-def load_concat_datasets(path, preload, ids_to_load=None, target_name=None):
-    """Load a series of stored BaseConcatDataset of BaseDatasets or
-    WindowsDatasets from files that were stored to individual subdirectories
-    that are ascendingly numerated. This is for datasets, that do not fit
-    entirely into RAM, s.t. each recording has to be individually preprocessed
-    and stored.
-
-    Parameters
-    ----------
-    path: str
-        path to the directory of the .fif and .json files
-    preload: bool
-        whether to preload the data
-    ids_to_load: None | list(int)
-        ids of specific signals to load
-    target_name: None or str
-        Load specific column as target. If not given, take saved target name.
-
-    Returns
-    -------
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
-    """
-    path = os.path.join(path, '*', '')
-    paths = glob(path)
-    paths = sorted(paths, key=lambda p: int(p.split('/')[-2]))
-    if ids_to_load is not None:
-        paths = [paths[i] for i in ids_to_load]
-    all_concat_ds = []
-    for path in paths:
-        concat_ds = load_concat_dataset(
-            os.path.join(path), preload=preload, target_name=target_name
-        )
-        all_concat_ds.append(concat_ds)
-    return BaseConcatDataset(all_concat_ds)

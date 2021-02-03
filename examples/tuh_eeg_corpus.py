@@ -20,9 +20,10 @@ from braindecode.datasets import TUH
 from braindecode.datautil.preprocess import preprocess, MNEPreproc, NumpyPreproc
 from braindecode.datautil.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import (
-    save_concat_dataset, load_concat_datasets)
+    save_concat_dataset, load_concat_dataset)
 
-mne.set_log_level('WARNING')  # avoid messages everytime a window is extracted
+mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
+
 
 ###############################################################################
 # We start by creating a TUH dataset. First, the class generates a description
@@ -49,6 +50,7 @@ tuh = TUH(
     add_physician_reports=True,
 )
 
+
 ###############################################################################
 # We can easily create descriptive statistics using the description `DataFrame`,
 # for example an age pyramid split by gender of patients.
@@ -57,9 +59,11 @@ genders = tuh.description.gender.unique()
 for gender in genders:
     tuh.description.age[tuh.description.gender == gender].plot.hist(
         bins=np.arange(100, dtype=int),
-        ax=ax
+        ax=ax,
+        alpha=.5
     )
 ax.legend(genders)
+
 
 ###############################################################################
 # Next, we will perform some preprocessing steps. First, we will do some
@@ -82,7 +86,7 @@ def select_by_duration(ds, tmin=0, tmax=None):
 
 tmin = 5*60
 tmax = None
-tuh_time = select_by_duration(tuh, tmin, tmax)
+tuh = select_by_duration(tuh, tmin, tmax)
 
 
 ###############################################################################
@@ -126,7 +130,7 @@ def select_by_channels(ds, ch_mapping):
     return ds.split(split_ids)['0']
 
 
-tuh_chs = select_by_channels(tuh_time, ch_mapping)
+tuh = select_by_channels(tuh, ch_mapping)
 
 
 ###############################################################################
@@ -160,7 +164,6 @@ def custom_crop(raw, tmin=0.0, tmax=None, include_tmax=True):
     raw.crop(tmin=tmin, tmax=tmax, include_tmax=include_tmax)
 
 
-batch_size = 1
 tmin = 1*60
 tmax = 6*60
 sfreq = 100
@@ -179,85 +182,69 @@ preprocessors = [
 
 
 ###############################################################################
-# To apply the preprocessing steps, we split the dataset into batches, s.t. we
-# do not encounter memory issues. Data is not loaded here.
-
-def split_into_batches(n, batch_size):
-    batches = [list(range(i*batch_size, (i+1)*batch_size))
-               for i in range(n//batch_size)]
-    last_batch = list(range(n//batch_size*batch_size,
-                            n//batch_size*batch_size+n%batch_size))
-    if last_batch:
-        batches += [last_batch]
-    return batches
-
-
-split_ids = split_into_batches(len(tuh_chs.datasets), batch_size)
-tuh_splits = tuh_chs.split(split_ids)
-
-
-###############################################################################
-# The preprocessing loop works as follows. For every batch, we apply the
-# preprocessors as defined above. Then, we update the description of the batch,
+# The preprocessing loop works as follows. For every recording, we apply the
+# preprocessors as defined above. Then, we update the description of the rec,
 # since we have altered the duration, the reference, and the sampling frequency.
 # Afterwards, we split the continuous signals into compute windows. We store
-# each batch to a unique subdirectory that is named corresponding to the
-# batch id. To save memory, after windowing and storing, we delete the batched
-# raw dataset and the batched windows dataset, respectively.
+# each recording to a unique subdirectory that is named corresponding to the
+# rec id. To save memory, after windowing and storing, we delete the raw
+# dataset and the windows dataset, respectively.
 
 out_i = 0
 errors = []
-OUT_PATH = '/tuh_sample/'
-for batch_i, tuh_subset in tuh_splits.items():
-    # some recordings fail with
-    # info["meas_date"] seconds must be between "(-2147483648, 0)" and "(2147483647, 0)", got "-2209161600"  # noqa
-    # so catch it
-    try:
-        # TODO: implement preprocess for BaseDatasets? Would remove necessity
-        #  to split above
-        preprocess(tuh_subset, preprocessors)
-        # update description of the recording(s)
-        tuh_subset.description.sfreq = len(tuh_subset.datasets) * [sfreq]
-        tuh_subset.description.reference = len(tuh_subset.datasets) * ['ar']
-        tuh_subset.description.n_samples = [len(d) for d in tuh_subset.datasets]
+OUT_PATH = './tuh_sample/'
+tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])
+for rec_i, tuh_subset in tuh_splits.items():
+    # implement preprocess for BaseDatasets? Would remove necessity
+    # to split above
+    preprocess(tuh_subset, preprocessors)
 
-        if create_compute_windows:
-            # generate compute windows here and store them to disk
-            tuh_windows = create_fixed_length_windows(
-                tuh_subset,
-                start_offset_samples=0,
-                stop_offset_samples=None,
-                window_size_samples=window_size_samples,
-                window_stride_samples=window_stride_samples,
-                drop_last_window=False
-            )
-            # save memory by deleting raw recording(s)
-            del tuh_subset
-            # store the number of windows required for loading later on
-            tuh_windows.description["n_windows"] = [len(d) for d in
-                                                    tuh_windows.datasets]
+    # update description of the recording(s)
+    tuh_subset.description.sfreq = len(tuh_subset.datasets) * [sfreq]
+    tuh_subset.description.reference = len(tuh_subset.datasets) * ['ar']
+    tuh_subset.description.n_samples = [len(d) for d in tuh_subset.datasets]
 
+    if create_compute_windows:
+        # generate compute windows here and store them to disk
+        tuh_windows = create_fixed_length_windows(
+            tuh_subset,
+            start_offset_samples=0,
+            stop_offset_samples=None,
+            window_size_samples=window_size_samples,
+            window_stride_samples=window_stride_samples,
+            drop_last_window=False
+        )
+        # save memory by deleting raw recording
+        del tuh_subset
+        # store the number of windows required for loading later on
+        tuh_windows.description["n_windows"] = [len(d) for d in
+                                                tuh_windows.datasets]
+
+        # some recordings fail with
+        # info["meas_date"] seconds must be between "(-2147483648, 0)" and "(2147483647, 0)", got "-2209161600"  # noqa
+        # during save, so catch it
+        try:
+            mne.io.meas_info._check_dates(tuh_windows.datasets[0].windows.info)
+        except RuntimeError as e:
+            errors.append((rec_i, e))
+        else:
             # create one directory for every recording
-            rec_path = os.path.join(OUT_PATH, str(batch_i))
+            rec_path = os.path.join(OUT_PATH, str(rec_i))
             if not os.path.exists(rec_path):
                 os.makedirs(rec_path)
-            save_concat_dataset(rec_path, tuh_windows, overwrite=True)
+            save_concat_dataset(rec_path, tuh_windows)
+            out_i += 1
+            # save memory by catching epoched recording
             del tuh_windows
-        else:
-            # store raws to disk for option of using different compute window
-            # sizes
-            pass
-
-    except Exception as e:
-        errors.append((batch_i, e))
     else:
-        out_i += 1
+        # store raws to disk for option of using different compute window
+        # sizes
+        pass
 
 
 ###############################################################################
-# Preprocessing might fail, for example measurement date is broken for some
-# recordings which causes `mne` to raise a `RuntimeError`. We catch exceptions
-# and batch ids of failures and check them afterwards
+# Preprocessing might fail due to broken measurement date. We catch exceptions
+# and recording ids of failures and check them afterwards
 
 [print(e) for e in errors]
 
@@ -266,4 +253,4 @@ for batch_i, tuh_subset in tuh_splits.items():
 # We load the preprocessed data again in a lazy fashion (`preload=False`). It is
 # now ready to be used for model training.
 
-tuh_loaded = load_concat_datasets('./tuh_sample/', preload=False)
+tuh_loaded = load_concat_dataset('./tuh_sample/', preload=False)
