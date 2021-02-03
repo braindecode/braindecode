@@ -52,18 +52,14 @@ tuh = TUH(
 ###############################################################################
 # We can easily create descriptive statistics using the description `DataFrame`,
 # for example an age pyramid split by gender of patients.
-import seaborn as sns
-sns.set_color_codes(True)
-
 fig, ax = plt.subplots(1, 1, figsize=(15, 5))
-sns.histplot(
-    data=tuh.description,
-    x='age',
-    hue='gender',
-    bins=np.arange(100, dtype=int),
-    multiple='stack',
-    ax=ax,
-)
+genders = tuh.description.gender.unique()
+for gender in genders:
+    tuh.description.age[tuh.description.gender == gender].plot.hist(
+        bins=np.arange(100, dtype=int),
+        ax=ax
+    )
+ax.legend(genders)
 
 ###############################################################################
 # Next, we will perform some preprocessing steps. First, we will do some
@@ -90,7 +86,7 @@ tuh_time = select_by_duration(tuh, tmin, tmax)
 
 
 ###############################################################################
-# Next, we will discard all recording that have an incomplete channel
+# Next, we will discard all recordings that have an incomplete channel
 # configuration (wrt the channels that we are interested in, i.e. the 21
 # channels of the international 10-20-placement). The dataset is subdivided into
 # recordings with 'le' and 'ar' reference which we will have to consider. Data
@@ -134,21 +130,25 @@ tuh_chs = select_by_channels(tuh_time, ch_mapping)
 
 
 ###############################################################################
-# Next, we will chain several preprocessing steps that are realized through mne:
-# - crop the recordings to a region of interest (does not load)
-# - re-reference all recordings to 'ar' (loads)
-# - rename channels to short channel names (does not load)
-# - pick channels of interest (does not load)
-# - scale signals to microvolts (loads)
-# - resample recordings to a common frequency (loads)
-# - create compute windows (does not load)
+# Next, we will chain several preprocessing steps that are realized through
+# `mne`. Data will be loaded by the first preprocessor that has a mention of it
+# in brackets:
+# - crop the recordings to a region of interest
+# - re-reference all recordings to 'ar' (requires load)
+# - rename channels to short channel names
+# - pick channels of interest
+# - scale signals to microvolts (requires load)
+# - resample recordings to a common frequency (requires load)
+# - create compute windows
 
 def custom_rename_channels(raw, mapping):
     # rename channels which are dependent on referencing:
-    # le: EEG 01-LE, ar_ EEG 01-REF
+    # le: EEG 01-LE, ar: EEG 01-REF
     # mne fails if the mapping contains channels as keys that are not present
     # in the raw
-    reference = 'le' if raw.ch_names[0].split('-')[-1].lower() == 'le' else 'ar'
+    reference = raw.ch_names[0].split('-')[-1].lower()
+    assert reference in ['le', 'ref'], 'unexpected referencing'
+    reference = 'le' if reference == 'le' else 'ar'
     raw.rename_channels(mapping[reference])
 
 
@@ -180,7 +180,7 @@ preprocessors = [
 
 ###############################################################################
 # To apply the preprocessing steps, we split the dataset into batches, s.t. we
-# do not encounter memory issues.
+# do not encounter memory issues. Data is not loaded here.
 
 def split_into_batches(n, batch_size):
     batches = [list(range(i*batch_size, (i+1)*batch_size))
@@ -201,7 +201,7 @@ tuh_splits = tuh_chs.split(split_ids)
 # preprocessors as defined above. Then, we update the description of the batch,
 # since we have altered the duration, the reference, and the sampling frequency.
 # Afterwards, we split the continuous signals into compute windows. We store
-# each batch to a unique subdirectory that are named corresponding to the
+# each batch to a unique subdirectory that is named corresponding to the
 # batch id. To save memory, after windowing and storing, we delete the batched
 # raw dataset and the batched windows dataset, respectively.
 
@@ -256,8 +256,8 @@ for batch_i, tuh_subset in tuh_splits.items():
 
 ###############################################################################
 # Preprocessing might fail, for example measurement date is broken for some
-# recordings which causes mne to raise a RuntimeError. We catch exceptions and
-# batch ids of failures and check them afterwards
+# recordings which causes `mne` to raise a `RuntimeError`. We catch exceptions
+# and batch ids of failures and check them afterwards
 
 [print(e) for e in errors]
 
