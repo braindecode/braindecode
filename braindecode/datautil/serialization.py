@@ -88,7 +88,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
     concat_of_epochs = os.path.isfile(os.path.join(path, '0-epo.fif'))
     paths = [path]
     # assume we have multiple concat datasets to load
-    if not (concat_of_raws + concat_of_epochs):
+    if not (concat_of_raws or concat_of_epochs):
         concat_of_raws = os.path.isfile(os.path.join(path, '0', '0-raw.fif'))
         concat_of_epochs = os.path.isfile(os.path.join(path, '0', '0-epo.fif'))
         path = os.path.join(path, '*', '')
