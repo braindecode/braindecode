@@ -93,7 +93,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
         concat_of_epochs = os.path.isfile(os.path.join(path, '0', '0-epo.fif'))
         path = os.path.join(path, '*', '')
         paths = glob(path)
-        paths = sorted(paths, key=lambda p: int(p.split('/')[-2]))
+        paths = sorted(paths, key=lambda p: int(p.split(os.sep)[-2]))
         if ids_to_load is not None:
             paths = [paths[i] for i in ids_to_load]
         ids_to_load = None
