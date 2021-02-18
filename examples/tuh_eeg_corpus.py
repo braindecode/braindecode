@@ -56,12 +56,13 @@ tuh = TUH(
 # for example an age pyramid split by gender of patients.
 fig, ax = plt.subplots(1, 1, figsize=(15, 5))
 genders = tuh.description.gender.unique()
-for gender in genders:
-    tuh.description.age[tuh.description.gender == gender].plot.hist(
-        bins=np.arange(100, dtype=int),
-        ax=ax,
-        alpha=.5
-    )
+x = [tuh.description.age[tuh.description.gender == g] for g in genders]
+ax.hist(
+    x=x,
+    stacked=True,
+    bins=np.arange(100, dtype=int),
+    alpha=.5,
+)
 ax.legend(genders)
 
 
