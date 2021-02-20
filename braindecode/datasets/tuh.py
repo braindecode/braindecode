@@ -67,15 +67,16 @@ class TUH(BaseConcatDataset):
             # read info relevant for preprocessing from raw without loading it
             sfreq = raw.info['sfreq']
             n_samples = raw.n_times
-            if add_physician_reports:
-                physician_report = _read_physician_report(file_path)
-            additional_description = pd.Series({
+            d = {
                 'sfreq': float(sfreq),
                 'n_samples': int(n_samples),
                 'age': int(age),
                 'gender': gender,
-                'report': physician_report
-            })
+            }
+            if add_physician_reports:
+                physician_report = _read_physician_report(file_path)
+                d['report'] = physician_report
+            additional_description = pd.Series(d)
             description = pd.concat(
                 [descriptions.pop(file_path_i), additional_description])
             base_dataset = BaseDataset(raw, description,
