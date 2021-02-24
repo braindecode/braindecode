@@ -123,6 +123,7 @@ jobs:
             command: |
               cd docs;
               PATTERN=$(cat ../pattern.txt) make $(cat ../build.txt);
+            no_output_timeout: 30m # sometimes downloads of data may take longer?
 
         # Reduce upload time of artifacts we will (almost) never look at
         - run:
