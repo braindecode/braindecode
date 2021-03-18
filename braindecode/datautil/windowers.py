@@ -55,7 +55,7 @@ def create_windows_from_events(
         trial size of the first trial and trial_start_offset_samples and
         trial_stop_offset_samples.
     window_stride_samples: int | None
-        Stride between windows, in samples. If None, the window size is
+        Stride between windows, in samples. If None, the window stride is
         inferred from the original trial size of the first trial and
         trial_start_offset_samples and trial_stop_offset_samples.
     drop_last_window: bool
