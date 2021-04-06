@@ -3,8 +3,6 @@
 #
 # License: BSD-3
 
-from collections import OrderedDict
-
 import numpy as np
 import pytest
 
@@ -185,7 +183,7 @@ def test_filterbank(base_concat_ds):
         MNEPreproc('pick_channels', ch_names=sorted(["C4", "Cz"]), ordered=True),
         MNEPreproc(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
                    drop_original_signals=False),
-        ]
+    ]
     preprocess(base_concat_ds, preprocessors)
     for x, y in base_concat_ds:
         break
