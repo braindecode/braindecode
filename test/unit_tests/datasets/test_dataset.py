@@ -28,10 +28,10 @@ def set_up():
                        [400, 0, 4],
                        [500, 0, 3]])
     window_idxs = [(0, 0, 100),
-                      (0, 100, 200),
-                      (1, 0, 100),
-                      (2, 0, 100),
-                      (2, 50, 150)]
+                   (0, 100, 200),
+                   (1, 0, 100),
+                   (2, 0, 100),
+                   (2, 50, 150)]
     i_window_in_trial, i_start_in_trial, i_stop_in_trial = list(
         zip(*window_idxs))
     metadata = pd.DataFrame(
@@ -71,7 +71,7 @@ def concat_windows_dataset(concat_ds_targets):
 
 
 def test_get_item(set_up):
-    _, _, mne_epochs, windows_dataset, events, window_idxs  = set_up
+    _, _, mne_epochs, windows_dataset, events, window_idxs = set_up
     for i, epoch in enumerate(mne_epochs.get_data()):
         x, y, inds = windows_dataset[i]
         np.testing.assert_allclose(epoch, x)
@@ -198,3 +198,30 @@ def test_metadata(concat_windows_dataset):
 def test_no_metadata(concat_ds_targets):
     with pytest.raises(TypeError, match='Metadata dataframe can only be'):
         concat_ds_targets[0].get_metadata()
+
+
+def test_on_the_fly_transforms_base_dataset(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    original_X = concat_ds[0][0]
+    factor = 10
+    transform = lambda x: x * factor
+    concat_ds.transform = transform
+    transformed_X = concat_ds[0][0]
+
+    assert (factor * original_X == transformed_X).all()
+
+    with pytest.raises(ValueError):
+        concat_ds.transform = 0
+
+
+def test_on_the_fly_transforms_windows_dataset(concat_windows_dataset):
+    original_X = concat_windows_dataset[0][0]
+    factor = 10
+    transform = lambda x: x * factor
+    concat_windows_dataset.transform = transform
+    transformed_X = concat_windows_dataset[0][0]
+
+    assert (factor * original_X == transformed_X).all()
+
+    with pytest.raises(ValueError):
+        concat_windows_dataset.transform = 0
