@@ -1,6 +1,4 @@
 """Preprocessors that work on Raw or Epochs objects.
-ToDo: should transformer also transform y (e.g. cutting continuous labelled
-      data)?
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
@@ -18,24 +16,37 @@ import numpy as np
 import pandas as pd
 
 
-class MNEPreproc(object):
+class Preprocessor(object):
     """Preprocessor for an MNE Raw or Epochs object.
+
+    Applies the provided preprocessing function to the data of a Raw or Epochs
+    object.
+    If the function is provided as a string, the method with that name will be
+    used (e.g., 'pick_channels', 'filter', etc.).
+    If it is provided as a callable and `apply_on_array` is True, the
+    `apply_function` method of Raw and Epochs object will be used to apply the
+    function on the internal arrays of Raw and Epochs.
+    If `apply_on_array` is False, the callable must directly modify the Raw or
+    Epochs object (e.g., by calling its method(s) or directly modifying its
+    internal arrays).
 
     Parameters
     ----------
     fn: str or callable
         If str, the Raw/Epochs object must have a method with that name.
         if callable, directly apply the callable to the object.
-    channel_wise: bool
-        Whether to apply the function channel-wise. Only used if `fn` is a
-        callable.
+    apply_on_array : bool
+        Ignored if `fn` is not a callable. If True, the `apply_function` of Raw
+        and Epochs object will be used to run `fn` on the underlying arrays
+        directly. If False, `fn` must directly modify the Raw or Epochs object.
     kwargs:
         Keyword arguments to be forwarded to the MNE function.
     """
-    def __init__(self, fn, channel_wise=False, **kwargs):
-        # if callable(fn):
-        #     kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise)
-        #     fn = 'apply_function'
+    def __init__(self, fn, apply_on_array=True, **kwargs):
+        if callable(fn) and apply_on_array:
+            channel_wise = kwargs.pop('channel_wise', False)
+            kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise)
+            fn = 'apply_function'
         self.fn = fn
         self.kwargs = kwargs
 
@@ -56,28 +67,9 @@ class MNEPreproc(object):
             self.fn(raw_or_epochs, **self.kwargs)
         else:
             if not hasattr(raw_or_epochs, self.fn):
-                raise AttributeError(f'MNE object does not have {self.fn} method.')
-        getattr(raw_or_epochs, self.fn)(**self.kwargs)
-
-
-class NumpyPreproc(MNEPreproc):
-    """Preprocessor that directly operates on the underlying numpy array of an
-    MNE Raw/Epochs object.
-
-    Parameters
-    ----------
-    fn: callable
-        Function that preprocesses the numpy array.
-    channel_wise: bool
-        Whether to apply the function channel-wise.
-    kwargs:
-        Keyword arguments to be forwarded to the function.
-    """
-    def __init__(self, fn, channel_wise=False, **kwargs):
-        # use apply function of MNE which will directly apply it to numpy array
-        partial_fn = partial(fn, **kwargs)
-        mne_kwargs = dict(fun=partial_fn, channel_wise=channel_wise)
-        super().__init__(fn='apply_function', **mne_kwargs)
+                raise AttributeError(
+                    f'MNE object does not have a {self.fn} method.')
+            getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
 def preprocess(concat_ds, preprocessors):
@@ -282,10 +274,10 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
 
     Parameters
     ----------
-    raw: Instance of mne.io.Raw
-        The raw signals to be filtered
+    raw: mne.io.Raw
+        The raw signals to be filtered.
     frequency_bands: list(tuple)
-        The frequency bands to be filtered for (e.g. [(4, 8), (8, 13)])
+        The frequency bands to be filtered for (e.g. [(4, 8), (8, 13)]).
     drop_original_signals: bool
         Whether to drop the original unfiltered signals
     order_by_frequency_band: bool
