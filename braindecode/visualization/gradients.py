@@ -32,7 +32,7 @@ def compute_amplitude_gradients_for_X(model, X):
 
     try:
         iffted = torch.fft.irfft(
-            fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],))
+            fft_coefs, n=X.shape[2], dim=2)
     except AttributeError:
         iffted = torch.irfft(  # Deprecated since 1.7
             fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],))
