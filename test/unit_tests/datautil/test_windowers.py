@@ -60,6 +60,17 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
     assert all([not ds.windows.preload for ds in windows.datasets])
 
 
+def test_windows_from_events_n_jobs(lazy_loadable_dataset):
+    windows = [create_windows_from_events(
+        concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=False, preload=True,
+        n_jobs=n_jobs) for n_jobs in [1, 2]]
+
+    for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
+        assert ds1.windows == ds2.windows
+
+
 def test_windows_from_events_mapping_filter(tmpdir_factory):
     raw = _get_raw(tmpdir_factory, 5 * ['T0', 'T1'])
     base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
@@ -69,7 +80,7 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
         concat_ds=concat_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, mapping={'T1': 0})
-    description = windows.datasets[0].windows.metadata["target"].to_list()
+    description = windows.datasets[0].windows.metadata['target'].to_list()
 
     assert len(description) == 5
     np.testing.assert_array_equal(description, np.zeros(5))
@@ -95,7 +106,7 @@ def test_windows_from_events_different_events(tmpdir_factory):
     description = []
     events = []
     for ds in windows.datasets:
-        description += ds.windows.metadata["target"].to_list()
+        description += ds.windows.metadata['target'].to_list()
         events += ds.windows.events[:, 0].tolist()
 
     assert len(description) == 20
@@ -207,7 +218,7 @@ def test_single_sample_size_windows(concat_ds_targets):
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1, window_stride_samples=1,
         drop_last_window=False, mapping=dict(tongue=3, left_hand=1,
-                                    right_hand=2,feet=4))
+                                             right_hand=2, feet=4))
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 1000
     np.testing.assert_array_equal(description[::1000], targets)
@@ -225,7 +236,8 @@ def test_overlapping_trial_offsets(concat_ds_targets):
             drop_last_window=False)
 
 
-@pytest.mark.parametrize('drop_bad_windows,preload', [(True, False), (True, False)])
+@pytest.mark.parametrize('drop_bad_windows,preload',
+                         [(True, False), (True, False)])
 def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
     concat_ds, _ = concat_ds_targets
     windows_from_events = create_windows_from_events(
@@ -246,13 +258,11 @@ def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
 
 
 def test_windows_from_events_(lazy_loadable_dataset):
-    with pytest.raises(ValueError,
-                       match='"trial_stop_offset_samples" too large\\. Stop '
-                             'of last trial \\(19900\\) \\+ '
-                             '"trial_stop_offset_samples" \\(250\\) must be '
-                             'smaller than length of recording \\(20000\\)\\.'
-                       ):
-        windows = create_windows_from_events(
+    msg = '"trial_stop_offset_samples" too large\\. Stop of last trial ' \
+          '\\(19900\\) \\+ "trial_stop_offset_samples" \\(250\\) must be ' \
+          'smaller than length of recording \\(20000\\)\\.'
+    with pytest.raises(ValueError, match=msg):
+        create_windows_from_events(
             concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
             trial_stop_offset_samples=250, window_size_samples=100,
             window_stride_samples=100, drop_last_window=False)
@@ -302,15 +312,26 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         idxs = np.append(idxs, stop_offset_samples - window_size_samples)
 
     assert len(idxs) == epochs_data.shape[0], (
-        f"Number of epochs different than expected")
+        'Number of epochs different than expected')
     assert window_size_samples == epochs_data.shape[2], (
-        f"Window size different than expected")
+        'Window size different than expected')
     for j, idx in enumerate(idxs):
         np.testing.assert_allclose(
             base_ds.raw.get_data()[:, idx:idx + window_size_samples],
             epochs_data[j, :],
-            err_msg=f"Epochs different for epoch {j}"
+            err_msg=f'Epochs different for epoch {j}'
         )
+
+
+def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
+    windows = [create_fixed_length_windows(
+        concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+        stop_offset_samples=None, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=True, preload=True,
+        n_jobs=n_jobs) for n_jobs in [1, 2]]
+
+    for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
+        assert ds1.windows == ds2.windows
 
 
 def test_windows_from_events_cropped(lazy_loadable_dataset):
