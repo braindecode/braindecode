@@ -1,4 +1,4 @@
-name: Installation of Braindecode
+name: Install And Run Tests of Braindecode
 on: [push]
 jobs:
   Install-Test-Braindecode:
