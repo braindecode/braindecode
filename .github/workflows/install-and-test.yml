@@ -32,6 +32,8 @@ jobs:
       run: pytest --cov=braindecode test/
     - name: Install docs requirements
       run: python -m pip install --upgrade -r docs/requirements.txt
+    - name: Install newer versions scikit learn scipy to prevent error # should be removed once moabb reason is clearer
+      run: pip install --upgrade scipy scikit-learn
     - name: Create Docs
       run: |
         cd docs
