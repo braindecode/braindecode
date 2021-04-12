@@ -16,10 +16,8 @@ jobs:
         auto-activate-base: false
     - run: conda --version
     - run: conda info --envs
-    - run: which $CONDA/bin/python
-    - run: $CONDA/bin/python -c "import braindecode; print(braindecode.__version__)"
     - run: which python
     - run: python -c "import braindecode; print(braindecode.__version__)"
     # Install MOABB as well
-    - run: $CONDA/bin/pip install moabb
-    - run: $CONDA/bin/pip install -e .
+    - run: pip install moabb
+    - run: pip install -e .
