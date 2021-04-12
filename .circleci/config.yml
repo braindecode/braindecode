@@ -57,6 +57,7 @@ jobs:
               python -m pip install --user --upgrade --progress-bar off coloredlogs
               python -m pip install --user --upgrade --progress-bar off pyyaml
               python -m pip install --user --upgrade --progress-bar off moabb
+              python -m pip install --user --upgrade --progress-bar off scikit-learn scipy
               python -m pip install --user -e .
 
         - save_cache:
