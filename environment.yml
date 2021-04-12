@@ -11,11 +11,10 @@ dependencies:
 - mkl
 - matplotlib
 - h5py
-- pytest
 - pytorch
+- pytest
 - pip
 - skorch
 - pip:
   - mne
   - https://github.com/braindecode/braindecode/zipball/master
-  #- torch # for now via pip as long as conda version causes problems on CPU
