@@ -31,8 +31,9 @@ def compute_amplitude_gradients_for_X(model, X):
     fft_coefs = fft_coefs.squeeze(3)
 
     try:
+        complex_fft_coefs = torch.view_as_complex(fft_coefs)
         iffted = torch.fft.irfft(
-            fft_coefs, n=X.shape[2], dim=2)
+            complex_fft_coefs, n=X.shape[2], dim=2)
     except AttributeError:
         iffted = torch.irfft(  # Deprecated since 1.7
             fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],))
