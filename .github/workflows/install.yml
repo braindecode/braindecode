@@ -1,7 +1,7 @@
 name: Installation of Braindecode
 on: [push]
 jobs:
-  Install-Braindecode:
+  Install-Test-Braindecode:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -26,15 +26,8 @@ jobs:
       run: pip install moabb
     - name: Install Braindecode from current checkout
       run: pip install -e .
-  Test-Braindecode:
-    needs: Install-Braindecode
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -l {0}
-    steps:
-    - run: ls -ahl
-    - run: pwd
-    - run: pip install --upgrade pytest pytest-cov codecov
-    - run: pytest --cov=braindecode test/
+    - name: Install codecov etc.
+      run: pip install --upgrade pytest pytest-cov codecov
+    - name: Run Tests
+      run: pytest --cov=braindecode test/
 
