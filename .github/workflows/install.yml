@@ -11,5 +11,8 @@ jobs:
         python-version: 3.7
         conda-channels: anaconda, conda-forge, pytorch
     - run: conda --version
+    - run: conda env create -f environment.yml
+    - run: conda activate braindecode
+    - run: conda --info envs
     - run: which python
     - run: python -c "print('hi')"
