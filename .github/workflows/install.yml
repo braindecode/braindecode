@@ -29,8 +29,12 @@ jobs:
   Test-Braindecode:
     needs: Install-Braindecode
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
     steps:
-    - run: ls
+    - run: ls -ahl
+    - run: pwd
     - run: pip install --upgrade pytest pytest-cov codecov
     - run: pytest --cov=braindecode test/
 
