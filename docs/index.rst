@@ -7,17 +7,20 @@ For EEG researchers that want to work with deep learning and
 deep learning researchers that want to work with EEG data.
 For now focussed on convolutional networks.
 
-
 Installation
 ============
 
 1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
-2. Install numpy (necessary for resamply installation to work), e.g.:
+2. Install MOABB from https://github.com/NeuroTechX/moabb, needed if you want to use MOABB datasets utilities:
 
 .. code-block:: bash
 
-  pip install numpy
+  pip install download
+  python -c "from download import download; download('https://raw.githubusercontent.com/NeuroTechX/moabb/master/requirements.txt', 'requirements.txt', replace=True)"
+  pip install -r requirements.txt
+  rm requirements.txt
+  pip install -U https://github.com/NeuroTechX/moabb/archive/master.zip
 
 3. Install braindecode via pip:
 
@@ -25,14 +28,33 @@ Installation
 
   pip install braindecode
 
+alternatively, if you use conda, you could create a dedicated environment with the following:
 
-Install the latest version of braindecode via pip:
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. code-block:: bash
+
+  curl -O https://raw.githubusercontent.com/braindecode/braindecode/master/environment.yml
+  conda env create -f environment.yml
+  conda activate braindecode
+
+alternatively, install the latest version of braindecode via pip:
 
 .. code-block:: bash
 
   pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master
 
+
+Get Started
+===========
+
+Learn how to use braindecode for ...
+
+.. toctree::
+   :maxdepth: 1
+
+    Basic trialwise decoding <auto_examples/plot_bcic_iv_2a_moabb_trial.rst>
+    More data-efficient "cropped decoding" <auto_examples/plot_bcic_iv_2a_moabb_cropped.rst>
+    Your own datasets through MNE <auto_examples/plot_mne_dataset_example.rst>
+    Your own datasets through Numpy <auto_examples/plot_custom_dataset_example.rst>
 
 Examples
 ========
@@ -50,17 +72,6 @@ Public API
    api
 
 
-.. Tutorials
-.. =========
-.. .. toctree::
-..    :maxdepth: 1
-
-..    notebooks/Trialwise_Decoding.ipynb
-..    notebooks/Cropped_Decoding.ipynb
-..    notebooks/Trialwise_Manual_Training_Loop.ipynb
-..    notebooks/Cropped_Manual_Training_Loop.ipynb
-..    notebooks/visualization/Perturbation.ipynb
-
 
 Troubleshooting
 ===============
@@ -68,18 +79,6 @@ Troubleshooting
 Please report any issues on github: https://github.com/braindecode/braindecode/issues
 
 
-.. API
-.. ===
-
-.. .. autosummary::
-..    :toctree: source
-
-..    braindecode.datasets
-..    braindecode.experiments
-..    braindecode.mne_ext
-..    braindecode.models
-..    braindecode.torch_ext
-..    braindecode.visualization
 
 Citing
 ======
@@ -103,7 +102,9 @@ If you use this code in a scientific publication, please cite us as:
     brain–computer interface, model interpretability, brain mapping},
   }
 
-as well as the `MNE-Python <https://mne.tools>`_` software that is used by braindecode:
+as well as the `MNE-Python <https://mne.tools>`_ software that is used by braindecode:
+
+.. code-block:: bibtex
 
   @article{10.3389/fnins.2013.00267,
   author={Gramfort, Alexandre and Luessi, Martin and Larson, Eric and Engemann, Denis and Strohmeier, Daniel and Brodbeck, Christian and Goj, Roman and Jas, Mainak and Brooks, Teon and Parkkonen, Lauri and Hämäläinen, Matti},

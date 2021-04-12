@@ -1,12 +1,16 @@
+# Authors: Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
+
 import os
-import errno
 import random
 
 import numpy as np
 import mne
 import h5py
-
-import torch as th
+import torch
+from sklearn.utils import check_random_state
 
 
 def set_random_seeds(seed, cuda):
@@ -20,9 +24,9 @@ def set_random_seeds(seed, cuda):
         Whether to set cuda seed with torch.
     """
     random.seed(seed)
-    th.manual_seed(seed)
+    torch.manual_seed(seed)
     if cuda:
-        th.cuda.manual_seed_all(seed)
+        torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
 
 
@@ -53,7 +57,7 @@ def np_to_var(
     X = np.asarray(X)
     if dtype is not None:
         X = X.astype(dtype)
-    X_tensor = th.tensor(X, requires_grad=requires_grad, **tensor_kwargs)
+    X_tensor = torch.tensor(X, requires_grad=requires_grad, **tensor_kwargs)
     if pin_memory:
         X_tensor = X_tensor.pin_memory()
     return X_tensor
@@ -166,127 +170,6 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
     return topo_result
 
 
-class FuncAndArgs(object):
-    """Container for a function and its arguments.
-    Useful in case you want to pass a function and its arguments
-    to another function without creating a new class.
-    You can call the new instance either with the apply method or
-    the ()-call operator:
-
-    >>> FuncAndArgs(max, 2,3).apply(4)
-    4
-    >>> FuncAndArgs(max, 2,3)(4)
-    4
-    >>> FuncAndArgs(sum, [3,4])(8)
-    15
-
-    """
-
-    def __init__(self, func, *args, **kwargs):
-        self.func = func
-        self.args = args
-        self.kwargs = kwargs
-
-    def apply(self, *other_args, **other_kwargs):
-        all_args = self.args + other_args
-        all_kwargs = self.kwargs.copy()
-        all_kwargs.update(other_kwargs)
-        return self.func(*all_args, **all_kwargs)
-
-    def __call__(self, *other_args, **other_kwargs):
-        return self.apply(*other_args, **other_kwargs)
-
-
-def add_message_to_exception(exc, additional_message):
-    #  give some more info...
-    # see http://www.ianbicking.org/blog/2007/09/re-raising-exceptions.html
-    args = exc.args
-    if not args:
-        arg0 = ""
-    else:
-
-        arg0 = args[0]
-    arg0 += additional_message
-    exc.args = (arg0,) + args[1:]
-
-
-def dict_compare(d1, d2):
-    """From http://stackoverflow.com/a/18860653/1469195"""
-    d1_keys = set(d1.keys())
-    d2_keys = set(d2.keys())
-    intersect_keys = d1_keys.intersection(d2_keys)
-    added = d1_keys - d2_keys
-    removed = d2_keys - d1_keys
-    modified = {o: (d1[o], d2[o]) for o in intersect_keys if d1[o] != d2[o]}
-    same = set(o for o in intersect_keys if d1[o] == d2[o])
-    return added, removed, modified, same
-
-
-def dict_equal(d1, d2):
-    d1_keys = set(d1.keys())
-    d2_keys = set(d2.keys())
-    intersect_keys = d1_keys.intersection(d2_keys)
-    modified = {o: (d1[o], d2[o]) for o in intersect_keys if d1[o] != d2[o]}
-    return (
-        intersect_keys == d2_keys
-        and intersect_keys == d1_keys
-        and len(modified) == 0
-    )
-
-
-def dict_is_subset(d1, d2):
-    added, removed, modified, same = dict_compare(d1, d2)
-    return len(added) == 0 and len(modified) == 0
-
-
-def merge_dicts(*dict_args):
-    """
-    Given any number of dicts, shallow copy and merge into a new dict,
-    precedence goes to key value pairs in latter dicts.
-    http://stackoverflow.com/a/26853961
-    """
-    result = {}
-    for dictionary in dict_args:
-        result.update(dictionary)
-    return result
-
-
-def touch_file(path):
-    # from http://stackoverflow.com/a/12654798/1469195
-    basedir = os.path.dirname(path)
-    if not os.path.exists(basedir):
-        os.makedirs(basedir)
-    with open(path, "a"):
-        os.utime(path, None)
-
-
-def to_tuple(sequence_or_element, length=None):
-    if hasattr(sequence_or_element, "__len__"):
-        assert length is None
-        return tuple(sequence_or_element)
-    else:
-        if length is None:
-            return (sequence_or_element,)
-        else:
-            return (sequence_or_element,) * length
-
-
-def mkdir_p(path):
-    try:
-        os.makedirs(path)
-    except OSError as exc:  # Python >2.5
-        if exc.errno == errno.EEXIST and os.path.isdir(path):
-            pass
-        else:
-            raise
-
-
-def select_inverse_inds(arr, inds):
-    mask = np.ones(len(arr), dtype=bool)
-    mask[inds] = False
-    return arr[mask]
-
-
 def get_balanced_batches(
     n_trials, rng, shuffle, n_batches=None, batch_size=None
 ):
@@ -340,18 +223,9 @@ def get_balanced_batches(
     return batches
 
 
-def round_list_to_int(a):
-    """
-    Round values in a and return as type int
-
-    :param a: array-like
-    :return: a with values rounded to integer
-    """
-    return np.round(a).astype(np.int)
-
-
 def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
-                         savedir=None, save_format='fif', overwrite=True):
+                         description=None, savedir=None, save_format='fif',
+                         overwrite=True, random_state=None):
     """Create an mne.io.RawArray with fake data, and optionally save it.
 
     This will overwrite already existing files.
@@ -366,11 +240,16 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
         Sampling frequency.
     include_anns : bool
         If True, also create annotations.
+    description : list | None
+        List of descriptions used for creating annotations. It should contain
+        10 elements.
     savedir : str | None
         If provided as a string, the file will be saved under that directory.
     save_format : str | list
         If `savedir` is provided, this specifies the file format the data should
         be saved to. Can be 'raw' or 'hdf5', or a list containing both.
+    random_state : int | RandomState
+        Random state for the generation of random data.
 
     Returns
     -------
@@ -379,7 +258,8 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
     save_fname : dict | None
         Dictionary containing the name the raw data was saved to.
     """
-    data = np.random.rand(n_channels, n_times)
+    random_state = check_random_state(random_state)
+    data = random_state.rand(n_channels, n_times)
     ch_names = [f'ch{i}' for i in range(n_channels)]
     ch_types = ['eeg'] * n_channels
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
@@ -392,7 +272,8 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
             int(sfreq * 2), int(n_times - sfreq * 2), num=n_anns).astype(int)
         onset = raw.times[inds]
         duration = [1] * n_anns
-        description = ['test'] * n_anns
+        if description is None:
+            description = ['test'] * n_anns
         anns = mne.Annotations(onset, duration, description)
         raw = raw.set_annotations(anns)
 
@@ -410,7 +291,48 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
             h5_fname = fname + '.h5'
             with h5py.File(h5_fname, 'w') as f:
                 f.create_dataset(
-                    'fake_raw', dtype='f16', data=raw.get_data())
+                    'fake_raw', dtype='f8', data=raw.get_data())
             save_fname['hdf5'] = h5_fname
 
     return raw, save_fname
+
+
+class ThrowAwayIndexLoader(object):
+    def __init__(self, net, loader, is_regression):
+        self.net = net
+        self.loader = loader
+        self.last_i = None
+        self.is_regression = is_regression
+
+    def __iter__(self, ):
+        normal_iter = self.loader.__iter__()
+        for batch in normal_iter:
+            if len(batch) == 3:
+                x, y, i = batch
+                # Store for scoring callbacks
+                self.net._last_window_inds = i
+            else:
+                x, y = batch
+
+            # TODO: should be on dataset side
+            if hasattr(x, 'type'):
+                x = x.type(torch.float32)
+                if self.is_regression:
+                    y = y.type(torch.float32)
+                else:
+                    y = y.type(torch.int64)
+            yield x, y
+
+
+def update_estimator_docstring(base_class, docstring):
+    base_doc = base_class.__doc__.replace(' : ', ': ')
+    idx = base_doc.find('callbacks:')
+    idx_end = idx + base_doc[idx:].find('\n\n')
+    # remove callback descripiton already included in braindecode docstring
+    filtered_doc = base_doc[:idx] + base_doc[idx_end+6:]
+    splitted = docstring.split('Parameters\n    ----------\n    ')
+    out_docstring = splitted[0] + \
+                    filtered_doc[filtered_doc.find('Parameters'):filtered_doc.find('Attributes')] + \
+                    splitted[1] + \
+                    filtered_doc[filtered_doc.find('Attributes'):]
+    return out_docstring

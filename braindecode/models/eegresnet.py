@@ -5,22 +5,24 @@
 
 import numpy as np
 
-import torch as th
+import torch
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
 
+from .functions import transpose_time_to_spat, squeeze_final_output
 from ..util import np_to_var
-from .modules import Expression, AvgPool2dWithConv
+from .modules import Expression, AvgPool2dWithConv, Ensure4d
 
 
 class EEGResNet(nn.Sequential):
     """
     Residual Network for EEG.
     """
-    def __init__(self, in_chans,
+    def __init__(self,
+                 in_chans,
                  n_classes,
-                 input_time_length,
+                 input_window_samples,
                  final_pool_length,
                  n_first_filters,
                  n_layers_per_block=2,
@@ -31,14 +33,25 @@ class EEGResNet(nn.Sequential):
                  batch_norm_epsilon=1e-4,
                  conv_weight_init_fn=lambda w: init.kaiming_normal_(w, a=0)):
         super().__init__()
+        self.in_chans = in_chans
+        self.n_classes = n_classes
+        self.input_window_samples = input_window_samples
         if final_pool_length == 'auto':
-            assert input_time_length is not None
+            assert input_window_samples is not None
         assert first_filter_length % 2 == 1
-        self.__dict__.update(locals())
-        del self.self
+        self.final_pool_length = final_pool_length
+        self.n_first_filters = n_first_filters
+        self.n_layers_per_block = n_layers_per_block
+        self.first_filter_length = first_filter_length
+        self.nonlinearity = nonlinearity
+        self.split_first_layer = split_first_layer
+        self.batch_norm_alpha = batch_norm_alpha
+        self.batch_norm_epsilon = batch_norm_epsilon
+        self.conv_weight_init_fn = conv_weight_init_fn
 
+        self.add_module("ensuredims", Ensure4d())
         if self.split_first_layer:
-            self.add_module('dimshuffle', Expression(_transpose_time_to_spat))
+            self.add_module('dimshuffle', Expression(transpose_time_to_spat))
             self.add_module('conv_time', nn.Conv2d(1, self.n_first_filters,
                                                    (self.first_filter_length, 1),
                                                    stride=1,
@@ -135,7 +148,7 @@ class EEGResNet(nn.Sequential):
         self.eval()
         if self.final_pool_length == 'auto':
             out = self(np_to_var(np.ones(
-                (1, self.in_chans, self.input_time_length, 1),
+                (1, self.in_chans, self.input_window_samples, 1),
                 dtype=np.float32)))
             n_out_time = out.cpu().data.numpy().shape[2]
             self.final_pool_length = n_out_time
@@ -146,7 +159,7 @@ class EEGResNet(nn.Sequential):
                         nn.Conv2d(n_cur_filters, self.n_classes,
                                   (1, 1), bias=True))
         self.add_module('softmax', nn.LogSoftmax(dim=1))
-        self.add_module('squeeze', Expression(_squeeze_final_output))
+        self.add_module('squeeze', Expression(squeeze_final_output))
 
         # Initialize all weights
         self.apply(lambda module: _weights_init(module, self.conv_weight_init_fn))
@@ -167,22 +180,6 @@ def _weights_init(module, conv_weight_init_fn):
     elif 'BatchNorm' in classname:
         init.constant_(module.weight, 1)
         init.constant_(module.bias, 0)
-
-
-def _squeeze_final_output(x):
-    """
-    remove empty dim at end and potentially remove empty time dim
-    do not just use squeeze as we never want to remove first dim
-    """
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
-    if x.size()[2] == 1:
-        x = x[:, :, 0]
-    return x
-
-
-def _transpose_time_to_spat(x):
-    return x.permute(0, 3, 2, 1)
 
 
 class _ResidualBlock(nn.Module):
@@ -227,11 +224,11 @@ class _ResidualBlock(nn.Module):
         stack_1 = self.nonlinearity(self.bn1(self.conv_1(x)))
         stack_2 = self.bn2(self.conv_2(stack_1))  # next nonlin after sum
         if self.n_pad_chans != 0:
-            zeros_for_padding = th.autograd.Variable(
-                th.zeros(x.size()[0], self.n_pad_chans // 2,
+            zeros_for_padding = torch.autograd.Variable(
+                torch.zeros(x.size()[0], self.n_pad_chans // 2,
                          x.size()[2], x.size()[3]))
             if x.is_cuda:
                 zeros_for_padding = zeros_for_padding.cuda()
-            x = th.cat((zeros_for_padding, x, zeros_for_padding), dim=1)
+            x = torch.cat((zeros_for_padding, x, zeros_for_padding), dim=1)
         out = self.nonlinearity(x + stack_2)
         return out

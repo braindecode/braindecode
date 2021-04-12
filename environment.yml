@@ -16,5 +16,5 @@ dependencies:
 - pip
 - skorch
 - pip:
-  - https://github.com/mne-tools/mne-python/zipball/master
+  - mne
   - https://github.com/braindecode/braindecode/zipball/master

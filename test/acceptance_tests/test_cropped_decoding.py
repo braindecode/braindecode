@@ -3,21 +3,19 @@
 #
 # License: BSD-3
 
-from collections import namedtuple
-
 import mne
 import numpy as np
-import torch as th
-import torch.nn.functional as F
+import torch
 from mne.io import concatenate_raws
+from skorch.helper import predefined_split
 from torch import optim
 
-from braindecode.datautil.iterators import CropsFromTrialsIterator
-from braindecode.monitors import compute_preds_per_trial_from_crops
+from braindecode import EEGClassifier
+from braindecode.datautil.xy import create_from_X_y
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.util import set_random_seeds
-from braindecode.util import var_to_np, np_to_var
 
 
 def test_cropped_decoding():
@@ -44,7 +42,6 @@ def test_cropped_decoding():
 
     # Find the events in this dataset
     events, _ = mne.events_from_annotations(raw)
-
     # Use only EEG channels
     eeg_channel_inds = mne.pick_types(
         raw.info, meg=False, eeg=True, stim=False, eog=False, exclude="bads"
@@ -67,25 +64,20 @@ def test_cropped_decoding():
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 
-    SignalAndTarget = namedtuple("SignalAndTarget", "X y")
-
-    train_set = SignalAndTarget(X[:60], y=y[:60])
-    test_set = SignalAndTarget(X[60:], y=y[60:])
-
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
     cuda = False
     set_random_seeds(seed=20170629, cuda=cuda)
 
     # This will determine how many crops are processed in parallel
-    input_time_length = 450
+    input_window_samples = 450
     n_classes = 2
-    in_chans = train_set.X.shape[1]
+    in_chans = X.shape[1]
     # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         final_conv_length=12,
     )
     to_dense_prediction_model(model)
@@ -93,123 +85,87 @@ def test_cropped_decoding():
     if cuda:
         model.cuda()
 
-    optimizer = optim.Adam(model.parameters())
-    # determine output size
-    test_input = np_to_var(
-        np.ones((2, in_chans, input_time_length, 1), dtype=np.float32)
-    )
-    if cuda:
-        test_input = test_input.cuda()
-    out = model(test_input)
-    n_preds_per_input = out.cpu().data.numpy().shape[2]
-    print("{:d} predictions per input/trial".format(n_preds_per_input))
+    # Perform forward pass to determine how many outputs per input
+    n_preds_per_input = get_output_shape(model, in_chans, input_window_samples)[2]
 
-    iterator = CropsFromTrialsIterator(
+    train_set = create_from_X_y(X[:60], y[:60],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+    valid_set = create_from_X_y(X[60:], y[60:],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+
+    train_split = predefined_split(valid_set)
+
+    clf = EEGClassifier(
+        model,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=torch.nn.functional.nll_loss,
+        optimizer=optim.Adam,
+        train_split=train_split,
         batch_size=32,
-        input_time_length=input_time_length,
-        n_preds_per_input=n_preds_per_input,
+        callbacks=['accuracy'],
     )
 
-    losses = []
-    accuracies = []
-    for i_epoch in range(4):
-        # Set model to training mode
-        model.train()
-        for batch_X, batch_y in iterator.get_batches(train_set, shuffle=False):
-            net_in = np_to_var(batch_X)
-            if cuda:
-                net_in = net_in.cuda()
-            net_target = np_to_var(batch_y)
-            if cuda:
-                net_target = net_target.cuda()
-            # Remove gradients of last backward pass from all parameters
-            optimizer.zero_grad()
-            outputs = model(net_in)
-            # Mean predictions across trial
-            # Note that this will give identical gradients to computing
-            # a per-prediction loss (at least for the combination of log softmax activation
-            # and negative log likelihood loss which we are using here)
-            outputs = th.mean(outputs, dim=2, keepdim=False)
-            loss = F.nll_loss(outputs, net_target)
-            loss.backward()
-            optimizer.step()
+    clf.fit(train_set, y=None, epochs=4)
 
-        # Print some statistics each epoch
-        model.eval()
-        print("Epoch {:d}".format(i_epoch))
-        for setname, dataset in (("Train", train_set), ("Test", test_set)):
-            # Collect all predictions and losses
-            all_preds = []
-            all_losses = []
-            batch_sizes = []
-            for batch_X, batch_y in iterator.get_batches(
-                dataset, shuffle=False
-            ):
-                net_in = np_to_var(batch_X)
-                if cuda:
-                    net_in = net_in.cuda()
-                net_target = np_to_var(batch_y)
-                if cuda:
-                    net_target = net_target.cuda()
-                outputs = model(net_in)
-                all_preds.append(var_to_np(outputs))
-                outputs = th.mean(outputs, dim=2, keepdim=False)
-                loss = F.nll_loss(outputs, net_target)
-                loss = float(var_to_np(loss))
-                all_losses.append(loss)
-                batch_sizes.append(len(batch_X))
-            # Compute mean per-input loss
-            loss = np.mean(
-                np.array(all_losses)
-                * np.array(batch_sizes)
-                / np.mean(batch_sizes)
-            )
-            print("{:6s} Loss: {:.5f}".format(setname, loss))
-            losses.append(loss)
-            # Assign the predictions to the trials
-            preds_per_trial = compute_preds_per_trial_from_crops(
-                all_preds, input_time_length, dataset.X
-            )
-            # preds per trial are now trials x classes x timesteps/predictions
-            # Now mean across timesteps for each trial to get per-trial predictions
-            meaned_preds_per_trial = np.array(
-                [np.mean(p, axis=1) for p in preds_per_trial]
-            )
-            predicted_labels = np.argmax(meaned_preds_per_trial, axis=1)
-            accuracy = np.mean(predicted_labels == dataset.y)
-            accuracies.append(accuracy * 100)
-            print("{:6s} Accuracy: {:.1f}%".format(setname, accuracy * 100))
     np.testing.assert_allclose(
-        np.array(losses),
+        clf.history[:, 'train_loss'],
         np.array(
             [
-                1.31657708,
-                1.73548156,
-                1.02950428,
-                1.43932164,
-                0.78677772,
-                1.12382019,
-                0.55920881,
-                0.87277424,
+                1.6666231592496237,
+                1.2292670885721841,
+                1.1270817518234253,
+                1.1752660751342774
             ]
         ),
-        rtol=1e-4,
-        atol=1e-5,
+        rtol=1e-3,
+        atol=1e-4,
     )
+
     np.testing.assert_allclose(
-        np.array(accuracies),
+        clf.history[:, 'valid_loss'],
         np.array(
             [
-                50.0,
-                46.66666667,
-                50.0,
-                46.66666667,
-                50.0,
-                46.66666667,
-                66.66666667,
-                50.0,
+                1.5687058925628663,
+                0.8510023872057597,
+                2.087181798617045,
+                0.7100235184033712
             ]
         ),
-        rtol=1e-4,
-        atol=1e-5,
+        rtol=1e-3,
+        atol=1e-3,
+    )
+
+    np.testing.assert_allclose(
+        clf.history[:, 'train_accuracy'],
+        np.array(
+            [
+                0.48333333333333334,
+                0.5,
+                0.5,
+                0.6333333333333333
+            ]
+        ),
+        rtol=1e-3,
+        atol=1e-4,
+    )
+
+    np.testing.assert_allclose(
+        clf.history[:, 'valid_accuracy'],
+        np.array(
+            [
+                0.533333,
+                0.5,
+                0.466667,
+                0.666667
+            ]
+        ),
+        rtol=1e-3,
+        atol=1e-4,
     )

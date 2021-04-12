@@ -3,18 +3,31 @@
 #
 # License: BSD-3
 
-from collections import namedtuple
-
 import mne
 import numpy as np
-import torch.nn.functional as F
+import torch
 from mne.io import concatenate_raws
-from numpy.random import RandomState
-from torch import optim
+from skorch.helper import predefined_split
+from torch.utils.data import Dataset, Subset
 
+from braindecode.classifier import EEGClassifier
 from braindecode.models import ShallowFBCSPNet
-from braindecode.util import np_to_var, var_to_np, get_balanced_batches
 from braindecode.util import set_random_seeds
+
+
+class EpochsDataset(Dataset):
+    def __init__(self, windows):
+        self.windows = windows
+        self.y = np.array(self.windows.events[:, -1])
+        self.y = self.y - self.y.min()
+
+    def __getitem__(self, index):
+        X = self.windows.get_data(item=index)[0].astype('float32')[:, :, None]
+        y = self.y[index]
+        return X, y
+
+    def __len__(self):
+        return len(self.windows.events)
 
 
 def test_trialwise_decoding():
@@ -38,6 +51,7 @@ def test_trialwise_decoding():
 
     # Concatenate them
     raw = concatenate_raws(parts)
+    raw.apply_function(lambda x: x * 1000000)
 
     # Find the events in this dataset
     events, _ = mne.events_from_annotations(raw)
@@ -59,125 +73,96 @@ def test_trialwise_decoding():
         preload=True,
     )
 
-    # Convert data from volt to millivolt
-    # Pytorch expects float32 for input and int64 for labels.
-    X = (epoched.get_data() * 1e6).astype(np.float32)
-    y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
+    ds = EpochsDataset(epoched)
 
-    SignalAndTarget = namedtuple("SignalAndTarget", "X y")
+    train_set = Subset(ds, np.arange(60))
+    valid_set = Subset(ds, np.arange(60, len(ds)))
 
-    train_set = SignalAndTarget(X[:60], y=y[:60])
-    test_set = SignalAndTarget(X[60:], y=y[60:])
+    train_valid_split = predefined_split(valid_set)
 
-    # Set if you want to use GPU
-    # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
     cuda = False
+    if cuda:
+        device = 'cuda'
+    else:
+        device = 'cpu'
     set_random_seeds(seed=20170629, cuda=cuda)
     n_classes = 2
-    in_chans = train_set.X.shape[1]
-    # final_conv_length = auto ensures we only get a single output in the time dimension
+    in_chans = train_set[0][0].shape[0]
+    input_window_samples = train_set[0][0].shape[1]
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=train_set.X.shape[2],
+        input_window_samples=input_window_samples,
         final_conv_length="auto",
     )
     if cuda:
         model.cuda()
 
-    optimizer = optim.Adam(model.parameters())
-
-    rng = RandomState((2017, 6, 30))
-    losses = []
-    accuracies = []
-    for i_epoch in range(6):
-        i_trials_in_batch = get_balanced_batches(
-            len(train_set.X), rng, shuffle=True, batch_size=30
-        )
-        # Set model to training mode
-        model.train()
-        for i_trials in i_trials_in_batch:
-            # Have to add empty fourth dimension to X
-            batch_X = train_set.X[i_trials][:, :, :, None]
-            batch_y = train_set.y[i_trials]
-            net_in = np_to_var(batch_X)
-            if cuda:
-                net_in = net_in.cuda()
-            net_target = np_to_var(batch_y)
-            if cuda:
-                net_target = net_target.cuda()
-            # Remove gradients of last backward pass from all parameters
-            optimizer.zero_grad()
-            # Compute outputs of the network
-            outputs = model(net_in)
-            # Compute the loss
-            loss = F.nll_loss(outputs, net_target)
-            # Do the backpropagation
-            loss.backward()
-            # Update parameters with the optimizer
-            optimizer.step()
-
-        # Print some statistics each epoch
-        model.eval()
-        print("Epoch {:d}".format(i_epoch))
-        for setname, dataset in (("Train", train_set), ("Test", test_set)):
-            # Here, we will use the entire dataset at once, which is still possible
-            # for such smaller datasets. Otherwise we would have to use batches.
-            net_in = np_to_var(dataset.X[:, :, :, None])
-            if cuda:
-                net_in = net_in.cuda()
-            net_target = np_to_var(dataset.y)
-            if cuda:
-                net_target = net_target.cuda()
-            outputs = model(net_in)
-            loss = F.nll_loss(outputs, net_target)
-            losses.append(float(var_to_np(loss)))
-            print("{:6s} Loss: {:.5f}".format(setname, float(var_to_np(loss))))
-            predicted_labels = np.argmax(var_to_np(outputs), axis=1)
-            accuracy = np.mean(dataset.y == predicted_labels)
-            accuracies.append(accuracy * 100)
-            print("{:6s} Accuracy: {:.1f}%".format(setname, accuracy * 100))
+    clf = EEGClassifier(
+        model,
+        cropped=False,
+        criterion=torch.nn.NLLLoss,
+        optimizer=torch.optim.Adam,
+        train_split=train_valid_split,
+        optimizer__lr=0.001,
+        batch_size=30,
+        callbacks=["accuracy"],
+        device=device,
+    )
+    clf.fit(train_set, y=None, epochs=6)
 
     np.testing.assert_allclose(
-        np.array(losses),
-        np.array(
-            [
-                0.91796708,
-                1.2714895,
-                0.4999536,
-                0.94365239,
-                0.39268905,
-                0.89928466,
-                0.37648854,
-                0.8940345,
-                0.35774994,
-                0.86749417,
-                0.35080773,
-                0.80767328,
-            ]
-        ),
+        clf.history[:, 'train_loss'],
+        np.array([
+            1.623811,
+            1.141197,
+            0.730361,
+            0.5994,
+            0.738884,
+            0.419241
+        ]),
         rtol=1e-4,
         atol=1e-5,
     )
 
     np.testing.assert_allclose(
-        np.array(accuracies),
-        np.array(
-            [
-                55.0,
-                63.33333333,
-                71.66666667,
-                63.33333333,
-                81.66666667,
-                60.0,
-                78.33333333,
-                63.33333333,
-                83.33333333,
-                66.66666667,
-                80.0,
-                66.66666667,
-            ]
-        ),
+        clf.history[:, 'valid_loss'],
+        np.array([
+            1.958356261253357,
+            0.8494758009910583,
+            0.9321595430374146,
+            0.8126973509788513,
+            0.7426613569259644,
+            0.7547585368156433
+        ]),
+        rtol=1e-4,
+        atol=1e-5,
+    )
+
+    np.testing.assert_allclose(
+        clf.history[:, 'train_accuracy'],
+        np.array([
+            0.5,
+            0.8166666666666667,
+            0.7,
+            0.8,
+            0.8666666666666667,
+            0.9
+        ]),
+        rtol=1e-4,
+        atol=1e-5,
+    )
+
+    np.testing.assert_allclose(
+        clf.history[:, 'valid_accuracy'],
+        np.array([
+            0.4666666666666667,
+            0.6,
+            0.5,
+            0.5666666666666667,
+            0.6,
+            0.6,
+        ]),
         rtol=1e-4,
         atol=1e-5,
     )

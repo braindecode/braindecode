@@ -20,6 +20,30 @@ This is the reference for classes (``CamelCase`` names) and functions
    :no-members:
    :no-inherited-members:
 
+Classifier
+==========
+
+:py:mod:`braindecode.classifier`:
+
+.. currentmodule:: braindecode.classifier
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGClassifier
+
+Regressor
+==========
+
+:py:mod:`braindecode.regressor`:
+
+.. currentmodule:: braindecode.regressor
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGRegressor
+
 Models
 ======
 
@@ -36,6 +60,22 @@ Models
     EEGNetv4
     HybridNet
     EEGResNet
+    TCN
+
+Training
+==========
+
+:py:mod:`braindecode.training`:
+
+.. currentmodule:: braindecode.training
+
+.. autosummary::
+   :toctree: generated/
+
+    CroppedLoss
+    CroppedTrialEpochScoring
+    PostEpochTrainScoring
+    trial_preds_from_window_preds
 
 Datasets
 ==========
@@ -63,11 +103,18 @@ Data Utils
 .. autosummary::
    :toctree: generated/
 
-    SignalAndTarget
+    create_from_X_y
+    create_from_mne_raw
+    create_from_mne_epochs
     create_fixed_length_windows
     create_windows_from_events
+    exponential_moving_demean
+    exponential_moving_standardize
     zscore
     scale
+    filterbank
+    save_concat_dataset
+    load_concat_dataset
 
 Utils
 =====

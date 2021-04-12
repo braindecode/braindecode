@@ -7,15 +7,16 @@
 import mne
 import numpy as np
 from mne.io import concatenate_raws
+from skorch.helper import predefined_split
 from torch import optim
+from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
-from braindecode.datasets.croppedxy import CroppedXyDataset
-from braindecode.datautil.splitters import TrainTestSplit
-from braindecode.losses import CroppedNLLLoss
+from braindecode.datautil.xy import create_from_X_y
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.scoring import CroppedTrialEpochScoring
+from braindecode.training.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds, np_to_var
 
 
@@ -57,7 +58,7 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
     except AssertionError as exc:
         exc.__dict__.setdefault("traces", []).append(trace)
         msg = (
-            err.message
+            exc.message
             if hasattr(exc, "message")
             else exc.args[0]
             if exc.args
@@ -117,21 +118,20 @@ def test_eeg_classifier():
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 
-
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
     cuda = False
     set_random_seeds(seed=20170629, cuda=cuda)
 
     # This will determine how many crops are processed in parallel
-    input_time_length = 450
+    input_window_samples = 450
     n_classes = 2
     in_chans = X.shape[1]
     # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
-        input_time_length=input_time_length,
+        input_window_samples=input_window_samples,
         final_conv_length=12,
     )
     to_dense_prediction_model(model)
@@ -141,16 +141,22 @@ def test_eeg_classifier():
 
     # determine output size
     test_input = np_to_var(
-        np.ones((2, in_chans, input_time_length, 1), dtype=np.float32)
+        np.ones((2, in_chans, input_window_samples, 1), dtype=np.float32)
     )
     if cuda:
         test_input = test_input.cuda()
     out = model(test_input)
     n_preds_per_input = out.cpu().data.numpy().shape[2]
 
-    train_set = CroppedXyDataset(
-        X[:60], y=y[:60], input_time_length=input_time_length,
-        n_preds_per_input=n_preds_per_input)
+    train_set = create_from_X_y(X[:48], y[:48],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
+
+    valid_set = create_from_X_y(X[48:60], y[48:60],
+                                drop_last_window=False,
+                                window_size_samples=input_window_samples,
+                                window_stride_samples=n_preds_per_input)
 
     cropped_cb_train = CroppedTrialEpochScoring(
         "accuracy",
@@ -168,12 +174,11 @@ def test_eeg_classifier():
 
     clf = EEGClassifier(
         model,
-        criterion=CroppedNLLLoss,
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
         optimizer=optim.Adam,
-        train_split=TrainTestSplit(
-            train_size=0.8,
-            input_time_length=input_time_length,
-            n_preds_per_input=n_preds_per_input,),
+        train_split=predefined_split(valid_set),
         batch_size=32,
         callbacks=[
             ("train_trial_accuracy", cropped_cb_train),
@@ -181,88 +186,70 @@ def test_eeg_classifier():
         ],
     )
 
-    clf.fit(train_set.X, train_set.y, epochs=4)
+    clf.fit(train_set, y=None, epochs=4)
 
-    expected = [
-        {
-            "batches": [
-                {"train_loss": 2.0750882625579834, "train_batch_size": 32},
-                {"train_loss": 3.09424090385437, "train_batch_size": 32},
-                {"train_loss": 1.079931378364563, "train_batch_size": 32},
-                {"valid_loss": 2.3208131790161133, "valid_batch_size": 24},
-            ],
-            "epoch": 1,
-            "train_batch_count": 3,
-            "valid_batch_count": 1,
-            "train_loss": 2.083086848258972,
-            "train_loss_best": True,
-            "valid_loss": 2.3208131790161133,
-            "valid_loss_best": True,
-            "train_trial_accuracy": 0.5,
-            "train_trial_accuracy_best": True,
-            "valid_trial_accuracy": 0.5,
-            "valid_trial_accuracy_best": True,
-        },
-        {
-            "batches": [
-                {"train_loss": 1.827332615852356, "train_batch_size": 32},
-                {"train_loss": 1.4135494232177734, "train_batch_size": 32},
-                {"train_loss": 1.1295170783996582, "train_batch_size": 32},
-                {"valid_loss": 1.4291356801986694, "valid_batch_size": 24},
-            ],
-            "epoch": 2,
-            "train_batch_count": 3,
-            "valid_batch_count": 1,
-            "train_loss": 1.4567997058232625,
-            "train_loss_best": True,
-            "valid_loss": 1.4291356801986694,
-            "valid_loss_best": True,
-            "train_trial_accuracy": 0.5,
-            "train_trial_accuracy_best": False,
-            "valid_trial_accuracy": 0.5,
-            "valid_trial_accuracy_best": False,
-        },
-        {
-            "batches": [
-                {"train_loss": 1.1495535373687744, "train_batch_size": 32},
-                {"train_loss": 2.356320381164551, "train_batch_size": 32},
-                {"train_loss": 0.9548418521881104, "train_batch_size": 32},
-                {"valid_loss": 2.248246908187866, "valid_batch_size": 24},
-            ],
-            "epoch": 3,
-            "train_batch_count": 3,
-            "valid_batch_count": 1,
-            "train_loss": 1.4869052569071453,
-            "train_loss_best": False,
-            "valid_loss": 2.248246908187866,
-            "valid_loss_best": False,
-            "train_trial_accuracy": 0.5,
-            "train_trial_accuracy_best": False,
-            "valid_trial_accuracy": 0.5,
-            "valid_trial_accuracy_best": False,
-        },
-        {
-            "batches": [
-                {"train_loss": 1.2157528400421143, "train_batch_size": 32},
-                {"train_loss": 1.1182057857513428, "train_batch_size": 32},
-                {"train_loss": 0.9163083434104919, "train_batch_size": 32},
-                {"valid_loss": 0.9732739925384521, "valid_batch_size": 24},
-            ],
-            "epoch": 4,
-            "train_batch_count": 3,
-            "valid_batch_count": 1,
-            "train_loss": 1.083422323067983,
-            "train_loss_best": True,
-            "valid_loss": 0.9732739925384521,
-            "valid_loss_best": True,
-            "train_trial_accuracy": 0.5,
-            "train_trial_accuracy_best": False,
-            "valid_trial_accuracy": 0.5,
-            "valid_trial_accuracy_best": False,
-        },
-    ]
+    expected = [{'batches': [{'train_batch_size': 32, 'train_loss': 1.6639312505722046},
+                             {'train_batch_size': 32, 'train_loss': 2.6161606311798096},
+                             {'train_batch_size': 32, 'train_loss': 1.627132773399353},
+                             {'valid_batch_size': 24, 'valid_loss': 0.9677614569664001}],
+                 'epoch': 1,
+                 'train_batch_count': 3,
+                 'train_loss': 1.9690748850504558,
+                 'train_loss_best': True,
+                 'train_trial_accuracy': 0.4791666666666667,
+                 'train_trial_accuracy_best': True,
+                 'valid_batch_count': 1,
+                 'valid_loss': 0.9677614569664001,
+                 'valid_loss_best': True,
+                 'valid_trial_accuracy': 0.5,
+                 'valid_trial_accuracy_best': True},
+                {'batches': [{'train_batch_size': 32, 'train_loss': 1.3829222917556763},
+                             {'train_batch_size': 32, 'train_loss': 1.3123714923858643},
+                             {'train_batch_size': 32, 'train_loss': 1.0109959840774536},
+                             {'valid_batch_size': 24, 'valid_loss': 1.9435862302780151}],
+                 'epoch': 2,
+                 'train_batch_count': 3,
+                 'train_loss': 1.2354299227396648,
+                 'train_loss_best': True,
+                 'train_trial_accuracy': 0.5,
+                 'train_trial_accuracy_best': True,
+                 'valid_batch_count': 1,
+                 'valid_loss': 1.9435862302780151,
+                 'valid_loss_best': False,
+                 'valid_trial_accuracy': 0.5,
+                 'valid_trial_accuracy_best': False},
+                {'batches': [{'train_batch_size': 32, 'train_loss': 1.172208547592163},
+                             {'train_batch_size': 32, 'train_loss': 0.8899562954902649},
+                             {'train_batch_size': 32, 'train_loss': 1.0232216119766235},
+                             {'valid_batch_size': 24, 'valid_loss': 0.9585554599761963}],
+                 'epoch': 3,
+                 'train_batch_count': 3,
+                 'train_loss': 1.0284621516863506,
+                 'train_loss_best': True,
+                 'train_trial_accuracy': 0.5,
+                 'train_trial_accuracy_best': False,
+                 'valid_batch_count': 1,
+                 'valid_loss': 0.9585554599761963,
+                 'valid_loss_best': True,
+                 'valid_trial_accuracy': 0.5,
+                 'valid_trial_accuracy_best': False},
+                {'batches': [{'train_batch_size': 32, 'train_loss': 0.9693693518638611},
+                             {'train_batch_size': 32, 'train_loss': 0.900641918182373},
+                             {'train_batch_size': 32, 'train_loss': 0.8839665651321411},
+                             {'valid_batch_size': 24, 'valid_loss': 0.873468816280365}],
+                 'epoch': 4,
+                 'train_batch_count': 3,
+                 'train_loss': 0.9179926117261251,
+                 'train_loss_best': True,
+                 'train_trial_accuracy': 0.625,
+                 'train_trial_accuracy_best': True,
+                 'valid_batch_count': 1,
+                 'valid_loss': 0.873468816280365,
+                 'valid_loss_best': True,
+                 'valid_trial_accuracy': 0.4166666666666667,
+                 'valid_trial_accuracy_best': False}]
 
     history_without_dur = [
         {k: v for k, v in h.items() if k != "dur"} for h in clf.history
     ]
-    assert_deep_allclose(history_without_dur, expected, atol=1e-3, rtol=1e-3)
+    assert_deep_allclose(expected, history_without_dur, atol=1e-3, rtol=1e-3)

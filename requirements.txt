@@ -3,5 +3,5 @@ pandas
 scipy
 matplotlib
 h5py
-git+https://github.com/mne-tools/mne-python.git
+mne
 skorch

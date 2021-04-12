@@ -1,10 +1,9 @@
-import torch as th
-
+import torch
 from torch import nn
 from torch.nn.functional import elu
 
-from .modules import Expression
-
+from .modules import Expression, Ensure4d
+from .functions import squeeze_final_output
 
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
@@ -12,7 +11,7 @@ class Conv2dWithConstraint(nn.Conv2d):
         super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
 
     def forward(self, x):
-        self.weight.data = th.renorm(
+        self.weight.data = torch.renorm(
             self.weight.data, p=2, dim=0, maxnorm=self.max_norm
         )
         return super(Conv2dWithConstraint, self).forward(x)
@@ -41,8 +40,8 @@ class EEGNetv4(nn.Sequential):
         self,
         in_chans,
         n_classes,
+        input_window_samples=None,
         final_conv_length="auto",
-        input_time_length=None,
         pool_mode="mean",
         F1=8,
         D=2,
@@ -53,11 +52,21 @@ class EEGNetv4(nn.Sequential):
     ):
         super().__init__()
         if final_conv_length == "auto":
-            assert input_time_length is not None
-        self.__dict__.update(locals())
-        del self.self
+            assert input_window_samples is not None
+        self.in_chans = in_chans
+        self.n_classes = n_classes
+        self.input_window_samples = input_window_samples
+        self.final_conv_length = final_conv_length
+        self.pool_mode = pool_mode
+        self.F1 = F1
+        self.D = D
+        self.F2 = F2
+        self.kernel_length = kernel_length
+        self.third_kernel_size = third_kernel_size
+        self.drop_prob = drop_prob
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
+        self.add_module("ensuredims", Ensure4d())
         # b c 0 1
         # now to b 1 0 c
         self.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
@@ -136,9 +145,9 @@ class EEGNetv4(nn.Sequential):
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            th.ones(
-                (1, self.in_chans, self.input_time_length, 1),
-                dtype=th.float32
+            torch.ones(
+                (1, self.in_chans, self.input_window_samples, 1),
+                dtype=torch.float32
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -160,7 +169,7 @@ class EEGNetv4(nn.Sequential):
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         self.add_module("permute_back", Expression(_transpose_1_0))
-        self.add_module("squeeze", Expression(_squeeze_final_output))
+        self.add_module("squeeze", Expression(squeeze_final_output))
 
         _glorot_weight_zero_bias(self)
 
@@ -171,16 +180,6 @@ def _transpose_to_b_1_c_0(x):
 
 def _transpose_1_0(x):
     return x.permute(0, 1, 3, 2)
-
-
-# remove empty dim at end and potentially remove empty time dim
-# do not just use squeeze as we never want to remove first dim
-def _squeeze_final_output(x):
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
-    if x.size()[2] == 1:
-        x = x[:, :, 0]
-    return x
 
 
 class EEGNetv1(nn.Sequential):
@@ -206,8 +205,8 @@ class EEGNetv1(nn.Sequential):
         self,
         in_chans,
         n_classes,
+        input_window_samples=None,
         final_conv_length="auto",
-        input_time_length=None,
         pool_mode="max",
         second_kernel_size=(2, 32),
         third_kernel_size=(8, 4),
@@ -215,17 +214,18 @@ class EEGNetv1(nn.Sequential):
     ):
         super().__init__()
         if final_conv_length == "auto":
-            assert input_time_length is not None
+            assert input_window_samples is not None
         self.in_chans = in_chans
         self.n_classes = n_classes
+        self.input_window_samples = input_window_samples
         self.final_conv_length = final_conv_length
-        self.input_time_length = input_time_length
         self.pool_mode = pool_mode
         self.second_kernel_size = second_kernel_size
         self.third_kernel_size = third_kernel_size
         self.drop_prob = drop_prob
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
+        self.add_module("ensuredims", Ensure4d())
         n_filters_1 = 16
         self.add_module(
             "conv_1",
@@ -246,7 +246,7 @@ class EEGNetv1(nn.Sequential):
         n_filters_2 = 4
         # keras padds unequal padding more in front, so padding
         # too large should be ok.
-        # Not padding in time so that croped training makes sense
+        # Not padding in time so that cropped training makes sense
         # https://stackoverflow.com/questions/43994604/padding-with-even-kernel-size-in-a-convolutional-layer-in-keras-theano
 
         self.add_module(
@@ -289,9 +289,9 @@ class EEGNetv1(nn.Sequential):
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
         out = self(
-            th.ones(
-                    (1, self.in_chans, self.input_time_length, 1),
-                    dtype=th.float32,
+            torch.ones(
+                    (1, self.in_chans, self.input_window_samples, 1),
+                    dtype=torch.float32,
             )
         )
         n_out_virtual_chans = out.cpu().data.numpy().shape[2]
@@ -315,12 +315,12 @@ class EEGNetv1(nn.Sequential):
         self.add_module(
             "permute_2", Expression(lambda x: x.permute(0, 1, 3, 2))
         )
-        self.add_module("squeeze", Expression(_squeeze_final_output))
+        self.add_module("squeeze", Expression(squeeze_final_output))
         _glorot_weight_zero_bias(self)
 
-
 def _glorot_weight_zero_bias(model):
-    """Initalize parameters of all modules by initializing weights with glorot
+    """Initalize parameters of all modules by initializing weights with
+    glorot
      uniform/xavier initialization, and setting biases to zero. Weights from
      batch norm layers are set to 1.
 
