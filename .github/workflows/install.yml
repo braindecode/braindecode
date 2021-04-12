@@ -12,6 +12,7 @@ jobs:
         conda-channels: anaconda, conda-forge, pytorch
     - run: conda --version
     - run: conda env create -f environment.yml
+    - run: conda init bash
     - run: conda activate braindecode
     - run: conda --info envs
     - run: which python
