@@ -10,6 +10,7 @@ jobs:
         update-conda: true
         python-version: 3.7
         conda-channels: anaconda, conda-forge, pytorch
+    - shell: bash -l {0}  
     - run: conda --version
     - run: conda env create -f environment.yml
     - run: conda init bash
