@@ -21,7 +21,7 @@ install:
   - pip install --upgrade pytest pytest-cov codecov
   - pip install --upgrade coloredlogs
   - pip install --upgrade pyyaml
-  - pip install --upgrade git+https://github.com/NeuroTechX/moabb
+  - pip install --upgrade moabb
   - pip install -e .
 
 # command to run tests

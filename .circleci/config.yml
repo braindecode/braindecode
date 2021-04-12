@@ -58,7 +58,7 @@ jobs:
               python -m pip install --user --upgrade --progress-bar off pyyaml
               python -m pip install --user --upgrade --progress-bar off wfdb
               python -m pip install --user --upgrade --progress-bar off pyunpack
-              python -m pip install --user --upgrade --progress-bar off git+https://github.com/NeuroTechX/moabb
+              python -m pip install --user --upgrade --progress-bar off moabb
               python -m pip install --user -e .
 
         - save_cache:
