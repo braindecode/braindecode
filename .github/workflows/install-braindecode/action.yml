@@ -2,28 +2,27 @@ name: 'Install Braindecode through Conda'
 description: 'Install Braindecode in Conda Environment'
 runs:
   using: "composite"
+  runs-on: ubuntu-latest
+  defaults:
+    run:
+      shell: bash -l {0}
   steps:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -l {0}
-    steps:
-    - name: Checking out repository 
-      uses: actions/checkout@v2
-    - name: Setting up conda braindecode environment
-      uses: conda-incubator/setup-miniconda@v2
-      with:
-        environment-file: environment.yml
-        python-version: 3.7
-        activate-environment: braindecode
-        auto-activate-base: false
-    # Show Conda Versions and Braindecode Versions
-    - run: conda --version
-    - run: conda info --envs
-    - run: which python
-    - run: python -c "import braindecode; print(braindecode.__version__)"
-    # Install MOABB as well
-    - name: Install MOABB
-      run: pip install moabb
-    - name: Install Braindecode from current checkout
-      run: pip install -e .
+  - name: Checking out repository 
+    uses: actions/checkout@v2
+  - name: Setting up conda braindecode environment
+    uses: conda-incubator/setup-miniconda@v2
+    with:
+      environment-file: environment.yml
+      python-version: 3.7
+      activate-environment: braindecode
+      auto-activate-base: false
+  # Show Conda Versions and Braindecode Versions
+  - run: conda --version
+  - run: conda info --envs
+  - run: which python
+  - run: python -c "import braindecode; print(braindecode.__version__)"
+  # Install MOABB as well
+  - name: Install MOABB
+    run: pip install moabb
+  - name: Install Braindecode from current checkout
+    run: pip install -e .
