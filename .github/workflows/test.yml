@@ -4,6 +4,9 @@ jobs:
   Install-Braindecode:
     runs-on: ubuntu-latest
     steps:
-    - uses: ./.github/workflows/install.yml
+    - name: Checking out repository 
+      uses: actions/checkout@v2
+    - name: Install braindecode
+      uses: ./.github/workflows/install.yml
     - run: pip install --upgrade pytest pytest-cov codecov
     - run: pytest --cov=braindecode test/
