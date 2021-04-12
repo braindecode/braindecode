@@ -13,7 +13,7 @@ jobs:
     - run: conda --version
     - run: conda env create -f environment.yml
     - run: conda init bash
-    - run: conda activate braindecode
+    - run: source activate braindecode
     - run: conda --info envs
     - run: which python
     - run: python -c "print('hi')"
