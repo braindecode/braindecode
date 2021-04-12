@@ -1,0 +1,9 @@
+name: Tests using PyTest
+on: [push]
+jobs:
+  Install-Braindecode:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: ./.github/workflows/install.yml
+    - run: pip install --upgrade pytest pytest-cov codecov
+    - run: pytest --cov=braindecode test/
