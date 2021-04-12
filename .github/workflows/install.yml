@@ -9,7 +9,7 @@ jobs:
     steps:
     - name: Checking out repository 
       uses: actions/checkout@v2
-    - name: Setting up conda environment
+    - name: Setting up conda braindecode environment
       uses: conda-incubator/setup-miniconda@v2
       with:
         environment-file: environment.yml
