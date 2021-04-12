@@ -1,7 +1,7 @@
 name: Tests using PyTest
 on: [push]
 jobs:
-  Install-Braindecode:
+  Test-Braindecode:
     runs-on: ubuntu-latest
     steps:
     - name: Checking out repository 
