@@ -49,6 +49,8 @@ jobs:
       with:
         fail_ci_if_error: true
         file: ./junit-results.xml
+        
+    ## Create Sphinx Documentation
     - name: Install Docs Requirements
       run: python -m pip install --upgrade -r docs/requirements.txt
     - name: Install newer versions scikit learn scipy to prevent error # should be removed once moabb reason is clearer
