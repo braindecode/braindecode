@@ -1,4 +1,4 @@
-name: unittests
+name: tests-and-docs
 
 on:
   pull_request:
