@@ -18,6 +18,174 @@ from joblib import Parallel, delayed
 from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 
+def create_windows_from_events(
+        concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
+        window_size_samples=None, window_stride_samples=None,
+        drop_last_window=False, mapping=None, preload=False,
+        drop_bad_windows=True, picks=None, reject=None, flat=None,
+        on_missing='error', n_jobs=1):
+    """Create windows based on events in mne.Raw.
+
+    This function extracts windows of size window_size_samples in the interval
+    [trial onset + trial_start_offset_samples, trial onset + trial duration +
+    trial_stop_offset_samples] around each trial, with a separation of
+    window_stride_samples between consecutive windows. If the last window
+    around an event does not end at trial_stop_offset_samples and
+    drop_last_window is set to False, an additional overlapping window that
+    ends at trial_stop_offset_samples is created.
+
+    Windows are extracted from the interval defined by the following:
+
+                                                  trial onset +
+                    trial onset                     duration
+    |--------------------|------------------------------|---------------------|
+    trial onset -                                                 trial onset +
+    trial_start_offset_samples                                       duration +
+                                                      trial_stop_offset_samples
+
+    Parameters
+    ----------
+    concat_ds: BaseConcatDataset
+        A concat of base datasets each holding raw and description.
+    trial_start_offset_samples: int
+        Start offset from original trial onsets, in samples.
+    trial_stop_offset_samples: int
+        Stop offset from original trial stop, in samples.
+    window_size_samples: int | None
+        Window size. If None, the window size is inferred from the original
+        trial size of the first trial and trial_start_offset_samples and
+        trial_stop_offset_samples.
+    window_stride_samples: int | None
+        Stride between windows, in samples. If None, the window stride is
+        inferred from the original trial size of the first trial and
+        trial_start_offset_samples and trial_stop_offset_samples.
+    drop_last_window: bool
+        If False, an additional overlapping window that ends at
+        trial_stop_offset_samples will be extracted around each event when the
+        last window does not end exactly at trial_stop_offset_samples.
+    mapping: dict(str: int)
+        Mapping from event description to numerical target value.
+    preload: bool
+        If True, preload the data of the Epochs objects. This is useful to
+        reduce disk reading overhead when returning windows in a training
+        scenario, however very large data might not fit into memory.
+    drop_bad_windows: bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as otherwise
+        the BaseConcatDataset has to be updated as well.
+    picks: str | list | slice | None
+        Channels to include. If None, all available channels are used. See
+        mne.Epochs.
+    reject: dict | None
+        Epoch rejection parameters based on peak-to-peak amplitude. If None, no
+        rejection is done based on peak-to-peak amplitude. See mne.Epochs.
+    flat: dict | None
+        Epoch rejection parameters based on flatness of signals. If None, no
+        rejection based on flatness is done. See mne.Epochs.
+    on_missing: str
+        What to do if one or several event ids are not found in the recording.
+        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+    n_jobs: int
+        Number of jobs to use to parallelize the windowing.
+
+    Returns
+    -------
+    windows_ds: WindowsDataset
+        Dataset containing the extracted windows.
+    """
+    _check_windowing_arguments(
+        trial_start_offset_samples, trial_stop_offset_samples,
+        window_size_samples, window_stride_samples)
+
+    # If user did not specify mapping, we extract all events from all datasets
+    # and map them to increasing integers starting from 0
+    infer_mapping = mapping is None
+    mapping = dict() if infer_mapping else mapping
+    infer_window_size_stride = window_size_samples is None
+
+    list_of_windows_ds = Parallel(n_jobs=n_jobs)(
+        delayed(_create_windows_from_events)(
+            ds, infer_mapping, infer_window_size_stride,
+            trial_start_offset_samples, trial_stop_offset_samples,
+            window_size_samples, window_stride_samples, drop_last_window,
+            mapping, preload, drop_bad_windows, picks, reject, flat,
+            'error') for ds in concat_ds.datasets)
+
+    return BaseConcatDataset(list_of_windows_ds)
+
+
+def create_fixed_length_windows(
+        concat_ds, start_offset_samples, stop_offset_samples,
+        window_size_samples, window_stride_samples, drop_last_window,
+        mapping=None, preload=False, drop_bad_windows=True, picks=None,
+        reject=None, flat=None, on_missing='error', n_jobs=1):
+    """Windower that creates sliding windows.
+
+    Parameters
+    ----------
+    concat_ds: ConcatDataset
+        A concat of base datasets each holding raw and descpription.
+    start_offset_samples: int
+        Start offset from beginning of recording in samples.
+    stop_offset_samples: int | None
+        Stop offset from beginning of recording in samples. If None, set to be
+        the end of the recording.
+    window_size_samples: int
+        Window size.
+    window_stride_samples: int
+        Stride between windows.
+    drop_last_window: bool
+        Whether or not have a last overlapping window, when windows do not
+        equally divide the continuous signal.
+    mapping: dict(str: int)
+        Mapping from event description to target value.
+    preload: bool
+        If True, preload the data of the Epochs objects.
+    drop_bad_windows: bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as
+        otherwise the BaseConcatDataset has to be updated as well.
+    picks: str | list | slice | None
+        Channels to include. If None, all available channels are used. See
+        mne.Epochs.
+    reject: dict | None
+        Epoch rejection parameters based on peak-to-peak amplitude. If None, no
+        rejection is done based on peak-to-peak amplitude. See mne.Epochs.
+    flat: dict | None
+        Epoch rejection parameters based on flatness of signals. If None, no
+        rejection based on flatness is done. See mne.Epochs.
+    on_missing: str
+        What to do if one or several event ids are not found in the recording.
+        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+    n_jobs: int
+        Number of jobs to use to parallelize the windowing.
+
+    Returns
+    -------
+    windows_ds: WindowsDataset
+        Dataset containing the extracted windows.
+    """
+    _check_windowing_arguments(
+        start_offset_samples, stop_offset_samples,
+        window_size_samples, window_stride_samples)
+    if stop_offset_samples == 0:
+        warnings.warn(
+            'Meaning of `trial_stop_offset_samples`=0 has changed, use `None` '
+            'to indicate end of trial/recording. Using `None`.')
+        stop_offset_samples = None
+
+    list_of_windows_ds = Parallel(n_jobs=n_jobs)(
+        delayed(_create_fixed_length_windows)(
+            ds, start_offset_samples, stop_offset_samples, window_size_samples,
+            window_stride_samples, drop_last_window, mapping, preload,
+            drop_bad_windows, picks, reject, flat, on_missing)
+        for ds in concat_ds.datasets)
+
+    return BaseConcatDataset(list_of_windows_ds)
+
+
 def _create_windows_from_events(
         ds, infer_mapping, infer_window_size_stride,
         trial_start_offset_samples, trial_stop_offset_samples,
@@ -125,103 +293,6 @@ def _create_windows_from_events(
     return WindowsDataset(mne_epochs, ds.description)
 
 
-def create_windows_from_events(
-        concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples=None, window_stride_samples=None,
-        drop_last_window=False, mapping=None, preload=False,
-        drop_bad_windows=True, picks=None, reject=None, flat=None,
-        on_missing='error', n_jobs=1):
-    """Create windows based on events in mne.Raw.
-
-    This function extracts windows of size window_size_samples in the interval
-    [trial onset + trial_start_offset_samples, trial onset + trial duration +
-    trial_stop_offset_samples] around each trial, with a separation of
-    window_stride_samples between consecutive windows. If the last window
-    around an event does not end at trial_stop_offset_samples and
-    drop_last_window is set to False, an additional overlapping window that
-    ends at trial_stop_offset_samples is created.
-
-    Windows are extracted from the interval defined by the following:
-
-                                                  trial onset +
-                    trial onset                     duration
-    |--------------------|------------------------------|---------------------|
-    trial onset -                                                 trial onset +
-    trial_start_offset_samples                                       duration +
-                                                      trial_stop_offset_samples
-
-    Parameters
-    ----------
-    concat_ds: BaseConcatDataset
-        A concat of base datasets each holding raw and description.
-    trial_start_offset_samples: int
-        Start offset from original trial onsets, in samples.
-    trial_stop_offset_samples: int
-        Stop offset from original trial stop, in samples.
-    window_size_samples: int | None
-        Window size. If None, the window size is inferred from the original
-        trial size of the first trial and trial_start_offset_samples and
-        trial_stop_offset_samples.
-    window_stride_samples: int | None
-        Stride between windows, in samples. If None, the window stride is
-        inferred from the original trial size of the first trial and
-        trial_start_offset_samples and trial_stop_offset_samples.
-    drop_last_window: bool
-        If False, an additional overlapping window that ends at
-        trial_stop_offset_samples will be extracted around each event when the
-        last window does not end exactly at trial_stop_offset_samples.
-    mapping: dict(str: int)
-        Mapping from event description to numerical target value.
-    preload: bool
-        If True, preload the data of the Epochs objects. This is useful to
-        reduce disk reading overhead when returning windows in a training
-        scenario, however very large data might not fit into memory.
-    drop_bad_windows: bool
-        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifying e.g., windows that fall outside of the
-        continuous recording. It is suggested to run this step here as otherwise
-        the BaseConcatDataset has to be updated as well.
-    picks: str | list | slice | None
-        Channels to include. If None, all available channels are used. See
-        mne.Epochs.
-    reject: dict | None
-        Epoch rejection parameters based on peak-to-peak amplitude. If None, no
-        rejection is done based on peak-to-peak amplitude. See mne.Epochs.
-    flat: dict | None
-        Epoch rejection parameters based on flatness of signals. If None, no
-        rejection based on flatness is done. See mne.Epochs.
-    on_missing: str
-        What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
-    n_jobs: int
-        Number of jobs to use to parallelize the windowing.
-
-    Returns
-    -------
-    windows_ds: WindowsDataset
-        Dataset containing the extracted windows.
-    """
-    _check_windowing_arguments(
-        trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples, window_stride_samples)
-
-    # If user did not specify mapping, we extract all events from all datasets
-    # and map them to increasing integers starting from 0
-    infer_mapping = mapping is None
-    mapping = dict() if infer_mapping else mapping
-    infer_window_size_stride = window_size_samples is None
-
-    list_of_windows_ds = Parallel(n_jobs=n_jobs)(
-        delayed(_create_windows_from_events)(
-            ds, infer_mapping, infer_window_size_stride,
-            trial_start_offset_samples, trial_stop_offset_samples,
-            window_size_samples, window_stride_samples, drop_last_window,
-            mapping, preload, drop_bad_windows, picks, reject, flat,
-            'error') for ds in concat_ds.datasets)
-
-    return BaseConcatDataset(list_of_windows_ds)
-
-
 def _create_fixed_length_windows(
         ds, start_offset_samples, stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window, mapping=None, preload=False,
@@ -277,77 +348,6 @@ def _create_fixed_length_windows(
         mne_epochs.drop_bad()
 
     return WindowsDataset(mne_epochs, ds.description)
-
-
-def create_fixed_length_windows(
-        concat_ds, start_offset_samples, stop_offset_samples,
-        window_size_samples, window_stride_samples, drop_last_window,
-        mapping=None, preload=False, drop_bad_windows=True, picks=None,
-        reject=None, flat=None, on_missing='error', n_jobs=1):
-    """Windower that creates sliding windows.
-
-    Parameters
-    ----------
-    concat_ds: ConcatDataset
-        A concat of base datasets each holding raw and descpription.
-    start_offset_samples: int
-        Start offset from beginning of recording in samples.
-    stop_offset_samples: int | None
-        Stop offset from beginning of recording in samples. If None, set to be
-        the end of the recording.
-    window_size_samples: int
-        Window size.
-    window_stride_samples: int
-        Stride between windows.
-    drop_last_window: bool
-        Whether or not have a last overlapping window, when windows do not
-        equally divide the continuous signal.
-    mapping: dict(str: int)
-        Mapping from event description to target value.
-    preload: bool
-        If True, preload the data of the Epochs objects.
-    drop_bad_windows: bool
-        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifying e.g., windows that fall outside of the
-        continuous recording. It is suggested to run this step here as
-        otherwise the BaseConcatDataset has to be updated as well.
-    picks: str | list | slice | None
-        Channels to include. If None, all available channels are used. See
-        mne.Epochs.
-    reject: dict | None
-        Epoch rejection parameters based on peak-to-peak amplitude. If None, no
-        rejection is done based on peak-to-peak amplitude. See mne.Epochs.
-    flat: dict | None
-        Epoch rejection parameters based on flatness of signals. If None, no
-        rejection based on flatness is done. See mne.Epochs.
-    on_missing: str
-        What to do if one or several event ids are not found in the recording.
-        Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
-    n_jobs: int
-        Number of jobs to use to parallelize the windowing.
-
-    Returns
-    -------
-    windows_ds: WindowsDataset
-        Dataset containing the extracted windows.
-    """
-    _check_windowing_arguments(
-        start_offset_samples, stop_offset_samples,
-        window_size_samples, window_stride_samples)
-    if stop_offset_samples == 0:
-        warnings.warn(
-            'Meaning of `trial_stop_offset_samples`=0 has changed, use `None` '
-            'to indicate end of trial/recording. Using `None`.')
-        stop_offset_samples = None
-
-    list_of_windows_ds = Parallel(n_jobs=n_jobs)(
-        delayed(_create_fixed_length_windows)(
-            ds, start_offset_samples, stop_offset_samples, window_size_samples,
-            window_stride_samples, drop_last_window, mapping, preload,
-            drop_bad_windows, picks, reject, flat, on_missing)
-        for ds in concat_ds.datasets)
-
-    return BaseConcatDataset(list_of_windows_ds)
 
 
 def _compute_window_inds(
