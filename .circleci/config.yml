@@ -55,7 +55,8 @@ jobs:
               python -m pip install --user --upgrade --progress-bar off ipython "https://api.github.com/repos/sphinx-gallery/sphinx-gallery/zipball/master" memory_profiler
               python -m pip install --user --upgrade --progress-bar off coloredlogs
               python -m pip install --user --upgrade --progress-bar off pyyaml
-              python -m pip install --user --upgrade --progress-bar off git+https://github.com/NeuroTechX/moabb
+              python -m pip install --user --upgrade --progress-bar off moabb
+              python -m pip install --user --upgrade --progress-bar off scikit-learn scipy
               python -m pip install --user -e .
 
         - save_cache:
@@ -125,6 +126,7 @@ jobs:
             command: |
               cd docs;
               PATTERN=$(cat ../pattern.txt) make $(cat ../build.txt);
+            no_output_timeout: 120m # sometimes downloads of data may take longer?
 
         # Keep these separate, maybe better in terms of size limitations (?)
         - save_cache:
