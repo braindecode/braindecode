@@ -31,7 +31,6 @@ jobs:
         # Load our data
         - restore_cache:
             keys:
-              - data-cache-0
               - pip-cache
 
         - run:
@@ -70,6 +69,11 @@ jobs:
             command: |
                which python
                python -c "import braindecode"
+
+        # Load our data
+        - restore_cache:
+            keys:
+              - data-cache-0
 
         # Figure out if we should run a full, pattern, or noplot version
         - run:
@@ -122,6 +126,13 @@ jobs:
               cd docs;
               PATTERN=$(cat ../pattern.txt) make $(cat ../build.txt);
 
+        # Keep these separate, maybe better in terms of size limitations (?)
+        - save_cache:
+            key: data-cache-0
+            paths:
+              - ~/mne_data/MNE-eegbci-data
+              - ~/mne_data/physionet-sleep-data
+
         # Reduce upload time of artifacts we will (almost) never look at
         - run:
             name: Reduce artifact upload time
@@ -139,13 +150,6 @@ jobs:
             root: docs/_build
             paths:
               - html
-
-        # Keep these separate, maybe better in terms of size limitations (?)
-        - save_cache:
-            key: data-cache-0
-            paths:
-              - ~/mne_data/MNE-eegbci-data
-              - ~/mne_data/physionet-sleep-data
 
     deploy:
       docker:
