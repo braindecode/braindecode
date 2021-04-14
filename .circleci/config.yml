@@ -132,8 +132,7 @@ jobs:
         - save_cache:
             key: data-cache-0
             paths:
-              - ~/mne_data/MNE-eegbci-data
-              - ~/mne_data/physionet-sleep-data
+              - ~/mne_data/
 
         # Reduce upload time of artifacts we will (almost) never look at
         - run:
