@@ -61,8 +61,9 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
 
 
 def test_windows_from_events_n_jobs(lazy_loadable_dataset):
+    longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
     windows = [create_windows_from_events(
-        concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
+        concat_ds=longer_dataset, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, preload=True,
         n_jobs=n_jobs) for n_jobs in [1, 2]]
@@ -176,7 +177,7 @@ def test_shifting_last_window_back_in(concat_ds_targets):
     assert len(description) == len(targets) * 2
     np.testing.assert_array_equal(description[0::2], targets)
     np.testing.assert_array_equal(description[1::2], targets)
-    
+
 
 def test_dropping_last_incomplete_window(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
@@ -324,8 +325,9 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
 
 
 def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
+    longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
     windows = [create_fixed_length_windows(
-        concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+        concat_ds=longer_dataset, start_offset_samples=0,
         stop_offset_samples=None, window_size_samples=100,
         window_stride_samples=100, drop_last_window=True, preload=True,
         n_jobs=n_jobs) for n_jobs in [1, 2]]
@@ -433,7 +435,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.reject == reject
     assert epochs.flat == flat
 
-    
+
 def test_window_sizes_from_events(concat_ds_targets):
     # no fixed window size, no offsets
     expected_n_samples = 1000
@@ -445,7 +447,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, positive trial start offset
     expected_n_samples = 999
     concat_ds, targets = concat_ds_targets
@@ -456,7 +458,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, negative trial start offset
     expected_n_samples = 1001
     concat_ds, targets = concat_ds_targets
@@ -467,7 +469,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, positive trial stop offset
     expected_n_samples = 1001
     concat_ds, targets = concat_ds_targets
@@ -478,7 +480,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, negative trial stop offset
     expected_n_samples = 999
     concat_ds, targets = concat_ds_targets
