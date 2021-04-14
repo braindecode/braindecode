@@ -12,15 +12,11 @@ Installation
 
 1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
-2. Install MOABB from https://github.com/NeuroTechX/moabb, needed if you want to use MOABB datasets utilities:
+2. Install `MOABB <https://github.com/NeuroTechX/moabb>`_ via pip (needed if you want to use MOABB datasets utilities):
 
 .. code-block:: bash
 
-  pip install download
-  python -c "from download import download; download('https://raw.githubusercontent.com/NeuroTechX/moabb/master/requirements.txt', 'requirements.txt', replace=True)"
-  pip install -r requirements.txt
-  rm requirements.txt
-  pip install -U https://github.com/NeuroTechX/moabb/archive/master.zip
+  pip install moabb
 
 3. Install braindecode via pip:
 

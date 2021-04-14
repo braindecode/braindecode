@@ -5,8 +5,8 @@ Braindecode
    :alt: Join the chat at https://gitter.im/braindecodechat/community
    :target: https://gitter.im/braindecodechat/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
 
-.. image:: https://travis-ci.org/braindecode/braindecode.svg?branch=master
-   :target: https://travis-ci.org/braindecode/braindecode
+.. image:: https://github.com/braindecode/braindecode/workflows/tests-and-docs/badge.svg
+   :target: https://github.com/braindecode/braindecode/actions
 
 .. image:: https://circleci.com/gh/braindecode/braindecode.svg?style=svg
    :target: https://circleci.com/gh/braindecode/braindecode
