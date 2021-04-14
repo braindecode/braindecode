@@ -74,7 +74,7 @@ jobs:
         # Load our data
         - restore_cache:
             keys:
-              - data-cache-0
+              - data-cache-1
 
         # Figure out if we should run a full, pattern, or noplot version
         - run:
@@ -130,7 +130,7 @@ jobs:
 
         # Keep these separate, maybe better in terms of size limitations (?)
         - save_cache:
-            key: data-cache-0
+            key: data-cache-1
             paths:
               - ~/mne_data/
 
