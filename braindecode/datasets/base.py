@@ -111,10 +111,10 @@ class WindowsDataset(BaseDataset):
         self.description = _create_description(description)
         self.transform = transform
 
-        self.y = self.windows.metadata.loc[:, 'target'].values
+        self.y = self.windows.metadata.loc[:, 'target'].to_numpy()
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
-                'i_stop_in_trial']].values
+                'i_stop_in_trial']].to_numpy()
 
     def __getitem__(self, index):
         X = self.windows.get_data(item=index)[0].astype('float32')
