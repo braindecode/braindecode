@@ -8,6 +8,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 
 """
 
+from collections import OrderedDict
 
 ######################################################################
 # Loading and preprocessing the dataset
@@ -35,7 +36,6 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #
 
 from braindecode.datasets.moabb import MOABBDataset
-import mne
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
@@ -63,7 +63,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #
 
 from braindecode.datautil.preprocess import exponential_moving_standardize
-from braindecode.datautil.preprocess import MNEPreproc, NumpyPreproc, preprocess
+from braindecode.datautil.preprocess import preprocess
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -71,17 +71,13 @@ high_cut_hz = 38.  # high cut frequency for filtering
 factor_new = 1e-3
 init_block_size = 1000
 
-preprocessors = [
-    # keep only EEG sensors
-    MNEPreproc(fn='pick_types', eeg=True, meg=False, stim=False),
-    # convert from volt to microvolt, directly modifying the numpy array
-    NumpyPreproc(fn=lambda x: x * 1e6),
-    # bandpass filter
-    MNEPreproc(fn='filter', l_freq=low_cut_hz, h_freq=high_cut_hz),
-    # exponential moving standardization
-    NumpyPreproc(fn=exponential_moving_standardize, factor_new=factor_new,
-        init_block_size=init_block_size)
-]
+preprocessors = OrderedDict([
+    ('pick_types', dict(eeg=True, meg=False, stim=False)),  # Keep EEG sensors
+    (lambda x: x * 1e6, dict()),  # Convert from V to uV
+    ('filter', dict(l_freq=low_cut_hz, h_freq=high_cut_hz)),  # Bandpass filter
+    (exponential_moving_standardize,  # Exponential moving standardization
+        dict(factor_new=factor_new, init_block_size=init_block_size))
+])
 
 # Transform the data
 preprocess(dataset, preprocessors)
@@ -167,7 +163,7 @@ seed = 20200220  # random seed to make results reproducible
 # Set random seed to be able to reproduce results
 set_random_seeds(seed=seed, cuda=cuda)
 
-n_classes=4
+n_classes = 4
 # Extract number of chans and time steps from dataset
 n_chans = train_set[0][0].shape[0]
 input_window_samples = train_set[0][0].shape[1]

@@ -77,17 +77,16 @@ dataset = SleepPhysionet(
 # we don't need to apply resampling.
 #
 
-from braindecode.datautil.preprocess import (
-    MNEPreproc, NumpyPreproc, preprocess)
+from collections import OrderedDict
+
+from braindecode.datautil.preprocess import preprocess
 
 high_cut_hz = 30
 
-preprocessors = [
-    # convert from volt to microvolt, directly modifying the numpy array
-    NumpyPreproc(fn=lambda x: x * 1e6),
-    # bandpass filter
-    MNEPreproc(fn='filter', l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs),
-]
+preprocessors = OrderedDict([
+    (lambda x: x * 1e6, dict()),
+    ('filter', dict(l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs))
+])
 
 # Transform the data
 preprocess(dataset, preprocessors)
@@ -141,7 +140,7 @@ windows_dataset = create_windows_from_events(
 
 from braindecode.datautil.preprocess import zscore
 
-preprocess(windows_dataset, [MNEPreproc(fn=zscore)])
+preprocess(windows_dataset, OrderedDict([(zscore, dict())]))
 
 
 ######################################################################
@@ -333,8 +332,8 @@ from skorch.callbacks import Checkpoint, EarlyStopping, EpochScoring
 from braindecode import EEGClassifier
 
 lr = 5e-3
-batch_size = 256
-n_epochs = 50
+batch_size = 512
+n_epochs = 25
 num_workers = 0 if n_jobs <= 1 else n_jobs
 
 cp = Checkpoint(dirname='', f_criterion=None, f_optimizer=None, f_history=None)

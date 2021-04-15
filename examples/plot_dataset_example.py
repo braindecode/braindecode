@@ -19,7 +19,7 @@ from IPython.display import display
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil.windowers import \
     create_windows_from_events, create_fixed_length_windows
-from braindecode.datautil.preprocess import preprocess, MNEPreproc
+from braindecode.datautil.preprocess import preprocess
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
@@ -40,12 +40,12 @@ for x, y in ds:
 ##############################################################################
 # We can apply preprocessing transforms that are defined in mne and work
 # in-place, such as resampling, bandpass filtering, or electrode selection.
-transforms = [
-    MNEPreproc("pick_types", eeg=True, meg=False, stim=True),
-    MNEPreproc("resample", sfreq=100),
-]
+preprocessors = OrderedDict([
+    ('pick_types', dict(eeg=True, meg=False, stim=True)),
+    ('resample', dict(sfreq=100))
+])
 print(ds.datasets[0].raw.info["sfreq"])
-preprocess(ds, transforms)
+preprocess(ds, preprocessors)
 print(ds.datasets[0].raw.info["sfreq"])
 
 ###############################################################################
@@ -99,24 +99,27 @@ for x, y, window_ind in sliding_windows_ds:
 # Transforms can also be applied on windows in the same way as shown
 # above on continuous data:
 
+
 def crop_windows(windows, start_offset_samples, stop_offset_samples):
     fs = windows.info["sfreq"]
     windows.crop(tmin=start_offset_samples / fs, tmax=stop_offset_samples / fs,
                  include_tmax=False)
 
-epochs_transform_list = [
-    MNEPreproc("pick_types", eeg=True, meg=False, stim=False),
-    MNEPreproc(crop_windows, start_offset_samples=100, stop_offset_samples=900),
-]
+
+epochs_preprocessors = OrderedDict([
+    ('pick_types', dict(eeg=True, meg=False, stim=False)),
+    (crop_windows, dict(apply_on_array=False, start_offset_samples=100,
+                        stop_offset_samples=900))
+])
 
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
-preprocess(windows_ds, epochs_transform_list)
+preprocess(windows_ds, epochs_preprocessors)
 print(windows_ds.datasets[0].windows.info["ch_names"],
       len(windows_ds.datasets[0].windows.times))
 
 max_i = 2
-fig, ax_arr = plt.subplots(1, max_i+1, figsize=((max_i+1)*7, 5),
+fig, ax_arr = plt.subplots(1, max_i + 1, figsize=((max_i + 1) * 7, 5),
                            sharex=True, sharey=True)
 for i, (x, y, window_ind) in enumerate(windows_ds):
     ax_arr[i].plot(x.T)
@@ -130,4 +133,3 @@ for i, (x, y, window_ind) in enumerate(windows_ds):
 # description DataFrame:
 subsets = windows_ds.split("session")
 print({subset_name: len(subset) for subset_name, subset in subsets.items()})
-
