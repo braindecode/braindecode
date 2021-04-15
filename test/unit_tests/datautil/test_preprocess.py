@@ -3,6 +3,8 @@
 #
 # License: BSD-3
 
+import copy
+
 import pytest
 import numpy as np
 from collections import OrderedDict
@@ -14,17 +16,25 @@ from braindecode.datautil.preprocess import preprocess, zscore, scale, \
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
+# We can't use fixtures with scope='module' as the dataset objects are modified
+# inplace during preprocessing. To avoid the long setup time caused by calling
+# the dataset/windowing functions multiple times, we instantiate the dataset
+# objects once and deep-copy them in fixture.
+raw_ds = MOABBDataset(dataset_name='BNCI2014001', subject_ids=[1, 2])
+windows_ds = create_fixed_length_windows(
+    raw_ds, start_offset_samples=100, stop_offset_samples=None,
+    window_size_samples=1000, window_stride_samples=1000,
+    drop_last_window=True, mapping=None, preload=True)
+
+
 @pytest.fixture
 def base_concat_ds():
-    return MOABBDataset(dataset_name='BNCI2014001', subject_ids=[1, 2])
+    return copy.deepcopy(raw_ds)
 
 
 @pytest.fixture
-def windows_concat_ds(base_concat_ds):
-    return create_fixed_length_windows(
-        base_concat_ds, start_offset_samples=100, stop_offset_samples=None,
-        window_size_samples=1000, window_stride_samples=1000,
-        drop_last_window=True, mapping=None, preload=True)
+def windows_concat_ds():
+    return copy.deepcopy(windows_ds)
 
 
 def modify_windows_object(epochs, factor=1):
@@ -53,22 +63,23 @@ def test_method_not_available(base_concat_ds):
 
 
 def test_preprocess_raw_str(base_concat_ds):
-    preprocessors = [Preprocessor('resample', sfreq=50)]
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
     preprocess(base_concat_ds, preprocessors)
-    assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
+    assert len(base_concat_ds.datasets[0].raw.times) == 2500
 
 
 def test_preprocess_raw_ordered_dict(base_concat_ds):
-    preprocessors = OrderedDict([('resample', {'sfreq': 50})])
+    preprocessors = OrderedDict([
+        ('crop', {'tmax': 10, 'include_tmax': False})])
     preprocess(base_concat_ds, preprocessors)
-    assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
+    assert len(base_concat_ds.datasets[0].raw.times) == 2500
 
 
 def test_preprocess_windows_str(windows_concat_ds):
-    preprocessors = [Preprocessor('filter', l_freq=7, h_freq=13)]
-    raw_window = windows_concat_ds[0][0]
+    preprocessors = OrderedDict([
+        ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False})])
     preprocess(windows_concat_ds, preprocessors)
-    assert not np.array_equal(raw_window, windows_concat_ds[0][0])
+    assert windows_concat_ds[0][0].shape[1] == 25
 
 
 def test_preprocess_raw_callable_on_array(base_concat_ds):
