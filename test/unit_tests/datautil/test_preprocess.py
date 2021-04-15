@@ -5,6 +5,7 @@
 
 import pytest
 import numpy as np
+from collections import OrderedDict
 
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil.preprocess import preprocess, zscore, scale, \
@@ -24,6 +25,10 @@ def windows_concat_ds(base_concat_ds):
         base_concat_ds, start_offset_samples=100, stop_offset_samples=None,
         window_size_samples=1000, window_stride_samples=1000,
         drop_last_window=True, mapping=None, preload=True)
+
+
+def modify_windows_object(epochs, factor=1):
+    epochs._data *= factor
 
 
 def test_not_list():
@@ -53,6 +58,12 @@ def test_preprocess_raw_str(base_concat_ds):
     assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
 
 
+def test_preprocess_raw_ordered_dict(base_concat_ds):
+    preprocessors = OrderedDict([('resample', {'sfreq': 50})])
+    preprocess(base_concat_ds, preprocessors)
+    assert base_concat_ds.datasets[0].raw.info['sfreq'] == 50
+
+
 def test_preprocess_windows_str(windows_concat_ds):
     preprocessors = [Preprocessor('filter', l_freq=7, h_freq=13)]
     raw_window = windows_concat_ds[0][0]
@@ -76,13 +87,20 @@ def test_preprocess_raw_callable_on_object(base_concat_ds):
 
 
 def test_preprocess_windows_callable_on_object(windows_concat_ds):
-
-    def modify_windows_object(epochs, factor=1):
-        epochs._data *= factor
-
     factor = 10
     preprocessors = [Preprocessor(modify_windows_object, apply_on_array=False,
                                   factor=factor)]
+    raw_window = windows_concat_ds[0][0]
+    preprocess(windows_concat_ds, preprocessors)
+    np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
+                               rtol=1e-4, atol=1e-4)
+
+
+def test_preprocess_windows_callable_on_object_ordered_dict(windows_concat_ds):
+    factor = 10
+    preprocessors = OrderedDict([
+        (modify_windows_object, {'apply_on_array': False, 'factor': factor})
+    ])
     raw_window = windows_concat_ds[0][0]
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,

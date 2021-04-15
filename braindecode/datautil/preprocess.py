@@ -9,6 +9,7 @@
 # License: BSD (3-clause)
 
 from collections.abc import Iterable
+from collections import OrderedDict
 from functools import partial
 from warnings import warn
 
@@ -34,7 +35,7 @@ class Preprocessor(object):
     ----------
     fn: str or callable
         If str, the Raw/Epochs object must have a method with that name.
-        if callable, directly apply the callable to the object.
+        If callable, directly apply the callable to the object.
     apply_on_array : bool
         Ignored if `fn` is not a callable. If True, the `apply_function` of Raw
         and Epochs object will be used to run `fn` on the underlying arrays
@@ -79,15 +80,27 @@ def preprocess(concat_ds, preprocessors):
     ----------
     concat_ds: BaseConcatDataset
         A concat of BaseDataset or WindowsDataset datasets to be preprocessed.
-    preprocessors: list(MNEPreproc) #TODO: correct object stuffs
-        List of preprocessors to apply to the dataset.
+    preprocessors: OrderedDict | list(Preprocessor)
+        If provided as an OrderedDict, configuration of the preprocessors to
+        use, where keys are a str or callable and values are a dict with the
+        preprocessing function kwargs (see parameters of the `Preprocessor`
+        class).
+        If provided as a list, directly contains the Preprocessor objects to
+        apply to the dataset.
 
     Returns
     -------
     BaseConcatDataset:
         Preprocessed dataset.
     """
-    assert isinstance(preprocessors, Iterable)
+    if isinstance(preprocessors, OrderedDict):
+        # Make Preprocessor objects out of a config
+        preprocessors = [
+            Preprocessor(k, **v) for k, v in preprocessors.items()]
+
+    if not isinstance(preprocessors, Iterable):
+        raise ValueError('preprocessors must be an OrderedDict or a list of '
+                         'Preprocessor objects.')
     for elem in preprocessors:
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
@@ -115,8 +128,8 @@ def _preprocess(raw_or_epochs, preprocessors):
     ----------
     raw_or_epochs: mne.io.Raw or mne.Epochs
         Object to preprocess.
-    preprocessors: list(MNEPreproc) #TODO: correct object stuffs
-        List of preprocessors to apply to the dataset
+    preprocessors: list(Preprocessor)
+        List of preprocessors to apply to the dataset.
     """
     for preproc in preprocessors:
         preproc.apply(raw_or_epochs)
@@ -168,8 +181,7 @@ def exponential_moving_standardize(
             data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
         init_block_standardized = (
-                                          data[0:init_block_size] - init_mean
-                                  ) / np.maximum(eps, init_std)
+            data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
