@@ -68,8 +68,12 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
         window_stride_samples=100, drop_last_window=False, preload=True,
         n_jobs=n_jobs) for n_jobs in [1, 2]]
 
+    assert windows[0].description.equals(windows[1].description)
     for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
         assert ds1.windows == ds2.windows
+        assert ds1.description.equals(ds2.description)
+        assert np.array_equal(ds1.y, ds2.y)
+        assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
 
 
 def test_windows_from_events_mapping_filter(tmpdir_factory):
@@ -332,8 +336,12 @@ def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
         window_stride_samples=100, drop_last_window=True, preload=True,
         n_jobs=n_jobs) for n_jobs in [1, 2]]
 
+    assert windows[0].description.equals(windows[1].description)
     for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
         assert ds1.windows == ds2.windows
+        assert ds1.description.equals(ds2.description)
+        assert np.array_equal(ds1.y, ds2.y)
+        assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
 
 
 def test_windows_from_events_cropped(lazy_loadable_dataset):
