@@ -17,5 +17,5 @@ dependencies:
 - skorch
 - joblib
 - pip:
-  - mne
+  - git+https://github.com/mne-tools/mne-python.git@5cc6eb8d7ebd102049843336d9d4a342f0f3e966
   - https://github.com/braindecode/braindecode/zipball/master
