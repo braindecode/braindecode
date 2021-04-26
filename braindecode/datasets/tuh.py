@@ -130,6 +130,8 @@ def _parse_description_from_file_path(file_path):
 def _read_physician_report(file_path):
     physician_report = np.nan
     # check if there is a report to add to the description
+    # TODO: not all files follow this logic. use glob again, assert 0 or 1 txt file
+    # try to read at with utf-8, if it fails use latin-1
     report_path = "_".join(file_path.split("_")[:-1]) + ".txt"
     if os.path.exists(report_path):
         with open(report_path, "r", encoding="latin-1") as f:
