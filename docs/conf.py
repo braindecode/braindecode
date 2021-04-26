@@ -17,6 +17,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
+import os
 import sys
 
 import matplotlib
@@ -31,6 +32,8 @@ from numpydoc import numpydoc, docscrape  # noqa
 #
 # needs_sphinx = '1.0'
 
+curdir = os.path.dirname(__file__)
+sys.path.append(os.path.abspath(os.path.join(curdir, 'sphinxext')))
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
@@ -47,7 +50,8 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
     'sphinx_gallery.gen_gallery',
-    'numpydoc'
+    'numpydoc',
+    'gh_substitutions',
 ]
 
 
@@ -144,7 +148,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'Braindecode'
-copyright = '2018-2020, Braindecode developers'
+copyright = '2018-2021, Braindecode developers'
 author = 'Braindecode developers'
 
 # The version info for the project you're documenting, acts as replacement for
