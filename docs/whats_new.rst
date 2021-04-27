@@ -18,7 +18,7 @@ What's new
 
 .. _current:
 
-Current (0.6.dev0)
+Current (0.5.1.dev0)
 -------------------
 
 Enhancements
@@ -27,7 +27,9 @@ Enhancements
 
 Bugs
 ~~~~
-- 
+- amplitude gradients are correctly computed for layers with multiple filters
+  (before, they were accidentally summed over all previous filters in the layer) (:gh:`167` by `Robin Tibor Schirrmeister`_)
+- get_output_shape and compute_amplitude_gradients assume 3d, not 4d inputs (:gh:`166` by `Robin Tibor Schirrmeister`_)
 
 API changes
 ~~~~~~~~~~~
@@ -37,3 +39,4 @@ Authors
 ~~~~~~~
 
 .. _Hubert Banville: https://github.com/hubertjb
+.. _Robin Tibor Schirrmeister: https://github.com/robintibor
