@@ -35,9 +35,9 @@ class TUH(BaseConcatDataset):
     target_name: str
         Can be 'gender', or 'age'.
     preload: bool
-        Ff True, preload the data of the Raw objects.
+        If True, preload the data of the Raw objects.
     add_physician_reports: bool
-        Ff True, the physician reports will be read from disk and added to the
+        If True, the physician reports will be read from disk and added to the
         description.
     """
     def __init__(self, path, recording_ids=None, target_name=None,
@@ -129,13 +129,22 @@ def _parse_description_from_file_path(file_path):
 
 
 def _read_physician_report(file_path):
-    physician_report = np.nan
-    # check if there is a report to add to the description
-    report_path = "_".join(file_path.split("_")[:-1]) + ".txt"
-    if os.path.exists(report_path):
-        with open(report_path, "r", encoding="latin-1") as f:
-            physician_report = f.read()
-    return physician_report
+    directory = os.path.dirname(file_path)
+    txt_file = glob.glob(os.path.join(directory, '**/*.txt'), recursive=True)
+    # check that there is at most one txt file in the same directory
+    assert len(txt_file) in [0, 1]
+    report = ''
+    if txt_file:
+        txt_file = txt_file[0]
+        # somewhere in the corpus, encoding apparently changed
+        # first try to read as utf-8, if it does not work use latin-1
+        try:
+            with open(txt_file, 'r', encoding='utf-8') as f:
+                report = f.read()
+        except UnicodeDecodeError:
+            with open(txt_file, 'r', encoding='latin-1') as f:
+                report = f.read()
+    return report
 
 
 def _read_edf_header(file_path):
