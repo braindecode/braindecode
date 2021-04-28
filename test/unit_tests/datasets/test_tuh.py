@@ -11,7 +11,7 @@ def test_parse_from_tuh_file_path():
     file_path = ("v2.0.0/edf/01_tcp_ar/000/00000021/"
                  "s004_2013_08_15/00000021_s004_t000.edf")
     description = _parse_description_from_file_path(file_path)
-    assert len(description) == 8
+    assert len(description) == 9
     assert description['path'] == file_path
     assert description['year'] == 2013
     assert description['month'] == 8
@@ -20,6 +20,7 @@ def test_parse_from_tuh_file_path():
     assert description['session'] == 4
     assert description['segment'] == 0
     assert description['reference'] == 'ar'
+    assert description['version'] == 'v2.0.0'
 
 
 def test_parse_from_tuh_abnormal_file_path():

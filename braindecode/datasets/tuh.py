@@ -19,26 +19,26 @@ from .base import BaseDataset, BaseConcatDataset
 
 
 class TUH(BaseConcatDataset):
-    """Temple University Hospital (TUH) EEG Corpus.
-    see www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg
+    """Temple University Hospital (TUH) EEG Corpus
+    (www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg).
 
     Parameters
     ----------
     path: str
-        parent directory of the dataset
+        Parent directory of the dataset.
     recording_ids: list(int) | int
-        (list of) int of recording(s) to be read (order matters and will
+        A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
-        later then the second recording. provide recording_ids in ascending
-        order to preserve chronological order)
+        later then the second recording. Provide recording_ids in ascending
+        order to preserve chronological order.).
     target_name: str
-        can be "gender", or "age"
+        Can be 'gender', or 'age'.
     preload: bool
-        if True, preload the data of the Raw objects.
+        Ff True, preload the data of the Raw objects.
     add_physician_reports: bool
-        if True, the physician reports will be read from disk and added to the
-        description
+        Ff True, the physician reports will be read from disk and added to the
+        description.
     """
     def __init__(self, path, recording_ids=None, target_name=None,
                  preload=False, add_physician_reports=False):
@@ -168,20 +168,20 @@ class TUHAbnormal(TUH):
     Parameters
     ----------
     path: str
-        parent directory of the dataset
+        Parent directory of the dataset.
     recording_ids: list(int) | int
-        (list of) int of recording(s) to be read (order matters and will
+        A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
-        later then the second recording. provide recording_ids in ascending
-        order to preserve chronological order)
+        later then the second recording. Provide recording_ids in ascending
+        order to preserve chronological order.).
     target_name: str
-        can be "pathological", "gender", or "age"
+        Can be 'pathological', 'gender', or 'age'.
     preload: bool
-        if True, preload the data of the Raw objects.
+        If True, preload the data of the Raw objects.
     add_physician_reports: bool
-        if True, the physician reports will be read from disk and added to the
-        description
+        If True, the physician reports will be read from disk and added to the
+        description.
     """
     def __init__(self, path, recording_ids=None, target_name='pathological',
                  preload=False, add_physician_reports=False):
