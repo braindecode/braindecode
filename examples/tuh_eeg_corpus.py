@@ -14,6 +14,7 @@ import os
 
 import numpy as np
 import matplotlib.pyplot as plt
+plt.style.use('seaborn')
 import mne
 
 from braindecode.datasets import TUH
@@ -53,7 +54,7 @@ tuh = TUH(
 
 ###############################################################################
 # We can easily create descriptive statistics using the description `DataFrame`,
-# for example an age pyramid split by gender of patients.
+# for example an age histogram split by gender of patients.
 fig, ax = plt.subplots(1, 1, figsize=(15, 5))
 genders = tuh.description.gender.unique()
 x = [tuh.description.age[tuh.description.gender == g] for g in genders]
@@ -168,9 +169,6 @@ def custom_crop(raw, tmin=0.0, tmax=None, include_tmax=True):
 tmin = 1*60
 tmax = 6*60
 sfreq = 100
-window_size_samples = 1000
-window_stride_samples = 1000
-create_compute_windows = True
 
 preprocessors = [
     MNEPreproc(custom_crop, tmin=tmin, tmax=tmax, include_tmax=False),
@@ -190,6 +188,9 @@ preprocessors = [
 # each recording to a unique subdirectory that is named corresponding to the
 # rec id. To save memory, after windowing and storing, we delete the raw
 # dataset and the windows dataset, respectively.
+window_size_samples = 1000
+window_stride_samples = 1000
+create_compute_windows = True
 
 out_i = 0
 errors = []
