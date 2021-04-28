@@ -27,6 +27,12 @@ Enhancements
 - Adding self-supervised learning example on the Sleep Physionet dataset along with new sampler module `braindecode.samplers` (:gh:`178` by `Hubert Banville`_)
 - Adding sleep staging example on the Sleep Physionet dataset (:gh:`161` by `Hubert Banville`_)
 - Adding new parameters to windowers :func:`braindecode.datautil.windowers.create_windows_from_events` and :func:`braindecode.datautil.windowers.create_fixed_length_windows` for finer control over epoching (:gh:`152` by `Hubert Banville`_)
+- Adding Temporal Convolutional Network (:gh:`138` by `Lukas Gemein`_)
+- Adding tests for TUHAbnormal dataset (:gh:`139` by `Lukas Gemein`_)
+- Adding option to use BaseConcatDataset as input to BaseConcatDataset (:gh:`142` by `Lukas Gemein`_)
+- Adding a simplified API for splitting of BaseConcatDataset: parameters `property` and `split_ids` in :func:`braindecode.datasets.base.BaseConcatDataset.split` are replaced by `by` (:gh:`147` by `Lukas Gemein`_)
+- Adding a preprocessor that realizes a filterbank: :func:`braindecode.datautil.preprocess.filterbank` (:gh:`158` by `Lukas Gemein`_)
+- Removing code duplicate in BaseDataset and WindowsDataset (:gh:`159` by `Lukas Gemein`_)
 
 Bugs
 ~~~~
@@ -34,6 +40,9 @@ Bugs
   (before, they were accidentally summed over all previous filters in the layer) (:gh:`167` by `Robin Tibor Schirrmeister`_)
 - get_output_shape and compute_amplitude_gradients assume 3d, not 4d inputs (:gh:`166` by `Robin Tibor Schirrmeister`_)
 - Fixing windower functions when the continuous data has been cropped (:gh:`152` by `Hubert Banville`_)
+- Fixing incorrect usage of recording ids in TUHAbnormal (:gh:`146` by `Lukas Gemein`_)
+- Adding check for correct input dimensions (4d) in TCN (:gh:`169` by `Lukas Gemein`_)
+- Fixing :func:`braindecode.datautil.windowers.create_windows_from_event` when `window_size` is not given but there is a `trial_stop_offset_samples` (:gh:`148` by `Lukas Gemein`_)
 
 API changes
 ~~~~~~~~~~~
@@ -44,3 +53,4 @@ Authors
 
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
+-- _Lukas Gemein: https://github.com/gemeinl
