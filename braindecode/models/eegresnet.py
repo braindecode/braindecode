@@ -12,7 +12,7 @@ from torch.nn.functional import elu
 
 from .functions import transpose_time_to_spat, squeeze_final_output
 from ..util import np_to_var
-from .modules import Expression, AvgPool2dWithConv
+from .modules import Expression, AvgPool2dWithConv, Ensure4d
 
 
 class EEGResNet(nn.Sequential):
@@ -49,6 +49,7 @@ class EEGResNet(nn.Sequential):
         self.batch_norm_epsilon = batch_norm_epsilon
         self.conv_weight_init_fn = conv_weight_init_fn
 
+        self.add_module("ensuredims", Ensure4d())
         if self.split_first_layer:
             self.add_module('dimshuffle', Expression(transpose_time_to_spat))
             self.add_module('conv_time', nn.Conv2d(1, self.n_first_filters,

@@ -55,11 +55,11 @@ def create_windows_from_events(
         trial size of the first trial and trial_start_offset_samples and
         trial_stop_offset_samples.
     window_stride_samples: int | None
-        Stride between windows, in samples. If None, the window size is
+        Stride between windows, in samples. If None, the window stride is
         inferred from the original trial size of the first trial and
         trial_start_offset_samples and trial_stop_offset_samples.
     drop_last_window: bool
-        If True, an additional overlapping window that ends at
+        If False, an additional overlapping window that ends at
         trial_stop_offset_samples will be extracted around each event when the
         last window does not end exactly at trial_stop_offset_samples.
     mapping: dict(str: int)

@@ -67,15 +67,16 @@ class TUH(BaseConcatDataset):
             # read info relevant for preprocessing from raw without loading it
             sfreq = raw.info['sfreq']
             n_samples = raw.n_times
-            if add_physician_reports:
-                physician_report = _read_physician_report(file_path)
-            additional_description = pd.Series({
+            d = {
                 'sfreq': float(sfreq),
                 'n_samples': int(n_samples),
                 'age': int(age),
                 'gender': gender,
-                'report': physician_report
-            })
+            }
+            if add_physician_reports:
+                physician_report = _read_physician_report(file_path)
+                d['report'] = physician_report
+            additional_description = pd.Series(d)
             description = pd.concat(
                 [descriptions.pop(file_path_i), additional_description])
             base_dataset = BaseDataset(raw, description,
@@ -130,8 +131,6 @@ def _parse_description_from_file_path(file_path):
 def _read_physician_report(file_path):
     physician_report = np.nan
     # check if there is a report to add to the description
-    # TODO: not all files follow this logic. use glob again, assert 0 or 1 txt file
-    # try to read at with utf-8, if it fails use latin-1
     report_path = "_".join(file_path.split("_")[:-1]) + ".txt"
     if os.path.exists(report_path):
         with open(report_path, "r", encoding="latin-1") as f:

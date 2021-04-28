@@ -30,16 +30,21 @@ def compute_amplitude_gradients_for_X(model, X):
         (torch.cos(phases_th), torch.sin(phases_th)), dim=-1)
     fft_coefs = fft_coefs.squeeze(3)
 
-    iffted = torch.irfft(
-        fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],))
+    try:
+        complex_fft_coefs = torch.view_as_complex(fft_coefs)
+        iffted = torch.fft.irfft(
+            complex_fft_coefs, n=X.shape[2], dim=2)
+    except AttributeError:
+        iffted = torch.irfft(  # Deprecated since 1.7
+            fft_coefs, signal_ndim=1, signal_sizes=(X.shape[2],))
 
     outs = model(iffted)
 
     n_filters = outs.shape[1]
     amp_grads_per_filter = np.full((n_filters,) + ffted.shape,
-                            np.nan, dtype=np.float32)
+                                   np.nan, dtype=np.float32)
     for i_filter in range(n_filters):
-        mean_out = torch.mean(outs[:,i_filter])
+        mean_out = torch.mean(outs[:, i_filter])
         mean_out.backward(retain_graph=True)
         amp_grads = to_numpy(amps_th.grad.clone())
         amp_grads_per_filter[i_filter] = amp_grads
