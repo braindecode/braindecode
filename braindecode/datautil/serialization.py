@@ -9,65 +9,18 @@ Convenience functions for storing and loading of windows datasets.
 import json
 import os
 from glob import glob
+import warnings
 
 import mne
 import pandas as pd
 
-from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+from braindecode.datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
-    """Save a BaseConcatDataset of BaseDatasets or WindowsDatasets to files.
-
-    Parameters
-    ----------
-    path: str
-        Directory to which .fif / -epo.fif and .json files are stored.
-    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
-        The dataset to save to files.
-    overwrite: bool
-        Whether to delete old files (.json, .fif, -epo.fif) in specified directory 
-        prior to saving.
-    """
-    assert len(concat_dataset.datasets) > 0, "Expect at least one dataset"
-    assert (hasattr(concat_dataset.datasets[0], 'raw') + hasattr(
-        concat_dataset.datasets[0], 'windows') == 1), (
-        "dataset should have either raw or windows attribute")
-    files = ['target_name.json', 'description.json']
-    file_names_ = ["{}-raw.fif", "{}-epo.fif"]
-    description_file_name = os.path.join(path, 'description.json')
-    target_file_name = os.path.join(path, 'target_name.json')
-    if not overwrite:
-        if (os.path.exists(description_file_name) or 
-            os.path.exists(target_file_name)):
-            raise FileExistsError(
-                f'{description_file_name} or {target_file_name} exist in {path}.')
-    else:
-        for file_name in file_names_:
-            file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
-            _ = [os.remove(f) for f in file_names]
-        if os.path.isfile(target_file_name):
-            os.remove(target_file_name)
-        if os.path.isfile(description_file_name):
-            os.remove(description_file_name)
-
-    concat_of_raws = hasattr(concat_dataset.datasets[0], 'raw')
-    file_name = file_names_[0] if concat_of_raws else file_names_[1]
-    if concat_of_raws:
-        # for checks that all have same target name and for
-        # saving later
-        target_name = concat_dataset.datasets[0].target_name
-    for i_ds, ds in enumerate(concat_dataset.datasets):
-        full_file_path = os.path.join(path, file_name.format(i_ds))
-        if concat_of_raws:
-            ds.raw.save(full_file_path, overwrite=overwrite)
-            assert ds.target_name == target_name, "All datasets should have same target name"
-        else:
-            ds.windows.save(full_file_path, overwrite=overwrite)
-
-    if concat_of_raws:
-        json.dump({'target_name': target_name}, open(target_file_name, 'w'))
-    concat_dataset.description.to_json(description_file_name)
+    warnings.warn('"save_concat_dataset()" is deprecated and will be removed in the future. '
+                  'Use dataset.save() instead.')
+    concat_dataset.save(path=path, overwrite=overwrite)
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
@@ -83,7 +36,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
     ids_to_load: None | list(int)
         Ids of specific files to load.
     target_name: None or str
-        Load specific descriotion column as target. If not given, take saved target name.
+        Load specific description column as target. If not given, take saved target name.
 
     Returns
     -------

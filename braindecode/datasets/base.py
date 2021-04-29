@@ -10,7 +10,10 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
+import os
+import json
 import warnings
+from glob import glob
 
 import numpy as np
 import pandas as pd
@@ -238,3 +241,54 @@ class BaseConcatDataset(ConcatDataset):
     def transform(self, value):
         for i in range(len(self.datasets)):
             self.datasets[i].transform = value
+
+    def save(self, path, overwrite=False):
+        """Save dataset to files.
+
+        Parameters
+        ----------
+        path: str
+            Directory to which .fif / -epo.fif and .json files are stored.
+        overwrite: bool
+            Whether to delete old files (.json, .fif, -epo.fif) in specified directory 
+            prior to saving.
+        """
+        assert len(self.datasets) > 0, "Expect at least one dataset"
+        assert (hasattr(self.datasets[0], 'raw') + hasattr(
+            self.datasets[0], 'windows') == 1), (
+            "dataset should have either raw or windows attribute")
+        files = ['target_name.json', 'description.json']
+        file_names_ = ["{}-raw.fif", "{}-epo.fif"]
+        description_file_name = os.path.join(path, 'description.json')
+        target_file_name = os.path.join(path, 'target_name.json')
+        if not overwrite:
+            if (os.path.exists(description_file_name) or 
+                os.path.exists(target_file_name)):
+                raise FileExistsError(
+                    f'{description_file_name} or {target_file_name} exist in {path}.')
+        else:
+            for file_name in file_names_:
+                file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
+                _ = [os.remove(f) for f in file_names]
+            if os.path.isfile(target_file_name):
+                os.remove(target_file_name)
+            if os.path.isfile(description_file_name):
+                os.remove(description_file_name)
+
+        concat_of_raws = hasattr(self.datasets[0], 'raw')
+        file_name = file_names_[0] if concat_of_raws else file_names_[1]
+        if concat_of_raws:
+            # for checks that all have same target name and for
+            # saving later
+            target_name = self.datasets[0].target_name
+        for i_ds, ds in enumerate(self.datasets):
+            full_file_path = os.path.join(path, file_name.format(i_ds))
+            if concat_of_raws:
+                ds.raw.save(full_file_path, overwrite=overwrite)
+                assert ds.target_name == target_name, "All datasets should have same target name"
+            else:
+                ds.windows.save(full_file_path, overwrite=overwrite)
+
+        if concat_of_raws:
+            json.dump({'target_name': target_name}, open(target_file_name, 'w'))
+        self.description.to_json(description_file_name)

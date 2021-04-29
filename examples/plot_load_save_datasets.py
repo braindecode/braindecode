@@ -1,5 +1,6 @@
-"""Load and save dataset example
-================================
+"""
+Load and save dataset example
+=============================
 
 In this example, we show how to load and save braindecode datasets.
 """
@@ -10,9 +11,16 @@ In this example, we show how to load and save braindecode datasets.
 
 from braindecode.datasets.moabb import MOABBDataset
 from braindecode.datautil.preprocess import preprocess, MNEPreproc
-from braindecode.datautil.serialization import (
-    save_concat_dataset, load_concat_dataset)
+from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.datautil.windowers import create_windows_from_events
+
+
+###############################################################################
+# First, we load some dataset using MOABB.
+ds = MOABBDataset(
+    dataset_name='BNCI2014001',
+    subject_ids=[1],
+)
 
 ###############################################################################
 # We can or cannot apply preprocessing steps to the dataset to our liking.
@@ -28,9 +36,8 @@ preprocess(
 # holding the name of the target. If you want to store to the same directory 
 # several times, for example due to trying different preprocessing, you can 
 # choose to overwrite the existing files.
-save_concat_dataset(
+ds.save(
     path='./',
-    concat_dataset=ds,
     overwrite=False,
 )
 
@@ -64,9 +71,8 @@ windows_ds = create_windows_from_events(
 # want to store to the same directory several times, for example due to 
 # trying different windowing parameters, you can choose to overwrite the 
 # existing files.
-save_concat_dataset(
+windows_ds.save(
     path='./',
-    concat_dataset=windows_ds,
     overwrite=True,
 )
 
