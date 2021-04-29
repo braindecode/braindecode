@@ -17,33 +17,42 @@ from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
-    """Save a BaseConcatDataset of BaseDatasets or WindowsDatasets to files
+    """Save a BaseConcatDataset of BaseDatasets or WindowsDatasets to files.
 
     Parameters
     ----------
     path: str
-        directory to which .fif and .json files are stored
+        Directory to which .fif / -epo.fif and .json files are stored.
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
-        to save to files
+        The dataset to save to files.
     overwrite: bool
-        whether to overwrite existing files (will delete old fif files in specified directory)
+        Whether to delete old files (.json, .fif, -epo.fif) in specified directory 
+        prior to saving.
     """
     assert len(concat_dataset.datasets) > 0, "Expect at least one dataset"
     assert (hasattr(concat_dataset.datasets[0], 'raw') + hasattr(
         concat_dataset.datasets[0], 'windows') == 1), (
         "dataset should have either raw or windows attribute")
-    concat_of_raws = hasattr(concat_dataset.datasets[0], 'raw')
-    file_name = "{}-raw.fif" if concat_of_raws else "{}-epo.fif"
+    files = ['target_name.json', 'description.json']
+    file_names_ = ["{}-raw.fif", "{}-epo.fif"]
     description_file_name = os.path.join(path, 'description.json')
     target_file_name = os.path.join(path, 'target_name.json')
-    if overwrite:
-        file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
-        _ = [os.remove(f) for f in file_names]
+    if not overwrite:
+        if (os.path.exists(description_file_name) or 
+            os.path.exists(target_file_name)):
+            raise FileExistsError(
+                f'{description_file_name} or {target_file_name} exist in {path}.')
+    else:
+        for file_name in file_names_:
+            file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
+            _ = [os.remove(f) for f in file_names]
         if os.path.isfile(target_file_name):
             os.remove(target_file_name)
         if os.path.isfile(description_file_name):
             os.remove(description_file_name)
 
+    concat_of_raws = hasattr(concat_dataset.datasets[0], 'raw')
+    file_name = file_names_[0] if concat_of_raws else file_names_[1]
     if concat_of_raws:
         # for checks that all have same target name and for
         # saving later
@@ -63,18 +72,18 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
     """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
-    files
+    files.
 
     Parameters
     ----------
     path: str
-        path to the directory of the .fif and .json files
+        Path to the directory of the .fif / -epo.fif and .json files.
     preload: bool
-        whether to preload the data
+        Whether to preload the data.
     ids_to_load: None | list(int)
-        ids of specific signals to load
+        Ids of specific files to load.
     target_name: None or str
-        Load specific column as target. If not given, take saved target name.
+        Load specific descriotion column as target. If not given, take saved target name.
 
     Returns
     -------
@@ -84,6 +93,8 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
              os.path.isfile(os.path.join(path, '0-epo.fif'))) == 1), (
         "Expect either raw or epo to exist inside the directory")
     concat_of_raws = os.path.isfile(os.path.join(path, '0-raw.fif'))
+    assert not (not concat_of_raws and target_name is not None), (
+        'Setting a new target is only supported for raws.')
 
     if concat_of_raws and target_name is None:
         target_file_name = os.path.join(path, 'target_name.json')
