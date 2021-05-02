@@ -43,6 +43,7 @@ Bugs
 - Fixing incorrect usage of recording ids in TUHAbnormal (:gh:`146` by `Lukas Gemein`_)
 - Adding check for correct input dimensions (4d) in TCN (:gh:`169` by `Lukas Gemein`_)
 - Fixing :func:`braindecode.datautil.windowers.create_windows_from_event` when `window_size` is not given but there is a `trial_stop_offset_samples` (:gh:`148` by `Lukas Gemein`_)
+- Fixing :meth:`braindecode.classifier.EEGClassifier.predict_proba` and :meth:`braindecode.regressor.EEGRegressor.predict` behavior in the cropped mode (:gh:`171` by `Maciej Śliwowski`_)
 
 API changes
 ~~~~~~~~~~~
@@ -53,4 +54,5 @@ Authors
 
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
--- _Lukas Gemein: https://github.com/gemeinl
+.. _Lukas Gemein: https://github.com/gemeinl
+.. _Maciej Śliwowski: https://github.com/sliwy
