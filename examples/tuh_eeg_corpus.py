@@ -222,33 +222,18 @@ for rec_i, tuh_subset in tuh_splits.items():
         tuh_windows.description["n_windows"] = [len(d) for d in
                                                 tuh_windows.datasets]
 
-        # some recordings fail with
-        # info["meas_date"] seconds must be between "(-2147483648, 0)" and "(2147483647, 0)", got "-2209161600"  # noqa
-        # during save, so catch it
-        try:
-            mne.io.meas_info._check_dates(tuh_windows.datasets[0].windows.info)
-        except RuntimeError as e:
-            errors.append((rec_i, e))
-        else:
-            # create one directory for every recording
-            rec_path = os.path.join(OUT_PATH, str(rec_i))
-            if not os.path.exists(rec_path):
-                os.makedirs(rec_path)
-            save_concat_dataset(rec_path, tuh_windows)
-            out_i += 1
-            # save memory by catching epoched recording
-            del tuh_windows
+        # create one directory for every recording
+        rec_path = os.path.join(OUT_PATH, str(rec_i))
+        if not os.path.exists(rec_path):
+            os.makedirs(rec_path)
+        save_concat_dataset(rec_path, tuh_windows)
+        out_i += 1
+        # save memory by catching epoched recording
+        del tuh_windows
     else:
         # store raws to disk for option of using different compute window
         # sizes
         pass
-
-
-###############################################################################
-# Preprocessing might fail due to broken measurement date. We catch exceptions
-# and recording ids of failures and check them afterwards
-
-[print(e) for e in errors]
 
 
 ###############################################################################
