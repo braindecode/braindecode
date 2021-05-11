@@ -4,7 +4,7 @@ version: 2.1
 parameters:
   github-artifact-url:
     type: string
-    default: "latest"
+    default: "none"
 jobs:
     fetch_docs_from_github:
       docker:
@@ -12,6 +12,9 @@ jobs:
       environment:
         GITHUB_ARTIFACT_URL: << pipeline.parameters.github-artifact-url >>
       steps:
+        - when:
+            - not:
+                - equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
         - run:
             name: Download some docs
             command: |
