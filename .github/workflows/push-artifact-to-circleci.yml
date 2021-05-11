@@ -12,11 +12,21 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
+    - name: Try setting pull number #https://stackoverflow.com/a/60723400/1469195
+      uses: actions/github-script@0.3.0
+      with:
+        github-token: ${{github.token}}
+        script: |
+          const core = require('@actions/core')
+          const prNumber = context.payload.number;
+          core.exportVariable('PULL_NUMBER', prNumber);
     - name: Show some stuff
       env:
         PR_NUMBER: ${{ github.event.number }}
         EVENT_OBJ:  ${{ toJson(github.event) }}
       run: |
+        echo "PULL_NUMBER"
+        echo $PULL_NUMBER
         echo "EVENT_OBJ"
         echo $EVENT_OBJ
         echo "PR_NUMBER"
