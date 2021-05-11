@@ -34,6 +34,7 @@ Enhancements
 - Adding a preprocessor that realizes a filterbank: :func:`braindecode.datautil.preprocess.filterbank` (:gh:`158` by `Lukas Gemein`_)
 - Removing code duplicate in BaseDataset and WindowsDataset (:gh:`159` by `Lukas Gemein`_)
 - Only load data if needed during preprocessing (e.g., allow timecrop without loading) (:gh:`164` by `Robin Tibor Schirrmeister`_)
+- Adding option to sort filtered channels by frequency band for the filterbank in :func:`braindecode.datautil.preprocess.filterbank` (:gh:`185` by `Lukas Gemein`_)
 
 Bugs
 ~~~~
