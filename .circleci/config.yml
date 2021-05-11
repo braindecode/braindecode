@@ -9,7 +9,7 @@ jobs:
         - run:
             name: Download some docs
             command: |
-              wget https://nightly.link/braindecode/braindecode/actions/artifacts/53832858.zip
+              wget -o HTML-docs.zip https://nightly.link/braindecode/braindecode/actions/artifacts/53832858.zip
               unzip HTML-docs.zip -d downloaded_docs
               ls -ahl .
         # Save the outputs
