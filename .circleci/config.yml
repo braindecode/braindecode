@@ -28,11 +28,3 @@ workflows:
   default:
     jobs:
       - fetch_docs_from_github
-      - build_docs
-      - deploy:
-          requires:
-            - build_docs
-          filters:
-            branches:
-              only:
-                - master
