@@ -12,23 +12,12 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-    - name: Try setting pull number #https://stackoverflow.com/a/60723400/1469195
-      id: get-pr-number
-      uses: actions/github-script@v4
-      with:
-        github-token: ${{github.token}}
-        script: |
-          const prNumber = context.payload.number;
-          core.exportVariable('PULL_NUMBER', prNumber);
-          return prNumber  
-        result-encoding: string
     - name: Show some stuff
       env:
         EVENT_OBJ:  ${{ toJson(github.event) }}
         COMMIT_SHA:  ${{ github.event.workflow_run.head_sha }}
         REPO_NAME:  ${{ github.event.workflow_run.head_repository.full_name }}
       run: |
-      
         echo "github.event.workflow_run.head_sha"
         echo ${{ github.event.workflow_run.head_sha }}
         echo "github.event.workflow_run.head_repository.html_url"
@@ -38,16 +27,6 @@ jobs:
         #echo "automated curl"
         #curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number'
         echo $PR_NUMBER
-        echo "steps.set-result.outputs.result"
-        echo "${{steps.set-result.outputs.result}}"
-        echo "PULL_NUMBER"
-        echo $PULL_NUMBER
-        echo "EVENT_OBJ"
-        echo $EVENT_OBJ
-        echo "Github REF"
-        echo $GITHUB_REF
-        echo "$GITHUB_EVENT_PATH"
-        echo $GITHUB_EVENT_PATH
         curl --request POST \
           --url https://circleci.com/api/v2/project/gh/braindecode/braindecode/pipeline \
           --header 'Circle-Token: SECRETTOKEN' \
@@ -55,3 +34,5 @@ jobs:
           --header 'x-attribution-actor-id: github_actions' \
           --header 'x-attribution-login: github_actions' \
           --data '{"branch":"pull/209/head","parameters":{"github-artifact-url":"test"}}'
+        echo "EVENT_OBJ"
+        echo $EVENT_OBJ
