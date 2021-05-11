@@ -17,7 +17,6 @@ jobs:
       with:
         github-token: ${{github.token}}
         script: |
-          const core = require('@actions/core')
           const prNumber = context.payload.number;
           core.exportVariable('PULL_NUMBER', prNumber);
     - name: Show some stuff
