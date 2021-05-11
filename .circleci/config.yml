@@ -2,7 +2,7 @@
 # Tagging a commit with [circle full] will build everything.
 version: 2
 jobs:
- fetch_docs_from_github:
+    fetch_docs_from_github:
       docker:
         - image: circleci/python:3.7-stretch
       steps:
