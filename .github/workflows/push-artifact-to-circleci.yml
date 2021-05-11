@@ -35,9 +35,10 @@ jobs:
         echo "github.event.workflow_run.head_repository.html_url"
         echo ${{ github.event.workflow_run.head_repository.html_url }}
         echo "manual curl"
-        curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/robintibor/braindecode-1/commits/0354654c543c5a17af86dcd1cd0961df9b5dc989/pulls 2>/dev/null | jq '.[0].number'
-        echo "automated curl"
-        curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number'
+        curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/robintibor/braindecode-1/commits/d353344aa8dfebc395ae3b515419df22d6f652ff/pulls 2>/dev/null | jq '.[0].number' > cat pull_nr.txt
+        #echo "automated curl"
+        #curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number' > cat pull_nr.txt
+        cat pull_nr.txt
         echo "steps.set-result.outputs.result"
         echo "${{steps.set-result.outputs.result}}"
         echo "PULL_NUMBER"
