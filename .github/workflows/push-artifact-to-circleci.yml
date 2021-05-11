@@ -24,7 +24,6 @@ jobs:
         result-encoding: string
     - name: Show some stuff
       env:
-        PR_NUMBER: ${{ github.event.number }}
         EVENT_OBJ:  ${{ toJson(github.event) }}
         COMMIT_SHA:  ${{ github.event.workflow_run.head_sha }}
         REPO_NAME:  ${{ github.event.workflow_run.head_repository.full_name }}
@@ -35,18 +34,16 @@ jobs:
         echo "github.event.workflow_run.head_repository.html_url"
         echo ${{ github.event.workflow_run.head_repository.html_url }}
         echo "manual curl"
-        curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/robintibor/braindecode-1/commits/d353344aa8dfebc395ae3b515419df22d6f652ff/pulls 2>/dev/null | jq '.[0].number' > cat pull_nr.txt
+        PR_NUMBER=$(curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/robintibor/braindecode-1/commits/d353344aa8dfebc395ae3b515419df22d6f652ff/pulls 2>/dev/null | jq '.[0].number')
         #echo "automated curl"
-        #curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number' > cat pull_nr.txt
-        cat pull_nr.txt
+        #curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number'
+        echo $PR_NUMBER
         echo "steps.set-result.outputs.result"
         echo "${{steps.set-result.outputs.result}}"
         echo "PULL_NUMBER"
         echo $PULL_NUMBER
         echo "EVENT_OBJ"
         echo $EVENT_OBJ
-        echo "PR_NUMBER"
-        echo $PR_NUMBER
         echo "Github REF"
         echo $GITHUB_REF
         echo "$GITHUB_EVENT_PATH"
