@@ -5,6 +5,8 @@ on:
   workflow_run:
     workflows: ["tests-and-docs"]
     branches-ignore: ["master"]
+    types:
+      - completed
 
 jobs:
   Push-Artifact-to-CircleCI:
@@ -13,7 +15,7 @@ jobs:
       run:
         shell: bash -l {0}
     steps:
-    - name: Show some stuff
+    - name: Trigger CircleCI download and publication of HTML Doc Artifact
       env:
         EVENT_OBJ:  ${{ toJson(github.event) }}
         COMMIT_SHA:  ${{ github.event.workflow_run.head_sha }}
@@ -25,12 +27,13 @@ jobs:
         echo ${{ github.event.workflow_run.head_sha }}
         echo "github.event.workflow_run.head_repository.html_url"
         echo ${{ github.event.workflow_run.head_repository.html_url }}
-        #echo "manual curl"
-        #PR_NUMBER=$(curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/robintibor/braindecode-1/commits/d353344aa8dfebc395ae3b515419df22d6f652ff/pulls 2>/dev/null | jq '.[0].number')
+        # Acquire the Pull Request Number from Github API
         echo "automated curl"
         PR_NUMBER=$(curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number')
         echo $PR_NUMBER
         
+        # Use Pull Request Number to trigger pipeline on CircleCI which will just download artifact,
+        # unzip it and make it available for browsing
         curl --request POST \
           --url https://circleci.com/api/v2/project/gh/braindecode/braindecode/pipeline \
           --header "Circle-Token: $CIRCLECI_TOKEN" \
@@ -38,5 +41,6 @@ jobs:
           --header 'x-attribution-actor-id: github_actions' \
           --header 'x-attribution-login: github_actions' \
           --data \{\"branch\":\"pull/$PR_NUMBER/head\",\"parameters\":\{\"github-artifact-url\":\"https://nightly.link/braindecode/braindecode/actions/runs/$RUN_ID/HTML-Docs.zip\"\}\}
+        # Just for debugging
         echo "EVENT_OBJ"
         echo $EVENT_OBJ
