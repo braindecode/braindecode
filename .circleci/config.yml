@@ -1,14 +1,22 @@
 # Tagging a commit with [circle front] will build the front page and perform test-doc.
 # Tagging a commit with [circle full] will build everything.
-version: 2
+version: 2.1
+parameters:
+  github-artifact-url:
+    type: string
+    default: "latest"
 jobs:
     fetch_docs_from_github:
       docker:
         - image: circleci/python:3.7-stretch
+      environment:
+        GITHUB_ARTIFACT_URL: << pipeline.parameters.github-artifact-url >>
       steps:
         - run:
             name: Download some docs
             command: |
+              echo "Show github artifact url"
+              echo $GITHUB_ARTIFACT_URL
               wget -O HTML-docs.zip https://nightly.link/braindecode/braindecode/actions/artifacts/53832858.zip
               ls -ahl .
               unzip HTML-docs.zip -d downloaded_docs
