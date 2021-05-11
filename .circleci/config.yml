@@ -6,15 +6,15 @@ parameters:
     type: string
     default: "none"
 jobs:
+    - when:
+        - not:
+            - equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
     fetch_docs_from_github:
       docker:
         - image: circleci/python:3.7-stretch
       environment:
         GITHUB_ARTIFACT_URL: << pipeline.parameters.github-artifact-url >>
       steps:
-        - when:
-            - not:
-                - equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
         - run:
             name: Download some docs
             command: |
