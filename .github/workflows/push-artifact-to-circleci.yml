@@ -4,6 +4,7 @@ name: push-artifact-to-circle-ci
 on:
   workflow_run:
     workflows: ["tests-and-docs"]
+    branches-ignore: ["master"]
 
 jobs:
   Push-Artifact-to-CircleCI:
@@ -18,15 +19,16 @@ jobs:
         COMMIT_SHA:  ${{ github.event.workflow_run.head_sha }}
         REPO_NAME:  ${{ github.event.workflow_run.head_repository.full_name }}
         CIRCLECI_TOKEN: ${{ secrets.CIRCLECI_TOKEN }}
+        RUN_ID: ${{github.event.workflow_run.id}}
       run: |
         echo "github.event.workflow_run.head_sha"
         echo ${{ github.event.workflow_run.head_sha }}
         echo "github.event.workflow_run.head_repository.html_url"
         echo ${{ github.event.workflow_run.head_repository.html_url }}
-        echo "manual curl"
-        PR_NUMBER=$(curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/robintibor/braindecode-1/commits/d353344aa8dfebc395ae3b515419df22d6f652ff/pulls 2>/dev/null | jq '.[0].number')
-        #echo "automated curl"
-        #curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number'
+        #echo "manual curl"
+        #PR_NUMBER=$(curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/robintibor/braindecode-1/commits/d353344aa8dfebc395ae3b515419df22d6f652ff/pulls 2>/dev/null | jq '.[0].number')
+        echo "automated curl"
+        PR_NUMBER=$(curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number')
         echo $PR_NUMBER
         
         curl --request POST \
@@ -35,6 +37,6 @@ jobs:
           --header 'content-type: application/json' \
           --header 'x-attribution-actor-id: github_actions' \
           --header 'x-attribution-login: github_actions' \
-          --data \{\"branch\":\"pull/$PR_NUMBER/head\",\"parameters\":\{\"github-artifact-url\":\"test2\"\}\}
+          --data \{\"branch\":\"pull/$PR_NUMBER/head\",\"parameters\":\{\"github-artifact-url\":\"https://nightly.link/braindecode/braindecode/actions/runs/$RUN_ID/HTML-Docs.zip\"\}\}
         echo "EVENT_OBJ"
         echo $EVENT_OBJ
