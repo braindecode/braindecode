@@ -270,7 +270,7 @@ def scale(data, factor):
 
 
 def filterbank(raw, frequency_bands, drop_original_signals=True,
-               **mne_filter_kwargs):
+               order_by_frequency_band=False, **mne_filter_kwargs):
     """Applies multiple bandpass filters to the signals in raw. The raw will be
     modified in-place and number of channels in raw will be updated to
     len(frequency_bands) * len(raw.ch_names) (-len(raw.ch_names) if
@@ -284,8 +284,13 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         The frequency bands to be filtered for (e.g. [(4, 8), (8, 13)])
     drop_original_signals: bool
         Whether to drop the original unfiltered signals
+    order_by_frequency_band: bool
+        If True will return channels odered by frequency bands, so if there
+        are channels Cz, O1 and filterbank ranges [(4,8), (8,13)], returned
+        channels will be [Cz_4-8, O1_4-8, Cz_8-13, O1_8-13]. If False, order
+        will be [Cz_4-8, Cz_8-13, O1_4-8, O1_8-13].
     mne_filter_kwargs: dict
-        Keyworkd arguments for filtering supported by mne.io.Raw.filter().
+        Keyword arguments for filtering supported by mne.io.Raw.filter().
         Please refer to mne for a detailed explanation.
     """
     if not frequency_bands:
@@ -313,10 +318,13 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
             for old_name in filtered.ch_names})
         all_filtered.append(filtered)
     raw.add_channels(all_filtered)
-    # reorder channels by frequency band
-    chs_by_freq_band = [
-        ch for i in range(len(original_ch_names))
-        for ch in raw.ch_names[i::len(original_ch_names)]]
-    raw.reorder_channels(chs_by_freq_band)
+    if not order_by_frequency_band:
+        # order channels by name and not by frequency band:
+        # index the list with a stepsize of the number of channels for each of
+        # the original channels
+        chs_by_freq_band = []
+        for i in range(len(original_ch_names)):
+            chs_by_freq_band.extend(raw.ch_names[i::len(original_ch_names)])
+        raw.reorder_channels(chs_by_freq_band)
     if drop_original_signals:
         raw.drop_channels(original_ch_names)
