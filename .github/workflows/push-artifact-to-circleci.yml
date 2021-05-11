@@ -15,7 +15,10 @@ jobs:
     - name: Show some stuff
       env:
         PR_NUMBER: ${{ github.event.number }}
+        EVENT_OBJ:  ${{ toJson(github.event) }}
       run: |
+        echo "EVENT_OBJ"
+        echo $EVENT_OBJ
         echo "PR_NUMBER"
         echo $PR_NUMBER
         echo "Github REF"
