@@ -29,7 +29,6 @@ jobs:
            root: downloaded_docs
            paths:
              - html
- jobs:
    dummy_job:
      docker:
        - image: circleci/python:3.7-stretch
@@ -49,6 +48,7 @@ workflows:
         equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
     jobs:
       - fetch_docs_from_github
+
   dummy_workflow:
     when:
       equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
