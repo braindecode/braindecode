@@ -6,9 +6,6 @@ parameters:
     type: string
     default: "none"
 jobs:
-    - when:
-        - not:
-            - equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
     fetch_docs_from_github:
       docker:
         - image: circleci/python:3.7-stretch
@@ -37,5 +34,8 @@ workflows:
   version: 2
 
   default:
+    - when:
+        - not:
+            - equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
     jobs:
       - fetch_docs_from_github
