@@ -28,12 +28,13 @@ jobs:
         #echo "automated curl"
         #curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number'
         echo $PR_NUMBER
+        
         curl --request POST \
           --url https://circleci.com/api/v2/project/gh/braindecode/braindecode/pipeline \
-          --header 'Circle-Token: $CIRCLECI_TOKEN' \
+          --header "Circle-Token: $CIRCLECI_TOKEN" \
           --header 'content-type: application/json' \
           --header 'x-attribution-actor-id: github_actions' \
           --header 'x-attribution-login: github_actions' \
-          --data '{"branch":"pull/$PR_NUMBER/head","parameters":{"github-artifact-url":"test2"}}'
+          --data \{\"branch\":\"pull/$PR_NUMBER/head\",\"parameters\":\{\"github-artifact-url\":\"test2\"\}\}
         echo "EVENT_OBJ"
         echo $EVENT_OBJ
