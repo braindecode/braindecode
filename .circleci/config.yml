@@ -15,7 +15,7 @@ jobs:
         - run:
             name: Download some docs
             command: |
-              echo "Show github artifact url"
+              echo "Show Github artifact url"
               echo $GITHUB_ARTIFACT_URL
               wget -O HTML-docs.zip https://nightly.link/braindecode/braindecode/actions/artifacts/53832858.zip
               ls -ahl .
