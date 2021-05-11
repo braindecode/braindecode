@@ -1,0 +1,27 @@
+name: push-artifact-to-circle-ci
+
+# will be changed to on workflow_run
+on:
+  workflow_run:
+    workflows: ["tests-and-docs"]
+
+jobs:
+  Push-Artifact-to-CircleCI:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+    - name: Show some stuff
+      run: |
+        echo "Github REF"
+        echo $GITHUB_REF
+        echo "$GITHUB_EVENT_PATH"
+        echo $GITHUB_EVENT_PATH
+        curl --request POST \
+          --url https://circleci.com/api/v2/project/gh/braindecode/braindecode/pipeline \
+          --header 'Circle-Token: SECRETTOKEN' \
+          --header 'content-type: application/json' \
+          --header 'x-attribution-actor-id: github_actions' \
+          --header 'x-attribution-login: github_actions' \
+          --data '{"branch":"pull/209/head","parameters":{"github-artifact-url":"test"}}'
