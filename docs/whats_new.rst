@@ -33,6 +33,7 @@ Enhancements
 - Adding a simplified API for splitting of BaseConcatDataset: parameters `property` and `split_ids` in :func:`braindecode.datasets.base.BaseConcatDataset.split` are replaced by `by` (:gh:`147` by `Lukas Gemein`_)
 - Adding a preprocessor that realizes a filterbank: :func:`braindecode.datautil.preprocess.filterbank` (:gh:`158` by `Lukas Gemein`_)
 - Removing code duplicate in BaseDataset and WindowsDataset (:gh:`159` by `Lukas Gemein`_)
+- Only load data if needed during preprocessing (e.g., allow timecrop without loading) (:gh:`164` by `Robin Tibor Schirrmeister`_)
 
 Bugs
 ~~~~
@@ -44,6 +45,7 @@ Bugs
 - Adding check for correct input dimensions (4d) in TCN (:gh:`169` by `Lukas Gemein`_)
 - Fixing :func:`braindecode.datautil.windowers.create_windows_from_event` when `window_size` is not given but there is a `trial_stop_offset_samples` (:gh:`148` by `Lukas Gemein`_)
 - Fixing :meth:`braindecode.classifier.EEGClassifier.predict_proba` and :meth:`braindecode.regressor.EEGRegressor.predict` behavior in the cropped mode (:gh:`171` by `Maciej Śliwowski`_)
+- Freeze torch random generator for scoring functions for reproducibility (:gh:`155` by `Robin Tibor Schirrmeister`_
 
 API changes
 ~~~~~~~~~~~
