@@ -34,8 +34,9 @@ workflows:
   version: 2.1
 
   default:
-    - when:
-        - not:
-            - equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
+    when:
+      not:
+        equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
+
     jobs:
       - fetch_docs_from_github
