@@ -29,11 +29,11 @@ jobs:
            root: downloaded_docs
            paths:
              - html
-   dummy_job:
-     docker:
+    dummy_job:
+      docker:
        - image: circleci/python:3.7-stretch
-     steps:
-       - run:
+      steps:
+        - run:
            name: Dummy echo
            command: |
              echo "Do nothing..."
