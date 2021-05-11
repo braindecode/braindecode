@@ -27,6 +27,9 @@ jobs:
         PR_NUMBER: ${{ github.event.number }}
         EVENT_OBJ:  ${{ toJson(github.event) }}
       run: |
+      
+        echo "github.event.workflow_run.head_sha"
+        echo ${{ github.event.workflow_run.head_sha }}
         echo "steps.set-result.outputs.result"
         echo "${{steps.set-result.outputs.result}}"
         echo "PULL_NUMBER"
