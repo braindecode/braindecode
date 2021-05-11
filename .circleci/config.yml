@@ -29,6 +29,16 @@ jobs:
            root: downloaded_docs
            paths:
              - html
+ jobs:
+   dummy_job:
+     docker:
+       - image: circleci/python:3.7-stretch
+     steps:
+       - run:
+           name: Dummy echo
+           command: |
+             echo "Do nothing..."
+
 
 workflows:
   version: 2.1
@@ -37,6 +47,9 @@ workflows:
     when:
       not:
         equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
+  dummy_job:
+    when:
+      equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
 
     jobs:
       - fetch_docs_from_github
