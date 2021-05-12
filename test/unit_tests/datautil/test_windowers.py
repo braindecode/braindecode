@@ -60,6 +60,25 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
     assert all([not ds.windows.preload for ds in windows.datasets])
 
 
+def test_windows_from_events_n_jobs(lazy_loadable_dataset):
+    longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
+    windows = [create_windows_from_events(
+        concat_ds=longer_dataset, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=False, preload=True,
+        n_jobs=n_jobs) for n_jobs in [1, 2]]
+
+    assert windows[0].description.equals(windows[1].description)
+    for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
+        # assert ds1.windows == ds2.windows  # Runs locally, fails in CI
+        assert np.allclose(ds1.windows.get_data(), ds2.windows.get_data())
+        assert pd.Series(ds1.windows.info).to_json() == \
+               pd.Series(ds2.windows.info).to_json()
+        assert ds1.description.equals(ds2.description)
+        assert np.array_equal(ds1.y, ds2.y)
+        assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
+
+
 def test_windows_from_events_mapping_filter(tmpdir_factory):
     raw = _get_raw(tmpdir_factory, 5 * ['T0', 'T1'])
     base_ds = BaseDataset(raw, description=pd.Series({'file_id': 1}))
@@ -69,7 +88,7 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
         concat_ds=concat_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, mapping={'T1': 0})
-    description = windows.datasets[0].windows.metadata["target"].to_list()
+    description = windows.datasets[0].windows.metadata['target'].to_list()
 
     assert len(description) == 5
     np.testing.assert_array_equal(description, np.zeros(5))
@@ -95,7 +114,7 @@ def test_windows_from_events_different_events(tmpdir_factory):
     description = []
     events = []
     for ds in windows.datasets:
-        description += ds.windows.metadata["target"].to_list()
+        description += ds.windows.metadata['target'].to_list()
         events += ds.windows.events[:, 0].tolist()
 
     assert len(description) == 20
@@ -165,7 +184,7 @@ def test_shifting_last_window_back_in(concat_ds_targets):
     assert len(description) == len(targets) * 2
     np.testing.assert_array_equal(description[0::2], targets)
     np.testing.assert_array_equal(description[1::2], targets)
-    
+
 
 def test_dropping_last_incomplete_window(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
@@ -207,7 +226,7 @@ def test_single_sample_size_windows(concat_ds_targets):
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1, window_stride_samples=1,
         drop_last_window=False, mapping=dict(tongue=3, left_hand=1,
-                                    right_hand=2,feet=4))
+                                             right_hand=2, feet=4))
     description = windows.datasets[0].windows.metadata["target"].to_list()
     assert len(description) == len(targets) * 1000
     np.testing.assert_array_equal(description[::1000], targets)
@@ -225,7 +244,8 @@ def test_overlapping_trial_offsets(concat_ds_targets):
             drop_last_window=False)
 
 
-@pytest.mark.parametrize('drop_bad_windows,preload', [(True, False), (True, False)])
+@pytest.mark.parametrize('drop_bad_windows,preload',
+                         [(True, False), (True, False)])
 def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
     concat_ds, _ = concat_ds_targets
     windows_from_events = create_windows_from_events(
@@ -246,13 +266,11 @@ def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
 
 
 def test_windows_from_events_(lazy_loadable_dataset):
-    with pytest.raises(ValueError,
-                       match='"trial_stop_offset_samples" too large\\. Stop '
-                             'of last trial \\(19900\\) \\+ '
-                             '"trial_stop_offset_samples" \\(250\\) must be '
-                             'smaller than length of recording \\(20000\\)\\.'
-                       ):
-        windows = create_windows_from_events(
+    msg = '"trial_stop_offset_samples" too large\\. Stop of last trial ' \
+          '\\(19900\\) \\+ "trial_stop_offset_samples" \\(250\\) must be ' \
+          'smaller than length of recording \\(20000\\)\\.'
+    with pytest.raises(ValueError, match=msg):
+        create_windows_from_events(
             concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
             trial_stop_offset_samples=250, window_size_samples=100,
             window_stride_samples=100, drop_last_window=False)
@@ -302,15 +320,34 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         idxs = np.append(idxs, stop_offset_samples - window_size_samples)
 
     assert len(idxs) == epochs_data.shape[0], (
-        f"Number of epochs different than expected")
+        'Number of epochs different than expected')
     assert window_size_samples == epochs_data.shape[2], (
-        f"Window size different than expected")
+        'Window size different than expected')
     for j, idx in enumerate(idxs):
         np.testing.assert_allclose(
             base_ds.raw.get_data()[:, idx:idx + window_size_samples],
             epochs_data[j, :],
-            err_msg=f"Epochs different for epoch {j}"
+            err_msg=f'Epochs different for epoch {j}'
         )
+
+
+def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
+    longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
+    windows = [create_fixed_length_windows(
+        concat_ds=longer_dataset, start_offset_samples=0,
+        stop_offset_samples=None, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=True, preload=True,
+        n_jobs=n_jobs) for n_jobs in [1, 2]]
+
+    assert windows[0].description.equals(windows[1].description)
+    for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
+        # assert ds1.windows == ds2.windows  # Runs locally, fails in CI
+        assert np.allclose(ds1.windows.get_data(), ds2.windows.get_data())
+        assert pd.Series(ds1.windows.info).to_json() == \
+               pd.Series(ds2.windows.info).to_json()
+        assert ds1.description.equals(ds2.description)
+        assert np.array_equal(ds1.y, ds2.y)
+        assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
 
 
 def test_windows_from_events_cropped(lazy_loadable_dataset):
@@ -412,7 +449,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.reject == reject
     assert epochs.flat == flat
 
-    
+
 def test_window_sizes_from_events(concat_ds_targets):
     # no fixed window size, no offsets
     expected_n_samples = 1000
@@ -424,7 +461,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, positive trial start offset
     expected_n_samples = 999
     concat_ds, targets = concat_ds_targets
@@ -435,7 +472,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, negative trial start offset
     expected_n_samples = 1001
     concat_ds, targets = concat_ds_targets
@@ -446,7 +483,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, positive trial stop offset
     expected_n_samples = 1001
     concat_ds, targets = concat_ds_targets
@@ -457,7 +494,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
-    
+
     # no fixed window size, negative trial stop offset
     expected_n_samples = 999
     concat_ds, targets = concat_ds_targets
