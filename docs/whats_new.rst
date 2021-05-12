@@ -23,6 +23,7 @@ Current (0.5.1.dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding `n_jobs` parameter to windowers :func:`braindecode.datautil.windowers.create_windows_from_events` and :func:`braindecode.datautil.windowers.create_fixed_length_windows` to allow for parallelization of the windowing process (:gh:`199` by `Hubert Banville`_)
 - Adding support for on-the-fly transforms (:gh:`198` by `Hubert Banville`_)
 - Adding self-supervised learning example on the Sleep Physionet dataset along with new sampler module `braindecode.samplers` (:gh:`178` by `Hubert Banville`_)
 - Adding sleep staging example on the Sleep Physionet dataset (:gh:`161` by `Hubert Banville`_)
