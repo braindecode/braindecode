@@ -91,6 +91,8 @@ Datasets
     BaseConcatDataset
     WindowsDataset
     MOABBDataset
+    TUH
+    TUHAbnormal
 
 
 Data Utils
