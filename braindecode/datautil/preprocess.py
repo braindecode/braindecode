@@ -9,11 +9,11 @@
 # License: BSD (3-clause)
 
 from collections.abc import Iterable
-from collections import OrderedDict
 from functools import partial
 from warnings import warn
 
 import numpy as np
+from numpy.lib.shape_base import apply_along_axis
 import pandas as pd
 
 
@@ -28,8 +28,7 @@ class Preprocessor(object):
     `apply_function` method of Raw and Epochs object will be used to apply the
     function on the internal arrays of Raw and Epochs.
     If `apply_on_array` is False, the callable must directly modify the Raw or
-    Epochs object (e.g., by calling its method(s) or directly modifying its
-    internal arrays).
+    Epochs object (e.g., by calling its method(s) or directly moraw_timepoint
 
     Parameters
     ----------
@@ -73,6 +72,43 @@ class Preprocessor(object):
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
+class MNEPreproc(Preprocessor):
+    """Preprocessor for an MNE-raw/epoch.
+
+    Parameters
+    ----------
+    fn: str or callable
+        if str, the raw/epoch object must have a member function with that name.
+        if callable, directly apply the callable to the mne raw/epoch.
+    kwargs:
+        Keyword arguments will be forwarded to the mne function
+    """
+    def __init__(self, fn, **kwargs):
+        warn('MNEPreproc is deprecated. Use Preprocessor with '
+             '`apply_on_array=False` instead.')
+        super().__init__(fn, apply_on_array=False, **kwargs)
+
+
+class NumpyPreproc(Preprocessor):
+    """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
+
+    Parameters
+    ----------
+    fn: callable
+        Function that preprocesses the numpy array
+    channel_wise: bool
+        Whether to apply the function channel-wise.
+    kwargs:
+        Keyword arguments will be forwarded to the function
+    """
+    def __init__(self, fn, channel_wise=False, **kwargs):
+        warn('NumpyPreproc is deprecated. Use Preprocessor with '
+             '`apply_on_array=True` instead.', UserWarning)
+        assert callable(fn), 'fn must be callable.'
+        super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
+                         **kwargs)
+
+
 def preprocess(concat_ds, preprocessors):
     """Apply preprocessors to a concat dataset.
 
@@ -80,27 +116,17 @@ def preprocess(concat_ds, preprocessors):
     ----------
     concat_ds: BaseConcatDataset
         A concat of BaseDataset or WindowsDataset datasets to be preprocessed.
-    preprocessors: OrderedDict | list(Preprocessor)
-        If provided as an OrderedDict, configuration of the preprocessors to
-        use, where keys are a str or callable and values are a dict with the
-        preprocessing function kwargs (see parameters of the `Preprocessor`
-        class).
-        If provided as a list, directly contains the Preprocessor objects to
-        apply to the dataset.
+    preprocessors: list(Preprocessor)
+        List of Preprocessor objects to apply to the dataset.
 
     Returns
     -------
     BaseConcatDataset:
         Preprocessed dataset.
     """
-    if isinstance(preprocessors, OrderedDict):
-        # Make Preprocessor objects out of a config
-        preprocessors = [
-            Preprocessor(k, **v) for k, v in preprocessors.items()]
-
     if not isinstance(preprocessors, Iterable):
-        raise ValueError('preprocessors must be an OrderedDict or a list of '
-                         'Preprocessor objects.')
+        raise ValueError(
+            'preprocessors must be a list of Preprocessor objects.')
     for elem in preprocessors:
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')

@@ -77,16 +77,14 @@ dataset = SleepPhysionet(
 # we don't need to apply resampling.
 #
 
-from collections import OrderedDict
-
-from braindecode.datautil.preprocess import preprocess
+from braindecode.datautil.preprocess import preprocess, Preprocessor
 
 high_cut_hz = 30
 
-preprocessors = OrderedDict([
-    (lambda x: x * 1e6, dict()),
-    ('filter', dict(l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs))
-])
+preprocessors = [
+    Preprocessor(lambda x: x * 1e6),
+    Preprocessor('filter', l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs)
+]
 
 # Transform the data
 preprocess(dataset, preprocessors)
@@ -140,7 +138,7 @@ windows_dataset = create_windows_from_events(
 
 from braindecode.datautil.preprocess import zscore
 
-preprocess(windows_dataset, OrderedDict([(zscore, dict())]))
+preprocess(windows_dataset, [Preprocessor(zscore)])
 
 
 ######################################################################

@@ -18,7 +18,7 @@ plt.style.use('seaborn')
 import mne
 
 from braindecode.datasets import TUH
-from braindecode.datautil.preprocess import preprocess, MNEPreproc, NumpyPreproc
+from braindecode.datautil.preprocess import preprocess, Preprocessor
 from braindecode.datautil.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import (
     save_concat_dataset, load_concat_dataset)
@@ -86,7 +86,7 @@ def select_by_duration(ds, tmin=0, tmax=None):
     return split
 
 
-tmin = 5*60
+tmin = 5 * 60
 tmax = None
 tuh = select_by_duration(tuh, tmin, tmax)
 
@@ -166,17 +166,19 @@ def custom_crop(raw, tmin=0.0, tmax=None, include_tmax=True):
     raw.crop(tmin=tmin, tmax=tmax, include_tmax=include_tmax)
 
 
-tmin = 1*60
-tmax = 6*60
+tmin = 1 * 60
+tmax = 6 * 60
 sfreq = 100
 
 preprocessors = [
-    MNEPreproc(custom_crop, tmin=tmin, tmax=tmax, include_tmax=False),
-    MNEPreproc('set_eeg_reference', ref_channels='average', ch_type='eeg'),
-    MNEPreproc(custom_rename_channels, mapping=ch_mapping),
-    MNEPreproc("pick_channels", ch_names=short_ch_names, ordered=True),
-    NumpyPreproc(lambda x: x * 1e6),
-    MNEPreproc("resample", sfreq=sfreq),
+    Preprocessor(custom_crop, tmin=tmin, tmax=tmax, include_tmax=False,
+                 apply_on_array=False),
+    Preprocessor('set_eeg_reference', ref_channels='average', ch_type='eeg'),
+    Preprocessor(custom_rename_channels, mapping=ch_mapping,
+                 apply_on_array=False),
+    Preprocessor("pick_channels", ch_names=short_ch_names, ordered=True),
+    Preprocessor(lambda x: x * 1e6),
+    Preprocessor("resample", sfreq=sfreq),
 ]
 
 

@@ -7,12 +7,11 @@ import copy
 
 import pytest
 import numpy as np
-from collections import OrderedDict
 
 from braindecode.datasets import MOABBDataset
 from braindecode.datautil.preprocess import preprocess, zscore, scale, \
     Preprocessor, filterbank, exponential_moving_demean, \
-    exponential_moving_standardize
+    exponential_moving_standardize, MNEPreproc, NumpyPreproc
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 
@@ -56,6 +55,23 @@ def test_no_raw_or_epochs():
         preprocess(ds, ["dummy", "dummy"])
 
 
+def test_deprecated_preprocs(base_concat_ds):
+    msg1 = 'MNEPreproc is deprecated. Use Preprocessor with ' \
+           '`apply_on_array=False` instead.'
+    msg2 = 'NumpyPreproc is deprecated. Use Preprocessor with ' \
+           '`apply_on_array=True` instead.'
+    with pytest.warns(UserWarning, match=msg1):
+        mne_preproc = MNEPreproc('pick_types', eeg=True, meg=False, stim=False)
+    factor = 1e6
+    with pytest.warns(UserWarning, match=msg2):
+        np_preproc = NumpyPreproc(scale, factor=factor)
+
+    raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
+    preprocess(base_concat_ds, [mne_preproc, np_preproc])
+    np.testing.assert_allclose(base_concat_ds[0][0], raw_timepoint * factor,
+                               rtol=1e-4, atol=1e-4)
+
+
 def test_method_not_available(base_concat_ds):
     preprocessors = [Preprocessor('this_method_is_not_real', )]
     with pytest.raises(AttributeError):
@@ -68,16 +84,9 @@ def test_preprocess_raw_str(base_concat_ds):
     assert len(base_concat_ds.datasets[0].raw.times) == 2500
 
 
-def test_preprocess_raw_ordered_dict(base_concat_ds):
-    preprocessors = OrderedDict([
-        ('crop', {'tmax': 10, 'include_tmax': False})])
-    preprocess(base_concat_ds, preprocessors)
-    assert len(base_concat_ds.datasets[0].raw.times) == 2500
-
-
 def test_preprocess_windows_str(windows_concat_ds):
-    preprocessors = OrderedDict([
-        ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False})])
+    preprocessors = [
+        Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
     assert windows_concat_ds[0][0].shape[1] == 25
 
@@ -101,17 +110,6 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
     factor = 10
     preprocessors = [Preprocessor(modify_windows_object, apply_on_array=False,
                                   factor=factor)]
-    raw_window = windows_concat_ds[0][0]
-    preprocess(windows_concat_ds, preprocessors)
-    np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
-                               rtol=1e-4, atol=1e-4)
-
-
-def test_preprocess_windows_callable_on_object_ordered_dict(windows_concat_ds):
-    factor = 10
-    preprocessors = OrderedDict([
-        (modify_windows_object, {'apply_on_array': False, 'factor': factor})
-    ])
     raw_window = windows_concat_ds[0][0]
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
@@ -257,14 +255,16 @@ def test_filterbank(base_concat_ds):
 
 
 def test_filterbank_order_channels_by_freq(base_concat_ds):
-    base_concat_ds = base_concat_ds.split([[0]])["0"]
+    base_concat_ds = base_concat_ds.split([[0]])['0']
     preprocessors = [
-        MNEPreproc('pick_channels', ch_names=sorted(["C4", "Cz"]), ordered=True),
-        MNEPreproc(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
-                   drop_original_signals=False, order_by_frequency_band=True),
-        ]
+        Preprocessor(
+            'pick_channels', ch_names=sorted(['C4', 'Cz']), ordered=True),
+        Preprocessor(
+            filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
+            drop_original_signals=False, order_by_frequency_band=True,
+            apply_on_array=False)]
     preprocess(base_concat_ds, preprocessors)
     np.testing.assert_array_equal(base_concat_ds.datasets[0].raw.ch_names, [
-        "C4", "Cz", "C4_0-4", "Cz_0-4",
-        "C4_4-8", "Cz_4-8", "C4_8-13", "Cz_8-13"
+        'C4', 'Cz', 'C4_0-4', 'Cz_0-4',
+        'C4_4-8', 'Cz_4-8', 'C4_8-13', 'Cz_8-13'
     ])

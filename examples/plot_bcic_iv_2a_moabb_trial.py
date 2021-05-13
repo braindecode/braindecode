@@ -8,8 +8,6 @@ labels (e.g., Right Hand, Left Hand, etc.).
 
 """
 
-from collections import OrderedDict
-
 ######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
@@ -62,8 +60,8 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
 
-from braindecode.datautil.preprocess import exponential_moving_standardize
-from braindecode.datautil.preprocess import preprocess
+from braindecode.datautil.preprocess import (
+    exponential_moving_standardize, preprocess, Preprocessor)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -71,13 +69,13 @@ high_cut_hz = 38.  # high cut frequency for filtering
 factor_new = 1e-3
 init_block_size = 1000
 
-preprocessors = OrderedDict([
-    ('pick_types', dict(eeg=True, meg=False, stim=False)),  # Keep EEG sensors
-    (lambda x: x * 1e6, dict()),  # Convert from V to uV
-    ('filter', dict(l_freq=low_cut_hz, h_freq=high_cut_hz)),  # Bandpass filter
-    (exponential_moving_standardize,  # Exponential moving standardization
-        dict(factor_new=factor_new, init_block_size=init_block_size))
-])
+preprocessors = [
+    Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
+    Preprocessor(lambda x: x * 1e6),  # Convert from V to uV
+    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
+    Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
+                 factor_new=factor_new, init_block_size=init_block_size)
+]
 
 # Transform the data
 preprocess(dataset, preprocessors)
@@ -249,6 +247,7 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import pandas as pd
+
 # Extract loss and accuracy values for plotting from history object
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
 df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns,
