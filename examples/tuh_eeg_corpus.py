@@ -176,9 +176,9 @@ preprocessors = [
     Preprocessor('set_eeg_reference', ref_channels='average', ch_type='eeg'),
     Preprocessor(custom_rename_channels, mapping=ch_mapping,
                  apply_on_array=False),
-    Preprocessor("pick_channels", ch_names=short_ch_names, ordered=True),
+    Preprocessor('pick_channels', ch_names=short_ch_names, ordered=True),
     Preprocessor(lambda x: x * 1e6),
-    Preprocessor("resample", sfreq=sfreq),
+    Preprocessor('resample', sfreq=sfreq),
 ]
 
 

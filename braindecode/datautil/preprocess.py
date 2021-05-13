@@ -103,7 +103,7 @@ class NumpyPreproc(Preprocessor):
     """
     def __init__(self, fn, channel_wise=False, **kwargs):
         warn('NumpyPreproc is deprecated. Use Preprocessor with '
-             '`apply_on_array=True` instead.', UserWarning)
+             '`apply_on_array=True` instead.')
         assert callable(fn), 'fn must be callable.'
         super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
                          **kwargs)
