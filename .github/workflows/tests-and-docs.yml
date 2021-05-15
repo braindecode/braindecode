@@ -71,7 +71,7 @@ jobs:
         path: ./docs/_build/
 
     - name: Deploy to Github Pages if on Master
-      if: {{ github.ref == 'ref/head/master' }}
+      if: ${{ github.ref == 'ref/head/master' }}
       uses: peaceiris/actions-gh-pages@v3
       with:
         deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
