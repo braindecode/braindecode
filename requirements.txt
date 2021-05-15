@@ -3,6 +3,6 @@ pandas
 scipy
 matplotlib
 h5py
-mne
 skorch
 joblib
+mne

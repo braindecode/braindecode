@@ -73,16 +73,13 @@ dataset = SleepPhysionet(
 # Physionet data is already sampled at a lower 100 Hz.
 #
 
-from braindecode.datautil.preprocess import (
-    MNEPreproc, NumpyPreproc, preprocess)
+from braindecode.datautil.preprocess import preprocess, Preprocessor
 
 high_cut_hz = 30
 
 preprocessors = [
-    # convert from volt to microvolt, directly modifying the numpy array
-    NumpyPreproc(fn=lambda x: x * 1e6),
-    # bandpass filter
-    MNEPreproc(fn='filter', l_freq=None, h_freq=high_cut_hz),
+    Preprocessor(lambda x: x * 1e6),
+    Preprocessor('filter', l_freq=None, h_freq=high_cut_hz)
 ]
 
 # Transform the data
@@ -133,7 +130,7 @@ windows_dataset = create_windows_from_events(
 
 from braindecode.datautil.preprocess import zscore
 
-preprocess(windows_dataset, [MNEPreproc(fn=zscore)])
+preprocess(windows_dataset, [Preprocessor(zscore)])
 
 
 ######################################################################

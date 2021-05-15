@@ -16,7 +16,7 @@ from braindecode.datasets.base import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.datautil import (
     create_windows_from_events, create_fixed_length_windows)
-from braindecode.datautil.preprocess import MNEPreproc, preprocess
+from braindecode.datautil.preprocess import Preprocessor, preprocess
 from braindecode.util import create_mne_dummy_raw
 
 
@@ -362,7 +362,7 @@ def test_windows_from_events_cropped(lazy_loadable_dataset):
     ds.datasets[0].raw.annotations.crop(tmin, tmax)
 
     crop_ds = copy.deepcopy(lazy_loadable_dataset)
-    crop_transform = MNEPreproc('crop', tmin=tmin, tmax=tmax)
+    crop_transform = Preprocessor('crop', tmin=tmin, tmax=tmax)
     preprocess(crop_ds, [crop_transform])
 
     # Extract windows
@@ -403,7 +403,7 @@ def test_windows_fixed_length_cropped(lazy_loadable_dataset):
     ds.datasets[0].raw.annotations.crop(tmin, tmax)
 
     crop_ds = copy.deepcopy(lazy_loadable_dataset)
-    crop_transform = MNEPreproc('crop', tmin=tmin, tmax=tmax)
+    crop_transform = Preprocessor('crop', tmin=tmin, tmax=tmax)
     preprocess(crop_ds, [crop_transform])
 
     # Extract windows

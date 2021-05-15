@@ -1,6 +1,4 @@
 """Preprocessors that work on Raw or Epochs objects.
-ToDo: should transformer also transform y (e.g. cutting continuous labelled
-      data)?
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
@@ -15,11 +13,66 @@ from functools import partial
 from warnings import warn
 
 import numpy as np
+from numpy.lib.shape_base import apply_along_axis
 import pandas as pd
-import mne
 
 
-class MNEPreproc(object):
+class Preprocessor(object):
+    """Preprocessor for an MNE Raw or Epochs object.
+
+    Applies the provided preprocessing function to the data of a Raw or Epochs
+    object.
+    If the function is provided as a string, the method with that name will be
+    used (e.g., 'pick_channels', 'filter', etc.).
+    If it is provided as a callable and `apply_on_array` is True, the
+    `apply_function` method of Raw and Epochs object will be used to apply the
+    function on the internal arrays of Raw and Epochs.
+    If `apply_on_array` is False, the callable must directly modify the Raw or
+    Epochs object (e.g., by calling its method(s) or directly moraw_timepoint
+
+    Parameters
+    ----------
+    fn: str or callable
+        If str, the Raw/Epochs object must have a method with that name.
+        If callable, directly apply the callable to the object.
+    apply_on_array : bool
+        Ignored if `fn` is not a callable. If True, the `apply_function` of Raw
+        and Epochs object will be used to run `fn` on the underlying arrays
+        directly. If False, `fn` must directly modify the Raw or Epochs object.
+    kwargs:
+        Keyword arguments to be forwarded to the MNE function.
+    """
+    def __init__(self, fn, apply_on_array=True, **kwargs):
+        if callable(fn) and apply_on_array:
+            channel_wise = kwargs.pop('channel_wise', False)
+            kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise)
+            fn = 'apply_function'
+        self.fn = fn
+        self.kwargs = kwargs
+
+    def apply(self, raw_or_epochs):
+        try:
+            self._try_apply(raw_or_epochs)
+        except RuntimeError:
+            # Maybe the function needs the data to be loaded and the data was
+            # not loaded yet. Not all MNE functions need data to be loaded,
+            # most importantly the 'crop' function can be lazily applied
+            # without preloading data which can make the overall preprocessing
+            # pipeline substantially faster.
+            raw_or_epochs.load_data()
+            self._try_apply(raw_or_epochs)
+
+    def _try_apply(self, raw_or_epochs):
+        if callable(self.fn):
+            self.fn(raw_or_epochs, **self.kwargs)
+        else:
+            if not hasattr(raw_or_epochs, self.fn):
+                raise AttributeError(
+                    f'MNE object does not have a {self.fn} method.')
+            getattr(raw_or_epochs, self.fn)(**self.kwargs)
+
+
+class MNEPreproc(Preprocessor):
     """Preprocessor for an MNE-raw/epoch.
 
     Parameters
@@ -31,34 +84,12 @@ class MNEPreproc(object):
         Keyword arguments will be forwarded to the mne function
     """
     def __init__(self, fn, **kwargs):
-        self.fn = fn
-        self.kwargs = kwargs
-
-    def apply(self, raw_or_epochs):
-        try:
-            self._try_apply(raw_or_epochs)
-        except RuntimeError:
-            # Maybe the function needs the data to be loaded
-            # and the data was not loaded yet
-            # Not all mne functions need data to be loaded,
-            # most importantly the 'crop' function can be
-            # lazily applied without preloading data
-            # which can make overall preprocessing pipeline
-            # substantially faster
-            raw_or_epochs.load_data()
-            self._try_apply(raw_or_epochs)
-
-    def _try_apply(self, raw_or_epochs):
-        if callable(self.fn):
-            self.fn(raw_or_epochs, **self.kwargs)
-        else:
-            if not hasattr(raw_or_epochs, self.fn):
-                raise AttributeError(
-                    f'MNE object does not have {self.fn} method.')
-            getattr(raw_or_epochs, self.fn)(**self.kwargs)
+        warn('MNEPreproc is deprecated. Use Preprocessor with '
+             '`apply_on_array=False` instead.')
+        super().__init__(fn, apply_on_array=False, **kwargs)
 
 
-class NumpyPreproc(MNEPreproc):
+class NumpyPreproc(Preprocessor):
     """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
 
     Parameters
@@ -66,44 +97,48 @@ class NumpyPreproc(MNEPreproc):
     fn: callable
         Function that preprocesses the numpy array
     channel_wise: bool
-        Whether to apply the function
+        Whether to apply the function channel-wise.
     kwargs:
         Keyword arguments will be forwarded to the function
     """
     def __init__(self, fn, channel_wise=False, **kwargs):
-        # use apply function of mne which will directly apply it to numpy array
-        partial_fn = partial(fn, **kwargs)
-        mne_kwargs = dict(fun=partial_fn, channel_wise=channel_wise)
-        super().__init__(fn='apply_function', **mne_kwargs)
+        warn('NumpyPreproc is deprecated. Use Preprocessor with '
+             '`apply_on_array=True` instead.')
+        assert callable(fn), 'fn must be callable.'
+        super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
+                         **kwargs)
 
 
 def preprocess(concat_ds, preprocessors):
-    """Apply several preprocessors to a concat dataset.
+    """Apply preprocessors to a concat dataset.
 
     Parameters
     ----------
-    concat_ds: A concat of BaseDataset or WindowsDataset
-        datasets to be preprocessed
-    preprocessors: list(MNEPreproc) #TODO: correct object stuffs
-        List of preprocessors to apply to the dataset
+    concat_ds: BaseConcatDataset
+        A concat of BaseDataset or WindowsDataset datasets to be preprocessed.
+    preprocessors: list(Preprocessor)
+        List of Preprocessor objects to apply to the dataset.
 
     Returns
     -------
-    concat_ds:
+    BaseConcatDataset:
+        Preprocessed dataset.
     """
-    assert isinstance(preprocessors, Iterable)
+    if not isinstance(preprocessors, Iterable):
+        raise ValueError(
+            'preprocessors must be a list of Preprocessor objects.')
     for elem in preprocessors:
         assert hasattr(elem, 'apply'), (
-            "Expect preprocessor object to have apply method")
+            'Preprocessor object needs an `apply` method.')
 
     for ds in concat_ds.datasets:
-        if hasattr(ds, "raw"):
+        if hasattr(ds, 'raw'):
             _preprocess(ds.raw, preprocessors)
-        elif hasattr(ds, "windows"):
+        elif hasattr(ds, 'windows'):
             _preprocess(ds.windows, preprocessors)
         else:
             raise ValueError(
-                'Can only perprocess concatenation of BaseDataset or '
+                'Can only preprocess concatenation of BaseDataset or '
                 'WindowsDataset, with either a `raw` or `windows` attribute.')
 
     # Recompute cumulative sizes as the transforms might have changed them
@@ -119,8 +154,8 @@ def _preprocess(raw_or_epochs, preprocessors):
     ----------
     raw_or_epochs: mne.io.Raw or mne.Epochs
         Object to preprocess.
-    preprocessors: list(MNEPreproc) #TODO: correct object stuffs
-        List of preprocessors to apply to the dataset
+    preprocessors: list(Preprocessor)
+        List of preprocessors to apply to the dataset.
     """
     for preproc in preprocessors:
         preproc.apply(raw_or_epochs)
@@ -172,8 +207,7 @@ def exponential_moving_standardize(
             data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
         init_block_standardized = (
-                                          data[0:init_block_size] - init_mean
-                                  ) / np.maximum(eps, init_std)
+            data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
@@ -278,10 +312,10 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
 
     Parameters
     ----------
-    raw: Instance of mne.io.Raw
-        The raw signals to be filtered
+    raw: mne.io.Raw
+        The raw signals to be filtered.
     frequency_bands: list(tuple)
-        The frequency bands to be filtered for (e.g. [(4, 8), (8, 13)])
+        The frequency bands to be filtered for (e.g. [(4, 8), (8, 13)]).
     drop_original_signals: bool
         Whether to drop the original unfiltered signals
     order_by_frequency_band: bool
