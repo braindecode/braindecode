@@ -25,6 +25,7 @@ Enhancements
 ~~~~~~~~~~~~
 - Adding `n_jobs` parameter to windowers :func:`braindecode.datautil.windowers.create_windows_from_events` and :func:`braindecode.datautil.windowers.create_fixed_length_windows` to allow for parallelization of the windowing process (:gh:`199` by `Hubert Banville`_)
 - Adding support for on-the-fly transforms (:gh:`198` by `Hubert Banville`_)
+- Unifying preprocessors under the :class:`braindecode.datautil.preprocess.Preprocessor` class (:gh:`197` by `Hubert Banville`_)
 - Adding self-supervised learning example on the Sleep Physionet dataset along with new sampler module `braindecode.samplers` (:gh:`178` by `Hubert Banville`_)
 - Adding sleep staging example on the Sleep Physionet dataset (:gh:`161` by `Hubert Banville`_)
 - Adding new parameters to windowers :func:`braindecode.datautil.windowers.create_windows_from_events` and :func:`braindecode.datautil.windowers.create_fixed_length_windows` for finer control over epoching (:gh:`152` by `Hubert Banville`_)
@@ -51,6 +52,7 @@ Bugs
 
 API changes
 ~~~~~~~~~~~
+- Preprocessor classes :class:`braindecode.datautil.preprocess.MNEPreproc` and :class:`braindecode.datautil.preprocess.NumpyPreproc` are deprecated in favor of :class:`braindecode.datautil.preprocess.Preprocessor` (:gh:`197` by `Hubert Banville`_)
 - Parameter `stop_offset_samples` of :func:`braindecode.datautil.windowers.create_fixed_length_windows` must now be set to `None` instead of 0 to indicate the end of the recording (:gh:`152` by `Hubert Banville`_)
 
 Authors
