@@ -4,6 +4,7 @@
 
 
 import os
+import glob
 import random
 
 import numpy as np
@@ -336,3 +337,26 @@ def update_estimator_docstring(base_class, docstring):
                     splitted[1] + \
                     filtered_doc[filtered_doc.find('Attributes'):]
     return out_docstring
+
+
+def read_all_file_names(directory, extension):
+    """Read all files with specified extension from given path and sorts them
+    based on a given sorting key.
+
+    Parameters
+    ----------
+    directory: str
+        Parent directory to be searched for files of the specified type.
+    extension: str
+        File extension, i.e. ".edf" or ".txt".
+
+    Returns
+    -------
+    file_paths: list(str)
+        List of all files found in (sub)directories of path.
+    """
+    assert extension.startswith('.')
+    file_paths = glob.glob(directory + '**/*' + extension, recursive=True)
+    assert len(file_paths) > 0, (
+        f'something went wrong. Found no {extension} files in {directory}')
+    return file_paths
