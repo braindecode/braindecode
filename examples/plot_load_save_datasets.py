@@ -23,7 +23,8 @@ ds = MOABBDataset(
 )
 
 ###############################################################################
-# We can or cannot apply preprocessing steps to the dataset to our liking.
+# We can apply preprocessing steps to the dataset. It is also possible to skip
+# this step and not apply any preprocessing.
 preprocess(
     concat_ds=ds,
     preprocessors=[MNEPreproc(fn='resample', sfreq=10)]
