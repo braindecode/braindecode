@@ -178,6 +178,17 @@ def test_scale_windows(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
+def test_preprocess_dtype(windows_concat_ds):
+    dtype = np.float32
+    factor = 1e6
+    preprocessors = [
+        Preprocessor('pick_types', eeg=True, meg=False, stim=False),
+        Preprocessor(scale, factor=factor, dtype=dtype)
+    ]
+    preprocess(windows_concat_ds, preprocessors)
+    assert windows_concat_ds[0][0].dtype == dtype
+
+
 @pytest.fixture(scope='module')
 def mock_data():
     mock_input = np.random.RandomState(20200217).rand(2, 10).reshape(2, 10)

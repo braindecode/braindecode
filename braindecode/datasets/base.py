@@ -237,4 +237,3 @@ class BaseConcatDataset(ConcatDataset):
     def transform(self, value):
         for i in range(len(self.datasets)):
             self.datasets[i].transform = value
-
