@@ -78,3 +78,4 @@ jobs:
         external_repository: braindecode/braindecode.github.io
         publish_branch: master
         publish_dir: ./docs/_build/html
+        cname: braindecode.org
