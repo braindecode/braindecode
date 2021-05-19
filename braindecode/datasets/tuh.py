@@ -209,6 +209,7 @@ class TUHAbnormal(TUH):
         for ds_i, ds in enumerate(self.datasets):
             ds.target_name = target_name
             ds.target = self.description[target_name][ds_i]
+            ds.description['pathological'] = self.description.loc[ds_i, 'pathological']
 
     @staticmethod
     def _parse_additional_description_from_file_path(file_path):
