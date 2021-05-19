@@ -208,8 +208,9 @@ class TUHAbnormal(TUH):
         # set target name and target of base datasets
         for ds_i, ds in enumerate(self.datasets):
             ds.target_name = target_name
-            ds.target = self.description[target_name][ds_i]
-            ds.description['pathological'] = self.description.loc[ds_i, 'pathological']
+            ds.target = self.description.loc[ds_i, target_name]
+            for k in additional_descriptions.columns:
+                ds.description[k] = self.description.loc[ds_i, k]
 
     @staticmethod
     def _parse_additional_description_from_file_path(file_path):
