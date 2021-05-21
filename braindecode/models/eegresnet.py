@@ -153,8 +153,7 @@ class EEGResNet(nn.Sequential):
             n_out_time = out.cpu().data.numpy().shape[2]
             self.final_pool_length = n_out_time
         self.add_module('mean_pool', AvgPool2dWithConv(
-            (self.final_pool_length, 1), (1, 1), dilation=(int(cur_dilation[0]),
-                                                           int(cur_dilation[1]))))
+            (self.final_pool_length, 1), (1, 1)))
         self.add_module('conv_classifier',
                         nn.Conv2d(n_cur_filters, self.n_classes,
                                   (1, 1), bias=True))

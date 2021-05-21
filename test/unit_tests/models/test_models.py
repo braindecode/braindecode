@@ -70,6 +70,17 @@ def test_eegresnet(input_sizes):
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
+def test_eegresnet_pool_length_auto(input_sizes):
+    model = EEGResNet(
+        input_sizes['n_channels'],
+        input_sizes['n_classes'],
+        input_sizes['n_in_times'],
+        final_pool_length='auto',
+        n_first_filters=2,
+    )
+    check_forward_pass(model, input_sizes, only_check_until_dim=2)
+
+
 def test_hybridnet(input_sizes):
     model = HybridNet(
         input_sizes['n_channels'], input_sizes['n_classes'],
