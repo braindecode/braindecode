@@ -12,7 +12,7 @@ from torch.nn.functional import elu
 
 from .functions import transpose_time_to_spat, squeeze_final_output
 from ..util import np_to_var
-from .modules import Expression, AvgPool2dWithConv, Ensure4d
+from .modules import Expression, Ensure4d
 
 
 class EEGResNet(nn.Sequential):
@@ -152,8 +152,9 @@ class EEGResNet(nn.Sequential):
                 dtype=np.float32)))
             n_out_time = out.cpu().data.numpy().shape[2]
             self.final_pool_length = n_out_time
-        self.add_module('mean_pool', AvgPool2dWithConv(
-            (self.final_pool_length, 1), (1, 1)))
+        self.add_module('mean_pool', nn.AvgPool2d(
+            kernel_size=(self.final_pool_length, 1), stride=(1, 1)
+        ))
         self.add_module('conv_classifier',
                         nn.Conv2d(n_cur_filters, self.n_classes,
                                   (1, 1), bias=True))

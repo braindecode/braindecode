@@ -3,7 +3,7 @@ from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
 
-from .modules import Expression, AvgPool2dWithConv, Ensure4d
+from .modules import Expression, Ensure4d
 from .functions import identity, transpose_time_to_spat, squeeze_final_output
 from ..util import np_to_var
 
@@ -90,7 +90,7 @@ class Deep4Net(nn.Sequential):
             conv_stride = 1
             pool_stride = self.pool_time_stride
         self.add_module("ensuredims", Ensure4d())
-        pool_class_dict = dict(max=nn.MaxPool2d, mean=AvgPool2dWithConv)
+        pool_class_dict = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)
         first_pool_class = pool_class_dict[self.first_pool_mode]
         later_pool_class = pool_class_dict[self.later_pool_mode]
         if self.split_first_layer:
