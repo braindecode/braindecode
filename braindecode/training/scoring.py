@@ -177,7 +177,9 @@ class CroppedTrialEpochScoring(EpochScoring):
                 pred_results['i_window_stops'])
             # trial preds is a list
             # each item is an 2d array classes x time
-            y_preds_per_trial = np.array(trial_preds)
+            y_preds_per_trial = np.array(
+                [np.mean(p, axis=1) for p in trial_preds]
+            )
             # Move into format expected by skorch (list of torch tensors)
             y_preds_per_trial = [torch.tensor(y_preds_per_trial)]
 

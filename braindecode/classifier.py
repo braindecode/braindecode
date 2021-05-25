@@ -221,7 +221,7 @@ class EEGClassifier(NeuralNetClassifier):
 
         """
         y_pred = super().predict_proba(X)
-        if self.cropped:
+        if self.cropped and len(y_pred.shape) == 3:
             return y_pred.mean(axis=-1)
         else:
             return y_pred
