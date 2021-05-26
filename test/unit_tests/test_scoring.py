@@ -36,7 +36,7 @@ class MockSkorchNet:
 
     def predict(self, X):
         return np.concatenate(
-            [to_numpy(x.mean(-1).argmax(dim=1)) for x in self.forward_iter(X)], 0
+            [to_numpy(x.argmax(1)) for x in self.forward_iter(X)], 0
         )
 
     def get_iterator(self, X_test, training):
