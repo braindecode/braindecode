@@ -175,8 +175,11 @@ class CroppedTrialEpochScoring(EpochScoring):
                 pred_results['preds'],
                 pred_results['i_window_in_trials'],
                 pred_results['i_window_stops'])
-            # trial preds is a list
-            # each item is an 2d array classes x time
+
+            # Average across the timesteps of each trial so we have per-trial
+            # predictions already, these will be just passed through the forward
+            # method of the classifier/regressor to the skorch scoring function.
+            # trial_preds is a list, each item is a 2d array classes x time
             y_preds_per_trial = np.array(
                 [np.mean(p, axis=1) for p in trial_preds]
             )

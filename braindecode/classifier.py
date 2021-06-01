@@ -221,6 +221,11 @@ class EEGClassifier(NeuralNetClassifier):
 
         """
         y_pred = super().predict_proba(X)
+        # Normally, we have to average the predictions across crops/timesteps
+        # to get one prediction per window/trial
+        # Predictions may be already averaged in CroppedTrialEpochScoring (y_pred.shape==2).
+        # However, when predictions are computed outside of CroppedTrialEpochScoring
+        # we have to average predictions, hence the check if len(y_pred.shape) == 3
         if self.cropped and len(y_pred.shape) == 3:
             return y_pred.mean(axis=-1)
         else:
