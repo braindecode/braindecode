@@ -85,8 +85,12 @@ class SleepStagerChambon2018(nn.Module):
         )
 
     def _len_last_layer(self, n_channels, input_size):
-        return len(self.feature_extractor(
-            torch.Tensor(1, 1, n_channels, input_size)).flatten())
+        self.feature_extractor.eval()
+        with torch.no_grad():
+            out = self.feature_extractor(
+                torch.Tensor(1, 1, n_channels, input_size))
+        self.feature_extractor.train()
+        return len(out.flatten())
 
     def forward(self, x):
         """Forward pass.
