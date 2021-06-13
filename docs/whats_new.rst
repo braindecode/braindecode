@@ -50,6 +50,7 @@ Bugs
 - Fixing :meth:`braindecode.classifier.EEGClassifier.predict_proba` and :meth:`braindecode.regressor.EEGRegressor.predict` behavior in the cropped mode (:gh:`171` by `Maciej Śliwowski`_)
 - Freeze torch random generator for scoring functions for reproducibility (:gh:`155` by `Robin Tibor Schirrmeister`_)
 - Make EEGResNet work for final_pool_length='auto' (:gh:'`223` by `Robin Tibor Schirrmeister`_ and `Maciej Śliwowski`_)
+- Fixing :class:`braindecode.scoring.CroppedTrialEpochScoring` in the case of variable length trials (:gh:`224` by `Maciej Śliwowski`_ and `Robin Tibor Schirrmeister`_)
 
 API changes
 ~~~~~~~~~~~
