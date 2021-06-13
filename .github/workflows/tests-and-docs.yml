@@ -25,6 +25,8 @@ jobs:
       with:
         path: ~/mne_data
         key: ${{ runner.os }}-v1
+    - name: Ensure MNE Data Directory exists
+      run: mkdir -p ~/mne_data
     - name: Setting Up Conda Braindecode Environment
       uses: conda-incubator/setup-miniconda@v2
       with:
