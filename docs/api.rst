@@ -62,6 +62,7 @@ Models
     EEGResNet
     TCN
     SleepStagerChambon2018
+    get_output_shape
 
 Training
 ==========
@@ -145,3 +146,17 @@ Utils
    :toctree: generated/
 
     set_random_seeds
+
+Visualization
+=============
+
+:py:mod:`braindecode.visualization`:
+
+.. currentmodule:: braindecode.visualization
+
+.. autosummary::
+   :toctree: generated/
+
+    compute_amplitude_gradients
+
+
