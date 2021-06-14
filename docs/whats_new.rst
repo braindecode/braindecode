@@ -25,7 +25,7 @@ Current (0.5.2.dev0)
 .. _changes_0_5_1:
 
 Version 0.5.1 (2021-07-14)
--------------------------
+--------------------------
 
 Enhancements
 ~~~~~~~~~~~~
@@ -35,8 +35,7 @@ Enhancements
 - Adding self-supervised learning example on the Sleep Physionet dataset along with new sampler module `braindecode.samplers` (:gh:`178` by `Hubert Banville`_)
 - Adding sleep staging example on the Sleep Physionet dataset (:gh:`161` by `Hubert Banville`_)
 - Adding new parameters to windowers :func:`braindecode.datautil.create_windows_from_events` and :func:`braindecode.datautil.create_fixed_length_windows` for finer control over epoching (:gh:`152` by `Hubert Banville`_)
-- Adding Temporal Convolutional Network (:gh:`138` by `Lukas Gemein`_)
-- Adding tests for TUHAbnormal dataset (:gh:`139` by `Lukas Gemein`_)
+- Adding Temporal Convolutional Network :class:`braindecode.models.TCN` (:gh:`138` by `Lukas Gemein`_)
 - Adding option to use BaseConcatDataset as input to BaseConcatDataset (:gh:`142` by `Lukas Gemein`_)
 - Adding a simplified API for splitting of BaseConcatDataset: parameters `property` and `split_ids` in :meth:`braindecode.datasets.BaseConcatDataset.split` are replaced by `by` (:gh:`147` by `Lukas Gemein`_)
 - Adding a preprocessor that realizes a filterbank: :func:`braindecode.datautil.filterbank` (:gh:`158` by `Lukas Gemein`_)

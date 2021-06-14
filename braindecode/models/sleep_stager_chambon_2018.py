@@ -9,7 +9,8 @@ import numpy as np
 
 
 class SleepStagerChambon2018(nn.Module):
-    """Sleep staging architecture from [1]_.
+    """
+    Sleep staging architecture from [1]_.
 
     Convolutional neural network for sleep staging described in [1]_.
 
@@ -93,7 +94,8 @@ class SleepStagerChambon2018(nn.Module):
         return len(out.flatten())
 
     def forward(self, x):
-        """Forward pass.
+        """
+        Forward pass.
 
         Parameters
         ---------
