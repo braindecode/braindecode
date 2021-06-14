@@ -61,6 +61,8 @@ Models
     HybridNet
     EEGResNet
     TCN
+    SleepStagerChambon2018
+    get_output_shape
 
 Training
 ==========
@@ -93,7 +95,7 @@ Datasets
     MOABBDataset
     TUH
     TUHAbnormal
-
+    SleepPhysionet
 
 Data Utils
 ==========
@@ -120,6 +122,19 @@ Data Utils
     preprocess
     Preprocessor
 
+Samplers
+========
+
+:py:mod:`braindecode.samplers`:
+
+.. currentmodule:: braindecode.samplers
+
+.. autosummary::
+   :toctree: generated/
+
+   RecordingSampler
+   RelativePositioningSampler
+
 Utils
 =====
 
@@ -131,3 +146,17 @@ Utils
    :toctree: generated/
 
     set_random_seeds
+
+Visualization
+=============
+
+:py:mod:`braindecode.visualization`:
+
+.. currentmodule:: braindecode.visualization
+
+.. autosummary::
+   :toctree: generated/
+
+    compute_amplitude_gradients
+
+
