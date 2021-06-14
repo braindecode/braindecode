@@ -39,7 +39,8 @@ def check_forward_pass(model, input_sizes, only_check_until_dim=None):
     y_pred_new = model(X)
     assert y_pred_new.shape[:only_check_until_dim] == (
         input_sizes['n_samples'], input_sizes['n_classes'])
-    np.testing.assert_allclose(y_pred.detach().cpu().numpy(), y_pred_new.detach().cpu().numpy())
+    np.testing.assert_allclose(y_pred.detach().cpu().numpy(),
+                               y_pred_new.detach().cpu().numpy())
 
 
 def test_shallow_fbcsp_net(input_sizes):
@@ -64,6 +65,17 @@ def test_eegresnet(input_sizes):
         input_sizes['n_classes'],
         input_sizes['n_in_times'],
         final_pool_length=5,
+        n_first_filters=2,
+    )
+    check_forward_pass(model, input_sizes, only_check_until_dim=2)
+
+
+def test_eegresnet_pool_length_auto(input_sizes):
+    model = EEGResNet(
+        input_sizes['n_channels'],
+        input_sizes['n_classes'],
+        input_sizes['n_in_times'],
+        final_pool_length='auto',
         n_first_filters=2,
     )
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
@@ -104,15 +116,21 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     time_conv_size_s = 0.5
     max_pool_size_s = 0.125
+    pad_size_s = 0.25
     n_examples = 10
 
     model = SleepStagerChambon2018(
         n_channels, sfreq, n_conv_chs=8, time_conv_size_s=time_conv_size_s,
-        max_pool_size_s=max_pool_size_s, n_classes=n_classes,
-        input_size_s=input_size_s, dropout=0.25)
+        max_pool_size_s=max_pool_size_s, pad_size_s=pad_size_s,
+        input_size_s=input_size_s, n_classes=n_classes, dropout=0.25)
+    model.eval()
 
     X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
     X = torch.from_numpy(X.astype(np.float32))
 
-    y_pred = model(X)
-    assert y_pred.shape == (n_examples, n_classes)
+    y_pred1 = model(X)  # 3D inputs
+    y_pred2 = model(X.unsqueeze(1))  # 4D inputs
+    assert y_pred1.shape == (n_examples, n_classes)
+    assert y_pred2.shape == (n_examples, n_classes)
+    np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
+                               y_pred2.detach().cpu().numpy())

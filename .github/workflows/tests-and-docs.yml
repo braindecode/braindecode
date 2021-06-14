@@ -24,7 +24,9 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/mne_data
-        key: ${{ runner.os }}-v1
+        key: ${{ runner.os }}-v2
+    - name: Ensure MNE Data Directory exists
+      run: mkdir -p ~/mne_data
     - name: Setting Up Conda Braindecode Environment
       uses: conda-incubator/setup-miniconda@v2
       with:
@@ -69,3 +71,13 @@ jobs:
       with:
         name: HTML-Docs
         path: ./docs/_build/
+
+    - name: Deploy to Github Pages if on Master
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+        external_repository: braindecode/braindecode.github.io
+        publish_branch: master
+        publish_dir: ./docs/_build/html
+        cname: braindecode.org

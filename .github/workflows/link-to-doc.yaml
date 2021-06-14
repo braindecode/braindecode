@@ -1,6 +1,6 @@
 on: [status]
 jobs:
-  circleci_artifacts_redirector_job:
+  circleci_artifacts_redirector:
     runs-on: ubuntu-latest
     name: Run CircleCI artifacts redirector
     steps:
@@ -9,4 +9,5 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           artifact-path: 0/dev/index.html
-          circleci-jobs: build_docs
+          circleci-jobs: fetch_docs_from_github
+          job-title: Check rendered doc here!

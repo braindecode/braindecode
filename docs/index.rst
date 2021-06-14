@@ -59,7 +59,6 @@ Examples
 
    auto_examples/index
 
-
 Public API
 ==========
 .. toctree::
@@ -67,7 +66,12 @@ Public API
 
    api
 
+What's new
+==========
+.. toctree::
+   :maxdepth: 1
 
+   whats_new
 
 Troubleshooting
 ===============
