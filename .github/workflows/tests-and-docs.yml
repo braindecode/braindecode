@@ -24,7 +24,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/mne_data
-        key: ${{ runner.os }}-v1
+        key: ${{ runner.os }}-v2
     - name: Ensure MNE Data Directory exists
       run: mkdir -p ~/mne_data
     - name: Setting Up Conda Braindecode Environment
