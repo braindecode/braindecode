@@ -102,8 +102,9 @@ You can look at the documentation by opening `docs/_build/html/index.html` in yo
 
 ### Find an open issue
 First, you can look  at the open issues under https://github.com/braindecode/braindecode/issues and find one that interests you.
-Todo: tags
-Make sure to comment that you try to work on that issue so that other people know about it.
+There are now tags showing basic/intermediate/advanced tasks, also a tag for the Braindecode sprint 2021, here you see the open issues for that:
+https://github.com/braindecode/braindecode/issues?q=is%3Aissue+is%3Aopen+label%3Asprint
+Make sure to comment that you try to work on that issue so that other people know about it and also assign it to yourself (right side on the issue page).
 
 ### Create a local branch for your contribution
 To ensure you are up to date with the upstream master, in your local repository,
