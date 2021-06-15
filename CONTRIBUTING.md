@@ -228,8 +228,7 @@ it may become necessary to rebase your code changes on the current Braindecode m
 This will make the git history look as if you just started your changes from the current upstream master state.
 To do that, from your local repository, first commit all the changes inside your local branch (without pushing) and then run the following:
 ```
-git checkout master
-git pull upstream master
+git fetch upstream master:master
 git checkout <branch-name>
 git rebase master
 ```
