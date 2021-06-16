@@ -86,7 +86,7 @@ from braindecode.datasets.moabb import MOABBDataset
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
-from braindecode.datautil.preprocess import (
+from braindecode.preprocessing.preprocess import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
 low_cut_hz = 4.  # low cut frequency for filtering
@@ -198,7 +198,7 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 # ``create_windows_from_events`` function.
 #
 
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets

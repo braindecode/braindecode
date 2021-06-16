@@ -99,8 +99,6 @@ Datasets
     create_from_X_y
     create_from_mne_raw
     create_from_mne_epochs
-    create_fixed_length_windows
-    create_windows_from_events
 
 Preprocessing
 =============
@@ -112,6 +110,8 @@ Preprocessing
 .. autosummary::
    :toctree: generated/
 
+    create_windows_from_events
+    create_fixed_length_windows
     exponential_moving_demean
     exponential_moving_standardize
     zscore

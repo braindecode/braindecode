@@ -10,9 +10,9 @@ In this example, we show how to load and save braindecode datasets.
 # License: BSD (3-clause)
 
 from braindecode.datasets.moabb import MOABBDataset
-from braindecode.datautil.preprocess import preprocess, MNEPreproc
+from braindecode.preprocessing.preprocess import preprocess, MNEPreproc
 from braindecode.datautil.serialization import load_concat_dataset
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import create_windows_from_events
 
 
 ###############################################################################

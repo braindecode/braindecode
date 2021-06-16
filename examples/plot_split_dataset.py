@@ -11,7 +11,7 @@ In this example, we show multiple ways of how to split datasets.
 from IPython.display import display
 
 from braindecode.datasets import MOABBDataset
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import create_windows_from_events
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,
