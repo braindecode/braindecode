@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from ..util import np_to_var
+from ..util import np_to_th
 
 
 class Ensure4d(torch.nn.Module):
@@ -94,7 +94,7 @@ class AvgPool2dWithConv(torch.nn.Module):
             (self._pool_weights.data.type() != x.data.type())
         ):
             n_pool = np.prod(self.kernel_size)
-            weights = np_to_var(
+            weights = np_to_th(
                 np.ones(weight_shape, dtype=np.float32) / float(n_pool)
             )
             weights = weights.type_as(x)

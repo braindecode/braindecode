@@ -6,7 +6,7 @@ import numpy as np
 from torch import nn
 from torch.nn import init
 
-from ..util import np_to_var
+from ..util import np_to_th
 from .modules import Expression, Ensure4d
 from .functions import (
     safe_log, square, transpose_time_to_spat, squeeze_final_output
@@ -125,7 +125,7 @@ class ShallowFBCSPNet(nn.Sequential):
         self.eval()
         if self.final_conv_length == "auto":
             out = self(
-                np_to_var(
+                np_to_th(
                     np.ones(
                         (1, self.in_chans, self.input_window_samples, 1),
                         dtype=np.float32,
