@@ -1,9 +1,14 @@
+# Authors: Lukas Gemein <l.gemein@gmail.com>
+#          Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 import pandas as pd
 import logging
 import mne
 
-from ..datasets.base import BaseDataset, BaseConcatDataset
+from .base import BaseDataset, BaseConcatDataset
 
 log = logging.getLogger(__name__)
 

@@ -1,3 +1,7 @@
+# Authors: Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 from torch import nn
 from torch.nn import init

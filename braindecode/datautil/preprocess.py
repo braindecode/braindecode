@@ -2,6 +2,8 @@
 #
 # License: BSD (3-clause)
 
+# To be removed in future versions
+
 from ..preprocessing.preprocess import *
 from warnings import warn
 

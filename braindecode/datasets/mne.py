@@ -1,3 +1,8 @@
+# Authors: Lukas Gemein <l.gemein@gmail.com>
+#          Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 import pandas as pd
 import mne

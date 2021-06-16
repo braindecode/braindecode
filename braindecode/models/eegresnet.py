@@ -1,4 +1,4 @@
-# Authors: Robin Tibor Schirrmeister
+# Authors: Robin Tibor Schirrmeister <robintibor@gmail.com>
 #          Tonio Ball
 #
 # License: BSD-3
@@ -11,7 +11,6 @@ from torch.nn import init
 from torch.nn.functional import elu
 
 from .functions import transpose_time_to_spat, squeeze_final_output
-from ..util import np_to_var
 from .modules import Expression, AvgPool2dWithConv, Ensure4d
 
 

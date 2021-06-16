@@ -1,3 +1,7 @@
+# Authors: Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
 import logging
 import re
 from glob import glob

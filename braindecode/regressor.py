@@ -1,3 +1,8 @@
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Robin Schirrmeister <robintibor@gmail.com>
+#
+# License: BSD (3-clause)
+
 import numpy as np
 from sklearn.metrics import get_scorer
 from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring

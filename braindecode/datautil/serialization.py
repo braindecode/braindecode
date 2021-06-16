@@ -14,7 +14,7 @@ import warnings
 import mne
 import pandas as pd
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
