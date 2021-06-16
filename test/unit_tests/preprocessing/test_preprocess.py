@@ -9,10 +9,10 @@ import pytest
 import numpy as np
 
 from braindecode.datasets import MOABBDataset
-from braindecode.datautil.preprocess import preprocess, zscore, scale, \
+from braindecode.preprocessing.preprocess import preprocess, zscore, scale, \
     Preprocessor, filterbank, exponential_moving_demean, \
     exponential_moving_standardize, MNEPreproc, NumpyPreproc
-from braindecode.datautil.windowers import create_fixed_length_windows
+from braindecode.preprocessing.windowers import create_fixed_length_windows
 
 
 # We can't use fixtures with scope='module' as the dataset objects are modified

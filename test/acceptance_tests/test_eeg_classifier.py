@@ -12,7 +12,7 @@ from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
-from braindecode.datautil.xy import create_from_X_y
+from braindecode.datasets.xy import create_from_X_y
 from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model

@@ -1,3 +1,7 @@
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#
+# License: BSD (3-clause)
+
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 from braindecode.datasets.base import BaseConcatDataset
 

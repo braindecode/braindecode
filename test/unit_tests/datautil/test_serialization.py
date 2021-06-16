@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from braindecode.datasets.moabb import MOABBDataset
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import create_windows_from_events
 from braindecode.datautil.serialization import (
     save_concat_dataset, load_concat_dataset)
 
