@@ -1,0 +1,23 @@
+name: flake8-codestyle
+on: [pull_request]   
+
+jobs:
+  Flake8-Codestyle-Check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+    - name: Checking Out Repository
+      uses: actions/checkout@v2
+    - name: Install Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.8"
+    - name: Install Flake8
+      run: pip install flake8
+    - name: Run Flake8
+      uses: liskin/gh-problem-matcher-wrap@v1
+      with:
+        linters: flake8
+        run: flake8 .
