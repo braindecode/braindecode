@@ -72,6 +72,7 @@ pip install -e .
 pip install --upgrade pytest pytest-cov codecov
 pip install --upgrade -r docs/requirements.txt
 pip install --upgrade scipy scikit-learn
+pip install --upgrade flake8
 mkdir -p ~/mne_data
 ```
 Ignore the error on the second-last step:
@@ -97,6 +98,15 @@ make html
 ```
 Again, the first run may take longer due to datasets being downloaded.
 You can look at the documentation by opening `docs/_build/html/index.html` in your browser.
+
+
+#### Run Stylecheck
+From within your local repository, run
+```
+flake8
+```
+There should be an empty output as there should be no style mistakes.
+
 
 ## Make a contribution 
 
@@ -138,6 +148,7 @@ Make sure your test passes by running:
 `pytest test/<yourtestfilepath>`
 Also before pushing, make sure to run all tests with:
 `pytest test`
+
 
 #### Write Documentation
 
@@ -194,11 +205,19 @@ These files will be executed when building of the documentation.
 
 ##### Build and check the documentation
 As explained above, you can run
- ```
+```
 cd docs
 make html
 ```
 and check the built documentation under `docs/_build/html/index.html`.
+
+#### Check Style
+As explained above, you can run:
+```
+flake8
+```
+and ensure that there are no style errors in your code (output of this command should be empty).
+
 
 ### Commit and push to your fork
 Now you can add, commit and push to your local fork.
