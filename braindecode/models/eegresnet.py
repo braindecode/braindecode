@@ -222,8 +222,7 @@ class _ResidualBlock(nn.Module):
         stack_2 = self.bn2(self.conv_2(stack_1))  # next nonlin after sum
         if self.n_pad_chans != 0:
             zeros_for_padding = torch.autograd.Variable(
-                torch.zeros(x.size()[0], self.n_pad_chans // 2,
-                         x.size()[2], x.size()[3]))
+                torch.zeros(x.size()[0], self.n_pad_chans // 2, x.size()[2], x.size()[3]))
             if x.is_cuda:
                 zeros_for_padding = zeros_for_padding.cuda()
             x = torch.cat((zeros_for_padding, x, zeros_for_padding), dim=1)

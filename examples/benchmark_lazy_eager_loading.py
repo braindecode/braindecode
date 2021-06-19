@@ -58,6 +58,7 @@ N_JOBS = 8
 torch.backends.cudnn.benchmark = True  # Enables automatic algorithm optimizations
 torch.set_num_threads(N_JOBS)  # Sets the available number of threads
 
+
 ###############################################################################
 # Next, we define a few functions to automate the benchmarking.
 # For the purpose of this example, we load some recordings from the TUH Abnormal
@@ -192,7 +193,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
     """
     for i in range(n_epochs):
         loss_vals = list()
-        for X, y, _  in dataloader:
+        for X, y, _ in dataloader:
             model.train()
             model.zero_grad()
 
@@ -225,12 +226,13 @@ NUM_WORKERS = [8, 0]  # number of processes used by pytorch's Dataloader
 PIN_MEMORY = [False]  # whether to use pinned memory
 CUDA = [True, False] if torch.cuda.is_available() else [False]  # whether to use a CUDA device
 
-N_REPETITIONS = 3  #3 # Number of times to repeat the experiment (to get better time estimates)
+N_REPETITIONS = 3  # Number of times to repeat the experiment (to get better time estimates)
 
 ###############################################################################
 # The following path needs to be changed to your local folder containing the
 # TUH Abnormal corpus:
-TUH_PATH = '/storage/store/data/tuh_eeg/www.isip.piconepress.com/projects/tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/edf/'
+TUH_PATH = ('/storage/store/data/tuh_eeg/www.isip.piconepress.com/projects/'
+            'tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/edf/')
 
 ###############################################################################
 # We can finally cycle through all the different combinations of the parameters
@@ -286,7 +288,7 @@ for (i, preload, n_subjects, win_len_s, n_epochs, batch_size, model_kind,
     # Record timing results
     results['data_preparation'] = data_loading_end - data_loading_start
     results['training_setup'] = training_setup_end - training_setup_start
-    results ['model_training'] = model_training_end - model_training_start
+    results['model_training'] = model_training_end - model_training_start
     all_results.append(results)
 
 ###############################################################################

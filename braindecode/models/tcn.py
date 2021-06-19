@@ -47,14 +47,14 @@ class TCN(nn.Module):
             n_inputs = n_in_chans if i == 0 else n_filters
             dilation_size = 2 ** i
             t_blocks.add_module("temporal_block_{:d}".format(i), TemporalBlock(
-                    n_inputs=n_inputs,
-                    n_outputs=n_filters,
-                    kernel_size=kernel_size,
-                    stride=1,
-                    dilation=dilation_size,
-                    padding=(kernel_size - 1) * dilation_size,
-                    drop_prob=drop_prob
-                ))
+                n_inputs=n_inputs,
+                n_outputs=n_filters,
+                kernel_size=kernel_size,
+                stride=1,
+                dilation=dilation_size,
+                padding=(kernel_size - 1) * dilation_size,
+                drop_prob=drop_prob
+            ))
         self.temporal_blocks = t_blocks
         self.fc = nn.Linear(in_features=n_filters, out_features=n_outputs)
         if add_log_softmax:

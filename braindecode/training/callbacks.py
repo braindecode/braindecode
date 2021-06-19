@@ -2,7 +2,7 @@
 #
 # License: BSD (3-clause)
 
-from skorch.callbacks import ProgressBar, Callback
+from skorch.callbacks import Callback
 import torch
 
 

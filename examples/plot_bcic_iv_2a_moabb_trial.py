@@ -95,7 +95,6 @@ preprocess(dataset, preprocessors)
 # before the trial.
 #
 
-import numpy as np
 from braindecode.preprocessing.windowers import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
@@ -176,7 +175,6 @@ model = ShallowFBCSPNet(
 # Send model to GPU
 if cuda:
     model.cuda()
-
 
 
 ######################################################################

@@ -11,7 +11,7 @@
 import pandas as pd
 import mne
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from .base import BaseDataset, BaseConcatDataset
 
 
 def _find_dataset_in_moabb(dataset_name):

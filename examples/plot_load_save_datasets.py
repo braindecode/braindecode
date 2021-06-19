@@ -31,11 +31,11 @@ preprocess(
 )
 
 ###############################################################################
-# We save the dataset to a an existing directory. It will create a '.fif' file 
-# for every dataset in the concat dataset. Additionally it will create two 
-# JSON files, the first holding the description of the dataset, the second 
-# holding the name of the target. If you want to store to the same directory 
-# several times, for example due to trying different preprocessing, you can 
+# We save the dataset to a an existing directory. It will create a '.fif' file
+# for every dataset in the concat dataset. Additionally it will create two
+# JSON files, the first holding the description of the dataset, the second
+# holding the name of the target. If you want to store to the same directory
+# several times, for example due to trying different preprocessing, you can
 # choose to overwrite the existing files.
 ds.save(
     path='./',
@@ -43,21 +43,21 @@ ds.save(
 )
 
 ##############################################################################
-# We load the saved dataset from a directory. Signals can be preloaded in 
-# compliance with mne. Optionally, only specific '.fif' files can be loaded 
-# by specifying their ids. The target name can be changed, if the dataset 
-# supports it (TUHAbnormal for example supports 'pathological', 'age', and 
-# 'gender'. If you stored a preprocessed version with target 'pathological' 
+# We load the saved dataset from a directory. Signals can be preloaded in
+# compliance with mne. Optionally, only specific '.fif' files can be loaded
+# by specifying their ids. The target name can be changed, if the dataset
+# supports it (TUHAbnormal for example supports 'pathological', 'age', and
+# 'gender'. If you stored a preprocessed version with target 'pathological'
 # it is possible to change the target upon loading).
 ds_loaded = load_concat_dataset(
     path='./',
     preload=True,
-    ids_to_load=[1,3],
+    ids_to_load=[1, 3],
     target_name=None,
 )
 
 ##############################################################################
-# The serialization utility also supports WindowsDatasets, so we create 
+# The serialization utility also supports WindowsDatasets, so we create
 # compute windows next.
 windows_ds = create_windows_from_events(
     concat_ds=ds_loaded,
@@ -66,11 +66,11 @@ windows_ds = create_windows_from_events(
 )
 
 ##############################################################################
-# Again, we save the dataset to an existing directory. It will create a 
-# '-epo.fif' file for every dataset in the concat dataset. Additionally it 
-# will create a JSON file holding the description of the dataset. If you 
-# want to store to the same directory several times, for example due to 
-# trying different windowing parameters, you can choose to overwrite the 
+# Again, we save the dataset to an existing directory. It will create a
+# '-epo.fif' file for every dataset in the concat dataset. Additionally it
+# will create a JSON file holding the description of the dataset. If you
+# want to store to the same directory several times, for example due to
+# trying different windowing parameters, you can choose to overwrite the
 # existing files.
 windows_ds.save(
     path='./',
@@ -78,9 +78,9 @@ windows_ds.save(
 )
 
 ##############################################################################
-# Load the saved dataset from a directory. Signals can be preloaded in 
-# compliance with mne. Optionally, only specific '-epo.fif' files can be 
-#loaded by specifying their ids.
+# Load the saved dataset from a directory. Signals can be preloaded in
+# compliance with mne. Optionally, only specific '-epo.fif' files can be
+# loaded by specifying their ids.
 windows_ds_loaded = load_concat_dataset(
     path='./',
     preload=False,

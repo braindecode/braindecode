@@ -22,8 +22,8 @@ from torch.utils.data import Dataset, ConcatDataset
 
 def _create_description(description):
     if description is not None:
-        if (not isinstance(description, pd.Series)
-                and not isinstance(description, dict)):
+        if (not isinstance(description, pd.Series) and
+                not isinstance(description, dict)):
             raise ValueError(f"'{description}' has to be either a "
                              f"pandas.Series or a dict.")
         if isinstance(description, dict):
@@ -249,20 +249,19 @@ class BaseConcatDataset(ConcatDataset):
         path: str
             Directory to which .fif / -epo.fif and .json files are stored.
         overwrite: bool
-            Whether to delete old files (.json, .fif, -epo.fif) in specified directory 
+            Whether to delete old files (.json, .fif, -epo.fif) in specified directory
             prior to saving.
         """
         assert len(self.datasets) > 0, "Expect at least one dataset"
         assert (hasattr(self.datasets[0], 'raw') + hasattr(
             self.datasets[0], 'windows') == 1), (
             "dataset should have either raw or windows attribute")
-        files = ['target_name.json', 'description.json']
         file_names_ = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, 'description.json')
         target_file_name = os.path.join(path, 'target_name.json')
         if not overwrite:
-            if (os.path.exists(description_file_name) or 
-                os.path.exists(target_file_name)):
+            if (os.path.exists(description_file_name) or
+                    os.path.exists(target_file_name)):
                 raise FileExistsError(
                     f'{description_file_name} or {target_file_name} exist in {path}.')
         else:
