@@ -18,8 +18,8 @@ plt.style.use('seaborn')
 import mne
 
 from braindecode.datasets import TUH
-from braindecode.datautil.preprocess import preprocess, Preprocessor
-from braindecode.datautil.windowers import create_fixed_length_windows
+from braindecode.preprocessing.preprocess import preprocess, Preprocessor
+from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import (
     save_concat_dataset, load_concat_dataset)
 

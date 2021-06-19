@@ -77,7 +77,7 @@ dataset = SleepPhysionet(
 # we don't need to apply resampling.
 #
 
-from braindecode.datautil.preprocess import preprocess, Preprocessor
+from braindecode.preprocessing.preprocess import preprocess, Preprocessor
 
 high_cut_hz = 30
 
@@ -105,7 +105,7 @@ preprocess(dataset, preprocessors)
 # that we can reuse them in the sleep staging downstream task later.
 #
 
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import create_windows_from_events
 
 window_size_s = 30
 sfreq = 100
@@ -136,7 +136,7 @@ windows_dataset = create_windows_from_events(
 # We also preprocess the windows by applying channel-wise z-score normalization.
 #
 
-from braindecode.datautil.preprocess import zscore
+from braindecode.preprocessing.preprocess import zscore
 
 preprocess(windows_dataset, [Preprocessor(zscore)])
 

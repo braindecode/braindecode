@@ -16,7 +16,7 @@ from braindecode.samplers import RecordingSampler
 from braindecode.samplers.ssl import RelativePositioningSampler
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.datautil.windowers import create_fixed_length_windows
+from braindecode.preprocessing.windowers import create_fixed_length_windows
 
 
 @pytest.fixture(scope='module')

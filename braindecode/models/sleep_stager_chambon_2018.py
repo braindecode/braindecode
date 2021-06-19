@@ -2,7 +2,6 @@
 #
 # License: BSD (3-clause)
 
-
 import torch
 from torch import nn
 import numpy as np

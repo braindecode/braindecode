@@ -10,7 +10,7 @@ import pytest
 
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import create_windows_from_events
 
 # TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")

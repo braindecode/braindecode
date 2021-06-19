@@ -11,7 +11,7 @@
 
 import mne
 
-from braindecode.datautil import create_from_X_y
+from braindecode.datasets import create_from_X_y
 
 ###############################################################################
 # To set up the example, we first fetch some data using mne:

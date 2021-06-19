@@ -73,7 +73,7 @@ dataset = SleepPhysionet(
 # Physionet data is already sampled at a lower 100 Hz.
 #
 
-from braindecode.datautil.preprocess import preprocess, Preprocessor
+from braindecode.preprocessing.preprocess import preprocess, Preprocessor
 
 high_cut_hz = 30
 
@@ -95,7 +95,7 @@ preprocess(dataset, preprocessors)
 ######################################################################
 # We extract 30-s windows to be used in the classification task.
 
-from braindecode.datautil.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
@@ -128,7 +128,7 @@ windows_dataset = create_windows_from_events(
 # in each window.
 #
 
-from braindecode.datautil.preprocess import zscore
+from braindecode.preprocessing.preprocess import zscore
 
 preprocess(windows_dataset, [Preprocessor(zscore)])
 

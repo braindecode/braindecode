@@ -33,7 +33,7 @@ Classifier
     EEGClassifier
 
 Regressor
-==========
+=========
 
 :py:mod:`braindecode.regressor`:
 
@@ -65,7 +65,7 @@ Models
     get_output_shape
 
 Training
-==========
+========
 
 :py:mod:`braindecode.training`:
 
@@ -80,7 +80,7 @@ Training
     trial_preds_from_window_preds
 
 Datasets
-==========
+========
 
 :py:mod:`braindecode.datasets`:
 
@@ -96,6 +96,29 @@ Datasets
     TUH
     TUHAbnormal
     SleepPhysionet
+    create_from_X_y
+    create_from_mne_raw
+    create_from_mne_epochs
+
+Preprocessing
+=============
+
+:py:mod:`braindecode.preprocessing`:
+
+.. currentmodule:: braindecode.preprocessing
+
+.. autosummary::
+   :toctree: generated/
+
+    create_windows_from_events
+    create_fixed_length_windows
+    exponential_moving_demean
+    exponential_moving_standardize
+    zscore
+    scale
+    filterbank
+    preprocess
+    Preprocessor
 
 Data Utils
 ==========
@@ -107,20 +130,8 @@ Data Utils
 .. autosummary::
    :toctree: generated/
 
-    create_from_X_y
-    create_from_mne_raw
-    create_from_mne_epochs
-    create_fixed_length_windows
-    create_windows_from_events
-    exponential_moving_demean
-    exponential_moving_standardize
-    zscore
-    scale
-    filterbank
     save_concat_dataset
     load_concat_dataset
-    preprocess
-    Preprocessor
 
 Samplers
 ========

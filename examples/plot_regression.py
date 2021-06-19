@@ -13,7 +13,7 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGRegressor
-from braindecode.datautil import create_fixed_length_windows
+from braindecode.preprocessing import create_fixed_length_windows
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.training.losses import CroppedLoss
 from braindecode.models import Deep4Net

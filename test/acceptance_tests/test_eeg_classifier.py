@@ -12,12 +12,12 @@ from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
-from braindecode.datautil.xy import create_from_X_y
+from braindecode.datasets.xy import create_from_X_y
 from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.training.scoring import CroppedTrialEpochScoring
-from braindecode.util import set_random_seeds, np_to_var
+from braindecode.util import set_random_seeds, np_to_th
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -140,7 +140,7 @@ def test_eeg_classifier():
         model.cuda()
 
     # determine output size
-    test_input = np_to_var(
+    test_input = np_to_th(
         np.ones((2, in_chans, input_window_samples, 1), dtype=np.float32)
     )
     if cuda:
