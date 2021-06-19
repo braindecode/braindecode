@@ -35,7 +35,7 @@ setup(
 
     install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch'],
     #tests_require = [...]
-
+    #error
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers
     classifiers=[
         'Development Status :: 3 - Alpha',
