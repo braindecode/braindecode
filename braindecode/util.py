@@ -35,7 +35,10 @@ def np_to_var(
     X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs
 ):
     warn("np_to_var has been renamed np_to_th, please use np_to_th instead")
-    return np_to_th(X, requires_grad=requires_grad, dtype=dtype, pin_memory=pin_memory, **tensor_kwargs)
+    return np_to_th(
+        X, requires_grad=requires_grad, dtype=dtype, pin_memory=pin_memory,
+        **tensor_kwargs
+    )
 
 
 def np_to_th(

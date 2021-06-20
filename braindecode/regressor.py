@@ -43,7 +43,7 @@ class EEGRegressor(NeuralNetRegressor):
         Defines whether train dataset will be shuffled. As skorch does not
         shuffle the train dataset by default this one overwrites this option.
 
-    """
+    """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
