@@ -2,7 +2,8 @@
 #
 # License: BSD (3-clause)
 
-from ..datasets.xy import *  # noqa: F401,F403
 from warnings import warn
+from ..datasets.xy import *  # noqa: F401,F403
 
-warn('datautil.xy module is deprecated and is now under datasets.xy, please use from import braindecode.datasets.xy')
+warn('datautil.xy module is deprecated and is now under '
+     'datasets.xy, please use from import braindecode.datasets.xy')
