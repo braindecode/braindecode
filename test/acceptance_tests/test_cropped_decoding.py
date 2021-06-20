@@ -98,7 +98,6 @@ def test_cropped_decoding():
                                 window_size_samples=input_window_samples,
                                 window_stride_samples=n_preds_per_input)
 
-
     train_split = predefined_split(valid_set)
 
     clf = EEGClassifier(

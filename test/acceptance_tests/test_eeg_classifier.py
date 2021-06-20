@@ -31,7 +31,7 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
     intact to assertAlmostEqual() (that's how you specify comparison
     precision).
     """
-    is_root = not "__trace" in kwargs
+    is_root = "__trace" not in kwargs
     trace = kwargs.pop("__trace", "ROOT")
     try:
         if isinstance(expected, (int, float, complex)):

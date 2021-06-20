@@ -74,14 +74,14 @@ def test_cropped_trial_epoch_scoring():
     expected_accuracies_cases = [0.25, 0.75]
 
     window_inds = [(
-            torch.tensor([0, 0]),  # i_window_in_trials
-            [None],  # won't be used
-            torch.tensor([4, 4]),  # i_window_stops
-        ),(
-            torch.tensor([0, 0]),  # i_window_in_trials
-            [None],  # won't be used
-            torch.tensor([4, 4]),  # i_window_stops
-        ),]
+        torch.tensor([0, 0]),  # i_window_in_trials
+        [None],  # won't be used
+        torch.tensor([4, 4]),  # i_window_stops
+    ), (
+        torch.tensor([0, 0]),  # i_window_in_trials
+        [None],  # won't be used
+        torch.tensor([4, 4]),  # i_window_stops
+    )]
 
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases

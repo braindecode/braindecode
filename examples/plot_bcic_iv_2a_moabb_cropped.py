@@ -59,7 +59,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     network and training directly on the individual crops. At the same time,
 #     the above training setup is much faster as it avoids redundant
 #     computations by using dilated convolutions, see our paper
-#     `Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_.
+#     `Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_.  # noqa: E501
 #     However, the two setups are only mathematically identical in case (1)
 #     your network does not use any padding or only left padding and
 #     (2) your loss function leads
@@ -194,8 +194,8 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
 
 ######################################################################
-# In contrast to trialwise decoding, we have to supply an explicit window size and window stride to the
-# ``create_windows_from_events`` function.
+# In contrast to trialwise decoding, we have to supply an explicit window size and
+# window stride to the ``create_windows_from_events`` function.
 #
 
 from braindecode.preprocessing.windowers import create_windows_from_events

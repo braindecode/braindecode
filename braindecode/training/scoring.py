@@ -142,7 +142,7 @@ class CroppedTrialEpochScoring(EpochScoring):
             self.window_inds_ = []
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
-        assert self.use_caching == True
+        assert self.use_caching
         if not self.crops_to_trials_computed:
             if self.on_train:
                 # Prevent that rng state of torch is changed by

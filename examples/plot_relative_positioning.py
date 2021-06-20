@@ -388,7 +388,6 @@ os.remove('./params.pt')  # Delete parameters file
 #
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
 
 # Extract loss and balanced accuracy values for plotting from history object

@@ -27,5 +27,5 @@ def test_crops_data_loader_explicit():
 
     assert len(Xs) == len(ys) == 3
 
-    for actual, expected,  in zip(Xs, expected_crops):
+    for actual, expected in zip(Xs, expected_crops):
         np.testing.assert_array_equal(actual.squeeze(), expected)

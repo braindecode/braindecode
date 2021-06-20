@@ -81,10 +81,8 @@ class SleepPhysionet(BaseConcatDataset):
             sleep_event_inds = np.where(mask)[0]
 
             # Crop raw
-            tmin = annots[int(sleep_event_inds[0])]['onset'] - \
-                   crop_wake_mins * 60
-            tmax = annots[int(sleep_event_inds[-1])]['onset'] + \
-                   crop_wake_mins * 60
+            tmin = annots[int(sleep_event_inds[0])]['onset'] - crop_wake_mins * 60
+            tmax = annots[int(sleep_event_inds[-1])]['onset'] + crop_wake_mins * 60
             raw.crop(tmin=tmin, tmax=tmax)
 
         # Rename EEG channels

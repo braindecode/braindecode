@@ -90,8 +90,8 @@ def test_relative_positioning_sampler(windows_ds, same_rec_neg):
         assert all(pairs_df.loc[pairs_df['y'] == 0, 'diff'] >= tau_neg)
         assert all(pairs_df['same_rec'] == same_rec_neg)
     else:
-        assert all(pairs_df.loc[pairs_df['y'] == 0, 'same_rec'] == False)
-        assert all(pairs_df.loc[pairs_df['y'] == 1, 'same_rec'] == True)
+        assert all(pairs_df.loc[pairs_df['y'] == 0, 'same_rec'] == False)  # noqa: E712
+        assert all(pairs_df.loc[pairs_df['y'] == 1, 'same_rec'] == True)  # noqa: E712
     assert abs(np.diff(pairs_df['y'].value_counts())) < 20
 
 
