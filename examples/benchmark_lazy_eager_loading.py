@@ -45,7 +45,7 @@ import pandas as pd
 import seaborn as sns
 
 from braindecode.datasets import TUHAbnormal
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.preprocessing import create_fixed_length_windows
 from braindecode.models import ShallowFBCSPNet, Deep4Net
 
 

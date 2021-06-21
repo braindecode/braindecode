@@ -132,6 +132,8 @@ def linkcode_resolve(domain, info):
 autosummary_generate = True
 autodoc_default_options = {'inherited-members': None}
 
+numpydoc_show_class_members = False
+
 exclude_patterns = ['_build', '_templates']
 
 # Add any paths that contain templates here, relative to this directory.
