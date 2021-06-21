@@ -60,9 +60,9 @@ windows_dataset = create_windows_from_events(
 
 ###############################################################################
 # We can iterate through the windows_ds which yields a window x,
-# a target y, and window_ind (which itself contains `i_window_in_trial`,
-# `i_start_in_trial`, and `i_stop_in_trial`, which are required for combining
-# window predictions in the scorer).
+# a target y, and window_ind (which itself contains ``i_window_in_trial``,
+# ``i_start_in_trial``, and ``i_stop_in_trial``, which are required for
+# combining window predictions in the scorer).
 for x, y, window_ind in windows_dataset:
     print(x.shape, y, window_ind)
     break
@@ -117,15 +117,18 @@ preprocess(windows_dataset, epochs_preprocessors)
 print(windows_dataset.datasets[0].windows.info["ch_names"],
       len(windows_dataset.datasets[0].windows.times))
 
+
 max_i = 2
-fig, ax_arr = plt.subplots(1, max_i + 1, figsize=((max_i + 1) * 7, 5),
+fig, ax_arr = plt.subplots(1, max_i + 1, figsize=(3.5 * (max_i + 1), 3.5),
                            sharex=True, sharey=True)
 for i, (x, y, window_ind) in enumerate(windows_dataset):
     ax_arr[i].plot(x.T)
-    ax_arr[i].set_ylim(-0.0002, 0.0002)
     ax_arr[i].set_title(f"label={y}")
     if i == max_i:
         break
+
+fig.tight_layout()
+plt.show()
 
 ###############################################################################
 # Again, we can easily split windows_ds based on some criteria in the
