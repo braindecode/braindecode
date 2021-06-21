@@ -204,9 +204,11 @@ for rec_i, tuh_subset in tuh_splits.items():
     preprocess(tuh_subset, preprocessors)
 
     # update description of the recording(s)
-    tuh_subset.description.sfreq = len(tuh_subset.datasets) * [sfreq]
-    tuh_subset.description.reference = len(tuh_subset.datasets) * ['ar']
-    tuh_subset.description.n_samples = [len(d) for d in tuh_subset.datasets]
+    tuh_subset.set_description({
+        'sfreq': len(tuh_subset.datasets) * [sfreq],
+        'reference': len(tuh_subset.datasets) * ['ar'],
+        'n_samples': [len(d) for d in tuh_subset.datasets],
+    }, overwrite=True)
 
     if create_compute_windows:
         # generate compute windows here and store them to disk
@@ -221,8 +223,8 @@ for rec_i, tuh_subset in tuh_splits.items():
         # save memory by deleting raw recording
         del tuh_subset
         # store the number of windows required for loading later on
-        tuh_windows.description["n_windows"] = [len(d) for d in
-                                                tuh_windows.datasets]
+        tuh_windows.set_description({
+            "n_windows": [len(d) for d in tuh_windows.datasets]})
 
         # create one directory for every recording
         rec_path = os.path.join(OUT_PATH, str(rec_i))
