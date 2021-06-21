@@ -1,3 +1,11 @@
+""" This module contains the internal functions defining data augmentations.
+They are not supposed to be part of the public API.
+"""
+
+# Authors: Cédric Rommel <cpe.rommel@gmail.com>
+#
+# License: BSD (3-clause)
+
 from numbers import Real
 
 import numpy as np
@@ -341,6 +349,7 @@ def _torch_legval(x, c, tensor=True):
     scalars have shape (,).
     Trailing zeros in the coefficients will be used in the evaluation, so
     they should be avoided if efficiency is a concern.
+
     Parameters
     ----------
     x : array_like, compatible object
@@ -362,18 +371,48 @@ def _torch_legval(x, c, tensor=True):
         over the columns of `c` for the evaluation.  This keyword is useful
         when `c` is multidimensional. The default value is True.
         .. versionadded:: 1.7.0
+
     Returns
     -------
     values : ndarray, algebra_like
         The shape of the return value is described above.
+
     See Also
     --------
     legval2d, leggrid2d, legval3d, leggrid3d
+
     Notes
     -----
-    The evaluation uses Clenshaw recursion, aka synthetic division.
-    Examples
-    --------
+    Code copied and modified from Numpy:
+    https://github.com/numpy/numpy/blob/v1.20.0/numpy/polynomial/legendre.py#L835-L920
+
+    Copyright (c) 2005-2021, NumPy Developers.
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are
+    met:
+        * Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+        * Redistributions in binary form must reproduce the above
+        copyright notice, this list of conditions and the following
+        disclaimer in the documentation and/or other materials provided
+        with the distribution.
+        * Neither the name of the NumPy Developers nor the names of any
+        contributors may be used to endorse or promote products derived
+        from this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     """
     c = torch.as_tensor(c)
     c = c.double()
@@ -404,6 +443,7 @@ def _torch_legval(x, c, tensor=True):
 
 def _torch_calc_g(cosang, stiffness=4, n_legendre_terms=50):
     """Calculate spherical spline g function between points on a sphere.
+
     Parameters
     ----------
     cosang : array-like of float, shape(n_channels, n_channels)
@@ -413,10 +453,42 @@ def _torch_calc_g(cosang, stiffness=4, n_legendre_terms=50):
         stiffness of the spline.
     n_legendre_terms : int
         number of Legendre terms to evaluate.
+
     Returns
     -------
     G : np.ndrarray of float, shape(n_channels, n_channels)
         The G matrix.
+
+    Notes
+    -----
+    Code copied and modified from MNE-Python:
+    https://github.com/mne-tools/mne-python/blob/bdaa1d460201a3bc3cec95b67fc2b8d31a933652/mne/channels/interpolation.py#L35
+
+    Copyright © 2011-2019, authors of MNE-Python
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+        * Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+        * Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+        * Neither the name of the copyright holder nor the names of its
+        contributors may be used to endorse or promote products derived from
+        this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
+    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+    LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+    OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+    DAMAGE.
     """
     factors = [(2 * n + 1) / (n ** stiffness * (n + 1) ** stiffness *
                               4 * np.pi)
@@ -426,7 +498,9 @@ def _torch_calc_g(cosang, stiffness=4, n_legendre_terms=50):
 
 def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
     """Compute interpolation matrix based on spherical splines.
-    Implementation based on [1]
+
+    Implementation based on [1]_
+
     Parameters
     ----------
     pos_from : np.ndarray of float, shape(n_good_sensors, 3)
@@ -435,16 +509,49 @@ def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
         The positions to interpoloate.
     alpha : float
         Regularization parameter. Defaults to 1e-5.
+
     Returns
     -------
     interpolation : np.ndarray of float, shape(len(pos_from), len(pos_to))
         The interpolation matrix that maps good signals to the location
         of bad signals.
+
     References
     ----------
     [1] Perrin, F., Pernier, J., Bertrand, O. and Echallier, JF. (1989).
         Spherical splines for scalp potential and current density mapping.
         Electroencephalography Clinical Neurophysiology, Feb; 72(2):184-7.
+
+    Notes
+    -----
+    Code copied and modified from MNE-Python:
+    https://github.com/mne-tools/mne-python/blob/bdaa1d460201a3bc3cec95b67fc2b8d31a933652/mne/channels/interpolation.py#L59
+
+    Copyright © 2011-2019, authors of MNE-Python
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+        * Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+        * Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+        * Neither the name of the copyright holder nor the names of its
+        contributors may be used to endorse or promote products derived from
+        this software without specific prior written permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+    IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
+    FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+    SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+    LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+    OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+    DAMAGE.
     """
     pos_from = pos_from.clone()
     pos_to = pos_to.clone()

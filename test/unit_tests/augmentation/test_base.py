@@ -95,7 +95,7 @@ def test_transform_proba_exception(random_batch, rng_seed):
     rng = check_random_state(rng_seed)
     with pytest.raises(AssertionError):
         k = rng.randint(10)
-        _ = Transform(
+        Transform(
             dummy_k_operation,
             'a',
             k=k
@@ -150,7 +150,8 @@ def test_data_loader(concat_windows_dataset, nb_transforms, no_list):
 
 def test_data_loader_exception(concat_windows_dataset):
     with pytest.raises(TypeError):
-        _ = BaseDataLoader(
+        BaseDataLoader(
             concat_windows_dataset,
             transforms='a',
-            batch_size=128)
+            batch_size=128
+        )

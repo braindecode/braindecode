@@ -3,17 +3,18 @@
 # License: BSD (3-clause)
 
 from numbers import Real
+import warnings
 
 import numpy as np
 from sklearn.utils import check_random_state
 import torch
 
 from braindecode.augmentation.base import Transform
-from braindecode.augmentation.functionals import time_reverse, sign_flip,\
-    downsample_shift_from_arrays, fft_surrogate, channel_dropout,\
-    channel_shuffle, add_gaussian_noise, permute_channels, random_time_mask,\
-    identity, random_bandstop, freq_shift, random_rotation,\
-    get_standard_10_20_positions, mixup
+from braindecode.augmentation._functionals import (
+    time_reverse, sign_flip, downsample_shift_from_arrays, fft_surrogate,
+    channel_dropout, channel_shuffle, add_gaussian_noise, permute_channels,
+    random_time_mask, identity, random_bandstop, freq_shift, random_rotation,
+    get_standard_10_20_positions)
 
 
 class TimeReverse(Transform):
@@ -21,15 +22,11 @@ class TimeReverse(Transform):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the uniform probability of
-        applying the operation, or a `callable` (modelling a non-uniform
-        probability law for example) taking no input and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     magnitude : object, optional
-        Always ignored, exists for compatibility.
-    mag_range : object, optional
-        Always ignored, exists for compatibility.
-    random_state : int | numpy.random.Generator, optional
+        Always ignored, exists for compatibility with other transforms.
+    random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
@@ -39,7 +36,6 @@ class TimeReverse(Transform):
         self,
         probability,
         magnitude=None,
-        mag_range=None,
         random_state=None
     ):
         super().__init__(
@@ -54,15 +50,11 @@ class SignFlip(Transform):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the uniform probability of
-        applying the operation, or a `callable` (modelling a non-uniform
-        probability law for example) taking no input and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     magnitude : object, optional
-        Always ignored, exists for compatibility.
-    mag_range : object, optional
-        Always ignored, exists for compatibility.
-    random_state : int | numpy.random.Generator, optional
+        Always ignored, exists for compatibility with other transforms.
+    random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
@@ -72,7 +64,6 @@ class SignFlip(Transform):
         self,
         probability,
         magnitude=None,
-        mag_range=None,
         random_state=None
     ):
         super().__init__(
@@ -92,11 +83,9 @@ class DownsamplingShift(Transform):
     Parameters
     ----------
     probability : object, optional
-        Always ignored, exists for compatibility.
+        Always ignored, exists for compatibility with other transforms.
     magnitude : object, optional
-        Always ignored, exists for compatibility.
-    mag_range : object, optional
-        Always ignored, exists for compatibility.
+        Always ignored, exists for compatibility with other transforms.
     factor: int, optional
         Factor by which X should be downsampled. For example, if factor is 2,
         only every other column of X will be kept. Defaults to 2.
@@ -123,17 +112,15 @@ class DownsamplingShift(Transform):
         self,
         probability=None,
         magnitude=None,
-        mag_range=None,
         factor=2,
         offset=None,
         random_state=None
     ):
         assert isinstance(factor, int), "factor has to be an int"
-        kwargs = {'random_state': random_state}
         if offset is None:
             self.rng = check_random_state(random_state)
             offset = self.rng.choice(np.arange(factor))
-            kwargs = {'random_state': self.rng}
+            random_state = self.rng
         else:
             assert isinstance(offset, int), "offset has to be an int"
             assert offset < factor, (
@@ -146,7 +133,7 @@ class DownsamplingShift(Transform):
             probability=1.0,  # always applied as it changes the shape of X
             factor=factor,
             offset=offset,
-            **kwargs
+            random_state=random_state,
         )
 
 
@@ -155,16 +142,12 @@ class FTSurrogate(Transform):
 
     Parameters
     ----------
-    probability: float | callable
-        Either a float between 0 and 1 defining the uniform probability of
-        applying the operation, or a `callable` (modelling a non-uniform
-        probability law for example) taking no input and returning a boolean.
+    probability: float
+        Float setting the probability of applying the operation.
     magnitude : object, optional
         Float between 0 and 1 setting the range over which the phase
         pertubation is uniformly sampled: ``[0, magnitude * 2 * pi]``. Defaults
         to 1.
-    mag_range : object, optional
-        Always ignored, exists for compatibility.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -182,7 +165,6 @@ class FTSurrogate(Transform):
         self,
         probability,
         magnitude=1,
-        mag_range=None,
         random_state=None
     ):
         if magnitude is None:
@@ -202,17 +184,12 @@ class MissingChannels(Transform):
 
     Parameters
     ----------
-    probability: float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability: float
+        Float setting the probability of applying the operation.
     magnitude: float | None, optional
         Float between 0 and 1 setting the fraction of channels to zero-out.
         If ommited, a random number of channels is (uniformly) sampled.
         Defaults to None.
-    mag_range : object, optional
-        Always ignored, exists for compatibility.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -229,7 +206,6 @@ class MissingChannels(Transform):
         self,
         probability,
         magnitude=0.2,
-        mag_range=None,
         random_state=None
     ):
         super().__init__(
@@ -247,17 +223,12 @@ class ShuffleChannels(Transform):
 
     Parameters
     ----------
-    probability: float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability: float
+        Float setting the probability of applying the operation.
     magnitude: float | None, optional
         Float between 0 and 1 setting the fraction of channels to permute.
         If ommited, a random number of channels is (uniformly) sampled.
         Defaults to None.
-    mag_range : object, optional
-        Always ignored, exists for compatibility.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -274,7 +245,6 @@ class ShuffleChannels(Transform):
         self,
         probability,
         magnitude=0.2,
-        mag_range=None,
         random_state=None
     ):
         super().__init__(
@@ -292,11 +262,8 @@ class GaussianNoise(Transform):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     magnitude : float | None, optional
         Float between 0 and 1 encoding the standard deviation to use for the
         additive noise:
@@ -348,7 +315,6 @@ class GaussianNoise(Transform):
             operation=add_gaussian_noise,
             probability=probability,
             magnitude=magnitude,
-            mag_range=mag_range,
             std=self.std,
             random_state=random_state,
         )
@@ -361,20 +327,15 @@ class ChannelSymmetry(Transform):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     ordered_ch_names : list
         Ordered list of strings containing the names (in 10-20
         nomenclature) of the EEG channels that will be transformed. The
         first name should correspond the data in the first row of X, the
         second name in the second row and so on.
     magnitude : object, optional
-        Always ignored, exists for compatibility.
-    mag_range : object, optional
-        Always ignored, exists for compatibility.
+        Always ignored, exists for compatibility with other transforms.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -393,7 +354,6 @@ class ChannelSymmetry(Transform):
         probability,
         ordered_ch_names,
         magnitude=None,
-        mag_range=None,
         random_state=None
     ):
         assert (
@@ -433,11 +393,8 @@ class TimeMask(Transform):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     magnitude : float | None, optional
         Float between 0 and 1 encoding the number of consecutive samples within
         ``mag_range`` to set to 0:
@@ -517,11 +474,8 @@ class BandstopFilter(Transform):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     magnitude : float | None, optional
         Float between 0 and 1 encoding the `bandwidth` parameter:
         ```
@@ -578,6 +532,11 @@ class BandstopFilter(Transform):
         nyq = sfreq / 2
         if max_freq is None or max_freq > nyq:
             max_freq = nyq
+            warnings.warn(
+                "You either passed None or a frequency greater than the"
+                f" Nyquist frequency ({nyq} Hz)."
+                f" Falling back to `max_freq = {nyq}`."
+            )
         assert bandwidth < max_freq,\
             f"`bandwidth` needs to be smaller than `max_freq`={max_freq}"
 
@@ -600,7 +559,6 @@ class BandstopFilter(Transform):
             probability=probability,
             operation=operation,
             magnitude=magnitude,
-            mag_range=mag_range,
             bandwidth=self.bandwidth,
             max_freq=self.max_freq,
             sfreq=self.sfreq,
@@ -611,13 +569,12 @@ class BandstopFilter(Transform):
 class FrequencyShift(Transform):
     """Add a random shift in the frequency domain to all channels.
 
+    Note that here, the shift is the same for all channels of a single example.
+
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     magnitude : float | None, optional
         Float between 0 and 1 encoding the ``max_shift`` parameter:
         ```
@@ -684,11 +641,8 @@ class RandomSensorsRotation(Transform):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     sensors_positions_matrix : numpy.ndarray
         Matrix giving the positions of each sensor in a 3D cartesian coordinate
         system. Should have shape (3, n_channels), where n_channels is the
@@ -792,11 +746,8 @@ class RandomZRotation(RandomSensorsRotation):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     ordered_ch_names : list
         List of strings representing the channels of the montage considered.
         Has to be in standard 10-20 style. The order has to be consistent with
@@ -812,8 +763,6 @@ class RandomZRotation(RandomSensorsRotation):
     mag_range : tuple of two floats | None, optional
         Range of possible values for `max_degree` settable using the magnitude
         (see `magnitude`). If omitted, the range (0, 30 degrees) will be used.
-    axis : 'x' | 'y' | 'z', optional
-        Axis around which to rotate. Defaults to 'z'.
     max_degree : float, optional
         Maximum rotation. Rotation angles will be sampled between `-max_degree`
         and `max_degree`. Defaults to 15 degrees.
@@ -840,6 +789,7 @@ class RandomZRotation(RandomSensorsRotation):
         magnitude=None,
         mag_range=(0, 30),
         max_degrees=15,
+        spherical_splines=True,
         random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
@@ -852,6 +802,7 @@ class RandomZRotation(RandomSensorsRotation):
             mag_range=mag_range,
             axis='z',
             max_degrees=max_degrees,
+            spherical_splines=spherical_splines,
             random_state=random_state
         )
 
@@ -864,11 +815,8 @@ class RandomYRotation(RandomSensorsRotation):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     ordered_ch_names : list
         List of strings representing the channels of the montage considered.
         Has to be in standard 10-20 style. The order has to be consistent with
@@ -910,6 +858,7 @@ class RandomYRotation(RandomSensorsRotation):
         magnitude=None,
         mag_range=(0, 30),
         max_degrees=15,
+        spherical_splines=True,
         random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
@@ -922,6 +871,7 @@ class RandomYRotation(RandomSensorsRotation):
             mag_range=mag_range,
             axis='y',
             max_degrees=max_degrees,
+            spherical_splines=spherical_splines,
             random_state=random_state
         )
 
@@ -934,11 +884,8 @@ class RandomXRotation(RandomSensorsRotation):
 
     Parameters
     ----------
-    probability : float | callable
-        Either a float between 0 and 1 defining the
-        uniform probability of applying the operation, or a `callable`
-        (modelling a non-uniform probability law for example) taking no input
-        and returning a boolean.
+    probability : float
+        Float setting the probability of applying the operation.
     ordered_ch_names : list
         List of strings representing the channels of the montage considered.
         Has to be in standard 10-20 style. The order has to be consistent with
@@ -980,6 +927,7 @@ class RandomXRotation(RandomSensorsRotation):
         magnitude=None,
         mag_range=(0, 30),
         max_degrees=15,
+        spherical_splines=True,
         random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
@@ -992,6 +940,7 @@ class RandomXRotation(RandomSensorsRotation):
             mag_range=mag_range,
             axis='x',
             max_degrees=max_degrees,
+            spherical_splines=spherical_splines,
             random_state=random_state
         )
 
