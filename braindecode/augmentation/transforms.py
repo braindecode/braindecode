@@ -997,8 +997,8 @@ class RandomXRotation(RandomSensorsRotation):
 
 
 class Mixup(Transform):
-    """Implements Iterator for Mixup for EEG data. See [1].
-    Implementation based on [2]
+    """Implements Iterator for Mixup for EEG data. See [1]_.
+    Implementation based on [2]_.
 
     Parameters
     ----------

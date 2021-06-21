@@ -22,8 +22,8 @@ class CroppedLoss(nn.Module):
 
 
 class mixup_criterion:
-    """Implements loss for Mixup for EEG data. See [1].
-    Code adapted from [2]
+    """Implements loss for Mixup for EEG data. See [1]_.
+    Implementation based on [2]_.
 
 
     Parameters

@@ -582,8 +582,8 @@ def get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
 
 
 def mixup(X, y, alpha, beta_per_sample, random_state=None, magnitude=None):
-    """Mixes two channels of EEG data. See [1].
-    Implementation based on [2]
+    """Mixes two channels of EEG data. See [1]_.
+    Implementation based on [2]_.
 
     Parameters
     ----------
