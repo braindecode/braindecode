@@ -239,10 +239,10 @@ def test_set_description_base_dataset(concat_ds_targets):
     assert len(concat_ds.description.columns) == 5
     assert concat_ds.description.loc[1, 'hi'] == 'are'
     assert concat_ds.description.loc[0, 'how'] == 'does'
-    
+
     # try to set existing description without overwriting
     with pytest.raises(
-        AssertionError, 
+        AssertionError,
         match="'how' already in description. Please rename or set overwrite to"
         " True."
     ):
@@ -250,7 +250,7 @@ def test_set_description_base_dataset(concat_ds_targets):
             'first': [-1, -1, -1],
             'how': ['this', 'will', 'fail'],
         }, overwrite=False)
-    
+
     # add single entry to single base
     base_ds = concat_ds.datasets[0]
     base_ds.set_description({'test': 4})
@@ -260,7 +260,7 @@ def test_set_description_base_dataset(concat_ds_targets):
     # overwrite singe entry in single base
     base_ds.set_description({'test': 0}, overwrite=True)
     assert base_ds.description['test'] == 0
-    
+
 
 def test_set_description_windows_dataset(concat_windows_dataset):
     assert len(concat_windows_dataset.description.columns) == 3
@@ -278,8 +278,8 @@ def test_set_description_windows_dataset(concat_windows_dataset):
     window_ds.set_description({'4': 123})
     assert '4' in window_ds.description
     assert window_ds.description['4'] == 123
-    
-    # overwrite multiple in single window 
+
+    # overwrite multiple in single window
     window_ds.set_description({
         '4': 'overwritten',
         'wow': 'not cool',
@@ -289,7 +289,7 @@ def test_set_description_windows_dataset(concat_windows_dataset):
 
     # try to set existing description without overwriting
     with pytest.raises(
-        AssertionError, 
+        AssertionError,
         match="'wow' already in description. Please rename or set overwrite to"
         " True."
     ):
