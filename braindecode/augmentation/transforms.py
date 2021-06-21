@@ -104,7 +104,7 @@ class DownsamplingShift(Transform):
         Offset (in number of columns) to be used to time-shift the data.
         Offset needs to be less than factor.
         When downsampling by a factor N, you have N different offsets possible.
-        If not value is passed to ofset, it is randomly relected between 0 and
+        If no value is passed to ``offset``, it is randomly selected between 0 and
         factor-1.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
