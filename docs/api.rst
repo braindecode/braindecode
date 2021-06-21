@@ -60,6 +60,7 @@ Models
     EEGNetv4
     HybridNet
     EEGResNet
+    FakeConvModel
     TCN
     SleepStagerChambon2018
     get_output_shape

@@ -21,6 +21,9 @@ What's new
 Current (0.5.2.dev0)
 --------------------
 
+Enhancements
+~~~~~~~~~~~~
+- Adding FakeConvModel !
 
 .. _changes_0_5_1:
 
