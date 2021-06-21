@@ -17,7 +17,7 @@ from braindecode.augmentation.functionals import time_reverse, sign_flip,\
 
 
 class TimeReverse(Transform):
-    """ Flip the time axis of each feature sample with a given probability
+    """ Flip the time axis of each sample with a given probability
 
     Parameters
     ----------
