@@ -153,8 +153,8 @@ from braindecode.datasets import get_sequence_dataset
 
 seq_len = 5  # Sequences of 5 consecutive windows
 step_len = 1  # Maximally overlapping sequences
-label_transform = lambda x: x[np.ceil(len(x) / 2).astype(int)]  # Use label of
-# center window in the sequence
+# Use label of center window in the sequence
+label_transform = lambda x: x[np.ceil(len(x) / 2).astype(int)]  # noqa: E731
 windows_dataset = get_sequence_dataset(
     windows_dataset, seq_len=seq_len, step_len=step_len,
     label_transform=label_transform)

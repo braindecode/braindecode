@@ -365,7 +365,7 @@ def test_get_sequence_dataset(concat_windows_dataset):
 
 
 def test_sequence_dataset_label_transform(concat_windows_dataset):
-    label_transform = lambda x: x[0]
+    label_transform = lambda x: x[0]  # noqa: E731
     seq_ds = get_sequence_dataset(concat_windows_dataset, 3, step_len=100,
                                   label_transform=label_transform)
 
