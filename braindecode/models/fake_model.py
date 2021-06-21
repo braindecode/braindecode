@@ -2,9 +2,8 @@
 #
 # License: BSD (3-clause)
 
-import torch
 from torch import nn
-from torch.nn.functional import elu
+
 
 class FakeConvModel(nn.Module):
     def __init__(self, in_chans, n_classes,):

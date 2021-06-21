@@ -23,7 +23,7 @@ Current (0.5.2.dev0)
 
 Enhancements
 ~~~~~~~~~~~~
-- Adding FakeConvModel !
+- Adding FakeConvModel ! (:gh:`253` by `Robin Tibor Schirrmeister`_)
 
 .. _changes_0_5_1:
 
