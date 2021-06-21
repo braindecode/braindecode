@@ -70,14 +70,16 @@ for x, y, window_ind in windows_dataset:
 ###############################################################################
 # We visually inspect the windows:
 max_i = 2
-fig, ax_arr = plt.subplots(1, max_i + 1, figsize=((max_i + 1) * 7, 5),
+fig, ax_arr = plt.subplots(1, max_i + 1, figsize=(3.5 * (max_i + 1), 3.5),
                            sharex=True, sharey=True)
 for i, (x, y, window_ind) in enumerate(windows_dataset):
     ax_arr[i].plot(x.T)
-    ax_arr[i].set_ylim(-0.0002, 0.0002)
+    ax_arr[i].set_ylim(-4e-5, 4e-5)
     ax_arr[i].set_title(f"label={y}")
     if i == max_i:
         break
+
+fig.tight_layout()
 
 ###############################################################################
 # Alternatively, we can create evenly spaced ("sliding") windows using a
@@ -123,6 +125,7 @@ fig, ax_arr = plt.subplots(1, max_i + 1, figsize=(3.5 * (max_i + 1), 3.5),
                            sharex=True, sharey=True)
 for i, (x, y, window_ind) in enumerate(windows_dataset):
     ax_arr[i].plot(x.T)
+    ax_arr[i].set_ylim(-4e-5, 4e-5)
     ax_arr[i].set_title(f"label={y}")
     if i == max_i:
         break
