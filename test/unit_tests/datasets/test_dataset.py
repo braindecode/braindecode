@@ -64,8 +64,8 @@ def concat_ds_targets():
 def concat_windows_dataset(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows_ds = create_windows_from_events(
-        concat_ds=concat_ds, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=concat_ds, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
 
     return windows_ds

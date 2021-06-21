@@ -11,7 +11,7 @@ from .base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def create_from_mne_raw(
-        raws, trial_start_offset_samples, trial_stop_offset_samples,
+        raws, start_offset_samples, stop_offset_samples,
         window_size_samples, window_stride_samples, drop_last_window,
         descriptions=None, mapping=None, preload=False, drop_bad_windows=True):
     """Create WindowsDatasets from mne.RawArrays
@@ -20,9 +20,9 @@ def create_from_mne_raw(
     ----------
     raws: array-like
         list of mne.RawArrays
-    trial_start_offset_samples: int
+    start_offset_samples: int
         start offset from original trial onsets in samples
-    trial_stop_offset_samples: int
+    stop_offset_samples: int
         stop offset from original trial stop in samples
     window_size_samples: int
         window size
@@ -64,8 +64,8 @@ def create_from_mne_raw(
     base_datasets = BaseConcatDataset(base_datasets)
     windows_datasets = create_windows_from_events(
         base_datasets,
-        trial_start_offset_samples=trial_start_offset_samples,
-        trial_stop_offset_samples=trial_stop_offset_samples,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
         window_size_samples=window_size_samples,
         window_stride_samples=window_stride_samples,
         drop_last_window=drop_last_window,

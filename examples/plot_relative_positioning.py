@@ -121,7 +121,7 @@ mapping = {  # We merge stages 3 and 4 following AASM standards.
 }
 
 windows_dataset = create_windows_from_events(
-    dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0,
+    dataset, start_offset_samples=0, stop_offset_samples=0,
     window_size_samples=window_size_samples,
     window_stride_samples=window_size_samples, preload=True, mapping=mapping)
 

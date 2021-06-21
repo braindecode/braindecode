@@ -53,8 +53,8 @@ def lazy_loadable_dataset(tmpdir_factory):
 
 def test_windows_from_events_preload_false(lazy_loadable_dataset):
     windows = create_windows_from_events(
-        concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
 
     assert all([not ds.windows.preload for ds in windows.datasets])
@@ -63,8 +63,8 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
 def test_windows_from_events_n_jobs(lazy_loadable_dataset):
     longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
     windows = [create_windows_from_events(
-        concat_ds=longer_dataset, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=longer_dataset, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, preload=True,
         n_jobs=n_jobs) for n_jobs in [1, 2]]
 
@@ -85,8 +85,8 @@ def test_windows_from_events_mapping_filter(tmpdir_factory):
     concat_ds = BaseConcatDataset([base_ds])
 
     windows = create_windows_from_events(
-        concat_ds=concat_ds, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=concat_ds, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, mapping={'T1': 0})
     description = windows.datasets[0].windows.metadata['target'].to_list()
 
@@ -108,8 +108,8 @@ def test_windows_from_events_different_events(tmpdir_factory):
     concat_ds = BaseConcatDataset([base_ds, base_ds_1])
 
     windows = create_windows_from_events(
-        concat_ds=concat_ds, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=concat_ds, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
     description = []
     events = []
@@ -140,7 +140,7 @@ def test_one_window_per_original_trial(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        start_offset_samples=0, stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1,
         drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -152,7 +152,7 @@ def test_stride_has_no_effect(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        start_offset_samples=0, stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1000,
         drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -164,7 +164,7 @@ def test_trial_start_offset(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
+        start_offset_samples=-250, stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=250,
         drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -177,7 +177,7 @@ def test_shifting_last_window_back_in(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
+        start_offset_samples=-250, stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=300,
         drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -190,7 +190,7 @@ def test_dropping_last_incomplete_window(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
+        start_offset_samples=-250, stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=300,
         drop_last_window=True)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -202,7 +202,7 @@ def test_maximally_overlapping_windows(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-2, trial_stop_offset_samples=0,
+        start_offset_samples=-2, stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1,
         drop_last_window=False)
     description = windows.datasets[0].windows.metadata["target"].to_list()
@@ -223,7 +223,7 @@ def test_single_sample_size_windows(concat_ds_targets):
     # targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        start_offset_samples=0, stop_offset_samples=0,
         window_size_samples=1, window_stride_samples=1,
         drop_last_window=False, mapping=dict(tongue=3, left_hand=1,
                                              right_hand=2, feet=4))
@@ -239,7 +239,7 @@ def test_overlapping_trial_offsets(concat_ds_targets):
                        match='Trial overlap not implemented.'):
         create_windows_from_events(
             concat_ds=concat_ds,
-            trial_start_offset_samples=-2000, trial_stop_offset_samples=0,
+            start_offset_samples=-2000, stop_offset_samples=0,
             window_size_samples=1000, window_stride_samples=1000,
             drop_last_window=False)
 
@@ -249,8 +249,8 @@ def test_overlapping_trial_offsets(concat_ds_targets):
 def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
     concat_ds, _ = concat_ds_targets
     windows_from_events = create_windows_from_events(
-        concat_ds=concat_ds, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=concat_ds, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, preload=preload,
         drop_bad_windows=drop_bad_windows)
 
@@ -266,13 +266,13 @@ def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
 
 
 def test_windows_from_events_(lazy_loadable_dataset):
-    msg = '"trial_stop_offset_samples" too large\\. Stop of last trial ' \
-          '\\(19900\\) \\+ "trial_stop_offset_samples" \\(250\\) must be ' \
+    msg = '"stop_offset_samples" too large\\. Stop of last trial ' \
+          '\\(19900\\) \\+ "stop_offset_samples" \\(250\\) must be ' \
           'smaller than length of recording \\(20000\\)\\.'
     with pytest.raises(ValueError, match=msg):
         create_windows_from_events(
-            concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
-            trial_stop_offset_samples=250, window_size_samples=100,
+            concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+            stop_offset_samples=250, window_size_samples=100,
             window_stride_samples=100, drop_last_window=False)
 
 
@@ -367,27 +367,27 @@ def test_windows_from_events_cropped(lazy_loadable_dataset):
 
     # Extract windows
     windows1 = create_windows_from_events(
-        concat_ds=ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        concat_ds=ds, start_offset_samples=0, stop_offset_samples=0,
         window_size_samples=100, window_stride_samples=100,
         drop_last_window=False)
     windows2 = create_windows_from_events(
-        concat_ds=crop_ds, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=crop_ds, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
     assert (windows1[0][0] == windows2[0][0]).all()
 
     # Make sure events that fall outside of recording will trigger an error
     with pytest.raises(
-            ValueError, match='"trial_stop_offset_samples" too large'):
+            ValueError, match='"stop_offset_samples" too large'):
         create_windows_from_events(
-            concat_ds=ds, trial_start_offset_samples=0,
-            trial_stop_offset_samples=10000, window_size_samples=100,
+            concat_ds=ds, start_offset_samples=0,
+            stop_offset_samples=10000, window_size_samples=100,
             window_stride_samples=100, drop_last_window=False)
     with pytest.raises(
-            ValueError, match='"trial_stop_offset_samples" too large'):
+            ValueError, match='"stop_offset_samples" too large'):
         create_windows_from_events(
-            concat_ds=crop_ds, trial_start_offset_samples=0,
-            trial_stop_offset_samples=2001, window_size_samples=100,
+            concat_ds=crop_ds, start_offset_samples=0,
+            stop_offset_samples=2001, window_size_samples=100,
             window_stride_samples=100, drop_last_window=False)
 
 
@@ -428,8 +428,8 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     reject = {'eeg': 43e-6}
 
     windows = create_windows_from_events(
-        concat_ds=lazy_loadable_dataset, trial_start_offset_samples=0,
-        trial_stop_offset_samples=0, window_size_samples=100,
+        concat_ds=lazy_loadable_dataset, start_offset_samples=0,
+        stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, picks=picks,
         on_missing=on_missing, flat=flat, reject=reject)
 
@@ -456,7 +456,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        start_offset_samples=0, stop_offset_samples=0,
         drop_last_window=False)
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -467,7 +467,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=1, trial_stop_offset_samples=0,
+        start_offset_samples=1, stop_offset_samples=0,
         drop_last_window=False)
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -478,7 +478,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=-1, trial_stop_offset_samples=0,
+        start_offset_samples=-1, stop_offset_samples=0,
         drop_last_window=False)
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -489,7 +489,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=1,
+        start_offset_samples=0, stop_offset_samples=1,
         drop_last_window=False)
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -500,7 +500,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=0, trial_stop_offset_samples=-1,
+        start_offset_samples=0, stop_offset_samples=-1,
         drop_last_window=False)
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
@@ -511,7 +511,7 @@ def test_window_sizes_from_events(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
     windows = create_windows_from_events(
         concat_ds=concat_ds,
-        trial_start_offset_samples=3, trial_stop_offset_samples=8,
+        start_offset_samples=3, stop_offset_samples=8,
         window_size_samples=250, window_stride_samples=250,
         drop_last_window=False)
     x, y, ind = windows[0]

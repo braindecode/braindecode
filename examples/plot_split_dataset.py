@@ -49,7 +49,7 @@ display(splits["2"].description)
 ###############################################################################
 # Similarly, we can split datasets after creating windows
 windows = create_windows_from_events(
-    ds, trial_start_offset_samples=0, trial_stop_offset_samples=0)
+    ds, start_offset_samples=0, stop_offset_samples=0)
 splits = windows.split("run")
 display(splits)
 splits = windows.split([4, 8])

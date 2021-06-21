@@ -55,7 +55,7 @@ print({subset_name: len(subset) for subset_name, subset in subsets.items()})
 ###############################################################################
 # Next, we use a windower to extract events from the dataset based on events:
 windows_ds = create_windows_from_events(
-    ds, trial_start_offset_samples=0, trial_stop_offset_samples=100,
+    ds, start_offset_samples=0, stop_offset_samples=100,
     window_size_samples=400, window_stride_samples=100,
     drop_last_window=False)
 

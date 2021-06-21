@@ -24,8 +24,8 @@ def setup_concat_windows_dataset(setup_concat_raw_dataset):
     moabb_dataset = setup_concat_raw_dataset
     return create_windows_from_events(
         concat_ds=moabb_dataset,
-        trial_start_offset_samples=0,
-        trial_stop_offset_samples=0)
+        start_offset_samples=0,
+        stop_offset_samples=0)
 
 
 def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):

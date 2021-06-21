@@ -19,7 +19,7 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 
 def create_windows_from_events(
-        concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
+        concat_ds, start_offset_samples, stop_offset_samples,
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
@@ -27,12 +27,12 @@ def create_windows_from_events(
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
-    [trial onset + trial_start_offset_samples, trial onset + trial duration +
-    trial_stop_offset_samples] around each trial, with a separation of
+    [trial onset + start_offset_samples, trial onset + trial duration +
+    stop_offset_samples] around each trial, with a separation of
     window_stride_samples between consecutive windows. If the last window
-    around an event does not end at trial_stop_offset_samples and
+    around an event does not end at stop_offset_samples and
     drop_last_window is set to False, an additional overlapping window that
-    ends at trial_stop_offset_samples is created.
+    ends at stop_offset_samples is created.
 
     Windows are extracted from the interval defined by the following:
 
@@ -40,29 +40,29 @@ def create_windows_from_events(
                     trial onset                     duration
     |--------------------|------------------------------|---------------------|
     trial onset -                                                 trial onset +
-    trial_start_offset_samples                                       duration +
-                                                      trial_stop_offset_samples
+    start_offset_samples                                       duration +
+                                                      stop_offset_samples
 
     Parameters
     ----------
     concat_ds: BaseConcatDataset
         A concat of base datasets each holding raw and description.
-    trial_start_offset_samples: int
+    start_offset_samples: int
         Start offset from original trial onsets, in samples.
-    trial_stop_offset_samples: int
+    stop_offset_samples: int
         Stop offset from original trial stop, in samples.
     window_size_samples: int | None
         Window size. If None, the window size is inferred from the original
-        trial size of the first trial and trial_start_offset_samples and
-        trial_stop_offset_samples.
+        trial size of the first trial and start_offset_samples and
+        stop_offset_samples.
     window_stride_samples: int | None
         Stride between windows, in samples. If None, the window stride is
         inferred from the original trial size of the first trial and
-        trial_start_offset_samples and trial_stop_offset_samples.
+        start_offset_samples and stop_offset_samples.
     drop_last_window: bool
         If False, an additional overlapping window that ends at
-        trial_stop_offset_samples will be extracted around each event when the
-        last window does not end exactly at trial_stop_offset_samples.
+        stop_offset_samples will be extracted around each event when the
+        last window does not end exactly at stop_offset_samples.
     mapping: dict(str: int)
         Mapping from event description to numerical target value.
     preload: bool
@@ -95,7 +95,7 @@ def create_windows_from_events(
         Dataset containing the extracted windows.
     """
     _check_windowing_arguments(
-        trial_start_offset_samples, trial_stop_offset_samples,
+        start_offset_samples, stop_offset_samples,
         window_size_samples, window_stride_samples)
 
     # If user did not specify mapping, we extract all events from all datasets
@@ -107,7 +107,7 @@ def create_windows_from_events(
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_events)(
             ds, infer_mapping, infer_window_size_stride,
-            trial_start_offset_samples, trial_stop_offset_samples,
+            start_offset_samples, stop_offset_samples,
             window_size_samples, window_stride_samples, drop_last_window,
             mapping, preload, drop_bad_windows, picks, reject, flat,
             'error') for ds in concat_ds.datasets)
@@ -172,7 +172,7 @@ def create_fixed_length_windows(
         window_size_samples, window_stride_samples)
     if stop_offset_samples == 0:
         warnings.warn(
-            'Meaning of `trial_stop_offset_samples`=0 has changed, use `None` '
+            'Meaning of `stop_offset_samples`=0 has changed, use `None` '
             'to indicate end of trial/recording. Using `None`.')
         stop_offset_samples = None
 
@@ -188,7 +188,7 @@ def create_fixed_length_windows(
 
 def _create_windows_from_events(
         ds, infer_mapping, infer_window_size_stride,
-        trial_start_offset_samples, trial_stop_offset_samples,
+        start_offset_samples, stop_offset_samples,
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
@@ -204,7 +204,7 @@ def _create_windows_from_events(
         increasing integers starting from 0.
     infer_window_size_stride : bool
         If True, infer the stride from the original trial size of the first
-        trial and trial_start_offset_samples and trial_stop_offset_samples.
+        trial and start_offset_samples and stop_offset_samples.
 
     See `create_windows_from_events` for description of other parameters.
 
@@ -234,21 +234,21 @@ def _create_windows_from_events(
     #     `events_from_annotations`
 
     last_samp = ds.raw.first_samp + ds.raw.n_times
-    if stops[-1] + trial_stop_offset_samples > last_samp:
+    if stops[-1] + stop_offset_samples > last_samp:
         raise ValueError(
-            '"trial_stop_offset_samples" too large. Stop of last trial '
-            f'({stops[-1]}) + "trial_stop_offset_samples" '
-            f'({trial_stop_offset_samples}) must be smaller than length of'
+            '"stop_offset_samples" too large. Stop of last trial '
+            f'({stops[-1]}) + "stop_offset_samples" '
+            f'({stop_offset_samples}) must be smaller than length of'
             f' recording ({len(ds)}).')
 
     if infer_window_size_stride:
         # window size is trial size
         if window_size_samples is None:
-            window_size_samples = stops[0] + trial_stop_offset_samples - (
-                onsets[0] + trial_start_offset_samples)
+            window_size_samples = stops[0] + stop_offset_samples - (
+                    onsets[0] + start_offset_samples)
             window_stride_samples = window_size_samples
-        this_trial_sizes = (stops + trial_stop_offset_samples) - (
-            onsets + trial_start_offset_samples)
+        this_trial_sizes = (stops + stop_offset_samples) - (
+                onsets + start_offset_samples)
         # Maybe actually this is not necessary?
         # We could also just say we just assume window size=trial size
         # in case not given, without this condition...
@@ -261,8 +261,8 @@ def _create_windows_from_events(
     description = events[:, -1]
 
     i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
-        onsets, stops, trial_start_offset_samples,
-        trial_stop_offset_samples, window_size_samples,
+        onsets, stops, start_offset_samples,
+        stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window)
 
     events = [[start, window_size_samples, description[i_trials[i_start]]]
@@ -420,11 +420,11 @@ def _compute_window_inds(
 
 
 def _check_windowing_arguments(
-        trial_start_offset_samples, trial_stop_offset_samples,
+        start_offset_samples, stop_offset_samples,
         window_size_samples, window_stride_samples):
-    assert isinstance(trial_start_offset_samples, (int, np.integer))
-    assert (isinstance(trial_stop_offset_samples, (int, np.integer)) or
-           (trial_stop_offset_samples is None))
+    assert isinstance(start_offset_samples, (int, np.integer))
+    assert (isinstance(stop_offset_samples, (int, np.integer)) or
+            (stop_offset_samples is None))
     assert isinstance(window_size_samples, (int, np.integer, type(None)))
     assert isinstance(window_stride_samples, (int, np.integer, type(None)))
     assert (window_size_samples is None) == (window_stride_samples is None)

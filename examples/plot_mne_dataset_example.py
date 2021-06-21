@@ -37,8 +37,8 @@ descriptions = [{"event_code": code, "subject": subject_id}
                 for code in event_codes]
 windows_datasets = create_from_mne_raw(
     parts,
-    trial_start_offset_samples=0,
-    trial_stop_offset_samples=0,
+    start_offset_samples=0,
+    stop_offset_samples=0,
     window_size_samples=500,
     window_stride_samples=500,
     drop_last_window=False,

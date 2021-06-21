@@ -61,8 +61,8 @@ ds_loaded = load_concat_dataset(
 # compute windows next.
 windows_ds = create_windows_from_events(
     concat_ds=ds_loaded,
-    trial_start_offset_samples=0,
-    trial_stop_offset_samples=0,
+    start_offset_samples=0,
+    stop_offset_samples=0,
 )
 
 ##############################################################################
