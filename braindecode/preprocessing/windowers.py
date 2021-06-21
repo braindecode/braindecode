@@ -37,12 +37,12 @@ def create_windows_from_events(
 
     Windows are extracted from the interval defined by the following::
 
-                                                  trial onset +
-                    trial onset                     duration
-    |--------------------|------------------------------|---------------------|
-    trial onset -                                                 trial onset +
-    trial_start_offset_samples                                       duration +
-                                                      trial_stop_offset_samples
+                                                trial onset +
+                        trial onset                duration
+        |--------------------|------------------------|-----------------------|
+        trial onset -                                             trial onset +
+        trial_start_offset_samples                                   duration +
+                                                    trial_stop_offset_samples
 
     Parameters
     ----------
