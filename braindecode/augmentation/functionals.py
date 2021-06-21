@@ -2,14 +2,11 @@ from numbers import Real
 
 import numpy as np
 from scipy.interpolate import Rbf
-from scipy.spatial.transform import Rotation
 from sklearn.utils import check_random_state
 import torch
 from torch.fft import fft, ifft
-from torch.nn.functional import dropout2d, pad, one_hot
-from torch.distributions import Normal
+from torch.nn.functional import pad, one_hot
 from mne.filter import notch_filter
-from mne.channels.interpolation import _make_interpolation_matrix
 from mne.channels import make_standard_montage
 
 

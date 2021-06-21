@@ -45,17 +45,6 @@ def common_tranform_assertions(input_batch, output_batch, expected_X=None):
         assert torch.equal(tr_X, expected_X)
 
 
-@pytest.fixture
-def random_batch(rng_seed, batch_size=5):
-    """ Generate batch of elements containing feature matrix of size 66x50
-    filled with random floats between 0 and 1.
-    """
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    rng = check_random_state(rng_seed)
-    X = torch.from_numpy(rng.random((batch_size, 66, 51))).float().to(device)
-    return X, torch.zeros(batch_size)
-
-
 @pytest.mark.parametrize("k1,k2,expected,p1,p2", [
     (1, 0, 0, 1, 1),  # replace by 1s with p=1, then 0s with p=1 -> 0s
     (0, 1, 1, 1, 1),  # replace by 0s with p=1, then 1s with p=1 -> 1s
@@ -106,7 +95,7 @@ def test_transform_proba_exception(random_batch, rng_seed):
     rng = check_random_state(rng_seed)
     with pytest.raises(AssertionError):
         k = rng.randint(10)
-        dummy_transform = Transform(
+        _ = Transform(
             dummy_k_operation,
             'a',
             k=k
@@ -161,7 +150,7 @@ def test_data_loader(concat_windows_dataset, nb_transforms, no_list):
 
 def test_data_loader_exception(concat_windows_dataset):
     with pytest.raises(TypeError):
-        data_loader = BaseDataLoader(
+        _ = BaseDataLoader(
             concat_windows_dataset,
             transforms='a',
             batch_size=128)

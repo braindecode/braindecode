@@ -6,19 +6,17 @@ import pytest
 import numpy as np
 from scipy.fft import fft, fftfreq, fftshift
 from scipy.signal import find_peaks, welch
-from scipy.spatial.transform import Rotation
 from sklearn.utils import check_random_state
 import torch
 
 from braindecode.augmentation.transforms import TimeReverse,\
-    DownsamplingShift, MissingChannels, ShuffleChannels, FTSurrogate,\
+    MissingChannels, ShuffleChannels, FTSurrogate,\
     GaussianNoise, ChannelSymmetry, TimeMask, SignFlip,\
     BandstopFilter, FrequencyShift, RandomZRotation, RandomYRotation,\
     RandomXRotation
 from braindecode.augmentation.functionals import get_standard_10_20_positions,\
     _rotate_signals, _freq_shift, make_rotation_matrix
-from test.unit_tests.augmentation.test_base import random_batch,\
-    common_tranform_assertions
+from test.unit_tests.augmentation.test_base import common_tranform_assertions
 
 
 @pytest.fixture
