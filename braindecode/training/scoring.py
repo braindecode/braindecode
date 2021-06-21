@@ -112,6 +112,7 @@ class CroppedTrialEpochScoring(EpochScoring):
     """
     Class to compute scores for trials from a model that predicts (super)crops.
     """
+    # XXX needs a docstring !!!
 
     def __init__(
         self,
