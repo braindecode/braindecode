@@ -96,6 +96,9 @@ class BaseDataset(Dataset):
         description: dict
             Description in the form key: value. Will overwrite entries in
             existing description under 'key'.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
         """
         description = _create_description(description)
         for key, value in description.items():
@@ -175,6 +178,9 @@ class WindowsDataset(BaseDataset):
         description: dict
             Description in the form key: value. Will overwrite entries in
             existing description under 'key'.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
         """
         description = _create_description(description)
         for key, value in description.items():
@@ -347,6 +353,9 @@ class BaseConcatDataset(ConcatDataset):
         description: dict
             Description in the form key: value where the length of the value
             has to match the number of datasets.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
         """
         description = _create_description(description)
         for key, value in description.items():
