@@ -155,16 +155,27 @@ class WindowsDataset(BaseDataset):
         Holds additional info about the windows.
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
+    targets : list | str | None
     """
-    def __init__(self, windows, description=None, transform=None):
+    def __init__(self, windows, description=None, transform=None, targets=None):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
+        ch_names = self.windows.ch_names
+        if isinstance(targets, (list, tuple)):
+            self.targets = targets
+            # TODO: More detailed error
+            assert all(target_name in ch_names for target_name in self.targets), 'Not all targets present in the channel names.'
+        elif isinstance(targets, str):
+            self.targets = [ch_name for ch_name in ch_names if targets in ch_name]
+            assert self.targets, 'No targets found.'
+        elif targets is None:
+            self.targets = None
+        else:
+            raise ValueError('Wrong targets parameter.')
 
-        self.y = self.windows.metadata.loc[:, 'target'].to_list()
-        self.crop_inds = self.windows.metadata.loc[
-            :, ['i_window_in_trial', 'i_start_in_trial',
-                'i_stop_in_trial']].to_numpy()
+        if self.targets is not None:
+            self._targets_idx = [i for i, ch_name in enumerate(ch_names) if ch_name in self.targets]
 
     def __getitem__(self, index):
         """Get a window and its target.
@@ -186,11 +197,18 @@ class WindowsDataset(BaseDataset):
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
-        y = self.y[index]
+        if self.targets is None:
+            y = self.windows.metadata.loc[index, 'target'].to_numpy()
+            y_idxs = None
+        else:
+            raw_targets = X[self._targets_idx, :]
+            y_idxs = np.argwhere(~np.isnan(raw_targets)).to_list()
+            y = raw_targets[~np.isnan(raw_targets)]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
-        crop_inds = self.crop_inds[index].tolist()
-
+        crop_inds = self.windows.metadata.loc[
+            index, ['i_window_in_trial', 'i_start_in_trial',
+                    'i_stop_in_trial']].to_numpy().to_list() + [y_idxs]
         return X, y, crop_inds
 
     def __len__(self):
