@@ -123,7 +123,7 @@ class EEGClassifier(NeuralNetClassifier):
             If this doesn't work with your data, you have to pass a
             ``Dataset`` that can deal with the data.
         training : bool (default=False)
-          Whether train mode should be used or not.
+            Whether train mode should be used or not.
 
         Returns
         -------
