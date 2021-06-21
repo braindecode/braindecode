@@ -13,7 +13,7 @@ from braindecode.augmentation.transforms import TimeReverse,\
     MissingChannels, ShuffleChannels, FTSurrogate,\
     GaussianNoise, ChannelSymmetry, TimeMask, SignFlip,\
     BandstopFilter, FrequencyShift, RandomZRotation, RandomYRotation,\
-    RandomXRotation
+    RandomXRotation, Mixup
 from braindecode.augmentation.functionals import get_standard_10_20_positions,\
     _rotate_signals, _freq_shift, make_rotation_matrix
 from test.unit_tests.augmentation.test_base import common_tranform_assertions
@@ -475,3 +475,39 @@ def test_random_rotations(
             expected_max_degrees = magnitude * transform.mag_range[1] +\
                 (1 - magnitude) * transform.mag_range[0]
         assert transform.max_degrees == expected_max_degrees
+
+
+@ pytest.mark.parametrize("alpha,beta_per_sample", [
+    (0.5, False),
+    (0.5, True),
+    (-.1, True)
+])
+def test_mixup(rng_seed, random_batch, alpha, beta_per_sample):
+    transform = Mixup(
+        1.0,
+        alpha,
+        beta_per_sample,
+        random_state=rng_seed
+    )
+    batch_size = random_batch[0].shape[0]
+    random_batch = (random_batch[0], torch.arange(batch_size))
+    X, y = random_batch
+    transformed_batch = transform(*random_batch)
+
+    X_t, y_t = transformed_batch
+    idx, idx_perm, lam = y_t
+
+    # y_t[0] should equal y
+    assert torch.equal(idx, y)
+    # basic mixup
+    for i in range(batch_size):
+        mixed = lam[i] * X[i] \
+            + (1 - lam[i]) * X[idx_perm[i]]
+        assert torch.equal(X_t[i], mixed)
+    # all lam should be equal
+    if not beta_per_sample:
+        assert torch.equal(lam, torch.ones_like(lam) * lam[0])
+    # no mixup
+    if alpha < 0:
+        assert torch.equal(lam, torch.ones_like(lam))
+        assert torch.equal(X_t, X)

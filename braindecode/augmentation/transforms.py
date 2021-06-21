@@ -13,7 +13,7 @@ from braindecode.augmentation.functionals import time_reverse, sign_flip,\
     downsample_shift_from_arrays, fft_surrogate, channel_dropout,\
     channel_shuffle, add_gaussian_noise, permute_channels, random_time_mask,\
     identity, random_bandstop, freq_shift, random_rotation,\
-    get_standard_10_20_positions
+    get_standard_10_20_positions, mixup
 
 
 class TimeReverse(Transform):
@@ -992,5 +992,43 @@ class RandomXRotation(RandomSensorsRotation):
             mag_range=mag_range,
             axis='x',
             max_degrees=max_degrees,
+            random_state=random_state
+        )
+
+
+class Mixup(Transform):
+    """Implements Iterator for Mixup for EEG data. See [1].
+    Implementation based on [2]
+
+    Parameters
+    ----------
+    dataset: Dataset
+        dataset from which to load the data.
+    alpha: float
+        mixup hyperparameter.
+    beta_per_sample: bool (default=False)
+        by default, one mixing coefficient per batch is drawn from an beta
+        distribution. If True, one mixing coefficient per sample is drawn.
+
+    References
+    ----------
+        [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+        mixup: Beyond Empirical Risk Minimization
+        Online: https://arxiv.org/abs/1710.09412
+        [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+    """
+
+    def __init__(
+        self,
+        probability,
+        alpha,
+        beta_per_sample=False,
+        random_state=None
+    ):
+        super().__init__(
+            operation=mixup,
+            probability=probability,
+            alpha=alpha,
+            beta_per_sample=beta_per_sample,
             random_state=random_state
         )

@@ -96,7 +96,10 @@ class Transform(torch.nn.Module):
         num_valid = mask.sum().long()
         if num_valid > 0:
             out_X[mask == 1, ...] = tr_X[mask == 1, ...]
-            out_y[mask == 1] = tr_y[mask == 1]
+            if type(tr_y) is tuple:
+                out_y = tuple(tmp_y[mask == 1] for tmp_y in tr_y)
+            else:
+                out_y[mask == 1] = tr_y[mask == 1]
         return out_X, out_y
 
     def _get_mask(self, batch_size=None) -> torch.Tensor:

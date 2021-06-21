@@ -579,3 +579,59 @@ def get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
         k: positions_dict[k] for k in ordered_ch_names if k in positions_dict
     }
     return np.stack(list(positions_subdict.values())).T
+
+
+def mixup(X, y, alpha, beta_per_sample, random_state=None, magnitude=None):
+    """Mixes two channels of EEG data. See [1].
+    Implementation based on [2]
+
+    Parameters
+    ----------
+    X:  torch.tensor
+        EEG data in form 'batch_size', 'n_channels', 'n_times'
+    y : torch.tensor
+        Target of length 'batch_size'
+    alpha : float
+        mixup hyperparameter.
+    beta_per_sample: bool (default=False)
+        by default, one mixing coefficient per batch is drawn from an beta
+        distribution. If True, one mixing coefficient per sample is drawn.
+    Returns
+    -------
+    tuple
+        'X', 'y'. Where 'X' is augmented and 'y' is a tuple  of length 3
+        containing the labels of the two mixed channels and the mixing coefficient.
+
+    References
+    ----------
+        [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+        mixup: Beyond Empirical Risk Minimization
+        Online: https://arxiv.org/abs/1710.09412
+        [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+    """
+    rng = check_random_state(random_state)
+
+    device = X.device
+    batch_size, n_channels, n_times = X.shape
+
+    if alpha > 0:
+        if beta_per_sample:
+            lam = torch.tensor(rng.beta(alpha, alpha, batch_size)).to(device)
+        else:
+            lam = torch.ones(batch_size).to(device)
+            lam *= rng.beta(alpha, alpha)
+    else:
+        lam = torch.ones(batch_size).to(device)
+
+    idx_perm = torch.tensor(rng.permutation(batch_size,))
+    X_mix = torch.zeros((batch_size, n_channels, n_times)).to(device)
+    y_a = torch.arange(batch_size).to(device)
+    y_b = torch.arange(batch_size).to(device)
+
+    for idx in range(batch_size):
+        X_mix[idx] = lam[idx] * X[idx] \
+            + (1 - lam[idx]) * X[idx_perm[idx]]
+        y_a[idx] = y[idx]
+        y_b[idx] = y[idx_perm[idx]]
+
+    return X_mix, (y_a, y_b, lam)
