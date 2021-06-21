@@ -29,7 +29,7 @@ class TimeReverse(Transform):
         Always ignored, exists for compatibility.
     mag_range : object, optional
         Always ignored, exists for compatibility.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
@@ -62,7 +62,7 @@ class SignFlip(Transform):
         Always ignored, exists for compatibility.
     mag_range : object, optional
         Always ignored, exists for compatibility.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
@@ -102,10 +102,10 @@ class DownsamplingShift(Transform):
         only every other column of X will be kept. Defaults to 2.
     offset: int, optional
         Offset (in number of columns) to be used to time-shift the data.
-        Offset needs to be less than factor.
-        When downsampling by a factor N, you have N different offsets possible.
+        Offset needs to be less than ``factor``.
+        When downsampling with ``factor=N``, you have `N` different offsets possible.
         If no value is passed to ``offset``, it is randomly selected between 0 and
-        factor-1.
+        ``factor-1``.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -161,7 +161,7 @@ class FTSurrogate(Transform):
         probability law for example) taking no input and returning a boolean.
     magnitude : object, optional
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled: [0, `magnitude` * 2 * `pi`]. Defaults
+        pertubation is uniformly sampled: ``[0, magnitude * 2 * pi]``. Defaults
         to 1.
     mag_range : object, optional
         Always ignored, exists for compatibility.
@@ -440,7 +440,7 @@ class TimeMask(Transform):
         and returning a boolean.
     magnitude : float | None, optional
         Float between 0 and 1 encoding the number of consecutive samples within
-        `mag_range` to set to 0:
+        ``mag_range`` to set to 0:
         ```
         mask_len_samples = int(round(magnitude * mag_range[1] +
             (1 - magnitude) * mag_range[0]))
@@ -509,8 +509,8 @@ class TimeMask(Transform):
 
 
 class BandstopFilter(Transform):
-    """Applies a stopband filter with desired bandwidth at a randomly selected
-    frequency position between 0 and `max_freq`.
+    """Apply a band-stop filter with desired bandwidth at a randomly selected
+    frequency position between 0 and ``max_freq``.
 
     Suggested e.g. in [1]_ and [2]_
     Similar to the frequency variant of SpecAugment for speech signals [3]_
@@ -619,14 +619,14 @@ class FrequencyShift(Transform):
         (modelling a non-uniform probability law for example) taking no input
         and returning a boolean.
     magnitude : float | None, optional
-        Float between 0 and 1 encoding the `max_shift` parameter:
+        Float between 0 and 1 encoding the ``max_shift`` parameter:
         ```
         max_shift = magnitude * mag_range[1] + (1 - magnitude) * mag_range[0]
         ```
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
-        Range of possible values for `max_shift` settable using the magnitude
-        (see `magnitude`). If omitted the range (0 Hz, 5 Hz) will be used.
+        Range of possible values for ``max_shift`` settable using the magnitude
+        (see `magnitude`). If omitted the range [0, 5] Hz will be used.
     max_shift : float, optional
         Random frequency shifts will be samples uniformly in the interval
         `[0, max_shift]`. Defaults to 2 Hz.
@@ -690,8 +690,8 @@ class RandomSensorsRotation(Transform):
         (modelling a non-uniform probability law for example) taking no input
         and returning a boolean.
     sensors_positions_matrix : numpy.ndarray
-        Matrix giving the positions of each sensor in a 3D cartesian coordiante
-        systemsof. Should have shape (3, n_channels), where n_channels is the
+        Matrix giving the positions of each sensor in a 3D cartesian coordinate
+        system. Should have shape (3, n_channels), where n_channels is the
         number of channels. Standard 10-20 positions can be obtained from
         `mne` through:
         ```
@@ -786,7 +786,7 @@ class RandomSensorsRotation(Transform):
 
 class RandomZRotation(RandomSensorsRotation):
     """Interpolates EEG signals over sensors rotated around the Z axis
-    with an angle sampled uniformly between 0 and `max_degree`.
+    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
 
@@ -857,8 +857,8 @@ class RandomZRotation(RandomSensorsRotation):
 
 
 class RandomYRotation(RandomSensorsRotation):
-    """Interpolates EEG signals over sensors rotated around the Z axis
-    with an angle sampled uniformly between 0 and `max_degree`.
+    """Interpolates EEG signals over sensors rotated around the Y axis
+    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
 
@@ -884,8 +884,6 @@ class RandomYRotation(RandomSensorsRotation):
     mag_range : tuple of two floats | None, optional
         Range of possible values for `max_degree` settable using the magnitude
         (see `magnitude`). If omitted, the range (0, 30 degrees) will be used.
-    axis : 'x' | 'y' | 'z', optional
-        Axis around which to rotate. Defaults to 'z'.
     max_degree : float, optional
         Maximum rotation. Rotation angles will be sampled between `-max_degree`
         and `max_degree`. Defaults to 15 degrees.
@@ -929,8 +927,8 @@ class RandomYRotation(RandomSensorsRotation):
 
 
 class RandomXRotation(RandomSensorsRotation):
-    """Interpolates EEG signals over sensors rotated around the Z axis
-    with an angle sampled uniformly between 0 and `max_degree`.
+    """Interpolates EEG signals over sensors rotated around the X axis
+    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
 
@@ -956,8 +954,6 @@ class RandomXRotation(RandomSensorsRotation):
     mag_range : tuple of two floats | None, optional
         Range of possible values for `max_degree` settable using the magnitude
         (see `magnitude`). If omitted, the range (0, 30 degrees) will be used.
-    axis : 'x' | 'y' | 'z', optional
-        Axis around which to rotate. Defaults to 'z'.
     max_degree : float, optional
         Maximum rotation. Rotation angles will be sampled between `-max_degree`
         and `max_degree`. Defaults to 15 degrees.
