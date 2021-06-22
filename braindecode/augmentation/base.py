@@ -12,7 +12,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 
-from ._functionals import identity
+from .functional import identity
 
 Batch = List[Tuple[torch.Tensor, int, Any]]
 Output = Tuple[torch.Tensor, torch.Tensor]
@@ -74,10 +74,10 @@ class Transform(torch.nn.Module):
 
         Parameters
         ----------
-        X : Tensor
-            EEG input batch.
-        y : Tensor
-            EEG labels for the batch.
+        X : torch.Tensor
+            EEG input example or batch.
+        y : torch.Tensor
+            EEG labels for the example or batch.
 
         Returns
         -------
@@ -150,7 +150,6 @@ class Compose(Transform):
     ----------
     transforms: list
         Sequence of Transforms to be composed.
-
     """
 
     def __init__(self, transforms):
@@ -186,13 +185,13 @@ class AugmentedDataLoader(DataLoader):
     Parameters
     ----------
     dataset : BaseDataset
+        The dataset containing the signals.
     transforms : list | Transform, optional
         Transform or sequence of Transform to be applied to each batch.
     *args : tuple
         arguments to pass to standard DataLoader class. Defaults to None.
     **kwargs : dict, optional
         keyword arguments to pass to standard DataLoader class.
-
     """
 
     def __init__(self, dataset, transforms=None, *args, **kwargs):

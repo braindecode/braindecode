@@ -20,7 +20,7 @@ from braindecode.augmentation.transforms import (
     ChannelSymmetry, TimeMask, SignFlip, BandstopFilter, FrequencyShift,
     RandomZRotation, RandomYRotation, RandomXRotation
 )
-from braindecode.augmentation._functionals import (
+from braindecode.augmentation.functional import (
     get_standard_10_20_positions, _rotate_signals, _freq_shift,
     make_rotation_matrix,
 )

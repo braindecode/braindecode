@@ -10,7 +10,7 @@ from sklearn.utils import check_random_state
 import torch
 
 from .base import Transform
-from ._functionals import (
+from .functional import (
     time_reverse, sign_flip, downsample_shift_from_arrays, fft_surrogate,
     channel_dropout, channel_shuffle, add_gaussian_noise, permute_channels,
     random_time_mask, identity, random_bandstop, freq_shift, random_rotation,
@@ -89,10 +89,10 @@ class DownsamplingShift(Transform):
         only every other column of X will be kept. Defaults to 2.
     offset: int, optional
         Offset (in number of columns) to be used to time-shift the data.
-        Offset needs to be less than ``factor``.
-        When downsampling with ``factor=N``, you have `N` different offsets
-        possible. If no value is passed to ``offset``, it is randomly selected
-        between 0 and ``factor-1``.
+        Offset needs to be less than ``factor``. When downsampling with
+        ``factor=N``, you have `N` different offsets possible. If no value is
+        passed to ``offset``, it is randomly selected between 0 and
+        ``factor-1``.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -103,7 +103,6 @@ class DownsamplingShift(Transform):
     .. [1] Frydenlund, A., & Rudzicz, F. (2015). Emotional Affect Estimation
         Using Video and EEG Data in Deep Neural Networks. Proceedings of
         Canadian Conference on Artificial Intelligence 273-280.
-
     """
 
     def __init__(
@@ -185,9 +184,8 @@ class MissingChannels(Transform):
     probability: float
         Float setting the probability of applying the operation.
     magnitude: float | None, optional
-        Float between 0 and 1 setting the fraction of channels to zero-out.
-        If omitted, a random number of channels is (uniformly) sampled.
-        Defaults to None.
+        Float between 0 and 1 setting the probability of dropping each channel.
+        Defaults to 0.2.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -224,13 +222,13 @@ class ShuffleChannels(Transform):
     probability: float
         Float setting the probability of applying the operation.
     magnitude: float | None, optional
-        Float between 0 and 1 setting the fraction of channels to permute.
-        If omitted, a random number of channels is (uniformly) sampled.
-        Defaults to None.
+        Float between 0 and 1 setting the probability of including the channel
+        in the set of permutted channels. Defaults to 0.2.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
-        argument. Defaults to None.
+        argument, to sample which channels to shuffle and to carry the shuffle.
+        Defaults to None.
 
     References
     ----------
@@ -270,7 +268,7 @@ class GaussianNoise(Transform):
         ```
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
-        Std range when set using the magnitude (see `magnitude`).
+        Std range when set using the magnitude (see ``magnitude``).
         If omitted, the range (0, 0.2) will be used.
     std : float, optional
         Standard deviation to use for the additive noise. Will be ignored if
@@ -291,7 +289,6 @@ class GaussianNoise(Transform):
     .. [3] Mohsenvand, M. N., Izadi, M. R., & Maes, P. (2020). Contrastive
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
-
     """
 
     def __init__(
@@ -344,7 +341,6 @@ class ChannelSymmetry(Transform):
     .. [1] Deiss, O., Biswal, S., Jin, J., Sun, H., Westover, M. B., & Sun, J.
        (2018). HAMLET: interpretable human and machine co-learning technique.
        arXiv preprint arXiv:1803.09702.
-
     """
 
     def __init__(
@@ -384,10 +380,10 @@ class ChannelSymmetry(Transform):
 
 
 class TimeMask(Transform):
-    """Replace part of all channels by zeros
+    """Smoothly replace a randomly chosen contiguous part of all channels by
+    zeros
 
     Suggested e.g. in [1]_ and [2]_
-    Similar to the time variant of SpecAugment for speech signals [3]_
 
     Parameters
     ----------
@@ -403,7 +399,7 @@ class TimeMask(Transform):
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
         Range of possible values for `mask_len_samples` settable using the
-        magnitude (see `magnitude`). If omitted, the range (0, 100) samples
+        magnitude (see ``magnitude``). If omitted, the range (0, 100) samples
         will be used.
     mask_len_samples : int, optional
         Number of consecutive samples to zero out. Will be ignored if
@@ -420,10 +416,6 @@ class TimeMask(Transform):
     .. [2] Mohsenvand, M. N., Izadi, M. R., & Maes, P. (2020). Contrastive
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
-    .. [3] Park, D.S., Chan, W., Zhang, Y., Chiu, C., Zoph, B., Cubuk, E.D.,
-       Le, Q.V. (2019) SpecAugment: A Simple Data Augmentation Method for
-       Automatic Speech Recognition. Proc. Interspeech 2019, 2613-2617
-
     """
 
     def __init__(
@@ -468,7 +460,6 @@ class BandstopFilter(Transform):
     frequency position between 0 and ``max_freq``.
 
     Suggested e.g. in [1]_ and [2]_
-    Similar to the frequency variant of SpecAugment for speech signals [3]_
 
     Parameters
     ----------
@@ -482,7 +473,7 @@ class BandstopFilter(Transform):
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
         Range of possible values for `bandwidth` settable using the magnitude
-        (see `magnitude`). If omitted, the range (0, 2 Hz) will be used.
+        (see ``magnitude``). If omitted, the range (0, 2 Hz) will be used.
     bandwidth : float, optional
         Bandwidth of the filter, i.e. distance between the low and high cut
         frequencies. Will be ignored if magnitude is not set to None. Defaults
@@ -491,9 +482,9 @@ class BandstopFilter(Transform):
         Sampling frequency of the signals to be filtered. Defaults to 100 Hz.
     max_freq : float | None, optional
         Maximal admissible frequency. The low cut frequency will be sampled so
-        that the corresponding high cut frequency + transition are below
-        `max_freq`. If omitted or `None`, will default to the Nyquist frequency
-        (`sfreq / 2`).
+        that the corresponding high cut frequency + transition (=1Hz) are below
+        ``max_freq``. If omitted or `None`, will default to the Nyquist
+        frequency (``sfreq / 2``).
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -506,9 +497,6 @@ class BandstopFilter(Transform):
     .. [2] Mohsenvand, M. N., Izadi, M. R., & Maes, P. (2020). Contrastive
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
-    .. [3] Park, D.S., Chan, W., Zhang, Y., Chiu, C., Zoph, B., Cubuk, E.D.,
-       Le, Q.V. (2019) SpecAugment: A Simple Data Augmentation Method for
-       Automatic Speech Recognition. Proc. Interspeech 2019, 2613-2617
     """
 
     def __init__(
@@ -533,10 +521,10 @@ class BandstopFilter(Transform):
             warnings.warn(
                 "You either passed None or a frequency greater than the"
                 f" Nyquist frequency ({nyq} Hz)."
-                f" Falling back to `max_freq = {nyq}`."
+                f" Falling back to max_freq = {nyq}."
             )
         assert bandwidth < max_freq,\
-            f"`bandwidth` needs to be smaller than `max_freq`={max_freq}"
+            f"`bandwidth` needs to be smaller than max_freq={max_freq}"
 
         # override bandwidth value when a magnitude is passed
         self.sfreq = sfreq
@@ -581,10 +569,10 @@ class FrequencyShift(Transform):
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
         Range of possible values for ``max_shift`` settable using the magnitude
-        (see `magnitude`). If omitted the range [0, 5] Hz will be used.
+        (see ``magnitude``). If omitted the range [0, 5] Hz will be used.
     max_shift : float, optional
         Random frequency shifts will be samples uniformly in the interval
-        `[0, max_shift]`. Defaults to 2 Hz.
+        ``[0, max_shift]``. Defaults to 2 Hz.
     sfreq : float, optional
         Sampling frequency of the signals to be transformed. Default to 100 Hz.
     random_state: int | numpy.random.Generator, optional
@@ -633,7 +621,7 @@ class FrequencyShift(Transform):
 
 class RandomSensorsRotation(Transform):
     """Interpolates EEG signals over sensors rotated around the desired axis
-    with an angle sampled uniformly between 0 and `max_degree`.
+    with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
     Suggested in [1]_
 
@@ -659,16 +647,17 @@ class RandomSensorsRotation(Transform):
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
         Range of possible values for `max_degree` settable using the magnitude
-        (see `magnitude`). If omitted, the range (0, 30 degrees) will be used.
+        (see ``magnitude``). If omitted, the range (0, 30 degrees) will be
+        used.
     axis : 'x' | 'y' | 'z', optional
         Axis around which to rotate. Defaults to 'z'.
     max_degree : float, optional
-        Maximum rotation. Rotation angles will be sampled between `-max_degree`
-        and `max_degree`. Defaults to 15 degrees.
+        Maximum rotation. Rotation angles will be sampled between
+        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
-        `False`, standard scipy.interpolate.Rbf (with quadratic kernel) will be
-        used (as in the original paper). Defaults to True.
+        ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
+        be used (as in the original paper). Defaults to True.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -760,14 +749,15 @@ class RandomZRotation(RandomSensorsRotation):
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
         Range of possible values for `max_degree` settable using the magnitude
-        (see `magnitude`). If omitted, the range (0, 30 degrees) will be used.
+        (see ``magnitude``). If omitted, the range (0, 30 degrees) will be
+        used.
     max_degree : float, optional
-        Maximum rotation. Rotation angles will be sampled between `-max_degree`
-        and `max_degree`. Defaults to 15 degrees.
+        Maximum rotation. Rotation angles will be sampled between
+        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
-        `False`, standard scipy.interpolate.Rbf (with quadratic kernel) will be
-        used (as in the original paper). Defaults to True.
+        ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
+        be used (as in the original paper). Defaults to True.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -829,14 +819,15 @@ class RandomYRotation(RandomSensorsRotation):
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
         Range of possible values for `max_degree` settable using the magnitude
-        (see `magnitude`). If omitted, the range (0, 30 degrees) will be used.
+        (see ``magnitude``). If omitted, the range (0, 30 degrees) will be
+        used.
     max_degree : float, optional
-        Maximum rotation. Rotation angles will be sampled between `-max_degree`
-        and `max_degree`. Defaults to 15 degrees.
+        Maximum rotation. Rotation angles will be sampled between
+        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
-        `False`, standard scipy.interpolate.Rbf (with quadratic kernel) will be
-        used (as in the original paper). Defaults to True.
+        ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
+        be used (as in the original paper). Defaults to True.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -898,14 +889,15 @@ class RandomXRotation(RandomSensorsRotation):
         Defaults to None (ignored).
     mag_range : tuple of two floats | None, optional
         Range of possible values for `max_degree` settable using the magnitude
-        (see `magnitude`). If omitted, the range (0, 30 degrees) will be used.
+        (see ``magnitude``). If omitted, the range (0, 30 degrees) will be
+        used.
     max_degree : float, optional
-        Maximum rotation. Rotation angles will be sampled between `-max_degree`
-        and `max_degree`. Defaults to 15 degrees.
+        Maximum rotation. Rotation angles will be sampled between
+        ``-max_degree`` and ``max_degree``. Defaults to 15 degrees.
     spherical_splines : bool, optional
         Whether to use spherical splines for the interpolation or not. When
-        `False`, standard scipy.interpolate.Rbf (with quadratic kernel) will be
-        used (as in the original paper). Defaults to True.
+        ``False``, standard scipy.interpolate.Rbf (with quadratic kernel) will
+        be used (as in the original paper). Defaults to True.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
