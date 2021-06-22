@@ -38,6 +38,7 @@ class RecordingSampler(Sampler):
         and window indices information in an easily accessible structure for
         quick sampling of windows.
     """
+    # XXX attributes n_recordings missing
     def __init__(self, metadata, random_state=None):
         self.metadata = metadata
         self._init_info()
@@ -60,11 +61,13 @@ class RecordingSampler(Sampler):
     def sample_recording(self):
         """Return a random recording index.
         """
+        # XXX docstring missing
         return self.rng.choice(self.n_recordings)
 
     def sample_window(self, rec_ind=None):
         """Return a specific window.
         """
+        # XXX docstring missing
         if rec_ind is None:
             rec_ind = self.sample_recording()
         win_ind = self.rng.choice(self.info.iloc[rec_ind]['index'])

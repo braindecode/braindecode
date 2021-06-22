@@ -150,11 +150,13 @@ def test_eeg_classifier():
 
     train_set = create_from_X_y(X[:48], y[:48],
                                 drop_last_window=False,
+                                sfreq=100,
                                 window_size_samples=input_window_samples,
                                 window_stride_samples=n_preds_per_input)
 
     valid_set = create_from_X_y(X[48:60], y[48:60],
                                 drop_last_window=False,
+                                sfreq=100,
                                 window_size_samples=input_window_samples,
                                 window_stride_samples=n_preds_per_input)
 

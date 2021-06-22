@@ -1,9 +1,10 @@
-"""Custom Dataset Example
-=========================
 """
-##############################################################################
-# This example shows how to convert data from X and y to a braindecode
-# compatible data format.
+Custom Dataset Example
+======================
+
+This example shows how to convert data X and y as numpy arrays to a braindecode
+compatible data format.
+"""
 
 # Authors: Lukas Gemein <l.gemein@gmail.com>
 #
@@ -46,3 +47,18 @@ windows_dataset = create_from_X_y(
     window_stride_samples=500,
     window_size_samples=500,
 )
+
+windows_dataset.description  # look as dataset description
+
+###############################################################################
+# You can manipulate the dataset
+print(len(windows_dataset))  # get the number of samples
+
+###############################################################################
+# You can now index the data
+i = 0
+x_i, y_i, window_ind = windows_dataset[0]
+n_channels, n_times = x_i.shape  # the EEG data
+_, start_ind, stop_ind = window_ind
+print(f"n_channels={n_channels}  -- n_times={n_times} -- y_i={y_i}")
+print(f"start_ind={start_ind} -- stop_ind={stop_ind}")
