@@ -14,7 +14,7 @@ from ._functionals import (
     time_reverse, sign_flip, downsample_shift_from_arrays, fft_surrogate,
     channel_dropout, channel_shuffle, add_gaussian_noise, permute_channels,
     random_time_mask, identity, random_bandstop, freq_shift, random_rotation,
-    get_standard_10_20_positions)
+    get_standard_10_20_positions, mixup)
 
 
 class TimeReverse(Transform):
