@@ -198,17 +198,21 @@ class WindowsDataset(BaseDataset):
         if self.transform is not None:
             X = self.transform(X)
         if self.targets is None:
-            y = self.windows.metadata.loc[index, 'target'].to_numpy()
+            y = self.windows.metadata.loc[index, 'target']
             y_idxs = None
         else:
             raw_targets = X[self._targets_idx, :]
-            y_idxs = np.argwhere(~np.isnan(raw_targets)).to_list()
-            y = raw_targets[~np.isnan(raw_targets)]
+            # TODO: handle multi targets present only for some events
+            y_idxs = np.argwhere(~np.isnan(raw_targets[0, :]))
+            # TODO: what are the actual dimensions of the y_idxs
+            y = raw_targets[:, y_idxs]
+            y = y[:, -1, 0].astype(np.float32)
+            X = X[[i for i in range(X.shape[0]) if i not in self._targets_idx], :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.windows.metadata.loc[
             index, ['i_window_in_trial', 'i_start_in_trial',
-                    'i_stop_in_trial']].to_numpy().to_list() + [y_idxs]
+                    'i_stop_in_trial']].to_numpy().tolist() + [y_idxs]
         return X, y, crop_inds
 
     def __len__(self):

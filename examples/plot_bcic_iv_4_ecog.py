@@ -34,13 +34,14 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #
 import copy
 
-from braindecode.datasets.ecog import load_bci_iv_ecog
-from braindecode.datasets.moabb import MOABBDataset
 import numpy as np
+
+from braindecode.datasets.ecog import load_bci_iv_ecog
 
 subject_id = 1
 dataset = load_bci_iv_ecog('/home/maciej/projects/braindecode/BCICIV_4_mat',
                            subject_ids=[subject_id])
+dataset = dataset.split('session')['train']
 dataset_before = copy.deepcopy(dataset)
 
 from braindecode.preprocessing.preprocess import (
@@ -64,7 +65,13 @@ preprocessors = [
 # Transform the data
 preprocess(dataset, preprocessors)
 
-np.testing.assert_array_equal(dataset.datasets[0].raw.get_data()[-5:, :], dataset_before.datasets[0].raw.get_data()[-5:, :])
+# Check whether preprocessing has not affected the targets
+np.testing.assert_array_equal(
+    dataset.datasets[0].raw.get_data()[-5:, :],
+    dataset_before.datasets[0].raw.get_data()[-5:, :]
+)
+del dataset_before
+
 #
 #
 # ######################################################################
@@ -81,23 +88,22 @@ np.testing.assert_array_equal(dataset.datasets[0].raw.get_data()[-5:, :], datase
 # # before the trial.
 # #
 #
-# from braindecode.preprocessing.windowers import create_windows_from_events
-#
-# trial_start_offset_seconds = -0.5
-# # Extract sampling frequency, check that they are same in all datasets
-# sfreq = dataset.datasets[0].raw.info['sfreq']
-# assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
-# # Calculate the trial start offset in samples.
-# trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
-#
-# # Create windows using braindecode function for this. It needs parameters to define how
-# # trials should be used.
-# windows_dataset = create_windows_from_events(
-#     dataset,
-#     trial_start_offset_samples=trial_start_offset_samples,
-#     trial_stop_offset_samples=0,
-#     preload=True,
-# )
+from braindecode.preprocessing.windowers import create_windows_from_target_channels
+
+trial_start_offset_seconds = -0.5
+# Extract sampling frequency, check that they are same in all datasets
+sfreq = dataset.datasets[0].raw.info['sfreq']
+assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
+# Calculate the trial start offset in samples.
+trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
+
+windows_dataset = create_windows_from_target_channels(
+    dataset,
+    trial_start_offset_samples=1000,
+    trial_stop_offset_samples=400000 - 392000,
+    window_size_samples=1000,
+    preload=True,
+)
 #
 #
 # ######################################################################
@@ -112,9 +118,13 @@ np.testing.assert_array_equal(dataset.datasets[0].raw.get_data()[-5:, :], datase
 # # ``session_T`` for training and ``session_E`` for validation.
 # #
 #
-# splitted = windows_dataset.split('session')
-# train_set = splitted['session_T']
-# valid_set = splitted['session_E']
+from sklearn.model_selection import train_test_split
+
+idx_train, idx_valid = train_test_split(np.arange(len(windows_dataset)),
+                                        random_state=100,
+                                        test_size=0.2)
+train_set = windows_dataset.subset(idx_train)
+valid_set = windows_dataset.subset(idx_valid)
 #
 #
 # ######################################################################
@@ -133,36 +143,42 @@ np.testing.assert_array_equal(dataset.datasets[0].raw.get_data()[-5:, :], datase
 # # to use your own model, it just has to be a normal PyTorch
 # # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
 # #
-#
-# import torch
-# from braindecode.util import set_random_seeds
-# from braindecode.models import ShallowFBCSPNet
-#
-# cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
-# device = 'cuda' if cuda else 'cpu'
-# if cuda:
-#     torch.backends.cudnn.benchmark = True
-# seed = 20200220  # random seed to make results reproducible
-# # Set random seed to be able to reproduce results
-# set_random_seeds(seed=seed, cuda=cuda)
-#
-# n_classes = 4
-# # Extract number of chans and time steps from dataset
-# n_chans = train_set[0][0].shape[0]
-# input_window_samples = train_set[0][0].shape[1]
-#
-# model = ShallowFBCSPNet(
-#     n_chans,
-#     n_classes,
-#     input_window_samples=input_window_samples,
-#     final_conv_length='auto',
-# )
-#
-# # Send model to GPU
-# if cuda:
-#     model.cuda()
-#
-#
+
+import torch
+from braindecode.util import set_random_seeds
+from braindecode.models import ShallowFBCSPNet
+
+cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
+device = 'cuda' if cuda else 'cpu'
+if cuda:
+    torch.backends.cudnn.benchmark = True
+seed = 20200220  # random seed to make results reproducible
+# Set random seed to be able to reproduce results
+set_random_seeds(seed=seed, cuda=cuda)
+
+n_classes = 4
+# Extract number of chans and time steps from dataset
+n_chans = 62
+input_window_samples = 1000
+
+model = ShallowFBCSPNet(
+    n_chans,
+    5,
+    input_window_samples=input_window_samples,
+    final_conv_length='auto',
+)
+
+new_model = torch.nn.Sequential()
+for name, module_ in model.named_children():
+    if "softmax" in name:
+        continue
+    new_model.add_module(name, module_)
+model = new_model
+
+# Send model to GPU
+if cuda:
+    model.cuda()
+
 # ######################################################################
 # # Training
 # # --------
@@ -184,38 +200,39 @@ np.testing.assert_array_equal(dataset.datasets[0].raw.get_data()[-5:, :], datase
 # #    cross validation on your training data.
 # #
 #
-# from skorch.callbacks import LRScheduler
-# from skorch.helper import predefined_split
-#
-# from braindecode import EEGClassifier
-# # These values we found good for shallow network:
-# lr = 0.0625 * 0.01
-# weight_decay = 0
-#
-# # For deep4 they should be:
-# # lr = 1 * 0.01
-# # weight_decay = 0.5 * 0.001
-#
-# batch_size = 64
-# n_epochs = 4
-#
-# clf = EEGClassifier(
-#     model,
-#     criterion=torch.nn.NLLLoss,
-#     optimizer=torch.optim.AdamW,
-#     train_split=predefined_split(valid_set),  # using valid_set for validation
-#     optimizer__lr=lr,
-#     optimizer__weight_decay=weight_decay,
-#     batch_size=batch_size,
-#     callbacks=[
-#         "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
-#     ],
-#     device=device,
-# )
-# # Model training for a specified number of epochs. `y` is None as it is already supplied
-# # in the dataset.
-# clf.fit(train_set, y=None, epochs=n_epochs)
-#
+from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
+
+from braindecode import EEGRegressor
+
+# These values we found good for shallow network:
+lr = 0.0625 * 0.01
+weight_decay = 0
+
+# For deep4 they should be:
+# lr = 1 * 0.01
+# weight_decay = 0.5 * 0.001
+
+batch_size = 64
+n_epochs = 4
+
+clf = EEGRegressor(
+    model,
+    criterion=torch.nn.MSELoss,
+    optimizer=torch.optim.AdamW,
+    train_split=predefined_split(valid_set),  # using valid_set for validation,
+    optimizer__lr=lr,
+    optimizer__weight_decay=weight_decay,
+    batch_size=batch_size,
+    callbacks=[
+        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+    ],
+    device=device,
+)
+# Model training for a specified number of epochs. `y` is None as it is already supplied
+# in the dataset.
+clf.fit(windows_dataset, y=None, epochs=n_epochs)
+
 #
 # ######################################################################
 # # Plot Results
@@ -260,7 +277,9 @@ np.testing.assert_array_equal(dataset.datasets[0].raw.get_data()[-5:, :], datase
 #
 # # where some data has already been plotted to ax
 # handles = []
-# handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
-# handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
+# handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-',
+# label='Train'))
+# handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':',
+# label='Valid'))
 # plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 # plt.tight_layout()
