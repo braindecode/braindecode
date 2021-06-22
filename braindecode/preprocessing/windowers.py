@@ -398,9 +398,9 @@ def create_windows_from_target_channels(
         window_size_samples=None,
         preload=False, drop_bad_windows=True, picks=None, reject=None,
         flat=None, n_jobs=1):
-    _check_windowing_arguments(
-        trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples, None)
+    # _check_windowing_arguments(
+    #     trial_start_offset_samples, trial_stop_offset_samples,
+    #     window_size_samples, None)
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
