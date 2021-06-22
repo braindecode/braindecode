@@ -204,11 +204,11 @@ class AugmentedDataLoader(DataLoader):
         if transforms is None or (
             isinstance(transforms, list) and len(transforms) == 0
         ):
-            self.collated_tr = make_collateable(IdentityTransform())
+            self.collated_tr = _make_collateable(IdentityTransform())
         elif isinstance(transforms, (Transform, nn.Module)):
-            self.collated_tr = make_collateable(transforms)
+            self.collated_tr = _make_collateable(transforms)
         elif isinstance(transforms, list):
-            self.collated_tr = make_collateable(Compose(transforms))
+            self.collated_tr = _make_collateable(Compose(transforms))
         else:
             raise TypeError("transforms can be either a Transform object" +
                             " or a list of Transform objects.")
