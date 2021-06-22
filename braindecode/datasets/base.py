@@ -192,7 +192,7 @@ class WindowsDataset(BaseDataset):
         self._description = pd.concat([self.description, description])
 
 
-class SequenceDataset(WindowsDataset):
+class SequenceWindowsDataset(WindowsDataset):
     """Dataset of sequences of consecutive windows.
 
     Parameters
@@ -208,9 +208,9 @@ class SequenceDataset(WindowsDataset):
         Number of consecutive windows in a sequence.
     step_len : int
         Number of windows between two consecutive sequences.
-    label_transform : callable | None
-        On-the-fly transform to apply to the sequence of labels. Useful to e.g.
-        select a single label for each sequence.
+    target_transform : callable | None
+        On-the-fly transform to apply to the sequence of targets. Useful to
+        e.g. select a single target for each sequence.
     on_missing : 'raise' | 'warn' | 'ignore'
         What to do if no sequences can be extracted given the number of epochs
         and sequence parameters. Valid keys are 'raise' | 'warn' | 'ignore'.
@@ -218,7 +218,7 @@ class SequenceDataset(WindowsDataset):
         if 'ignore' it will proceed silently.
     """
     def __init__(self, windows, description=None, transform=None, seq_len=21,
-                 step_len=1, label_transform=None, on_missing='raise'):
+                 step_len=1, target_transform=None, on_missing='raise'):
         super().__init__(windows, description=description, transform=transform)
 
         if seq_len > len(windows):
@@ -230,7 +230,7 @@ class SequenceDataset(WindowsDataset):
         self.seq_len = seq_len
         self.step_len = step_len
         self.start_inds = self._compute_seq_inds()
-        self.label_transform = label_transform
+        self.target_transform = target_transform
 
     def _compute_seq_inds(self):
         """Compute sequence indices.
@@ -252,7 +252,7 @@ class SequenceDataset(WindowsDataset):
         Returns
         -------
         np.ndarray :
-            Sequence of windows, of shape (seq_len, n_chs, *).
+            Sequence of windows, of shape (seq_len, n_channels, *).
         np.array :
             List of labels of length seq_len, or can be something else if
             `label_transform` is defined.
@@ -268,8 +268,8 @@ class SequenceDataset(WindowsDataset):
 
         seq = np.stack(seq, axis=0)
         ys = np.array(ys)
-        if self.label_transform is not None:
-            ys = self.label_transform(ys)
+        if self.target_transform is not None:
+            ys = self.target_transform(ys)
 
         return seq, ys
 
@@ -446,7 +446,8 @@ class BaseConcatDataset(ConcatDataset):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
 
-def get_sequence_dataset(concat_ds, seq_len, step_len=1, label_transform=None):
+def create_sequence_dataset(concat_ds, seq_len, step_len=1,
+                            target_transform=None):
     """Helper function to create a dataset that returns sequences of windows.
 
     Parameters
@@ -457,14 +458,14 @@ def get_sequence_dataset(concat_ds, seq_len, step_len=1, label_transform=None):
         Number of consecutive windows in a sequence.
     step_len : int
         Number of windows between two consecutive sequences.
-    label_transform : callable | None
+    target_transform : callable | None
         On-the-fly transform to apply to the sequence of labels. Useful to e.g.
         select a single label for each sequence.
     """
     if not all([isinstance(ds, WindowsDataset) for ds in concat_ds.datasets]):
         raise TypeError('`concat_ds` must contain WindowsDatasets.')
     return BaseConcatDataset(
-        [SequenceDataset(
+        [SequenceWindowsDataset(
             ds.windows, ds.description, ds.transform, seq_len, step_len,
-            label_transform)
+            target_transform)
          for ds in concat_ds.datasets])

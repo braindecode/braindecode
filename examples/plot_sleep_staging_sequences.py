@@ -96,7 +96,7 @@ preprocess(dataset, preprocessors)
 ######################################################################
 # We extract 30-s windows to be used in the classification task.
 
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
@@ -149,15 +149,15 @@ preprocess(windows_dataset, [Preprocessor(zscore)])
 # the classifier). We do this by creating a collection of SequenceDatasets:
 
 import numpy as np
-from braindecode.datasets import get_sequence_dataset
+from braindecode.datasets import create_sequence_dataset
 
 seq_len = 5  # Sequences of 5 consecutive windows
 step_len = 1  # Maximally overlapping sequences
 # Use label of center window in the sequence
-label_transform = lambda x: x[np.ceil(len(x) / 2).astype(int)]  # noqa: E731
-windows_dataset = get_sequence_dataset(
+target_transform = lambda x: x[np.ceil(len(x) / 2).astype(int)]  # noqa: E731
+windows_dataset = create_sequence_dataset(
     windows_dataset, seq_len=seq_len, step_len=step_len,
-    label_transform=label_transform)
+    target_transform=target_transform)
 
 
 ######################################################################
@@ -168,8 +168,8 @@ windows_dataset = get_sequence_dataset(
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # `description` attribute of :class:`braindecode.datasets.BaseDataset`,
-# in this case using the ``subject`` column. Here, we split the examples per subject.
-#
+# in this case using the ``subject`` column. Here, we split the examples per
+# subject.
 
 splitted = windows_dataset.split('subject')
 train_set = splitted['0']
@@ -229,7 +229,7 @@ class TimeDistributedNet(nn.Module):
             n_channels, n_times).
         """
         feats = [self.feat_extractor.embed(x[:, i]) for i in range(x.shape[1])]
-        feats = torch.stack(feats, dim=0).transpose(0, 1).flatten(start_dim=1)
+        feats = torch.stack(feats, dim=1).flatten(start_dim=1)
         return self.clf(feats)
 
 

@@ -9,8 +9,8 @@ import pandas as pd
 import pytest
 
 from braindecode.datasets import (
-    WindowsDataset, SequenceDataset, BaseDataset, BaseConcatDataset,
-    get_sequence_dataset)
+    WindowsDataset, SequenceWindowsDataset, BaseDataset, BaseConcatDataset,
+    create_sequence_dataset)
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import create_windows_from_events
 
@@ -318,7 +318,7 @@ def test_sequence_dataset(concat_windows_dataset, seq_len, step_len):
     n_windows = len(windows_ds)
     n_channels, n_times = windows_ds[0][0].shape
 
-    seq_ds = SequenceDataset(
+    seq_ds = SequenceWindowsDataset(
         windows_ds.windows, windows_ds.description, windows_ds.transform,
         seq_len=seq_len, step_len=step_len)
 
@@ -338,35 +338,35 @@ def test_invalid_sequence_dataset(concat_windows_dataset, on_missing):
     n_channels, n_times = windows_ds[0][0].shape
 
     if on_missing == 'ignore':
-        seq_ds = SequenceDataset(
+        seq_ds = SequenceWindowsDataset(
             windows_ds.windows, windows_ds.description, windows_ds.transform,
             seq_len=n_windows + 1, step_len=1, on_missing=on_missing)
         assert len(seq_ds) == 0
     elif on_missing == 'warn':
         with pytest.warns(RuntimeWarning):
-            seq_ds = SequenceDataset(
+            seq_ds = SequenceWindowsDataset(
                 windows_ds.windows, windows_ds.description,
                 windows_ds.transform, seq_len=n_windows + 1, step_len=1,
                 on_missing=on_missing)
         assert len(seq_ds) == 0
     elif on_missing == 'raise':
         with pytest.raises(ValueError):
-            seq_ds = SequenceDataset(
+            seq_ds = SequenceWindowsDataset(
                 windows_ds.windows, windows_ds.description,
                 windows_ds.transform, seq_len=n_windows + 1, step_len=1,
                 on_missing=on_missing)
 
 
 def test_get_sequence_dataset(concat_windows_dataset):
-    seq_ds = get_sequence_dataset(concat_windows_dataset, 3, step_len=2)
+    seq_ds = create_sequence_dataset(concat_windows_dataset, 3, step_len=2)
 
     assert isinstance(seq_ds, BaseConcatDataset)
     assert len(seq_ds) == sum([len(ds) for ds in seq_ds.datasets])
 
 
 def test_sequence_dataset_label_transform(concat_windows_dataset):
-    label_transform = lambda x: x[0]  # noqa: E731
-    seq_ds = get_sequence_dataset(concat_windows_dataset, 3, step_len=100,
-                                  label_transform=label_transform)
+    target_transform = lambda x: x[0]  # noqa: E731
+    seq_ds = create_sequence_dataset(concat_windows_dataset, 3, step_len=100,
+                                     target_transform=target_transform)
 
     assert isinstance(seq_ds[0][1], np.int64)
