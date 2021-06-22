@@ -19,19 +19,17 @@ Output = Tuple[torch.Tensor, torch.Tensor]
 
 
 class Transform(torch.nn.Module):
-    """ Basic transform class used for implementing data augmentation
+    """Basic transform class used for implementing data augmentation
     operations
 
     Parameters
     ----------
     operation : callable
-        A function taking arrays X, y (sample features and
-        target resp.) and other required arguments, and returning the
-        transformed X and y.
+        A function taking arrays X, y (sample features and target resp.) and
+        other required arguments, and returning the transformed X and y.
     probability : float, optional
-        Float between 0 and 1 defining the uniform probability of
-        applying the operation. Set to 1.0 by default (e.g always apply the
-        operation).
+        Float between 0 and 1 defining the uniform probability of applying the
+        operation. Set to 1.0 by default (e.g always apply the operation).
     magnitude : float | None, optional
         Defines the strength of the transformation applied between 0 and 1 and
         depends on the nature of the transformation and on its range. Some
@@ -72,7 +70,7 @@ class Transform(torch.nn.Module):
         self.kwargs = kwargs
 
     def forward(self, X: Tensor, y: Tensor) -> Output:
-        """ General forward pass for an augmentation transform
+        """General forward pass for an augmentation transform
 
         Parameters
         ----------
@@ -124,7 +122,7 @@ class Transform(torch.nn.Module):
         return self._magnitude
 
     def to_dict(self):
-        """ Returns a dictionary describing the transform """
+        """Returns a dictionary describing the transform """
         return {
             "operation": type(self).__name__,
             "probability": self.probability,
@@ -133,7 +131,7 @@ class Transform(torch.nn.Module):
 
 
 class IdentityTransform(Transform):
-    """ Identity transform
+    """Identity transform
 
     Transform that does not change the input.
     """
@@ -143,7 +141,7 @@ class IdentityTransform(Transform):
 
 
 class Compose(Transform):
-    """ Transform composition
+    """Transform composition
 
     Callable class allowing to cast a sequence of Transform objects into a
     single one.
@@ -165,7 +163,7 @@ class Compose(Transform):
         return X, y
 
     def to_dict(self):
-        """ Returns a DataFrame describing the transforms making the object"""
+        """Returns a DataFrame describing the transforms making the object"""
         structure = list()
         for i, transform in enumerate(self.transforms):
             transform_struct = transform.to_dict()
@@ -183,7 +181,7 @@ def make_collateable(transform):
 
 
 class AugmentedDataLoader(DataLoader):
-    """ A base dataloader class customized to applying augmentation Transforms.
+    """A base dataloader class customized to applying augmentation Transforms.
 
     Parameters
     ----------

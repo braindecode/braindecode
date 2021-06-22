@@ -18,7 +18,7 @@ from braindecode.augmentation._functionals import (
 
 
 class TimeReverse(Transform):
-    """ Flip the time axis of each sample with a given probability
+    """Flip the time axis of each sample with a given probability
 
     Parameters
     ----------
@@ -46,7 +46,7 @@ class TimeReverse(Transform):
 
 
 class SignFlip(Transform):
-    """ Flip the sign axis of each feature sample with a given probability
+    """Flip the sign axis of each feature sample with a given probability
 
     Parameters
     ----------
@@ -74,11 +74,9 @@ class SignFlip(Transform):
 
 
 class DownsamplingShift(Transform):
-    """ Downsamples and offsets features matrix with a given probability
+    """Downsamples and offsets features matrix with a given probability
 
     Augmentation proposed in [1]_
-
-    DEPRECATED
 
     Parameters
     ----------
@@ -138,7 +136,7 @@ class DownsamplingShift(Transform):
 
 
 class FTSurrogate(Transform):
-    """ FT surrogate augmentation of a single EEG channel, as proposed in [1]_
+    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_
 
     Parameters
     ----------
@@ -178,7 +176,7 @@ class FTSurrogate(Transform):
 
 
 class MissingChannels(Transform):
-    """ Randomly set channels to flat signal
+    """Randomly set channels to flat signal
 
     Part of the CMSAugment policy proposed in [1]_
 
@@ -217,7 +215,7 @@ class MissingChannels(Transform):
 
 
 class ShuffleChannels(Transform):
-    """ Randomly shuffle channels in EEG data matrix
+    """Randomly shuffle channels in EEG data matrix
 
     Part of the CMSAugment policy proposed in [1]_
 
