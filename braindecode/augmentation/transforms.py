@@ -9,8 +9,8 @@ import numpy as np
 from sklearn.utils import check_random_state
 import torch
 
-from braindecode.augmentation.base import Transform
-from braindecode.augmentation._functionals import (
+from .base import Transform
+from ._functionals import (
     time_reverse, sign_flip, downsample_shift_from_arrays, fft_surrogate,
     channel_dropout, channel_shuffle, add_gaussian_noise, permute_channels,
     random_time_mask, identity, random_bandstop, freq_shift, random_rotation,

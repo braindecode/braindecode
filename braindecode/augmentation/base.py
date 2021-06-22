@@ -12,7 +12,7 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
 
-from braindecode.augmentation._functionals import identity
+from ._functionals import identity
 
 Batch = List[Tuple[torch.Tensor, int, Any]]
 Output = Tuple[torch.Tensor, torch.Tensor]
