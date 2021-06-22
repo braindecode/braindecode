@@ -155,7 +155,12 @@ class WindowsDataset(BaseDataset):
         Holds additional info about the windows.
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
-    targets : list | str | None
+    targets : list | tuple | str | None
+        Defines target channels in the case of time series of targets stored as `misc`
+        channels in mne.Epochs. If string, all channels containing provided string in the
+        channel name will be selected. In the case of list/tuple of strings it should
+        contain exact target channel names.
+        If None (default), `target` columns from metadata will be used.
     """
     def __init__(self, windows, description=None, transform=None, targets=None):
         self.windows = windows
@@ -164,11 +169,14 @@ class WindowsDataset(BaseDataset):
         ch_names = self.windows.ch_names
         if isinstance(targets, (list, tuple)):
             self.targets = targets
-            # TODO: More detailed error
-            assert all(target_name in ch_names for target_name in self.targets), 'Not all targets present in the channel names.'
+            targets_not_found = (target_name in ch_names for target_name in self.targets
+                                 if target_name not in ch_names)
+            if targets_not_found:
+                raise ValueError(f'{targets_not_found} target channels not found in data')
         elif isinstance(targets, str):
             self.targets = [ch_name for ch_name in ch_names if targets in ch_name]
-            assert self.targets, 'No targets found.'
+            if not self.targets:
+                raise ValueError('No target channels found in data.')
         elif targets is None:
             self.targets = None
         else:
@@ -199,20 +207,20 @@ class WindowsDataset(BaseDataset):
             X = self.transform(X)
         if self.targets is None:
             y = self.windows.metadata.loc[index, 'target']
-            y_idxs = None
+            target_positions = None
         else:
             raw_targets = X[self._targets_idx, :]
             # TODO: handle multi targets present only for some events
-            y_idxs = np.argwhere(~np.isnan(raw_targets[0, :]))
+            target_positions = np.argwhere(~np.isnan(raw_targets[0, :]))[:, 0]
             # TODO: what are the actual dimensions of the y_idxs
-            y = raw_targets[:, y_idxs]
-            y = y[:, -1, 0].astype(np.float32)
+            y = raw_targets[:, target_positions]
+            y = y[:, -1]
             X = X[[i for i in range(X.shape[0]) if i not in self._targets_idx], :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.windows.metadata.loc[
             index, ['i_window_in_trial', 'i_start_in_trial',
-                    'i_stop_in_trial']].to_numpy().tolist() + [y_idxs]
+                    'i_stop_in_trial']].to_numpy().tolist() + [target_positions]
         return X, y, crop_inds
 
     def __len__(self):

@@ -119,13 +119,19 @@ windows_dataset = create_windows_from_target_channels(
 # #
 #
 from sklearn.model_selection import train_test_split
+import torch
 
-idx_train, idx_valid = train_test_split(np.arange(len(windows_dataset)),
-                                        random_state=100,
-                                        test_size=0.2)
-train_set = windows_dataset.subset(idx_train)
-valid_set = windows_dataset.subset(idx_valid)
-#
+idx_train, idx_test_valid = train_test_split(np.arange(len(windows_dataset)),
+                                             random_state=100,
+                                             test_size=0.4,
+                                             shuffle=False)
+idx_valid, idx_test = train_test_split(idx_test_valid,
+                                       test_size=0.7,
+                                       shuffle=False)
+train_set = torch.utils.data.Subset(windows_dataset, idx_train)
+valid_set = torch.utils.data.Subset(windows_dataset, idx_valid)
+test_set = torch.utils.data.Subset(windows_dataset, idx_test)
+
 #
 # ######################################################################
 # # Create model
@@ -144,7 +150,6 @@ valid_set = windows_dataset.subset(idx_valid)
 # # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
 # #
 
-import torch
 from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
 
@@ -216,7 +221,7 @@ weight_decay = 0
 batch_size = 64
 n_epochs = 4
 
-clf = EEGRegressor(
+regressor = EEGRegressor(
     model,
     criterion=torch.nn.MSELoss,
     optimizer=torch.optim.AdamW,
@@ -231,7 +236,7 @@ clf = EEGRegressor(
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-clf.fit(windows_dataset, y=None, epochs=n_epochs)
+regressor.fit(windows_dataset, y=None, epochs=n_epochs)
 
 #
 # ######################################################################
