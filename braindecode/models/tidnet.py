@@ -123,7 +123,7 @@ class _TemporalFilter(nn.Module):
             return x
 
 
-class _tidnet_features(nn.Module):
+class _TIDNetFeatures(nn.Module):
     def __init__(self, s_growth, t_filters, in_chans, input_window_samples, drop_prob, pooling,
                  temp_layers, spat_layers, temp_span, bottleneck, summary):
         super().__init__()
