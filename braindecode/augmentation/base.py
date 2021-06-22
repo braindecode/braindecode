@@ -173,7 +173,7 @@ class Compose(Transform):
         return res
 
 
-def make_collateable(transform):
+def _make_collateable(transform):
     def _collate_fn(batch):
         X, y, _ = default_collate(batch)
         return transform(X, y)
