@@ -7,21 +7,7 @@ from .modules import Ensure4d, Expression
 import torch
 
 
-class Expand(nn.Module):
-    def __init__(self, axis=-1):
-        super().__init__()
-        self.axis = axis
-
-    def forward(self, x):
-        return x.unsqueeze(self.axis)
-
-
-class Flatten(nn.Module):
-    def forward(self, x):
-        return x.contiguous().view(x.size(0), -1)
-
-
-class BatchNormZG(nn.BatchNorm2d):
+class _BatchNormZG(nn.BatchNorm2d):
     def reset_parameters(self):
         if self.track_running_stats:
             self.running_mean.zero_()
@@ -31,7 +17,7 @@ class BatchNormZG(nn.BatchNorm2d):
             self.bias.data.zero_()
 
 
-class ConvBlock2D(nn.Module):
+class _ConvBlock2D(nn.Module):
     """Implements Convolution block with order:
     Convolution, dropout, activation, batch-norm
     """
@@ -45,7 +31,7 @@ class ConvBlock2D(nn.Module):
         self.conv = nn.Conv2d(in_filters, out_filters, kernel, stride=stride, padding=padding,
                               dilation=dilation, groups=groups, bias=not batch_norm)
         self.dropout = nn.Dropout2d(p=drop_prob)
-        self.batch_norm = BatchNormZG(out_filters) if residual else nn.BatchNorm2d(out_filters) if\
+        self.batch_norm = _BatchNormZG(out_filters) if residual else nn.BatchNorm2d(out_filters) if\
             batch_norm else lambda x: x
 
     def forward(self, input, **kwargs):
@@ -57,7 +43,7 @@ class ConvBlock2D(nn.Module):
         return input + res if self.residual else input
 
 
-class DenseFilter(nn.Module):
+class _DenseFilter(nn.Module):
     def __init__(self, in_features, growth_rate, filter_len=5, drop_prob=0.5, bottleneck=2,
                  activation=nn.LeakyReLU, dim=-2):
         super().__init__()
@@ -81,18 +67,18 @@ class DenseFilter(nn.Module):
         return torch.cat((x, self.net(x)), dim=1)
 
 
-class DenseSpatialFilter(nn.Module):
+class _DenseSpatialFilter(nn.Module):
     def __init__(self, in_chans, growth, depth, in_ch=1, bottleneck=4, drop_prob=0.0,
                  activation=nn.LeakyReLU, collapse=True):
         super().__init__()
         self.net = nn.Sequential(*[
-            DenseFilter(in_ch + growth * d, growth, bottleneck=bottleneck, drop_prob=drop_prob,
-                        activation=activation) for d in range(depth)
+            _DenseFilter(in_ch + growth * d, growth, bottleneck=bottleneck, drop_prob=drop_prob,
+                         activation=activation) for d in range(depth)
         ])
         n_filters = in_ch + growth * depth
         self.collapse = collapse
         if collapse:
-            self.channel_collapse = ConvBlock2D(n_filters, n_filters, (in_chans, 1), drop_prob=0)
+            self.channel_collapse = _ConvBlock2D(n_filters, n_filters, (in_chans, 1), drop_prob=0)
 
     def forward(self, x):
         if len(x.shape) < 4:
@@ -103,7 +89,7 @@ class DenseSpatialFilter(nn.Module):
         return x
 
 
-class TemporalFilter(nn.Module):
+class _TemporalFilter(nn.Module):
     def __init__(self, in_chans, filters, depth, temp_len, drop_prob=0., activation=nn.LeakyReLU,
                  residual='netwise'):
         super().__init__()
@@ -113,7 +99,6 @@ class TemporalFilter(nn.Module):
 
         for i in range(depth):
             dil = depth - i
-            # batch, 1, chans, time
             conv = weight_norm(nn.Conv2d(in_chans if i == 0 else filters, filters,
                                          kernel_size=(1, temp_len), dilation=dil,
                                          padding=(0, dil * (temp_len - 1) // 2)))
@@ -161,17 +146,17 @@ class _tidnet_features(nn.Module):
         self.temporal = nn.Sequential(
             Ensure4d(),
             Expression(_permute),
-            TemporalFilter(1, t_filters, depth=temp_layers, temp_len=self.temp_len),
+            _TemporalFilter(1, t_filters, depth=temp_layers, temp_len=self.temp_len),
             nn.MaxPool2d((1, pooling)),
             nn.Dropout2d(drop_prob),
         )
         summary = input_window_samples // pooling if summary == -1 else summary
 
-        self.spatial = DenseSpatialFilter(in_chans, s_growth, spat_layers, in_ch=t_filters,
-                                          drop_prob=drop_prob, bottleneck=bottleneck)
+        self.spatial = _DenseSpatialFilter(in_chans, s_growth, spat_layers, in_ch=t_filters,
+                                           drop_prob=drop_prob, bottleneck=bottleneck)
         self.extract_features = nn.Sequential(
             nn.AdaptiveAvgPool1d(int(summary)),
-            Flatten()
+            nn.Flatten(start_dim=1)
         )
 
         self._num_features = (t_filters + s_growth * spat_layers) * summary
@@ -233,7 +218,7 @@ class TIDNet(nn.Module):
     """
     def __init__(self, in_chans, n_classes, input_window_samples, s_growth=24, t_filters=32,
                  drop_prob=0.4, pooling=15, temp_layers=2, spat_layers=2, temp_span=0.05,
-                 bottleneck=3, summary=-1, **kwargs):
+                 bottleneck=3, summary=-1):
         super().__init__()
         self.n_classes = n_classes
         self.in_chans = in_chans
@@ -244,7 +229,7 @@ class TIDNet(nn.Module):
                                       input_window_samples=input_window_samples,
                                       drop_prob=drop_prob, pooling=pooling, temp_layers=temp_layers,
                                       spat_layers=spat_layers, temp_span=temp_span,
-                                      bottleneck=bottleneck, summary=summary, **kwargs)
+                                      bottleneck=bottleneck, summary=summary)
 
         self._num_features = self.dscnn.num_features
 
@@ -254,7 +239,7 @@ class TIDNet(nn.Module):
         classifier = nn.Linear(incoming, n_classes)
         init.xavier_normal_(classifier.weight)
         classifier.bias.data.zero_()
-        return nn.Sequential(Flatten(), classifier, nn.LogSoftmax(dim=-1))
+        return nn.Sequential(nn.Flatten(start_dim=1), classifier, nn.LogSoftmax(dim=-1))
 
     def forward(self, x, **kwargs):
 
