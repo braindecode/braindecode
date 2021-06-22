@@ -17,7 +17,7 @@ class USleep(nn.Module):
 
     def __init__(self, 
                  n_classes=5,
-                 depth=12,
+                 depth=3,
                  dilation=1,
                  dense_classifier_activation="tanh",
                  kernel_size=9,
@@ -58,7 +58,7 @@ class USleep(nn.Module):
         # Instantiate bottom
         in_channels = out_channels
         out_channels = int(filters * complexity_factor)
-        bottom = nn.Sequential(
+        self.bottom = nn.Sequential(
                     nn.Conv1d(in_channels=in_channels, 
                               out_channels=out_channels, 
                               kernel_size=kernel_size, 
@@ -74,6 +74,8 @@ class USleep(nn.Module):
 
         for _ in range(depth):
 
+            in_channels = out_channels
+
             # add decoder blocks (up)
             decoder_preskip += [
                 nn.Sequential(
@@ -82,7 +84,7 @@ class USleep(nn.Module):
                               out_channels=out_channels, 
                               kernel_size=kernel_size, 
                               stride=1, 
-                              padding=(kernel_size - 1) // 2),
+                              padding=padding),
                     nn.ELU(),
                     nn.BatchNorm1d(num_features=out_channels),
                 )
@@ -98,7 +100,7 @@ class USleep(nn.Module):
                               out_channels=out_channels, 
                               kernel_size=kernel_size, 
                               stride=1, 
-                              padding=(kernel_size - 1) // 2),  # to preserve dimension (check)
+                              padding=padding),  # to preserve dimension (check)
                     nn.ELU(),
                     nn.BatchNorm1d(num_features=out_channels),
                 )
