@@ -227,10 +227,10 @@ class TIDNet(nn.Module):
         self.temp_len = ceil(temp_span * input_window_samples)
 
         self.dscnn = _TIDNetFeatures(s_growth=s_growth, t_filters=t_filters, in_chans=in_chans,
-                                      input_window_samples=input_window_samples,
-                                      drop_prob=drop_prob, pooling=pooling, temp_layers=temp_layers,
-                                      spat_layers=spat_layers, temp_span=temp_span,
-                                      bottleneck=bottleneck, summary=summary)
+                                     input_window_samples=input_window_samples,
+                                     drop_prob=drop_prob, pooling=pooling, temp_layers=temp_layers,
+                                     spat_layers=spat_layers, temp_span=temp_span,
+                                     bottleneck=bottleneck, summary=summary)
 
         self._num_features = self.dscnn.num_features
 
