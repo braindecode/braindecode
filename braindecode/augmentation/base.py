@@ -187,7 +187,7 @@ class AugmentedDataLoader(DataLoader):
     ----------
     dataset : BaseDataset
     transforms : list | Transform, optional
-        Transform or sequence of Transforms to be applied to each batch.
+        Transform or sequence of Transform to be applied to each batch.
     *args : tuple
         arguments to pass to standard DataLoader class. Defaults to None.
     **kwargs : dict, optional

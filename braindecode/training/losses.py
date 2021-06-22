@@ -21,7 +21,7 @@ class CroppedLoss(nn.Module):
         return self.loss_function(avg_preds, targets)
 
 
-class mixup_criterion:
+class MixupCriterion:
     """Implements loss for Mixup for EEG data. See [1]_.
     Implementation based on [2]_.
 
@@ -40,7 +40,7 @@ class mixup_criterion:
     ..  [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
         mixup: Beyond Empirical Risk Minimization
         Online: https://arxiv.org/abs/1710.09412
-        [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+     ..   [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
 
     def __call__(self, preds, target):

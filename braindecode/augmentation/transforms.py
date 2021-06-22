@@ -186,7 +186,7 @@ class MissingChannels(Transform):
         Float setting the probability of applying the operation.
     magnitude: float | None, optional
         Float between 0 and 1 setting the fraction of channels to zero-out.
-        If ommited, a random number of channels is (uniformly) sampled.
+        If omitted, a random number of channels is (uniformly) sampled.
         Defaults to None.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
@@ -225,7 +225,7 @@ class ShuffleChannels(Transform):
         Float setting the probability of applying the operation.
     magnitude: float | None, optional
         Float between 0 and 1 setting the fraction of channels to permute.
-        If ommited, a random number of channels is (uniformly) sampled.
+        If omitted, a random number of channels is (uniformly) sampled.
         Defaults to None.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
