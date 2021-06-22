@@ -20,8 +20,7 @@ import mne
 from braindecode.datasets import TUH
 from braindecode.preprocessing.preprocess import preprocess, Preprocessor
 from braindecode.preprocessing.windowers import create_fixed_length_windows
-from braindecode.datautil.serialization import (
-    save_concat_dataset, load_concat_dataset)
+from braindecode.datautil.serialization import load_concat_dataset
 
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
@@ -204,9 +203,11 @@ for rec_i, tuh_subset in tuh_splits.items():
     preprocess(tuh_subset, preprocessors)
 
     # update description of the recording(s)
-    tuh_subset.description.sfreq = len(tuh_subset.datasets) * [sfreq]
-    tuh_subset.description.reference = len(tuh_subset.datasets) * ['ar']
-    tuh_subset.description.n_samples = [len(d) for d in tuh_subset.datasets]
+    tuh_subset.set_description({
+        'sfreq': len(tuh_subset.datasets) * [sfreq],
+        'reference': len(tuh_subset.datasets) * ['ar'],
+        'n_samples': [len(d) for d in tuh_subset.datasets],
+    }, overwrite=True)
 
     if create_compute_windows:
         # generate compute windows here and store them to disk
@@ -221,14 +222,14 @@ for rec_i, tuh_subset in tuh_splits.items():
         # save memory by deleting raw recording
         del tuh_subset
         # store the number of windows required for loading later on
-        tuh_windows.description["n_windows"] = [len(d) for d in
-                                                tuh_windows.datasets]
+        tuh_windows.set_description({
+            "n_windows": [len(d) for d in tuh_windows.datasets]})
 
         # create one directory for every recording
         rec_path = os.path.join(OUT_PATH, str(rec_i))
         if not os.path.exists(rec_path):
             os.makedirs(rec_path)
-        save_concat_dataset(rec_path, tuh_windows)
+        tuh_windows.save(rec_path)
         out_i += 1
         # save memory by catching epoched recording
         del tuh_windows
