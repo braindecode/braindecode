@@ -46,7 +46,7 @@ class BaseDataset(Dataset):
         Continuous data.
     description : dict | pandas.Series | None
         Holds additional description about the continuous signal / subject.
-    target_name : str | None
+    target_name : str | list(str) | None
         Name of the index in `description` that should be used to provide the
         target (e.g., to be used in a prediction task later on).
     transform : callable | None
@@ -62,12 +62,25 @@ class BaseDataset(Dataset):
         self.target_name = target_name
         if self.target_name is not None and self.target_name not in self.description:
             raise ValueError(f"'{self.target_name}' not in description.")
+        if target_name is not None:
+            # check if target name(s) can be read from description
+            if not isinstance(target_name, list):  # should work for al Iterables but string
+                target_name = [target_name]
+            for name in target_name:
+                if name not in self.description:
+                    raise ValueError(f"'{name}' not in description.")
 
     def __getitem__(self, index):
         X = self.raw[:, index][0]
         y = None
         if self.target_name is not None:
             y = self.description[self.target_name]
+        X = self.raw[:, index][0]
+        y = None
+        if self.target_name is not None:
+            y = self.description[self.target_name]
+        if isinstance(y, pd.Series):
+            y = y.to_list()
         if self.transform is not None:
             X = self.transform(X)
         return X, y
@@ -138,7 +151,7 @@ class WindowsDataset(BaseDataset):
         self._description = _create_description(description)
         self.transform = transform
 
-        self.y = self.windows.metadata.loc[:, 'target'].to_numpy()
+        self.y = self.windows.metadata.loc[:, 'target'].to_list()
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
                 'i_stop_in_trial']].to_numpy()
