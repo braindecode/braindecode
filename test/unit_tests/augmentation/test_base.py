@@ -10,12 +10,20 @@ from sklearn.utils import check_random_state
 import torch
 import mne
 
-from braindecode.augmentation.base import Transform, Compose, AugmentedDataLoader
+from braindecode.augmentation.base import (
+    Transform, Compose, AugmentedDataLoader
+)
 from braindecode.datautil import create_from_mne_epochs
 
 
-def dummy_k_operation(X, y, k, *args, **kwargs):
+def dummy_k_operation(X, y, k):
     return torch.ones_like(X) * k, y
+
+
+@pytest.fixture
+def dummy_transform():
+    k = np.random.randint(10)
+    return Transform(operation=partial(dummy_k_operation, k=k), probability=1)
 
 
 def common_tranform_assertions(input_batch, output_batch, expected_X=None):
@@ -70,35 +78,13 @@ def test_transform_composition(random_batch, k1, k2, expected, p1, p2):
     )
 
 
-@pytest.mark.parametrize("probability", [0, 1])
-def test_transform_with_kwargs(random_batch, rng_seed, probability):
-    rng = check_random_state(rng_seed)
-    k = rng.randint(10)
-    dummy_transform = Transform(
-        dummy_k_operation,
-        probability=probability,
-        k=k
-    )
-    X, y = random_batch
-    expected_tensor = torch.ones(
-        X.shape,
-        device=X.device
-    ) * k if probability else X
-    common_tranform_assertions(
-        random_batch,
-        dummy_transform(X, y),
-        expected_tensor
-    )
-
-
-def test_transform_proba_exception(random_batch, rng_seed):
+def test_transform_proba_exception(rng_seed, dummy_transform):
     rng = check_random_state(rng_seed)
     with pytest.raises(AssertionError):
-        k = rng.randint(10)
         Transform(
-            dummy_k_operation,
-            'a',
-            k=k
+            operation=dummy_transform,
+            probability='a',
+            random_state=rng,
         )
 
 
@@ -126,17 +112,13 @@ def concat_windows_dataset():
     return windows_datasets
 
 
-def dummy_transform():
-    k = np.random.randint(10)
-    return Transform(dummy_k_operation, 1, k=k)
-
-
 # test AugmentedDataLoader with 0, 1 and 2 composed transforms
 @pytest.mark.parametrize("nb_transforms,no_list", [
     (0, False), (1, False), (1, True), (2, False)
 ])
-def test_data_loader(concat_windows_dataset, nb_transforms, no_list):
-    transforms = [dummy_transform() for _ in range(nb_transforms)]
+def test_data_loader(dummy_transform, concat_windows_dataset, nb_transforms,
+                     no_list):
+    transforms = [dummy_transform for _ in range(nb_transforms)]
     if no_list:
         transforms = transforms[0]
     data_loader = AugmentedDataLoader(
