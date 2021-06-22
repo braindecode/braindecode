@@ -208,7 +208,7 @@ class TIDNet(nn.Module):
 
     Notes
     -----
-    Code adapted from: https://github.com/SPOClab-ca/ThinkerInvariance/blob/master/
+    Code adapted from: https://github.com/SPOClab-ca/ThinkerInvariance/
 
     References
     ----------
