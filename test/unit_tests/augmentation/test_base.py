@@ -10,7 +10,7 @@ from sklearn.utils import check_random_state
 import torch
 import mne
 
-from braindecode.augmentation.base import Transform, Compose, BaseDataLoader
+from braindecode.augmentation.base import Transform, Compose, AugmentedDataLoader
 from braindecode.datautil import create_from_mne_epochs
 
 
@@ -131,7 +131,7 @@ def dummy_transform():
     return Transform(dummy_k_operation, 1, k=k)
 
 
-# test BaseDataLoader with 0, 1 and 2 composed transforms
+# test AugmentedDataLoader with 0, 1 and 2 composed transforms
 @pytest.mark.parametrize("nb_transforms,no_list", [
     (0, False), (1, False), (1, True), (2, False)
 ])
@@ -139,7 +139,7 @@ def test_data_loader(concat_windows_dataset, nb_transforms, no_list):
     transforms = [dummy_transform() for _ in range(nb_transforms)]
     if no_list:
         transforms = transforms[0]
-    data_loader = BaseDataLoader(
+    data_loader = AugmentedDataLoader(
         concat_windows_dataset,
         transforms=transforms,
         batch_size=128)
@@ -150,7 +150,7 @@ def test_data_loader(concat_windows_dataset, nb_transforms, no_list):
 
 def test_data_loader_exception(concat_windows_dataset):
     with pytest.raises(TypeError):
-        BaseDataLoader(
+        AugmentedDataLoader(
             concat_windows_dataset,
             transforms='a',
             batch_size=128

@@ -111,9 +111,9 @@ class Transform(torch.nn.Module):
     def _get_mask(self, batch_size=None) -> torch.Tensor:
         """Samples whether to apply operation or not over the whole batch
         """
-        size = (batch_size, 1, 1)
-        mask = torch.as_tensor(self.probability > self.rng.uniform(size=size))
-        return mask.squeeze_()
+        return torch.as_tensor(
+            self.probability > self.rng.uniform(size=batch_size)
+        )
 
     @property
     def probability(self):
@@ -182,7 +182,7 @@ def make_collateable(transform):
     return _collate_fn
 
 
-class BaseDataLoader(DataLoader):
+class AugmentedDataLoader(DataLoader):
     """ A base dataloader class customized to applying augmentation Transforms.
 
     Parameters
