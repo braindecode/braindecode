@@ -1,10 +1,11 @@
-from torch import nn
 from math import ceil
-from torch.nn import init
-from torch.nn.utils import weight_norm
-from .modules import Ensure4d, Expression
 
 import torch
+from torch import nn
+from torch.nn import init
+from torch.nn.utils import weight_norm
+
+from .modules import Ensure4d, Expression
 
 
 class _BatchNormZG(nn.BatchNorm2d):
