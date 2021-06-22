@@ -707,14 +707,16 @@ def mixup(X, y, alpha, beta_per_sample, random_state=None, magnitude=None):
     -------
     tuple
         'X', 'y'. Where 'X' is augmented and 'y' is a tuple  of length 3
-        containing the labels of the two mixed channels and the mixing coefficient.
+        containing the labels of the two mixed channels and the mixing
+        coefficient.
 
     References
     ----------
-        [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
-        mixup: Beyond Empirical Risk Minimization
+    ..  [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+        (2018). mixup: Beyond Empirical Risk Minimization. In 2018
+        International Conference on Learning Representations (ICLR)
         Online: https://arxiv.org/abs/1710.09412
-        [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+    ..  [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
     rng = check_random_state(random_state)
 

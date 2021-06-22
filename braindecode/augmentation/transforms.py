@@ -90,9 +90,9 @@ class DownsamplingShift(Transform):
     offset: int, optional
         Offset (in number of columns) to be used to time-shift the data.
         Offset needs to be less than ``factor``.
-        When downsampling with ``factor=N``, you have `N` different offsets possible.
-        If no value is passed to ``offset``, it is randomly selected between 0 and
-        ``factor-1``.
+        When downsampling with ``factor=N``, you have `N` different offsets
+        possible. If no value is passed to ``offset``, it is randomly selected
+        between 0 and ``factor-1``.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -959,10 +959,11 @@ class Mixup(Transform):
 
     References
     ----------
-        [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
-        mixup: Beyond Empirical Risk Minimization
+    ..  [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+        (2018). mixup: Beyond Empirical Risk Minimization. In 2018
+        International Conference on Learning Representations (ICLR)
         Online: https://arxiv.org/abs/1710.09412
-        [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+    ..  [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
 
     def __init__(
