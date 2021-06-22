@@ -93,9 +93,8 @@ class BaseDataset(Dataset):
 
         Parameters
         ----------
-        description: dict
-            Description in the form key: value. Will overwrite entries in
-            existing description under 'key'.
+        description: dict | pd.Series
+            Description in the form key: value.
         overwrite: bool
             Has to be True if a key in description already exists in the
             dataset description.
@@ -175,9 +174,8 @@ class WindowsDataset(BaseDataset):
 
         Parameters
         ----------
-        description: dict
-            Description in the form key: value. Will overwrite entries in
-            existing description under 'key'.
+        description: dict | pd.Series
+            Description in the form key: value.
         overwrite: bool
             Has to be True if a key in description already exists in the
             dataset description.
@@ -350,14 +348,14 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        description: dict
+        description: dict | pd.DataFrame
             Description in the form key: value where the length of the value
             has to match the number of datasets.
         overwrite: bool
             Has to be True if a key in description already exists in the
             dataset description.
         """
-        description = _create_description(description)
+        description = pd.DataFrame(description)
         for key, value in description.items():
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)

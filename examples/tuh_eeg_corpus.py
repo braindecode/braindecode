@@ -20,8 +20,7 @@ import mne
 from braindecode.datasets import TUH
 from braindecode.preprocessing.preprocess import preprocess, Preprocessor
 from braindecode.preprocessing.windowers import create_fixed_length_windows
-from braindecode.datautil.serialization import (
-    save_concat_dataset, load_concat_dataset)
+from braindecode.datautil.serialization import load_concat_dataset
 
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
@@ -230,7 +229,7 @@ for rec_i, tuh_subset in tuh_splits.items():
         rec_path = os.path.join(OUT_PATH, str(rec_i))
         if not os.path.exists(rec_path):
             os.makedirs(rec_path)
-        save_concat_dataset(rec_path, tuh_windows)
+        tuh_windows.save(rec_path)
         out_i += 1
         # save memory by catching epoched recording
         del tuh_windows
