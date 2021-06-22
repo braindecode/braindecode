@@ -21,7 +21,7 @@ def _load_data_to_mne(file_path):
 
     test_targets = np.full((test_data.shape[0], original_targets.shape[1]), np.nan)
     # TODO: fix no target for test data
-    upsampled_targets[::targets_stride] = -1
+    test_targets[::targets_stride] = -1
     ch_names = [f'{i}' for i in range(train_data.shape[1])]
     ch_names += [f'target_{i}' for i in range(original_targets.shape[1])]
     ch_types = ['ecog' for _ in range(train_data.shape[1])] + ['misc' for _ in range(original_targets.shape[1])]
