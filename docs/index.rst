@@ -42,7 +42,7 @@ alternatively, install the latest version of braindecode via pip:
 Get Started
 ===========
 Here an example to give you a quick idea how Braindecode is used to load and preprocess an EEG dataset
-to train a deep network on it.
+and train a deep network on it.
 This example may not give particularly good performance,
 note the examples below for better-performing training pipelines.
 
