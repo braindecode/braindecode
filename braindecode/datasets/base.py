@@ -155,36 +155,37 @@ class WindowsDataset(BaseDataset):
         Holds additional info about the windows.
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
-    targets : list | tuple | str | None
+    raw_targets : list | tuple | str | None
         Defines target channels in the case of time series of targets stored as `misc`
         channels in mne.Epochs. If string, all channels containing provided string in the
         channel name will be selected. In the case of list/tuple of strings it should
         contain exact target channel names.
         If None (default), `target` columns from metadata will be used.
     """
-    def __init__(self, windows, description=None, transform=None, targets=None, last_target_only=True):
+    def __init__(self, windows, description=None, transform=None, raw_targets=None, last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
         self.last_target_only = last_target_only
         ch_names = self.windows.ch_names
-        if isinstance(targets, (list, tuple)):
-            self.targets = targets
-            targets_not_found = (target_name in ch_names for target_name in self.targets
+        if isinstance(raw_targets, (list, tuple)):
+            raw_targets = raw_targets
+            targets_not_found = (target_name in ch_names for target_name in self.raw_targets
                                  if target_name not in ch_names)
             if targets_not_found:
                 raise ValueError(f'{targets_not_found} target channels not found in data')
-        elif isinstance(targets, str):
-            self.targets = [ch_name for ch_name in ch_names if targets in ch_name]
-            if not self.targets:
+        elif isinstance(raw_targets, str):
+            raw_targets = [ch_name for ch_name in ch_names if raw_targets in ch_name]
+            if not raw_targets:
                 raise ValueError('No target channels found in data.')
-        elif targets is None:
-            self.targets = None
         else:
             raise ValueError('Wrong targets parameter.')
 
-        if self.targets is not None:
-            self._targets_idx = [i for i, ch_name in enumerate(ch_names) if ch_name in self.targets]
+        if raw_targets is not None:
+            self._raw_targets_idx = [i for i, ch_name in enumerate(ch_names) if ch_name in raw_targets]
+        else:
+            self._raw_targets_idx = None
+
 
     def __getitem__(self, index):
         """Get a window and its target.
@@ -206,23 +207,20 @@ class WindowsDataset(BaseDataset):
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
-        if self.targets is None:
+        if self._raw_targets_idx is None:
             y = self.windows.metadata.loc[index, 'target']
-            target_positions = None
         else:
-            raw_targets = X[self._targets_idx, :]
-            # TODO: handle multi targets present only for some events
-            target_positions = np.argwhere(~np.isnan(raw_targets[0, :]))[:, 0]
-            # TODO: what are the actual dimensions of the y_idxs
-            y = raw_targets[:, target_positions]
             if self.last_target_only:
-                y = y[:, -1]
-            X = X[[i for i in range(X.shape[0]) if i not in self._targets_idx], :]
+                y = X[self._raw_targets_idx, -1]
+            else:
+                y = X[self._raw_targets_idx, :]
+            # remove the target channels from raw
+            X = X[[i for i in range(X.shape[0]) if i not in self._raw_targets_idx], :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.windows.metadata.loc[
             index, ['i_window_in_trial', 'i_start_in_trial',
-                    'i_stop_in_trial']].to_numpy().tolist() + [target_positions]
+                    'i_stop_in_trial']].to_numpy().tolist()
         return X, y, crop_inds
 
     def __len__(self):
