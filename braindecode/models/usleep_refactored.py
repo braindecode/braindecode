@@ -215,7 +215,7 @@ class USleep(nn.Module):
 
         # Instantiate classifier
         self.clf = nn.Sequential(
-            # nn.Dropout(0.5), 
+            nn.Dropout(0.5), 
             nn.Linear(channels[1] * input_size, n_classes)
         )
         # The temporal dimension remains unchanged (except through the AvgPooling which collapses it to 1)
