@@ -166,7 +166,7 @@ class _TIDNetFeatures(nn.Module):
     def num_features(self):
         return self._num_features
 
-    def forward(self, x, **kwargs):
+    def forward(self, x):
         x = self.temporal(x)
         x = self.spatial(x)
         return self.extract_features(x)
@@ -242,7 +242,7 @@ class TIDNet(nn.Module):
         classifier.bias.data.zero_()
         return nn.Sequential(nn.Flatten(start_dim=1), classifier, nn.LogSoftmax(dim=-1))
 
-    def forward(self, x, **kwargs):
+    def forward(self, x):
 
         x = self.dscnn(x)
         return self.classify(x)
