@@ -84,6 +84,8 @@ class USleep(nn.Module):
             in_channels = out_channels
             out_channels = int(filters * complexity_factor)
 
+            in_channels = out_channels
+
             # add decoder blocks (up)
             decoder_preskip += [
                 nn.Sequential(
@@ -145,6 +147,7 @@ class USleep(nn.Module):
             zip(self.decoder_preskip, self.decoder_postskip)
         ):
             x = up_preskip(x)
+<<<<<<< HEAD
             cropped_x = self.crop_nodes_to_match(x, residuals[idx])
 
             x = torch.cat([cropped_x, residuals[idx]], axis=1)  # (B, 2 * C, T)
@@ -185,3 +188,23 @@ class USleep(nn.Module):
 #     weight = np.ones(shape) * 0.1
 #     param.data = torch.tensor(weight, dtype=torch.float32)
 #     # print(param.data)
+=======
+            x = torch.cat([x, residuals[idx]], axis=1)  # (B, 2 * C, T)
+            x = up_postskip(x)
+            print(x.shape)
+        # return self.fc(x.flatten(start_dim=1))
+        return x
+
+
+# Small testing script
+batch_size, n_channels, n_times = 1024, 2, 3000
+
+np.random.seed(0)
+x = np.random.random((batch_size, n_times, 1, n_channels))
+x = np.moveaxis(x, 1, 3)
+x = torch.tensor(x, dtype=torch.float32)
+x = x.squeeze()
+
+model = USleep()
+model(x)
+>>>>>>> 7848ad49215261b802d09b5c2fb4eae53c0af09c
