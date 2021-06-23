@@ -174,8 +174,6 @@ from braindecode.samplers import SequenceSampler
 
 n_windows = 5  # Sequences of 5 consecutive windows
 n_windows_stride = 1  # Maximally overlapping sequences
-# Use label of center window in the sequence
-target_transform = lambda x: x[np.ceil(len(x) / 2).astype(int)]  # noqa: E731
 
 train_sampler = SequenceSampler(
     train_set.get_metadata(), n_windows, n_windows_stride)
