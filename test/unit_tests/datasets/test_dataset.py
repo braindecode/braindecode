@@ -2,6 +2,7 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD (3-clause)
+import copy
 
 import mne
 import numpy as np
@@ -11,7 +12,9 @@ import pytest
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
-    create_windows_from_events, create_fixed_length_windows)
+    create_windows_from_events, create_fixed_length_windows,
+    create_windows_from_target_channels)
+from braindecode.preprocessing import Preprocessor, preprocess
 
 
 # TODO: split file up into files with proper matching names
@@ -59,6 +62,87 @@ def concat_ds_targets():
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
     return concat_ds, targets
+
+
+# TODO: split file up into files with proper matching names
+@pytest.fixture(scope="module")
+# TODO: add test for transformers and case when subject_info is used
+def dataset_target_time_series():
+    rng = np.random.RandomState(42)
+    signal_sfreq = 50
+    info = mne.create_info(ch_names=['0', '1', 'target_0', 'target_1'],
+                           sfreq=signal_sfreq,
+                           ch_types=['eeg', 'eeg', 'misc', 'misc'])
+    signal = rng.randn(2, 1000)
+    targets = np.full((2, 1000), np.nan)
+    targets_sfreq = 25
+    targets_stride = int(signal_sfreq / targets_sfreq)
+    targets[:, ::targets_stride] = rng.randn(2, int(targets.shape[1] / targets_stride))
+
+    targets_positions = np.arange(0, signal.shape[1], targets_stride, dtype=int)
+
+    raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
+    desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
+    base_dataset = BaseDataset(raw, desc, target_name='age')
+    concat_ds = BaseConcatDataset([base_dataset])
+    windows_dataset = create_windows_from_target_channels(
+        concat_ds,
+        trial_start_offset_samples=10,
+        trial_stop_offset_samples=1000-20,
+        window_size_samples=100,
+    )
+
+    return concat_ds, targets_positions, windows_dataset
+
+
+def test_creating_windows_from_raw(dataset_target_time_series):
+    _, target_positions, windows_dataset = dataset_target_time_series
+    len(windows_dataset)
+
+
+def test_preprocessors(dataset_target_time_series):
+    base_dataset, target_positions = dataset_target_time_series
+    base_dataset_before = copy.deepcopy(base_dataset)
+    preprocessors = [
+        Preprocessor('pick_types', eeg=True, misc=True),
+        Preprocessor(lambda x: x / 1e6),
+    ]
+
+    preprocess(base_dataset, preprocessors)
+
+    # Check whether preprocessing has not affected the targets
+    # This is only valid for preprocessors that use mne functions which do not modify
+    # `misc` channels.
+    np.testing.assert_array_equal(
+        base_dataset.datasets[0].raw.get_data()[-2:, :],
+        base_dataset_before.datasets[0].raw.get_data()[-2:, :]
+    )
+
+    #
+    # events = np.array([[100, 0, 1],
+    #                    [200, 0, 2],
+    #                    [300, 0, 1],
+    #                    [400, 0, 4],
+    #                    [500, 0, 3]])
+    # window_idxs = [(0, 0, 100),
+    #                (0, 100, 200),
+    #                (1, 0, 100),
+    #                (2, 0, 100),
+    #                (2, 50, 150)]
+    # i_window_in_trial, i_start_in_trial, i_stop_in_trial = list(
+    #     zip(*window_idxs))
+    # metadata = pd.DataFrame(
+    #     {'sample': events[:, 0],
+    #      'x': events[:, 1],
+    #      'target': events[:, 2],
+    #      'i_window_in_trial': i_window_in_trial,
+    #      'i_start_in_trial': i_start_in_trial,
+    #      'i_stop_in_trial': i_stop_in_trial})
+    #
+    # mne_epochs = mne.Epochs(raw=raw, events=events, metadata=metadata)
+    # windows_dataset = WindowsDataset(mne_epochs, desc)
+    #
+    # return raw, base_dataset, mne_epochs, windows_dataset, events, window_idxs
 
 
 @pytest.fixture(scope='module')

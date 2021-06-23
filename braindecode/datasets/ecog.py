@@ -6,7 +6,6 @@ from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
 def _load_data_to_mne(file_path):
-    # TODO: add option for loading test data
     f = scipy.io.loadmat(file_path)
     train_data = f['train_data']
     test_data = f['test_data']
