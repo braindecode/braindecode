@@ -36,11 +36,11 @@ import copy
 
 import numpy as np
 
-from braindecode.datasets.ecog import load_bci_iv_ecog
+from braindecode.datasets.ecog import EcogBCICompetition4
 
 subject_id = 1
-dataset = load_bci_iv_ecog('/home/maciej/projects/braindecode/BCICIV_4_mat',
-                           subject_ids=[subject_id])
+dataset = EcogBCICompetition4('/home/maciej/projects/braindecode/BCICIV_4_mat',
+                              subject_ids=[subject_id])
 dataset = dataset.split('session')['train']
 dataset_before = copy.deepcopy(dataset)
 
