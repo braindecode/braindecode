@@ -162,10 +162,11 @@ class WindowsDataset(BaseDataset):
         contain exact target channel names.
         If None (default), `target` columns from metadata will be used.
     """
-    def __init__(self, windows, description=None, transform=None, targets=None):
+    def __init__(self, windows, description=None, transform=None, targets=None, last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
+        self.last_target_only = last_target_only
         ch_names = self.windows.ch_names
         if isinstance(targets, (list, tuple)):
             self.targets = targets
@@ -214,7 +215,8 @@ class WindowsDataset(BaseDataset):
             target_positions = np.argwhere(~np.isnan(raw_targets[0, :]))[:, 0]
             # TODO: what are the actual dimensions of the y_idxs
             y = raw_targets[:, target_positions]
-            y = y[:, -1]
+            if self.last_target_only:
+                y = y[:, -1]
             X = X[[i for i in range(X.shape[0]) if i not in self._targets_idx], :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
