@@ -67,7 +67,7 @@ note the examples below for better-performing training pipelines.
     ]
     preprocess(dataset, preprocessors)
 
-    # Cut trials windows from the data
+    # Cut trial windows from the data
     windows_dataset = create_windows_from_events(
         dataset,
         trial_start_offset_samples=0,
