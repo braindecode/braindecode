@@ -226,3 +226,85 @@ def test_on_the_fly_transforms_windows_dataset(concat_windows_dataset):
 
     with pytest.raises(ValueError):
         concat_windows_dataset.transform = 0
+
+
+def test_set_description_base_dataset(concat_ds_targets):
+    concat_ds = concat_ds_targets[0]
+    assert len(concat_ds.description.columns) == 3
+    # add multiple new entries at the same time to concat of base
+    concat_ds.set_description({
+        'hi': ['who', 'are', 'you'],
+        'how': ['does', 'this', 'work'],
+    })
+    assert len(concat_ds.description.columns) == 5
+    assert concat_ds.description.loc[1, 'hi'] == 'are'
+    assert concat_ds.description.loc[0, 'how'] == 'does'
+
+    # do the same again but give a DataFrame this time
+    concat_ds.set_description(pd.DataFrame.from_dict({
+        2: ['', 'need', 'sleep'],
+    }))
+    assert len(concat_ds.description.columns) == 6
+    assert concat_ds.description.loc[0, 2] == ''
+
+    # try to set existing description without overwriting
+    with pytest.raises(
+        AssertionError,
+        match="'how' already in description. Please rename or set overwrite to"
+        " True."
+    ):
+        concat_ds.set_description({
+            'first': [-1, -1, -1],
+            'how': ['this', 'will', 'fail'],
+        }, overwrite=False)
+
+    # add single entry to single base
+    base_ds = concat_ds.datasets[0]
+    base_ds.set_description({'test': 4})
+    assert 'test' in base_ds.description
+    assert base_ds.description['test'] == 4
+
+    # overwrite singe entry in single base using a Series
+    base_ds.set_description(pd.Series({'test': 0}), overwrite=True)
+    assert base_ds.description['test'] == 0
+
+
+def test_set_description_windows_dataset(concat_windows_dataset):
+    assert len(concat_windows_dataset.description.columns) == 3
+    # add multiple entries to multiple windows
+    concat_windows_dataset.set_description({
+        'wow': ['this', 'is', 'cool'],
+        3: [1, 2, 3],
+    })
+    assert len(concat_windows_dataset.description.columns) == 5
+    assert concat_windows_dataset.description.loc[2, 'wow'] == 'cool'
+    assert concat_windows_dataset.description.loc[1, 3] == 2
+
+    # do the same, however this time give a DataFrame
+    concat_windows_dataset.set_description(pd.DataFrame.from_dict({
+        'hello': [0, 0, 0],
+    }))
+    assert len(concat_windows_dataset.description.columns) == 6
+    assert concat_windows_dataset.description['hello'].to_list() == [0, 0, 0]
+
+    # add single entry in single window
+    window_ds = concat_windows_dataset.datasets[-1]
+    window_ds.set_description({'4': 123})
+    assert '4' in window_ds.description
+    assert window_ds.description['4'] == 123
+
+    # overwrite multiple in single window
+    window_ds.set_description({
+        '4': 'overwritten',
+        'wow': 'not cool',
+    }, overwrite=True)
+    assert window_ds.description['4'] == 'overwritten'
+    assert window_ds.description['wow'] == 'not cool'
+
+    # try to set existing description without overwriting using Series
+    with pytest.raises(
+        AssertionError,
+        match="'wow' already in description. Please rename or set overwrite to"
+        " True."
+    ):
+        window_ds.set_description(pd.Series({'wow': 'error'}), overwrite=False)
