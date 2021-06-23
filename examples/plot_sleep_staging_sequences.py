@@ -135,32 +135,6 @@ preprocess(windows_dataset, [Preprocessor(zscore)])
 
 
 ######################################################################
-# Create datasets of sequences
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-
-######################################################################
-# Following the time distributed approach of [1]_, we will need to provide our
-# neural network with sequences of windows, such that the embeddings of
-# multiple consecutive windows can be concatenated and provided to a final
-# classifier. To simplify the example, we train the whole model end-to-end on
-# sequences, rather than using the two-step approach of [1]_ (training the
-# feature extractor on single windows, then freezing its weights and training
-# the classifier). We do this by creating a collection of SequenceDatasets:
-
-import numpy as np
-from braindecode.datasets import create_sequence_dataset
-
-seq_len = 5  # Sequences of 5 consecutive windows
-step_len = 1  # Maximally overlapping sequences
-# Use label of center window in the sequence
-target_transform = lambda x: x[np.ceil(len(x) / 2).astype(int)]  # noqa: E731
-windows_dataset = create_sequence_dataset(
-    windows_dataset, seq_len=seq_len, step_len=step_len,
-    target_transform=target_transform)
-
-
-######################################################################
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
@@ -171,13 +145,86 @@ windows_dataset = create_sequence_dataset(
 # in this case using the ``subject`` column. Here, we split the examples per
 # subject.
 
+from braindecode.datasets import BaseConcatDataset
+
 splitted = windows_dataset.split('subject')
 train_set = splitted['0']
 valid_set = splitted['1']
 
+
+######################################################################
+# Create sequence samplers
+# ------------------------
+#
+
+######################################################################
+# Following the time distributed approach of [1]_, we will need to provide our
+# neural network with sequences of windows, such that the embeddings of
+# multiple consecutive windows can be concatenated and provided to a final
+# classifier. We can achieve this by defining Sampler objects that return
+# sequences of windows.
+# To simplify the example, we train the whole model end-to-end on sequences,
+# rather than using the two-step approach of [1]_ (training the feature
+# extractor on single windows, then freezing its weights and training the
+# classifier).
+
+import numpy as np
+
+from braindecode.samplers import SequenceSampler
+
+n_windows = 5  # Sequences of 5 consecutive windows
+n_windows_stride = 1  # Maximally overlapping sequences
+# Use label of center window in the sequence
+target_transform = lambda x: x[np.ceil(len(x) / 2).astype(int)]  # noqa: E731
+
+train_sampler = SequenceSampler(
+    train_set.get_metadata(), n_windows, n_windows_stride)
+valid_sampler = SequenceSampler(
+    valid_set.get_metadata(), n_windows, n_windows_stride)
+
 # Print number of examples per class
-print(train_set.datasets[0].windows)
-print(valid_set.datasets[0].windows)
+print(len(train_sampler))
+print(len(valid_sampler))
+
+
+######################################################################
+# We also create a modified BaseConcatDataset that can receive multiple indices
+# and concatenate the corresponding windows. We also implement a transform to
+# extract the label of the center window of a sequence to use it as target.
+
+# Use label of center window in the sequence
+def target_transform(x):
+    return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
+
+
+class SequenceWindowsDataset(BaseConcatDataset):
+    """BaseConcatDataset with __getitem__ that expects a list of indices.
+    """
+    def __init__(self, list_of_ds, target_transform=None):
+        super().__init__(list_of_ds)
+        self.target_transform = target_transform
+
+    def __getitem__(self, indices):
+        seq, ys = list(), list()
+        # The following cannot be put into a list comprehension because of
+        # scope requirements for `super()`.
+        for ind in indices:
+            X, y, _ = super().__getitem__(ind)
+            seq.append(X)
+            ys.append(y)
+
+        seq = np.stack(seq, axis=0)
+        ys = np.array(ys)
+        if self.target_transform is not None:
+            ys = self.target_transform(ys)
+
+        return seq, ys
+
+
+train_set = SequenceWindowsDataset(
+    [ds for ds in train_set.datasets], target_transform=target_transform)
+valid_set = SequenceWindowsDataset(
+    [ds for ds in valid_set.datasets], target_transform=target_transform)
 
 
 ######################################################################
@@ -205,19 +252,18 @@ set_random_seeds(seed=87, cuda=cuda)
 
 n_classes = 5
 # Extract number of channels and time steps from dataset
-n_channels = train_set[0][0].shape[1]
-input_size_samples = train_set[0][0].shape[2]
+_, n_channels, input_size_samples = train_set[[0]][0].shape
 
 
 class TimeDistributedNet(nn.Module):
-    """Model features are extracted for multiple windows then concatenated.
+    """Extract features for multiple windows then concatenate & classify them.
     """
-    def __init__(self, feat_extractor, seq_len, n_classes, dropout=0.25):
+    def __init__(self, feat_extractor, n_windows, n_classes, dropout=0.25):
         super().__init__()
         self.feat_extractor = feat_extractor
         self.clf = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(feat_extractor.len_last_layer * seq_len, n_classes)
+            nn.Linear(feat_extractor.len_last_layer * n_windows, n_classes)
         )
 
     def forward(self, x):
@@ -241,7 +287,7 @@ feat_extractor = SleepStagerChambon2018(
 )
 
 model = TimeDistributedNet(
-    feat_extractor, seq_len=seq_len, n_classes=n_classes)
+    feat_extractor, n_windows=n_windows, n_classes=n_classes)
 
 
 # Send model to GPU
@@ -293,6 +339,9 @@ clf = EEGClassifier(
     model,
     criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.Adam,
+    iterator_train__shuffle=False,
+    iterator_train__sampler=train_sampler,
+    iterator_valid__sampler=valid_sampler,
     train_split=predefined_split(valid_set),  # using valid_set for validation
     optimizer__lr=lr,
     batch_size=batch_size,
@@ -363,7 +412,7 @@ plt.tight_layout()
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
 
-y_true = [valid_set[i][1] for i in range(len(valid_set))]
+y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
 
 print(confusion_matrix(y_true, y_pred))
@@ -377,6 +426,5 @@ print(classification_report(y_true, y_pred))
 # classification task (chance-level = 20%) on held-out data.
 #
 # To further improve performance, more recordings can be included in the
-# training set, and various modifications can be made to the model (e.g.,
-# aggregating the representation of multiple consecutive windows [1]_).
+# training set.
 #
