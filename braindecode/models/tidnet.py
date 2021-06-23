@@ -37,7 +37,7 @@ class _ConvBlock2D(nn.Module):
 
     def forward(self, input):
         res = input
-        input = self.conv(input, **kwargs)
+        input = self.conv(input,)
         input = self.dropout(input)
         input = self.activation(input)
         input = self.batch_norm(input)
