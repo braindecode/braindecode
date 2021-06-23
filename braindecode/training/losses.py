@@ -54,12 +54,13 @@ class TimeSeriesLoss(nn.Module):
             Target labels with shape (batch_size, n_classes, n_times).
         """
         num_preds = preds.shape[-1]
-        targets_mask = ~torch.isnan(targets)
-        # slice the targets mask to fit preds shape
-        preds_mask = targets_mask[:, :, -num_preds:]
+        # slice the targets to fit preds shape
+        targets = targets[:, :, -num_preds:]
+        # create valid targets mask
+        mask = ~torch.isnan(targets)
         # select valid targets that have a matching predictions
-        masked_targets = targets[targets_mask][:, :, -num_preds:]
-        masked_preds = preds[preds_mask]
+        masked_targets = targets[mask]
+        masked_preds = preds[mask]
         return self.loss_function(masked_preds, masked_targets)
 
 
