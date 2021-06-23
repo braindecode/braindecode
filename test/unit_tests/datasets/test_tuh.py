@@ -2,9 +2,13 @@
 #
 # License: BSD-3
 
+from unittest import mock
+import numpy as np
+import mne
+
 from braindecode.datasets.tuh import (
     _parse_description_from_file_path, _create_chronological_description,
-    TUHAbnormal)
+    TUHAbnormal, TUH)
 
 
 def test_parse_from_tuh_file_path():
@@ -95,3 +99,30 @@ def test_sort_chronologically():
     ]
     for p1, p2 in zip(expected, description.T.path):
         assert p1 == p2
+
+
+
+
+file_paths = [
+    "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/00010831_s002_t001.edf",
+    "v2.0.0/edf/eval/abnormal/01_tcp_ar/10/00010032/s001_2011_01_30/00010031_s001_t002.edf",
+]
+rng = np.random.RandomState(42)
+def fake_raw():
+    print("calling me")
+    data = rng.randn(2, 1000)
+    info = mne.create_info(['1', '2'], 10, ch_types='eeg')
+    raw = mne.io.RawArray(data, info)
+    return raw
+
+@mock.patch('glob.glob', return_value=file_paths)
+@mock.patch('mne.io.read_raw_edf', return_v alue=fake_raw())
+def test_tuh(mock_glob, mock_mne):
+    tuh = TUH('')
+    assert True
+
+@mock.patch('glob.glob', return_value=file_paths)
+@mock.patch('mne.io.read_raw_edf', return_value=fake_raw())
+def test_tuh_abnormal(mock_glob, mock_mne):
+    tuh_ab = TUHAbnormal('')
+    assert True
