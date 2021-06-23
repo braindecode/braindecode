@@ -40,11 +40,11 @@ class BaseDataset(Dataset):
 
     Parameters
     ----------
-    raw: mne.io.Raw
+    raw : mne.io.Raw
         Continuous data.
-    description: dict | pandas.Series | None
+    description : dict | pandas.Series | None
         Holds additional description about the continuous signal / subject.
-    target_name: str | None
+    target_name : str | None
         Name of the index in `description` that should be used to provide the
         target (e.g., to be used in a prediction task later on).
     transform : callable | None
@@ -149,7 +149,7 @@ class BaseConcatDataset(ConcatDataset):
 
     Parameters
     ----------
-    list_of_ds: list
+    list_of_ds : list
         list of BaseDataset, BaseConcatDataset or WindowsDataset
     """
     def __init__(self, list_of_ds):
@@ -166,20 +166,21 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        by: str | list(int) | list(list(int))
-            If by is a string, splitting is performed based on the description
+        by : str | list
+            If ``by`` is a string, splitting is performed based on the description
             DataFrame column with this name.
-            If by is a (list of) list of integers, the position in the first
+            If ``by`` is a (list of) list of integers, the position in the first
             list corresponds to the split id and the integers to the
             datapoints of that split.
-        property: str
+        property : str
             Some property which is listed in info DataFrame.
-        split_ids: list(int) | list(list(int))
+        split_ids : list
             List of indices to be combined in a subset.
+            It can be a list of int or a list of list of int.
 
         Returns
         -------
-        splits: dict{str: BaseConcatDataset}
+        splits : dict
             A dictionary with the name of the split (a string) as key and the
             dataset as value.
         """
@@ -214,7 +215,7 @@ class BaseConcatDataset(ConcatDataset):
 
         Returns
         -------
-        pd.DataFrame:
+        metadata : pd.DataFrame
             DataFrame containing as many rows as there are windows in the
             BaseConcatDataset, with the metadata and description information
             for each window.
@@ -246,9 +247,9 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        path: str
+        path : str
             Directory to which .fif / -epo.fif and .json files are stored.
-        overwrite: bool
+        overwrite : bool
             Whether to delete old files (.json, .fif, -epo.fif) in specified directory
             prior to saving.
         """

@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 
 def create_from_X_y(
-        X, y, drop_last_window, sfreq=None, ch_names=None, window_size_samples=None,
+        X, y, drop_last_window, sfreq, ch_names=None, window_size_samples=None,
         window_stride_samples=None):
     """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials
@@ -26,12 +26,13 @@ def create_from_X_y(
         list of pre-cut trials as n_trials x n_channels x n_times
     y: array-like
         targets corresponding to the trials
-    sfreq: common sampling frequency of all trials
-    ch_names: array-like
-        channel names of the trials
     drop_last_window: bool
         whether or not have a last overlapping window, when
         windows/windows do not equally divide the continuous signal
+    sfreq: float
+        Sampling frequency of signals.
+    ch_names: array-like
+        Names of the channels.
     window_size_samples: int
         window size
     window_stride_samples: int
@@ -48,9 +49,6 @@ def create_from_X_y(
         create_fixed_length_windows, )
     n_samples_per_x = []
     base_datasets = []
-    if sfreq is None:
-        sfreq = 100
-        log.info("No sampling frequency given, set to 100 Hz.")
     if ch_names is None:
         ch_names = [str(i) for i in range(X.shape[1])]
         log.info(f"No channel names given, set to 0-{X.shape[1]}).")
