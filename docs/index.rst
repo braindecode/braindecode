@@ -41,20 +41,22 @@ alternatively, install the latest version of braindecode via pip:
 
 Get Started
 ===========
-A minimal example for loading an EEG dataset, preprocessing and training a deep network on it looks like the following.
-This may not give particularly good performance and is customized for the Shallow Network,
-note the examples further below for better-performing training pipelines.
+Here an example to give you a quick idea how Braindecode is used to load and preprocess an EEG dataset
+to train a deep network on it.
+This example may not give particularly good performance,
+note the examples below for better-performing training pipelines.
 
 .. code-block:: python
 
+    import torch
+    from skorch.callbacks import LRScheduler
+    from skorch.helper import predefined_split
     from braindecode.datasets.moabb import MOABBDataset
     from braindecode.preprocessing.preprocess import preprocess, Preprocessor
     from braindecode.preprocessing.windowers import create_windows_from_events
     from braindecode.models import ShallowFBCSPNet
-    from skorch.callbacks import LRScheduler
-    from skorch.helper import predefined_split
-    import torch
     from braindecode import EEGClassifier
+
     # Load the data
     dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 
@@ -81,6 +83,7 @@ note the examples further below for better-performing training pipelines.
         final_conv_length='auto',
     )
 
+    # Create the skorch classifier object for training.
     # These learning rates and weight decay work well for the shallow network:
     clf = EEGClassifier(
         model,
@@ -94,6 +97,7 @@ note the examples further below for better-performing training pipelines.
             "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
         ],
     )
+
     # Model training for a specified number of epochs. `y` is None as it is already supplied
     # in the dataset.
     clf.fit(train_set, y=None, epochs=4)
