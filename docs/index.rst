@@ -41,6 +41,64 @@ alternatively, install the latest version of braindecode via pip:
 
 Get Started
 ===========
+A minimal example for loading an EEG dataset, preprocessing and training a deep network on it looks like the following.
+This may not give particularly good performance and is customized for the Shallow Network,
+note the examples further below for better-performing training pipelines.
+
+.. code-block:: python
+
+    from braindecode.datasets.moabb import MOABBDataset
+    from braindecode.preprocessing.preprocess import preprocess, Preprocessor
+    from braindecode.preprocessing.windowers import create_windows_from_events
+    from braindecode.models import ShallowFBCSPNet
+    from skorch.callbacks import LRScheduler
+    from skorch.helper import predefined_split
+    import torch
+    from braindecode import EEGClassifier
+    # Load the data
+    dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+
+    # Preprocess the data
+    preprocessors = [
+        Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
+        Preprocessor(lambda x: x * 1e6) # Convert from V to uV
+    ]
+    preprocess(dataset, preprocessors)
+
+    # Cut trials windows from the data
+    windows_dataset = create_windows_from_events(
+        dataset,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        preload=True,
+    )
+
+    # Create the model
+    model = ShallowFBCSPNet(
+        in_chans=train_set[0][0].shape[0],
+        n_classes=4,
+        input_window_samples=train_set[0][0].shape[1],
+        final_conv_length='auto',
+    )
+
+    # These learning rates and weight decay work well for the shallow network:
+    clf = EEGClassifier(
+        model,
+        criterion=torch.nn.NLLLoss,
+        optimizer=torch.optim.AdamW,
+        train_split=predefined_split(valid_set),  # using valid_set for validation
+        optimizer__lr=0.0625 * 0.01,
+        optimizer__weight_decay=0,
+        batch_size=64,
+        callbacks=[
+            "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        ],
+    )
+    # Model training for a specified number of epochs. `y` is None as it is already supplied
+    # in the dataset.
+    clf.fit(train_set, y=None, epochs=4)
+
+
 
 Learn how to use braindecode for ...
 
