@@ -10,3 +10,4 @@ from .eegresnet import EEGResNet
 from .tcn import TCN
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .util import get_output_shape
+from .usleep_wip import USleep

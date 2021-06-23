@@ -25,6 +25,8 @@ class USleep(nn.Module):
         super().__init__()
 
         # Set attributes
+        self.n_crops = 0
+
         padding = (kernel_size - 1) // 2  # to preserve dimension (check)
         complexity_factor = np.sqrt(complexity_factor)
 
@@ -130,8 +132,10 @@ class USleep(nn.Module):
         residuals = []
         for down in self.encoder:
             x = down(x)
-            print(x.shape)
             residuals.append(x)
+            s = x.shape[-1]
+            if s % 2:
+                x = nn.ConstantPad1d(padding=1, value=0)(x)
             x = nn.MaxPool1d(kernel_size=2)(x)
 
         x = self.bottom(x)
@@ -141,19 +145,43 @@ class USleep(nn.Module):
             zip(self.decoder_preskip, self.decoder_postskip)
         ):
             x = up_preskip(x)
-            x = torch.cat([x, residuals[idx]], axis=1)  # (B, 2 * C, T)
+            cropped_x = self.crop_nodes_to_match(x, residuals[idx])
+
+            x = torch.cat([cropped_x, residuals[idx]], axis=1)  # (B, 2 * C, T)
             x = up_postskip(x)
-        # return self.fc(x.flatten(start_dim=1))
-        return x
+        return self.fc(x.flatten(start_dim=1))
+        # return x
+
+    def crop_nodes_to_match(self, node1, node2):
+        """
+        If necessary, applies Cropping2D layer to node1 to match shape of node2
+        """
+        s1 = np.array(node1.shape)[-1]
+        s2 = np.array(node2.shape)[-1]
+
+        if np.any(s1 != s2):
+            c = abs(s1 - s2)
+            cropped_node1 = node1[:, :, :-c]
+        else:
+            cropped_node1 = node1
+        return cropped_node1
 
 
-# Small testing script
-batch_size, n_channels, n_times = 1024, 2, 3000
+# # Small testing script
+# batch_size, n_channels, n_times = 1024, 2, 3000
 
-np.random.seed(0)
-x = np.random.random((batch_size, n_times, 1, n_channels))
-x = np.moveaxis(x, 1, 3)
-x = torch.tensor(x, dtype=torch.float32)
-x = x.squeeze()
+# np.random.seed(0)
+# x = np.random.random((batch_size, n_times, 1, n_channels))
+# x = np.moveaxis(x, 1, 3)
+# x = torch.tensor(x, dtype=torch.float32)
+# x = x.squeeze()
 
-model = USleep()
+# model = USleep()
+
+# for param in model.parameters():
+#     np.random.seed(1)
+#     shape = param.shape
+#     # weight = np.random.random(shape)
+#     weight = np.ones(shape) * 0.1
+#     param.data = torch.tensor(weight, dtype=torch.float32)
+#     # print(param.data)

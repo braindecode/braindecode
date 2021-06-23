@@ -57,8 +57,7 @@ References
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
-dataset = SleepPhysionet(
-    subject_ids=[0, 1], recording_ids=[1], crop_wake_mins=30)
+dataset = SleepPhysionet(subject_ids=[0, 1], recording_ids=[1], crop_wake_mins=30)
 
 
 ######################################################################
@@ -79,7 +78,7 @@ high_cut_hz = 30
 
 preprocessors = [
     Preprocessor(lambda x: x * 1e6),
-    Preprocessor('filter', l_freq=None, h_freq=high_cut_hz)
+    Preprocessor("filter", l_freq=None, h_freq=high_cut_hz),
 ]
 
 # Transform the data
@@ -99,12 +98,12 @@ from braindecode.preprocessing.windowers import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    'Sleep stage W': 0,
-    'Sleep stage 1': 1,
-    'Sleep stage 2': 2,
-    'Sleep stage 3': 3,
-    'Sleep stage 4': 3,
-    'Sleep stage R': 4
+    "Sleep stage W": 0,
+    "Sleep stage 1": 1,
+    "Sleep stage 2": 2,
+    "Sleep stage 3": 3,
+    "Sleep stage 4": 3,
+    "Sleep stage R": 4,
 }
 
 window_size_s = 30
@@ -112,9 +111,14 @@ sfreq = 100
 window_size_samples = window_size_s * sfreq
 
 windows_dataset = create_windows_from_events(
-    dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0,
+    dataset,
+    trial_start_offset_samples=0,
+    trial_stop_offset_samples=0,
     window_size_samples=window_size_samples,
-    window_stride_samples=window_size_samples, preload=True, mapping=mapping)
+    window_stride_samples=window_size_samples,
+    preload=True,
+    mapping=mapping,
+)
 
 
 ######################################################################
@@ -144,9 +148,9 @@ preprocess(windows_dataset, [Preprocessor(zscore)])
 # in this case using the ``subject`` column. Here, we split the examples per subject.
 #
 
-splitted = windows_dataset.split('subject')
-train_set = splitted['0']
-valid_set = splitted['1']
+splitted = windows_dataset.split("subject")
+train_set = splitted["0"]
+valid_set = splitted["1"]
 
 # Print number of examples per class
 print(train_set.datasets[0].windows)
@@ -167,9 +171,10 @@ print(valid_set.datasets[0].windows)
 import torch
 from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerChambon2018
+from braindecode.models import USleep
 
 cuda = torch.cuda.is_available()  # check if GPU is available
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda" if torch.cuda.is_available() else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to reproduce results
@@ -181,11 +186,9 @@ n_channels = train_set[0][0].shape[0]
 input_size_samples = train_set[0][0].shape[1]
 
 model = SleepStagerChambon2018(
-    n_channels,
-    sfreq,
-    n_classes=n_classes,
-    input_size_s=input_size_samples / sfreq
+    n_channels, sfreq, n_classes=n_classes, input_size_s=input_size_samples / sfreq
 )
+# model = USleep(depth=10)
 
 # Send model to GPU
 if cuda:
@@ -224,13 +227,18 @@ batch_size = 16
 n_epochs = 5
 
 train_bal_acc = EpochScoring(
-    scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
-    lower_is_better=False)
+    scoring="balanced_accuracy",
+    on_train=True,
+    name="train_bal_acc",
+    lower_is_better=False,
+)
 valid_bal_acc = EpochScoring(
-    scoring='balanced_accuracy', on_train=False, name='valid_bal_acc',
-    lower_is_better=False)
-callbacks = [('train_bal_acc', train_bal_acc),
-             ('valid_bal_acc', valid_bal_acc)]
+    scoring="balanced_accuracy",
+    on_train=False,
+    name="valid_bal_acc",
+    lower_is_better=False,
+)
+callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
 
 clf = EEGClassifier(
     model,
@@ -240,7 +248,7 @@ clf = EEGClassifier(
     optimizer__lr=lr,
     batch_size=batch_size,
     callbacks=callbacks,
-    device=device
+    device=device,
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
@@ -266,35 +274,38 @@ import pandas as pd
 
 # Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
-df[['train_mis_clf', 'valid_mis_clf']] = 100 - df[
-    ['train_bal_acc', 'valid_bal_acc']] * 100
+df[["train_mis_clf", "valid_mis_clf"]] = (
+    100 - df[["train_bal_acc", "valid_bal_acc"]] * 100
+)
 
 # get percent of misclass for better visual comparison to loss
-plt.style.use('seaborn-talk')
+plt.style.use("seaborn-talk")
 fig, ax1 = plt.subplots(figsize=(8, 3))
-df.loc[:, ['train_loss', 'valid_loss']].plot(
-    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False,
-    fontsize=14)
+df.loc[:, ["train_loss", "valid_loss"]].plot(
+    ax=ax1, style=["-", ":"], marker="o", color="tab:blue", legend=False, fontsize=14
+)
 
-ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
-ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
+ax1.tick_params(axis="y", labelcolor="tab:blue", labelsize=14)
+ax1.set_ylabel("Loss", color="tab:blue", fontsize=14)
 
 ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
-df.loc[:, ['train_mis_clf', 'valid_mis_clf']].plot(
-    ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
-ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
-ax2.set_ylabel('Balanced misclassification rate [%]', color='tab:red',
-               fontsize=14)
+df.loc[:, ["train_mis_clf", "valid_mis_clf"]].plot(
+    ax=ax2, style=["-", ":"], marker="o", color="tab:red", legend=False
+)
+ax2.tick_params(axis="y", labelcolor="tab:red", labelsize=14)
+ax2.set_ylabel("Balanced misclassification rate [%]", color="tab:red", fontsize=14)
 ax2.set_ylim(ax2.get_ylim()[0], 85)  # make some room for legend
-ax1.set_xlabel('Epoch', fontsize=14)
+ax1.set_xlabel("Epoch", fontsize=14)
 
 # where some data has already been plotted to ax
 handles = []
 handles.append(
-    Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
+    Line2D([0], [0], color="black", linewidth=1, linestyle="-", label="Train")
+)
 handles.append(
-    Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
+    Line2D([0], [0], color="black", linewidth=1, linestyle=":", label="Valid")
+)
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()
 
@@ -306,7 +317,7 @@ plt.tight_layout()
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
 
-y_true = valid_set.datasets[0].windows.metadata['target'].values
+y_true = valid_set.datasets[0].windows.metadata["target"].values
 y_pred = clf.predict(valid_set)
 
 print(confusion_matrix(y_true, y_pred))
