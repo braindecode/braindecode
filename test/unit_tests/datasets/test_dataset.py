@@ -87,8 +87,6 @@ def dataset_target_time_series():
     concat_ds = BaseConcatDataset([base_dataset])
     windows_dataset = create_windows_from_target_channels(
         concat_ds,
-        trial_start_offset_samples=10,
-        trial_stop_offset_samples=1000-20,
         window_size_samples=100,
     )
 
@@ -97,7 +95,7 @@ def dataset_target_time_series():
 
 def test_creating_windows_from_raw(dataset_target_time_series):
     _, target_positions, windows_dataset = dataset_target_time_series
-    len(windows_dataset)
+    assert len(windows_dataset) == 450
 
 
 def test_preprocessors(dataset_target_time_series):

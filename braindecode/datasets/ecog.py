@@ -6,6 +6,8 @@ from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
 class EcogBCICompetition4(BaseConcatDataset):
+    possible_subjects = [1, 2, 3]
+
     def __init__(self, dataset_path, subject_ids=None):
         """BCI competition IV ECoG dataset with finger movements.
 
@@ -13,16 +15,25 @@ class EcogBCICompetition4(BaseConcatDataset):
         Targets correspond to the time courses of the flexion of each of five fingers.
         See http://www.bbci.de/competition/iv/desc_4.pdf for the dataset description.
 
+        Test labels can be downloaded from:
+        http://www.bbci.de/competition/iv/results/ds4/true_labels.zip
+        Data can be downloaded from (Dataset 4):
+        http://www.bbci.de/competition/iv/#dataset4
+
         Parameters
         ----------
         dataset_path : str
-            Path to the folder with BCI competition IV dataset 4.
+            Path to the folder with BCI competition IV dataset 4. All .mat files are
+            expected to be in this directory.
         subject_ids: list(int) | int | None
             (list of) int of subject(s) to be loaded. If None, load all available
-            subjects.
+            subjects. Should be in range 1-3.
         """
+        if isinstance(subject_ids, int):
+            subject_ids = [subject_ids]
         if subject_ids is None:
-            subject_ids = [1, 2, 3]
+            subject_ids = self.possible_subjects
+        self._validate_subjects(subject_ids)
         files_list = [f'{dataset_path}/sub{i}_comp.mat' for i in subject_ids]
         datasets = []
         for file_path in files_list:
@@ -76,3 +87,15 @@ class EcogBCICompetition4(BaseConcatDataset):
         raw_test = mne.io.RawArray(test_data.T, info=info)
         # TODO: show how to resample targets
         return raw_train, raw_test
+
+    def _validate_subjects(self, subject_ids):
+        if isinstance(subject_ids, (list, tuple)):
+            if not all((subject in self.possible_subjects for subject in subject_ids)):
+                raise ValueError(
+                    f'Wrong subject_ids parameter. Possible values: {subject_ids}. '
+                    f'Provided {subject_ids}.'
+                )
+        else:
+            raise ValueError(
+                f'Wrong subject_ids format. Expected types: None, list, tuple, int.'
+            )

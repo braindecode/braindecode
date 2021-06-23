@@ -394,27 +394,22 @@ def _create_fixed_length_windows(
 
 # TODO: rethink trial/session naming for ECoG
 def create_windows_from_target_channels(
-        concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
-        window_size_samples=None,
-        preload=False, drop_bad_windows=True, picks=None, reject=None,
-        flat=None, n_jobs=1):
+        concat_ds, window_size_samples=None, preload=False, drop_bad_windows=True,
+        picks=None, reject=None, flat=None, n_jobs=1):
     # _check_windowing_arguments(
     #     trial_start_offset_samples, trial_stop_offset_samples,
     #     window_size_samples, None)
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
-            ds, trial_start_offset_samples, trial_stop_offset_samples,
-            window_size_samples, preload,
-            drop_bad_windows, picks, reject, flat,
-            'error') for ds in concat_ds.datasets)
+            ds, window_size_samples, preload, drop_bad_windows, picks, reject,
+            flat, 'error') for ds in concat_ds.datasets)
     return BaseConcatDataset(list_of_windows_ds)
 
 
 def _create_windows_from_target_channels(
-        ds, start_offset_samples, stop_offset_samples, window_size_samples,
-        preload=False, drop_bad_windows=True, picks=None, reject=None,
-        flat=None, on_missing='error'):
+        ds, window_size_samples, preload=False, drop_bad_windows=True, picks=None,
+        reject=None, flat=None, on_missing='error'):
     """Create WindowsDataset from BaseDataset with sliding windows.
 
     Parameters
@@ -429,16 +424,14 @@ def _create_windows_from_target_channels(
     WindowsDataset :
         Windowed dataset.
     """
-    stop = ds.raw.n_times \
-        if stop_offset_samples is None else stop_offset_samples
-    stop = stop + ds.raw.first_samp
+    stop = ds.raw.n_times + ds.raw.first_samp
 
     target_ch_names = [ch_name for ch_name in ds.raw.ch_names
                        if ch_name.startswith('target_')]
     target = ds.raw.get_data(picks=target_ch_names)
     # TODO: handle multi targets present only for some events
     stops = np.nonzero((~np.isnan(target[0, :])))[0]
-    stops = stops[(stops < stop) & (stops > (start_offset_samples + window_size_samples))]
+    stops = stops[(stops < stop) & (stops >= window_size_samples)]
     stops = stops.astype(int)
     # TODO: Make sure that indices are correct
     fake_events = [[stop, window_size_samples, -1] for stop in stops]
