@@ -166,7 +166,7 @@ print(valid_set.datasets[0].windows)
 
 import torch
 from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018
+from braindecode.models import SleepStagerChambon2018, USleep
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -180,9 +180,15 @@ n_classes = 5
 n_channels = train_set[0][0].shape[0]
 input_size_samples = train_set[0][0].shape[1]
 
-model = SleepStagerChambon2018(
-    n_channels,
-    sfreq,
+# model = SleepStagerChambon2018(
+#     n_channels,
+#     sfreq,
+#     n_classes=n_classes,
+#     input_size_s=input_size_samples / sfreq
+# )
+model = USleep(
+    n_channels=n_channels,
+    sfreq=sfreq,
     n_classes=n_classes,
     input_size_s=input_size_samples / sfreq
 )
