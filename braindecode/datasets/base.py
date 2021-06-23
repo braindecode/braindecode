@@ -170,7 +170,7 @@ class WindowsDataset(BaseDataset):
         ch_names = self.windows.ch_names
         if isinstance(raw_targets, (list, tuple)):
             raw_targets = raw_targets
-            targets_not_found = (target_name in ch_names for target_name in self.raw_targets
+            targets_not_found = (target_name in ch_names for target_name in raw_targets
                                  if target_name not in ch_names)
             if targets_not_found:
                 raise ValueError(f'{targets_not_found} target channels not found in data')
