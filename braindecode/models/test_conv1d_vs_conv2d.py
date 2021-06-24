@@ -19,8 +19,8 @@ def set_torch_seed(seed):
         torch.cuda.manual_seed_all(seed)
 
 
-def get_times(batch_size=64, 
-              in_channels=2, out_channels=2, 
+def get_times(batch_size=64,
+              in_channels=2, out_channels=2,
               n_times=3000,
               kernel_size=9,
               seed=0,
@@ -34,17 +34,17 @@ def get_times(batch_size=64,
 
     # Create input
     x = torch.Tensor(batch_size, in_channels, n_times)  # shape (B, C, T)
-    x_augment = torch.unsqueeze(x, dim=2)               # shape (B, C, 1, T)    
+    x_augment = torch.unsqueeze(x, dim=2)               # shape (B, C, 1, T)
 
     # Option 1 : Temporal Convolution via Conv1d (last axis)
-    layer_1d = nn.Conv1d(in_channels=in_channels, 
+    layer_1d = nn.Conv1d(in_channels=in_channels,
                          out_channels=out_channels,
                          kernel_size=kernel_size,
                          padding=padding)
     layer_1d.weight.data = conv_weights
 
     # Option 2 : Temporal Convolution via Conv2d (dummy axis trick)
-    layer_2d = nn.Conv2d(in_channels=in_channels, 
+    layer_2d = nn.Conv2d(in_channels=in_channels,
                          out_channels=out_channels,
                          kernel_size=(1, kernel_size),
                          padding=(0, padding))
@@ -86,8 +86,8 @@ for kernel_size in X.astype(int):
         t1s_temp.append(t1)
         t2s_temp.append(t2)
     t1, t2 = np.median(t1s_temp), np.median(t2s_temp)
-    t1_error, t2_error = iqr(t1s_temp)/2, iqr(t2s_temp)/2, 
-    
+    t1_error, t2_error = iqr(t1s_temp)/2, iqr(t2s_temp)/2,
+
     t1s.append(t1)
     t2s.append(t2)
     t1s_error.append(t1_error)
@@ -96,7 +96,7 @@ for kernel_size in X.astype(int):
 fig, ax = plt.subplots()
 ax.errorbar(X, t1s, t1s_error, label='Conv1d', color='blue')
 ax.errorbar(X, t2s, t2s_error, label='Conv2d', color='red')
-ax.set(title=f'Comparing speed for Temporal Convolutions',
+ax.set(title='Comparing speed for Temporal Convolutions',
        xlabel='Kernel size',
        ylabel='Speed (s)')
 ax.legend()

@@ -8,10 +8,6 @@
 import numpy as np
 import torch
 from torch import nn
-from torch.nn import init
-from torch.nn.functional import elu, upsample
-from torch.nn.modules.batchnorm import BatchNorm1d
-
 
 
 def crop_tensors_to_match(x1, x2, axis=-1):
@@ -37,9 +33,9 @@ class EncoderBlock(nn.Module):
         padding = (kernel_size - 1) // 2   # chosen to preserve dimension
 
         self.block_prepool = nn.Sequential(
-                nn.Conv1d(in_channels=in_channels, 
-                          out_channels=out_channels, 
-                          kernel_size=kernel_size, 
+                nn.Conv1d(in_channels=in_channels,
+                          out_channels=out_channels,
+                          kernel_size=kernel_size,
                           padding=padding),
                 nn.ELU(),
                 nn.BatchNorm1d(num_features=out_channels),
@@ -72,17 +68,18 @@ class DecoderBlock(nn.Module):
 
         self.block_preskip = nn.Sequential(
                     nn.Upsample(scale_factor=upsample),
-                    nn.Conv1d(in_channels=in_channels, 
-                              out_channels=out_channels, 
-                              kernel_size=kernel_size, 
+                    nn.Conv1d(in_channels=in_channels,
+                              out_channels=out_channels,
+                              kernel_size=kernel_size,
                               padding=padding),
                     nn.ELU(),
                     nn.BatchNorm1d(num_features=out_channels),
                 )
         self.block_postskip = nn.Sequential(
-                    nn.Conv1d(in_channels=2 * out_channels if with_skip_connection else out_channels, 
-                              out_channels=out_channels, 
-                              kernel_size=kernel_size, 
+                    nn.Conv1d(in_channels=(
+                            2 * out_channels if with_skip_connection else out_channels),
+                              out_channels=out_channels,
+                              kernel_size=kernel_size,
                               padding=padding),  # to preserve dimension (check)
                     nn.ELU(),
                     nn.BatchNorm1d(num_features=out_channels),
@@ -92,14 +89,13 @@ class DecoderBlock(nn.Module):
         x = self.block_preskip(x)
         if self.with_skip_connection:
             x, residual = crop_tensors_to_match(x, residual, axis=-1)  # in case of mismatch
-            x = torch.cat([x, residual], axis=1) # (B, 2 * C, T)
+            x = torch.cat([x, residual], axis=1)  # (B, 2 * C, T)
         x = self.block_postskip(x)
         return x
 
 
 class USleep(nn.Module):
-    """
-    Sleep staging architecture from [1]_.
+    """Sleep staging architecture from [1]_.
 
     U-Net (autoencoder with skip connections) feature-extractor for sleep staging described in [1]_.
 
@@ -118,16 +114,16 @@ class USleep(nn.Module):
     sfreq : float
         EEG sampling frequency. Set to 128 in [1]_.
     depth : int
-        Number of encoding (resp. decoding) blocks in the U-Net. 
+        Number of encoding (resp. decoding) blocks in the U-Net.
         Set to 12 in [1]_.
     time_conv_size_s : float
-        Size of filters in temporal convolution layers, in seconds. 
+        Size of filters in temporal convolution layers, in seconds.
         Set to 0.070 in [1]_ (9 samples at sfreq=128).
     max_pool_size_s : float
         Max pooling size, in seconds. Set to 0.016 in [1]_ (2 samples at
         sfreq=128).
     n_time_filters : int
-        Number of channels (i.e. of temporal filters) of the output. 
+        Number of channels (i.e. of temporal filters) of the output.
         Set to 5 in [1]_.
     complexity_factor : float
         Multiplicative factor for number of channels at each layer of the U-Net.
@@ -142,11 +138,11 @@ class USleep(nn.Module):
 
     References
     ----------
-    .. [1] Perslev, M., Darkner, S., Kempfner, L. et al. 
-           U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021). 
+    .. [1] Perslev, M., Darkner, S., Kempfner, L. et al.
+           U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
            https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
-    def __init__(self, 
+    def __init__(self,
                  n_channels=2,
                  sfreq=100,
                  depth=10,  # default should be 12
@@ -174,27 +170,29 @@ class USleep(nn.Module):
         assert (input_size == 3000), "Window length is not equal to 3000."
 
         # Define geometric sequence of channels
-        channels = n_time_filters * complexity_factor * np.sqrt(2) ** np.arange(0, depth + 1)  # len = depth + 1
+        channels = (
+            n_time_filters * complexity_factor * np.sqrt(2) ** np.arange(0, depth + 1)
+        )  # len = depth + 1
         channels = np.ceil(channels).astype(int).tolist()
         channels = [n_channels] + channels  # len = depth + 2
         self.channels = channels
-    
+
         # Instantiate encoder
         encoder = []
         for idx in range(depth):
             encoder += [
-                EncoderBlock(in_channels=channels[idx], 
-                             out_channels=channels[idx + 1], 
-                             kernel_size=time_conv_size, 
+                EncoderBlock(in_channels=channels[idx],
+                             out_channels=channels[idx + 1],
+                             kernel_size=time_conv_size,
                              downsample=max_pool_size)
             ]
         self.encoder = nn.Sequential(*encoder)
 
         # Instantiate bottom (channels increase, temporal dim stays the same)
         self.bottom = nn.Sequential(
-                    nn.Conv1d(in_channels=channels[idx + 1], 
-                              out_channels=channels[idx + 2], 
-                              kernel_size=time_conv_size, 
+                    nn.Conv1d(in_channels=channels[idx + 1],
+                              out_channels=channels[idx + 2],
+                              kernel_size=time_conv_size,
                               padding=(time_conv_size - 1) // 2),  # preserves dimension
                     nn.ELU(),
                     nn.BatchNorm1d(num_features=channels[idx + 2]),
@@ -215,11 +213,12 @@ class USleep(nn.Module):
 
         # Instantiate classifier
         # self.clf = nn.Sequential(
-        #     nn.Dropout(0.5), 
+        #     nn.Dropout(0.5),
         #     nn.Linear(channels[1] * input_size, n_classes)
         # )
 
-        # The temporal dimension remains unchanged (except through the AvgPooling which collapses it to 1)
+        # The temporal dimension remains unchanged
+        # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
         self.clf = nn.Sequential(
             nn.Conv1d(
@@ -228,7 +227,7 @@ class USleep(nn.Module):
                 kernel_size=1,
                 stride=1,
                 padding=0,
-            ),                         # output is (B, C, S * T)
+            ),                         # output is (B, C, 1, S * T)
             nn.Tanh(),
             nn.AvgPool1d(input_size),  # output is (B, C, S)
             nn.Conv1d(
@@ -245,13 +244,16 @@ class USleep(nn.Module):
                 kernel_size=1,
                 stride=1,
                 padding=0,
-            ),                          
-            nn.Softmax(dim=1),         # output is (B, 5, S), TODO: permute 2 last axes if need be
+            ),
+            nn.Softmax(dim=1),  # output is (B, 5, S), TODO: permute 2 last axes if need be
         )
 
-
     def forward(self, x):
-        '''Input x has shape (B, C, T).'''
+        '''Input x has shape (B, S, C, T).'''
+        # reshape input
+        x = x.permute(0, 2, 1, 3)  # (B, C, S, T)
+        x = x.flatten(start_dim=2)  # (B, C, S * T)
+
         # encoder
         # print(x.shape)
         residuals = []
@@ -260,7 +262,7 @@ class USleep(nn.Module):
             residuals.append(res)
             # print(x.shape)
 
-        # bottom 
+        # bottom
         x = self.bottom(x)
         # print(x.shape)
 
@@ -271,37 +273,36 @@ class USleep(nn.Module):
             # print(x.shape)
 
         # classifier
-        print(x.shape)
+        # print(x.shape)
         y_pred = self.clf(x)        # (B, n_classes, seq_length)
         # y_pred = self.clf(x.flatten(start_dim=1))        # (B, n_classes)
-        print(y_pred.shape)
+        # print(y_pred.shape)
 
-        return y_pred  # y_pred[:, :, 0]
+        return y_pred
 
 
 # Example: U-Net
 
-# Input (sequence) given by braindecode : (B, S, C, T)
-batch_size, seq_length, n_channels, n_times = 64, 35, 2, 3000
-x = torch.Tensor(batch_size, seq_length, n_channels, n_times) 
+# # Input (sequence) given by braindecode : (B, S, C, T)
+# batch_size, seq_length, n_channels, n_times = 64, 35, 2, 3000
+# x = torch.Tensor(batch_size, seq_length, n_channels, n_times)
 
-# Reshape tensor for UNet : (B, C, T' = S * T)
-x_temp = x.permute(0, 2, 1, 3)  # (B, C, S, T)
-x_window_merge = x_temp.flatten(start_dim=2)  # (B, C, S * T)
-# TODO: verify that flatten preserves the order of the sequence of windows
+# # Reshape tensor for UNet : (B, C, T' = S * T)
+# x_temp = x.permute(0, 2, 1, 3)  # (B, C, S, T)
+# x_window_merge = x_temp.flatten(start_dim=2)  # (B, C, S * T)
+# # TODO: verify that flatten preserves the order of the sequence of windows
 
-# Pass it through UNet
-model = USleep(depth=10)
-y_pred = model(x_window_merge) 
+# # Pass it through UNet
+# model = USleep(depth=10)
+# y_pred = model(x_window_merge)
 
 # UNet part returns: x_hat (B, 7, S * T)
 
 # Pass it through a classifier
 
-# x_hat = model(x) 
+# x_hat = model(x)
 # print("x shape: ", x.shape)
 # print("x_hat shape: ", x_hat.shape)
-
 
 
 # # Example: mirror Encoder / Decoder pair (understand dims)
@@ -315,4 +316,4 @@ y_pred = model(x_window_merge)
 # # print(residual.shape)  # (64, 4, 3000)
 # z_new = torch.cat([z, z], axis=1)
 # # print(z_new.shape)     # (64, 8, 1500)
-# x_hat = decoder(z_new, residual)  
+# x_hat = decoder(z_new, residual)
