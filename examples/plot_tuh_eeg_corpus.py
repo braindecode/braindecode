@@ -63,7 +63,7 @@ def _get_header(*args):
 @mock.patch('braindecode.datasets.tuh._read_edf_header', new=_get_header)
 def mock_get_data(mock_glob):
     tuh = TUH(
-        path=''
+        path='',
         recording_ids=None,
         target_name=None,
         preload=False,
