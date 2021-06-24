@@ -202,14 +202,10 @@ class TUHAbnormal(TUH):
                 self._parse_additional_description_from_file_path(file_path))
             additional_descriptions.append(additional_description)
         additional_descriptions = pd.DataFrame(additional_descriptions)
-        self.set_description(additional_descriptions)
-        # not 100% sure if this is required:
-        # set target name and target of base datasets
-        for ds_i, ds in enumerate(self.datasets):
+        self.set_description(additional_descriptions, overwrite=True)
+        # update target names
+        for ds in self.datasets:
             ds.target_name = target_name
-            ds.target = self.description.loc[ds_i, target_name]
-            for k in additional_descriptions.columns:
-                ds.description[k] = self.description.loc[ds_i, k]
 
     @staticmethod
     def _parse_additional_description_from_file_path(file_path):
@@ -224,6 +220,7 @@ class TUHAbnormal(TUH):
         assert ('train' in tokens or 'eval' in tokens), (
             'No train or eval set information found.')
         return {
+            'version': tokens[-9],
             'train': 'train' in tokens,
             'pathological': 'abnormal' in tokens,
         }

@@ -326,7 +326,7 @@ def _create_fixed_length_windows(
         starts = np.append(starts, stop)
 
     # TODO: handle multi-target case / non-integer target case
-    target = -1 if ds.target is None else ds.target
+    target = -1 if ds.target_name is None else ds.description[ds.target_name]
     if mapping is not None:
         target = mapping[target]
 
