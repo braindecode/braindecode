@@ -30,6 +30,7 @@ class TimeReverse(Transform):
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
+    operation = staticmethod(time_reverse)
 
     def __init__(
         self,
@@ -37,7 +38,6 @@ class TimeReverse(Transform):
         random_state=None
     ):
         super().__init__(
-            operation=time_reverse,
             probability=probability,
             random_state=random_state
         )
@@ -57,6 +57,7 @@ class SignFlip(Transform):
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
+    operation = staticmethod(sign_flip)
 
     def __init__(
         self,
@@ -64,7 +65,6 @@ class SignFlip(Transform):
         random_state=None
     ):
         super().__init__(
-            operation=sign_flip,
             probability=probability,
             random_state=random_state
         )
@@ -93,6 +93,7 @@ class FTSurrogate(Transform):
        Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
        preprint arXiv:1806.08675.
     """
+    operation = staticmethod(fft_surrogate)
 
     def __init__(
         self,
@@ -105,7 +106,6 @@ class FTSurrogate(Transform):
         assert 0 <= magnitude <= 1, "magnitude should be between 0 and 1."
         self.magnitude = magnitude
         super().__init__(
-            operation=fft_surrogate,
             probability=probability,
             random_state=random_state
         )
@@ -137,6 +137,7 @@ class MissingChannels(Transform):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
+    operation = staticmethod(channel_dropout)
 
     def __init__(
         self,
@@ -146,7 +147,6 @@ class MissingChannels(Transform):
     ):
         self.proba_drop = proba_drop
         super().__init__(
-            operation=channel_dropout,
             probability=probability,
             random_state=random_state
         )
@@ -179,6 +179,7 @@ class ShuffleChannels(Transform):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
+    operation = staticmethod(channel_shuffle)
 
     def __init__(
         self,
@@ -188,7 +189,6 @@ class ShuffleChannels(Transform):
     ):
         self.proba_shuffle = proba_shuffle
         super().__init__(
-            operation=channel_shuffle,
             probability=probability,
             random_state=random_state
         )
@@ -236,6 +236,7 @@ class GaussianNoise(Transform):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
+    operation = staticmethod(add_gaussian_noise)
 
     def __init__(
         self,
@@ -245,7 +246,6 @@ class GaussianNoise(Transform):
     ):
         self.std = std
         super().__init__(
-            operation=add_gaussian_noise,
             probability=probability,
             random_state=random_state,
         )
@@ -281,6 +281,7 @@ class ChannelSymmetry(Transform):
        (2018). HAMLET: interpretable human and machine co-learning technique.
        arXiv preprint arXiv:1803.09702.
     """
+    operation = staticmethod(permute_channels)
 
     def __init__(
         self,
@@ -311,7 +312,6 @@ class ChannelSymmetry(Transform):
         self.permutation = permutation
 
         super().__init__(
-            operation=permute_channels,
             probability=probability,
             random_state=random_state,
         )
@@ -358,6 +358,7 @@ class TimeMask(Transform):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
+    operation = staticmethod(smooth_time_mask)
 
     def __init__(
         self,
@@ -373,7 +374,6 @@ class TimeMask(Transform):
 
         super().__init__(
             probability=probability,
-            operation=smooth_time_mask,
             random_state=random_state,
         )
 
@@ -428,6 +428,7 @@ class BandstopFilter(Transform):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
+    operation = staticmethod(bandstop_filter)
 
     def __init__(
         self,
@@ -461,7 +462,6 @@ class BandstopFilter(Transform):
         self.bandwidth = bandwidth
         super().__init__(
             probability=probability,
-            operation=bandstop_filter,
             random_state=random_state,
         )
 
@@ -496,6 +496,7 @@ class FrequencyShift(Transform):
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
     """
+    operation = staticmethod(freq_shift)
 
     def __init__(
         self,
@@ -512,7 +513,6 @@ class FrequencyShift(Transform):
         self.delta_freq_range = delta_freq_range
 
         super().__init__(
-            operation=freq_shift,
             probability=probability,
             random_state=random_state,
         )
@@ -569,6 +569,7 @@ class RandomSensorsRotation(Transform):
        Conference of the IEEE Engineering in Medicine and Biology Society
        (EMBC) (pp. 471-474).
     """
+    operation = staticmethod(sensors_rotation)
 
     def __init__(
         self,
@@ -600,7 +601,6 @@ class RandomSensorsRotation(Transform):
 
         super().__init__(
             probability=probability,
-            operation=sensors_rotation,
             random_state=random_state
         )
 
@@ -811,6 +811,7 @@ class Mixup(Transform):
         Online: https://arxiv.org/abs/1710.09412
     ..  [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
+    operation = staticmethod(mixup)
 
     def __init__(
         self,
@@ -821,7 +822,6 @@ class Mixup(Transform):
         self.alpha = alpha
         self.beta_per_sample = beta_per_sample
         super().__init__(
-            operation=mixup,
             probability=1.0,  # Mixup has to be applied to whole batches
             random_state=random_state
         )

@@ -20,10 +20,22 @@ def dummy_k_operation(X, y, k):
     return torch.ones_like(X) * k, y
 
 
+class DummyTransform(Transform):
+    operation = staticmethod(dummy_k_operation)
+    def __init__(self, probability=1.0, random_state=None, k=None):
+        if k is None:
+            self.k = np.random.randint(10)
+        else:
+            self.k = k
+        super().__init__(probability=probability, random_state=random_state)
+
+    def get_params(self, X, y):
+        return (self.k,)
+
+
 @pytest.fixture
 def dummy_transform():
-    k = np.random.randint(10)
-    return Transform(operation=partial(dummy_k_operation, k=k), probability=1)
+    return DummyTransform()
 
 
 def common_tranform_assertions(input_batch, output_batch, expected_X=None):
@@ -70,8 +82,8 @@ def test_transform_call_with_no_label(random_batch, dummy_transform):
 ])
 def test_transform_composition(random_batch, k1, k2, expected, p1, p2):
     X, y = random_batch
-    dummy_transform1 = Transform(partial(dummy_k_operation, k=k1), p1)
-    dummy_transform2 = Transform(partial(dummy_k_operation, k=k2), p2)
+    dummy_transform1 = DummyTransform(k=k1, probability=p1)
+    dummy_transform2 = DummyTransform(k=k2, probability=p2)
     concat_transform = Compose([dummy_transform1, dummy_transform2])
     expected_tensor = torch.ones(
         X.shape,
@@ -88,8 +100,7 @@ def test_transform_composition(random_batch, k1, k2, expected, p1, p2):
 def test_transform_proba_exception(rng_seed, dummy_transform):
     rng = check_random_state(rng_seed)
     with pytest.raises(AssertionError):
-        Transform(
-            operation=dummy_transform,
+        DummyTransform(
             probability='a',
             random_state=rng,
         )

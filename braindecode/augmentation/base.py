@@ -35,13 +35,13 @@ class Transform(torch.nn.Module):
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
+    operation = None
 
-    def __init__(self, operation, probability=1.0, random_state=None):
+    def __init__(self, probability=1.0, random_state=None):
         super().__init__()
         if self.forward.__func__ is Transform.forward:
-            assert callable(operation), "operation should be a ``callable``."
+            assert callable(self.operation), "operation should be a ``callable``."
 
-        self.operation = operation
         assert isinstance(probability, Real), (
             f"probability should be a ``real``. Got {type(probability)}.")
         assert probability <= 1. and probability >= 0., \
@@ -121,9 +121,7 @@ class IdentityTransform(Transform):
 
     Transform that does not change the input.
     """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(operation=identity)
+    operation = staticmethod(identity)
 
 
 class Compose(Transform):
@@ -140,7 +138,7 @@ class Compose(Transform):
 
     def __init__(self, transforms):
         self.transforms = transforms
-        super().__init__(operation=None)
+        super().__init__()
 
     def forward(self, X, y):
         for transform in self.transforms:
