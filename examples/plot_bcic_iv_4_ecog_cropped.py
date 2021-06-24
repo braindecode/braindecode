@@ -31,9 +31,11 @@ In Braindecode, there are two supported configurations created for training mode
 #    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
+import copy
+
 import sklearn
 
-DATASET_PATH = '/home/maciej/projects/braindecode/BCICIV_4_mat'
+DATASET_PATH = '/home/fattouh/data/BCICIV_4_mat'
 
 import numpy as np
 
@@ -62,6 +64,20 @@ preprocessors = [
 ]
 # Transform the data
 preprocess(dataset, preprocessors)
+
+# crop dataset into train, valid and test
+train_dataset = copy.deepcopy(dataset)
+# for speed up the tarining we will use the first 10 secs for training
+preprocess(train_dataset, [Preprocessor('crop', tmin=0, tmax=10)])
+
+valid_dataset = copy.deepcopy(dataset)
+# for speed up the tarining we will use the first 10 secs for training
+preprocess(valid_dataset, [Preprocessor('crop', tmin=20, tmax=30)])
+
+test_dataset = copy.deepcopy(dataset)
+# for speed up the tarining we will use the first 10 secs for training
+preprocess(test_dataset, [Preprocessor('crop', tmin=30, tmax=40)])
+
 
 ######################################################################
 # Create model and compute windowing parameters
@@ -170,21 +186,16 @@ from braindecode.preprocessing.windowers import create_fixed_length_windows
 sfreq = dataset.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 
-from braindecode.datautil.windowers import create_windows_from_events
 
-trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
 sfreq = dataset.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 
-# Calculate the trial start offset in samples.
-trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
-
 # Create windows using braindecode function for this. It needs parameters to define how
 # trials should be used.
 
-windows_dataset = create_fixed_length_windows(
-    dataset,
+train_windows_dataset = create_fixed_length_windows(
+    train_dataset,
     start_offset_samples=0,
     stop_offset_samples=None,
     window_size_samples=input_window_samples,
@@ -195,6 +206,29 @@ windows_dataset = create_fixed_length_windows(
     preload=True
 )
 
+valid_windows_dataset = create_fixed_length_windows(
+    valid_dataset,
+    start_offset_samples=0,
+    stop_offset_samples=None,
+    window_size_samples=input_window_samples,
+    window_stride_samples=n_preds_per_input,
+    drop_last_window=False,
+    raw_targets='target',
+    last_target_only=False,
+    preload=True
+)
+
+test_windows_dataset = create_fixed_length_windows(
+    test_dataset,
+    start_offset_samples=0,
+    stop_offset_samples=None,
+    window_size_samples=input_window_samples,
+    window_stride_samples=n_preds_per_input,
+    drop_last_window=False,
+    raw_targets='target',
+    last_target_only=False,
+    preload=True
+)
 # ######################################################################
 # # Split dataset into train and valid
 # # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -207,19 +241,6 @@ windows_dataset = create_fixed_length_windows(
 # # ``session_T`` for training and ``session_E`` for validation.
 # #
 #
-from sklearn.model_selection import train_test_split
-import torch
-
-idx_train, idx_test_valid = train_test_split(np.arange(len(windows_dataset)),
-                                             random_state=100,
-                                             test_size=0.4,
-                                             shuffle=False)
-idx_valid, idx_test = train_test_split(idx_test_valid,
-                                       test_size=0.75,
-                                       shuffle=False)
-train_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
-valid_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
-test_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
 
 ######################################################################
 # Training
@@ -247,8 +268,6 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 from braindecode.training import TimeSeriesLoss
 
-
-
 from braindecode import EEGRegressor
 # from braindecode.training.losses import TimeSeriesLoss
 from braindecode.training.scoring import CroppedTimeSeriesEpochScoring
@@ -271,7 +290,7 @@ regressor = EEGRegressor(
     criterion=TimeSeriesLoss,
     criterion__loss_function=torch.nn.functional.mse_loss,
     optimizer=torch.optim.AdamW,
-    train_split=predefined_split(valid_set),
+    train_split=predefined_split(valid_windows_dataset),
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
     iterator_train__shuffle=True,
@@ -288,29 +307,27 @@ regressor = EEGRegressor(
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-regressor.fit(train_set, y=None, epochs=n_epochs)
+regressor.fit(train_windows_dataset, y=None, epochs=n_epochs)
 
-xs_valid, ys_valid = [], []
-for batch in valid_set:
-    xs_valid.append(batch[0])
+ys_valid, i_window_in_trials_valid, i_window_stops_valid  = [], [], []
+
+for batch in valid_windows_dataset:
     ys_valid.append(batch[1])
+    i_window_in_trials_valid.append(batch[2][0])
+    i_window_stops_valid.append(batch[2][2])
+
 ys_valid = np.stack(ys_valid)
-xs_valid = np.stack(xs_valid)
 
-xs_test, ys_test = [], []
-for batch in test_set:
-    xs_test.append(batch[0])
+ys_test, i_window_in_trials_test, i_window_stops_test  = [], [], []
+for batch in test_windows_dataset:
     ys_test.append(batch[1])
+    i_window_in_trials_test.append(batch[2][0])
+    i_window_stops_test.append(batch[2][2])
+
 ys_test = np.stack(ys_test)
-xs_test = np.stack(xs_test)
 
-preds_valid = regressor.predict(xs_valid)
-preds_test = regressor.predict(xs_test)
-
-import matplotlib.pyplot as plt
-
-plt.plot(np.arange(100)/25, preds_test[-100:, 1])
-plt.plot(np.arange(100)/25, ys_test[-100:, 1])
+preds_valid = regressor.predict(valid_windows_dataset)
+preds_test = regressor.predict(test_windows_dataset)
 
 import numpy as np
 
@@ -318,10 +335,36 @@ import numpy as np
 for i in range(ys_test.shape[1]):
     ys_cropped = ys_test[:, i, -preds_test.shape[2]:]
     mask = ~np.isnan(ys_cropped)
-
     ys_masked = ys_cropped[mask]
     preds_masked = preds_test[:, i, :][mask]
-    print(preds_masked.shape)
     print(np.corrcoef(preds_masked, ys_masked)[0, 1])
 
-# Trialwise
+######################################################################
+import matplotlib.pyplot as plt
+
+plt.scatter(preds_masked, ys_masked)
+######################################################################
+# Trial-wise correlation coefficient score
+from braindecode.training.scoring import trial_preds_from_window_preds
+
+for target_ch_idx in range(ys_test.shape[1]):
+    ys_cropped = ys_test[:, target_ch_idx, -preds_test.shape[2]:]
+
+    trials_preds = trial_preds_from_window_preds(
+        np.expand_dims(preds_test[:, target_ch_idx, :], 1),
+        i_window_in_trials_test,
+        i_window_stops_test
+    )
+
+    trials_ys = trial_preds_from_window_preds(
+        np.expand_dims(ys_cropped, 1),
+        i_window_in_trials_test,
+        i_window_stops_test
+    )
+
+    for trial_idx, (trial_preds, trial_ys) in enumerate(zip(trials_preds, trials_ys)):
+        mask = ~np.isnan(trial_ys)
+        ys_masked = trial_ys[mask]
+        preds_masked = trial_preds[mask]
+        print(f'corr. coeff. for target {target_ch_idx} trial {trial_idx}: ',
+              np.corrcoef(preds_masked, ys_masked)[0, 1])
