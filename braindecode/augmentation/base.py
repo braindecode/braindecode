@@ -6,7 +6,6 @@
 from typing import List, Tuple, Any
 from numbers import Real
 
-import pandas as pd
 from sklearn.utils import check_random_state
 import torch
 from torch import Tensor, nn
