@@ -180,10 +180,7 @@ def select_by_channels(ds, ch_mapping):
         # if recording contains all channels we are looking for, include it
         if seta.issubset(setb):
             split_ids.append(i)
-    if split_ids:
-        return ds.split(split_ids)['0']
-    else:
-        return ds
+    return ds.split(split_ids)['0']
 
 
 tuh = select_by_channels(tuh, ch_mapping)
