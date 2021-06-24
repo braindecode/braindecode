@@ -310,21 +310,6 @@ def test_set_description_windows_dataset(concat_windows_dataset):
         window_ds.set_description(pd.Series({'wow': 'error'}), overwrite=False)
 
 
-@pytest.mark.parametrize('seq_len,step_len', [[1, 1], [10, 5], [10, 100]])
-def test_sequence_dataset(concat_windows_dataset, seq_len, step_len):
-    windows_ds = concat_windows_dataset.datasets[0]
-    n_windows = len(windows_ds)
-    n_channels, n_times = windows_ds[0][0].shape
-
-    assert X.shape[0] == len(indices)
-    assert X.shape[1:] == single_X.shape
-
-    for ind, Xi, yi in zip(indices, X, y):
-        Xii, yii, _ = concat_windows_dataset[ind]
-        np.testing.assert_array_equal(Xi, Xii)
-        np.testing.assert_array_equal(yi, yii)
-
-
 def test_concat_dataset_get_sequence_out_of_range(concat_windows_dataset):
     indices = [len(concat_windows_dataset)]
     with pytest.raises(IndexError):
