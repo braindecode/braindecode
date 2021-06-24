@@ -64,9 +64,9 @@ class Transform(torch.nn.Module):
 
         Returns
         -------
-        Tensor
+        torch.Tensor
             Transformed inputs.
-        Tensor, optional
+        torch.Tensor, optional
             Transformed labels. Only returned when y is not equal to
             None or omitted.
         """

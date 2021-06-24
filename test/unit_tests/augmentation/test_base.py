@@ -51,7 +51,7 @@ def common_tranform_assertions(input_batch, output_batch, expected_X=None):
     output_batch : tuple
         The batch output by the transform. Should have two elements: the
         transformed X and y.
-    expected_X : tensor, optional
+    expected_X : torch.Tensor, optional
         The expected first element of output_batch, which will be compared to
         it. By default None.
     """

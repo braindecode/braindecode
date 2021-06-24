@@ -11,7 +11,6 @@ import torch
 from torch.fft import fft, ifft
 from torch.nn.functional import pad, one_hot
 from mne.filter import notch_filter
-from mne.channels import make_standard_montage
 
 
 def identity(X, y):
@@ -105,7 +104,7 @@ _new_random_fft_phase = {
 }
 
 
-def _fft_surrogate(x=None, f=None, eps=1, random_state=None):
+def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -175,7 +174,7 @@ def _fft_surrogate(x=None, f=None, eps=1, random_state=None):
     return shifted.real.float()
 
 
-def fft_surrogate(X, y, magnitude, random_state=None):
+def ft_surrogate(X, y, magnitude, random_state=None):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -209,7 +208,7 @@ def fft_surrogate(X, y, magnitude, random_state=None):
     """
     if magnitude == 0:
         return X, y
-    transformed_X = _fft_surrogate(
+    transformed_X = _ft_surrogate(
         x=X,
         eps=magnitude,
         random_state=random_state
@@ -217,7 +216,7 @@ def fft_surrogate(X, y, magnitude, random_state=None):
     return transformed_X, y
 
 
-def _pick_channels_randomly(X, proba_pick, random_state):
+def _pick_channels_randomly(X, p_pick, random_state):
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
     # allows to use the same RNG
@@ -227,10 +226,10 @@ def _pick_channels_randomly(X, proba_pick, random_state):
         device=X.device,
     )
     # equivalent to a 0s and 1s mask
-    return torch.sigmoid(1000*(unif_samples - proba_pick)).to(X.device)
+    return torch.sigmoid(1000*(unif_samples - p_pick)).to(X.device)
 
 
-def channel_dropout(X, y, proba_drop, random_state=None):
+def channels_dropout(X, y, p_drop, random_state=None):
     """Randomly set channels to flat signal.
 
     Part of the CMSAugment policy proposed in [1]_
@@ -241,9 +240,9 @@ def channel_dropout(X, y, proba_drop, random_state=None):
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    proba_pick: float
+    p_drop : float
         Float between 0 and 1 setting the probability of dropping each channel.
-    random_state: int | numpy.random.Generator, optional
+    random_state : int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
 
@@ -260,9 +259,9 @@ def channel_dropout(X, y, proba_drop, random_state=None):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-    if proba_drop == 0:
+    if p_drop == 0:
         return X, y
-    mask = _pick_channels_randomly(X, proba_drop, random_state=random_state)
+    mask = _pick_channels_randomly(X, p_drop, random_state=random_state)
     return X * mask.unsqueeze(-1), y
 
 
@@ -287,7 +286,7 @@ def _make_permutation_matrix(X, mask, random_state):
     return batch_permutations
 
 
-def channel_shuffle(X, y, proba_shuffle, random_state=None):
+def channels_shuffle(X, y, p_shuffle, random_state=None):
     """Randomly shuffle channels in EEG data matrix.
 
     Part of the CMSAugment policy proposed in [1]_
@@ -298,7 +297,7 @@ def channel_shuffle(X, y, proba_shuffle, random_state=None):
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    proba_shuffle: float | None
+    p_shuffle: float | None
         Float between 0 and 1 setting the probability of including the channel
         in the set of permutted channels.
     random_state: int | numpy.random.Generator, optional
@@ -319,14 +318,14 @@ def channel_shuffle(X, y, proba_shuffle, random_state=None):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-    if proba_shuffle == 0:
+    if p_shuffle == 0:
         return X, y
-    mask = _pick_channels_randomly(X, 1 - proba_shuffle, random_state)
+    mask = _pick_channels_randomly(X, 1 - p_shuffle, random_state)
     batch_permutations = _make_permutation_matrix(X, mask, random_state)
     return torch.matmul(batch_permutations, X), y
 
 
-def add_gaussian_noise(X, y, std, random_state=None):
+def gaussian_noise(X, y, std, random_state=None):
     """Randomly add white Gaussian noise to all channels.
 
     Suggested e.g. in [1]_, [2]_ and [3]_
@@ -374,7 +373,7 @@ def add_gaussian_noise(X, y, std, random_state=None):
     return transformed_X, y
 
 
-def permute_channels(X, y, permutation):
+def channels_permute(X, y, permutation):
     """Permute EEG channels according to fixed permutation matrix.
 
     Suggested e.g. in [1]_
@@ -530,7 +529,7 @@ def _nextpow2(n):
     return int(np.ceil(np.log2(np.abs(n))))
 
 
-def _freq_shift(X, fs, f_shift):
+def _frequency_shift(X, fs, f_shift):
     """
     Shift the specified signal by the specified frequency.
 
@@ -551,7 +550,7 @@ def _freq_shift(X, fs, f_shift):
     return shifted[..., :N_orig].real.float()
 
 
-def freq_shift(X, y, delta_freq, sfreq):
+def frequency_shift(X, y, delta_freq, sfreq):
     """Adds a shift in the frequency domain to all channels.
 
     Note that here, the shift is the same for all channels of a single example.
@@ -574,7 +573,7 @@ def freq_shift(X, y, delta_freq, sfreq):
     torch.Tensor
         Transformed labels.
     """
-    transformed_X = _freq_shift(
+    transformed_X = _frequency_shift(
         X=X,
         fs=sfreq,
         f_shift=delta_freq,
@@ -918,12 +917,11 @@ def sensors_rotation(X, y, sensors_positions_matrix, axis, angles,
         Matrix giving the positions of each sensor in a 3D cartesian coordinate
         system. Should have shape (3, n_channels), where n_channels is the
         number of channels. Standard 10-20 positions can be obtained from
-        ``mne`` through:
-        ```
-        ten_twenty_montage = mne.channels.make_standard_montage(
-            'standard_1020'
-        ).get_positions()['ch_pos']
-        ```
+        ``mne`` through::
+
+         >>> ten_twenty_montage = mne.channels.make_standard_montage(
+         ...    'standard_1020'
+         ... ).get_positions()['ch_pos']
     axis : 'x' | 'y' | 'z'
         Axis around which to rotate.
     angles : array-like
@@ -951,35 +949,10 @@ def sensors_rotation(X, y, sensors_positions_matrix, axis, angles,
     return rotated_X, y
 
 
-def get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
-    """Returns standard 10-20 sensors position matrix (for instantiating
-    RandomSensorsRotation for example).
-
-    Parameters
-    ----------
-    raw_or_epoch : mne.io.Raw | mne.Epoch, optional
-        Example of raw or epoch to retrive ordered channels list from. Need to
-        be named as in 10-20. By default None.
-    ordered_ch_names : list, optional
-        List of strings representing the channels of the montage considered.
-        The order has to be consistent with the order of channels in the input
-        matrices that will be fed to `RandomSensorsRotation` transform. By
-        default None.
-    """
-    assert raw_or_epoch is not None or ordered_ch_names is not None,\
-        "At least one of raw_or_epoch and ordered_ch_names is needed."
-    if ordered_ch_names is None:
-        ordered_ch_names = raw_or_epoch.info['ch_names']
-    ten_twenty_montage = make_standard_montage('standard_1020')
-    positions_dict = ten_twenty_montage.get_positions()['ch_pos']
-    positions_subdict = {
-        k: positions_dict[k] for k in ordered_ch_names if k in positions_dict
-    }
-    return np.stack(list(positions_subdict.values())).T
-
-
 def mixup(X, y, lam, random_state=None):
-    """Mixes two channels of EEG data. See [1]_.
+    """Mixes two channels of EEG data.
+
+    See [1]_ for details.
     Implementation based on [2]_.
 
     Parameters
@@ -1003,11 +976,11 @@ def mixup(X, y, lam, random_state=None):
 
     References
     ----------
-    ..  [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+    .. [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
         (2018). mixup: Beyond Empirical Risk Minimization. In 2018
         International Conference on Learning Representations (ICLR)
         Online: https://arxiv.org/abs/1710.09412
-    ..  [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+    .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
     rng = check_random_state(random_state)
 

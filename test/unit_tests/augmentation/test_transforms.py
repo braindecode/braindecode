@@ -10,12 +10,12 @@ from sklearn.utils import check_random_state
 import torch
 
 from braindecode.augmentation.transforms import (
-    TimeReverse, SignFlip, FTSurrogate, MissingChannels, ShuffleChannels,
-    GaussianNoise, ChannelSymmetry, TimeMask, BandstopFilter, FrequencyShift,
-    RandomZRotation, RandomYRotation, RandomXRotation, Mixup
+    TimeReverse, SignFlip, FTSurrogate, ChannelsDropout, ChannelsShuffle,
+    GaussianNoise, ChannelsSymmetry, SmoothTimeMask, BandstopFilter, FrequencyShift,
+    SensorsZRotation, SensorsYRotation, SensorsXRotation, Mixup
 )
 from braindecode.augmentation.functional import (
-    _freq_shift, sensors_rotation, get_standard_10_20_positions
+    _frequency_shift, sensors_rotation, get_standard_10_20_positions
 )
 from test.unit_tests.augmentation.test_base import common_tranform_assertions
 
@@ -120,7 +120,7 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
 def test_missing_channels_transform(rng_seed, proba_drop):
     ones_batch = ones_and_zeros_batch()
     X, y = ones_batch
-    transform = MissingChannels(
+    transform = ChannelsDropout(
         1, proba_drop=proba_drop, random_state=rng_seed
     )
     new_batch = transform(*ones_batch)
@@ -139,7 +139,7 @@ def test_missing_channels_transform(rng_seed, proba_drop):
 @pytest.mark.parametrize("proba_shuffle", [0.25, 0.5])
 def test_shuffle_channels(rng_seed, ch_aranged_batch, proba_shuffle):
     X, y = ch_aranged_batch
-    transform = ShuffleChannels(
+    transform = ChannelsShuffle(
         1, proba_shuffle=proba_shuffle, random_state=rng_seed
     )
     new_batch = transform(*ch_aranged_batch)
@@ -202,7 +202,7 @@ def test_channel_symmetry():
         'T3', 'C3', 'Cz', 'C4', 'T4',
         'T5', 'P3', 'Pz', 'P4', 'T6', 'O1', 'Oz', 'O2'
     ]
-    transform = ChannelSymmetry(1, ch_names)
+    transform = ChannelsSymmetry(1, ch_names)
 
     expected_perm = [
         2, 1, 0, 7, 6, 5, 4, 3, 12, 11, 10, 9, 8, 17, 16, 15, 14,
@@ -226,15 +226,15 @@ def test_channel_symmetry():
 ])
 def test_time_mask(rng_seed, random_batch, mask_len_samples, fail):
     if fail:
-        # Check TimeMask with max length smaller than 1 cannot be instantiated
+        # Check SmoothTimeMask with max length smaller than 1 cannot be instantiated
         with pytest.raises(AssertionError):
-            transform = TimeMask(
+            transform = SmoothTimeMask(
                 1.0,
                 mask_len_samples=mask_len_samples,
                 random_state=rng_seed
             )
     else:
-        transform = TimeMask(
+        transform = SmoothTimeMask(
             1.0,
             mask_len_samples=mask_len_samples,
             random_state=rng_seed
@@ -332,10 +332,10 @@ def make_sinusoid():
 
 
 @ pytest.mark.parametrize("shift", [1, 2, 5])
-def test_freq_shift_funcion(make_sinusoid, shift):
+def test_frequency_shift_funcion(make_sinusoid, shift):
     sfreq = 100
     _, sinusoid_epoch = make_sinusoid(sfreq=sfreq, freq=20, duration_s=30)
-    transformed_sinusoid = _freq_shift(
+    transformed_sinusoid = _frequency_shift(
         sinusoid_epoch, sfreq, shift)[0, 0, :]
     sinusoid = sinusoid_epoch[0, 0, :]
     _, psd_orig = welch(sinusoid, sfreq, nperseg=1024)
@@ -375,12 +375,12 @@ def test_frequency_shift_transform(
         _get_frequency_peaks(time, transformed_sinusoid, sfreq)
         for transformed_sinusoid in transformed_sinusoid_batch
     ])
-    effective_freq_shifts = shifted_frequencies - freq
+    effective_frequency_shifts = shifted_frequencies - freq
     if max_shift > 0:  # Unless the allowed shift is 0...
-        assert np.abs(effective_freq_shifts).std() > 0
+        assert np.abs(effective_frequency_shifts).std() > 0
 
     # ... and that shifts are within desired range
-    assert np.abs(effective_freq_shifts).max() <= max_shift
+    assert np.abs(effective_frequency_shifts).max() <= max_shift
 
 
 def test_rotate_signals():
@@ -408,10 +408,10 @@ def test_rotate_signals():
 
 
 @ pytest.mark.parametrize("rotation,max_degrees,fail", [
-    (RandomXRotation, 15, False),
-    (RandomYRotation, 15, False),
-    (RandomZRotation, 15, False),
-    (RandomZRotation, -15, True),
+    (SensorsXRotation, 15, False),
+    (SensorsYRotation, 15, False),
+    (SensorsZRotation, 15, False),
+    (SensorsZRotation, -15, True),
 ])
 def test_random_rotations(
     rng_seed,

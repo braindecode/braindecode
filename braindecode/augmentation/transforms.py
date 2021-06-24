@@ -7,12 +7,13 @@ import warnings
 
 import numpy as np
 import torch
+from mne.channels import make_standard_montage
 
 from .base import Transform
 from .functional import (
-    time_reverse, sign_flip, fft_surrogate, channel_dropout, channel_shuffle,
-    add_gaussian_noise, permute_channels, smooth_time_mask, bandstop_filter,
-    freq_shift, sensors_rotation, get_standard_10_20_positions, mixup
+    time_reverse, sign_flip, ft_surrogate, channels_dropout, channels_shuffle,
+    gaussian_noise, channels_permute, smooth_time_mask, bandstop_filter,
+    frequency_shift, sensors_rotation, mixup
 )
 
 
@@ -23,8 +24,6 @@ class TimeReverse(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    magnitude : object, optional
-        Always ignored, exists for compatibility with other transforms.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -50,8 +49,6 @@ class SignFlip(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    magnitude : object, optional
-        Always ignored, exists for compatibility with other transforms.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -93,7 +90,7 @@ class FTSurrogate(Transform):
        Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
        preprint arXiv:1806.08675.
     """
-    operation = staticmethod(fft_surrogate)
+    operation = staticmethod(ft_surrogate)
 
     def __init__(
         self,
@@ -114,7 +111,7 @@ class FTSurrogate(Transform):
         return self.magnitude, self.rng
 
 
-class MissingChannels(Transform):
+class ChannelsDropout(Transform):
     """Randomly set channels to flat signal.
 
     Part of the CMSAugment policy proposed in [1]_
@@ -137,7 +134,7 @@ class MissingChannels(Transform):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-    operation = staticmethod(channel_dropout)
+    operation = staticmethod(channels_dropout)
 
     def __init__(
         self,
@@ -155,7 +152,7 @@ class MissingChannels(Transform):
         return self.proba_drop, self.rng
 
 
-class ShuffleChannels(Transform):
+class ChannelsShuffle(Transform):
     """Randomly shuffle channels in EEG data matrix.
 
     Part of the CMSAugment policy proposed in [1]_
@@ -179,7 +176,7 @@ class ShuffleChannels(Transform):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-    operation = staticmethod(channel_shuffle)
+    operation = staticmethod(channels_shuffle)
 
     def __init__(
         self,
@@ -206,16 +203,6 @@ class GaussianNoise(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    magnitude : float | None, optional
-        Float between 0 and 1 encoding the standard deviation to use for the
-        additive noise:
-        ```
-        std = magnitude * mag_range[1] + (1 - magnitude) * mag_range[0]
-        ```
-        Defaults to None (ignored).
-    mag_range : tuple of two floats | None, optional
-        Std range when set using the magnitude (see ``magnitude``).
-        If omitted, the range (0, 0.2) will be used.
     std : float, optional
         Standard deviation to use for the additive noise. Will be ignored if
         magnitude is not set to None. Defaults to 0.1.
@@ -236,7 +223,7 @@ class GaussianNoise(Transform):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
-    operation = staticmethod(add_gaussian_noise)
+    operation = staticmethod(gaussian_noise)
 
     def __init__(
         self,
@@ -254,7 +241,7 @@ class GaussianNoise(Transform):
         return self.std, self.rng
 
 
-class ChannelSymmetry(Transform):
+class ChannelsSymmetry(Transform):
     """Permute EEG channels inverting left and right-side sensors.
 
     Suggested e.g. in [1]_
@@ -268,8 +255,6 @@ class ChannelSymmetry(Transform):
         nomenclature) of the EEG channels that will be transformed. The
         first name should correspond the data in the first row of X, the
         second name in the second row and so on.
-    magnitude : object, optional
-        Always ignored, exists for compatibility with other transforms.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -281,7 +266,7 @@ class ChannelSymmetry(Transform):
        (2018). HAMLET: interpretable human and machine co-learning technique.
        arXiv preprint arXiv:1803.09702.
     """
-    operation = staticmethod(permute_channels)
+    operation = staticmethod(channels_permute)
 
     def __init__(
         self,
@@ -320,7 +305,7 @@ class ChannelSymmetry(Transform):
         return [self.permutation]
 
 
-class TimeMask(Transform):
+class SmoothTimeMask(Transform):
     """Smoothly replace a randomly chosen contiguous part of all channels by
     zeros.
 
@@ -330,18 +315,6 @@ class TimeMask(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    magnitude : float | None, optional
-        Float between 0 and 1 encoding the number of consecutive samples within
-        ``mag_range`` to set to 0:
-        ```
-        mask_len_samples = int(round(magnitude * mag_range[1] +
-            (1 - magnitude) * mag_range[0]))
-        ```
-        Defaults to None (ignored).
-    mag_range : tuple of two floats | None, optional
-        Range of possible values for `mask_len_samples` settable using the
-        magnitude (see ``magnitude``). If omitted, the range (0, 100) samples
-        will be used.
     mask_len_samples : int, optional
         Number of consecutive samples to zero out. Will be ignored if
         magnitude is not set to None. Defaults to 100.
@@ -395,15 +368,6 @@ class BandstopFilter(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    magnitude : float | None, optional
-        Float between 0 and 1 encoding the `bandwidth` parameter:
-        ```
-        bandwidth = magnitude * mag_range[1] + (1 - magnitude) * mag_range[0]
-        ```
-        Defaults to None (ignored).
-    mag_range : tuple of two floats | None, optional
-        Range of possible values for `bandwidth` settable using the magnitude
-        (see ``magnitude``). If omitted, the range (0, 2 Hz) will be used.
     bandwidth : float, optional
         Bandwidth of the filter, i.e. distance between the low and high cut
         frequencies. Will be ignored if magnitude is not set to None. Defaults
@@ -496,7 +460,7 @@ class FrequencyShift(Transform):
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
     """
-    operation = staticmethod(freq_shift)
+    operation = staticmethod(frequency_shift)
 
     def __init__(
         self,
@@ -529,7 +493,34 @@ class FrequencyShift(Transform):
         return delta_freq, self.sfreq
 
 
-class RandomSensorsRotation(Transform):
+def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
+    """Returns standard 10-20 sensors position matrix (for instantiating
+    SensorsRotation for example).
+
+    Parameters
+    ----------
+    raw_or_epoch : mne.io.Raw | mne.Epoch, optional
+        Example of raw or epoch to retrive ordered channels list from. Need to
+        be named as in 10-20. By default None.
+    ordered_ch_names : list, optional
+        List of strings representing the channels of the montage considered.
+        The order has to be consistent with the order of channels in the input
+        matrices that will be fed to `SensorsRotation` transform. By
+        default None.
+    """
+    assert raw_or_epoch is not None or ordered_ch_names is not None,\
+        "At least one of raw_or_epoch and ordered_ch_names is needed."
+    if ordered_ch_names is None:
+        ordered_ch_names = raw_or_epoch.info['ch_names']
+    ten_twenty_montage = make_standard_montage('standard_1020')
+    positions_dict = ten_twenty_montage.get_positions()['ch_pos']
+    positions_subdict = {
+        k: positions_dict[k] for k in ordered_ch_names if k in positions_dict
+    }
+    return np.stack(list(positions_subdict.values())).T
+
+
+class SensorsRotation(Transform):
     """Interpolates EEG signals over sensors rotated around the desired axis
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
@@ -543,12 +534,12 @@ class RandomSensorsRotation(Transform):
         Matrix giving the positions of each sensor in a 3D cartesian coordinate
         system. Should have shape (3, n_channels), where n_channels is the
         number of channels. Standard 10-20 positions can be obtained from
-        `mne` through:
-        ```
-        ten_twenty_montage = mne.channels.make_standard_montage(
-            'standard_1020'
-        ).get_positions()['ch_pos']
-        ```
+        `mne` through::
+
+         >>> ten_twenty_montage = mne.channels.make_standard_montage(
+         ...    'standard_1020'
+         ... ).get_positions()['ch_pos']
+
     axis : 'x' | 'y' | 'z', optional
         Axis around which to rotate. Defaults to 'z'.
     max_degree : float, optional
@@ -620,7 +611,7 @@ class RandomSensorsRotation(Transform):
         )
 
 
-class RandomZRotation(RandomSensorsRotation):
+class SensorsZRotation(SensorsRotation):
     """Interpolates EEG signals over sensors rotated around the Z axis
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
@@ -664,7 +655,7 @@ class RandomZRotation(RandomSensorsRotation):
         random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
-            get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
+            _get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
         )
         super().__init__(
             probability=probability,
@@ -676,7 +667,7 @@ class RandomZRotation(RandomSensorsRotation):
         )
 
 
-class RandomYRotation(RandomSensorsRotation):
+class SensorsYRotation(SensorsRotation):
     """Interpolates EEG signals over sensors rotated around the Y axis
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
@@ -720,7 +711,7 @@ class RandomYRotation(RandomSensorsRotation):
         random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
-            get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
+            _get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
         )
         super().__init__(
             probability=probability,
@@ -732,7 +723,7 @@ class RandomYRotation(RandomSensorsRotation):
         )
 
 
-class RandomXRotation(RandomSensorsRotation):
+class SensorsXRotation(SensorsRotation):
     """Interpolates EEG signals over sensors rotated around the X axis
     with an angle sampled uniformly between ``-max_degree`` and ``max_degree``.
 
@@ -776,7 +767,7 @@ class RandomXRotation(RandomSensorsRotation):
         random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
-            get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
+            _get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
         )
         super().__init__(
             probability=probability,
@@ -805,11 +796,11 @@ class Mixup(Transform):
 
     References
     ----------
-    ..  [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
-        (2018). mixup: Beyond Empirical Risk Minimization. In 2018
-        International Conference on Learning Representations (ICLR)
-        Online: https://arxiv.org/abs/1710.09412
-    ..  [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+    .. [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+       (2018). mixup: Beyond Empirical Risk Minimization. In 2018
+       International Conference on Learning Representations (ICLR)
+       Online: https://arxiv.org/abs/1710.09412
+    .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
     operation = staticmethod(mixup)
 
