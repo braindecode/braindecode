@@ -13,7 +13,9 @@ from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
 
-from .training.scoring import (PostEpochTrainScoring, CroppedTrialEpochScoring,
+from .training.scoring import (PostEpochTrainScoring,
+                               CroppedTrialEpochScoring,
+                               CroppedTimeSeriesEpochScoring,
                                predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
@@ -150,7 +152,7 @@ class EEGClassifier(NeuralNetClassifier):
             cbs = self._default_callbacks + self.callbacks
             epoch_cbs = []
             for name, cb in cbs:
-                if (cb.__class__.__name__ == 'CroppedTrialEpochScoring') and (
+                if isinstance(cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)) and (
                         hasattr(cb, 'window_inds_')) and (not cb.on_train):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
