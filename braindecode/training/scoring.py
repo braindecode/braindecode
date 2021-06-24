@@ -170,12 +170,11 @@ class CroppedTimeSeriesEpochScoring(EpochScoring):
 
             num_preds = pred_results['preds'][-1].shape[-1]
             # slice the targets to fit preds shape
-            pred_results['window_ys'] = [targets[:,:, -num_preds:] for targets in pred_results['window_ys']]
+            pred_results['window_ys'] = [targets[:, -num_preds:] for targets in pred_results['window_ys']]
             # A new trial starts
             # when the index of the window in trials
             # does not increment by 1
             # Add dummy infinity at start
-
 
             trial_preds = trial_preds_from_window_preds(
                 pred_results['preds'],
@@ -191,8 +190,8 @@ class CroppedTimeSeriesEpochScoring(EpochScoring):
             # timeseries of predictions/targets of shape (n_classes x timesteps)
 
             # mask NaNs form targets
-            preds = np.hstack(pred_results['preds']) # n_classes x timesteps in all trials
-            targets = np.hstack(pred_results['window_ys'])
+            preds = np.hstack(trial_preds) # n_classes x timesteps in all trials
+            targets = np.hstack(trial_ys)
             # create valid targets mask
             mask = ~np.isnan(targets)
             # select valid targets that have a matching predictions
@@ -215,8 +214,9 @@ class CroppedTimeSeriesEpochScoring(EpochScoring):
                 isinstance(cb, CroppedTimeSeriesEpochScoring) and (
                     cb.on_train == self.on_train)
             ]
+            masked_preds = [torch.tensor(masked_preds.T)]
             for cb in epoch_cbs:
-                cb.y_preds_ = masked_preds.T
+                cb.y_preds_ = masked_preds
                 cb.y_trues_ = masked_targets.T
                 cb.crops_to_trials_computed = True
 

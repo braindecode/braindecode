@@ -33,7 +33,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
-DATASET_PATH = './BCICIV_4_mat'
+DATASET_PATH = '/home/maciej/projects/braindecode/BCICIV_4_mat'
 
 import numpy as np
 
@@ -120,9 +120,9 @@ idx_train, idx_test_valid = train_test_split(np.arange(len(windows_dataset)),
 idx_valid, idx_test = train_test_split(idx_test_valid,
                                        test_size=0.7,
                                        shuffle=False)
-train_set = torch.utils.data.Subset(windows_dataset, idx_train)
-valid_set = torch.utils.data.Subset(windows_dataset, idx_valid)
-test_set = torch.utils.data.Subset(windows_dataset, idx_test)
+train_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
+valid_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
+test_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
 
 #
 # ######################################################################
