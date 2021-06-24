@@ -154,3 +154,11 @@ def test_data_loader_exception(concat_windows_dataset):
             transforms='a',
             batch_size=128
         )
+
+
+def test_dataset_with_transform(concat_windows_dataset):
+    factor = 10
+    transform = DummyTransform(k=factor)
+    concat_windows_dataset.transform = transform
+    transformed_X = concat_windows_dataset[0][0]
+    assert torch.all(transformed_X == factor)
