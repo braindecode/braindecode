@@ -17,7 +17,7 @@ from .functional import (
 
 
 class TimeReverse(Transform):
-    """Flip the time axis of each input with a given probability
+    """Flip the time axis of each input with a given probability.
 
     Parameters
     ----------
@@ -44,7 +44,7 @@ class TimeReverse(Transform):
 
 
 class SignFlip(Transform):
-    """Flip the sign axis of each input with a given probability
+    """Flip the sign axis of each input with a given probability.
 
     Parameters
     ----------
@@ -132,7 +132,7 @@ class SignFlip(Transform):
 
 
 class FTSurrogate(Transform):
-    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_
+    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Parameters
     ----------
@@ -176,7 +176,7 @@ class FTSurrogate(Transform):
 
 
 class MissingChannels(Transform):
-    """Randomly set channels to flat signal
+    """Randomly set channels to flat signal.
 
     Part of the CMSAugment policy proposed in [1]_
 
@@ -217,7 +217,7 @@ class MissingChannels(Transform):
 
 
 class ShuffleChannels(Transform):
-    """Randomly shuffle channels in EEG data matrix
+    """Randomly shuffle channels in EEG data matrix.
 
     Part of the CMSAugment policy proposed in [1]_
 
@@ -259,7 +259,7 @@ class ShuffleChannels(Transform):
 
 
 class GaussianNoise(Transform):
-    """Randomly add white noise to all channels
+    """Randomly add white noise to all channels.
 
     Suggested e.g. in [1]_, [2]_ and [3]_
 
@@ -316,7 +316,7 @@ class GaussianNoise(Transform):
 
 
 class ChannelSymmetry(Transform):
-    """Permute EEG channels inverting left and right-side sensors
+    """Permute EEG channels inverting left and right-side sensors.
 
     Suggested e.g. in [1]_
 
@@ -383,7 +383,7 @@ class ChannelSymmetry(Transform):
 
 class TimeMask(Transform):
     """Smoothly replace a randomly chosen contiguous part of all channels by
-    zeros
+    zeros.
 
     Suggested e.g. in [1]_ and [2]_
 

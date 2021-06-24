@@ -15,7 +15,7 @@ from mne.channels import make_standard_montage
 
 
 def identity(X, y):
-    """Identity operation
+    """Identity operation.
 
     Parameters
     ----------
@@ -35,7 +35,7 @@ def identity(X, y):
 
 
 def time_reverse(X, y):
-    """Flip the time axis of each input
+    """Flip the time axis of each input.
 
     Parameters
     ----------
@@ -55,7 +55,7 @@ def time_reverse(X, y):
 
 
 def sign_flip(X, y):
-    """Flip the sign axis of each input
+    """Flip the sign axis of each input.
 
     Parameters
     ----------
@@ -109,7 +109,7 @@ def sign_flip(X, y):
 #     return X[..., offset::factor], y
 
 
-def _new_random_fft_phase_odd(n, device, random_state=None):
+def _new_random_fft_phase_odd(n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
         2j * np.pi * rng.random((n - 1) // 2)
@@ -121,7 +121,7 @@ def _new_random_fft_phase_odd(n, device, random_state=None):
     ])
 
 
-def _new_random_fft_phase_even(n, device, random_state=None):
+def _new_random_fft_phase_even(n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
         2j * np.pi * rng.random(n // 2 - 1)
@@ -141,7 +141,7 @@ _new_random_fft_phase = {
 
 
 def _fft_surrogate(x=None, f=None, eps=1, random_state=None):
-    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_
+    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
     and modified.
@@ -211,7 +211,7 @@ def _fft_surrogate(x=None, f=None, eps=1, random_state=None):
 
 
 def fft_surrogate(X, y, magnitude, random_state=None):
-    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_
+    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
     and modified.
@@ -252,7 +252,7 @@ def fft_surrogate(X, y, magnitude, random_state=None):
     return transformed_X, y
 
 
-def _pick_channels_randomly(X, proba_pick, random_state=None):
+def _pick_channels_randomly(X, proba_pick, random_state):
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
     # allows to use the same RNG
@@ -266,7 +266,7 @@ def _pick_channels_randomly(X, proba_pick, random_state=None):
 
 
 def channel_dropout(X, y, proba_drop, random_state=None):
-    """Randomly set channels to flat signal
+    """Randomly set channels to flat signal.
 
     Part of the CMSAugment policy proposed in [1]_
 
@@ -297,11 +297,11 @@ def channel_dropout(X, y, proba_drop, random_state=None):
     """
     if proba_drop == 0:
         return X, y
-    mask = _pick_channels_randomly(X, proba_drop, random_state=None)
+    mask = _pick_channels_randomly(X, proba_drop, random_state=random_state)
     return X * mask.unsqueeze(-1), y
 
 
-def _make_permutation_matrix(X, mask, random_state=None):
+def _make_permutation_matrix(X, mask, random_state):
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
     hard_mask = mask.round()
@@ -323,7 +323,7 @@ def _make_permutation_matrix(X, mask, random_state=None):
 
 
 def channel_shuffle(X, y, proba_shuffle, random_state=None):
-    """Randomly shuffle channels in EEG data matrix
+    """Randomly shuffle channels in EEG data matrix.
 
     Part of the CMSAugment policy proposed in [1]_
 
@@ -362,7 +362,7 @@ def channel_shuffle(X, y, proba_shuffle, random_state=None):
 
 
 def add_gaussian_noise(X, y, std, random_state=None):
-    """Randomly add white noise to all channels
+    """Randomly add white Gaussian noise to all channels.
 
     Suggested e.g. in [1]_, [2]_ and [3]_
 
@@ -410,7 +410,7 @@ def add_gaussian_noise(X, y, std, random_state=None):
 
 
 def permute_channels(X, y, permutation):
-    """Permute EEG channels according to fixed permutation matrix
+    """Permute EEG channels according to fixed permutation matrix.
 
     Suggested e.g. in [1]_
 
@@ -440,7 +440,7 @@ def permute_channels(X, y, permutation):
 
 
 def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
-    """Smoothly replace a contiguous part of all channels by zeros
+    """Smoothly replace a contiguous part of all channels by zeros.
 
     Originally proposed in [1]_ and [2]_
 
@@ -489,7 +489,7 @@ def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
 
 def bandstop_filter(X, y, sfreq, bandwidth, freqs_to_notch):
     """Apply a band-stop filter with desired bandwidth at the desired frequency
-    position
+    position.
 
     Suggested e.g. in [1]_ and [2]_
 
@@ -561,7 +561,7 @@ def _hilbert_transform(x):
 
 
 def _nextpow2(n):
-    """Return the first integer N such that 2**N >= abs(n)"""
+    """Return the first integer N such that 2**N >= abs(n)."""
     return int(np.ceil(np.log2(np.abs(n))))
 
 
