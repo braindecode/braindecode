@@ -5,6 +5,7 @@ and Christian Igel. U-Time: A Fully Convolutional Network for Time Series
 Segmentation Applied to Sleep Staging. Advances in Neural Information
 Processing Systems (NeurIPS 2019)
 """
+from logging import raiseExceptions
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Model
@@ -38,7 +39,7 @@ class USleep(Model):
         self,
         n_classes,
         batch_shape,
-        depth=3,
+        depth=2,
         dilation=1,
         activation="elu",
         dense_classifier_activation="tanh",
@@ -155,7 +156,6 @@ class USleep(Model):
         residual_connections = []
         for i in range(depth):
             l_name = name + "_L%i" % i
-            print(complexity_factor)
             conv = Conv2D(
                 int(filters * complexity_factor),
                 (kernel_size, 1),
@@ -166,7 +166,6 @@ class USleep(Model):
                 dilation_rate=dilation,
                 name=l_name + "_conv1",
             )(in_)
-            print("conv shape:", conv.shape)
             bn = BatchNormalization(name=l_name + "_BN1")(conv)
             s = bn.get_shape()[1]
             if s % 2:
@@ -391,6 +390,7 @@ class USleep(Model):
             cr = np.array([c // 2, c // 2]).flatten()
             cr[self.n_crops % 2] += c % 2
             cropped_node1 = Cropping2D([list(cr), [0, 0]])(node1)
+
         else:
             cropped_node1 = node1
         return cropped_node1
@@ -405,3 +405,12 @@ x = np.random.random((batch_size, n_times, 1, n_channels))
 x = tf.convert_to_tensor(x)
 
 model = USleep(5, batch_shape=(batch_size, n_times, 1, n_channels))
+for i in range(len(model.layers)):
+    weight = []
+    for j in range(len(model.layers[i].get_weights())):
+        shape = model.layers[i].get_weights()[j].shape
+        # weight.append(np.random.random(shape))
+        weight.append(np.ones(shape) * 0.1)
+
+    model.layers[i].set_weights(weight)
+    # print(model.layers[i].get_weights())

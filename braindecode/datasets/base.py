@@ -12,9 +12,11 @@ Dataset classes.
 
 import os
 import json
+from typing import Iterable
 import warnings
 from glob import glob
 
+import numpy as np
 import pandas as pd
 
 from torch.utils.data import Dataset, ConcatDataset
@@ -119,6 +121,22 @@ class WindowsDataset(BaseDataset):
                 'i_stop_in_trial']].to_numpy()
 
     def __getitem__(self, index):
+        """Get a window and its target, or a list of windows and targets.
+
+        Parameters
+        ----------
+        index : int
+            Index to the window (and target) to return.
+
+        Returns
+        -------
+        np.ndarray
+            Window of shape (n_channels, n_times).
+        int | np.ndarray
+            Target(s) for the windows.
+        np.ndarray
+            Crop indices.
+        """
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
@@ -126,6 +144,7 @@ class WindowsDataset(BaseDataset):
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
+
         return X, y, crop_inds
 
     def __len__(self):
@@ -151,14 +170,47 @@ class BaseConcatDataset(ConcatDataset):
     ----------
     list_of_ds : list
         list of BaseDataset, BaseConcatDataset or WindowsDataset
+    seq_target_transform : callable | None
+        Function to call on sequences of targets before returning them. Only
+        called if the dataset is indexed with lists of indices to return
+        sequences.
     """
-    def __init__(self, list_of_ds):
+    def __init__(self, list_of_ds, seq_target_transform=None):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
         self.description = pd.DataFrame([ds.description for ds in list_of_ds])
         self.description.reset_index(inplace=True, drop=True)
+        self.seq_target_transform = seq_target_transform
+
+    def _get_sequence(self, indices):
+        X, y = list(), list()
+        for ind in indices:
+            out_i = super().__getitem__(ind)
+            X.append(out_i[0])
+            y.append(out_i[1])
+
+        X = np.stack(X, axis=0)
+        y = np.array(y)
+        if self.seq_target_transform is not None:
+            y = self.seq_target_transform(y)
+
+        return X, y
+
+    def __getitem__(self, idx):
+        """
+        Parameters
+        ----------
+        idx : int | list
+            Index of window and target to return. If provided as a list of
+            ints, multiple windows and targets will be extracted and
+            concatenated.
+        """
+        if isinstance(idx, Iterable):  # Sample multiple windows
+            return self._get_sequence(idx)
+        else:
+            return super().__getitem__(idx)
 
     def split(self, by=None, property=None, split_ids=None):
         """Split the dataset based on information listed in its description
@@ -238,9 +290,19 @@ class BaseConcatDataset(ConcatDataset):
         return [ds.transform for ds in self.datasets]
 
     @transform.setter
-    def transform(self, value):
+    def transform(self, fn):
         for i in range(len(self.datasets)):
-            self.datasets[i].transform = value
+            self.datasets[i].transform = fn
+
+    @property
+    def seq_target_transform(self):
+        return self._seq_target_transform
+
+    @seq_target_transform.setter
+    def seq_target_transform(self, fn):
+        if not (callable(fn) or fn is None):
+            raise TypeError('target_transform must be a callable.')
+        self._seq_target_transform = fn
 
     def save(self, path, overwrite=False):
         """Save dataset to files.
