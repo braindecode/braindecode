@@ -36,7 +36,7 @@ import copy
 
 import numpy as np
 
-from braindecode.datasets.ecog import EcogBCICompetition4
+from braindecode.datasets.ecog_bci_competition import EcogBCICompetition4
 
 subject_id = 1
 dataset = EcogBCICompetition4('/home/maciej/projects/braindecode/BCICIV_4_mat',
@@ -99,10 +99,10 @@ trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
 windows_dataset = create_windows_from_target_channels(
     dataset,
-    trial_start_offset_samples=1000,
-    trial_stop_offset_samples=400000 - 392000,
     window_size_samples=1000,
     preload=True,
+    raw_targets='target',
+    last_target_only=True
 )
 #
 #

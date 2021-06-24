@@ -452,7 +452,9 @@ def _create_windows_from_target_channels(
     if drop_bad_windows:
         mne_epochs.drop_bad()
 
-    return WindowsDataset(mne_epochs, ds.description, raw_targets=raw_targets, last_target_only=last_target_only)
+    return WindowsDataset(mne_epochs, ds.description,
+                          raw_targets=raw_targets,
+                          last_target_only=last_target_only)
 
 
 def _compute_window_inds(

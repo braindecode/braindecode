@@ -6,35 +6,47 @@ from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
 class EcogBCICompetition4(BaseConcatDataset):
+    """BCI competition IV ECoG dataset with finger movements.
+
+    Contains ECoG recordings for three patients moving fingers during the experiment.
+    Targets correspond to the time courses of the flexion of each of five fingers.
+    See http://www.bbci.de/competition/iv/desc_4.pdf for the dataset description.
+
+    Test labels can be downloaded from:
+    http://www.bbci.de/competition/iv/results/ds4/true_labels.zip
+
+    Data can be downloaded from (Dataset 4):
+    http://www.bbci.de/competition/iv/#dataset4
+
+    Notes
+    -----
+    When using this dataset in publications please cite [1]_ .
+
+    Parameters
+    ----------
+    path : str
+        Path to the folder with BCI competition IV dataset 4. All .mat files are
+        expected to be in this directory.
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be loaded. If None, load all available
+        subjects. Should be in range 1-3.
+
+    References
+    ----------
+    .. [1] Schalk, G., Kubanek, J., Miller, K.J., Anderson, N.R., Leuthardt, E.C.,
+        Ojemann, J.G., Limbrick, D., Moran, D.W., Gerhardt, L.A., and Wolpaw, J.R.
+        Decoding Two Dimensional Movement Trajectories Using Electrocorticographic Signals
+        in Humans, J Neural Eng, 4: 264-275, 2007.
+    """
     possible_subjects = [1, 2, 3]
 
-    def __init__(self, dataset_path, subject_ids=None):
-        """BCI competition IV ECoG dataset with finger movements.
-
-        Contains ECoG recordings for three patients moving fingers during the experiment.
-        Targets correspond to the time courses of the flexion of each of five fingers.
-        See http://www.bbci.de/competition/iv/desc_4.pdf for the dataset description.
-
-        Test labels can be downloaded from:
-        http://www.bbci.de/competition/iv/results/ds4/true_labels.zip
-        Data can be downloaded from (Dataset 4):
-        http://www.bbci.de/competition/iv/#dataset4
-
-        Parameters
-        ----------
-        dataset_path : str
-            Path to the folder with BCI competition IV dataset 4. All .mat files are
-            expected to be in this directory.
-        subject_ids: list(int) | int | None
-            (list of) int of subject(s) to be loaded. If None, load all available
-            subjects. Should be in range 1-3.
-        """
+    def __init__(self, path, subject_ids=None):
         if isinstance(subject_ids, int):
             subject_ids = [subject_ids]
         if subject_ids is None:
             subject_ids = self.possible_subjects
         self._validate_subjects(subject_ids)
-        files_list = [f'{dataset_path}/sub{i}_comp.mat' for i in subject_ids]
+        files_list = [f'{path}/sub{i}_comp.mat' for i in subject_ids]
         datasets = []
         for file_path in files_list:
             raw_train, raw_test = self._load_data_to_mne(file_path)
