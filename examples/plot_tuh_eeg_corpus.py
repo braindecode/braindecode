@@ -194,13 +194,13 @@ tuh = select_by_channels(tuh, ch_mapping)
 # Next, we will chain several preprocessing steps that are realized through
 # `mne`. Data will be loaded by the first preprocessor that has a mention of it
 # in brackets:
-# - crop the recordings to a region of interest
-# - re-reference all recordings to 'ar' (requires load)
-# - rename channels to short channel names
-# - pick channels of interest
-# - scale signals to microvolts (requires load)
-# - resample recordings to a common frequency (requires load)
-# - create compute windows
+# #. crop the recordings to a region of interest
+# #. re-reference all recordings to 'ar' (requires load)
+# #. rename channels to short channel names
+# #. pick channels of interest
+# #. scale signals to microvolts (requires load)
+# #. resample recordings to a common frequency (requires load)
+# #. create compute windows
 
 def custom_rename_channels(raw, mapping):
     # rename channels which are dependent on referencing:
@@ -240,20 +240,13 @@ preprocessors = [
 ###############################################################################
 # The preprocessing loop works as follows. For every recording, we apply the
 # preprocessors as defined above. Then, we update the description of the rec,
-# since we have altered the duration, the reference, and the sampling frequency.
-# Afterwards, we split the continuous signals into compute windows. We store
-# each recording to a unique subdirectory that is named corresponding to the
-# rec id. To save memory, after windowing and storing, we delete the raw
-# dataset and the windows dataset, respectively. Optionally, we can also store
-# the preprocessed dataset prior to windowing instead. This gives us the option
-# to try different windowing parameters after reloading the data.
-
-window_size_samples = 1000
-window_stride_samples = 1000
-create_compute_windows = True
+# since we have altered the duration, the reference, and the sampling
+# frequency. Afterwards, we store each recording to a unique subdirectory that
+# is named corresponding to the rec id. To save memory we delete the raw
+# dataset after storing. This gives us the option to try different windowing
+# parameters after reloading the data.
 
 OUT_PATH = tempfile.mkdtemp()  # plaese insert actual output directory here
-out_i = 0
 tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])
 for rec_i, tuh_subset in tuh_splits.items():
     preprocess(tuh_subset, preprocessors)
@@ -265,38 +258,36 @@ for rec_i, tuh_subset in tuh_splits.items():
         'n_samples': [len(d) for d in tuh_subset.datasets],
     }, overwrite=True)
 
-    if create_compute_windows:
-        # generate compute windows here and store them to disk
-        tuh_windows = create_fixed_length_windows(
-            tuh_subset,
-            start_offset_samples=0,
-            stop_offset_samples=None,
-            window_size_samples=window_size_samples,
-            window_stride_samples=window_stride_samples,
-            drop_last_window=False
-        )
-        # save memory by deleting raw recording
-        del tuh_subset
-        # store the number of windows required for loading later on
-        tuh_windows.set_description({
-            "n_windows": [len(d) for d in tuh_windows.datasets]})
-
     # create one directory for every recording
-    if OUT_PATH is not None:
-        rec_path = os.path.join(OUT_PATH, str(rec_i))
-        if not os.path.exists(rec_path):
-            os.makedirs(rec_path)
-        if create_compute_windows:
-            tuh_windows.save(rec_path)
-        else:
-            tuh_subset.save(rec_path)
-        # save memory by deleting epoched recording
-        del tuh_windows
-        out_i += 1
+    rec_path = os.path.join(OUT_PATH, str(rec_i))
+    if not os.path.exists(rec_path):
+        os.makedirs(rec_path)
+    tuh_subset.save(rec_path)
+    # save memory by deleting raw recording
+    del tuh_subset.datasets[0].raw
 
 
 ###############################################################################
-# We load the preprocessed data again in a lazy fashion (`preload=False`). It is
-# now ready to be used for model training.
+# We reload the preprocessed data again in a lazy fashion (`preload=False`).
 
 tuh_loaded = load_concat_dataset(OUT_PATH, preload=False)
+
+
+###############################################################################
+# We generate compute windows. The resulting dataset is now ready to be used
+# for model training.
+
+window_size_samples = 1000
+window_stride_samples = 1000
+# generate compute windows here and store them to disk
+tuh_windows = create_fixed_length_windows(
+    tuh_loaded,
+    start_offset_samples=0,
+    stop_offset_samples=None,
+    window_size_samples=window_size_samples,
+    window_stride_samples=window_stride_samples,
+    drop_last_window=False
+)
+# store the number of windows required for loading later on
+tuh_windows.set_description({
+    "n_windows": [len(d) for d in tuh_windows.datasets]})
