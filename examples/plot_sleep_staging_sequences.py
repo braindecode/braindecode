@@ -59,7 +59,7 @@ References
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
-    subject_ids=[0, 1], recording_ids=[1], crop_wake_mins=30)
+    subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
 
 
 ######################################################################
@@ -140,16 +140,29 @@ preprocess(windows_dataset, [Preprocessor(zscore)])
 #
 
 ######################################################################
-# We can easily split the dataset using additional info stored in the
-# `description` attribute of :class:`braindecode.datasets.BaseDataset`,
-# in this case using the ``subject`` column. Here, we split the examples per
-# subject.
+# We split the dataset using additional info stored in the `description`
+# attribute of :class:`braindecode.datasets.BaseDataset`, in this case using
+# the ``subject`` column. We create a training and a validation sets by
+# splitting by subjects:
 
+import numpy as np
+from sklearn.model_selection import train_test_split
 from braindecode.datasets import BaseConcatDataset
 
-splitted = windows_dataset.split('subject')
-train_set = splitted['0']
-valid_set = splitted['1']
+random_state = 31
+subjects = np.unique(windows_dataset.description['subject'])
+subj_train, subj_valid = train_test_split(
+    subjects, test_size=0.5, random_state=random_state)
+
+split_ids = {'train': subj_train, 'valid': subj_valid}
+splitted = dict()
+for name, values in split_ids.items():
+    splitted[name] = BaseConcatDataset(
+        [ds for ds in windows_dataset.datasets
+         if ds.description['subject'] in values])
+
+train_set = splitted['train']
+valid_set = splitted['valid']
 
 
 ######################################################################
@@ -168,11 +181,9 @@ valid_set = splitted['1']
 # extractor on single windows, then freezing its weights and training the
 # classifier).
 
-import numpy as np
-
 from braindecode.samplers import SequenceSampler
 
-n_windows = 5  # Sequences of 5 consecutive windows
+n_windows = 3  # Sequences of 3 consecutive windows
 n_windows_stride = 1  # Maximally overlapping sequences
 
 train_sampler = SequenceSampler(
@@ -186,43 +197,29 @@ print(len(valid_sampler))
 
 
 ######################################################################
-# We also create a modified BaseConcatDataset that can receive multiple indices
-# and concatenate the corresponding windows. We also implement a transform to
-# extract the label of the center window of a sequence to use it as target.
+# We also implement a transform to extract the label of the center window of a
+# sequence to use it as target.
 
 # Use label of center window in the sequence
-def target_transform(x):
+def get_center_label(x):
     return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
 
 
-class SequenceWindowsDataset(BaseConcatDataset):
-    """BaseConcatDataset with __getitem__ that expects a list of indices.
-    """
-    def __init__(self, list_of_ds, target_transform=None):
-        super().__init__(list_of_ds)
-        self.target_transform = target_transform
-
-    def __getitem__(self, indices):
-        seq, ys = list(), list()
-        # The following cannot be put into a list comprehension because of
-        # scope requirements for `super()`.
-        for ind in indices:
-            X, y, _ = super().__getitem__(ind)
-            seq.append(X)
-            ys.append(y)
-
-        seq = np.stack(seq, axis=0)
-        ys = np.array(ys)
-        if self.target_transform is not None:
-            ys = self.target_transform(ys)
-
-        return seq, ys
+train_set.seq_target_transform = get_center_label
+valid_set.seq_target_transform = get_center_label
 
 
-train_set = SequenceWindowsDataset(
-    [ds for ds in train_set.datasets], target_transform=target_transform)
-valid_set = SequenceWindowsDataset(
-    [ds for ds in valid_set.datasets], target_transform=target_transform)
+######################################################################
+# Finally, since some sleep stages appears a lot more often than others (e.g.
+# most of the night is spent in the N2 stage), the classes are imbalanced. To
+# avoid overfitting to the more frequent classes, we compute weights that we
+# will provide to the loss function when training.
+
+from sklearn.utils.class_weight import compute_class_weight
+
+y_train = [train_set[idx][1] for idx in train_sampler]
+class_weights = compute_class_weight(
+    'balanced', classes=np.unique(y_train), y=y_train)
 
 
 ######################################################################
@@ -250,7 +247,7 @@ set_random_seeds(seed=87, cuda=cuda)
 
 n_classes = 5
 # Extract number of channels and time steps from dataset
-_, n_channels, input_size_samples = train_set[[0]][0].shape
+n_channels, input_size_samples = train_set[0][0].shape
 
 
 class TimeDistributedNet(nn.Module):
@@ -285,7 +282,7 @@ feat_extractor = SleepStagerChambon2018(
 )
 
 model = TimeDistributedNet(
-    feat_extractor, n_windows=n_windows, n_classes=n_classes)
+    feat_extractor, n_windows=n_windows, n_classes=n_classes, dropout=0.5)
 
 
 # Send model to GPU
@@ -320,9 +317,9 @@ from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
 from braindecode import EEGClassifier
 
-lr = 5e-4
-batch_size = 16
-n_epochs = 5
+lr = 1e-3
+batch_size = 32
+n_epochs = 10
 
 train_bal_acc = EpochScoring(
     scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
@@ -336,6 +333,7 @@ callbacks = [('train_bal_acc', train_bal_acc),
 clf = EEGClassifier(
     model,
     criterion=torch.nn.CrossEntropyLoss,
+    criterion__weight=torch.Tensor(class_weights).to(device),
     optimizer=torch.optim.Adam,
     iterator_train__shuffle=False,
     iterator_train__sampler=train_sampler,
@@ -419,10 +417,13 @@ print(classification_report(y_true, y_pred))
 
 
 ######################################################################
-# Our model was able to perform reasonably well given the low amount of data
-# available, reaching a balanced accuracy of around 55% in a 5-class
-# classification task (chance-level = 20%) on held-out data.
+# Our model was able to learn despite the low amount of data that was available
+# (only two recordings in this example) and reached a balanced accuracy of
+# about 36% in a 5-class classification task (chance-level = 20%) on held-out
+# data.
 #
-# To further improve performance, more recordings can be included in the
-# training set.
+# To further improve performance, more recordings should be included in the
+# training set, and hyperparameters should be selected accordingly. Increasing
+# the sequence length was also shown in [1]_ to help improve performance,
+# especially when few EEG channels are available.
 #

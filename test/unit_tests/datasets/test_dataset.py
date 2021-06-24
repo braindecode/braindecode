@@ -8,9 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import (
-    WindowsDataset, SequenceWindowsDataset, BaseDataset, BaseConcatDataset,
-    create_sequence_dataset)
+from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import create_windows_from_events
 
@@ -230,61 +228,37 @@ def test_on_the_fly_transforms_windows_dataset(concat_windows_dataset):
         concat_windows_dataset.transform = 0
 
 
-@pytest.mark.parametrize('seq_len,step_len', [[1, 1], [10, 5], [10, 100]])
-def test_sequence_dataset(concat_windows_dataset, seq_len, step_len):
-    windows_ds = concat_windows_dataset.datasets[0]
-    n_windows = len(windows_ds)
-    n_channels, n_times = windows_ds[0][0].shape
+@pytest.mark.parametrize('indices', [[1], [1, 2, 3], range(100)])
+def test_concat_dataset_get_sequence(concat_windows_dataset, indices):
+    X, y = concat_windows_dataset[indices]
+    single_X, single_y, _ = concat_windows_dataset[0]
 
-    seq_ds = SequenceWindowsDataset(
-        windows_ds.windows, windows_ds.description, windows_ds.transform,
-        seq_len=seq_len, step_len=step_len)
+    assert X.shape[0] == len(indices)
+    assert X.shape[1:] == single_X.shape
 
-    assert len(seq_ds) == ((n_windows - seq_len) // step_len) + 1
-    assert seq_ds[0][0].shape == (seq_len, n_channels, n_times)
-    assert len(seq_ds[0][1]) == seq_len
-
-    for i in range(len(seq_ds) - 1):
-        np.testing.assert_array_equal(
-            seq_ds[i][0][step_len:], seq_ds[i + 1][0][:-step_len])
+    for ind, Xi, yi in zip(indices, X, y):
+        Xii, yii, _ = concat_windows_dataset[ind]
+        np.testing.assert_array_equal(Xi, Xii)
+        np.testing.assert_array_equal(yi, yii)
 
 
-@pytest.mark.parametrize('on_missing', ['ignore', 'warn', 'raise'])
-def test_invalid_sequence_dataset(concat_windows_dataset, on_missing):
-    windows_ds = concat_windows_dataset.datasets[0]
-    n_windows = len(windows_ds)
-    n_channels, n_times = windows_ds[0][0].shape
-
-    if on_missing == 'ignore':
-        seq_ds = SequenceWindowsDataset(
-            windows_ds.windows, windows_ds.description, windows_ds.transform,
-            seq_len=n_windows + 1, step_len=1, on_missing=on_missing)
-        assert len(seq_ds) == 0
-    elif on_missing == 'warn':
-        with pytest.warns(RuntimeWarning):
-            seq_ds = SequenceWindowsDataset(
-                windows_ds.windows, windows_ds.description,
-                windows_ds.transform, seq_len=n_windows + 1, step_len=1,
-                on_missing=on_missing)
-        assert len(seq_ds) == 0
-    elif on_missing == 'raise':
-        with pytest.raises(ValueError):
-            seq_ds = SequenceWindowsDataset(
-                windows_ds.windows, windows_ds.description,
-                windows_ds.transform, seq_len=n_windows + 1, step_len=1,
-                on_missing=on_missing)
+def test_concat_dataset_get_sequence_out_of_range(concat_windows_dataset):
+    indices = [len(concat_windows_dataset)]
+    with pytest.raises(IndexError):
+        X, y = concat_windows_dataset[indices]
 
 
-def test_get_sequence_dataset(concat_windows_dataset):
-    seq_ds = create_sequence_dataset(concat_windows_dataset, 3, step_len=2)
+def test_concat_dataset_seq_target_transform(concat_windows_dataset):
+    indices = range(100)
+    y = concat_windows_dataset[indices][1]
 
-    assert isinstance(seq_ds, BaseConcatDataset)
-    assert len(seq_ds) == sum([len(ds) for ds in seq_ds.datasets])
+    transform = lambda x: sum(x)  # noqa: E731
+    concat_windows_dataset.seq_target_transform = transform
+    y2 = concat_windows_dataset[indices][1]
+
+    assert y2 == transform(y)
 
 
-def test_sequence_dataset_label_transform(concat_windows_dataset):
-    target_transform = lambda x: x[0]  # noqa: E731
-    seq_ds = create_sequence_dataset(concat_windows_dataset, 3, step_len=100,
-                                     target_transform=target_transform)
-
-    assert isinstance(seq_ds[0][1], np.int64)
+def test_concat_dataset_invalid_seq_target_transform(concat_windows_dataset):
+    with pytest.raises(TypeError):
+        concat_windows_dataset.seq_target_transform = 0
