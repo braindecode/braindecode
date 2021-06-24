@@ -117,7 +117,7 @@ ax.hist(
 )
 ax.legend(genders)
 ax.set_xlabel('Age [years]')
-ax.set_xlabel('Count')
+ax.set_ylabel('Count')
 
 
 ###############################################################################
