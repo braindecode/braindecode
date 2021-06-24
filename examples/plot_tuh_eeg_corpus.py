@@ -243,7 +243,9 @@ preprocessors = [
 # Afterwards, we split the continuous signals into compute windows. We store
 # each recording to a unique subdirectory that is named corresponding to the
 # rec id. To save memory, after windowing and storing, we delete the raw
-# dataset and the windows dataset, respectively.
+# dataset and the windows dataset, respectively. Optionally, we can also store
+# the preprocessed dataset prior to windowing instead. This gives us the option
+# to try different windowing parameters after reloading the data.
 
 window_size_samples = 1000
 window_stride_samples = 1000
