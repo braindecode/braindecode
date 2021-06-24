@@ -45,6 +45,7 @@ class TUH(BaseConcatDataset):
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
         descriptions = _create_chronological_description(file_paths)
+        file_paths = descriptions.loc['path']
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
             descriptions = descriptions[recording_ids]
@@ -202,7 +203,7 @@ class TUHAbnormal(TUH):
                 self._parse_additional_description_from_file_path(file_path))
             additional_descriptions.append(additional_description)
         additional_descriptions = pd.DataFrame(additional_descriptions)
-        self.set_description(additional_descriptions)
+        self.set_description(additional_descriptions, overwrite=True)
         # not 100% sure if this is required:
         # set target name and target of base datasets
         for ds_i, ds in enumerate(self.datasets):
@@ -224,6 +225,7 @@ class TUHAbnormal(TUH):
         assert ('train' in tokens or 'eval' in tokens), (
             'No train or eval set information found.')
         return {
+            'version': tokens[-9],
             'train': 'train' in tokens,
             'pathological': 'abnormal' in tokens,
         }
