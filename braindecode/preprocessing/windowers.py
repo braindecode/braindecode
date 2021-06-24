@@ -117,8 +117,9 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-        concat_ds, start_offset_samples, stop_offset_samples,
+        concat_ds,
         window_size_samples, window_stride_samples, drop_last_window,
+        start_offset_samples=None, stop_offset_samples=None,
         mapping=None, preload=False, drop_bad_windows=True, picks=None,
         reject=None, flat=None, on_missing='error', n_jobs=1):
     """Windower that creates sliding windows.
@@ -176,6 +177,12 @@ def create_fixed_length_windows(
             'Meaning of `trial_stop_offset_samples`=0 has changed, use `None` '
             'to indicate end of trial/recording. Using `None`.')
         stop_offset_samples = None
+
+    if start_offset_samples is not None or stop_offset_samples is not None:
+        warnings.warn('Usage of offset_sample args in create_fixed_length_windows is deprecated and'
+                      ' will be removed in future versions. Please use '
+                      'braindecode.preprocessing.preprocess.Preprocessor("crop", tmin, tmax)'
+                      ' instead.')
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_fixed_length_windows)(
