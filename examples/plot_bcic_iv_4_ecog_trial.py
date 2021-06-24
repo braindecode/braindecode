@@ -1,9 +1,10 @@
 """
-Trialwise Decoding on BCIC IV 2a Dataset
+Trialwise Decoding on BCIC IV 4 ECoG Dataset
 ========================================
 
 This tutorial shows you how to train and test deep learning models with
-Braindecode in a classical EEG setting: you have trials of data with
+Braindecode with ECoG
+a classical EEG setting: you have trials of data with
 labels (e.g., Right Hand, Left Hand, etc.).
 
 """
@@ -32,17 +33,15 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
-import copy
+DATASET_PATH = './BCICIV_4_mat'
 
 import numpy as np
 
 from braindecode.datasets.ecog_bci_competition import EcogBCICompetition4
 
 subject_id = 1
-dataset = EcogBCICompetition4('/home/maciej/projects/braindecode/BCICIV_4_mat',
-                              subject_ids=[subject_id])
+dataset = EcogBCICompetition4(DATASET_PATH, subject_ids=[subject_id])
 dataset = dataset.split('session')['train']
-dataset_before = copy.deepcopy(dataset)
 
 from braindecode.preprocessing.preprocess import (
     exponential_moving_standardize, preprocess, Preprocessor)
@@ -64,13 +63,6 @@ preprocessors = [
 
 # Transform the data
 preprocess(dataset, preprocessors)
-
-# Check whether preprocessing has not affected the targets
-np.testing.assert_array_equal(
-    dataset.datasets[0].raw.get_data()[-5:, :],
-    dataset_before.datasets[0].raw.get_data()[-5:, :]
-)
-del dataset_before
 
 #
 #
