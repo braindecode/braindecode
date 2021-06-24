@@ -23,24 +23,24 @@ class CroppedLoss(nn.Module):
 
 class MixupCriterion:
     """Implements loss for Mixup for EEG data. See [1]_.
-    Implementation based on [2]_.
 
+    Implementation based on [2]_.
 
     Parameters
     ----------
-    preds: torch tensor
-        predictions from the model
-    target: torch tensor | list of torch tensor
+    preds : torch.Tensor
+        Predictions from the model.
+    target : torch.Tensor | list of torch.Tensor
         For predictions without mixup, the targets as a tensor. If mixup has
         been applied, a list containing the targets of the two mixed
         samples and the mixing coefficients as tensors.
 
     References
     ----------
-    ..  [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
-        mixup: Beyond Empirical Risk Minimization
-        Online: https://arxiv.org/abs/1710.09412
-     ..   [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
+    .. [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
+       mixup: Beyond Empirical Risk Minimization
+       Online: https://arxiv.org/abs/1710.09412
+    .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
 
     def __call__(self, preds, target):

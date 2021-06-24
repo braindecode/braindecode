@@ -67,8 +67,7 @@ class Transform(torch.nn.Module):
         torch.Tensor
             Transformed inputs.
         torch.Tensor, optional
-            Transformed labels. Only returned when y is not equal to
-            None or omitted.
+            Transformed labels. Only returned when y is not None.
         """
         out_X = X.clone()
         if y is not None:

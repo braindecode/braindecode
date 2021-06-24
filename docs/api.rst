@@ -77,6 +77,7 @@ Training
     CroppedLoss
     CroppedTrialEpochScoring
     PostEpochTrainScoring
+    MixupCriterion
     trial_preds_from_window_preds
 
 Datasets
