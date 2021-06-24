@@ -77,13 +77,14 @@ class Transform(torch.nn.Module):
         # Uses the mask to define the output
         out_X, out_y = X.clone(), y.clone()
         if num_valid > 0:
-            # Apply the operation defining the Transform to the whole batch
-            # if type(tr_y) is tuple:
-            #     out_y = tuple(tmp_y[mask] for tmp_y in tr_y)
-            # else:
-            out_X[mask, ...], out_y[mask] = self.operation(
+            out_X[mask, ...], tr_y = self.operation(
                 out_X[mask, ...], out_y[mask], *self.get_params(X, y)
             )
+            # Apply the operation defining the Transform to the whole batch
+            if type(tr_y) is tuple:
+                out_y = tuple(tmp_y[mask] for tmp_y in tr_y)
+            else:
+                out_y[mask] = tr_y
         return out_X, out_y
 
     def _get_mask(self, batch_size=None) -> torch.Tensor:
@@ -97,16 +98,11 @@ class Transform(torch.nn.Module):
     def probability(self):
         return self._probability
 
-    @property
-    def magnitude(self):
-        return self._magnitude
-
     def to_dict(self):
         """Returns a dictionary describing the transform """
         return {
             "operation": type(self).__name__,
             "probability": self.probability,
-            "magnitude": self.probabilitsy,
         }
 
 
