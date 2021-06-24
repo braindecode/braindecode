@@ -51,9 +51,11 @@ class EEGRegressor(NeuralNetRegressor):
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True, **kwargs):
+                 iterator_train__shuffle=True, aggregate_predictions=False, **kwargs):
         self.cropped = cropped
         callbacks = self._parse_callbacks(callbacks)
+        # TODO: docstring for aggregate predictions
+        self.aggregate_predictions = aggregate_predictions
 
         super().__init__(*args,
                          callbacks=callbacks,
@@ -250,7 +252,7 @@ class EEGRegressor(NeuralNetRegressor):
         # Predictions may be already averaged in CroppedTrialEpochScoring (y_pred.shape==2).
         # However, when predictions are computed outside of CroppedTrialEpochScoring
         # we have to average predictions, hence the check if len(y_pred.shape) == 3
-        if self.cropped and len(y_pred.shape) == 3:
+        if self.cropped and self.aggregate_predictions and len(y_pred.shape) == 3:
             return y_pred.mean(-1)
         else:
             return y_pred

@@ -267,6 +267,7 @@ n_epochs = 4
 regressor = EEGRegressor(
     model,
     cropped=True,
+    aggregate_predictions=False,
     criterion=TimeSeriesLoss,
     criterion__loss_function=torch.nn.functional.mse_loss,
     optimizer=torch.optim.AdamW,
