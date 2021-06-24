@@ -949,7 +949,7 @@ def sensors_rotation(X, y, sensors_positions_matrix, axis, angles,
     return rotated_X, y
 
 
-def mixup(X, y, lam, random_state=None):
+def mixup(X, y, lam, idx_perm):
     """Mixes two channels of EEG data.
 
     See [1]_ for details.
@@ -957,15 +957,15 @@ def mixup(X, y, lam, random_state=None):
 
     Parameters
     ----------
-    X : torch.tensor
+    X : torch.Tensor
         EEG data in form ``batch_size, n_channels, n_times``
-    y : torch.tensor
+    y : torch.Tensor
         Target of length ``batch_size``
-    lam : float
-        Float between 0 and 1 setting the linear interpolation between
+    lam : torch.Tensor
+        Values between 0 and 1 setting the linear interpolation between
         examples.
-    random_state: int | numpy.random.Generator (default=None)
-        Seed to be used to instantiate numpy random number generator instance.
+    idx_perm: torch.Tensor
+        Permuted indices of example that are mixed into original examples.
 
     Returns
     -------
@@ -981,13 +981,10 @@ def mixup(X, y, lam, random_state=None):
         International Conference on Learning Representations (ICLR)
         Online: https://arxiv.org/abs/1710.09412
     .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
-    """
-    rng = check_random_state(random_state)
-
+     """
     device = X.device
     batch_size, n_channels, n_times = X.shape
 
-    idx_perm = torch.as_tensor(rng.permutation(batch_size,))
     X_mix = torch.zeros((batch_size, n_channels, n_times)).to(device)
     y_a = torch.arange(batch_size).to(device)
     y_b = torch.arange(batch_size).to(device)
