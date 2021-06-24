@@ -58,15 +58,14 @@ class BaseDataset(Dataset):
 
         # save target name for load/save later
         self.target_name = target_name
-        if target_name is None:
-            self.target = None
-        elif target_name in self.description:
-            self.target = self.description[target_name]
-        else:
-            raise ValueError(f"'{target_name}' not in description.")
+        if self.target_name is not None and self.target_name not in self.description:
+            raise ValueError(f"'{self.target_name}' not in description.")
 
     def __getitem__(self, index):
-        X, y = self.raw[:, index][0], self.target
+        X = self.raw[:, index][0]
+        y = None
+        if self.target_name is not None:
+            y = self.description[self.target_name]
         if self.transform is not None:
             X = self.transform(X)
         return X, y
