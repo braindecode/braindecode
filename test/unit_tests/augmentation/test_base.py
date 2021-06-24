@@ -132,7 +132,7 @@ def test_data_loader(dummy_transform, concat_windows_dataset, nb_transforms,
         concat_windows_dataset,
         transforms=transforms,
         batch_size=128)
-    for idx_batch, (batch_x, batch_y) in enumerate(data_loader):
+    for idx_batch, _ in enumerate(data_loader):
         if idx_batch >= 3:
             break
 

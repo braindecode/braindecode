@@ -160,8 +160,9 @@ class Compose(Transform):
 
 def _make_collateable(transform):
     def _collate_fn(batch):
-        X, y, _ = default_collate(batch)
-        return transform(X, y)
+        collated_batch = default_collate(batch)
+        X, y = collated_batch[:2]
+        return (*transform(X, y), *collated_batch[2:])
     return _collate_fn
 
 
