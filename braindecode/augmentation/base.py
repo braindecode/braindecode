@@ -21,7 +21,7 @@ Output = Tuple[torch.Tensor, torch.Tensor]
 
 class Transform(torch.nn.Module):
     """Basic transform class used for implementing data augmentation
-    operations
+    operations.
 
     Parameters
     ----------
@@ -54,7 +54,7 @@ class Transform(torch.nn.Module):
         return tuple()
 
     def forward(self, X: Tensor, y: Tensor = None) -> Output:
-        """General forward pass for an augmentation transform
+        """General forward pass for an augmentation transform.
 
         Parameters
         ----------
@@ -108,16 +108,9 @@ class Transform(torch.nn.Module):
     def probability(self):
         return self._probability
 
-    def to_dict(self):
-        """Returns a dictionary describing the transform """
-        return {
-            "operation": type(self).__name__,
-            "probability": self.probability,
-        }
-
 
 class IdentityTransform(Transform):
-    """Identity transform
+    """Identity transform.
 
     Transform that does not change the input.
     """
@@ -125,7 +118,7 @@ class IdentityTransform(Transform):
 
 
 class Compose(Transform):
-    """Transform composition
+    """Transform composition.
 
     Callable class allowing to cast a sequence of Transform objects into a
     single one.
@@ -144,16 +137,6 @@ class Compose(Transform):
         for transform in self.transforms:
             X, y = transform(X, y)
         return X, y
-
-    def to_dict(self):
-        """Returns a DataFrame describing the transforms making the object"""
-        structure = list()
-        for i, transform in enumerate(self.transforms):
-            transform_struct = transform.to_dict()
-            transform_struct.update({"transform_idx": i})
-            structure.append(transform_struct)
-        res = pd.DataFrame(structure)
-        return res
 
 
 def _make_collateable(transform):
