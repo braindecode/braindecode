@@ -194,6 +194,7 @@ tuh = select_by_channels(tuh, ch_mapping)
 # Next, we will chain several preprocessing steps that are realized through
 # `mne`. Data will be loaded by the first preprocessor that has a mention of it
 # in brackets:
+#
 # #. crop the recordings to a region of interest
 # #. re-reference all recordings to 'ar' (requires load)
 # #. rename channels to short channel names
