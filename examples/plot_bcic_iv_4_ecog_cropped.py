@@ -297,10 +297,15 @@ regressor = EEGRegressor(
     batch_size=batch_size,
     callbacks=[
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
-        ('r2_score', CroppedTimeSeriesEpochScoring(sklearn.metrics.r2_score,
+        ('r2_train', CroppedTimeSeriesEpochScoring(sklearn.metrics.r2_score,
                                                    lower_is_better=False,
                                                    on_train=True,
-                                                   name='r2_score')
+                                                   name='r2_train')
+         ),
+        ('r2_valid', CroppedTimeSeriesEpochScoring(sklearn.metrics.r2_score,
+                                                   lower_is_better=False,
+                                                   on_train=False,
+                                                   name='r2_valid')
          )
     ],
     device=device,

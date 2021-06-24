@@ -33,6 +33,8 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
+from sklearn.metrics import r2_score
+
 DATASET_PATH = '/home/maciej/projects/braindecode/BCICIV_4_mat'
 
 import numpy as np
@@ -51,6 +53,8 @@ high_cut_hz = 200.  # high cut frequency for filtering
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
+
+preprocess(dataset, [Preprocessor('crop', tmin=0, tmax=30)])
 
 preprocessors = [
     # TODO: ensure that misc is not removed
@@ -118,11 +122,11 @@ idx_train, idx_test_valid = train_test_split(np.arange(len(windows_dataset)),
                                              test_size=0.4,
                                              shuffle=False)
 idx_valid, idx_test = train_test_split(idx_test_valid,
-                                       test_size=0.7,
+                                       test_size=0.75,
                                        shuffle=False)
-train_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
-valid_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
-test_set = torch.utils.data.Subset(windows_dataset, np.arange(100))
+train_set = torch.utils.data.Subset(windows_dataset, idx_train)
+valid_set = torch.utils.data.Subset(windows_dataset, idx_valid)
+test_set = torch.utils.data.Subset(windows_dataset, idx_test)
 
 #
 # ######################################################################
@@ -222,6 +226,7 @@ regressor = EEGRegressor(
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
+        'r2',
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
