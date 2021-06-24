@@ -135,7 +135,9 @@ def _get_header(*args):
 @mock.patch('mne.io.read_raw_edf', new=_fake_raw)
 @mock.patch('braindecode.datasets.tuh._read_edf_header', new=_get_header)
 def test_tuh(mock_glob):
-    tuh = TUH('')
+    tuh = TUH(
+        path='',
+    )
     assert len(tuh.datasets) == 5
     assert tuh.description.shape == (5, 13)
     assert len(tuh) == 5000
@@ -151,16 +153,51 @@ def test_tuh(mock_glob):
     assert tuh.description.reference.to_list() == ['le', 'ar', 'ar', 'ar', 'ar']
     assert tuh.description.sfreq.to_list() == [10, 10, 10, 10, 10]
     assert tuh.description.n_samples.to_list() == [1000, 1000, 1000, 1000, 1000]
+    x, y = tuh[0]
+    assert x.shape == (2, 1)
+    assert y is None
+    tuh = TUH(
+        path='',
+        target_name='gender',
+        recording_ids=[1, 4],
+    )
+    assert len(tuh.datasets) == 2
+    x, y = tuh[0]
+    assert y == 'F'
+    x, y = tuh[-1]
+    assert y == 'F'
 
 
 @mock.patch('glob.glob', return_value=TUH_EEG_ABNORMAL_PATHS)
 @mock.patch('mne.io.read_raw_edf', new=_fake_raw)
 @mock.patch('braindecode.datasets.tuh._read_edf_header', new=_get_header)
-def test_tuh_abnormal(mock_glob):
-    tuh_ab = TUHAbnormal('')
+@mock.patch('braindecode.datasets.tuh._read_physician_report', return_value='simple_test')
+def test_tuh_abnormal(mock_glob, mock_report):
+    tuh_ab = TUHAbnormal(
+        path='',
+        add_physician_reports=True,
+    )
     assert len(tuh_ab.datasets) == 5
-    assert tuh_ab.description.shape == (5, 15)
+    assert tuh_ab.description.shape == (5, 16)
     assert tuh_ab.description.version.to_list() == [
         'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0']
     assert tuh_ab.description.pathological.to_list() == [True, False, True, False, True]
     assert tuh_ab.description.train.to_list() == [True, True, True, True, False]
+    assert tuh_ab.description.report.to_list() == [
+        'simple_test', 'simple_test', 'simple_test', 'simple_test', 'simple_test']
+    x, y = tuh_ab[0]
+    assert x.shape == (2, 1)
+    assert y
+    x, y = tuh_ab[-1]
+    assert y
+
+    tuh_ab = TUHAbnormal(
+        path='',
+        target_name='age',
+    )
+    x, y = tuh_ab[-1]
+    assert y == 50
+    for ds in tuh_ab.datasets:
+        ds.target_name = 'gender'
+    x, y = tuh_ab[0]
+    assert y == 'M'

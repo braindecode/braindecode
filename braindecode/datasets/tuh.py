@@ -203,13 +203,9 @@ class TUHAbnormal(TUH):
             additional_descriptions.append(additional_description)
         additional_descriptions = pd.DataFrame(additional_descriptions)
         self.set_description(additional_descriptions, overwrite=True)
-        # not 100% sure if this is required:
-        # set target name and target of base datasets
+        # set target name of base datasets
         for ds_i, ds in enumerate(self.datasets):
             ds.target_name = target_name
-            ds.target = self.description.loc[ds_i, target_name]
-            for k in additional_descriptions.columns:
-                ds.description[k] = self.description.loc[ds_i, k]
 
     @staticmethod
     def _parse_additional_description_from_file_path(file_path):
