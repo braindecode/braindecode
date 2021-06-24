@@ -177,6 +177,12 @@ def create_fixed_length_windows(
             'to indicate end of trial/recording. Using `None`.')
         stop_offset_samples = None
 
+    if start_offset_samples != 0 or stop_offset_samples not in [0, None]:
+        warnings.warn('Usage of offset_sample args in create_fixed_length_windows is deprecated and'
+                      ' will be removed in future versions. Please use '
+                      'braindecode.preprocessing.preprocess.Preprocessor("crop", tmin, tmax)'
+                      ' instead.')
+
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_fixed_length_windows)(
             ds, start_offset_samples, stop_offset_samples, window_size_samples,

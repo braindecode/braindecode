@@ -95,7 +95,7 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
     Returns
     -------
     windows_datasets: BaseConcatDataset
-        X and y transformed to a dataset format that is compativle with skorch
+        X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """
     # Prevent circular import
