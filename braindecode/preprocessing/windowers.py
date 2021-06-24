@@ -18,6 +18,7 @@ from joblib import Parallel, delayed
 from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 
+# XXX it's called concat_ds...
 def create_windows_from_events(
         concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples=None, window_stride_samples=None,
@@ -34,14 +35,14 @@ def create_windows_from_events(
     drop_last_window is set to False, an additional overlapping window that
     ends at trial_stop_offset_samples is created.
 
-    Windows are extracted from the interval defined by the following:
+    Windows are extracted from the interval defined by the following::
 
-                                                  trial onset +
-                    trial onset                     duration
-    |--------------------|------------------------------|---------------------|
-    trial onset -                                                 trial onset +
-    trial_start_offset_samples                                       duration +
-                                                      trial_stop_offset_samples
+                                                trial onset +
+                        trial onset                duration
+        |--------------------|------------------------|-----------------------|
+        trial onset -                                             trial onset +
+        trial_start_offset_samples                                   duration +
+                                                    trial_stop_offset_samples
 
     Parameters
     ----------

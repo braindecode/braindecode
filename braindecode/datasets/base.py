@@ -40,11 +40,11 @@ class BaseDataset(Dataset):
 
     Parameters
     ----------
-    raw: mne.io.Raw
+    raw : mne.io.Raw
         Continuous data.
-    description: dict | pandas.Series | None
+    description : dict | pandas.Series | None
         Holds additional description about the continuous signal / subject.
-    target_name: str | None
+    target_name : str | None
         Name of the index in `description` that should be used to provide the
         target (e.g., to be used in a prediction task later on).
     transform : callable | None
@@ -53,7 +53,7 @@ class BaseDataset(Dataset):
     def __init__(self, raw, description=None, target_name=None,
                  transform=None):
         self.raw = raw
-        self.description = _create_description(description)
+        self._description = _create_description(description)
         self.transform = transform
 
         # save target name for load/save later
@@ -84,6 +84,30 @@ class BaseDataset(Dataset):
             raise ValueError('Transform needs to be a callable.')
         self._transform = value
 
+    @property
+    def description(self):
+        return self._description
+
+    def set_description(self, description, overwrite=False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.Series
+            Description in the form key: value.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = _create_description(description)
+        for key, value in description.items():
+            # if they key is already in the existing description, drop it
+            if key in self._description:
+                assert overwrite, (f"'{key}' already in description. Please "
+                                   f"rename or set overwrite to True.")
+                self._description.pop(key)
+        self._description = pd.concat([self.description, description])
+
 
 class WindowsDataset(BaseDataset):
     """Returns windows from an mne.Epochs object along with a target.
@@ -110,7 +134,7 @@ class WindowsDataset(BaseDataset):
     """
     def __init__(self, windows, description=None, transform=None):
         self.windows = windows
-        self.description = _create_description(description)
+        self._description = _create_description(description)
         self.transform = transform
 
         self.y = self.windows.metadata.loc[:, 'target'].to_numpy()
@@ -141,6 +165,30 @@ class WindowsDataset(BaseDataset):
             raise ValueError('Transform needs to be a callable.')
         self._transform = value
 
+    @property
+    def description(self):
+        return self._description
+
+    def set_description(self, description, overwrite=False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.Series
+            Description in the form key: value.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = _create_description(description)
+        for key, value in description.items():
+            # if they key is already in the existing description, drop it
+            if key in self._description:
+                assert overwrite, (f"'{key}' already in description. Please "
+                                   f"rename or set overwrite to True.")
+                self._description.pop(key)
+        self._description = pd.concat([self.description, description])
+
 
 class BaseConcatDataset(ConcatDataset):
     """A base class for concatenated datasets. Holds either mne.Raw or
@@ -149,7 +197,7 @@ class BaseConcatDataset(ConcatDataset):
 
     Parameters
     ----------
-    list_of_ds: list
+    list_of_ds : list
         list of BaseDataset, BaseConcatDataset or WindowsDataset
     """
     def __init__(self, list_of_ds):
@@ -157,8 +205,6 @@ class BaseConcatDataset(ConcatDataset):
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
-        self.description = pd.DataFrame([ds.description for ds in list_of_ds])
-        self.description.reset_index(inplace=True, drop=True)
 
     def split(self, by=None, property=None, split_ids=None):
         """Split the dataset based on information listed in its description
@@ -166,20 +212,21 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        by: str | list(int) | list(list(int))
-            If by is a string, splitting is performed based on the description
+        by : str | list
+            If ``by`` is a string, splitting is performed based on the description
             DataFrame column with this name.
-            If by is a (list of) list of integers, the position in the first
+            If ``by`` is a (list of) list of integers, the position in the first
             list corresponds to the split id and the integers to the
             datapoints of that split.
-        property: str
+        property : str
             Some property which is listed in info DataFrame.
-        split_ids: list(int) | list(list(int))
+        split_ids : list
             List of indices to be combined in a subset.
+            It can be a list of int or a list of list of int.
 
         Returns
         -------
-        splits: dict{str: BaseConcatDataset}
+        splits : dict
             A dictionary with the name of the split (a string) as key and the
             dataset as value.
         """
@@ -214,7 +261,7 @@ class BaseConcatDataset(ConcatDataset):
 
         Returns
         -------
-        pd.DataFrame:
+        metadata : pd.DataFrame
             DataFrame containing as many rows as there are windows in the
             BaseConcatDataset, with the metadata and description information
             for each window.
@@ -246,9 +293,9 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        path: str
+        path : str
             Directory to which .fif / -epo.fif and .json files are stored.
-        overwrite: bool
+        overwrite : bool
             Whether to delete old files (.json, .fif, -epo.fif) in specified directory
             prior to saving.
         """
@@ -290,3 +337,26 @@ class BaseConcatDataset(ConcatDataset):
         if concat_of_raws:
             json.dump({'target_name': target_name}, open(target_file_name, 'w'))
         self.description.to_json(description_file_name)
+
+    @property
+    def description(self):
+        df = pd.DataFrame([ds.description for ds in self.datasets])
+        df.reset_index(inplace=True, drop=True)
+        return df
+
+    def set_description(self, description, overwrite=False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.DataFrame
+            Description in the form key: value where the length of the value
+            has to match the number of datasets.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = pd.DataFrame(description)
+        for key, value in description.items():
+            for ds, value_ in zip(self.datasets, value):
+                ds.set_description({key: value_}, overwrite=overwrite)

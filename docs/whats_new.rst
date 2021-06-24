@@ -21,6 +21,13 @@ What's new
 Current (0.5.2.dev0)
 --------------------
 
+Enhancements
+~~~~~~~~~~~~
+- Adding Thinker Invariance Network :class:`braindecode.models.TIDNet` (:gh:`170` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+
+API changes
+~~~~~~~~~~~
+- Removing the default sampling frequency sfreq value in :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 
 .. _changes_0_5_1:
 
@@ -68,3 +75,7 @@ Authors
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
 .. _Maciej Śliwowski: https://github.com/sliwy
+.. _Ann-Kathrin Kiessner: https://github.com/Ann-KathrinKiessner
+.. _Dan Wilson: https://github.com/dcwil
+.. _Henrik Bonsmann: https://github.com/HenrikBons
+.. _Vytautas Jankauskas: https://github.com/vytjan

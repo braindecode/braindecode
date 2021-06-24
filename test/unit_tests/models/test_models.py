@@ -12,7 +12,7 @@ import pytest
 
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
-    SleepStagerChambon2018)
+    SleepStagerChambon2018, TIDNet)
 from braindecode.util import set_random_seeds
 
 
@@ -134,3 +134,10 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
     assert y_pred2.shape == (n_examples, n_classes)
     np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
                                y_pred2.detach().cpu().numpy())
+
+
+def test_tidnet(input_sizes):
+    model = TIDNet(
+        input_sizes['n_channels'], input_sizes['n_classes'],
+        input_sizes['n_in_times'],)
+    check_forward_pass(model, input_sizes)

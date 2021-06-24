@@ -90,11 +90,13 @@ def test_cropped_decoding():
 
     train_set = create_from_X_y(X[:60], y[:60],
                                 drop_last_window=False,
+                                sfreq=100,
                                 window_size_samples=input_window_samples,
                                 window_stride_samples=n_preds_per_input)
 
     valid_set = create_from_X_y(X[60:], y[60:],
                                 drop_last_window=False,
+                                sfreq=100,
                                 window_size_samples=input_window_samples,
                                 window_stride_samples=n_preds_per_input)
 
