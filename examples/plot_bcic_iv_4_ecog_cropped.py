@@ -266,10 +266,9 @@ test_windows_dataset = create_fixed_length_windows(
 
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
-from braindecode.training import TimeSeriesLoss
 
+from braindecode.training import TimeSeriesLoss
 from braindecode import EEGRegressor
-# from braindecode.training.losses import TimeSeriesLoss
 from braindecode.training.scoring import CroppedTimeSeriesEpochScoring
 
 # These values we found good for shallow network:

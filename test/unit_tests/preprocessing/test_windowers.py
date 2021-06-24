@@ -75,7 +75,8 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
         assert pd.Series(ds1.windows.info).to_json() == \
                pd.Series(ds2.windows.info).to_json()
         assert ds1.description.equals(ds2.description)
-        assert np.array_equal(ds1.y, ds2.y)
+        assert np.array_equal(ds1.windows.metadata.loc[:, 'target'].to_numpy(),
+                              ds2.windows.metadata.loc[:, 'target'].to_numpy())
         assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
 
 
@@ -346,7 +347,8 @@ def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
         assert pd.Series(ds1.windows.info).to_json() == \
                pd.Series(ds2.windows.info).to_json()
         assert ds1.description.equals(ds2.description)
-        assert np.array_equal(ds1.y, ds2.y)
+        assert np.array_equal(ds1.windows.metadata.loc[:, 'target'].to_numpy(),
+                              ds2.windows.metadata.loc[:, 'target'].to_numpy())
         assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
 
 

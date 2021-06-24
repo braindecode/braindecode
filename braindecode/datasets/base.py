@@ -187,6 +187,9 @@ class WindowsDataset(BaseDataset):
         else:
             self._raw_targets_idx = None
 
+        self.crop_inds = self.windows.metadata.loc[
+            :, ['i_window_in_trial', 'i_start_in_trial',
+                'i_stop_in_trial']].to_numpy()
 
     def __getitem__(self, index):
         """Get a window and its target.
@@ -219,9 +222,7 @@ class WindowsDataset(BaseDataset):
             X = X[[i for i in range(X.shape[0]) if i not in self._raw_targets_idx], :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
-        crop_inds = self.windows.metadata.loc[
-            index, ['i_window_in_trial', 'i_start_in_trial',
-                    'i_stop_in_trial']].to_numpy().tolist()
+        crop_inds = self.crop_inds[index].tolist()
         return X, y, crop_inds
 
     def __len__(self):

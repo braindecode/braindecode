@@ -99,21 +99,21 @@ def test_creating_windows_from_raw(dataset_target_time_series):
 
 
 def test_preprocessors(dataset_target_time_series):
-    base_dataset, target_positions = dataset_target_time_series
-    base_dataset_before = copy.deepcopy(base_dataset)
+    concat_ds, target_positions, _ = dataset_target_time_series
+    concat_ds_before = copy.deepcopy(concat_ds)
     preprocessors = [
         Preprocessor('pick_types', eeg=True, misc=True),
         Preprocessor(lambda x: x / 1e6),
     ]
 
-    preprocess(base_dataset, preprocessors)
+    preprocess(concat_ds, preprocessors)
 
     # Check whether preprocessing has not affected the targets
     # This is only valid for preprocessors that use mne functions which do not modify
     # `misc` channels.
     np.testing.assert_array_equal(
-        base_dataset.datasets[0].raw.get_data()[-2:, :],
-        base_dataset_before.datasets[0].raw.get_data()[-2:, :]
+        concat_ds.datasets[0].raw.get_data()[-2:, :],
+        concat_ds_before.datasets[0].raw.get_data()[-2:, :]
     )
 
     #
