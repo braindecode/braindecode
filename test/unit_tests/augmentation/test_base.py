@@ -2,8 +2,6 @@
 #
 # License: BSD (3-clause)
 
-from functools import partial
-
 import pytest
 import numpy as np
 from sklearn.utils import check_random_state
@@ -22,6 +20,7 @@ def dummy_k_operation(X, y, k):
 
 class DummyTransform(Transform):
     operation = staticmethod(dummy_k_operation)
+
     def __init__(self, probability=1.0, random_state=None, k=None):
         if k is None:
             self.k = np.random.randint(10)
