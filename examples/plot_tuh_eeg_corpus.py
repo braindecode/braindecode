@@ -27,7 +27,7 @@ mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
 ###############################################################################
 # If you want to try this code with the actual data, please delete the next
-# section. We are required to mock some datast functionality, since the data
+# section. We are required to mock some dataset functionality, since the data
 # is not available at creation time of this example.
 from unittest import mock
 
@@ -63,7 +63,7 @@ def _get_header(*args):
 @mock.patch('braindecode.datasets.tuh._read_edf_header', new=_get_header)
 def mock_get_data(mock_glob):
     tuh = TUH(
-        path='',  # please insert actual path to data here
+        path=''
         recording_ids=None,
         target_name=None,
         preload=False,
