@@ -447,9 +447,9 @@ from sklearn.metrics import classification_report
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
 
-print(confusion_matrix(y_true.flatten(), y_pred.flatten()))
+print(confusion_matrix(np.array(y_true).flatten(), np.array(y_pred).flatten()))
 
-print(classification_report(y_true.flatten(), y_pred.flatten()))
+print(classification_report(np.array(y_true).flatten(), np.array(y_pred).flatten()))
 
 
 ######################################################################
