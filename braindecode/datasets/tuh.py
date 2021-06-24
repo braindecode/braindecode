@@ -203,8 +203,8 @@ class TUHAbnormal(TUH):
             additional_descriptions.append(additional_description)
         additional_descriptions = pd.DataFrame(additional_descriptions)
         self.set_description(additional_descriptions, overwrite=True)
-        # set target name of base datasets
-        for ds_i, ds in enumerate(self.datasets):
+        # update target names
+        for ds in self.datasets:
             ds.target_name = target_name
 
     @staticmethod

@@ -11,6 +11,8 @@ including simple preprocessing steps as well as cutting of compute windows.
 # License: BSD (3-clause)
 
 import os
+import tempfile
+from unittest import mock
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,11 +20,57 @@ plt.style.use('seaborn')
 import mne
 
 from braindecode.datasets import TUH
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.preprocessing import preprocess, Preprocessor, create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
+
+
+###############################################################################
+# If you want to try this code with the actual data, please delete this
+# section. We are required to mock some datast functionality, since the data
+# is not available at creation time of this example.
+FAKE_PATHS = {
+    'tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf': b'0       00000000 M 01-JAN-1978 00000000 Age:37                                          ',  # noqa E501
+    'tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf': b'0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ',  # noqa E501
+    'tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf': b'0       00014928 F 01-JAN-1933 00014928 Age:83                                          ',  # noqa E501
+}
+
+
+def _fake_raw(*args, **kwargs):
+    sfreq = 10
+    ch_names = [
+        'EEG A1-REF', 'EEG A2-REF',
+        'EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF',
+        'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF',
+        'EEG F7-REF', 'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF',
+        'EEG T6-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF']
+    duration_min = 6
+    data = np.random.randn(len(ch_names), duration_min*sfreq*60)
+    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types='eeg')
+    raw = mne.io.RawArray(data=data, info=info)
+    return raw
+
+
+def _get_header(*args):
+    return FAKE_PATHS[args[0]]
+
+
+@mock.patch('glob.glob', return_value=FAKE_PATHS.keys())
+@mock.patch('mne.io.read_raw_edf', new=_fake_raw)
+@mock.patch('braindecode.datasets.tuh._read_edf_header', new=_get_header)
+def mock_get_data(mock_glob):
+    tuh = TUH(
+        path='',  # please insert actual path to data here
+        recording_ids=None,
+        target_name=None,
+        preload=False,
+        add_physician_reports=False,
+    )
+    return tuh
+
+
+tuh = mock_get_data()
 
 
 ###############################################################################
@@ -41,19 +89,21 @@ mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 # are read with `mne.io.read_raw_edf` with `preload=False`. Finally, we will get
 # a `BaseConcatDataset` of `BaseDatasets` each holding a single
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
-TUH_PATH = '/home/lukas/Downloads/tuh_eeg_sample/'
-tuh = TUH(
-    path=TUH_PATH,
-    recording_ids=None,
-    target_name=None,
-    preload=False,
-    add_physician_reports=True,
-)
+#
+# Uncomment the lines below to actually run this code on real data.
+# tuh = TUH(
+#     path=<TUH_PATH>,  # please insert actual path to data here
+#     recording_ids=None,
+#     target_name=None,
+#     preload=False,
+#     add_physician_reports=False,
+# )
 
 
 ###############################################################################
 # We can easily create descriptive statistics using the description `DataFrame`,
 # for example an age histogram split by gender of patients.
+
 fig, ax = plt.subplots(1, 1, figsize=(15, 5))
 genders = tuh.description.gender.unique()
 x = [tuh.description.age[tuh.description.gender == g] for g in genders]
@@ -70,7 +120,6 @@ ax.legend(genders)
 # Next, we will perform some preprocessing steps. First, we will do some
 # selection of available recordings based on the duration. We will select those
 # recordings, that have at least five minutes duration. Data is not loaded here.
-
 
 def select_by_duration(ds, tmin=0, tmax=None):
     # determine length of the recordings and select based on tmin and tmax
@@ -124,11 +173,17 @@ ch_mapping = {'ar': ar_ch_mapping, 'le': le_ch_mapping}
 def select_by_channels(ds, ch_mapping):
     split_ids = []
     for i, d in enumerate(ds.datasets):
+        # these are the channels we are looking for
         seta = set(ch_mapping[d.description.reference].keys())
+        # these are the channels of the recoding
         setb = set(d.raw.ch_names)
+        # if recording contains all channels we are looking for, include it
         if seta.issubset(setb):
             split_ids.append(i)
-    return ds.split(split_ids)['0']
+    if split_ids:
+        return ds.split(split_ids)['0']
+    else:
+        return ds
 
 
 tuh = select_by_channels(tuh, ch_mapping)
@@ -189,17 +244,15 @@ preprocessors = [
 # each recording to a unique subdirectory that is named corresponding to the
 # rec id. To save memory, after windowing and storing, we delete the raw
 # dataset and the windows dataset, respectively.
+
 window_size_samples = 1000
 window_stride_samples = 1000
 create_compute_windows = True
 
+OUT_PATH = tempfile.mkdtemp()  # plaese insert actual output directory here
 out_i = 0
-errors = []
-OUT_PATH = './tuh_sample/'
 tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])
 for rec_i, tuh_subset in tuh_splits.items():
-    # implement preprocess for BaseDatasets? Would remove necessity
-    # to split above
     preprocess(tuh_subset, preprocessors)
 
     # update description of the recording(s)
@@ -225,22 +278,22 @@ for rec_i, tuh_subset in tuh_splits.items():
         tuh_windows.set_description({
             "n_windows": [len(d) for d in tuh_windows.datasets]})
 
-        # create one directory for every recording
+    # create one directory for every recording
+    if OUT_PATH is not None:
         rec_path = os.path.join(OUT_PATH, str(rec_i))
         if not os.path.exists(rec_path):
             os.makedirs(rec_path)
-        tuh_windows.save(rec_path)
-        out_i += 1
-        # save memory by catching epoched recording
+        if create_compute_windows:
+            tuh_windows.save(rec_path)
+        else:
+            tuh_subset.save(rec_path)
+        # save memory by deleting epoched recording
         del tuh_windows
-    else:
-        # store raws to disk for option of using different compute window
-        # sizes
-        pass
+        out_i += 1
 
 
 ###############################################################################
 # We load the preprocessed data again in a lazy fashion (`preload=False`). It is
 # now ready to be used for model training.
 
-tuh_loaded = load_concat_dataset('./tuh_sample/', preload=False)
+tuh_loaded = load_concat_dataset(OUT_PATH, preload=False)
