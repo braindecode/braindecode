@@ -74,41 +74,6 @@ def sign_flip(X, y):
     return -X, y
 
 
-# def downsample_shift_from_arrays(X, y, factor, offset):
-#     """Downsamples and offsets input signals
-
-#     Augmentation proposed in [1]_
-
-#     Parameters
-#     ----------
-#     X : torch.Tensor
-#         EEG input example or batch.
-#     y : torch.Tensor
-#         EEG labels for the example or batch.
-#     factor: int
-#         Factor by which X should be downsampled. For example, if factor is 2,
-#         only every other column of X will be kept.
-#     offset: int
-#         Offset (in number of columns) to be used to time-shift the data.
-#         Offset needs to be less than ``factor``. When downsampling with
-#         ``factor=N``, you have `N` different offsets possible.
-
-#     Returns
-#     -------
-#     torch.Tensor
-#         Transformed inputs.
-#     torch.Tensor
-#         Transformed labels.
-
-#     References
-#     ----------
-#     .. [1] Frydenlund, A., & Rudzicz, F. (2015). Emotional Affect Estimation
-#         Using Video and EEG Data in Deep Neural Networks. Proceedings of
-#         Canadian Conference on Artificial Intelligence 273-280.
-#     """
-#     return X[..., offset::factor], y
-
-
 def _new_random_fft_phase_odd(n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(

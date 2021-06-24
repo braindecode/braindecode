@@ -70,67 +70,6 @@ class SignFlip(Transform):
         )
 
 
-# class DownsamplingShift(Transform):
-#     """Downsamples and offsets input signals with a given probability
-
-#     Augmentation proposed in [1]_
-
-#     Parameters
-#     ----------
-#     probability : object, optional
-#         Always ignored, exists for compatibility with other transforms.
-#     magnitude : object, optional
-#         Always ignored, exists for compatibility with other transforms.
-#     factor: int, optional
-#         Factor by which X should be downsampled. For example, if factor is 2,
-#         only every other column of X will be kept. Defaults to 2.
-#     offset: int, optional
-#         Offset (in number of columns) to be used to time-shift the data.
-#         Offset needs to be less than ``factor``. When downsampling with
-#         ``factor=N``, you have `N` different offsets possible. If no value is
-#         passed to ``offset``, it is randomly selected between 0 and
-#         ``factor-1``.
-#     random_state: int | numpy.random.Generator, optional
-#         Seed to be used to instantiate numpy random number generator instance.
-#         Used to decide whether or not to transform given the probability
-#         argument and to sample the offset when omitted. Defaults to None.
-
-#     References
-#     ----------
-#     .. [1] Frydenlund, A., & Rudzicz, F. (2015). Emotional Affect Estimation
-#         Using Video and EEG Data in Deep Neural Networks. Proceedings of
-#         Canadian Conference on Artificial Intelligence 273-280.
-#     """
-
-#     def __init__(
-#         self,
-#         probability=None,
-#         magnitude=None,
-#         factor=2,
-#         offset=None,
-#         random_state=None
-#     ):
-#         assert isinstance(factor, int), "factor has to be an int"
-#         if offset is None:
-#             self.rng = check_random_state(random_state)
-#             offset = self.rng.choice(np.arange(factor))
-#             random_state = self.rng
-#         else:
-#             assert isinstance(offset, int), "offset has to be an int"
-#             assert offset < factor, (
-#                 "offset needs to be less than factor. When down sampling"
-#                 " by a factor N, you have N different offsets possible."
-#             )
-
-#         super().__init__(
-#             operation=downsample_shift_from_arrays,
-#             probability=1.0,  # always applied as it changes the shape of X
-#             factor=factor,
-#             offset=offset,
-#             random_state=random_state,
-#         )
-
-
 class FTSurrogate(Transform):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
@@ -855,8 +794,6 @@ class Mixup(Transform):
 
     Parameters
     ----------
-    probability : float
-        Float setting the probability of applying the operation.
     alpha: float
         Mixup hyperparameter.
     beta_per_sample: bool (default=False)
