@@ -53,6 +53,13 @@ def common_tranform_assertions(input_batch, output_batch, expected_X=None):
         assert torch.equal(tr_X, expected_X)
 
 
+def test_transform_call_with_no_label(random_batch, dummy_transform):
+    X, y = random_batch
+    tr_X1, _ = dummy_transform(X, y)
+    tr_X2 = dummy_transform(X)
+    assert torch.equal(tr_X1, tr_X2)
+
+
 @pytest.mark.parametrize("k1,k2,expected,p1,p2", [
     (1, 0, 0, 1, 1),  # replace by 1s with p=1, then 0s with p=1 -> 0s
     (0, 1, 1, 1, 1),  # replace by 0s with p=1, then 1s with p=1 -> 1s

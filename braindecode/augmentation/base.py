@@ -52,31 +52,37 @@ class Transform(torch.nn.Module):
     def get_params(self, X, y):
         return tuple()
 
-    def forward(self, X: Tensor, y: Tensor) -> Output:
+    def forward(self, X: Tensor, y: Tensor = None) -> Output:
         """General forward pass for an augmentation transform
 
         Parameters
         ----------
         X : torch.Tensor
             EEG input example or batch.
-        y : torch.Tensor
-            EEG labels for the example or batch.
+        y : torch.Tensor | None
+            EEG labels for the example or batch. Defaults to None.
 
         Returns
         -------
         Tensor
             Transformed inputs.
-        Tensor
-            Transformed labels (usually unchanged).
+        Tensor, optional
+            Transformed labels. Only returned when y is not equal to
+            None or omitted.
         """
+        out_X = X.clone()
+        if y is not None:
+            out_y = y.clone()
+        else:
+            out_y = torch.zeros(X.shape[0])
+
         # Samples a mask setting for each example whether they should stay
         # inchanged or not
         mask = self._get_mask(X.shape[0])
         num_valid = mask.sum().long()
 
-        # Uses the mask to define the output
-        out_X, out_y = X.clone(), y.clone()
         if num_valid > 0:
+            # Uses the mask to define the output
             out_X[mask, ...], tr_y = self.operation(
                 out_X[mask, ...], out_y[mask], *self.get_params(X, y)
             )
@@ -85,7 +91,11 @@ class Transform(torch.nn.Module):
                 out_y = tuple(tmp_y[mask] for tmp_y in tr_y)
             else:
                 out_y[mask] = tr_y
-        return out_X, out_y
+
+        if y is not None:
+            return out_X, out_y
+        else:
+            return out_X
 
     def _get_mask(self, batch_size=None) -> torch.Tensor:
         """Samples whether to apply operation or not over the whole batch
