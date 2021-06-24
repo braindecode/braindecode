@@ -148,6 +148,8 @@ Samplers
    RecordingSampler
    RelativePositioningSampler
 
+.. _augmentation_api:
+
 Augmentation
 ============
 
