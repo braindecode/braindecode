@@ -6,7 +6,6 @@ from numbers import Real
 import warnings
 
 import numpy as np
-from sklearn.utils import check_random_state
 import torch
 
 from .base import Transform
@@ -15,11 +14,6 @@ from .functional import (
     add_gaussian_noise, permute_channels, smooth_time_mask, bandstop_filter,
     freq_shift, sensors_rotation, get_standard_10_20_positions, mixup
 )
-# from .functional import (
-#     time_reverse, sign_flip, downsample_shift_from_arrays, fft_surrogate,
-#     channel_dropout, channel_shuffle, add_gaussian_noise, permute_channels,
-#     random_time_mask, identity, random_bandstop, freq_shift, random_rotation,
-#     get_standard_10_20_positions, mixup)
 
 
 class TimeReverse(Transform):
@@ -167,7 +161,8 @@ class FTSurrogate(Transform):
         magnitude=1,
         random_state=None
     ):
-        assert isinstance(magnitude, (float, int)), "magnitude should be a float."
+        assert isinstance(magnitude, (float, int)),\
+            "magnitude should be a float."
         assert 0 <= magnitude <= 1, "magnitude should be between 0 and 1."
         self.magnitude = magnitude
         super().__init__(
@@ -895,4 +890,17 @@ class Mixup(Transform):
         )
 
     def get_params(self, X, y):
-        return self.alpha, self.beta_per_sample, self.rng
+        device = X.device
+        batch_size, _, _ = X.shape
+
+        if self.alpha > 0:
+            if self.beta_per_sample:
+                lam = torch.as_tensor(
+                    self.rng.beta(self.alpha, self.alpha, batch_size)
+                ).to(device)
+            else:
+                lam = torch.ones(batch_size).to(device)
+                lam *= self.rng.beta(self.alpha, self.alpha)
+        else:
+            lam = torch.ones(batch_size).to(device)
+        return lam, self.rng

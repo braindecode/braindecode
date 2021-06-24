@@ -15,8 +15,7 @@ from braindecode.augmentation.transforms import (
     RandomZRotation, RandomYRotation, RandomXRotation, Mixup
 )
 from braindecode.augmentation.functional import (
-    _freq_shift, sensors_rotation, sensors_rotation,
-    get_standard_10_20_positions
+    _freq_shift, sensors_rotation, get_standard_10_20_positions
 )
 from test.unit_tests.augmentation.test_base import common_tranform_assertions
 

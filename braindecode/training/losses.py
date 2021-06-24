@@ -44,7 +44,7 @@ class MixupCriterion:
     """
 
     def __call__(self, preds, target):
-        return mixup_criterion.loss_function(preds, target)
+        return self.loss_function(preds, target)
 
     @staticmethod
     def loss_function(preds, target):

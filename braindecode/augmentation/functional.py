@@ -1013,7 +1013,7 @@ def get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
     return np.stack(list(positions_subdict.values())).T
 
 
-def mixup(X, y, alpha, beta_per_sample, random_state=None):
+def mixup(X, y, lam, random_state=None):
     """Mixes two channels of EEG data. See [1]_.
     Implementation based on [2]_.
 
@@ -1023,11 +1023,9 @@ def mixup(X, y, alpha, beta_per_sample, random_state=None):
         EEG data in form ``batch_size, n_channels, n_times``
     y : torch.tensor
         Target of length ``batch_size``
-    alpha : float
-        mixup hyperparameter.
-    beta_per_sample : bool (default=False)
-        by default, one mixing coefficient per batch is drawn from an beta
-        distribution. If True, one mixing coefficient per sample is drawn.
+    lam : float
+        Float between 0 and 1 setting the linear interpolation between
+        examples.
     random_state: int | numpy.random.Generator (default=None)
         Seed to be used to instantiate numpy random number generator instance.
 
@@ -1046,23 +1044,10 @@ def mixup(X, y, alpha, beta_per_sample, random_state=None):
         Online: https://arxiv.org/abs/1710.09412
     ..  [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
-    # TODO: This stochasticity (sampling of the lambda) should be moved away
-    # from here into the Transform object according to the new API
     rng = check_random_state(random_state)
 
     device = X.device
     batch_size, n_channels, n_times = X.shape
-
-    if alpha > 0:
-        if beta_per_sample:
-            lam = torch.as_tensor(
-                rng.beta(alpha, alpha, batch_size)
-            ).to(device)
-        else:
-            lam = torch.ones(batch_size).to(device)
-            lam *= rng.beta(alpha, alpha)
-    else:
-        lam = torch.ones(batch_size).to(device)
 
     idx_perm = torch.as_tensor(rng.permutation(batch_size,))
     X_mix = torch.zeros((batch_size, n_channels, n_times)).to(device)
