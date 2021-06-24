@@ -12,7 +12,6 @@ including simple preprocessing steps as well as cutting of compute windows.
 
 import os
 import tempfile
-from unittest import mock
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,9 +26,12 @@ mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
 
 ###############################################################################
-# If you want to try this code with the actual data, please delete this
+# If you want to try this code with the actual data, please delete the next
 # section. We are required to mock some datast functionality, since the data
 # is not available at creation time of this example.
+from unittest import mock
+
+
 FAKE_PATHS = {
     'tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf': b'0       00000000 M 01-JAN-1978 00000000 Age:37                                          ',  # noqa E501
     'tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf': b'0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ',  # noqa E501
@@ -89,7 +91,7 @@ tuh = mock_get_data()
 # are read with `mne.io.read_raw_edf` with `preload=False`. Finally, we will get
 # a `BaseConcatDataset` of `BaseDatasets` each holding a single
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
-#
+
 # Uncomment the lines below to actually run this code on real data.
 # tuh = TUH(
 #     path=<TUH_PATH>,  # please insert actual path to data here
@@ -114,6 +116,8 @@ ax.hist(
     alpha=.5,
 )
 ax.legend(genders)
+ax.set_xlabel('Age [years]')
+ax.set_xlabel('Count')
 
 
 ###############################################################################
