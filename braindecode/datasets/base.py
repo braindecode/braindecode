@@ -145,7 +145,7 @@ class WindowsDataset(BaseDataset):
                 'i_stop_in_trial']].to_numpy()
 
     def __getitem__(self, index):
-        """Get a window and its target, or a list of windows and targets.
+        """Get a window and its target.
 
         Parameters
         ----------
@@ -156,8 +156,8 @@ class WindowsDataset(BaseDataset):
         -------
         np.ndarray
             Window of shape (n_channels, n_times).
-        int | np.ndarray
-            Target(s) for the windows.
+        int
+            Target for the windows.
         np.ndarray
             Crop indices.
         """
