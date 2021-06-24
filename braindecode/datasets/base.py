@@ -12,12 +12,12 @@ Dataset classes.
 
 import os
 import json
+from typing import Iterable
 import warnings
 from glob import glob
 
 import numpy as np
 import pandas as pd
-from mne.utils.check import _on_missing
 
 from torch.utils.data import Dataset, ConcatDataset
 
@@ -145,6 +145,22 @@ class WindowsDataset(BaseDataset):
                 'i_stop_in_trial']].to_numpy()
 
     def __getitem__(self, index):
+        """Get a window and its target, or a list of windows and targets.
+
+        Parameters
+        ----------
+        index : int
+            Index to the window (and target) to return.
+
+        Returns
+        -------
+        np.ndarray
+            Window of shape (n_channels, n_times).
+        int | np.ndarray
+            Target(s) for the windows.
+        np.ndarray
+            Crop indices.
+        """
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
@@ -152,6 +168,7 @@ class WindowsDataset(BaseDataset):
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
+
         return X, y, crop_inds
 
     def __len__(self):
@@ -192,88 +209,6 @@ class WindowsDataset(BaseDataset):
         self._description = pd.concat([self.description, description])
 
 
-class SequenceWindowsDataset(WindowsDataset):
-    """Dataset of sequences of consecutive windows.
-
-    Parameters
-    ----------
-    windows : mne.Epochs
-        Windows obtained through the application of a windower to a BaseDataset
-        (see `braindecode.datautil.windowers`).
-    description : dict | pandas.Series | None
-        Holds additional info about the windows.
-    transform : callable | None
-        On-the-fly transform applied to a window before it is returned.
-    seq_len : int
-        Number of consecutive windows in a sequence.
-    step_len : int
-        Number of windows between two consecutive sequences.
-    target_transform : callable | None
-        On-the-fly transform to apply to the sequence of targets. Useful to
-        e.g. select a single target for each sequence.
-    on_missing : 'raise' | 'warn' | 'ignore'
-        What to do if no sequences can be extracted given the number of epochs
-        and sequence parameters. Valid keys are 'raise' | 'warn' | 'ignore'.
-        Default is 'raise'. If on_missing is 'warn' it will proceed but warn,
-        if 'ignore' it will proceed silently.
-    """
-    def __init__(self, windows, description=None, transform=None, seq_len=21,
-                 step_len=1, target_transform=None, on_missing='raise'):
-        super().__init__(windows, description=description, transform=transform)
-
-        if seq_len > len(windows):
-            msg = ('Sequence length is larger than number of windows '
-                   f'({seq_len} > {len(windows)}).')
-            _on_missing(on_missing, msg)
-
-        # Make list of all possible sequences
-        self.seq_len = seq_len
-        self.step_len = step_len
-        self.start_inds = self._compute_seq_inds()
-        self.target_transform = target_transform
-
-    def _compute_seq_inds(self):
-        """Compute sequence indices.
-
-        Returns
-        -------
-        np.ndarray :
-            Array of shape (n_sequences,) containing the indices of the first
-            windows of possible sequences.
-        """
-        return np.arange(
-            0, super().__len__() - self.seq_len + 1, self.step_len)
-
-    def __len__(self):
-        return len(self.start_inds)
-
-    def __getitem__(self, index):
-        """
-        Returns
-        -------
-        np.ndarray :
-            Sequence of windows, of shape (seq_len, n_channels, *).
-        np.array :
-            List of labels of length seq_len, or can be something else if
-            `label_transform` is defined.
-        """
-        start_ind = self.start_inds[index]
-        seq, ys = list(), list()
-        # The following cannot be put into a list comprehension
-        # because of scope requirements for `super()`
-        for i in range(start_ind, start_ind + self.seq_len):
-            X, y, _ = super().__getitem__(i)
-            seq.append(X)
-            ys.append(y)
-
-        seq = np.stack(seq, axis=0)
-        ys = np.array(ys)
-        if self.target_transform is not None:
-            ys = self.target_transform(ys)
-
-        return seq, ys
-
-
 class BaseConcatDataset(ConcatDataset):
     """A base class for concatenated datasets. Holds either mne.Raw or
     mne.Epoch in self.datasets and has a pandas DataFrame with additional
@@ -283,12 +218,46 @@ class BaseConcatDataset(ConcatDataset):
     ----------
     list_of_ds : list
         list of BaseDataset, BaseConcatDataset or WindowsDataset
+    seq_target_transform : callable | None
+        Function to call on sequences of targets before returning them. Only
+        called if the dataset is indexed with lists of indices to return
+        sequences.
     """
-    def __init__(self, list_of_ds):
+    def __init__(self, list_of_ds, seq_target_transform=None):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
+
+        self.seq_target_transform = seq_target_transform
+
+    def _get_sequence(self, indices):
+        X, y = list(), list()
+        for ind in indices:
+            out_i = super().__getitem__(ind)
+            X.append(out_i[0])
+            y.append(out_i[1])
+
+        X = np.stack(X, axis=0)
+        y = np.array(y)
+        if self.seq_target_transform is not None:
+            y = self.seq_target_transform(y)
+
+        return X, y
+
+    def __getitem__(self, idx):
+        """
+        Parameters
+        ----------
+        idx : int | list
+            Index of window and target to return. If provided as a list of
+            ints, multiple windows and targets will be extracted and
+            concatenated.
+        """
+        if isinstance(idx, Iterable):  # Sample multiple windows
+            return self._get_sequence(idx)
+        else:
+            return super().__getitem__(idx)
 
     def split(self, by=None, property=None, split_ids=None):
         """Split the dataset based on information listed in its description
@@ -368,9 +337,19 @@ class BaseConcatDataset(ConcatDataset):
         return [ds.transform for ds in self.datasets]
 
     @transform.setter
-    def transform(self, value):
+    def transform(self, fn):
         for i in range(len(self.datasets)):
-            self.datasets[i].transform = value
+            self.datasets[i].transform = fn
+
+    @property
+    def seq_target_transform(self):
+        return self._seq_target_transform
+
+    @seq_target_transform.setter
+    def seq_target_transform(self, fn):
+        if not (callable(fn) or fn is None):
+            raise TypeError('target_transform must be a callable.')
+        self._seq_target_transform = fn
 
     def save(self, path, overwrite=False):
         """Save dataset to files.
@@ -444,28 +423,3 @@ class BaseConcatDataset(ConcatDataset):
         for key, value in description.items():
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
-
-
-def create_sequence_dataset(concat_ds, seq_len, step_len=1,
-                            target_transform=None):
-    """Helper function to create a dataset that returns sequences of windows.
-
-    Parameters
-    ----------
-    concat_ds : BaseConcatDataset
-        Window datasets from which to create sequence datasets.
-    seq_len : int
-        Number of consecutive windows in a sequence.
-    step_len : int
-        Number of windows between two consecutive sequences.
-    target_transform : callable | None
-        On-the-fly transform to apply to the sequence of labels. Useful to e.g.
-        select a single label for each sequence.
-    """
-    if not all([isinstance(ds, WindowsDataset) for ds in concat_ds.datasets]):
-        raise TypeError('`concat_ds` must contain WindowsDatasets.')
-    return BaseConcatDataset(
-        [SequenceWindowsDataset(
-            ds.windows, ds.description, ds.transform, seq_len, step_len,
-            target_transform)
-         for ds in concat_ds.datasets])
