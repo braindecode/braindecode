@@ -45,7 +45,6 @@ class TUH(BaseConcatDataset):
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
         descriptions = _create_chronological_description(file_paths)
-        file_paths = descriptions.loc['path']
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
             descriptions = descriptions[recording_ids]
