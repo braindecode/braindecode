@@ -840,7 +840,7 @@ class Mixup(Transform):
                 lam *= self.rng.beta(self.alpha, self.alpha)
         else:
             lam = torch.ones(batch_size).to(device)
-        
+
         idx_perm = torch.as_tensor(self.rng.permutation(batch_size,))
 
         return lam, idx_perm
