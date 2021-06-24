@@ -27,7 +27,7 @@ class EcogBCICompetition4(BaseConcatDataset):
     path : str
         Path to the folder with BCI competition IV dataset 4. All .mat files are
         expected to be in this directory.
-    subject_ids: list(int) | int | None
+    subject_ids : list(int) | int | None
         (list of) int of subject(s) to be loaded. If None, load all available
         subjects. Should be in range 1-3.
 

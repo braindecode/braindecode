@@ -1,12 +1,9 @@
 """
-Trialwise Decoding on BCIC IV 4 ECoG Dataset
+Fingers flexion decoding on BCIC IV 4 ECoG Dataset
 ========================================
 
 This tutorial shows you how to train and test deep learning models with
-Braindecode with ECoG
-a classical EEG setting: you have trials of data with
-labels (e.g., Right Hand, Left Hand, etc.).
-
+Braindecode on ECoG BCI IV competition dataset 4.
 """
 
 ######################################################################
@@ -22,10 +19,18 @@ labels (e.g., Right Hand, Left Hand, etc.).
 
 
 ######################################################################
-# First, we load the data. In this tutorial, we use the functionality of
-# braindecode to load datasets through
-# `MOABB <https://github.com/NeuroTechX/moabb>`__ to load the BCI
-# Competition IV 2a data.
+# First, we load the data. In this tutorial, we use the functionality of braindecode
+# to load `BCI IV competition dataset 4
+# <http://www.bbci.de/competition/iv/#dataset4>`__ [1]
+#
+# To run this tutorial you have to download the dataset and test labels from:
+# Test labels: http://www.bbci.de/competition/iv/results/ds4/true_labels.zip
+# Data: http://www.bbci.de/competition/iv/#dataset4
+#
+# [1] Schalk, G., Kubanek, J., Miller, K.J., Anderson, N.R., Leuthardt, E.C.,
+#     Ojemann, J.G., Limbrick, D., Moran, D.W., Gerhardt, L.A., and Wolpaw, J.R.
+#     Decoding Two Dimensional Movement Trajectories Using Electrocorticographic Signals
+#     in Humans, J Neural Eng, 4: 264-275, 2007.
 #
 # .. note::
 #    To load your own datasets either via mne or from
@@ -33,8 +38,10 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
-from sklearn.metrics import r2_score
-
+# This dataset contains ECoG signal and time series of 5 targets corresponding
+# to each finger flexion. This is different than standard decoding setup for EEG with
+# multiple trials and usually one target per trial. Here, fingers flexions change in time
+# and are recorded with sampling frequency equals to 25 Hz.
 DATASET_PATH = '/home/maciej/projects/braindecode/BCICIV_4_mat'
 
 import numpy as np
@@ -43,21 +50,45 @@ from braindecode.datasets.ecog_bci_competition import EcogBCICompetition4
 
 subject_id = 1
 dataset = EcogBCICompetition4(DATASET_PATH, subject_ids=[subject_id])
-dataset = dataset.split('session')['train']
+
+######################################################################
+# Preprocessing
+# ~~~~~~~~~~~~~
+#
+######################################################################
+# Now we apply preprocessing like bandpass filtering to our dataset. You
+# can either apply functions provided by
+# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
+# `mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`__
+# or apply your own functions, either to the MNE object or the underlying
+# numpy array.
+# In th
+#
+# .. note::
+#    These prepocessings are now directly applied to the loaded
+#    data, and not on-the-fly applied as transformations in
+#    PyTorch-libraries like
+#    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
+#
 
 from braindecode.preprocessing.preprocess import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
-low_cut_hz = 4.  # low cut frequency for filtering
-high_cut_hz = 200.  # high cut frequency for filtering
+low_cut_hz = 1.  # low cut frequency for filtering
+high_cut_hz = 200.  # high cut frequency for filtering, for ECoG higher than for EEG
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
 
+# We select only first 30 seconds of signal to limit time and memory to run this example.
+# To obtain results on the whole datasets one should remove this line.
 preprocess(dataset, [Preprocessor('crop', tmin=0, tmax=30)])
 
+# In time series targets setup, targets variables are stored in mne.Raw object as channels
+# of type `misc`. Thus those channels have to be selected for further processing. However,
+# many mne functions ignore`misc` channels and perform operations only on data channels
+# (see https://mne.tools/stable/glossary.html#term-data-channels).
 preprocessors = [
-    # TODO: ensure that misc is not removed
     Preprocessor('pick_types', ecog=True, misc=True),
     Preprocessor(lambda x: x / 1e6, picks='ecog'),  # Convert from V to uV
     Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
@@ -68,30 +99,36 @@ preprocessors = [
 # Transform the data
 preprocess(dataset, preprocessors)
 
-#
-#
-# ######################################################################
-# # Cut Compute Windows
-# # ~~~~~~~~~~~~~~~~~~~
-# #
-#
-#
-# ######################################################################
-# # Now we cut out compute windows, the inputs for the deep networks during
-# # training. In the case of trialwise decoding, we just have to decide if
-# # we want to cut out some part before and/or after the trial. For this
-# # dataset, in our work, it often was beneficial to also cut out 500 ms
-# # before the trial.
-# #
-#
-from braindecode.preprocessing.windowers import create_windows_from_target_channels
-
-trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
 sfreq = dataset.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
-# Calculate the trial start offset in samples.
-trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
+
+# ######################################################################
+# Split dataset into train and valid
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# ######################################################################
+# We can easily split the dataset using additional info stored in the
+# description attribute, in this case ``session`` column. We select `train` dataset
+# for training and validation and `test` for final evaluation.
+
+subsets = dataset.split('session')
+dataset_train = subsets['train']
+dataset_test = subsets['test']
+
+# ######################################################################
+# Cut Compute Windows
+# ~~~~~~~~~~~~~~~~~~~
+#
+#
+#
+######################################################################
+# Now we cut out compute windows, the inputs for the deep networks during
+# training. In the case of trialwise decoding of time series targets, we just have to
+# decide about length windows that will be selected from the signal preceding each target.
+# We use different windowing function than in standard trialwise decoding as our targets
+# are stored as target channels in mne.Raw
+from braindecode.preprocessing.windowers import create_windows_from_target_channels
 
 windows_dataset = create_windows_from_target_channels(
     dataset,
@@ -100,35 +137,20 @@ windows_dataset = create_windows_from_target_channels(
     raw_targets='target',
     last_target_only=True
 )
-#
-#
-# ######################################################################
-# # Split dataset into train and valid
-# # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# #
-#
-#
-# ######################################################################
-# # We can easily split the dataset using additional info stored in the
-# # description attribute, in this case ``session`` column. We select
-# # ``session_T`` for training and ``session_E`` for validation.
-# #
-#
+
 from sklearn.model_selection import train_test_split
 import torch
 
-idx_train, idx_test_valid = train_test_split(np.arange(len(windows_dataset)),
-                                             random_state=100,
-                                             test_size=0.4,
-                                             shuffle=False)
-idx_valid, idx_test = train_test_split(idx_test_valid,
-                                       test_size=0.75,
-                                       shuffle=False)
+# We can split train dataset into training and validation datasets using
+# `sklearn.model_selection.train_test_split` and `torch.utils.data.Subset`
+idx_train, idx_valid = train_test_split(np.arange(len(windows_dataset)),
+                                        random_state=100,
+                                        test_size=0.2,
+                                        shuffle=False)
+
 train_set = torch.utils.data.Subset(windows_dataset, idx_train)
 valid_set = torch.utils.data.Subset(windows_dataset, idx_valid)
-test_set = torch.utils.data.Subset(windows_dataset, idx_test)
 
-#
 # ######################################################################
 # # Create model
 # # ------------
