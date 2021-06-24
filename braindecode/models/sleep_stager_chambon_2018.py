@@ -107,7 +107,7 @@ class SleepStagerChambon2018(nn.Module):
         Forward pass.
 
         Parameters
-        ---------
+        ----------
         x: torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
         """

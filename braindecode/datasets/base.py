@@ -348,7 +348,7 @@ class BaseConcatDataset(ConcatDataset):
     @seq_target_transform.setter
     def seq_target_transform(self, fn):
         if not (callable(fn) or fn is None):
-            raise TypeError('target_transform must be a callable.')
+            raise TypeError('seq_target_transform must be a callable.')
         self._seq_target_transform = fn
 
     def save(self, path, overwrite=False):
