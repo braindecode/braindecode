@@ -1,4 +1,4 @@
-# Authors: Cédric Rommel <cpe.rommel@gmail.com>
+# Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
 
