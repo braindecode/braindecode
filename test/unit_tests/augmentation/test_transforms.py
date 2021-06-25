@@ -42,15 +42,18 @@ def ch_aranged_batch(time_aranged_batch):
     return X.transpose(1, 2), y
 
 
-def test_flip_transform(time_aranged_batch):
+@pytest.mark.parametrize("probability", [1.0, 0.5])
+def test_flip_transform(time_aranged_batch, probability):
     X, y = time_aranged_batch
-    flip_transform = TimeReverse(1.0)
+    flip_transform = TimeReverse(probability)
 
     device = X.device.type
-    expected_tensor = np.stack([np.arange(50)] * 64)
-    expected_tensor = torch.as_tensor(
-        expected_tensor[:, ::-1].copy(), device=device
-    ).repeat(X.shape[0], 1, 1).float()
+    expected_tensor = None
+    if probability == 1.0:
+        expected_tensor = np.stack([np.arange(50)] * 64)
+        expected_tensor = torch.as_tensor(
+            expected_tensor[:, ::-1].copy(), device=device
+        ).repeat(X.shape[0], 1, 1).float()
 
     common_tranform_assertions(
         time_aranged_batch,
@@ -59,15 +62,18 @@ def test_flip_transform(time_aranged_batch):
     )
 
 
-def test_sign_transform(time_aranged_batch):
+@pytest.mark.parametrize("probability", [1.0, 0.5])
+def test_sign_transform(time_aranged_batch, probability):
     X, y = time_aranged_batch
-    sign_flip_transform = SignFlip(1.0)
+    sign_flip_transform = SignFlip(probability)
 
     device = X.device.type
-    expected_tensor = np.stack([-np.arange(50)] * 64)
-    expected_tensor = torch.as_tensor(
-        expected_tensor.copy(), device=device
-    ).repeat(X.shape[0], 1, 1).float()
+    expected_tensor = None
+    if probability == 1.0:
+        expected_tensor = np.stack([-np.arange(50)] * 64)
+        expected_tensor = torch.as_tensor(
+            expected_tensor.copy(), device=device
+        ).repeat(X.shape[0], 1, 1).float()
 
     common_tranform_assertions(
         time_aranged_batch,
@@ -169,12 +175,13 @@ def test_shuffle_channels(rng_seed, ch_aranged_batch, p_shuffle):
     )/theor_n_shuffled_channels < 0.05
 
 
-def test_gaussian_noise(rng_seed):
+@pytest.mark.parametrize("probability", [1.0, 0.5])
+def test_gaussian_noise(rng_seed, probability):
     ones_batch = ones_and_zeros_batch(shape=(1000, 1000))
     X, y = ones_batch
     std = 2.0
     transform = GaussianNoise(
-        1,
+        probability,
         std=std,
         random_state=rng_seed
     )
@@ -182,18 +189,20 @@ def test_gaussian_noise(rng_seed):
     tr_X, _ = new_batch
     common_tranform_assertions(ones_batch, new_batch)
 
-    # check that the values of X changed, but the rows and cols means are
-    # unchanged (within Gaussian confidence interval)
-    assert not torch.equal(tr_X, X)
-    assert torch.mean(
-        (torch.abs(torch.mean(tr_X, 1) - 1.0) < 1.96 * std).float()
-    ) > 0.95
-    assert torch.mean(
-        (torch.abs(torch.mean(tr_X, 2) - 1.0) < 1.96 * std).float()
-    ) > 0.95
+    if probability == 1.0:
+        # check that the values of X changed, but the rows and cols means are
+        # unchanged (within Gaussian confidence interval)
+        assert not torch.equal(tr_X, X)
+        assert torch.mean(
+            (torch.abs(torch.mean(tr_X, 1) - 1.0) < 1.96 * std).float()
+        ) > 0.95
+        assert torch.mean(
+            (torch.abs(torch.mean(tr_X, 2) - 1.0) < 1.96 * std).float()
+        ) > 0.95
 
 
-def test_channel_symmetry():
+@pytest.mark.parametrize("probability", [1.0, 0.5])
+def test_channel_symmetry(probability):
     batch_size = 5
     seq_len = 64
     X = torch.stack([torch.stack([torch.arange(21)] * seq_len).T] * batch_size)
@@ -203,13 +212,15 @@ def test_channel_symmetry():
         'T3', 'C3', 'Cz', 'C4', 'T4',
         'T5', 'P3', 'Pz', 'P4', 'T6', 'O1', 'Oz', 'O2'
     ]
-    transform = ChannelsSymmetry(1, ch_names)
+    transform = ChannelsSymmetry(probability, ch_names)
 
-    expected_perm = [
-        2, 1, 0, 7, 6, 5, 4, 3, 12, 11, 10, 9, 8, 17, 16, 15, 14,
-        13, 20, 19, 18
-    ]
-    expected_tensor = X[:, expected_perm, :]
+    expected_tensor = None
+    if probability == 1.0:
+        expected_perm = [
+            2, 1, 0, 7, 6, 5, 4, 3, 12, 11, 10, 9, 8, 17, 16, 15, 14,
+            13, 20, 19, 18
+        ]
+        expected_tensor = X[:, expected_perm, :]
 
     ordered_batch = (X, torch.zeros(batch_size))
 
