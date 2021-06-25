@@ -11,9 +11,9 @@ import torch
 
 from braindecode.augmentation.transforms import (
     TimeReverse, SignFlip, FTSurrogate, ChannelsDropout, ChannelsShuffle,
-    GaussianNoise, ChannelsSymmetry, SmoothTimeMask, BandstopFilter, FrequencyShift,
-    SensorsZRotation, SensorsYRotation, SensorsXRotation, Mixup,
-    _get_standard_10_20_positions
+    GaussianNoise, ChannelsSymmetry, SmoothTimeMask, BandstopFilter,
+    FrequencyShift, SensorsZRotation, SensorsYRotation, SensorsXRotation,
+    Mixup, _get_standard_10_20_positions
 )
 from braindecode.augmentation.functional import (
     _frequency_shift, sensors_rotation
@@ -238,7 +238,7 @@ def test_channel_symmetry(probability):
 ])
 def test_time_mask(rng_seed, random_batch, mask_len_samples, fail):
     if fail:
-        # Check SmoothTimeMask with max length smaller than 1 cannot be instantiated
+        # Check max length smaller than 1 cannot be instantiated
         with pytest.raises(AssertionError):
             transform = SmoothTimeMask(
                 1.0,

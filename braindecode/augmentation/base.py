@@ -40,7 +40,8 @@ class Transform(torch.nn.Module):
     def __init__(self, probability=1.0, random_state=None):
         super().__init__()
         if self.forward.__func__ is Transform.forward:
-            assert callable(self.operation), "operation should be a ``callable``."
+            assert callable(self.operation),\
+                "operation should be a ``callable``."
 
         assert isinstance(probability, Real), (
             f"probability should be a ``real``. Got {type(probability)}.")
