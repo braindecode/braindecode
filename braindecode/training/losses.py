@@ -21,7 +21,7 @@ class CroppedLoss(nn.Module):
         return self.loss_function(avg_preds, targets)
 
 
-class MixupCriterion:
+def mixup_criterion(preds, target):
     """Implements loss for Mixup for EEG data. See [1]_.
 
     Implementation based on [2]_.
@@ -35,6 +35,11 @@ class MixupCriterion:
         been applied, a list containing the targets of the two mixed
         samples and the mixing coefficients as tensors.
 
+    Returns
+    -------
+    loss : float
+        The loss value.
+
     References
     ----------
     .. [1] Hongyi Zhang, Moustapha Cisse, Yann N. Dauphin, David Lopez-Paz
@@ -42,25 +47,19 @@ class MixupCriterion:
        Online: https://arxiv.org/abs/1710.09412
     .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
-
-    def __call__(self, preds, target):
-        return self.loss_function(preds, target)
-
-    @staticmethod
-    def loss_function(preds, target):
-        if len(target) == 3:
-            # unpack target
-            y_a, y_b, lam = target
-            # compute loss per sample
-            loss_a = torch.nn.functional.nll_loss(preds,
-                                                  y_a,
-                                                  reduction='none')
-            loss_b = torch.nn.functional.nll_loss(preds,
-                                                  y_b,
-                                                  reduction='none')
-            # compute weighted mean
-            ret = torch.mul(lam, loss_a) + torch.mul(1 - lam, loss_b)
-            return ret.mean()
-        else:
-            return torch.nn.functional.nll_loss(preds,
-                                                target)
+    if len(target) == 3:
+        # unpack target
+        y_a, y_b, lam = target
+        # compute loss per sample
+        loss_a = torch.nn.functional.nll_loss(preds,
+                                              y_a,
+                                              reduction='none')
+        loss_b = torch.nn.functional.nll_loss(preds,
+                                              y_b,
+                                              reduction='none')
+        # compute weighted mean
+        ret = torch.mul(lam, loss_a) + torch.mul(1 - lam, loss_b)
+        return ret.mean()
+    else:
+        return torch.nn.functional.nll_loss(preds,
+                                            target)
