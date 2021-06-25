@@ -8,13 +8,17 @@
 #
 # License: BSD (3-clause)
 
-from collections.abc import Iterable
-from functools import partial
 from warnings import warn
+from functools import partial
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
 from sklearn.utils import deprecated
+from joblib import Parallel, delayed
+
+from braindecode.datasets.base import BaseConcatDataset
+from braindecode.datautil.serialization import load_base_dataset
 
 
 class Preprocessor(object):
@@ -111,7 +115,8 @@ class NumpyPreproc(Preprocessor):
                          **kwargs)
 
 
-def preprocess(concat_ds, preprocessors):
+def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
+               reload=False, n_jobs=None):
     """Apply preprocessors to a concat dataset.
 
     Parameters
@@ -120,6 +125,17 @@ def preprocess(concat_ds, preprocessors):
         A concat of BaseDataset or WindowsDataset datasets to be preprocessed.
     preprocessors: list(Preprocessor)
         List of Preprocessor objects to apply to the dataset.
+    save_dir : str | None
+        If a string, the preprocessed data will be saved under the specified
+        directory.
+    overwrite : bool
+        When `save_dir` is provided, controls whether to overwrite existing
+        files with the same name.
+    reload : bool
+        If True and `save_dir` is provided, the data saved on disk will be read
+        with `preload=False` to limit memory usage.
+    n_jobs : int | None
+        Number of jobs for parallel execution.
 
     Returns
     -------
@@ -133,30 +149,26 @@ def preprocess(concat_ds, preprocessors):
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
-    # get the preprocessing keyword arguments
-    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+    if n_jobs is None or n_jobs == 1:
+        list_of_ds = [_preprocess(
+            ds, preprocessors, save_dir, overwrite, reload)
+            for ds in concat_ds.datasets]
+        # XXX Should we avoid returning the data when n_jobs=1, since it can be
+        #     modified in place?
+    else:
+        list_of_ds = Parallel(n_jobs=n_jobs)(
+            delayed(_preprocess)(ds, preprocessors, save_dir, overwrite, reload)
+            for ds in concat_ds.datasets)
 
-    for ds in concat_ds.datasets:
-        if hasattr(ds, 'raw'):
-            _preprocess(ds.raw, preprocessors)
-            # store raw preprocessing keyword arguments to the dataset
-            setattr(ds, 'raw_preproc_kwargs', preproc_kwargs)
-        elif hasattr(ds, 'windows'):
-            _preprocess(ds.windows, preprocessors)
-            # store window preprocessing keyword arguments to the dataset
-            setattr(ds, 'window_preproc_kwargs', preproc_kwargs)
-        else:
-            raise ValueError(
-                'Can only preprocess concatenation of BaseDataset or '
-                'WindowsDataset, with either a `raw` or `windows` attribute.')
+    return BaseConcatDataset(list_of_ds)
 
-    # Recompute cumulative sizes as the transforms might have changed them
-    # XXX: Ultimately, the best solution would be to have cumulative_size be
-    #      a property of BaseConcatDataset.
-    concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
+    # # Recompute cumulative sizes as the transforms might have changed them
+    # concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
+    # XXX Not necessary anymore if creating BaseConcatDataset again
 
 
-def _preprocess(raw_or_epochs, preprocessors):
+def _preprocess(ds, preprocessors, save_dir=None, overwrite=False,
+                reload=False):
     """Apply preprocessor(s) to Raw or Epochs object.
 
     Parameters
@@ -165,9 +177,33 @@ def _preprocess(raw_or_epochs, preprocessors):
         Object to preprocess.
     preprocessors: list(Preprocessor)
         List of preprocessors to apply to the dataset.
+    save_dir : str | None
+        ...
+    overwrite : bool
+        ...
+    reload : bool
+        ...
     """
-    for preproc in preprocessors:
-        preproc.apply(raw_or_epochs)
+
+    def _preprocess_raw_or_epochs(raw_or_epochs, preprocessors):
+        for preproc in preprocessors:
+            preproc.apply(raw_or_epochs)
+
+    if hasattr(ds, 'raw'):
+        _preprocess_raw_or_epochs(ds.raw, preprocessors)
+    elif hasattr(ds, 'windows'):
+        _preprocess_raw_or_epochs(ds.windows, preprocessors)
+    else:
+        raise ValueError(
+            'Can only preprocess concatenation of BaseDataset or '
+            'WindowsDataset, with either a `raw` or `windows` attribute.')
+
+    if save_dir is not None:  # Serialize dataset
+        fname = ds.save(save_dir, overwrite=overwrite)
+        if reload:  # Reload from file with preload=False
+            ds = load_base_dataset(fname[0], preload=False)
+
+    return ds
 
 
 def _get_preproc_kwargs(preprocessors):

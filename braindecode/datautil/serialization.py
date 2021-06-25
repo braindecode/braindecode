@@ -6,16 +6,127 @@ Convenience functions for storing and loading of windows datasets.
 #
 # License: BSD (3-clause)
 
-import json
 import os
-from glob import glob
+import json
 import warnings
+from glob import glob
 
 import mne
 import pandas as pd
 from joblib import Parallel, delayed
 
 from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+
+
+def create_fname_id_from_description(description):
+    # XXX: Enforce 'subject', 'recording' and/or 'run' in description?
+    fname = list()
+    if 'subject' in description:
+        fname.append(f'subj{description["subject"]}')
+    if 'recording' in description:
+        fname.append(f'rec{description["recording"]}')
+    if 'run' in description:
+        fname.append(f'run{description["run"]}')
+
+    if not fname:
+        raise ValueError(
+            'description must contain any of "subject", "recording" or "run".')
+
+    return '_'.join(fname)
+
+
+def save_base_dataset(dataset, path, overwrite=False):
+    """Save a BaseDataset.
+
+    Parameters
+    ----------
+    dataset : BaseDataset
+        BaseDataset to serialize.
+    path : str
+        Directory in which the dataset should be saved.
+    overwrite : bool
+        If True, overwrite existing files with the same name. If False and
+        files with the same name exist, an error will be raised.
+
+    Returns
+    -------
+    str, str, str
+        File names for the data, the description dictionary, and the target.
+    """
+    if not isinstance(dataset, BaseDataset):
+        raise TypeError('dataset must inherit from BaseDataset.')
+
+    if hasattr(dataset, 'raw'):
+        dataset_type = 'raw'
+    elif hasattr(dataset, 'windows'):
+        dataset_type = 'windows'
+    else:
+        raise AttributeError(
+            'dataset should have either a `raw` or `windows` attribute.')
+
+    fnames_ = ['{}-raw.fif', '{}-epo.fif']
+
+    fname_template = fnames_[0] if dataset_type == 'raw' else fnames_[1]
+    basename = create_fname_id_from_description(dataset.description)
+    fname = os.path.join(path, fname_template.format(basename))
+    description_fname = os.path.join(path, f'{basename}-description.json')
+    target_fname = os.path.join(path, f'{basename}-target_name.json')
+
+    if not overwrite:
+        if (os.path.exists(description_fname) or
+                os.path.exists(target_fname)):
+            raise FileExistsError(
+                f'{description_fname} or {target_fname} already exist '
+                f'under {path}.')
+    else:
+        for f in [fname, target_fname, description_fname]:
+            if os.path.isfile(f):
+                os.remove(f)
+
+    getattr(dataset, dataset_type).save(fname, overwrite=overwrite)
+    if dataset_type == 'raw':
+        json.dump({'target_name': dataset.target_name},
+                  open(target_fname, 'w'))
+    dataset.description.to_json(description_fname)
+
+    return fname, description_fname, target_fname
+
+
+def load_base_dataset(fname, preload=False):
+    """Load a BaseDataset.
+
+    Parameters
+    ----------
+    path : str
+        E.g. `my_data/subj0_rec1-raw.fif`
+    preload : bool
+        ...
+
+    Returns
+    -------
+    ...
+    """
+    dirname, basename = os.path.split(fname)
+    basename = basename[:-8]
+
+    description_fname = os.path.join(dirname, basename + '-description.json')
+    target_fname = os.path.join(dirname, basename + '-target_name.json')
+
+    raw_or_epochs = _load_signals(fname, preload=preload)
+    with open(description_fname, 'r') as f:
+        description = json.load(f)
+
+    if isinstance(raw_or_epochs, mne.io.Raw):
+        with open(target_fname, 'r') as f:
+            target_name = json.load(f)['target_name']
+        ds = BaseDataset(raw_or_epochs, description=description,
+                         target_name=target_name)
+    elif isinstance(raw_or_epochs, mne.Epochs):
+        ds = WindowsDataset(raw_or_epochs, description)
+
+    # XXX What about transforms?
+
+    return ds
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
@@ -116,8 +227,10 @@ def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
 def _load_signals(fif_file, preload, is_raw):
     if is_raw:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
-    else:
+    elif fif_file.endswith('-epo.fif'):
         signals = mne.read_epochs(fif_file, preload=preload)
+    else:
+        raise ValueError('fif_file must end with raw.fif or epo.fif.')
     return signals
 
 
