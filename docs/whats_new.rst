@@ -28,7 +28,8 @@ Enhancements
 API changes
 ~~~~~~~~~~~
 - Removing the default sampling frequency sfreq value in :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
-- Added warning for non default arguments in :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`269` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+- Made windowing arguments optional in :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`269` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+
 .. _changes_0_5_1:
 
 Version 0.5.1 (2021-07-14)

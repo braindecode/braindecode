@@ -1,10 +1,13 @@
 """Get epochs from mne.Raw
 """
-
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
+#          Henrik Bonsmann <henrikbons@gmail.com>
+#          Ann-Kathrin Kiessner <ann-kathrin.kiessner@gmx.de>
+#          Vytautas Jankauskas <vytauto.jankausko@gmail.com>
+#          Dan Wilson <dan.c.wil@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -117,9 +120,8 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-        concat_ds,
-        window_size_samples, window_stride_samples, drop_last_window,
-        start_offset_samples=None, stop_offset_samples=None,
+        concat_ds, start_offset_samples=0, stop_offset_samples=None,
+        window_size_samples=None, window_stride_samples=None, drop_last_window=None,
         mapping=None, preload=False, drop_bad_windows=True, picks=None,
         reject=None, flat=None, on_missing='error', n_jobs=1):
     """Windower that creates sliding windows.
@@ -127,19 +129,22 @@ def create_fixed_length_windows(
     Parameters
     ----------
     concat_ds: ConcatDataset
-        A concat of base datasets each holding raw and descpription.
+        A concat of base datasets each holding raw and description.
     start_offset_samples: int
         Start offset from beginning of recording in samples.
     stop_offset_samples: int | None
         Stop offset from beginning of recording in samples. If None, set to be
         the end of the recording.
-    window_size_samples: int
-        Window size.
-    window_stride_samples: int
-        Stride between windows.
-    drop_last_window: bool
+    window_size_samples: int | None
+        Window size in samples. If None, set to be the maximum possible window size, ie length of
+        the recording, once offsets are accounted for.
+    window_stride_samples: int | None
+        Stride between windows in samples. If None, set to be equal to winddow_size_samples, so
+        windows will not overlap.
+    drop_last_window: bool | None
         Whether or not have a last overlapping window, when windows do not
-        equally divide the continuous signal.
+        equally divide the continuous signal. Must be set to a bool if window size and stride are
+        not None.
     mapping: dict(str: int)
         Mapping from event description to target value.
     preload: bool
@@ -169,20 +174,14 @@ def create_fixed_length_windows(
     windows_ds: WindowsDataset
         Dataset containing the extracted windows.
     """
-    _check_windowing_arguments(
-        start_offset_samples, stop_offset_samples,
-        window_size_samples, window_stride_samples)
-    if stop_offset_samples == 0:
-        warnings.warn(
-            'Meaning of `trial_stop_offset_samples`=0 has changed, use `None` '
-            'to indicate end of trial/recording. Using `None`.')
-        stop_offset_samples = None
+    stop_offset_samples, drop_last_window = _check_and_set_fixed_length_window_arguments(
+        start_offset_samples, stop_offset_samples, window_size_samples, window_stride_samples,
+        drop_last_window)
 
-    if start_offset_samples is not None or stop_offset_samples is not None:
-        warnings.warn('Usage of offset_sample args in create_fixed_length_windows is deprecated and'
-                      ' will be removed in future versions. Please use '
-                      'braindecode.preprocessing.preprocess.Preprocessor("crop", tmin, tmax)'
-                      ' instead.')
+    # check if recordings are of different lengths
+    lengths = np.array([ds.raw.n_times - ds.raw.first_samp for ds in concat_ds.datasets])
+    if (np.diff(lengths) != 0).any():
+        warnings.warn('Recordings have different lengths, they will not be batch-able!')
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_fixed_length_windows)(
@@ -322,10 +321,18 @@ def _create_fixed_length_windows(
     """
     stop = ds.raw.n_times \
         if stop_offset_samples is None else stop_offset_samples
+
+    # assume window should be whole recording
+    if window_size_samples is None:
+        window_size_samples = stop - start_offset_samples
+    if window_stride_samples is None:
+        window_stride_samples = window_size_samples
+
     stop = stop - window_size_samples + ds.raw.first_samp
     # already includes last incomplete window start
     starts = np.arange(
-        ds.raw.first_samp + start_offset_samples, stop + 1,
+        ds.raw.first_samp + start_offset_samples,
+        stop + 1,
         window_stride_samples)
 
     if not drop_last_window and starts[-1] < stop:
@@ -441,3 +448,42 @@ def _check_windowing_arguments(
             "window size has to be larger than 0")
         assert window_stride_samples > 0, (
             "window stride has to be larger than 0")
+
+
+def _check_and_set_fixed_length_window_arguments(start_offset_samples, stop_offset_samples,
+                                                 window_size_samples, window_stride_samples,
+                                                 drop_last_window):
+    """Raises warnings for incorrect input arguments and will set correct default values for
+    stop_offset_samples & drop_last_window, if necessary.
+    """
+    _check_windowing_arguments(
+        start_offset_samples, stop_offset_samples,
+        window_size_samples, window_stride_samples)
+
+    if stop_offset_samples == 0:
+        warnings.warn(
+            'Meaning of `trial_stop_offset_samples`=0 has changed, use `None` '
+            'to indicate end of trial/recording. Using `None`.')
+        stop_offset_samples = None
+
+    if start_offset_samples != 0 or stop_offset_samples is not None:
+        warnings.warn('Usage of offset_sample args in create_fixed_length_windows is deprecated and'
+                      ' will be removed in future versions. Please use '
+                      'braindecode.preprocessing.preprocess.Preprocessor("crop", tmin, tmax)'
+                      ' instead.')
+
+    if window_size_samples is not None and window_stride_samples is not None and \
+            drop_last_window is None:
+        raise ValueError('drop_last_window must be set if window_size_samples &'
+                         ' window_stride_samples are not set')
+    elif window_size_samples is None and\
+            window_stride_samples is None and\
+            drop_last_window is False:
+        # necessary for following assertion
+        drop_last_window = None
+
+    assert (window_size_samples is None) == \
+           (window_stride_samples is None) == \
+           (drop_last_window is None)
+
+    return stop_offset_samples, drop_last_window
