@@ -253,7 +253,6 @@ class USleep(nn.Module):
         '''If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).
         '''
-        print(x.shape)
         # reshape input
         if len(x.shape) == 4:  # input x has shape (B, S, C, T)
             x = x.permute(0, 2, 1, 3)  # (B, C, S, T)
@@ -263,23 +262,18 @@ class USleep(nn.Module):
         residuals = []
         for down in self.encoder:
             x, res = down(x)
-            print(x.shape)
             residuals.append(res)
 
         # bottom
         x = self.bottom(x)
-        print(x.shape)
 
         # decoder
         residuals = residuals[::-1]  # flip order
         for up, res in zip(self.decoder, residuals):
             x = up(x, res)
-            print(x.shape)
 
         # classifier
-        print(x.shape)
         y_pred = self.clf(x)        # (B, n_classes, seq_length)
-        print(y_pred.shape)
 
         # y_pred = self.clf(x.flatten(start_dim=1))        # (B, n_classes)
         if y_pred.shape[-1] == 1:  # seq_length of 1

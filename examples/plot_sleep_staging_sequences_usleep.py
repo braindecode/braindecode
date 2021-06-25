@@ -58,7 +58,7 @@ References
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
-dataset = SleepPhysionet(subject_ids=[i for i in range(30)], recording_ids=[2], crop_wake_mins=30)
+dataset = SleepPhysionet(subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
 
 
 ######################################################################
@@ -156,7 +156,7 @@ from braindecode.datasets import BaseConcatDataset
 random_state = 31
 subjects = np.unique(windows_dataset.description["subject"])
 subj_train, subj_valid = train_test_split(
-    subjects, test_size=0.2, random_state=random_state
+    subjects, test_size=0.5, random_state=random_state
 )
 
 split_ids = {"train": subj_train, "valid": subj_valid}
@@ -188,8 +188,8 @@ valid_set = splitted["valid"]
 
 from braindecode.samplers import SequenceSampler
 
-n_windows = 3  # Sequences of 3 consecutive windows
-n_windows_stride = 1  # Maximally overlapping sequences
+n_windows = 35  # Sequences of 3 consecutive windows
+n_windows_stride = 35  # Maximally overlapping sequences
 
 train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
@@ -197,21 +197,6 @@ valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_s
 # Print number of examples per class
 print(len(train_sampler))
 print(len(valid_sampler))
-
-
-######################################################################
-# TODO: determine if this is useful or if it can go
-
-# We also implement a transform to extract the label of the center window of a
-# sequence to use it as target.
-
-# # Use label of center window in the sequence
-# def get_center_label(x):
-#     return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
-
-
-# train_set.seq_target_transform = get_center_label
-# valid_set.seq_target_transform = get_center_label
 
 
 ######################################################################
@@ -252,46 +237,9 @@ n_classes = 5
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = train_set[0][0].shape
 
-
-# class TimeDistributedNet(nn.Module):
-#     """Extract features for multiple windows then concatenate & classify them.
-#     """
-#     def __init__(self, feat_extractor, n_windows, n_classes, dropout=0.25):
-#         super().__init__()
-#         self.feat_extractor = feat_extractor
-#         self.clf = nn.Sequential(
-#             nn.Dropout(dropout),
-#             nn.Linear(feat_extractor.len_last_layer * n_windows, n_classes)
-#         )
-
-#     def forward(self, x):
-#         """
-#         Parameters
-#         ----------
-#         x : torch.Tensor
-#             Input sequence of windows, of shape (batch_size, seq_len,
-#             n_channels, n_times).
-#         """
-#         feats = [self.feat_extractor.embed(x[:, i]) for i in range(x.shape[1])]
-#         feats = torch.stack(feats, dim=1).flatten(start_dim=1)
-#         return self.clf(feats)
-
-
-# feat_extractor = SleepStagerChambon2018(
-#     n_channels,
-#     sfreq,
-#     n_classes=n_classes,
-#     input_size_s=
-# )
-
-# model = TimeDistributedNet(
-#     feat_extractor, n_windows=n_windows, n_classes=n_classes, dropout=0.5)
-
-
 model = USleep(
     n_channels=n_channels,
     sfreq=sfreq,
-    depth=10,
     with_skip_connection=True,
     n_classes=n_classes,
     input_size_s=input_size_samples / sfreq,
@@ -334,8 +282,8 @@ from skorch.callbacks import EpochScoring
 from braindecode import EEGClassifier
 
 lr = 1e-3
-batch_size = 128
-n_epochs = 2
+batch_size = 64
+n_epochs = 10
 
 from sklearn.metrics import balanced_accuracy_score
 
