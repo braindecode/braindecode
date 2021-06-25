@@ -23,8 +23,14 @@ class Conv2dWithConstraint(nn.Conv2d):
 
 
 class EEGNetv4(nn.Sequential):
-    """
-    EEGNet v4 model from [EEGNet4]_.
+    """EEGNet v4 model from Lawhern et al 2018.
+
+    See details in [EEGNet4]_.
+
+    Parameters
+    ----------
+    in_chans : int
+        XXX
 
     Notes
     -----
@@ -187,8 +193,14 @@ def _transpose_1_0(x):
 
 
 class EEGNetv1(nn.Sequential):
-    """
-    EEGNet model from [EEGNet]_.
+    """EEGNet model from Lawhern et al. 2016.
+
+    See details in [EEGNet]_.
+
+    Parameters
+    ----------
+    in_chans : int
+        XXX
 
     Notes
     -----

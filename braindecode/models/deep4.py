@@ -13,8 +13,14 @@ from ..util import np_to_th
 
 
 class Deep4Net(nn.Sequential):
-    """
-    Deep ConvNet model from [Schirrmeister2017]_.
+    """Deep ConvNet model from Schirrmeister et al 2017.
+
+    Model described in [Schirrmeister2017]_.
+
+    Parameters
+    ----------
+    in_chans : int
+        XXX
 
     References
     ----------

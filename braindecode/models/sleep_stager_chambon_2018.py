@@ -8,8 +8,7 @@ import numpy as np
 
 
 class SleepStagerChambon2018(nn.Module):
-    """
-    Sleep staging architecture from [Chambon2018]_.
+    """Sleep staging architecture from Chambon et al 2018.
 
     Convolutional neural network for sleep staging described in [Chambon2018]_.
 

@@ -12,9 +12,9 @@ from .shallow_fbcsp import ShallowFBCSPNet
 
 
 class HybridNet(nn.Module):
-    """Hybrid ConvNet model from [Schirrmeister2017]_.
+    """Hybrid ConvNet model from Schirrmeister et al 2017.
 
-    Very hardcoded at the moment.
+    See [Schirrmeister2017]_ for details.
 
     References
     ----------
