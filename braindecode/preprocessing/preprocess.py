@@ -7,13 +7,15 @@
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #
 # License: BSD (3-clause)
-
+import os
 from collections.abc import Iterable
 from functools import partial
 from warnings import warn
 
 import numpy as np
 import pandas as pd
+
+from braindecode.datasets.base import BaseConcatDataset
 
 
 class Preprocessor(object):
@@ -108,7 +110,8 @@ class NumpyPreproc(Preprocessor):
                          **kwargs)
 
 
-def preprocess(concat_ds, preprocessors):
+def preprocess(concat_ds, preprocessors, out_dir=None, overwrite=False,
+               n_jobs=1):
     """Apply preprocessors to a concat dataset.
 
     Parameters
@@ -130,15 +133,21 @@ def preprocess(concat_ds, preprocessors):
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
-    for ds in concat_ds.datasets:
-        if hasattr(ds, 'raw'):
-            _preprocess(ds.raw, preprocessors)
-        elif hasattr(ds, 'windows'):
-            _preprocess(ds.windows, preprocessors)
-        else:
-            raise ValueError(
-                'Can only preprocess concatenation of BaseDataset or '
-                'WindowsDataset, with either a `raw` or `windows` attribute.')
+    for i, one_ds in enumerate(concat_ds.datasets):
+        one_concat_ds = BaseConcatDataset([one_ds])
+        for ds in one_concat_ds.datasets:
+            if hasattr(ds, 'raw'):
+                _preprocess(ds.raw, preprocessors)
+            elif hasattr(ds, 'windows'):
+                _preprocess(ds.windows, preprocessors)
+            else:
+                raise ValueError(
+                    'Can only preprocess concatenation of BaseDataset or '
+                    'WindowsDataset, with either a `raw` or `windows` attribute.')
+        this_out_dir = os.path.join(out_dir, str(i))
+        if not os.path.exists(this_out_dir):
+            os.makedirs(this_out_dir)
+        one_concat_ds.save(this_out_dir, overwrite=overwrite)
 
     # Recompute cumulative sizes as the transforms might have changed them
     # XXX: Ultimately, the best solution would be to have cumulative_size be
