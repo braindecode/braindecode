@@ -52,6 +52,7 @@ References
 # .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
 #
 
+from numbers import Integral
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
@@ -162,9 +163,6 @@ for name, values in split_ids.items():
 train_set = splitted['train']
 valid_set = splitted['valid']
 
-# Extract number of channels and time steps from dataset
-n_channels, input_size_samples = train_set[0][0].shape
-
 ######################################################################
 # Create sequence samplers
 # ------------------------
@@ -205,12 +203,13 @@ print(len(valid_sampler))
 
 # Use label of center window in the sequence
 def get_center_label(x):
+    if isinstance(x, Integral):
+        return x
     return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
 
 
 train_set.target_transform = get_center_label
 valid_set.target_transform = get_center_label
-
 
 ######################################################################
 # Finally, since some sleep stages appear a lot more often than others (e.g.
@@ -250,6 +249,8 @@ if cuda:
 set_random_seeds(seed=random_state, cuda=cuda)
 
 n_classes = 5
+# Extract number of channels and time steps from dataset
+n_channels, input_size_samples = train_set[0][0].shape
 
 
 class TimeDistributedNet(nn.Module):
