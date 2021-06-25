@@ -7,13 +7,13 @@ from braindecode.training.losses import mixup_criterion
 
 
 def test_mixup_criterion():
-    N_classes = 2
-    N_samples = 5
-    y_a = torch.zeros(N_samples, dtype=torch.int64)
-    y_b = torch.ones(N_samples, dtype=torch.int64)
-    lam = torch.arange(.1, 1, 1/N_samples)
+    n_classes = 2
+    n_samples = 5
+    y_a = torch.zeros(n_samples, dtype=torch.int64)
+    y_b = torch.ones(n_samples, dtype=torch.int64)
+    lam = torch.arange(.1, 1, 1 / n_samples)
 
-    preds = torch.rand((N_samples, N_classes))
+    preds = torch.rand((n_samples, n_classes))
 
     target = (y_a, y_b, lam)
     loss = mixup_criterion(preds, target)
