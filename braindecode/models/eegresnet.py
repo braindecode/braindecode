@@ -15,8 +15,15 @@ from .modules import Expression, AvgPool2dWithConv, Ensure4d
 
 
 class EEGResNet(nn.Sequential):
-    """
-    Residual Network for EEG.
+    """Residual Network for EEG.
+
+    XXX missing reference
+
+    Parameters
+    ----------
+    in_chans : int
+        XXX
+
     """
     def __init__(self,
                  in_chans,

@@ -146,6 +146,7 @@ Samplers
    :toctree: generated/
 
    RecordingSampler
+   SequenceSampler
    RelativePositioningSampler
 
 .. _augmentation_api:
@@ -218,5 +219,6 @@ Visualization
    :toctree: generated/
 
     compute_amplitude_gradients
+    plot_confusion_matrix
 
 

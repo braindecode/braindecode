@@ -308,3 +308,24 @@ def test_set_description_windows_dataset(concat_windows_dataset):
         " True."
     ):
         window_ds.set_description(pd.Series({'wow': 'error'}), overwrite=False)
+
+
+def test_concat_dataset_get_sequence_out_of_range(concat_windows_dataset):
+    indices = [len(concat_windows_dataset)]
+    with pytest.raises(IndexError):
+        X, y = concat_windows_dataset[indices]
+
+
+def test_concat_dataset_target_transform(concat_windows_dataset):
+    indices = range(100)
+    y = concat_windows_dataset[indices][1]
+
+    concat_windows_dataset.target_transform = sum
+    y2 = concat_windows_dataset[indices][1]
+
+    assert y2 == sum(y)
+
+
+def test_concat_dataset_invalid_target_transform(concat_windows_dataset):
+    with pytest.raises(TypeError):
+        concat_windows_dataset.target_transform = 0

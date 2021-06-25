@@ -12,7 +12,7 @@ from . import RecordingSampler
 
 
 class RelativePositioningSampler(RecordingSampler):
-    """Sample examples for the relative positioning task from [1]_.
+    """Sample examples for the relative positioning task from [Banville2020]_.
 
     Sample examples as tuples of two window indices, with a label indicating
     whether the windows are close or far, as defined by tau_pos and tau_neg.
@@ -40,8 +40,8 @@ class RelativePositioningSampler(RecordingSampler):
 
     References
     ----------
-    .. [1] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., &
-           Gramfort, A. (2020). Uncovering the structure of clinical EEG
+    .. [Banville2020] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A.,
+           & Gramfort, A. (2020). Uncovering the structure of clinical EEG
            signals with self-supervised learning.
            arXiv preprint arXiv:2007.16104.
     """

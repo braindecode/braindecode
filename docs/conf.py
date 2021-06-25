@@ -130,7 +130,7 @@ def linkcode_resolve(domain, info):
 
 
 autosummary_generate = True
-autodoc_default_options = {'inherited-members': None}
+autodoc_default_options = {'inherited-members': False}
 
 numpydoc_show_class_members = False
 

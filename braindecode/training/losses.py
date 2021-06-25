@@ -16,6 +16,15 @@ class CroppedLoss(nn.Module):
         self.loss_function = loss_function
 
     def forward(self, preds, targets):
+        """Forward pass.
+
+        Parameters
+        ----------
+        preds: torch.Tensor
+            Model's prediction with shape (batch_size, n_classes, n_times).
+        targets: torch.Tensor
+            Target labels with shape (batch_size, n_classes, n_times).
+        """
         avg_preds = torch.mean(preds, dim=2)
         avg_preds = avg_preds.squeeze(dim=1)
         return self.loss_function(avg_preds, targets)
