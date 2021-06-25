@@ -87,6 +87,13 @@ class HybridNet(nn.Module):
         )
 
     def forward(self, x):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        """
         deep_out = self.reduced_deep_model(x)
         shallow_out = self.reduced_shallow_model(x)
 

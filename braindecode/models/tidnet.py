@@ -244,6 +244,13 @@ class TIDNet(nn.Module):
         return nn.Sequential(nn.Flatten(start_dim=1), classifier, nn.LogSoftmax(dim=-1))
 
     def forward(self, x):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        """
 
         x = self.dscnn(x)
         return self.classify(x)
