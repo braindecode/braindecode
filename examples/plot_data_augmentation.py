@@ -29,7 +29,7 @@ transform on the input signals.
 from braindecode import EEGClassifier
 from skorch.helper import predefined_split
 from skorch.callbacks import LRScheduler
-from braindecode.datasets.moabb import MOABBDataset
+from braindecode.datasets import MOABBDataset
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
@@ -59,8 +59,8 @@ preprocessors = [
 preprocess(dataset, preprocessors)
 
 ######################################################################
-# Cut Compute Windows
-# ~~~~~~~~~~~~~~~~~~~
+# Extracting windows
+# ~~~~~~~~~~~~~~~~~~
 #
 
 from braindecode.preprocessing import create_windows_from_events
@@ -91,17 +91,17 @@ train_set = splitted['session_T']
 valid_set = splitted['session_E']
 
 ######################################################################
-# Defining a transform
+# Defining a Transform
 # --------------------
 #
 
 ######################################################################
 # Data can be manipulated by transforms, which are callable objects. A
 # transform is usually handled by a custom data loader, but can also be called
-# directly on input data, as demonstrated below for illutrative purpose.
+# directly on input data, as demonstrated below for illutrative purposes.
 #
 
-# First, we need to define a transform. Here we chose the FrequencyShift, which
+# First, we need to define a Transform. Here we chose the FrequencyShift, which
 # randomly translates all frequencies within a given range.
 
 from braindecode.augmentation import FrequencyShift
@@ -128,7 +128,7 @@ X_tr = transform(X).numpy()
 
 ######################################################################
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
-# see in the psd plot.
+# see on the psd plot.
 
 import mne
 import matplotlib.pyplot as plt
@@ -156,8 +156,8 @@ plt.show()
 # Training a model with data augmentation
 # ---------------------------------------
 # 
-# Now that we know how to instantiate Transforms, it is time to learn how to
-# use them in the training of a model to try to improve its generalization.
+# Now that we know how to instantiate ``Transforms``, it is time to learn how
+# to use them to train a model and try to improve its generalization power.
 # Let's first create a model.
 #
 # Create model
@@ -193,15 +193,14 @@ model = ShallowFBCSPNet(
 )
 
 ######################################################################
-# Define final EEGClassifier with the desired augmentation
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Create an EEGClassifier with the desired augmentation
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 ######################################################################
-# In order to use train with data augmentation, a custom data loader can be
-# used in for the training. Multiple transforms can be passed to and will
-# be applied sequentially to the batched data within the `AugmentedDataLoader`
-# object.
+# In order to train with data augmentation, a custom data loader can be
+# for the training. Multiple transforms can be passed to it and will be applied
+# sequentially to the batched data within the ``AugmentedDataLoader`` object.
 
 from braindecode.augmentation import AugmentedDataLoader, SignFlip
 
@@ -224,8 +223,8 @@ if cuda:
 
 ######################################################################
 # The model is now trained as in the trial-wise example. The
-# `AugmentedDataLoader` is used as the train iterator and the transforms are
-# passed as arguments.
+# ``AugmentedDataLoader`` is used as the train iterator and the list of
+# transforms are passed as arguments.
 
 lr = 0.0625 * 0.01
 weight_decay = 0
@@ -257,7 +256,7 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # Manually composing Transforms
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# It would be equivalent (although more verbose) to pass to `EEGClassifier` a
+# It would be equivalent (although more verbose) to pass to ``EEGClassifier`` a
 # composition of the same transforms:
 
 from braindecode.augmentation import Compose
@@ -270,8 +269,8 @@ composed_transforms = Compose(transforms=transforms)
 #
 # Also note that it is also possible for most of the transforms to pass them
 # directly to the WindowsDataset object through the `transform` argument, as
-# most commonly done in other libraries. However, using the AugmentedDataLoader
-# as above is advised as it is compatible with all transforms and slightly more
-# efficient.
+# most commonly done in other libraries. However, it is advised to use the
+# ``AugmentedDataLoader`` as above, as it is compatible with all transforms and
+# can be more efficient.
 
 train_set.transform = composed_transforms
