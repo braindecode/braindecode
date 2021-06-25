@@ -206,6 +206,7 @@ def test_channel_symmetry(probability):
     batch_size = 5
     seq_len = 64
     X = torch.stack([torch.stack([torch.arange(21)] * seq_len).T] * batch_size)
+    X = X.float()
 
     ch_names = [
         'Fp1', 'Fpz', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
