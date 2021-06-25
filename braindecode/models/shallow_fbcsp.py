@@ -22,6 +22,8 @@ class ShallowFBCSPNet(nn.Sequential):
     ----------
     in_chans : int
         Number of EEG input channels.
+    n_classes: int
+        Number of classes to predict (number of output filters of last layer).
 
     References
     ----------
