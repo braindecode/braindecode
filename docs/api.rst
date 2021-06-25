@@ -145,6 +145,7 @@ Samplers
    :toctree: generated/
 
    RecordingSampler
+   SequenceSampler
    RelativePositioningSampler
 
 Utils

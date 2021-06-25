@@ -78,10 +78,10 @@ class SleepStagerChambon2018(nn.Module):
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size))
         )
-        len_last_layer = self._len_last_layer(n_channels, input_size)
+        self.len_last_layer = self._len_last_layer(n_channels, input_size)
         self.fc = nn.Sequential(
             nn.Dropout(dropout),
-            nn.Linear(len_last_layer, n_classes)
+            nn.Linear(self.len_last_layer, n_classes)
         )
 
     def _len_last_layer(self, n_channels, input_size):
@@ -92,15 +92,7 @@ class SleepStagerChambon2018(nn.Module):
         self.feature_extractor.train()
         return len(out.flatten())
 
-    def forward(self, x):
-        """
-        Forward pass.
-
-        Parameters
-        ---------
-        x: torch.Tensor
-            Batch of EEG windows of shape (batch_size, n_channels, n_times).
-        """
+    def embed(self, x):
         if x.ndim == 3:
             x = x.unsqueeze(1)
 
@@ -108,5 +100,15 @@ class SleepStagerChambon2018(nn.Module):
             x = self.spatial_conv(x)
             x = x.transpose(1, 2)
 
-        x = self.feature_extractor(x)
-        return self.fc(x.flatten(start_dim=1))
+        return self.feature_extractor(x).flatten(start_dim=1)
+
+    def forward(self, x):
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        """
+        return self.fc(self.embed(x))
