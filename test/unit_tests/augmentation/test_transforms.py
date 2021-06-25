@@ -117,19 +117,19 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
     return X, torch.zeros(batch_size)
 
 
-@pytest.mark.parametrize("proba_drop", [0.25, 0.5])
-def test_missing_channels_transform(rng_seed, proba_drop):
+@pytest.mark.parametrize("p_drop", [0.25, 0.5])
+def test_missing_channels_transform(rng_seed, p_drop):
     ones_batch = ones_and_zeros_batch()
     X, y = ones_batch
     transform = ChannelsDropout(
-        1, proba_drop=proba_drop, random_state=rng_seed
+        1, p_drop=p_drop, random_state=rng_seed
     )
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
     common_tranform_assertions(ones_batch, new_batch)
     zeros_mask = np.all(tr_X.cpu().numpy() <= 1e-3, axis=-1)
     average_nb_of_zero_rows = np.mean(np.sum(zeros_mask.astype(int), axis=-1))
-    expected_nb_zero_rows = transform.proba_drop * X.shape[-2]
+    expected_nb_zero_rows = transform.p_drop * X.shape[-2]
     # test that the expected number of channels was set to zero
     assert np.abs(average_nb_of_zero_rows - expected_nb_zero_rows) <= 1
     # test that channels are conserved (same across it)
@@ -137,11 +137,11 @@ def test_missing_channels_transform(rng_seed, proba_drop):
                 for i in range(tr_X.shape[2])])
 
 
-@pytest.mark.parametrize("proba_shuffle", [0.25, 0.5])
-def test_shuffle_channels(rng_seed, ch_aranged_batch, proba_shuffle):
+@pytest.mark.parametrize("p_shuffle", [0.25, 0.5])
+def test_shuffle_channels(rng_seed, ch_aranged_batch, p_shuffle):
     X, y = ch_aranged_batch
     transform = ChannelsShuffle(
-        1, proba_shuffle=proba_shuffle, random_state=rng_seed
+        1, p_shuffle=p_shuffle, random_state=rng_seed
     )
     new_batch = transform(*ch_aranged_batch)
     tr_X, _ = new_batch
@@ -161,7 +161,7 @@ def test_shuffle_channels(rng_seed, ch_aranged_batch, proba_shuffle):
         ]
     )
     theor_n_shuffled_channels = int(
-        round(proba_shuffle * n_channels * batch_size)
+        round(p_shuffle * n_channels * batch_size)
     )
     # Check we are within 5% of asymptotic number of shuffled channels
     assert (
