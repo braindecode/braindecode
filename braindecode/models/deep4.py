@@ -15,7 +15,7 @@ from ..util import np_to_th
 class Deep4Net(nn.Sequential):
     """Deep ConvNet model from Schirrmeister et al 2017.
 
-    Model described in [2]_.
+    Model described in [Schirrmeister2017]_.
 
     Parameters
     ----------
@@ -24,11 +24,13 @@ class Deep4Net(nn.Sequential):
 
     References
     ----------
-    .. [1] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
-       Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F. & Ball, T. (2017).
+    .. [Schirrmeister2017] Schirrmeister, R. T., Springenberg, J. T., Fiederer,
+       L. D. J., Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F.
+       & Ball, T. (2017).
        Deep learning with convolutional neural networks for EEG decoding and
        visualization.
-       Human Brain Mapping , Aug. 2017. Online: http://dx.doi.org/10.1002/hbm.23730
+       Human Brain Mapping , Aug. 2017.
+       Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
     def __init__(

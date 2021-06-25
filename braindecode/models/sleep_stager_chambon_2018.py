@@ -10,7 +10,7 @@ import numpy as np
 class SleepStagerChambon2018(nn.Module):
     """Sleep staging architecture from Chambon et al 2018.
 
-    Convolutional neural network for sleep staging described in [1]_.
+    Convolutional neural network for sleep staging described in [Chambon2018]_.
 
     Parameters
     ----------
@@ -41,7 +41,7 @@ class SleepStagerChambon2018(nn.Module):
 
     References
     ----------
-    .. [1] Chambon, S., Galtier, M. N., Arnal, P. J., Wainrib, G., &
+    .. [Chambon2018] Chambon, S., Galtier, M. N., Arnal, P. J., Wainrib, G., &
            Gramfort, A. (2018). A deep learning architecture for temporal sleep
            stage classification using multivariate and multimodal time series.
            IEEE Transactions on Neural Systems and Rehabilitation Engineering,

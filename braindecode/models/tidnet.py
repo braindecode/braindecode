@@ -215,7 +215,8 @@ class TIDNet(nn.Module):
     References
     ----------
     .. [TIDNet] Kostas, D. & Rudzicz, F.
-        Thinker invariance: enabling deep neural networks for BCI across more people.
+        Thinker invariance: enabling deep neural networks for BCI across more
+        people.
         J. Neural Eng. 17, 056008 (2020).
         doi: 10.1088/1741-2552/abb7a7.
     """
@@ -245,6 +246,13 @@ class TIDNet(nn.Module):
         return nn.Sequential(nn.Flatten(start_dim=1), classifier, nn.LogSoftmax(dim=-1))
 
     def forward(self, x):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        """
 
         x = self.dscnn(x)
         return self.classify(x)

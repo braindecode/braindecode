@@ -39,7 +39,6 @@ class EEGNetv4(nn.Sequential):
 
     References
     ----------
-
     .. [EEGNet4] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon,
        S. M., Hung, C. P., & Lance, B. J. (2018).
        EEGNet: A Compact Convolutional Network for EEG-based
