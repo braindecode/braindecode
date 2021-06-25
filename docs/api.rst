@@ -63,6 +63,7 @@ Models
     TCN
     SleepStagerChambon2018
     USleep
+    TIDNet
     get_output_shape
 
 Training
@@ -145,6 +146,7 @@ Samplers
    :toctree: generated/
 
    RecordingSampler
+   SequenceSampler
    RelativePositioningSampler
 
 Utils
@@ -170,5 +172,6 @@ Visualization
    :toctree: generated/
 
     compute_amplitude_gradients
+    plot_confusion_matrix
 
 

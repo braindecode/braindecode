@@ -122,4 +122,4 @@ class SequenceSampler(RecordingSampler):
 
     def __iter__(self):
         for start_ind in self.start_inds:
-            yield list(range(start_ind, start_ind + self.n_windows))
+            yield tuple(range(start_ind, start_ind + self.n_windows))

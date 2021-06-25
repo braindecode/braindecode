@@ -55,20 +55,19 @@ class BaseDataset(Dataset):
     def __init__(self, raw, description=None, target_name=None,
                  transform=None):
         self.raw = raw
-        self.description = _create_description(description)
+        self._description = _create_description(description)
         self.transform = transform
 
         # save target name for load/save later
         self.target_name = target_name
-        if target_name is None:
-            self.target = None
-        elif target_name in self.description:
-            self.target = self.description[target_name]
-        else:
-            raise ValueError(f"'{target_name}' not in description.")
+        if self.target_name is not None and self.target_name not in self.description:
+            raise ValueError(f"'{self.target_name}' not in description.")
 
     def __getitem__(self, index):
-        X, y = self.raw[:, index][0], self.target
+        X = self.raw[:, index][0]
+        y = None
+        if self.target_name is not None:
+            y = self.description[self.target_name]
         if self.transform is not None:
             X = self.transform(X)
         return X, y
@@ -85,6 +84,30 @@ class BaseDataset(Dataset):
         if value is not None and not callable(value):
             raise ValueError('Transform needs to be a callable.')
         self._transform = value
+
+    @property
+    def description(self):
+        return self._description
+
+    def set_description(self, description, overwrite=False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.Series
+            Description in the form key: value.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = _create_description(description)
+        for key, value in description.items():
+            # if they key is already in the existing description, drop it
+            if key in self._description:
+                assert overwrite, (f"'{key}' already in description. Please "
+                                   f"rename or set overwrite to True.")
+                self._description.pop(key)
+        self._description = pd.concat([self.description, description])
 
 
 class WindowsDataset(BaseDataset):
@@ -112,7 +135,7 @@ class WindowsDataset(BaseDataset):
     """
     def __init__(self, windows, description=None, transform=None):
         self.windows = windows
-        self.description = _create_description(description)
+        self._description = _create_description(description)
         self.transform = transform
 
         self.y = self.windows.metadata.loc[:, 'target'].to_numpy()
@@ -121,7 +144,7 @@ class WindowsDataset(BaseDataset):
                 'i_stop_in_trial']].to_numpy()
 
     def __getitem__(self, index):
-        """Get a window and its target, or a list of windows and targets.
+        """Get a window and its target.
 
         Parameters
         ----------
@@ -132,8 +155,8 @@ class WindowsDataset(BaseDataset):
         -------
         np.ndarray
             Window of shape (n_channels, n_times).
-        int | np.ndarray
-            Target(s) for the windows.
+        int
+            Target for the windows.
         np.ndarray
             Crop indices.
         """
@@ -160,6 +183,30 @@ class WindowsDataset(BaseDataset):
             raise ValueError('Transform needs to be a callable.')
         self._transform = value
 
+    @property
+    def description(self):
+        return self._description
+
+    def set_description(self, description, overwrite=False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.Series
+            Description in the form key: value.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = _create_description(description)
+        for key, value in description.items():
+            # if they key is already in the existing description, drop it
+            if key in self._description:
+                assert overwrite, (f"'{key}' already in description. Please "
+                                   f"rename or set overwrite to True.")
+                self._description.pop(key)
+        self._description = pd.concat([self.description, description])
+
 
 class BaseConcatDataset(ConcatDataset):
     """A base class for concatenated datasets. Holds either mne.Raw or
@@ -180,8 +227,6 @@ class BaseConcatDataset(ConcatDataset):
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
-        self.description = pd.DataFrame([ds.description for ds in list_of_ds])
-        self.description.reset_index(inplace=True, drop=True)
         self.seq_target_transform = seq_target_transform
 
     def _get_sequence(self, indices):
@@ -301,7 +346,7 @@ class BaseConcatDataset(ConcatDataset):
     @seq_target_transform.setter
     def seq_target_transform(self, fn):
         if not (callable(fn) or fn is None):
-            raise TypeError('target_transform must be a callable.')
+            raise TypeError('seq_target_transform must be a callable.')
         self._seq_target_transform = fn
 
     def save(self, path, overwrite=False):
@@ -353,3 +398,26 @@ class BaseConcatDataset(ConcatDataset):
         if concat_of_raws:
             json.dump({'target_name': target_name}, open(target_file_name, 'w'))
         self.description.to_json(description_file_name)
+
+    @property
+    def description(self):
+        df = pd.DataFrame([ds.description for ds in self.datasets])
+        df.reset_index(inplace=True, drop=True)
+        return df
+
+    def set_description(self, description, overwrite=False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.DataFrame
+            Description in the form key: value where the length of the value
+            has to match the number of datasets.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = pd.DataFrame(description)
+        for key, value in description.items():
+            for ds, value_ in zip(self.datasets, value):
+                ds.set_description({key: value_}, overwrite=overwrite)

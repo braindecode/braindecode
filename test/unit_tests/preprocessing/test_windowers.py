@@ -307,7 +307,7 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         drop_last_window=drop_last_window, mapping=mapping)
 
     if mapping is not None:
-        assert base_ds.target == 48
+        assert base_ds.description[base_ds.target_name] == 48
         assert all(epochs_ds.datasets[0].windows.metadata['target'] == 0)
 
     epochs_data = epochs_ds.datasets[0].windows.get_data()
