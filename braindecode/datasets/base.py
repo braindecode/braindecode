@@ -217,18 +217,16 @@ class BaseConcatDataset(ConcatDataset):
     ----------
     list_of_ds : list
         list of BaseDataset, BaseConcatDataset or WindowsDataset
-    seq_target_transform : callable | None
-        Function to call on sequences of targets before returning them. Only
-        called if the dataset is indexed with lists of indices to return
-        sequences.
+    target_transform : callable | None
+        Optional function to call on targets before returning them.
     """
-    def __init__(self, list_of_ds, seq_target_transform=None):
+    def __init__(self, list_of_ds, target_transform=None):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
 
-        self.seq_target_transform = seq_target_transform
+        self.target_transform = target_transform
 
     def _get_sequence(self, indices):
         X, y = list(), list()
@@ -239,8 +237,6 @@ class BaseConcatDataset(ConcatDataset):
 
         X = np.stack(X, axis=0)
         y = np.array(y)
-        if self.seq_target_transform is not None:
-            y = self.seq_target_transform(y)
 
         return X, y
 
@@ -254,9 +250,12 @@ class BaseConcatDataset(ConcatDataset):
             concatenated.
         """
         if isinstance(idx, Iterable):  # Sample multiple windows
-            return self._get_sequence(idx)
+            X, y = self._get_sequence(idx)
         else:
-            return super().__getitem__(idx)
+            X, y = super().__getitem__(idx)
+        if self.target_transform is not None:
+            y = self.target_transform(y)
+        return X, y
 
     def split(self, by=None, property=None, split_ids=None):
         """Split the dataset based on information listed in its description
@@ -341,14 +340,14 @@ class BaseConcatDataset(ConcatDataset):
             self.datasets[i].transform = fn
 
     @property
-    def seq_target_transform(self):
-        return self._seq_target_transform
+    def target_transform(self):
+        return self._target_transform
 
-    @seq_target_transform.setter
-    def seq_target_transform(self, fn):
+    @target_transform.setter
+    def target_transform(self, fn):
         if not (callable(fn) or fn is None):
-            raise TypeError('seq_target_transform must be a callable.')
-        self._seq_target_transform = fn
+            raise TypeError('target_transform must be a callable.')
+        self._target_transform = fn
 
     def save(self, path, overwrite=False):
         """Save dataset to files.

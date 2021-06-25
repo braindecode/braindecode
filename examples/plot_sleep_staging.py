@@ -206,8 +206,8 @@ def get_center_label(x):
     return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
 
 
-train_set.seq_target_transform = get_center_label
-valid_set.seq_target_transform = get_center_label
+train_set.target_transform = get_center_label
+valid_set.target_transform = get_center_label
 
 
 ######################################################################
