@@ -14,7 +14,9 @@ from .functions import (
 
 
 class ShallowFBCSPNet(nn.Sequential):
-    """Shallow ConvNet model from [2]_.
+    """Shallow ConvNet model from Schirrmeister et al 2017.
+
+    Model described in [2]_.
 
     Parameters
     ----------

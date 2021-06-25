@@ -12,8 +12,12 @@ from .functions import squeeze_final_output
 
 
 class TCN(nn.Module):
-    """Temporal Convolutional Network (TCN) as described in [1]_.
+    """Temporal Convolutional Network (TCN) from Bai et al 2018.
+
+    See [1]_ for details.
+
     Code adapted from https://github.com/locuslab/TCN/blob/master/TCN/tcn.py
+
     Parameters
     ----------
     n_in_chans: int
