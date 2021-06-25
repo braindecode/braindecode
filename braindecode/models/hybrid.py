@@ -12,14 +12,14 @@ from .shallow_fbcsp import ShallowFBCSPNet
 
 
 class HybridNet(nn.Module):
-    """Hybrid ConvNet model from [3]_.
+    """Hybrid ConvNet model from Schirrmeister et al 2017.
 
-    Very hardcoded at the moment.
+    See [3]_ for details.
 
     References
     ----------
 
-    .. [3] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
+    .. [1] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
        Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F. & Ball, T. (2017).
        Deep learning with convolutional neural networks for EEG decoding and
        visualization.

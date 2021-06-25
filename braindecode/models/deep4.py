@@ -13,12 +13,17 @@ from ..util import np_to_th
 
 
 class Deep4Net(nn.Sequential):
-    """
-    Deep ConvNet model from [1]_.
+    """Deep ConvNet model from Schirrmeister et al 2017.
+
+    Model described in [2]_.
+
+    Parameters
+    ----------
+    in_chans : int
+        XXX
 
     References
     ----------
-
     .. [1] Schirrmeister, R. T., Springenberg, J. T., Fiederer, L. D. J.,
        Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F. & Ball, T. (2017).
        Deep learning with convolutional neural networks for EEG decoding and

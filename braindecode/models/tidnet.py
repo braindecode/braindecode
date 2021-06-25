@@ -173,7 +173,9 @@ class _TIDNetFeatures(nn.Module):
 
 
 class TIDNet(nn.Module):
-    """Thinker Invariance DenseNet model from [TIDNet]_
+    """Thinker Invariance DenseNet model from Kostas et al 2020.
+
+    See [TIDNet]_ for details.
 
     Parameters
     ----------
