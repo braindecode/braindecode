@@ -11,7 +11,10 @@
 import pandas as pd
 import mne
 
+from moabb.datasets import Schirrmeister2017, BNCI2014001
+
 from .base import BaseDataset, BaseConcatDataset
+from braindecode.util import update_moabb_docstring
 
 
 def _find_dataset_in_moabb(dataset_name):
@@ -99,12 +102,16 @@ class MOABBDataset(BaseConcatDataset):
 
 
 class BNCI2014001(MOABBDataset):
-    """See moabb.datasets.bnci.BNCI2014001"""
+    doc = """See moabb.datasets.bnci.BNCI2014001"""
+    __doc__ = update_moabb_docstring(BNCI2014001, doc)
+
     def __init__(self, *args, **kwargs):
         super().__init__("BNCI2014001", *args, **kwargs)
 
 
 class HGD(MOABBDataset):
-    """See moabb.datasets.schirrmeister2017.Schirrmeister2017"""
+    doc = """See moabb.datasets.schirrmeister2017.Schirrmeister2017"""
+    __doc__ = update_moabb_docstring(Schirrmeister2017, doc)
+
     def __init__(self, *args, **kwargs):
         super().__init__("Schirrmeister2017", *args, **kwargs)
