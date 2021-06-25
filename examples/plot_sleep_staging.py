@@ -202,6 +202,7 @@ print(len(valid_sampler))
 # sequence to use it as target.
 #
 
+
 # Use label of center window in the sequence
 def get_center_label(x):
     return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
@@ -249,6 +250,7 @@ if cuda:
 set_random_seeds(seed=random_state, cuda=cuda)
 
 n_classes = 5
+
 
 class TimeDistributedNet(nn.Module):
     """Extract features for multiple windows then concatenate & classify them.
