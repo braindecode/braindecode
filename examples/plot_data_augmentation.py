@@ -2,14 +2,24 @@
 Data Augmentation on BCIC IV 2a Dataset
 =======================================
 
-This tutorial shows the application of transforms for data augmentation. It
-follows the trialwise decoding example, but adds transforms to the training.
-For visualization, the effect of a transform is shown.
+This tutorial shows how to train EEG deep models with data augmentation. It
+follows the trial-wise decoding example and also illustrates the effect of a
+transform on the input signals.
+
+.. contents:: This example covers:
+   :local:
+   :depth: 2
 
 """
 
+# Authors: Simon Brandt <simonbrandt@protonmail.com>
+#          Cédric Rommel <cedric.rommel@inria.fr>
+#
+# License: BSD (3-clause)
+
 ######################################################################
-# Following trialwise decoding example
+# Loading and preprocessing the dataset
+# -------------------------------------
 
 ######################################################################
 # Loading
@@ -29,7 +39,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # ~~~~~~~~~~~~~
 #
 
-from braindecode.preprocessing.preprocess import (
+from braindecode.preprocessing import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
 low_cut_hz = 4.  # low cut frequency for filtering
@@ -53,7 +63,7 @@ preprocess(dataset, preprocessors)
 # ~~~~~~~~~~~~~~~~~~~
 #
 
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -62,8 +72,8 @@ assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Calculate the trial start offset in samples.
 trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
-# Create windows using braindecode function for this. It needs parameters to define how
-# trials should be used.
+# Create windows using braindecode function for this. It needs parameters to
+# define how trials should be used.
 windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
@@ -82,40 +92,39 @@ valid_set = splitted['session_E']
 
 ######################################################################
 # Defining a transform
-# ~~~~~~~~~~~~~~~~~~~~
+# --------------------
 #
 
 ######################################################################
-# Data can be manipulated by transforms. A transform is usually handled by a
-# custom data loader, but can also be called using the forward function. Here I
-# will use the forward function to get manipulated data for visualization.
+# Data can be manipulated by transforms, which are callable objects. A
+# transform is usually handled by a custom data loader, but can also be called
+# directly on input data, as demonstrated below for illutrative purpose.
 #
 
-# First, we need to define a transform.
+# First, we need to define a transform. Here we chose the FrequencyShift, which
+# randomly translates all frequencies within a given range.
 
 from braindecode.augmentation import FrequencyShift
+
 transform = FrequencyShift(
-    probability=1.,  # defines the probability by which a sample is manipulated
+    probability=1.,  # defines the probability of actually modifying the input
     sfreq=sfreq,
     delta_freq_range=(10., 10.)  # -> fixed frequency shift for visualization
 )
 
 ######################################################################
-# Manipulating one session and visualizing the transformation
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Manipulating one session and visualizing the transformed data
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
-# Next, I will manipulate one session to show the resulting frequency shift. I
-# will manipulate the data of an mne Epoch to make usage of mne functions.
+# Next, let us augment one session to show the resulting frequency shift. The
+# data of an mne Epoch is used here to make usage of mne functions.
 
 import torch
 
-epochs = train_set.datasets[0].windows
-epochs_tr = epochs.copy()
-
-X = torch.Tensor(epochs_tr._data)
-X_tr = transform.forward(X)
-epochs_tr._data = X_tr
+epochs = train_set.datasets[0].windows  # original epochs
+X = epochs.get_data()
+X_tr = transform(X).numpy()
 
 ######################################################################
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
@@ -125,17 +134,18 @@ import mne
 import matplotlib.pyplot as plt
 import numpy as np
 
-f, ax = plt.subplots()
 
-psds, freqs = mne.time_frequency.psd_multitaper(epochs)
-psds = 10. * np.log10(psds)
-psds_mean = psds.mean(0).mean(0)
-ax.plot(freqs, psds_mean, color='k', label='original')
+def plot_psd(data, axis, label, color):
+    psds, freqs = mne.time_frequency.psd_array_multitaper(data, sfreq=sfreq,
+                                                          fmin=0.1, fmax=100)
+    psds = 10. * np.log10(psds)
+    psds_mean = psds.mean(0).mean(0)
+    axis.plot(freqs, psds_mean, color=color, label=label)
 
-psds, freqs = mne.time_frequency.psd_multitaper(epochs_tr)
-psds = 10. * np.log10(psds)
-psds_mean = psds.mean(0).mean(0)
-ax.plot(freqs, psds_mean, color='r', label='shifted')
+
+_, ax = plt.subplots()
+plot_psd(X, ax, 'original', 'k')
+plot_psd(X_tr, ax, 'shifted', 'r')
 
 ax.set(title='Multitaper PSD (gradiometers)', xlabel='Frequency (Hz)',
        ylabel='Power Spectral Density (dB)')
@@ -143,8 +153,15 @@ ax.legend()
 plt.show()
 
 ######################################################################
+# Training a model with data augmentation
+# ---------------------------------------
+# 
+# Now that we know how to instantiate Transforms, it is time to learn how to
+# use them in the training of a model to try to improve its generalization.
+# Let's first create a model.
+#
 # Create model
-# ------------
+# ~~~~~~~~~~~~
 #
 
 ######################################################################
@@ -157,11 +174,13 @@ cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses t
 device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
-seed = 20200220  # random seed to make results reproducible
+
 # Set random seed to be able to reproduce results
+seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4
+
 # Extract number of chans and time steps from dataset
 n_chans = train_set[0][0].shape[0]
 input_window_samples = train_set[0][0].shape[1]
@@ -174,21 +193,22 @@ model = ShallowFBCSPNet(
 )
 
 ######################################################################
-# Define final model
-# ------------------
+# Define final EEGClassifier with the desired augmentation
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 ######################################################################
-# To use the transformer in the training, a custom data loader is used in for
-# the training. Multiple transforms can be passed to the data loader and will
-# be applied on the batched data.
+# In order to use train with data augmentation, a custom data loader can be
+# used in for the training. Multiple transforms can be passed to and will
+# be applied sequentially to the batched data within the `AugmentedDataLoader`
+# object.
 
 from braindecode.augmentation import AugmentedDataLoader, SignFlip
 
 freq_shift = FrequencyShift(
     probability=.5,
     sfreq=sfreq,
-    delta_freq_range=(3., 5.)  # the frequency shifts are sampled now
+    delta_freq_range=(-2., 2.)  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
 sign_flip = SignFlip(probability=.1)
@@ -203,8 +223,9 @@ if cuda:
     model.cuda()
 
 ######################################################################
-# The model is now trained as in the trial wise example. The data laoder is
-# used as the train iterator and the transforms passed as arguments.
+# The model is now trained as in the trial-wise example. The
+# `AugmentedDataLoader` is used as the train iterator and the transforms are
+# passed as arguments.
 
 lr = 0.0625 * 0.01
 weight_decay = 0
@@ -214,8 +235,8 @@ n_epochs = 4
 
 clf = EEGClassifier(
     model,
-    iterator_train=AugmentedDataLoader,
-    iterator_train__transforms=transforms,
+    iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
+    iterator_train__transforms=transforms,  # This sets the augmentations to use
     criterion=torch.nn.NLLLoss,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),  # using valid_set for validation
@@ -223,10 +244,34 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
-        "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        "accuracy",
+        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
 )
-# Model training for a specified number of epochs. `y` is None as it is already supplied
-# in the dataset.
+# Model training for a specified number of epochs. `y` is None as it is already
+# supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
+
+######################################################################
+# Manually composing Transforms
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# It would be equivalent (although more verbose) to pass to `EEGClassifier` a
+# composition of the same transforms:
+
+from braindecode.augmentation import Compose
+
+composed_transforms = Compose(transforms=transforms)
+
+######################################################################
+# Setting the data augmentation at the Dataset level
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Also note that it is also possible for most of the transforms to pass them
+# directly to the WindowsDataset object through the `transform` argument, as
+# most commonly done in other libraries. However, using the AugmentedDataLoader
+# as above is advised as it is compatible with all transforms and slightly more
+# efficient.
+
+train_set.transform = composed_transforms
