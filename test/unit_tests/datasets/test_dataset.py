@@ -320,11 +320,10 @@ def test_concat_dataset_seq_target_transform(concat_windows_dataset):
     indices = range(100)
     y = concat_windows_dataset[indices][1]
 
-    transform = lambda x: sum(x)  # noqa: E731
-    concat_windows_dataset.seq_target_transform = transform
+    concat_windows_dataset.seq_target_transform = sum
     y2 = concat_windows_dataset[indices][1]
 
-    assert y2 == transform(y)
+    assert y2 == sum(y)
 
 
 def test_concat_dataset_invalid_seq_target_transform(concat_windows_dataset):

@@ -23,6 +23,10 @@ Current (0.5.2.dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding :class:`braindecode.samplers.SequenceSampler` along with support for returning sequences of windows in :class:`braindecode.datasets.BaseConcatDataset` and an updated sleep staging example to show how to train on sequences of windows (:gh:`263` by `Hubert Banville`_)
+
+Enhancements
+~~~~~~~~~~~~
 - Adding Thinker Invariance Network :class:`braindecode.models.TIDNet` (:gh:`170` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 
 API changes
