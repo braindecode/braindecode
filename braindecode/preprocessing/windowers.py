@@ -1,5 +1,6 @@
 """Get epochs from mne.Raw
 """
+
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
@@ -23,7 +24,7 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 # XXX it's called concat_ds...
 def create_windows_from_events(
-        concat_ds, trial_start_offset_samples, trial_stop_offset_samples,
+        concat_ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
@@ -52,9 +53,9 @@ def create_windows_from_events(
     concat_ds: BaseConcatDataset
         A concat of base datasets each holding raw and description.
     trial_start_offset_samples: int
-        Start offset from original trial onsets, in samples.
+        Start offset from original trial onsets, in samples. Defaults to zero.
     trial_stop_offset_samples: int
-        Stop offset from original trial stop, in samples.
+        Stop offset from original trial stop, in samples. Defaults to zero.
     window_size_samples: int | None
         Window size. If None, the window size is inferred from the original
         trial size of the first trial and trial_start_offset_samples and
