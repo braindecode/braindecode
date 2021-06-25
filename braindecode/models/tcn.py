@@ -12,8 +12,9 @@ from .functions import squeeze_final_output
 
 
 class TCN(nn.Module):
-    """Temporal Convolutional Network (TCN) as described in [1]_.
+    """Temporal Convolutional Network (TCN) as described in [Bai2018]_.
     Code adapted from https://github.com/locuslab/TCN/blob/master/TCN/tcn.py
+
     Parameters
     ----------
     n_in_chans: int
@@ -31,9 +32,10 @@ class TCN(nn.Module):
         dropout probability
     add_log_softmax: bool
         whether to add a log softmax layer
+
     References
     ----------
-    .. [1] Bai, S., Kolter, J. Z., & Koltun, V. (2018).
+    .. [Bai2018] Bai, S., Kolter, J. Z., & Koltun, V. (2018).
        An empirical evaluation of generic convolutional and recurrent networks
        for sequence modeling.
        arXiv preprint arXiv:1803.01271.
@@ -70,6 +72,13 @@ class TCN(nn.Module):
         self.eval()
 
     def forward(self, x):
+        """Forward pass.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        """
         x = self.ensuredims(x)
         # x is in format: B x C x T x 1
         (batch_size, _, time_size, _) = x.size()
