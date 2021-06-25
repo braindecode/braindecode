@@ -14,8 +14,10 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 
 from braindecode.datasets.base import BaseConcatDataset
+from braindecode.datautil.serialization import load_concat_dataset
 
 
 class Preprocessor(object):
@@ -133,26 +135,44 @@ def preprocess(concat_ds, preprocessors, out_dir=None, overwrite=False,
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
-    for i, one_ds in enumerate(concat_ds.datasets):
-        one_concat_ds = BaseConcatDataset([one_ds])
-        for ds in one_concat_ds.datasets:
-            if hasattr(ds, 'raw'):
-                _preprocess(ds.raw, preprocessors)
-            elif hasattr(ds, 'windows'):
-                _preprocess(ds.windows, preprocessors)
-            else:
-                raise ValueError(
-                    'Can only preprocess concatenation of BaseDataset or '
-                    'WindowsDataset, with either a `raw` or `windows` attribute.')
-        this_out_dir = os.path.join(out_dir, str(i))
-        if not os.path.exists(this_out_dir):
-            os.makedirs(this_out_dir)
-        one_concat_ds.save(this_out_dir, overwrite=overwrite)
+    Parallel(n_jobs)(delayed(_parallel_preproc)(
+        BaseConcatDataset([one_ds]), i, preprocessors, out_dir, overwrite)
+                     for i, one_ds in enumerate(concat_ds.datasets))
 
+    # reload the datasets again with preload=False and kind of mimic in-place
+    # operation by setting raw or description in the original concat ds
+    concat_ds_reloaded = load_concat_dataset(out_dir, preload=False)
+    for ds, ds_reloaded in zip(concat_ds.datasets, concat_ds_reloaded.datasets):
+        if hasattr(ds, 'raw'):
+            ds.raw = ds_reloaded.raw
+        if hasattr(ds, 'windows'):
+            ds.windows = ds_reloaded.windows
     # Recompute cumulative sizes as the transforms might have changed them
     # XXX: Ultimately, the best solution would be to have cumulative_size be
     #      a property of BaseConcatDataset.
     concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
+
+
+def _parallel_preproc(one_concat_ds, i, preprocessors, out_dir, overwrite):
+    for ds in one_concat_ds.datasets:
+        if hasattr(ds, 'raw'):
+            _preprocess(ds.raw, preprocessors)
+        elif hasattr(ds, 'windows'):
+            _preprocess(ds.windows, preprocessors)
+        else:
+            raise ValueError(
+                'Can only preprocess concatenation of BaseDataset or '
+                'WindowsDataset, with either a `raw` or `windows` attribute.')
+    # create a subdirectory for this recording corresponding to its id
+    this_out_dir = os.path.join(out_dir, str(i))
+    if not os.path.exists(this_out_dir):
+        os.makedirs(this_out_dir)
+    one_concat_ds.save(this_out_dir, overwrite=overwrite)
+    # free memory
+    if hasattr(ds, 'raw'):
+        del ds.raw
+    if hasattr(ds, 'windows'):
+        del ds.windows
 
 
 def _preprocess(raw_or_epochs, preprocessors):
