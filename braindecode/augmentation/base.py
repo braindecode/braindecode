@@ -85,7 +85,8 @@ class Transform(torch.nn.Module):
         if num_valid > 0:
             # Uses the mask to define the output
             out_X[mask, ...], tr_y = self.operation(
-                out_X[mask, ...], out_y[mask], *self.get_params(X, y)
+                out_X[mask, ...], out_y[mask],
+                *self.get_params(out_X[mask, ...], out_y[mask])
             )
             # Apply the operation defining the Transform to the whole batch
             if type(tr_y) is tuple:
