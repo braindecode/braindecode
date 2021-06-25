@@ -58,7 +58,7 @@ References
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
-dataset = SleepPhysionet(subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
+dataset = SleepPhysionet(subject_ids=[i for i in range(30)], recording_ids=[2], crop_wake_mins=30)
 
 
 ######################################################################
@@ -156,7 +156,7 @@ from braindecode.datasets import BaseConcatDataset
 random_state = 31
 subjects = np.unique(windows_dataset.description["subject"])
 subj_train, subj_valid = train_test_split(
-    subjects, test_size=0.5, random_state=random_state
+    subjects, test_size=0.2, random_state=random_state
 )
 
 split_ids = {"train": subj_train, "valid": subj_valid}
@@ -188,7 +188,7 @@ valid_set = splitted["valid"]
 
 from braindecode.samplers import SequenceSampler
 
-n_windows = 35  # Sequences of 3 consecutive windows
+n_windows = 35  # Sequences of 35 consecutive windows
 n_windows_stride = 35  # Maximally overlapping sequences
 
 train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
@@ -283,7 +283,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 64
-n_epochs = 10
+n_epochs = 100
 
 from sklearn.metrics import balanced_accuracy_score
 

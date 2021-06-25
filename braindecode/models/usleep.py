@@ -149,13 +149,12 @@ class USleep(nn.Module):
            https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
     def __init__(self,
-                 n_channels=2,
+                 n_channels=2,  # XXX change n_channels -> in_chans
                  sfreq=100,
                  complexity_factor=np.sqrt(2),
                  with_skip_connection=True,
                  n_classes=5,
                  input_size_s=30,
-                 apply_batch_norm=True
                  ):
         super().__init__()
 

@@ -138,7 +138,7 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
 
 @pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
                          [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
-def test_sleep_stager_sequence(n_channels, sfreq, n_classes, input_size_s):
+def test_usleep(n_channels, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     n_examples = 10
     seq_length = 3
