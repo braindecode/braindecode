@@ -109,6 +109,22 @@ class FTSurrogate(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        magnitude : float
+            The magnitude of the transformation.
+        random_state : numpy.random.Generator
+            The generator to use.
+        """
         return self.magnitude, self.rng
 
 
@@ -303,7 +319,7 @@ class ChannelsSymmetry(Transform):
         )
 
     def get_params(self, X, y):
-        return [self.permutation]
+        return (self.permutation,)
 
 
 class SmoothTimeMask(Transform):
