@@ -335,7 +335,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 10
+n_epochs = 2
 
 from sklearn.metrics import balanced_accuracy_score
 
@@ -439,17 +439,14 @@ plt.tight_layout()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-# TODO flatten y_true and y_pred
-
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
 
-y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
+y_true = np.array([valid_set[i][1] for i in valid_sampler])
 y_pred = clf.predict(valid_set)
 
-print(confusion_matrix(np.array(y_true).flatten(), np.array(y_pred).flatten()))
-
-print(classification_report(np.array(y_true).flatten(), np.array(y_pred).flatten()))
+print(confusion_matrix(y_true.flatten(), y_pred.flatten()))
+print(classification_report(y_true.flatten(), y_pred.flatten()))
 
 
 ######################################################################
