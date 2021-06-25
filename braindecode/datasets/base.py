@@ -247,14 +247,15 @@ class BaseConcatDataset(ConcatDataset):
         idx : int | list
             Index of window and target to return. If provided as a list of
             ints, multiple windows and targets will be extracted and
-            concatenated.
+            concatenated. The target output can be modified on the
+            fly by the ``traget_transform`` parameter.
         """
         if isinstance(idx, Iterable):  # Sample multiple windows
             item = self._get_sequence(idx)
         else:
             item = super().__getitem__(idx)
         if self.target_transform is not None:
-            item[1] = self.target_transform(item[1])
+            item = item[:1] + (self.target_transform(item[1]),) + item[2:]
         return item
 
     def split(self, by=None, property=None, split_ids=None):
