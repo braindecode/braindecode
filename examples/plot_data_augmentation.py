@@ -200,7 +200,7 @@ transforms = [
 
 # Send model to GPU
 if cuda:
-    model.cuda()    
+    model.cuda()
 
 ######################################################################
 # The model is now trained as in the trial wise example. The data laoder is
