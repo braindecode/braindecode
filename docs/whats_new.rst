@@ -45,7 +45,6 @@ Enhancements
 - Removing code duplicate in BaseDataset and WindowsDataset (:gh:`159` by `Lukas Gemein`_)
 - Only load data if needed during preprocessing (e.g., allow timecrop without loading) (:gh:`164` by `Robin Tibor Schirrmeister`_)
 - Adding option to sort filtered channels by frequency band for the filterbank in :func:`braindecode.datautil.filterbank` (:gh:`185` by `Lukas Gemein`_)
-
 Bugs
 ~~~~
 - Amplitude gradients are correctly computed for layers with multiple filters
@@ -75,3 +74,5 @@ Authors
 .. _Dan Wilson: https://github.com/dcwil
 .. _Henrik Bonsmann: https://github.com/HenrikBons
 .. _Vytautas Jankauskas: https://github.com/vytjan
+.. _Théo Gnassounou: https://github.com/Tgnassou
+.. _L Emir Omar Chehab: https://github.com/l-omar-chehab
