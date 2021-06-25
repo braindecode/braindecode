@@ -162,6 +162,8 @@ for name, values in split_ids.items():
 train_set = splitted['train']
 valid_set = splitted['valid']
 
+# Extract number of channels and time steps from dataset
+n_channels, input_size_samples = train_set[0][0].shape
 
 ######################################################################
 # Create sequence samplers
@@ -194,7 +196,6 @@ valid_sampler = SequenceSampler(
 # Print number of examples per class
 print(len(train_sampler))
 print(len(valid_sampler))
-
 
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
@@ -248,9 +249,6 @@ if cuda:
 set_random_seeds(seed=random_state, cuda=cuda)
 
 n_classes = 5
-# Extract number of channels and time steps from dataset
-n_channels, input_size_samples = train_set[0][0].shape
-
 
 class TimeDistributedNet(nn.Module):
     """Extract features for multiple windows then concatenate & classify them.
