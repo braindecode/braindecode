@@ -62,6 +62,7 @@ Models
     EEGResNet
     TCN
     SleepStagerChambon2018
+    USleep
     get_output_shape
 
 Training
