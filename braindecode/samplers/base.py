@@ -6,6 +6,7 @@ Sampler classes.
 #
 # License: BSD (3-clause)
 
+import numpy as np
 from torch.utils.data.sampler import Sampler
 from sklearn.utils import check_random_state
 
@@ -79,3 +80,46 @@ class RecordingSampler(Sampler):
     @property
     def n_recordings(self):
         return self.info.shape[0]
+
+
+class SequenceSampler(RecordingSampler):
+    """Sample sequences of consecutive windows.
+
+    Parameters
+    ----------
+    metadata : pd.DataFrame
+        See RecordingSampler.
+    n_windows : int
+        Number of consecutive windows in a sequence.
+    n_windows_stride : int
+        Number of windows between two consecutive sequences.
+    random_state : np.RandomState | int | None
+        Random state.
+    """
+    def __init__(self, metadata, n_windows, n_windows_stride,
+                 random_state=None):
+        super().__init__(metadata, random_state=random_state)
+
+        self.n_windows = n_windows
+        self.n_windows_stride = n_windows_stride
+        self.start_inds = self._compute_seq_start_inds()
+
+    def _compute_seq_start_inds(self):
+        """Compute sequence start indices.
+
+        Returns
+        -------
+        np.ndarray :
+            Array of shape (n_sequences,) containing the indices of the first
+            windows of possible sequences.
+        """
+        end_offset = 1 - self.n_windows if self.n_windows > 1 else None
+        return np.concatenate(self.info['index'].apply(
+            lambda x: x[:end_offset:self.n_windows_stride]).values)
+
+    def __len__(self):
+        return len(self.start_inds)
+
+    def __iter__(self):
+        for start_ind in self.start_inds:
+            yield tuple(range(start_ind, start_ind + self.n_windows))

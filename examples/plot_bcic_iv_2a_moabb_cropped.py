@@ -343,3 +343,35 @@ handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label
 handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()
+
+
+######################################################################
+# Plot Confusion Matrix
+# ---------------------
+#
+
+
+#######################################################################
+# Generate a confusion matrix as in https://onlinelibrary.wiley.com/doi/full/10.1002/hbm.23730
+#
+
+
+from sklearn.metrics import confusion_matrix
+from braindecode.visualization import plot_confusion_matrix
+
+# generate confusion matrices
+# get the targets
+y_true = valid_set.get_metadata().target
+y_pred = clf.predict(valid_set)
+
+# generating confusion matrix
+confusion_mat = confusion_matrix(y_true, y_pred)
+
+# add class labels
+# label_dict is class_name : str -> i_class : int
+label_dict = valid_set.datasets[0].windows.event_id.items()
+# sort the labels by values (values are integer class labels)
+labels = list(dict(sorted(list(label_dict), key=lambda kv: kv[1])).keys())
+
+# plot the basic conf. matrix
+plot_confusion_matrix(confusion_mat, class_names=labels)
