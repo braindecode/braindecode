@@ -3,8 +3,6 @@
 #
 # License: BSD (3-clause)
 
-# TODO: add crop function, add classifier
-
 import numpy as np
 import torch
 from torch import nn
@@ -122,7 +120,8 @@ class USleep(nn.Module):
         EEG sampling frequency. Set to 128 in [1]_.
     depth : int
         Number of encoding (resp. decoding) blocks in the U-Net.
-        Set to 12 in [1]_.
+        Set to 12 in [1]_ with sfreq=128.
+        Here we set it to 10 with sfreq=100.
     time_conv_size_s : float
         Size of filters in temporal convolution layers, in seconds.
         Set to 0.070 in [1]_ (9 samples at sfreq=128).
@@ -152,10 +151,6 @@ class USleep(nn.Module):
     def __init__(self,
                  n_channels=2,
                  sfreq=100,
-                 depth=10,  # default should be 12
-                 time_conv_size_s=0.09,
-                 max_pool_size_s=0.02,
-                 n_time_filters=5,
                  complexity_factor=np.sqrt(2),
                  with_skip_connection=True,
                  n_classes=5,
@@ -166,14 +161,14 @@ class USleep(nn.Module):
 
         self.n_channels = n_channels
 
-        # Convert between units: seconds to time-points (at sfreq)
-        time_conv_size = np.ceil(time_conv_size_s * sfreq).astype(int)
-        max_pool_size = np.ceil(max_pool_size_s * sfreq).astype(int)
-        input_size = np.ceil(input_size_s * sfreq).astype(int)
+        # Harcoded (otherwise dims can break)
+        depth = 10
+        time_conv_size = 9  # 0.09s at sfreq = 100 Hz
+        max_pool_size = 2   # 0.02s at sfreq = 100 Hz
+        n_time_filters = 5
 
-        assert (time_conv_size == 9), "Temporal convolution size is not equal to 9."
-        assert (max_pool_size == 2), "Maxpool size is not equal to 2."
-        assert (input_size == 3000), "Window length is not equal to 3000."
+        # Convert between units: seconds to time-points (at sfreq)
+        input_size = np.ceil(input_size_s * sfreq).astype(int)
 
         # Define geometric sequence of channels
         channels = (
@@ -258,6 +253,7 @@ class USleep(nn.Module):
         '''If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).
         '''
+        print(x.shape)
         # reshape input
         if len(x.shape) == 4:  # input x has shape (B, S, C, T)
             x = x.permute(0, 2, 1, 3)  # (B, C, S, T)
@@ -267,44 +263,26 @@ class USleep(nn.Module):
         residuals = []
         for down in self.encoder:
             x, res = down(x)
+            print(x.shape)
             residuals.append(res)
 
         # bottom
         x = self.bottom(x)
+        print(x.shape)
 
         # decoder
         residuals = residuals[::-1]  # flip order
         for up, res in zip(self.decoder, residuals):
             x = up(x, res)
+            print(x.shape)
 
         # classifier
+        print(x.shape)
         y_pred = self.clf(x)        # (B, n_classes, seq_length)
+        print(y_pred.shape)
+
         # y_pred = self.clf(x.flatten(start_dim=1))        # (B, n_classes)
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]
 
         return y_pred
-
-
-def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
-    rng = np.random.RandomState(42)
-    time_conv_size_s = 0.5
-    max_pool_size_s = 0.125
-    pad_size_s = 0.25
-    n_examples = 10
-
-    model = USleep(
-        n_channels, sfreq, n_conv_chs=8, time_conv_size_s=time_conv_size_s,
-        max_pool_size_s=max_pool_size_s, pad_size_s=pad_size_s,
-        input_size_s=input_size_s, n_classes=n_classes, dropout=0.25)
-    model.eval()
-
-    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
-    X = torch.from_numpy(X.astype(np.float32))
-
-    y_pred1 = model(X)  # 3D inputs
-    y_pred2 = model(X.unsqueeze(1))  # 4D inputs
-    assert y_pred1.shape == (n_examples, n_classes)
-    assert y_pred2.shape == (n_examples, n_classes)
-    np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
-                               y_pred2.detach().cpu().numpy())
