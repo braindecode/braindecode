@@ -155,7 +155,7 @@ plt.show()
 ######################################################################
 # Training a model with data augmentation
 # ---------------------------------------
-# 
+#
 # Now that we know how to instantiate ``Transforms``, it is time to learn how
 # to use them to train a model and try to improve its generalization power.
 # Let's first create a model.
