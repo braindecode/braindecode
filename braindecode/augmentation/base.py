@@ -69,7 +69,7 @@ class Transform(torch.nn.Module):
         torch.Tensor, optional
             Transformed labels. Only returned when y is not None.
         """
-        X = torch.as_tensor(X)
+        X = torch.as_tensor(X).float()
         out_X = X.clone()
         if y is not None:
             y = torch.as_tensor(y)
