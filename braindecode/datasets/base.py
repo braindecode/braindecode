@@ -250,12 +250,12 @@ class BaseConcatDataset(ConcatDataset):
             concatenated.
         """
         if isinstance(idx, Iterable):  # Sample multiple windows
-            X, y = self._get_sequence(idx)
+            item = self._get_sequence(idx)
         else:
-            X, y = super().__getitem__(idx)
+            item = super().__getitem__(idx)
         if self.target_transform is not None:
-            y = self.target_transform(y)
-        return X, y
+            item[1] = self.target_transform(item[1])
+        return item
 
     def split(self, by=None, property=None, split_ids=None):
         """Split the dataset based on information listed in its description
