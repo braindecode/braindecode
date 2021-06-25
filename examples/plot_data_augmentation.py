@@ -182,11 +182,11 @@ set_random_seeds(seed=seed, cuda=cuda)
 n_classes = 4
 
 # Extract number of chans and time steps from dataset
-n_chans = train_set[0][0].shape[0]
+n_channels = train_set[0][0].shape[0]
 input_window_samples = train_set[0][0].shape[1]
 
 model = ShallowFBCSPNet(
-    n_chans,
+    n_channels,
     n_classes,
     input_window_samples=input_window_samples,
     final_conv_length='auto',
