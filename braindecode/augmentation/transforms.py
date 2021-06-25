@@ -122,7 +122,7 @@ class FTSurrogate(Transform):
         -------
         magnitude : float
             The magnitude of the transformation.
-        random_state : numpy.random.Generator
+        rng : numpy.random.Generator
             The generator to use.
         """
         return self.magnitude, self.rng
@@ -156,17 +156,34 @@ class ChannelsDropout(Transform):
     def __init__(
         self,
         probability,
-        proba_drop=0.2,
+        p_drop=0.2,
         random_state=None
     ):
-        self.proba_drop = proba_drop
+        self.p_drop = p_drop
         super().__init__(
             probability=probability,
             random_state=random_state
         )
 
     def get_params(self, X, y):
-        return self.proba_drop, self.rng
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        p_drop : float
+            Float between 0 and 1 setting the probability of dropping each
+            channel.
+        rng : numpy.random.Generator
+            The generator to use.
+        """
+        return self.p_drop, self.rng
 
 
 class ChannelsShuffle(Transform):
@@ -178,7 +195,7 @@ class ChannelsShuffle(Transform):
     ----------
     probability: float
         Float setting the probability of applying the operation.
-    proba_shuffle: float | None, optional
+    p_shuffle: float | None, optional
         Float between 0 and 1 setting the probability of including the channel
         in the set of permutted channels. Defaults to 0.2.
     random_state: int | numpy.random.Generator, optional
@@ -198,17 +215,34 @@ class ChannelsShuffle(Transform):
     def __init__(
         self,
         probability,
-        proba_shuffle=0.2,
+        p_shuffle=0.2,
         random_state=None
     ):
-        self.proba_shuffle = proba_shuffle
+        self.p_shuffle = p_shuffle
         super().__init__(
             probability=probability,
             random_state=random_state
         )
 
     def get_params(self, X, y):
-        return self.proba_shuffle, self.rng
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        p_shuffle : float
+            Float between 0 and 1 setting the probability of including the
+            channel in the set of permutted channels.
+        rng : numpy.random.Generator
+            The generator to use.
+        """
+        return self.p_shuffle, self.rng
 
 
 class GaussianNoise(Transform):
@@ -255,6 +289,22 @@ class GaussianNoise(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        std : float
+            Standard deviation to use for the additive noise.
+        rng : numpy.random.Generator
+            The generator to use.
+        """
         return self.std, self.rng
 
 
@@ -319,6 +369,20 @@ class ChannelsSymmetry(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        permutation : float
+            List of integers defining the new channels order.
+        """
         return (self.permutation,)
 
 
@@ -368,6 +432,25 @@ class SmoothTimeMask(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        mask_start_per_sample : torch.tensor
+            Tensor of integers containing the position (in last dimension)
+            where to start masking the signal. Should have the same size as the
+            first dimension of X (i.e. one start position per example in the
+            batch).
+        mask_len_samples : int
+            Number of consecutive samples to zero out.
+        """
         seq_length = torch.as_tensor(X.shape[-1], device=X.device)
         mask_start = torch.as_tensor(self.rng.uniform(
             low=0, high=1, size=X.shape[0],
@@ -447,6 +530,29 @@ class BandstopFilter(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        sfreq : float
+            Sampling frequency of the signals to be filtered.
+        bandwidth : float
+            Bandwidth of the filter, i.e. distance between the low and high cut
+            frequencies.
+        freqs_to_notch : array-like | None
+            Array of floats of size ``(batch_size,)`` containing the center of
+            the frequency band to filter out for each sample in the batch.
+            Frequencies should be greater than ``bandwidth/2 + transition`` and
+            lower than ``sfreq/2 - bandwidth/2 - transition`` (where
+            ``transition = 1 Hz``).
+        """
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
             low=1 + 2 * self.bandwidth,
@@ -499,6 +605,22 @@ class FrequencyShift(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        delta_freq : float
+            The amplitude of the frequency shift (in Hz).
+        sfreq : float
+            Sampling frequency of the signals to be transformed.
+        """
         min_delta_freq, max_delta_freq = self.delta_freq_range
         u = torch.as_tensor(
             self.rng.uniform(size=X.shape[0]),
@@ -613,6 +735,32 @@ class SensorsRotation(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        sensors_positions_matrix : numpy.ndarray
+            Matrix giving the positions of each sensor in a 3D cartesian
+            coordinate system. Should have shape (3, n_channels), where
+            n_channels is the number of channels.
+        axis : 'x' | 'y' | 'z'
+            Axis around which to rotate.
+        angles : array-like
+            Array of float of shape ``(batch_size,)`` containing the rotation
+            angles (in degrees) for each element of the input batch, sampled
+            uniformly between ``-max_degrees``and ``max_degrees``.
+        spherical_splines : bool
+            Whether to use spherical splines for the interpolation or not. When
+            `False`, standard scipy.interpolate.Rbf (with quadratic kernel)
+            will be used (as in the original paper).
+        """
         u = self.rng.uniform(
             low=0,
             high=1,
@@ -835,6 +983,23 @@ class Mixup(Transform):
         )
 
     def get_params(self, X, y):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+
+        Returns
+        -------
+        lam : torch.Tensor
+            Values sampled uniformly between 0 and 1 setting the linear
+            interpolation between examples.
+        idx_perm: torch.Tensor
+            Shuffled indices of example that are mixed into original examples.
+        """
         device = X.device
         batch_size, _, _ = X.shape
 
