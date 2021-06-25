@@ -52,6 +52,7 @@ References
 # .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
 #
 
+from numbers import Integral
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
@@ -162,7 +163,6 @@ for name, values in split_ids.items():
 train_set = splitted['train']
 valid_set = splitted['valid']
 
-
 ######################################################################
 # Create sequence samplers
 # ------------------------
@@ -195,20 +195,21 @@ valid_sampler = SequenceSampler(
 print(len(train_sampler))
 print(len(valid_sampler))
 
-
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
 # sequence to use it as target.
 #
 
+
 # Use label of center window in the sequence
 def get_center_label(x):
+    if isinstance(x, Integral):
+        return x
     return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
 
 
-train_set.seq_target_transform = get_center_label
-valid_set.seq_target_transform = get_center_label
-
+train_set.target_transform = get_center_label
+valid_set.target_transform = get_center_label
 
 ######################################################################
 # Finally, since some sleep stages appear a lot more often than others (e.g.
