@@ -21,7 +21,7 @@ class ShallowFBCSPNet(nn.Sequential):
     Parameters
     ----------
     in_chans : int
-        XXX
+        Number of EEG input channels.
 
     References
     ----------
