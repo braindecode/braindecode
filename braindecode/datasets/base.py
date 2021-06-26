@@ -66,10 +66,6 @@ class BaseDataset(Dataset):
         y = None
         if self.target_name is not None:
             y = self.description[self.target_name]
-        X = self.raw[:, index][0]
-        y = None
-        if self.target_name is not None:
-            y = self.description[self.target_name]
         if isinstance(y, pd.Series):
             y = y.to_list()
         if self.transform is not None:
