@@ -88,7 +88,7 @@ if __name__ == '__main__':
         start = time.time()
         # run(n_recs, save, n_jobs)
         mem = max(memory_usage(
-            proc=(run, [n_recs, save, n_jobs], {}))) #, max_usage=True))
+            proc=(run, [n_recs, save, n_jobs], {})))  # , max_usage=True))
         time_taken = time.time() - start
         results.append({
             'n_recs': n_recs,
