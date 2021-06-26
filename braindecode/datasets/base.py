@@ -470,7 +470,7 @@ class BaseConcatDataset(ConcatDataset):
         assert (hasattr(self.datasets[0], 'raw') + hasattr(
             self.datasets[0], 'windows') == 1), (
             "dataset should have either raw or windows attribute")
-        file_names_ = ["{}-raw.fif", "{}-epo.fif"]
+        file_name_pattern = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, 'description.json')
         target_file_name = os.path.join(path, 'target_name.json')
         if not overwrite:
@@ -479,17 +479,27 @@ class BaseConcatDataset(ConcatDataset):
                 raise FileExistsError(
                     f'{description_file_name} or {target_file_name} exist in {path}.')
         else:
-            # remove all existing "{}-raw.fif" / "{}-epo.fif" files
-            for file_name in file_names_:
-                file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
-                _ = [os.remove(f) for f in file_names]
-            # remove existing json files
-            if os.path.isfile(target_file_name):
-                os.remove(target_file_name)
-            if os.path.isfile(description_file_name):
-                os.remove(description_file_name)
+            _clear_up_directory(
+                file_name_pattern, path, target_file_name, description_file_name)
+        self._save_target_name(target_file_name)
+        self._save_datasets_and_description(path, overwrite, file_name_pattern)
 
-        file_name = file_names_[1]
+    def _save_datasets_and_description(self, path, overwrite, file_name_pattern):
+        is_raw = hasattr(self.datasets[0], 'raw')
+        file_name = file_name_pattern[0] if is_raw else file_name_pattern[1]
+        # save all the datasets and description
+        for i_ds, ds in enumerate(self.datasets):
+            # create one subdirectory per dataset
+            this_path = os.path.join(path, str(i_ds))
+            os.makedirs(this_path)
+            full_file_path = os.path.join(this_path, file_name.format(i_ds))
+            if is_raw:
+                ds.raw.save(full_file_path, overwrite=overwrite)
+            else:
+                ds.windows.save(full_file_path, overwrite=overwrite)
+            ds.description.to_json(os.path.join(this_path, 'description.json'))
+
+    def _save_target_name(self, target_file_name):
         # make sure we do not have an inconsistency in the target name
         concat_of_raws = hasattr(self.datasets[0], 'raw')
         if concat_of_raws:
@@ -499,17 +509,16 @@ class BaseConcatDataset(ConcatDataset):
                 "All datasets should have same target name")
             with open(target_file_name, 'w') as f:
                json.dump({'target_name': expected_target_name}, f)
-            file_name = file_names_[0]
 
-        # save all the datasets
-        for i_ds, ds in enumerate(self.datasets):
-            # create one subdirectory per dataset
-            this_path = os.path.join(path, str(i_ds))
-            os.makedirs(this_path)
-            full_file_path = os.path.join(this_path, file_name.format(i_ds))
-            if concat_of_raws:
-                ds.raw.save(full_file_path, overwrite=overwrite)
-            else:
-                ds.windows.save(full_file_path, overwrite=overwrite)
-            ds.description.to_json(os.path.join(this_path, 'description.json'))
-        #self.description.to_json(description_file_name)
+    @staticmethod
+    def _clear_up_directory(
+            file_name_pattern, path, target_file_name, description_file_name):
+        # remove all existing "{}-raw.fif" / "{}-epo.fif" files
+        for file_name in file_name_pattern:
+            file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
+            _ = [os.remove(f) for f in file_names]
+        # remove existing json files
+        if os.path.isfile(target_file_name):
+            os.remove(target_file_name)
+        if os.path.isfile(description_file_name):
+            os.remove(description_file_name)

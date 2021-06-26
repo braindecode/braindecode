@@ -13,6 +13,7 @@ import warnings
 
 import mne
 import pandas as pd
+from joblib import Parallel, delayed
 
 from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
 
@@ -114,7 +115,7 @@ def _load_signals(fif_file, preload, raws):
     if raws:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
     else:
-        signals = mne.read_epochs(fif_file, preload=preload)
+        signals = mne.read_epochs(fif_file, preload=preload)  # seems like this cannot be parallelized
     return signals
 
 
@@ -132,7 +133,8 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     ids_to_load: None | list(int)
         Ids of specific files to load.
     target_name: None or str
-        Load specific description column as target. If not given, take saved target name.
+        Load specific description column as target. If not given, take saved
+        target name.
     n_jobs: int
         Number of jobs to be used to read files in parallel.
 
@@ -143,6 +145,8 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     # if we encounter a dataset that was saved in 'the old way', call the
     # corresponding 'old' loading function
     if _is_outdated_saved(path):
+        warnings.warn("The way your dataset was saved is deprecated by now. "
+                      "Please save it again using '.save()'.")
         return _load_concat_dataset(
             path=path, preload=preload, ids_to_load=ids_to_load,
             target_name=target_name)
@@ -151,31 +155,50 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     # - subdirectories in path for every dataset
     # - description.json and -epo.fif or -raw.fif in every subdirectory
     # - target_name.json in path if we were given raws
+    # grab all the fif and json files, numbers have to match
     fif_files = glob(os.path.join(path, '**/*.fif'))
     description_files = glob(os.path.join(path, '**/description.json'))
     assert len(fif_files) == len(description_files)
+    # sort files by id of the datasets
     fif_files = sorted(fif_files, key=lambda p: int(p.split(os.sep)[-2]))
     description_files = sorted(
         description_files, key=lambda p: int(p.split(os.sep)[-2]))
+    # optionally make a selection of files
     if ids_to_load is not None:
         fif_files = [fif_files[i] for i in ids_to_load]
         description_files = [description_files[i] for i in ids_to_load]
     raws = fif_files[0].endswith('-raw.fif')
-    datasets = []
-    for fif_file, description_file in zip(fif_files, description_files):
-        signals = _load_signals(fif_file, preload, raws)
-        description = pd.read_json(description_file, typ='series')
-        if raws:
-            target_file = os.path.join(path, 'target_name.json')
-            if os.path.exists(target_file):
-                target_name = pd.read_json(target_file, typ='series')
-            datasets.append(BaseDataset(signals, description, target_name))
-        else:
-            datasets.append(WindowsDataset(signals, description))
+    if n_jobs == 1:
+        datasets = [_load_parallel(
+            fif_files[i], description_files[i], path, preload, raws)
+            for i in range(len(fif_files))]
+    else:
+        datasets = Parallel(n_jobs)(
+            delayed(_load_parallel)(
+                fif_files[i], description_files[i], path, preload, raws)
+            for i in range(len(fif_files)))
     return BaseConcatDataset(datasets)
 
 
+def _load_parallel(fif_file, description_file, path, preload, raws):
+    signals = _load_signals(fif_file, preload, raws)
+    description = pd.read_json(description_file, typ='series')
+    if raws:
+        target_name = None
+        target_file = os.path.join(path, 'target_name.json')
+        if os.path.exists(target_file):
+            target_name = json.load(open(target_file, "r"))['target_name']
+            # target_name = pd.read_json(target_file, typ='series')
+        dataset = BaseDataset(signals, description, target_name)
+    else:
+        dataset = WindowsDataset(signals, description)
+    return dataset
+
+
 def _is_outdated_saved(path):
+    """Data was saved in the old way if there are 'description.json', '-raw.fif'
+    or '-epo.fif' in path OR if there are more 'fif' files than
+    'description.json' files."""
     multiple2 = False
     i = 0
     while True:
