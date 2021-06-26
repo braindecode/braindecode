@@ -62,7 +62,6 @@ dataset = EcogBCICompetition4(DATASET_PATH, subject_ids=[subject_id])
 # `mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`__
 # or apply your own functions, either to the MNE object or the underlying
 # numpy array.
-# In th
 #
 # .. note::
 #    These prepocessings are now directly applied to the loaded
@@ -134,9 +133,16 @@ windows_dataset = create_windows_from_target_channels(
     dataset,
     window_size_samples=1000,
     preload=True,
-    raw_targets='target',
     last_target_only=True
 )
+
+windows_dataset_test = create_windows_from_target_channels(
+    dataset,
+    window_size_samples=1000,
+    preload=True,
+    last_target_only=True
+)
+
 
 from sklearn.model_selection import train_test_split
 import torch
@@ -179,18 +185,19 @@ seed = 20200220  # random seed to make results reproducible
 # Set random seed to be able to reproduce results
 set_random_seeds(seed=seed, cuda=cuda)
 
-n_classes = 4
+n_out_chans = train_set[0][1].shape[0]
 # Extract number of chans and time steps from dataset
-n_chans = 62
-input_window_samples = 1000
+n_chans = train_set[0][0].shape[0]
+input_window_samples = 1000  # 1 second long windows
 
 model = ShallowFBCSPNet(
     n_chans,
-    5,
+    n_out_chans,
     input_window_samples=input_window_samples,
     final_conv_length='auto',
 )
 
+# We are removing the softmax layer to make it a regression model
 new_model = torch.nn.Sequential()
 for name, module_ in model.named_children():
     if "softmax" in name:
@@ -203,25 +210,22 @@ if cuda:
     model.cuda()
 
 # ######################################################################
-# # Training
-# # --------
-# #
+# Training
+# --------
 #
+
+
+######################################################################
+# Now we train the network! EEGRegressor is a Braindecode object
+# responsible for managing the training of neural networks. It inherits
+# from skorch.NeuralNetRegressor, so the training logic is the same as in
+# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
-# ######################################################################
-# # Now we train the network! EEGClassifier is a Braindecode object
-# # responsible for managing the training of neural networks. It inherits
-# # from skorch.NeuralNetClassifier, so the training logic is the same as in
-# # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
-# #
-#
-#
-# ######################################################################
-# #    **Note**: In this tutorial, we use some default parameters that we
-# #    have found to work well for motor decoding, however we strongly
-# #    encourage you to perform your own hyperparameter optimization using
-# #    cross validation on your training data.
-# #
+######################################################################
+#    **Note**: In this tutorial, we use some default parameters that we
+#    have found to work well for EEG motor decoding, however we strongly
+#    encourage you to perform your own hyperparameter and preprocessing optimization using
+#    cross validation on your training data.
 #
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
@@ -231,11 +235,6 @@ from braindecode import EEGRegressor
 # These values we found good for shallow network:
 lr = 0.0625 * 0.01
 weight_decay = 0
-
-# For deep4 they should be:
-# lr = 1 * 0.01
-# weight_decay = 0.5 * 0.001
-
 batch_size = 64
 n_epochs = 4
 
@@ -257,6 +256,11 @@ regressor = EEGRegressor(
 # in the dataset.
 regressor.fit(windows_dataset, y=None, epochs=n_epochs)
 
+preds_test = regressor.predict(windows_dataset_test)
+
+import matplotlib.pyplot as plt
+
+# plt.plot()
 #
 # ######################################################################
 # # Plot Results

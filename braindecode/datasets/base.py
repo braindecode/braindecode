@@ -155,37 +155,19 @@ class WindowsDataset(BaseDataset):
         Holds additional info about the windows.
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
-    raw_targets : list | tuple | str | None
-        Defines target channels in the case of time series of targets stored as `misc`
-        channels in mne.Epochs. If string, all channels containing provided string in the
-        channel name will be selected. In the case of list/tuple of strings it should
-        contain exact target channel names.
-        If None (default), `target` columns from metadata will be used.
+    targets_from : str
+        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
+        channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-    def __init__(self, windows, description=None, transform=None, raw_targets=None, last_target_only=True):
+    def __init__(self, windows, description=None, transform=None, targets_from='channels',
+                 last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
         self.last_target_only = last_target_only
-        ch_names = self.windows.ch_names
-        if isinstance(raw_targets, (list, tuple)):
-            targets_not_found = (target_name in ch_names for target_name in raw_targets
-                                 if target_name not in ch_names)
-            if targets_not_found:
-                raise ValueError(f'{targets_not_found} target channels not found in data')
-        elif isinstance(raw_targets, str):
-            raw_targets = [ch_name for ch_name in ch_names if raw_targets in ch_name]
-            if not raw_targets:
-                raise ValueError('No target channels found in data.')
-        elif raw_targets is None:
-            self._raw_targets_idx = None
-        else:
-            raise ValueError('Wrong targets parameter.')
-
-        if raw_targets is not None:
-            self._raw_targets_idx = [i for i, ch_name in enumerate(ch_names) if ch_name in raw_targets]
-        else:
-            self._raw_targets_idx = None
+        if targets_from not in ('metadata', 'channels'):
+            raise ValueError('Wrong value for parameter `targets_from`.')
+        self.targets_from = targets_from
 
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
@@ -211,15 +193,16 @@ class WindowsDataset(BaseDataset):
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
-        if self._raw_targets_idx is None:
+        if self.targets_from == 'metadata':
             y = self.windows.metadata.loc[index, 'target']
         else:
+            misc_mask = np.array(self.windows.get_channel_types()) == 'misc'
             if self.last_target_only:
-                y = X[self._raw_targets_idx, -1]
+                y = X[misc_mask, -1]
             else:
-                y = X[self._raw_targets_idx, :]
+                y = X[misc_mask, :]
             # remove the target channels from raw
-            X = X[[i for i in range(X.shape[0]) if i not in self._raw_targets_idx], :]
+            X = X[~misc_mask, :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
