@@ -28,20 +28,20 @@ def setup_concat_windows_dataset(setup_concat_raw_dataset):
         trial_stop_offset_samples=0)
 
 
-def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
+def test_outdated_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
-    concat_raw_dataset.save(path=tmpdir, overwrite=False)
+    concat_raw_dataset._outdated_save(path=tmpdir, overwrite=False)
     assert os.path.exists(tmpdir.join("description.json"))
     for raw_i in range(n_raw_datasets):
         assert os.path.exists(tmpdir.join(f"{raw_i}-raw.fif"))
     assert not os.path.exists(tmpdir.join(f"{n_raw_datasets}-raw.fif"))
 
 
-def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
+def test_outdated_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
-    concat_windows_dataset.save(path=tmpdir, overwrite=False)
+    concat_windows_dataset._outdated_save(path=tmpdir, overwrite=False)
     assert os.path.exists(tmpdir.join("description.json"))
     for windows_i in range(n_windows_datasets):
         assert os.path.exists(tmpdir.join(f"{windows_i}-epo.fif"))
@@ -51,7 +51,7 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
 def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
-    concat_raw_dataset.save(path=tmpdir, overwrite=False)
+    concat_raw_dataset._outdated_save(path=tmpdir, overwrite=False)
     loaded_concat_raw_dataset = load_concat_dataset(
         path=tmpdir, preload=False)
     assert len(concat_raw_dataset) == len(loaded_concat_raw_dataset)
@@ -70,7 +70,7 @@ def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
 def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
-    concat_windows_dataset.save(path=tmpdir, overwrite=False)
+    concat_windows_dataset._outdated_save(path=tmpdir, overwrite=False)
     loaded_concat_windows_dataset = load_concat_dataset(
         path=tmpdir, preload=False)
     assert len(concat_windows_dataset) == len(loaded_concat_windows_dataset)
@@ -93,7 +93,7 @@ def test_load_multiple_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     for i in range(2):
         path = os.path.join(tmpdir, str(i))
         os.makedirs(path)
-        concat_raw_dataset.save(path=path, overwrite=False)
+        concat_raw_dataset._outdated_save(path=path, overwrite=False)
     loaded_concat_raw_datasets = load_concat_dataset(
         path=tmpdir, preload=False)
     assert 2 * len(concat_raw_dataset) == len(loaded_concat_raw_datasets)
@@ -109,7 +109,7 @@ def test_load_multiple_concat_windows_dataset(setup_concat_windows_dataset,
     for i in range(2):
         path = os.path.join(tmpdir, str(i))
         os.makedirs(path)
-        concat_windows_dataset.save(path=path, overwrite=False)
+        concat_windows_dataset._outdated_save(path=path, overwrite=False)
     loaded_concat_windows_datasets = load_concat_dataset(
         path=tmpdir, preload=False)
     assert 2 * len(concat_windows_dataset) == len(loaded_concat_windows_datasets)
@@ -155,3 +155,23 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
     assert loaded_concat_windows_dataset.window_preproc_kwargs == [
         ('pick_channels', {'ch_names': ['Cz']}),
     ]
+
+
+def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
+    concat_raw_dataset = setup_concat_raw_dataset
+    n_raw_datasets = len(concat_raw_dataset.datasets)
+    concat_raw_dataset.save(path=tmpdir, overwrite=False)
+    for raw_i in range(n_raw_datasets):
+        assert os.path.exists(os.path.join(tmpdir, f"{raw_i}", "description.json"))
+        assert os.path.exists(os.path.join(tmpdir, f"{raw_i}", f"{raw_i}-raw.fif"))
+    assert not os.path.exists(os.path.join(tmpdir, f"{n_raw_datasets}-raw.fif"))
+
+
+def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
+    concat_windows_dataset = setup_concat_windows_dataset
+    n_windows_datasets = len(concat_windows_dataset.datasets)
+    concat_windows_dataset.save(path=tmpdir, overwrite=False)
+    for windows_i in range(n_windows_datasets):
+        assert os.path.exists(os.path.join(tmpdir, f"{windows_i}", "description.json"))
+        assert os.path.exists(os.path.join(tmpdir, f"{windows_i}", f"{windows_i}-epo.fif"))
+    assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}-epo.fif"))

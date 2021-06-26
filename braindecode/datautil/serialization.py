@@ -23,7 +23,7 @@ def save_concat_dataset(path, concat_dataset, overwrite=False):
     concat_dataset.save(path=path, overwrite=overwrite)
 
 
-def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
+def _load_concat_dataset(path, preload, ids_to_load=None, target_name=None,):
     """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
     files.
 
@@ -116,3 +116,58 @@ def _load_signals(fif_file, preload, raws):
     else:
         signals = mne.read_epochs(fif_file, preload=preload)
     return signals
+
+
+def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
+                         n_jobs=-1):
+    """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
+    files.
+
+    Parameters
+    ----------
+    path: str
+        Path to the directory of the .fif / -epo.fif and .json files.
+    preload: bool
+        Whether to preload the data.
+    ids_to_load: None | list(int)
+        Ids of specific files to load.
+    target_name: None or str
+        Load specific description column as target. If not given, take saved target name.
+    n_jobs: int
+        Number of jobs to be used to read files in parallel.
+
+    Returns
+    -------
+    concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
+    """
+    # if we encounter a dataset that was saved in 'the old way', call the
+    # corresponding 'old' loading function
+    if _is_outdated_saved(path):
+        return _load_concat_dataset(
+            path=path, preload=preload, ids_to_load=ids_to_load,
+            target_name=target_name)
+
+    # else we have a dataset saved in the new way with
+    # - subdirectories in path for every dataset
+    # - description.json and -epo.fif or -raw.fif in every subdirectory
+    # - target_name.json in path if we were given raws
+    1/0
+
+
+def _is_outdated_saved(path):
+    multiple = False
+    i = 0
+    while True:
+        this_dir = os.path.join(path, str(i))
+        if os.path.exists(this_dir):
+            # in the new way of saving, there exist exactly two files per
+            # subdirectory: -epo.fif / -raw.fif AND description.json
+            if len(os.listdir(this_dir)) > 2:
+                multiple = True
+                break
+        else:
+            break
+    return (os.path.exists(os.path.join(path, 'description.json')) or
+            os.path.exists(os.path.join(path, '0-raw.fif')) or
+            os.path.exists(os.path.join(path, '0-epo.fif')) or
+            multiple)

@@ -15,6 +15,7 @@ import json
 from typing import Iterable
 import warnings
 from glob import glob
+from warnings import warn
 
 import numpy as np
 import pandas as pd
@@ -366,9 +367,12 @@ class BaseConcatDataset(ConcatDataset):
             raise TypeError('target_transform must be a callable.')
         self._target_transform = fn
 
-    def save(self, path, overwrite=False):
-        """Save dataset to files.
+    def _outdated_save(self, path, overwrite=False):
+        """This is a copy of the old saving function, that had inconsistent
+        functionality for BaseDataset and WindowsDataset. It only exists to
+        assure backwards compatibility by still being able to run the old tests.
 
+        Save dataset to files.
         Parameters
         ----------
         path : str
@@ -377,6 +381,8 @@ class BaseConcatDataset(ConcatDataset):
             Whether to delete old files (.json, .fif, -epo.fif) in specified directory
             prior to saving.
         """
+        warn('This function only exists for backwards compatibilty purposes. '
+             'DO NOT USE!')
         assert len(self.datasets) > 0, "Expect at least one dataset"
         assert (hasattr(self.datasets[0], 'raw') + hasattr(
             self.datasets[0], 'windows') == 1), (
@@ -448,3 +454,62 @@ class BaseConcatDataset(ConcatDataset):
         for key, value in description.items():
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
+
+    def save(self, path, overwrite=False):
+        """Save datasets to files by creating one subdirectory for each dataset.
+
+        Parameters
+        ----------
+        path : str
+            Directory to which .fif / -epo.fif and .json files are stored.
+        overwrite : bool
+            Whether to delete old files (.json, .fif, -epo.fif) in specified directory
+            prior to saving.
+        """
+        assert len(self.datasets) > 0, "Expect at least one dataset"
+        assert (hasattr(self.datasets[0], 'raw') + hasattr(
+            self.datasets[0], 'windows') == 1), (
+            "dataset should have either raw or windows attribute")
+        file_names_ = ["{}-raw.fif", "{}-epo.fif"]
+        description_file_name = os.path.join(path, 'description.json')
+        target_file_name = os.path.join(path, 'target_name.json')
+        if not overwrite:
+            if (os.path.exists(description_file_name) or
+                    os.path.exists(target_file_name)):
+                raise FileExistsError(
+                    f'{description_file_name} or {target_file_name} exist in {path}.')
+        else:
+            # remove all existing "{}-raw.fif" / "{}-epo.fif" files
+            for file_name in file_names_:
+                file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
+                _ = [os.remove(f) for f in file_names]
+            # remove existing json files
+            if os.path.isfile(target_file_name):
+                os.remove(target_file_name)
+            if os.path.isfile(description_file_name):
+                os.remove(description_file_name)
+
+        file_name = file_names_[1]
+        # make sure we do not have an inconsistency in the target name
+        concat_of_raws = hasattr(self.datasets[0], 'raw')
+        if concat_of_raws:
+            expected_target_name = self.datasets[0].target_name
+            assert all([expected_target_name == ds.target_name
+                        for ds in self.datasets]), (
+                "All datasets should have same target name")
+            with open(target_file_name, 'w') as f:
+               json.dump({'target_name': expected_target_name}, f)
+            file_name = file_names_[0]
+
+        # save all the datasets
+        for i_ds, ds in enumerate(self.datasets):
+            # create one subdirectory per dataset
+            this_path = os.path.join(path, str(i_ds))
+            os.makedirs(this_path)
+            full_file_path = os.path.join(this_path, file_name.format(i_ds))
+            if concat_of_raws:
+                ds.raw.save(full_file_path, overwrite=overwrite)
+            else:
+                ds.windows.save(full_file_path, overwrite=overwrite)
+            ds.description.to_json(os.path.join(this_path, 'description.json'))
+        #self.description.to_json(description_file_name)
