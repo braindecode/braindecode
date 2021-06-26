@@ -26,23 +26,9 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 
 
 ###############################################################################
-# We start by creating a TUH dataset. First, the class generates a description
-# of the recordings in `TUH_PATH` (which is later accessible as
-# `tuh.description`) without actually touching the files. This will parse
-# information from file paths such as patient id, recording data, etc and should
-# be really fast. Afterwards, the files are sorted chronologically by year,
-# month, day, patient id, recording session and segment.
-# In the following, a subset of the description corresponding to `recording_ids`
-# is used.
-# Afterwards, the files will be iterated a second time, slower than before.
-# The files are now actually touched. Additional information about subjects
-# like age and gender are parsed directly from the EDF file header. If existent,
-# the physician report is added to the description. Furthermore, the recordings
-# are read with `mne.io.read_raw_edf` with `preload=False`. Finally, we will get
-# a `BaseConcatDataset` of `BaseDatasets` each holding a single
-# `nme.io.Raw` which is fully compatible with other braindecode functionalities.
-# # In the constructor, we do not specify the target as a string, but actually
-# give multiple strings as a list.
+# We start by creating a TUH dataset. Instead of just a str, we give it
+# multiple strings as target names. Each of the strings has to exist as a
+# column in the description DataFrame.
 
 TUH_PATH = 'please insert actual path to data here'
 tuh = TUH(
@@ -52,12 +38,15 @@ tuh = TUH(
     preload=False,
     add_physician_reports=False,
 )
+tuh.description
 
 
 ###############################################################################
 # Iterating through the dataset gives x as ndarray(n_channels x 1) as well as
 # the target as [age of the subject, gender of the subject].
-tuh[0]
+x, y = tuh[0]
+print('x:', x)
+print('y:', y)
 
 
 ###############################################################################
@@ -83,7 +72,10 @@ tuh_windows.set_description({
 ###############################################################################
 # Iterating through the dataset gives x as ndarray(n_channels x 1000), y as
 # [age, gender], and ind.
-tuh_windows[0]
+x, y, ind = tuh_windows[0]
+print('x:', x)
+print('y:', y)
+print('ind:', ind)
 
 
 ###############################################################################
@@ -101,4 +93,6 @@ dl = DataLoader(
 # subject])], and batch_ind.
 for batch_X, batch_y, batch_ind in dl:
     break
-batch_X, batch_y, batch_ind
+print('batch_X:', batch_X)
+print('batch_y:', batch_y)
+print('batch_ind:', batch_ind)
