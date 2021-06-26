@@ -357,7 +357,7 @@ def update_estimator_docstring(base_class, docstring):
 
 def _update_moabb_docstring(base_class, docstring):
     base_doc = base_class.__doc__
-    out_docstring = f'{docstring}\n\n' + base_doc
+    out_docstring = base_doc + f'\n\n{docstring}'
     return out_docstring
 
 
