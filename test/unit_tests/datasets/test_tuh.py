@@ -100,6 +100,7 @@ def test_sort_chronologically():
 def test_tuh():
     tuh = _TUHMock(
         path='',
+        n_jobs=1,  # required for test to work. mocking seems to fail otherwise
     )
     assert len(tuh.datasets) == 5
     assert tuh.description.shape == (5, 13)
@@ -123,6 +124,7 @@ def test_tuh():
         path='',
         target_name='gender',
         recording_ids=[1, 4],
+        n_jobs=1,
     )
     assert len(tuh.datasets) == 2
     x, y = tuh[0]
@@ -135,6 +137,7 @@ def test_tuh_abnormal():
     tuh_ab = _TUHAbnormalMock(
         path='',
         add_physician_reports=True,
+        n_jobs=1,  # required for test to work. mocking seems to fail otherwise
     )
     assert len(tuh_ab.datasets) == 5
     assert tuh_ab.description.shape == (5, 16)
@@ -153,6 +156,7 @@ def test_tuh_abnormal():
     tuh_ab = _TUHAbnormalMock(
         path='',
         target_name='age',
+        n_jobs=1,
     )
     x, y = tuh_ab[-1]
     assert y == 50
