@@ -78,6 +78,7 @@ Training
     CroppedLoss
     CroppedTrialEpochScoring
     PostEpochTrainScoring
+    mixup_criterion
     trial_preds_from_window_preds
 
 Datasets
@@ -149,6 +150,53 @@ Samplers
    RecordingSampler
    SequenceSampler
    RelativePositioningSampler
+
+.. _augmentation_api:
+
+Augmentation
+============
+
+:py:mod:`braindecode.augmentation`:
+
+.. currentmodule:: braindecode.augmentation
+
+.. autosummary::
+   :toctree: generated/
+
+    Transform
+    IdentityTransform
+    Compose
+    AugmentedDataLoader
+    TimeReverse
+    SignFlip
+    FTSurrogate
+    ChannelsShuffle
+    ChannelsDropout
+    GaussianNoise
+    ChannelsSymmetry
+    SmoothTimeMask
+    BandstopFilter
+    FrequencyShift
+    SensorsRotation
+    SensorsZRotation
+    SensorsYRotation
+    SensorsXRotation
+    Mixup
+
+    functional.identity
+    functional.time_reverse
+    functional.sign_flip
+    functional.ft_surrogate
+    functional.channels_dropout
+    functional.channels_shuffle
+    functional.channels_permute
+    functional.gaussian_noise
+    functional.smooth_time_mask
+    functional.bandstop_filter
+    functional.frequency_shift
+    functional.sensors_rotation
+    functional.mixup
+
 
 Utils
 =====
