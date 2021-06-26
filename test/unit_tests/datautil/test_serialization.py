@@ -177,13 +177,13 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}-epo.fif"))
 
 
-def test_load_in_parallel(setup_concat_windows_dataset, tmpdir):
-    concat_windows_dataset = setup_concat_windows_dataset
-    concat_windows_dataset.save(path=tmpdir, overwrite=False)
-    loaded_concat_windows_datasets = load_concat_dataset(
+def test_load_in_parallel(setup_concat_raw_dataset, tmpdir):
+    concat_raw_dataset = setup_concat_raw_dataset
+    concat_raw_dataset.save(path=tmpdir, overwrite=False)
+    loaded_concat_raw_datasets = load_concat_dataset(
         path=tmpdir, preload=False, n_jobs=2)
-    assert len(concat_windows_dataset) == len(loaded_concat_windows_datasets)
-    assert (len(concat_windows_dataset.datasets) ==
-            len(loaded_concat_windows_datasets.datasets))
-    assert (len(concat_windows_dataset.description) ==
-            len(loaded_concat_windows_datasets.description))
+    assert len(concat_raw_dataset) == len(loaded_concat_raw_datasets)
+    assert (len(concat_raw_dataset.datasets) ==
+            len(loaded_concat_raw_datasets.datasets))
+    assert (len(concat_raw_dataset.description) ==
+            len(loaded_concat_raw_datasets.description))
