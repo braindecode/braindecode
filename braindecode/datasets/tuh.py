@@ -15,6 +15,7 @@ from unittest import mock
 import pandas as pd
 import numpy as np
 import mne
+from joblib import Parallel, delayed
 
 from .base import BaseDataset, BaseConcatDataset
 
@@ -40,9 +41,11 @@ class TUH(BaseConcatDataset):
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
+    n_jobs: int
+        Number of jobs to be used to read files in parallel.
     """
     def __init__(self, path, recording_ids=None, target_name=None,
-                 preload=False, add_physician_reports=False):
+                 preload=False, add_physician_reports=False, n_jobs=-1):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
@@ -50,36 +53,41 @@ class TUH(BaseConcatDataset):
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
             descriptions = descriptions[recording_ids]
+        # this is the second loop (slow)
         # create datasets gathering more info about the files touching them
         # reading the raws and potentially preloading the data
-        base_datasets = self._create_datasets(
-            descriptions, target_name, preload, add_physician_reports)
+        # disable joblib for tests. mocking seems to fail otherwise
+        if n_jobs == 1:
+            base_datasets = [self._create_dataset(
+                descriptions[i], target_name, preload, add_physician_reports)
+                for i in descriptions.columns]
+        else:
+            base_datasets = Parallel(n_jobs)(delayed(
+                self._create_dataset)(
+                descriptions[i], target_name, preload, add_physician_reports
+            ) for i in descriptions.columns)
         super().__init__(base_datasets)
 
     @staticmethod
-    def _create_datasets(descriptions, target_name, preload,
-                         add_physician_reports):
-        # this is the second loop (slow)
-        base_datasets = []
-        for file_path_i, file_path in descriptions.loc['path'].iteritems():
-            # parse age and gender information from EDF header
-            age, gender = _parse_age_and_gender_from_edf_header(file_path)
-            raw = mne.io.read_raw_edf(file_path, preload=preload)
-            # read info relevant for preprocessing from raw without loading it
-            d = {
-                'age': int(age),
-                'gender': gender,
-            }
-            if add_physician_reports:
-                physician_report = _read_physician_report(file_path)
-                d['report'] = physician_report
-            additional_description = pd.Series(d)
-            description = pd.concat(
-                [descriptions.pop(file_path_i), additional_description])
-            base_dataset = BaseDataset(raw, description,
-                                       target_name=target_name)
-            base_datasets.append(base_dataset)
-        return base_datasets
+    def _create_dataset(description, target_name, preload,
+                        add_physician_reports):
+        file_path = description.loc['path']
+        # parse age and gender information from EDF header
+        age, gender = _parse_age_and_gender_from_edf_header(file_path)
+        raw = mne.io.read_raw_edf(file_path, preload=preload)
+        # read info relevant for preprocessing from raw without loading it
+        d = {
+            'age': int(age),
+            'gender': gender,
+        }
+        if add_physician_reports:
+            physician_report = _read_physician_report(file_path)
+            d['report'] = physician_report
+        additional_description = pd.Series(d)
+        description = pd.concat([description, additional_description])
+        base_dataset = BaseDataset(raw, description,
+                                   target_name=target_name)
+        return base_dataset
 
 
 def _create_chronological_description(file_paths):
@@ -188,10 +196,11 @@ class TUHAbnormal(TUH):
         description.
     """
     def __init__(self, path, recording_ids=None, target_name='pathological',
-                 preload=False, add_physician_reports=False):
+                 preload=False, add_physician_reports=False, n_jobs=-1):
         super().__init__(path=path, recording_ids=recording_ids,
                          preload=preload, target_name=target_name,
-                         add_physician_reports=add_physician_reports)
+                         add_physician_reports=add_physician_reports,
+                         n_jobs=n_jobs)
         additional_descriptions = []
         for file_path in self.description.path:
             additional_description = (
