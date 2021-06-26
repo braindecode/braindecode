@@ -8,6 +8,7 @@
 #
 # License: BSD (3-clause)
 
+import os
 from warnings import warn
 from functools import partial
 from collections.abc import Iterable
@@ -18,7 +19,7 @@ from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
 from braindecode.datasets.base import BaseConcatDataset
-from braindecode.datautil.serialization import load_base_dataset
+from braindecode.datautil.serialization import load_base_dataset, load_concat_dataset
 
 
 class Preprocessor(object):
@@ -116,7 +117,7 @@ class NumpyPreproc(Preprocessor):
 
 
 def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
-               reload=False, n_jobs=None):
+               n_jobs=None):
     """Apply preprocessors to a concat dataset.
 
     Parameters
@@ -131,16 +132,13 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
     overwrite : bool
         When `save_dir` is provided, controls whether to overwrite existing
         files with the same name.
-    reload : bool
-        If True and `save_dir` is provided, the data saved on disk will be read
-        with `preload=False` to limit memory usage.
     n_jobs : int | None
         Number of jobs for parallel execution.
 
     Returns
     -------
-    BaseConcatDataset:
-        Preprocessed dataset.
+    None | BaseConcatDataset:
+        Preprocessed dataset, if inplace is False.
     """
     if not isinstance(preprocessors, Iterable):
         raise ValueError(
@@ -149,40 +147,47 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
-    if n_jobs is None or n_jobs == 1:
-        list_of_ds = [_preprocess(
-            ds, preprocessors, save_dir, overwrite, reload)
-            for ds in concat_ds.datasets]
-        # XXX Should we avoid returning the data when n_jobs=1, since it can be
-        #     modified in place?
+    list_of_ds = Parallel(n_jobs=n_jobs)(
+        delayed(_preprocess)(ds, i, preprocessors, save_dir, overwrite)
+        for i, ds in enumerate(concat_ds.datasets))
+
+    if save_dir is not None:  # Reload datasets and replace in concat_ds
+        concat_ds_reloaded = load_concat_dataset(
+            save_dir, preload=False, target_name=None)
+        _replace_inplace(concat_ds, concat_ds_reloaded)
     else:
-        list_of_ds = Parallel(n_jobs=n_jobs)(
-            delayed(_preprocess)(ds, preprocessors, save_dir, overwrite, reload)
-            for ds in concat_ds.datasets)
-
-    return BaseConcatDataset(list_of_ds)
-
-    # # Recompute cumulative sizes as the transforms might have changed them
-    # concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
-    # XXX Not necessary anymore if creating BaseConcatDataset again
+        if n_jobs is None or n_jobs == 1:  # joblib did not make copies, the
+            # preprocessing happened in-place
+            # Recompute cumulative sizes as transforms might have changed them
+            concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
+        else:  # joblib made copies
+            _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
 
 
-def _preprocess(ds, preprocessors, save_dir=None, overwrite=False,
-                reload=False):
+def _replace_inplace(concat_ds, new_concat_ds):
+    if len(concat_ds.datasets) != len(new_concat_ds.datasets):
+        raise ValueError('Both inputs must have the same length.')
+    for i, ds in enumerate(new_concat_ds.datasets):
+        concat_ds.datasets[i] = new_concat_ds.datasets[i]
+
+
+def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
     """Apply preprocessor(s) to Raw or Epochs object.
 
     Parameters
     ----------
-    raw_or_epochs: mne.io.Raw or mne.Epochs
-        Object to preprocess.
+    ds: BaseDataset
+        Dataset object to preprocess.
+    ds_index : int
+        Index of the BaseDataset in its BaseConcatDataset. Ignored if save_dir
+        is None.
     preprocessors: list(Preprocessor)
         List of preprocessors to apply to the dataset.
     save_dir : str | None
-        ...
+        If provided, save the preprocessed BaseDataset in the
+        specified directory.
     overwrite : bool
-        ...
-    reload : bool
-        ...
+        If True, overwrite existing file with the same name.
     """
 
     def _preprocess_raw_or_epochs(raw_or_epochs, preprocessors):
@@ -198,12 +203,17 @@ def _preprocess(ds, preprocessors, save_dir=None, overwrite=False,
             'Can only preprocess concatenation of BaseDataset or '
             'WindowsDataset, with either a `raw` or `windows` attribute.')
 
-    if save_dir is not None:  # Serialize dataset
-        fname = ds.save(save_dir, overwrite=overwrite)
-        if reload:  # Reload from file with preload=False
-            ds = load_base_dataset(fname[0], preload=False)
-
-    return ds
+    if save_dir is not None:
+        concat_ds = BaseConcatDataset([ds])
+        save_subdir = os.path.join(save_dir, str(ds_index))
+        # XXX Save target_name.json if ds is a BaseDataset
+        if not os.path.exists(save_subdir):
+            os.makedirs(save_subdir)
+        concat_ds.save(save_subdir, overwrite=overwrite)
+        del concat_ds, ds  # Delete if processing is happening inplace (will be
+        # reloaded anyways)
+    else:
+        return ds
 
 
 def _get_preproc_kwargs(preprocessors):

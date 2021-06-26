@@ -181,7 +181,8 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
     for path in paths:
         if is_raw and target_name is None:
             target_file_name = os.path.join(path, 'target_name.json')
-            target_name = json.load(open(target_file_name, "r"))['target_name']
+            # target_name = json.load(open(target_file_name, "r"))['target_name']
+            # XXX To enable again!
 
         all_signals, description = _load_signals_and_description(
             path=path, preload=preload, is_raw=is_raw,
@@ -190,8 +191,9 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
         for i_signal, signal in enumerate(all_signals):
             if is_raw:
                 datasets.append(
-                    BaseDataset(signal, description.iloc[i_signal],
-                                target_name=target_name))
+                    BaseDataset(signal, description.iloc[i_signal]))
+                                # target_name=target_name))
+                                # XXX To enable again!
             else:
                 datasets.append(
                     WindowsDataset(signal, description.iloc[i_signal])

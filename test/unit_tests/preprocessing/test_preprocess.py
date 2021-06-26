@@ -3,12 +3,14 @@
 #
 # License: BSD-3
 
+import os
 import copy
+from glob import glob
 
 import pytest
 import numpy as np
 
-from braindecode.datasets import MOABBDataset
+from braindecode.datasets import MOABBDataset, base
 from braindecode.preprocessing.preprocess import preprocess, zscore, scale, \
     Preprocessor, filterbank, exponential_moving_demean, \
     exponential_moving_standardize, MNEPreproc, NumpyPreproc
@@ -315,3 +317,20 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
                         'drop_original_signals': False,
                         'order_by_frequency_band': True}),
     ] for ds in base_concat_ds.datasets])
+
+
+@pytest.mark.parametrize('save', [False, True])
+@pytest.mark.parametrize('n_jobs', [None, 1, 2])
+def test_preprocess_save_dir(base_concat_ds, tmp_path, save, n_jobs):
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+
+    save_dir = str(tmp_path) if save else None
+    preprocess(base_concat_ds, preprocessors, save_dir, overwrite=False,
+               n_jobs=n_jobs)
+
+    assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
+    if save_dir is not None:
+        assert all([not ds.raw.preload for ds in base_concat_ds.datasets])
+        save_dirs = [os.path.join(save_dir, str(i))
+                     for i in range(len(base_concat_ds.datasets))]
+        assert set(glob(save_dir + '/*')) == set(save_dirs)
