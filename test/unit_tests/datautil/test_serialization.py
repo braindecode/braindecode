@@ -175,3 +175,15 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         assert os.path.exists(os.path.join(tmpdir, f"{windows_i}", "description.json"))
         assert os.path.exists(os.path.join(tmpdir, f"{windows_i}", f"{windows_i}-epo.fif"))
     assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}-epo.fif"))
+
+
+def test_load_in_parallel(setup_concat_windows_dataset, tmpdir):
+    concat_windows_dataset = setup_concat_windows_dataset
+    concat_windows_dataset.save(path=tmpdir, overwrite=False)
+    loaded_concat_windows_datasets = load_concat_dataset(
+        path=tmpdir, preload=False, n_jobs=2)
+    assert len(concat_windows_dataset) == len(loaded_concat_windows_datasets)
+    assert (len(concat_windows_dataset.datasets) ==
+            len(loaded_concat_windows_datasets.datasets))
+    assert (len(concat_windows_dataset.description) ==
+            len(loaded_concat_windows_datasets.description))
