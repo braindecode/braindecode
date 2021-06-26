@@ -119,7 +119,7 @@ def _load_signals(fif_file, preload, raws):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
-                         n_jobs=-1):
+                        n_jobs=-1):
     """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
     files.
 
@@ -151,11 +151,32 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     # - subdirectories in path for every dataset
     # - description.json and -epo.fif or -raw.fif in every subdirectory
     # - target_name.json in path if we were given raws
-    1/0
+    fif_files = glob(os.path.join(path, '**/*.fif'))
+    description_files = glob(os.path.join(path, '**/description.json'))
+    assert len(fif_files) == len(description_files)
+    fif_files = sorted(fif_files, key=lambda p: int(p.split(os.sep)[-2]))
+    description_files = sorted(
+        description_files, key=lambda p: int(p.split(os.sep)[-2]))
+    if ids_to_load is not None:
+        fif_files = [fif_files[i] for i in ids_to_load]
+        description_files = [description_files[i] for i in ids_to_load]
+    raws = fif_files[0].endswith('-raw.fif')
+    datasets = []
+    for fif_file, description_file in zip(fif_files, description_files):
+        signals = _load_signals(fif_file, preload, raws)
+        description = pd.read_json(description_file, typ='series')
+        if raws:
+            target_file = os.path.join(path, 'target_name.json')
+            if os.path.exists(target_file):
+                target_name = pd.read_json(target_file, typ='series')
+            datasets.append(BaseDataset(signals, description, target_name))
+        else:
+            datasets.append(WindowsDataset(signals, description))
+    return BaseConcatDataset(datasets)
 
 
 def _is_outdated_saved(path):
-    multiple = False
+    multiple2 = False
     i = 0
     while True:
         this_dir = os.path.join(path, str(i))
@@ -163,11 +184,15 @@ def _is_outdated_saved(path):
             # in the new way of saving, there exist exactly two files per
             # subdirectory: -epo.fif / -raw.fif AND description.json
             if len(os.listdir(this_dir)) > 2:
-                multiple = True
+                multiple2 = True
                 break
         else:
             break
+        i += 1
+    description_files = glob(os.path.join(path, '**/description.json'))
+    fif_files = glob(os.path.join(path, '**/*.fif'))
+    multiple = len(description_files) != len(fif_files)
     return (os.path.exists(os.path.join(path, 'description.json')) or
             os.path.exists(os.path.join(path, '0-raw.fif')) or
             os.path.exists(os.path.join(path, '0-epo.fif')) or
-            multiple)
+            multiple or multiple2)
