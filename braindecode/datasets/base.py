@@ -415,6 +415,15 @@ class BaseConcatDataset(ConcatDataset):
         if concat_of_raws:
             json.dump({'target_name': target_name}, open(target_file_name, 'w'))
         self.description.to_json(description_file_name)
+        if hasattr(self, 'raw_preproc_args'):
+            self.raw_preproc_args.to_json(
+                os.path.join(path, 'raw_preproc_args.json'))
+        if hasattr(self, 'window_args'):
+            self.window_args.to_json(
+                os.path.join(path, 'window_args.json'))
+        if hasattr(self, 'window_preproc_args'):
+            self.window_preproc_args.to_json(
+                os.path.join(path, 'window_preproc_args.json'))
 
     @property
     def description(self):

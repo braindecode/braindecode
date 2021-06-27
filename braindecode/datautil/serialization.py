@@ -82,7 +82,20 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
                 datasets.append(
                     WindowsDataset(signal, description.iloc[i_signal])
                 )
-    return BaseConcatDataset(datasets)
+    concat_ds = BaseConcatDataset(datasets)
+    if os.path.exists(os.path.join(path, 'raw_preproc_args.json')):
+        raw_preproc_args = pd.read_json(
+            os.path.join(path, 'raw_preproc_args.json'))
+        concat_ds.raw_preproc_args = raw_preproc_args
+    if os.path.exists(os.path.join(path, 'window_args.json')):
+        window_args = pd.read_json(
+            os.path.join(path, 'window_args.json'))
+        concat_ds.window_args = window_args
+    if os.path.exists(os.path.join(path, 'window_preproc_args.json')):
+        window_preproc_args = pd.read_json(
+            os.path.join(path, 'window_preproc_args.json'))
+        concat_ds.window_preproc_args = window_preproc_args
+    return concat_ds
 
 
 def _load_signals_and_description(path, preload, raws, ids_to_load=None):

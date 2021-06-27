@@ -131,11 +131,21 @@ def preprocess(concat_ds, preprocessors):
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
+    # save the preprocessing arguments to the dataset
+    preproc_args = {}
+    for p in preprocessors:
+        if 'fun' in p.__dict__:
+            preproc_args.update({p.__dict__['fun']: p.__dict__['kwargs']})
+        else:
+            preproc_args.update({p.__dict__['fn']: p.__dict__['kwargs']})
+
     for ds in concat_ds.datasets:
         if hasattr(ds, 'raw'):
             _preprocess(ds.raw, preprocessors)
+            setattr(concat_ds, 'raw_preproc_args', preproc_args)
         elif hasattr(ds, 'windows'):
             _preprocess(ds.windows, preprocessors)
+            setattr(concat_ds, 'window_preproc_args', preproc_args)
         else:
             raise ValueError(
                 'Can only preprocess concatenation of BaseDataset or '
