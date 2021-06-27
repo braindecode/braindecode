@@ -1,6 +1,6 @@
 """
-Sleep staging on the Sleep Physionet dataset
-============================================
+Sleep staging on the Sleep Physionet dataset using USleep network
+=================================================================
 
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We adapt the time distributed approach of [1]_ to learn on
@@ -34,13 +34,9 @@ References
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
-
-######################################################################
 # Loading
 # ~~~~~~~
 #
-
-######################################################################
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
@@ -54,7 +50,6 @@ References
 #    preprocessed X/y numpy arrays, see the `MNE Dataset
 #    Tutorial <./plot_mne_dataset_example.html>`__ and the `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
-#
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
@@ -65,15 +60,11 @@ dataset = SleepPhysionet(subject_ids=[i for i in range(30)], recording_ids=[2], 
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # Next, we preprocess the raw data. We apply convert the data to microvolts and
 # apply a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
 # Physionet data is already sampled at a lower 100 Hz.
-#
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor
+from braindecode.preprocessing import preprocess, Preprocessor
 
 high_cut_hz = 30
 
@@ -90,9 +81,6 @@ preprocess(dataset, preprocessors)
 # Extract windows
 # ~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We extract 30-s windows to be used in the classification task.
 
 from braindecode.preprocessing import create_windows_from_events
@@ -126,12 +114,8 @@ windows_dataset = create_windows_from_events(
 # Window preprocessing
 # ~~~~~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We also preprocess the windows by applying channel-wise z-score normalization
 # in each window.
-#
 
 from braindecode.preprocessing.preprocess import zscore
 
@@ -142,8 +126,6 @@ preprocess(windows_dataset, [Preprocessor(zscore)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # We split the dataset using additional info stored in the `description`
 # attribute of :class:`braindecode.datasets.BaseDataset`, in this case using
 # the ``subject`` column. We create a training and a validation sets by
@@ -174,8 +156,6 @@ valid_set = splitted["valid"]
 # Create sequence samplers
 # ------------------------
 #
-
-######################################################################
 # Following the time distributed approach of [1]_, we will need to provide our
 # neural network with sequences of windows, such that the embeddings of
 # multiple consecutive windows can be concatenated and provided to a final
@@ -215,12 +195,9 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 # Create model
 # ------------
 #
-
-######################################################################
 # We can now create the deep learning model. In this tutorial, we use the sleep
 # staging architecture introduced in [1]_, which is a four-layer convolutional
 # neural network.
-#
 
 import torch
 from braindecode.util import set_random_seeds
@@ -258,24 +235,18 @@ if cuda:
 # Training
 # --------
 #
-
-
-######################################################################
 # We can now train our network. :class:`braindecode.EEGClassifier` is a
 # braindecode object that is responsible for managing the training of neural
 # networks. It inherits from :class:`skorch.NeuralNetClassifier`, so the
 # training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
-
-
-######################################################################
-#    **Note**: We use different hyperparameters from [1]_, as
-#    these hyperparameters were optimized on a different dataset (MASS SS3) and
-#    with a different number of recordings. Generally speaking, it is
-#    recommended to perform hyperparameter optimization if reusing this code on
-#    a different dataset or with more recordings.
-#
+# .. note::
+#    We use different hyperparameters from [1]_, as these hyperparameters
+#    were optimized on a different dataset (MASS SS3) and with a different
+#    number of recordings. Generally speaking, it is recommended to perform
+#    hyperparameter optimization if reusing this code on a different dataset
+#    or with more recordings.
 
 from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
@@ -332,14 +303,10 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # Plot results
 # ------------
 #
-
-
-######################################################################
 # We use the history stored by Skorch during training to plot the performance of
 # the model throughout training. Specifically, we plot the loss and the balanced
 # misclassification rate (1 - balanced accuracy) for the training and validation
 # sets.
-#
 
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
@@ -385,7 +352,6 @@ plt.tight_layout()
 
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
-#
 
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
@@ -407,4 +373,3 @@ print(classification_report(y_true.flatten(), y_pred.flatten()))
 # training set, and hyperparameters should be selected accordingly. Increasing
 # the sequence length was also shown in [1]_ to help improve performance,
 # especially when few EEG channels are available.
-#
