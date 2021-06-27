@@ -177,13 +177,41 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}-epo.fif"))
 
 
-def test_load_in_parallel(setup_concat_raw_dataset, tmpdir):
+def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
+    n_raw_datasets = len(concat_raw_dataset.datasets)
     concat_raw_dataset.save(path=tmpdir, overwrite=False)
-    loaded_concat_raw_datasets = load_concat_dataset(
+    loaded_concat_raw_dataset = load_concat_dataset(
         path=tmpdir, preload=False, n_jobs=2)
-    assert len(concat_raw_dataset) == len(loaded_concat_raw_datasets)
+    assert len(concat_raw_dataset) == len(loaded_concat_raw_dataset)
     assert (len(concat_raw_dataset.datasets) ==
-            len(loaded_concat_raw_datasets.datasets))
+            len(loaded_concat_raw_dataset.datasets))
     assert (len(concat_raw_dataset.description) ==
-            len(loaded_concat_raw_datasets.description))
+            len(loaded_concat_raw_dataset.description))
+    for raw_i in range(n_raw_datasets):
+        actual_x, actual_y = concat_raw_dataset[raw_i]
+        x, y = loaded_concat_raw_dataset[raw_i]
+        np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
+    pd.testing.assert_frame_equal(
+        concat_raw_dataset.description, loaded_concat_raw_dataset.description)
+
+
+def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpdir):
+    concat_windows_dataset = setup_concat_windows_dataset
+    n_windows_datasets = len(concat_windows_dataset.datasets)
+    concat_windows_dataset.save(path=tmpdir, overwrite=False)
+    loaded_concat_windows_dataset = load_concat_dataset(
+        path=tmpdir, preload=False, n_jobs=2)
+    assert len(concat_windows_dataset) == len(loaded_concat_windows_dataset)
+    assert (len(concat_windows_dataset.datasets) ==
+            len(loaded_concat_windows_dataset.datasets))
+    assert (len(concat_windows_dataset.description) ==
+            len(loaded_concat_windows_dataset.description))
+    for windows_i in range(n_windows_datasets):
+        actual_x, actual_y, actual_crop_inds = concat_windows_dataset[windows_i]
+        x, y, crop_inds = loaded_concat_windows_dataset[windows_i]
+        np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
+        np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
+        np.testing.assert_array_equal(crop_inds, actual_crop_inds)
+    pd.testing.assert_frame_equal(concat_windows_dataset.description,
+                                  loaded_concat_windows_dataset.description)

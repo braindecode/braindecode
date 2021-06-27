@@ -115,7 +115,7 @@ def _load_signals(fif_file, preload, raws):
     if raws:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
     else:
-        signals = mne.read_epochs(fif_file, preload=preload)  # seems like this cannot be parallelized
+        signals = mne.read_epochs(fif_file, preload=preload)
     return signals
 
 
@@ -168,15 +168,18 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
         fif_files = [fif_files[i] for i in ids_to_load]
         description_files = [description_files[i] for i in ids_to_load]
     raws = fif_files[0].endswith('-raw.fif')
-    if n_jobs == 1:
-        datasets = [_load_parallel(
+    # Parallelization of mne.read_epochs with preload=False fails with
+    # 'TypeError: cannot pickle '_io.BufferedReader' object'.
+    # So ignore n_jobs in that case and load with a single job.
+    if not raws and n_jobs != 1:
+        warnings.warn(
+            'Parallelized reading with `preload=False` is not supported for '
+            'windowed data. Will use `n_jobs=1`.')
+        n_jobs = 1
+    datasets = Parallel(n_jobs)(
+        delayed(_load_parallel)(
             fif_files[i], description_files[i], path, preload, raws)
-            for i in range(len(fif_files))]
-    else:
-        datasets = Parallel(n_jobs)(
-            delayed(_load_parallel)(
-                fif_files[i], description_files[i], path, preload, raws)
-            for i in range(len(fif_files)))
+        for i in range(len(fif_files)))
     return BaseConcatDataset(datasets)
 
 
