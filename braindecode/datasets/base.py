@@ -481,7 +481,7 @@ class BaseConcatDataset(ConcatDataset):
                 raise FileExistsError(
                     f'{description_file_name} or {target_file_name} exist in {path}.')
         else:
-            _clear_up_directory(
+            self._clear_up_directory(
                 file_name_pattern, path, target_file_name, description_file_name)
         self._save_target_name(target_file_name)
         self._save_datasets_and_description(path, overwrite, file_name_pattern)
@@ -510,7 +510,7 @@ class BaseConcatDataset(ConcatDataset):
                         for ds in self.datasets]), (
                 "All datasets should have same target name")
             with open(target_file_name, 'w') as f:
-               json.dump({'target_name': expected_target_name}, f)
+                json.dump({'target_name': expected_target_name}, f)
 
     @staticmethod
     def _clear_up_directory(
