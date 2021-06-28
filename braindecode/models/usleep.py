@@ -23,7 +23,7 @@ def _crop_tensors_to_match(x1, x2, axis=-1):
     return x1_cropped, x2_cropped
 
 
-class EncoderBlock(nn.Module):
+class _EncoderBlock(nn.Module):
     '''Encoding block for a timeseries x of shape (B, C, T).'''
     def __init__(self,
                  in_channels=2,
