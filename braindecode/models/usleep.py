@@ -139,8 +139,7 @@ class USleep(nn.Module):
     n_classes : int
         Number of classes. Set to 5.
     apply_batch_norm : bool
-        If True, apply batch normalization after temporal convolutional
-        layers.
+        If True, apply batch normalization after temporal convolutional layers.
 
     References
     ----------
