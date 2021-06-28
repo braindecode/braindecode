@@ -144,7 +144,7 @@ class USleep(nn.Module):
 
     References
     ----------
-    .. [1] Perslev, M., Darkner, S., Kempfner, L. et al.
+    .. [1] Perslev M, Darkner S, Kempfner L, Nikolic M, Jennum PJ, Igel C.
            U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
            https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
