@@ -340,10 +340,15 @@ def _create_fixed_length_windows(
         # if last window does not end at trial stop, make it stop there
         starts = np.append(starts, stop)
 
-    # TODO: handle multi-target case / non-integer target case
+    # get targets from dataset description if they exist
     target = -1 if ds.target_name is None else ds.description[ds.target_name]
     if mapping is not None:
-        target = mapping[target]
+        # in case of multiple targets
+        if isinstance(target, pd.Series):
+            target = target.replace(mapping).to_list()
+        # in case of single value target
+        else:
+            target = mapping[target]
 
     fake_events = [[start, window_size_samples, -1] for start in starts]
     metadata = pd.DataFrame({

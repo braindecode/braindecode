@@ -29,50 +29,7 @@ mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 # If you want to try this code with the actual data, please delete the next
 # section. We are required to mock some dataset functionality, since the data
 # is not available at creation time of this example.
-from unittest import mock
-
-
-FAKE_PATHS = {
-    'tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf': b'0       00000000 M 01-JAN-1978 00000000 Age:37                                          ',  # noqa E501
-    'tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf': b'0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ',  # noqa E501
-    'tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf': b'0       00014928 F 01-JAN-1933 00014928 Age:83                                          ',  # noqa E501
-}
-
-
-def _fake_raw(*args, **kwargs):
-    sfreq = 10
-    ch_names = [
-        'EEG A1-REF', 'EEG A2-REF',
-        'EEG FP1-REF', 'EEG FP2-REF', 'EEG F3-REF', 'EEG F4-REF', 'EEG C3-REF',
-        'EEG C4-REF', 'EEG P3-REF', 'EEG P4-REF', 'EEG O1-REF', 'EEG O2-REF',
-        'EEG F7-REF', 'EEG F8-REF', 'EEG T3-REF', 'EEG T4-REF', 'EEG T5-REF',
-        'EEG T6-REF', 'EEG FZ-REF', 'EEG CZ-REF', 'EEG PZ-REF']
-    duration_min = 6
-    data = np.random.randn(len(ch_names), duration_min*sfreq*60)
-    info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types='eeg')
-    raw = mne.io.RawArray(data=data, info=info)
-    return raw
-
-
-def _get_header(*args):
-    return FAKE_PATHS[args[0]]
-
-
-@mock.patch('glob.glob', return_value=FAKE_PATHS.keys())
-@mock.patch('mne.io.read_raw_edf', new=_fake_raw)
-@mock.patch('braindecode.datasets.tuh._read_edf_header', new=_get_header)
-def mock_get_data(mock_glob):
-    tuh = TUH(
-        path='',
-        recording_ids=None,
-        target_name=None,
-        preload=False,
-        add_physician_reports=False,
-    )
-    return tuh
-
-
-tuh = mock_get_data()
+from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 
 
 ###############################################################################
@@ -92,14 +49,14 @@ tuh = mock_get_data()
 # a `BaseConcatDataset` of `BaseDatasets` each holding a single
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
 
-# Uncomment the lines below to actually run this code on real data.
-# tuh = TUH(
-#     path=<TUH_PATH>,  # please insert actual path to data here
-#     recording_ids=None,
-#     target_name=None,
-#     preload=False,
-#     add_physician_reports=False,
-# )
+TUH_PATH = 'please insert actual path to data here'
+tuh = TUH(
+    path=TUH_PATH,
+    recording_ids=None,
+    target_name=None,
+    preload=False,
+    add_physician_reports=False,
+)
 
 
 ###############################################################################
@@ -200,8 +157,8 @@ tuh = select_by_channels(tuh, ch_mapping)
 # #. rename channels to short channel names
 # #. pick channels of interest
 # #. scale signals to microvolts (requires load)
+# #. clip outlier values to +/- 800 microvolts (requires load)
 # #. resample recordings to a common frequency (requires load)
-# #. create compute windows
 
 def custom_rename_channels(raw, mapping):
     # rename channels which are dependent on referencing:
@@ -234,6 +191,7 @@ preprocessors = [
                  apply_on_array=False),
     Preprocessor('pick_channels', ch_names=short_ch_names, ordered=True),
     Preprocessor(lambda x: x * 1e6),
+    Preprocessor(fn=np.clip, a_min=-800, a_max=800, apply_on_array=True),
     Preprocessor('resample', sfreq=sfreq),
 ]
 
