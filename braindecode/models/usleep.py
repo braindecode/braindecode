@@ -149,7 +149,7 @@ class USleep(nn.Module):
            https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
     def __init__(self,
-                 n_channels=2,  # XXX change n_channels -> in_chans
+                 in_chans=2,
                  sfreq=100,
                  complexity_factor=np.sqrt(2),
                  with_skip_connection=True,
@@ -158,7 +158,7 @@ class USleep(nn.Module):
                  ):
         super().__init__()
 
-        self.n_channels = n_channels
+        self.in_chans = in_chans
 
         # Harcoded (otherwise dims can break)
         depth = 10
@@ -174,7 +174,7 @@ class USleep(nn.Module):
             n_time_filters * complexity_factor * np.sqrt(2) ** np.arange(0, depth + 1)
         )  # len = depth + 1
         channels = np.ceil(channels).astype(int).tolist()
-        channels = [n_channels] + channels  # len = depth + 2
+        channels = [in_chans] + channels  # len = depth + 2
         self.channels = channels
 
         # Instantiate encoder
