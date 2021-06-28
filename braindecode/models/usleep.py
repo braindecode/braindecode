@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 
-def crop_tensors_to_match(x1, x2, axis=-1):
+def _crop_tensors_to_match(x1, x2, axis=-1):
     '''Crops two tensors to their lowest-common-dimension along an axis.'''
     dim_cropped = min(x1.shape[axis], x2.shape[axis])
 
