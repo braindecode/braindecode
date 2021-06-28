@@ -93,7 +93,7 @@ class _DecoderBlock(nn.Module):
     def forward(self, x, residual):
         x = self.block_preskip(x)
         if self.with_skip_connection:
-            x, residual = crop_tensors_to_match(x, residual, axis=-1)  # in case of mismatch
+            x, residual = _crop_tensors_to_match(x, residual, axis=-1)  # in case of mismatch
             x = torch.cat([x, residual], axis=1)  # (B, 2 * C, T)
         x = self.block_postskip(x)
         return x
@@ -181,10 +181,10 @@ class USleep(nn.Module):
         encoder = []
         for idx in range(depth):
             encoder += [
-                EncoderBlock(in_channels=channels[idx],
-                             out_channels=channels[idx + 1],
-                             kernel_size=time_conv_size,
-                             downsample=max_pool_size)
+                _EncoderBlock(in_channels=channels[idx],
+                              out_channels=channels[idx + 1],
+                              kernel_size=time_conv_size,
+                              downsample=max_pool_size)
             ]
         self.encoder = nn.Sequential(*encoder)
 
@@ -203,19 +203,13 @@ class USleep(nn.Module):
         channels_reverse = channels[::-1]
         for idx in range(depth):
             decoder += [
-                DecoderBlock(in_channels=channels_reverse[idx],
-                             out_channels=channels_reverse[idx + 1],
-                             kernel_size=time_conv_size,
-                             upsample=max_pool_size,
-                             with_skip_connection=with_skip_connection)
+                _DecoderBlock(in_channels=channels_reverse[idx],
+                              out_channels=channels_reverse[idx + 1],
+                              kernel_size=time_conv_size,
+                              upsample=max_pool_size,
+                              with_skip_connection=with_skip_connection)
             ]
         self.decoder = nn.Sequential(*decoder)
-
-        # Instantiate classifier
-        # self.clf = nn.Sequential(
-        #     nn.Dropout(0.5),
-        #     nn.Linear(channels[1] * input_size, n_classes)
-        # )
 
         # The temporal dimension remains unchanged
         # (except through the AvgPooling which collapses it to 1)
@@ -274,7 +268,6 @@ class USleep(nn.Module):
         # classifier
         y_pred = self.clf(x)        # (B, n_classes, seq_length)
 
-        # y_pred = self.clf(x.flatten(start_dim=1))        # (B, n_classes)
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]
 
