@@ -73,7 +73,6 @@ pip install --upgrade pytest pytest-cov codecov
 pip install --upgrade -r docs/requirements.txt
 pip install --upgrade scipy scikit-learn
 pip install --upgrade flake8
-mkdir -p ~/mne_data
 ```
 Ignore the error on the second-last step:
 ```
