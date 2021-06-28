@@ -124,7 +124,7 @@ class USleep(nn.Module):
         Here we set it to 10 with sfreq=100.
     time_conv_size_s : float
         Size of filters in temporal convolution layers, in seconds.
-        Set to 0.070 in [1]_ (9 samples at sfreq=128).
+        Set to 0.070 s in [1]_ (9 samples at sfreq=128).
     max_pool_size_s : float
         Max pooling size, in seconds. Set to 0.016 in [1]_ (2 samples at
         sfreq=128).
