@@ -115,7 +115,7 @@ windows_dataset = create_windows_from_events(
 # We also preprocess the windows by applying channel-wise z-score normalization
 # in each window.
 
-from braindecode.preprocessing.preprocess import zscore
+from braindecode.preprocessing import zscore
 
 preprocess(windows_dataset, [Preprocessor(zscore)])
 
