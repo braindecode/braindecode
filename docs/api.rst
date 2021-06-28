@@ -95,6 +95,8 @@ Datasets
     BaseConcatDataset
     WindowsDataset
     MOABBDataset
+    HGD
+    BNCI2014001
     TUH
     TUHAbnormal
     SleepPhysionet
