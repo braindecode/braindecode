@@ -227,6 +227,7 @@ class BaseConcatDataset(ConcatDataset):
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
+
         self.seq_target_transform = seq_target_transform
 
     def _get_sequence(self, indices):
