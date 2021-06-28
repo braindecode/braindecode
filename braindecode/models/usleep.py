@@ -55,7 +55,7 @@ class _EncoderBlock(nn.Module):
         return x, residual
 
 
-class DecoderBlock(nn.Module):
+class _DecoderBlock(nn.Module):
     '''Decoding block for a timeseries x of shape (B, C, T).'''
     def __init__(self,
                  in_channels=2,
