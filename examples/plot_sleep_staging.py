@@ -1,10 +1,12 @@
 """
 Sleep staging on the Sleep Physionet dataset
 ============================================
+
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We adapt the time distributed approach of [1]_ to learn on
 sequences of EEG windows using the openly accessible Sleep Physionet dataset
 [2]_ [3]_.
+
 References
 ----------
 .. [1] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
@@ -12,9 +14,11 @@ References
       Classification Using Multivariate and Multimodal Time Series.
       IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
       (758-769)
+
 .. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
        a sleep-dependent neuronal feedback loop: the slow-wave
        microcontinuity of the EEG. IEEE-BME 47(9):1185-1194 (2000).
+
 .. [3] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
        Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. (2000)
        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
@@ -93,12 +97,12 @@ from braindecode.preprocessing import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    "Sleep stage W": 0,
-    "Sleep stage 1": 1,
-    "Sleep stage 2": 2,
-    "Sleep stage 3": 3,
-    "Sleep stage 4": 3,
-    "Sleep stage R": 4
+    'Sleep stage W': 0,
+    'Sleep stage 1': 1,
+    'Sleep stage 2': 2,
+    'Sleep stage 3': 3,
+    'Sleep stage 4': 3,
+    'Sleep stage R': 4
 }
 
 window_size_s = 30
