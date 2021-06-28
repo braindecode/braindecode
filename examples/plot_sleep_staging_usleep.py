@@ -51,7 +51,7 @@ References
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
-dataset = SleepPhysionet(subject_ids=[i for i in range(30)], recording_ids=[2], crop_wake_mins=30)
+dataset = SleepPhysionet(subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
 
 
 ######################################################################
@@ -136,7 +136,7 @@ from braindecode.datasets import BaseConcatDataset
 random_state = 31
 subjects = np.unique(windows_dataset.description["subject"])
 subj_train, subj_valid = train_test_split(
-    subjects, test_size=0.2, random_state=random_state
+    subjects, test_size=0.5, random_state=random_state
 )
 
 split_ids = {"train": subj_train, "valid": subj_valid}
@@ -219,10 +219,6 @@ model = USleep(
     n_classes=n_classes,
     input_size_s=input_size_samples / sfreq,
 )
-
-
-# y_pred (B, n_classes, seq_length)
-# y_true (B, seq_length)
 
 # Send model to GPU
 if cuda:
