@@ -9,11 +9,9 @@ sequences of EEG windows using the openly accessible Sleep Physionet dataset
 
 References
 ----------
-.. [1] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
-      (2018)A Deep Learning Architecture for Temporal Sleep Stage
-      Classification Using Multivariate and Multimodal Time Series.
-      IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
-      (758-769)
+.. [1] Perslev, M., Darkner, S., Kempfner, L. et al.
+       U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
+       https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
 
 .. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
        a sleep-dependent neuronal feedback loop: the slow-wave
