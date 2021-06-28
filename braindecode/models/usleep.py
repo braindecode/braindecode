@@ -100,7 +100,7 @@ class _DecoderBlock(nn.Module):
 
 
 class USleep(nn.Module):
-    """Sleep staging architecture from [1]_.
+    """Sleep staging architecture from Perslev et al 2021.
 
     U-Net (autoencoder with skip connections) feature-extractor for sleep staging described in [1]_.
 
