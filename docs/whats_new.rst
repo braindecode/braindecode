@@ -55,7 +55,7 @@ Enhancements
 - Removing code duplicate in BaseDataset and WindowsDataset (:gh:`159` by `Lukas Gemein`_)
 - Only load data if needed during preprocessing (e.g., allow timecrop without loading) (:gh:`164` by `Robin Tibor Schirrmeister`_)
 - Adding option to sort filtered channels by frequency band for the filterbank in :func:`braindecode.datautil.filterbank` (:gh:`185` by `Lukas Gemein`_)
-- Adding the USleep model :class:`braindecode.models.USleep` (:gh:`` by `Theo Gnassounou`_ and `Omar Chehab`_)
+- Adding the USleep model :class:`braindecode.models.USleep` (:gh:`282` by `Theo Gnassounou`_ and `Omar Chehab`_)
    
 Bugs
 ~~~~
