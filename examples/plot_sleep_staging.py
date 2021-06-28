@@ -93,12 +93,12 @@ from braindecode.preprocessing import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    'Sleep stage W': 0,
-    'Sleep stage 1': 1,
-    'Sleep stage 2': 2,
-    'Sleep stage 3': 3,
-    'Sleep stage 4': 3,
-    'Sleep stage R': 4
+    "Sleep stage W": 0,
+    "Sleep stage 1": 1,
+    "Sleep stage 2": 2,
+    "Sleep stage 3": 3,
+    "Sleep stage 4": 3,
+    "Sleep stage R": 4
 }
 
 window_size_s = 30
