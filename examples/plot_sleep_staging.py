@@ -1,12 +1,10 @@
 """
 Sleep staging on the Sleep Physionet dataset
 ============================================
-
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We adapt the time distributed approach of [1]_ to learn on
 sequences of EEG windows using the openly accessible Sleep Physionet dataset
 [2]_ [3]_.
-
 References
 ----------
 .. [1] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
@@ -14,11 +12,9 @@ References
       Classification Using Multivariate and Multimodal Time Series.
       IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
       (758-769)
-
 .. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
        a sleep-dependent neuronal feedback loop: the slow-wave
        microcontinuity of the EEG. IEEE-BME 47(9):1185-1194 (2000).
-
 .. [3] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
        Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. (2000)
        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
@@ -52,6 +48,7 @@ References
 # .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
 #
 
+from numbers import Integral
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
@@ -76,7 +73,7 @@ high_cut_hz = 30
 
 preprocessors = [
     Preprocessor(lambda x: x * 1e6),
-    Preprocessor("filter", l_freq=None, h_freq=high_cut_hz),
+    Preprocessor('filter', l_freq=None, h_freq=high_cut_hz)
 ]
 
 # Transform the data
@@ -96,12 +93,12 @@ from braindecode.preprocessing import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    "Sleep stage W": 0,
-    "Sleep stage 1": 1,
-    "Sleep stage 2": 2,
-    "Sleep stage 3": 3,
-    "Sleep stage 4": 3,
-    "Sleep stage R": 4,
+    'Sleep stage W': 0,
+    'Sleep stage 1': 1,
+    'Sleep stage 2': 2,
+    'Sleep stage 3': 3,
+    'Sleep stage 4': 3,
+    'Sleep stage R': 4
 }
 
 window_size_s = 30
@@ -109,14 +106,9 @@ sfreq = 100
 window_size_samples = window_size_s * sfreq
 
 windows_dataset = create_windows_from_events(
-    dataset,
-    trial_start_offset_samples=0,
-    trial_stop_offset_samples=0,
+    dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0,
     window_size_samples=window_size_samples,
-    window_stride_samples=window_size_samples,
-    preload=True,
-    mapping=mapping,
-)
+    window_stride_samples=window_size_samples, preload=True, mapping=mapping)
 
 
 ######################################################################
@@ -167,7 +159,6 @@ for name, values in split_ids.items():
 train_set = splitted['train']
 valid_set = splitted['valid']
 
-
 ######################################################################
 # Create sequence samplers
 # ------------------------
@@ -200,20 +191,21 @@ valid_sampler = SequenceSampler(
 print(len(train_sampler))
 print(len(valid_sampler))
 
-
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
 # sequence to use it as target.
 #
 
+
 # Use label of center window in the sequence
 def get_center_label(x):
+    if isinstance(x, Integral):
+        return x
     return x[np.ceil(len(x) / 2).astype(int)] if len(x) > 1 else x
 
 
-train_set.seq_target_transform = get_center_label
-valid_set.seq_target_transform = get_center_label
-
+train_set.target_transform = get_center_label
+valid_set.target_transform = get_center_label
 
 ######################################################################
 # Finally, since some sleep stages appear a lot more often than others (e.g.
@@ -246,7 +238,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerChambon2018
 
 cuda = torch.cuda.is_available()  # check if GPU is available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to reproduce results
@@ -331,18 +323,13 @@ batch_size = 32
 n_epochs = 10
 
 train_bal_acc = EpochScoring(
-    scoring="balanced_accuracy",
-    on_train=True,
-    name="train_bal_acc",
-    lower_is_better=False,
-)
+    scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
+    lower_is_better=False)
 valid_bal_acc = EpochScoring(
-    scoring="balanced_accuracy",
-    on_train=False,
-    name="valid_bal_acc",
-    lower_is_better=False,
-)
-callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
+    scoring='balanced_accuracy', on_train=False, name='valid_bal_acc',
+    lower_is_better=False)
+callbacks = [('train_bal_acc', train_bal_acc),
+             ('valid_bal_acc', valid_bal_acc)]
 
 clf = EEGClassifier(
     model,
@@ -356,7 +343,7 @@ clf = EEGClassifier(
     optimizer__lr=lr,
     batch_size=batch_size,
     callbacks=callbacks,
-    device=device,
+    device=device
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
@@ -382,38 +369,35 @@ import pandas as pd
 
 # Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
-df[["train_mis_clf", "valid_mis_clf"]] = (
-    100 - df[["train_bal_acc", "valid_bal_acc"]] * 100
-)
+df[['train_mis_clf', 'valid_mis_clf']] = 100 - df[
+    ['train_bal_acc', 'valid_bal_acc']] * 100
 
 # get percent of misclass for better visual comparison to loss
-plt.style.use("seaborn-talk")
+plt.style.use('seaborn-talk')
 fig, ax1 = plt.subplots(figsize=(8, 3))
-df.loc[:, ["train_loss", "valid_loss"]].plot(
-    ax=ax1, style=["-", ":"], marker="o", color="tab:blue", legend=False, fontsize=14
-)
+df.loc[:, ['train_loss', 'valid_loss']].plot(
+    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False,
+    fontsize=14)
 
-ax1.tick_params(axis="y", labelcolor="tab:blue", labelsize=14)
-ax1.set_ylabel("Loss", color="tab:blue", fontsize=14)
+ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
+ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
 
 ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
-df.loc[:, ["train_mis_clf", "valid_mis_clf"]].plot(
-    ax=ax2, style=["-", ":"], marker="o", color="tab:red", legend=False
-)
-ax2.tick_params(axis="y", labelcolor="tab:red", labelsize=14)
-ax2.set_ylabel("Balanced misclassification rate [%]", color="tab:red", fontsize=14)
+df.loc[:, ['train_mis_clf', 'valid_mis_clf']].plot(
+    ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
+ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
+ax2.set_ylabel('Balanced misclassification rate [%]', color='tab:red',
+               fontsize=14)
 ax2.set_ylim(ax2.get_ylim()[0], 85)  # make some room for legend
-ax1.set_xlabel("Epoch", fontsize=14)
+ax1.set_xlabel('Epoch', fontsize=14)
 
 # where some data has already been plotted to ax
 handles = []
 handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle="-", label="Train")
-)
+    Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
 handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle=":", label="Valid")
-)
+    Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()
 
