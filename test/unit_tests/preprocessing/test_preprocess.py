@@ -10,7 +10,7 @@ from glob import glob
 import pytest
 import numpy as np
 
-from braindecode.datasets import MOABBDataset, base
+from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing.preprocess import preprocess, zscore, scale, \
     Preprocessor, filterbank, exponential_moving_demean, \
     exponential_moving_standardize, MNEPreproc, NumpyPreproc

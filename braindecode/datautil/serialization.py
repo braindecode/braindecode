@@ -192,8 +192,8 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
             if is_raw:
                 datasets.append(
                     BaseDataset(signal, description.iloc[i_signal]))
-                                # target_name=target_name))
-                                # XXX To enable again!
+                # target_name=target_name))
+                # XXX To enable again!
             else:
                 datasets.append(
                     WindowsDataset(signal, description.iloc[i_signal])
