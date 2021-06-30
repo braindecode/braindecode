@@ -268,10 +268,6 @@ def zscore(data):
     """
     zscored = data - np.mean(data, keepdims=True, axis=-1)
     zscored = zscored / np.std(zscored, keepdims=True, axis=-1)
-    # TODO: the overriding of protected '_data' should be implemented in the
-    # TODO: dataset when transforms are applied to windows
-    if hasattr(data, '_data'):
-        data._data = zscored
     return zscored
 
 
@@ -291,16 +287,10 @@ def robust_scale(data):
     np.ndarray :
         Normalized continuous or windowed data of shape (n_channels, n_times)
         or (n_windows, n_channels, n_times).
-
-    .. note::
-        If this function is supposed to preprocess continuous data, it should be
-        given to raw.apply_function().
     """
     scaled = data - np.median(data, keepdims=True, axis=-1)
     q75, q25 = np.percentile(scaled, [75, 25], keepdims=True, axis=-1)
     scaled = scaled / (q75 - q25)
-    if hasattr(data, '_data'):
-        data._data = scaled
     return scaled
 
 
@@ -320,17 +310,8 @@ def scale(data, factor):
     np.ndarray :
         Normalized continuous or windowed data of shape (n_channels, n_times)
         or (n_windows, n_channels, n_times).
-
-    .. note::
-        If this function is supposed to preprocess continuous data, it should be
-        given to raw.apply_function().
     """
-    scaled = np.multiply(data, factor)
-    # TODO: the overriding of protected '_data' should be implemented in the
-    # TODO: dataset when transforms are applied to windows
-    if hasattr(data, '_data'):
-        data._data = scaled
-    return scaled
+    return np.multiply(data, factor)
 
 
 def filterbank(raw, frequency_bands, drop_original_signals=True,
