@@ -210,10 +210,10 @@ set_random_seeds(seed=87, cuda=cuda)
 
 n_classes = 5
 # Extract number of channels and time steps from dataset
-n_channels, input_size_samples = train_set[0][0].shape
+in_chans, input_size_samples = train_set[0][0].shape
 
 model = USleep(
-    n_channels=n_channels,
+    in_chans=in_chans,
     sfreq=sfreq,
     with_skip_connection=True,
     n_classes=n_classes,
