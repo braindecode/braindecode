@@ -249,7 +249,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 64
-n_epochs = 100
+n_epochs = 4  # this number is kept too small to reduce running time in the doc
 
 from sklearn.metrics import balanced_accuracy_score
 
