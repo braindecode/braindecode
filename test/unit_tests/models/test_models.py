@@ -136,19 +136,19 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
                                y_pred2.detach().cpu().numpy())
 
 
-@pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
+@pytest.mark.parametrize('in_chans,sfreq,n_classes,input_size_s',
                          [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
-def test_usleep(n_channels, sfreq, n_classes, input_size_s):
+def test_usleep(in_chans, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     n_examples = 10
     seq_length = 3
 
     model = USleep(
-        n_channels=n_channels, sfreq=sfreq,
+        in_chans=in_chans, sfreq=sfreq,
         n_classes=n_classes, input_size_s=input_size_s)
     model.eval()
 
-    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs : (batch, channels, time)
