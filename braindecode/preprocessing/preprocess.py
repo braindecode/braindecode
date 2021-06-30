@@ -249,16 +249,19 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
 
 def zscore(data):
     """Zscore normalize continuous or windowed data in-place.
+
     Parameters
     ----------
     data: np.ndarray
         Continuous or windowed data of shape (n_channels, n_times) or
         (n_windows, n_channels, n_times).
+
     Returns
     -------
     np.ndarray :
         Normalized continuous or windowed data of shape (n_channels, n_times)
         or (n_windows, n_channels, n_times).
+
     .. note::
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
@@ -274,17 +277,21 @@ def zscore(data):
 
 def robust_scale(data):
     """Robust scale continuous or windowed data in-place.
+
     Substract median and divide by interquartile range.
+
     Parameters
     ----------
     data: np.ndarray
         Continuous or windowed data of shape (n_channels, n_times) or
         (n_windows, n_channels, n_times).
+
     Returns
     -------
     np.ndarray :
         Normalized continuous or windowed data of shape (n_channels, n_times)
         or (n_windows, n_channels, n_times).
+
     .. note::
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
@@ -299,6 +306,7 @@ def robust_scale(data):
 
 def scale(data, factor):
     """Scale continuous or windowed data in-place
+
     Parameters
     ----------
     data: np.ndarray
@@ -306,11 +314,13 @@ def scale(data, factor):
         (n_windows, n_channels, n_times).
     factor: float
         Multiplication factor.
+
     Returns
     -------
     np.ndarray :
         Normalized continuous or windowed data of shape (n_channels, n_times)
         or (n_windows, n_channels, n_times).
+
     .. note::
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
