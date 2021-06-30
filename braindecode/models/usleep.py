@@ -9,7 +9,7 @@ from torch import nn
 
 
 def _crop_tensors_to_match(x1, x2, axis=-1):
-    '''Crops two tensors to their lowest-common-dimension along an axis.'''
+    """Crops two tensors to their lowest-common-dimension along an axis."""
     dim_cropped = min(x1.shape[axis], x2.shape[axis])
 
     x1_cropped = torch.index_select(
@@ -24,7 +24,7 @@ def _crop_tensors_to_match(x1, x2, axis=-1):
 
 
 class _EncoderBlock(nn.Module):
-    '''Encoding block for a timeseries x of shape (B, C, T).'''
+    """Encoding block for a timeseries x of shape (B, C, T)."""
     def __init__(self,
                  in_channels=2,
                  out_channels=2,
@@ -56,7 +56,7 @@ class _EncoderBlock(nn.Module):
 
 
 class _DecoderBlock(nn.Module):
-    '''Decoding block for a timeseries x of shape (B, C, T).'''
+    """Decoding block for a timeseries x of shape (B, C, T)."""
     def __init__(self,
                  in_channels=2,
                  out_channels=2,
@@ -114,14 +114,13 @@ class USleep(nn.Module):
 
     Parameters
     ----------
-    n_channels : int
+    in_chans : int
         Number of EEG or EOG channels. Set to 2 in [1]_ (1 EEG, 1 EOG).
     sfreq : float
         EEG sampling frequency. Set to 128 in [1]_.
     depth : int
         Number of encoding (resp. decoding) blocks in the U-Net.
-        Set to 12 in [1]_ with sfreq=128.
-        Here we set it to 10 with sfreq=100.
+        Set to 12 in [1]_ with sfreq=128. Here we set it to 10 with sfreq=100.
     time_conv_size_s : float
         Size of filters in temporal convolution layers, in seconds.
         Set to 0.070 s in [1]_ (9 samples at sfreq=128).
@@ -242,11 +241,11 @@ class USleep(nn.Module):
         )
 
     def forward(self, x):
-        '''If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
+        """If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).
-        '''
+        """
         # reshape input
-        if len(x.shape) == 4:  # input x has shape (B, S, C, T)
+        if x.ndim == 4:  # input x has shape (B, S, C, T)
             x = x.permute(0, 2, 1, 3)  # (B, C, S, T)
             x = x.flatten(start_dim=2)  # (B, C, S * T)
 
