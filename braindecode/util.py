@@ -355,6 +355,12 @@ def update_estimator_docstring(base_class, docstring):
     return out_docstring
 
 
+def _update_moabb_docstring(base_class, docstring):
+    base_doc = base_class.__doc__
+    out_docstring = base_doc + f'\n\n{docstring}'
+    return out_docstring
+
+
 def read_all_file_names(directory, extension):
     """Read all files with specified extension from given path and sorts them
     based on a given sorting key.

@@ -10,7 +10,8 @@ import pytest
 
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import (
+    create_windows_from_events, create_fixed_length_windows)
 
 
 # TODO: split file up into files with proper matching names
@@ -316,16 +317,37 @@ def test_concat_dataset_get_sequence_out_of_range(concat_windows_dataset):
         X, y = concat_windows_dataset[indices]
 
 
-def test_concat_dataset_seq_target_transform(concat_windows_dataset):
+def test_concat_dataset_target_transform(concat_windows_dataset):
     indices = range(100)
     y = concat_windows_dataset[indices][1]
 
-    concat_windows_dataset.seq_target_transform = sum
+    concat_windows_dataset.target_transform = sum
     y2 = concat_windows_dataset[indices][1]
 
     assert y2 == sum(y)
 
 
-def test_concat_dataset_invalid_seq_target_transform(concat_windows_dataset):
+def test_concat_dataset_invalid_target_transform(concat_windows_dataset):
     with pytest.raises(TypeError):
-        concat_windows_dataset.seq_target_transform = 0
+        concat_windows_dataset.target_transform = 0
+
+
+def test_multi_target_dataset(set_up):
+    _, base_dataset, _, _, _, _ = set_up
+    base_dataset.target_name = ['pathological', 'gender', 'age']
+    x, y = base_dataset[0]
+    assert len(y) == 3
+    assert base_dataset.description.to_list() == y
+    concat_ds = BaseConcatDataset([base_dataset])
+    windows_ds = create_fixed_length_windows(
+        concat_ds,
+        window_size_samples=100,
+        window_stride_samples=100,
+        start_offset_samples=0,
+        stop_offset_samples=None,
+        drop_last_window=False,
+        mapping={True: 1, False: 0, 'M': 0, 'F': 1},  # map non-digit targets
+    )
+    x, y, ind = windows_ds[0]
+    assert len(y) == 3
+    assert y == [1, 0, 48]  # order matters: pathological, gender, age

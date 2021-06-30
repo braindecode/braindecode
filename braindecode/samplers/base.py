@@ -93,7 +93,7 @@ class SequenceSampler(RecordingSampler):
         Number of consecutive windows in a sequence.
     n_windows_stride : int
         Number of windows between two consecutive sequences.
-    random_state : np.RandomState | int | None
+    random_state : np.random.RandomState | int | None
         Random state.
     """
     def __init__(self, metadata, n_windows, n_windows_stride,
@@ -109,7 +109,7 @@ class SequenceSampler(RecordingSampler):
 
         Returns
         -------
-        np.ndarray :
+        np.ndarray
             Array of shape (n_sequences,) containing the indices of the first
             windows of possible sequences.
         """

@@ -46,8 +46,8 @@ class BaseDataset(Dataset):
         Continuous data.
     description : dict | pandas.Series | None
         Holds additional description about the continuous signal / subject.
-    target_name : str | None
-        Name of the index in `description` that should be used to provide the
+    target_name : str | tuple | None
+        Name(s) of the index in `description` that should be used to provide the
         target (e.g., to be used in a prediction task later on).
     transform : callable | None
         On-the-fly transform applied to the example before it is returned.
@@ -59,15 +59,15 @@ class BaseDataset(Dataset):
         self.transform = transform
 
         # save target name for load/save later
-        self.target_name = target_name
-        if self.target_name is not None and self.target_name not in self.description:
-            raise ValueError(f"'{self.target_name}' not in description.")
+        self.target_name = self._target_name(target_name)
 
     def __getitem__(self, index):
         X = self.raw[:, index][0]
         y = None
         if self.target_name is not None:
             y = self.description[self.target_name]
+        if isinstance(y, pd.Series):
+            y = y.to_list()
         if self.transform is not None:
             X = self.transform(X)
         return X, y
@@ -109,6 +109,22 @@ class BaseDataset(Dataset):
                 self._description.pop(key)
         self._description = pd.concat([self.description, description])
 
+    def _target_name(self, target_name):
+        if target_name is None:
+            return target_name
+        else:
+            # convert tuple of names or single name to list
+            if isinstance(target_name, tuple):
+                target_name = [name for name in target_name]
+            else:
+                target_name = [target_name]
+            # check if target name(s) can be read from description
+            for name in target_name:
+                if name not in self.description:
+                    raise ValueError(f"'{name}' not in description.")
+        # return a list of str if there are multiple targets and a str otherwise
+        return target_name if len(target_name) > 1 else target_name[0]
+
 
 class WindowsDataset(BaseDataset):
     """Returns windows from an mne.Epochs object along with a target.
@@ -138,7 +154,7 @@ class WindowsDataset(BaseDataset):
         self._description = _create_description(description)
         self.transform = transform
 
-        self.y = self.windows.metadata.loc[:, 'target'].to_numpy()
+        self.y = self.windows.metadata.loc[:, 'target'].to_list()
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
                 'i_stop_in_trial']].to_numpy()
@@ -217,18 +233,16 @@ class BaseConcatDataset(ConcatDataset):
     ----------
     list_of_ds : list
         list of BaseDataset, BaseConcatDataset or WindowsDataset
-    seq_target_transform : callable | None
-        Function to call on sequences of targets before returning them. Only
-        called if the dataset is indexed with lists of indices to return
-        sequences.
+    target_transform : callable | None
+        Optional function to call on targets before returning them.
     """
-    def __init__(self, list_of_ds, seq_target_transform=None):
+    def __init__(self, list_of_ds, target_transform=None):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
         super().__init__(list_of_ds)
 
-        self.seq_target_transform = seq_target_transform
+        self.target_transform = target_transform
 
     def _get_sequence(self, indices):
         X, y = list(), list()
@@ -239,8 +253,6 @@ class BaseConcatDataset(ConcatDataset):
 
         X = np.stack(X, axis=0)
         y = np.array(y)
-        if self.seq_target_transform is not None:
-            y = self.seq_target_transform(y)
 
         return X, y
 
@@ -251,12 +263,16 @@ class BaseConcatDataset(ConcatDataset):
         idx : int | list
             Index of window and target to return. If provided as a list of
             ints, multiple windows and targets will be extracted and
-            concatenated.
+            concatenated. The target output can be modified on the
+            fly by the ``traget_transform`` parameter.
         """
         if isinstance(idx, Iterable):  # Sample multiple windows
-            return self._get_sequence(idx)
+            item = self._get_sequence(idx)
         else:
-            return super().__getitem__(idx)
+            item = super().__getitem__(idx)
+        if self.target_transform is not None:
+            item = item[:1] + (self.target_transform(item[1]),) + item[2:]
+        return item
 
     def split(self, by=None, property=None, split_ids=None):
         """Split the dataset based on information listed in its description
@@ -341,14 +357,14 @@ class BaseConcatDataset(ConcatDataset):
             self.datasets[i].transform = fn
 
     @property
-    def seq_target_transform(self):
-        return self._seq_target_transform
+    def target_transform(self):
+        return self._target_transform
 
-    @seq_target_transform.setter
-    def seq_target_transform(self, fn):
+    @target_transform.setter
+    def target_transform(self, fn):
         if not (callable(fn) or fn is None):
-            raise TypeError('seq_target_transform must be a callable.')
-        self._seq_target_transform = fn
+            raise TypeError('target_transform must be a callable.')
+        self._target_transform = fn
 
     def save(self, path, overwrite=False):
         """Save dataset to files.
