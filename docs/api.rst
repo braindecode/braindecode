@@ -119,6 +119,7 @@ Preprocessing
     exponential_moving_demean
     exponential_moving_standardize
     zscore
+    robust_scale
     scale
     filterbank
     preprocess

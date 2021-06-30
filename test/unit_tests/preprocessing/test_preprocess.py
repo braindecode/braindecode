@@ -8,10 +8,11 @@ import copy
 import pytest
 import numpy as np
 
-from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing.preprocess import preprocess, zscore, scale, \
-    Preprocessor, filterbank, exponential_moving_demean, \
-    exponential_moving_standardize, MNEPreproc, NumpyPreproc
+from braindecode.datasets import MOABBDataset, BaseConcatDataset
+from braindecode.preprocessing.preprocess import (
+    preprocess, zscore, robust_scale, scale, Preprocessor, filterbank,
+    exponential_moving_demean, exponential_moving_standardize, MNEPreproc,
+    NumpyPreproc)
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 
 
@@ -152,6 +153,48 @@ def test_zscore_windows(windows_concat_ds):
         expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
             windowed_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
+
+
+def test_robust_scale_continuous(base_concat_ds):
+    ds = BaseConcatDataset([base_concat_ds.datasets[0]])
+    preprocessors = [
+        Preprocessor('pick_types', eeg=True, meg=False, stim=False),
+        Preprocessor(robust_scale, channel_wise=True)
+    ]
+    preprocess(ds, preprocessors)
+
+    raw_data = ds.datasets[0].raw.get_data()
+    shape = raw_data.shape
+    # zero median
+    expected = np.zeros(shape[:-1])
+    np.testing.assert_allclose(
+        np.median(raw_data, axis=-1), expected, rtol=1e-4, atol=1e-4)
+    # unit iqr
+    expected = np.ones(shape[:-1])
+    q75, q25 = np.percentile(raw_data, [75, 25], axis=-1)
+    np.testing.assert_allclose(
+        q75 - q25, expected, rtol=1e-4, atol=1e-4)
+
+
+def test_robust_scale_windows(windows_concat_ds):
+    windows_ds = BaseConcatDataset([windows_concat_ds.datasets[0]])
+    preprocessors = [
+        Preprocessor('pick_types', eeg=True, meg=False, stim=False),
+        Preprocessor(robust_scale, channel_wise=True)
+    ]
+    preprocess(windows_ds, preprocessors)
+
+    windowed_data = windows_ds.datasets[0].windows.get_data()
+    shape = windowed_data.shape
+    # zero median
+    expected = np.zeros(shape[:-1])
+    np.testing.assert_allclose(
+        np.median(windowed_data, axis=-1), expected, rtol=1e-4, atol=1e-4)
+    # unit iqr
+    expected = np.ones(shape[:-1])
+    q75, q25 = np.percentile(windowed_data, [75, 25], axis=-1)
+    np.testing.assert_allclose(
+        q75 - q25, expected, rtol=1e-4, atol=1e-4)
 
 
 def test_scale_continuous(base_concat_ds):

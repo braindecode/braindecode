@@ -249,19 +249,17 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
 
 def zscore(data):
     """Zscore normalize continuous or windowed data in-place.
-
     Parameters
     ----------
-    data: np.ndarray (n_channels, n_times) or (n_windows, n_channels, n_times)
-        continuous or windowed signal
-
+    data: np.ndarray
+        Continuous or windowed data of shape (n_channels, n_times) or
+        (n_windows, n_channels, n_times).
     Returns
     -------
-    zscored: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        normalized continuous or windowed data
-
-    ..note:
+    np.ndarray :
+        Normalized continuous or windowed data of shape (n_channels, n_times)
+        or (n_windows, n_channels, n_times).
+    .. note::
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
@@ -274,23 +272,46 @@ def zscore(data):
     return zscored
 
 
-def scale(data, factor):
-    """Scale continuous or windowed data in-place
-
+def robust_scale(data):
+    """Robust scale continuous or windowed data in-place.
+    Substract median and divide by interquartile range.
     Parameters
     ----------
-    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        continuous or windowed signal
-    factor: float
-        multiplication factor
-
+    data: np.ndarray
+        Continuous or windowed data of shape (n_channels, n_times) or
+        (n_windows, n_channels, n_times).
     Returns
     -------
-    scaled: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        normalized continuous or windowed data
-    ..note:
+    np.ndarray :
+        Normalized continuous or windowed data of shape (n_channels, n_times)
+        or (n_windows, n_channels, n_times).
+    .. note::
+        If this function is supposed to preprocess continuous data, it should be
+        given to raw.apply_function().
+    """
+    scaled = data - np.median(data, keepdims=True, axis=-1)
+    q75, q25 = np.percentile(scaled, [75, 25], keepdims=True, axis=-1)
+    scaled = scaled / (q75 - q25)
+    if hasattr(data, '_data'):
+        data._data = scaled
+    return scaled
+
+
+def scale(data, factor):
+    """Scale continuous or windowed data in-place
+    Parameters
+    ----------
+    data: np.ndarray
+        Continuous or windowed data of shape (n_channels, n_times) or
+        (n_windows, n_channels, n_times).
+    factor: float
+        Multiplication factor.
+    Returns
+    -------
+    np.ndarray :
+        Normalized continuous or windowed data of shape (n_channels, n_times)
+        or (n_windows, n_channels, n_times).
+    .. note::
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
