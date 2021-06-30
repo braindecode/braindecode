@@ -5,7 +5,7 @@ Sleep staging on the Sleep Physionet dataset using USleep network
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We adapt the time distributed approach of [1]_ to learn on
 sequences of EEG windows using the openly accessible Sleep Physionet dataset
-[1]_ [2]_.
+[2]_ [3]_.
 
 References
 ----------
@@ -364,7 +364,8 @@ print(classification_report(y_true.flatten(), y_pred.flatten()))
 # about 36% in a 5-class classification task (chance-level = 20%) on held-out
 # data.
 #
-# To further improve performance, more recordings should be included in the
-# training set, and hyperparameters should be selected accordingly. Increasing
-# the sequence length was also shown in [1]_ to help improve performance,
-# especially when few EEG channels are available.
+# .. note::
+#    To further improve performance, more recordings should be included in the
+#    training set, more training epochs are necessary and hyperparameters should
+#    be optimized. Increasing the sequence length was also shown in [1]_
+#    to help improve performance, especially when few EEG channels are available.
