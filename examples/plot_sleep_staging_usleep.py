@@ -1,11 +1,16 @@
 """
-Sleep staging on the Sleep Physionet dataset using USleep network
-=================================================================
+Sleep staging on the Sleep Physionet dataset using U-Sleep network
+==================================================================
+
+.. note::
+    Please take a look at the simpler sleep staging example
+    `here <https://braindecode.org/auto_examples/plot_sleep_staging.html>`_
+    before going through this example. The current example uses a more complex
+    architecture and a sequence-to-sequence (seq2seq) approach.
 
 This tutorial shows how to train and test a sleep staging neural network with
-Braindecode. We adapt the time distributed approach of [1]_ to learn on
-sequences of EEG windows using the openly accessible Sleep Physionet dataset
-[2]_ [3]_.
+Braindecode. We adapt the U-Sleep approach of [1]_ to learn on sequences of EEG
+windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
 
 References
 ----------
@@ -44,33 +49,25 @@ References
 #
 # .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
 #
-# .. note::
-#    To load your own datasets either via MNE or from
-#    preprocessed X/y numpy arrays, see the `MNE Dataset
-#    Tutorial <./plot_mne_dataset_example.html>`__ and the `Numpy Dataset
-#    Tutorial <./plot_custom_dataset_example.html>`__.
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
-dataset = SleepPhysionet(subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
+dataset = SleepPhysionet(
+    subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
 
 
 ######################################################################
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
-# Next, we preprocess the raw data. We apply convert the data to microvolts and
-# apply a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
-# Physionet data is already sampled at a lower 100 Hz.
+# Next, we preprocess the raw data. We scale each channel recording-wise to
+# have zero median and unit interquartile range. We don't upsample to 128 Hz as
+# done in [1]_ so that we keep the example as light as possible. No filtering
+# is described in [1]_.
 
-from braindecode.preprocessing import preprocess, Preprocessor
+from braindecode.preprocessing import preprocess, Preprocessor, zscore  # XXX To be changed with robust_scale
 
-high_cut_hz = 30
-
-preprocessors = [
-    Preprocessor(lambda x: x * 1e6),
-    Preprocessor("filter", l_freq=None, h_freq=high_cut_hz),
-]
+preprocessors = [Preprocessor(zscore, channel_wise=True)]
 
 # Transform the data
 preprocess(dataset, preprocessors)
@@ -86,12 +83,12 @@ from braindecode.preprocessing import create_windows_from_events
 
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    "Sleep stage W": 0,
-    "Sleep stage 1": 1,
-    "Sleep stage 2": 2,
-    "Sleep stage 3": 3,
-    "Sleep stage 4": 3,
-    "Sleep stage R": 4,
+    'Sleep stage W': 0,
+    'Sleep stage 1': 1,
+    'Sleep stage 2': 2,
+    'Sleep stage 3': 3,
+    'Sleep stage 4': 3,
+    'Sleep stage R': 4,
 }
 
 window_size_s = 30
@@ -125,50 +122,48 @@ preprocess(windows_dataset, [Preprocessor(zscore)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We split the dataset using additional info stored in the `description`
-# attribute of :class:`braindecode.datasets.BaseDataset`, in this case using
-# the ``subject`` column. We create a training and a validation sets by
-# splitting by subjects:
+# We split the dataset into training and validation set using additional info
+# stored in the `description` attribute of
+# :class:`braindecode.datasets.BaseDataset`, in this case using the ``subject``
+# column.
 
 import numpy as np
 from sklearn.model_selection import train_test_split
 from braindecode.datasets import BaseConcatDataset
 
 random_state = 31
-subjects = np.unique(windows_dataset.description["subject"])
+subjects = np.unique(windows_dataset.description['subject'])
 subj_train, subj_valid = train_test_split(
     subjects, test_size=0.5, random_state=random_state
 )
 
-split_ids = {"train": subj_train, "valid": subj_valid}
+split_ids = {'train': subj_train, 'valid': subj_valid}
 splitted = dict()
 for name, values in split_ids.items():
     splitted[name] = BaseConcatDataset(
-        [ds for ds in windows_dataset.datasets if ds.description["subject"] in values]
+        [ds for ds in windows_dataset.datasets
+         if ds.description['subject'] in values]
     )
 
-train_set = splitted["train"]
-valid_set = splitted["valid"]
+train_set = splitted['train']
+valid_set = splitted['valid']
 
 
 ######################################################################
 # Create sequence samplers
 # ------------------------
 #
-# Following the time distributed approach of [1]_, we will need to provide our
-# neural network with sequences of windows, such that the embeddings of
-# multiple consecutive windows can be concatenated and provided to a final
-# classifier. We can achieve this by defining Sampler objects that return
-# sequences of windows.
-# To simplify the example, we train the whole model end-to-end on sequences,
-# rather than using the two-step approach of [1]_ (training the feature
-# extractor on single windows, then freezing its weights and training the
-# classifier).
+# Following the sequence-to-sequence approach of [1]_, we need to provide our
+# neural network with sequences of windows. We can achieve this by defining
+# Sampler objects that return sequences of windows.
+# Non-overlapping sequences of 35 windows are used in [1]_, however to limit
+# the memory requirements for this example we use shorter sequences of 3
+# windows.
 
 from braindecode.samplers import SequenceSampler
 
-n_windows = 35  # Sequences of 35 consecutive windows
-n_windows_stride = 35  # Maximally overlapping sequences
+n_windows = 3  # Sequences of 3 consecutive windows; originally 35 in paper
+n_windows_stride = 3  # Non-overlapping sequences
 
 train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
@@ -179,7 +174,7 @@ print(len(valid_sampler))
 
 
 ######################################################################
-# Finally, since some sleep stages appears a lot more often than others (e.g.
+# Finally, since some sleep stages appear a lot more often than others (e.g.
 # most of the night is spent in the N2 stage), the classes are imbalanced. To
 # avoid overfitting to the more frequent classes, we compute weights that we
 # will provide to the loss function when training.
@@ -187,15 +182,15 @@ print(len(valid_sampler))
 from sklearn.utils.class_weight import compute_class_weight
 
 y_train = [train_set[idx][1][1] for idx in train_sampler]
-class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
+class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
 
 
 ######################################################################
 # Create model
 # ------------
 #
-# We can now create the deep learning model. In this tutorial, we use the sleep
-# staging architecture introduced in [1]_, which is a four-layer convolutional
+# We can now create the deep learning model. In this tutorial, we use the
+# U-Sleep architecture introduced in [1]_, which is fully convolutional
 # neural network.
 
 import torch
@@ -203,11 +198,11 @@ from braindecode.util import set_random_seeds
 from braindecode.models import USleep
 
 cuda = torch.cuda.is_available()  # check if GPU is available
-device = "cuda" if torch.cuda.is_available() else "cpu"
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to reproduce results
-set_random_seeds(seed=87, cuda=cuda)
+set_random_seeds(seed=random_state, cuda=cuda)
 
 n_classes = 5
 # Extract number of channels and time steps from dataset
@@ -237,18 +232,18 @@ if cuda:
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 # .. note::
-#    We use different hyperparameters from [1]_, as these hyperparameters
-#    were optimized on a different dataset (MASS SS3) and with a different
-#    number of recordings. Generally speaking, it is recommended to perform
-#    hyperparameter optimization if reusing this code on a different dataset
-#    or with more recordings.
+#    We use different hyperparameters from [1]_, as these hyperparameters were
+#    optimized on different datasets and with a different number of recordings.
+#    Generally speaking, it is recommended to perform hyperparameter
+#    optimization if reusing this code on a different dataset or with more
+#    recordings.
 
 from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
 from braindecode import EEGClassifier
 
 lr = 1e-3
-batch_size = 64
+batch_size = 32
 n_epochs = 4  # this number is kept too small to reduce running time in the doc
 
 from sklearn.metrics import balanced_accuracy_score
@@ -261,19 +256,18 @@ def balanced_accuracy_multi(model, X, y):
 
 train_bal_acc = EpochScoring(
     scoring=balanced_accuracy_multi,
-    # scoring='balanced_accuracy', or define our own callable :
-    # wrapper that does a reshape before using sklearn's balanced accuracy
     on_train=True,
-    name="train_bal_acc",
+    name='train_bal_acc',
     lower_is_better=False,
 )
 valid_bal_acc = EpochScoring(
     scoring=balanced_accuracy_multi,
     on_train=False,
-    name="valid_bal_acc",
+    name='valid_bal_acc',
     lower_is_better=False,
 )
-callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
+callbacks = [('train_bal_acc', train_bal_acc),
+             ('valid_bal_acc', valid_bal_acc)]
 
 clf = EEGClassifier(
     model,
@@ -309,37 +303,37 @@ import pandas as pd
 
 # Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
-df[["train_mis_clf", "valid_mis_clf"]] = (
-    100 - df[["train_bal_acc", "valid_bal_acc"]] * 100
+df[['train_mis_clf', 'valid_mis_clf']] = (
+    100 - df[['train_bal_acc', 'valid_bal_acc']] * 100
 )
 
 # get percent of misclass for better visual comparison to loss
-plt.style.use("seaborn-talk")
+plt.style.use('seaborn-talk')
 fig, ax1 = plt.subplots(figsize=(8, 3))
-df.loc[:, ["train_loss", "valid_loss"]].plot(
-    ax=ax1, style=["-", ":"], marker="o", color="tab:blue", legend=False, fontsize=14
+df.loc[:, ['train_loss', 'valid_loss']].plot(
+    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14
 )
 
-ax1.tick_params(axis="y", labelcolor="tab:blue", labelsize=14)
-ax1.set_ylabel("Loss", color="tab:blue", fontsize=14)
+ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
+ax1.set_ylabel('Loss', color='tab:blue', fontsize=14)
 
 ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
-df.loc[:, ["train_mis_clf", "valid_mis_clf"]].plot(
-    ax=ax2, style=["-", ":"], marker="o", color="tab:red", legend=False
+df.loc[:, ['train_mis_clf', 'valid_mis_clf']].plot(
+    ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False
 )
-ax2.tick_params(axis="y", labelcolor="tab:red", labelsize=14)
-ax2.set_ylabel("Balanced misclassification rate [%]", color="tab:red", fontsize=14)
+ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
+ax2.set_ylabel('Balanced misclassification rate [%]', color='tab:red', fontsize=14)
 ax2.set_ylim(ax2.get_ylim()[0], 85)  # make some room for legend
-ax1.set_xlabel("Epoch", fontsize=14)
+ax1.set_xlabel('Epoch', fontsize=14)
 
 # where some data has already been plotted to ax
 handles = []
 handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle="-", label="Train")
+    Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train')
 )
 handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle=":", label="Valid")
+    Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid')
 )
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()
@@ -348,8 +342,7 @@ plt.tight_layout()
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
 
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix, classification_report
 
 y_true = np.array([valid_set[i][1] for i in valid_sampler])
 y_pred = clf.predict(valid_set)
@@ -359,13 +352,8 @@ print(classification_report(y_true.flatten(), y_pred.flatten()))
 
 
 ######################################################################
-# Our model was able to learn despite the low amount of data that was available
-# (only two recordings in this example) and reached a balanced accuracy of
-# about 36% in a 5-class classification task (chance-level = 20%) on held-out
-# data.
-#
-# .. note::
-#    To further improve performance, more recordings should be included in the
-#    training set, more training epochs are necessary and hyperparameters should
-#    be optimized. Increasing the sequence length was also shown in [1]_
-#    to help improve performance, especially when few EEG channels are available.
+# Our model was able to learn, as shown by the decreasing training and
+# validation loss values, despite the low amount of data that was available
+# (only two recordings in this example). To further improve performance, more
+# recordings should be included in the training set, the model should be
+# trained for more epochs and hyperparameters should be optimized.

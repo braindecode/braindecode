@@ -34,15 +34,9 @@ References
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
-
-
-######################################################################
 # Loading
 # ~~~~~~~
 #
-
-
-######################################################################
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
@@ -63,13 +57,9 @@ dataset = SleepPhysionet(
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
 # a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
 # Physionet data is already sampled at a lower 100 Hz.
-#
 
 from braindecode.preprocessing.preprocess import preprocess, Preprocessor
 
@@ -88,9 +78,6 @@ preprocess(dataset, preprocessors)
 # Extract windows
 # ~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We extract 30-s windows to be used in the classification task.
 
 from braindecode.preprocessing import create_windows_from_events
@@ -110,21 +97,22 @@ sfreq = 100
 window_size_samples = window_size_s * sfreq
 
 windows_dataset = create_windows_from_events(
-    dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0,
+    dataset,
+    trial_start_offset_samples=0,
+    trial_stop_offset_samples=0,
     window_size_samples=window_size_samples,
-    window_stride_samples=window_size_samples, preload=True, mapping=mapping)
+    window_stride_samples=window_size_samples,
+    preload=True,
+    mapping=mapping
+)
 
 
 ######################################################################
 # Window preprocessing
 # ~~~~~~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We also preprocess the windows by applying channel-wise z-score normalization
 # in each window.
-#
 
 from braindecode.preprocessing.preprocess import zscore
 
@@ -135,14 +123,10 @@ preprocess(windows_dataset, [Preprocessor(zscore)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We split the dataset into training and validation set using additional info
 # stored in the `description` attribute of
 # :class:`braindecode.datasets.BaseDataset`, in this case using the ``subject``
 # column.
-#
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -167,10 +151,7 @@ valid_set = splitted['valid']
 # Create sequence samplers
 # ------------------------
 #
-
-
-######################################################################
-# Following the time distributed approach of [1]_, we will need to provide our
+# Following the time distributed approach of [1]_, we need to provide our
 # neural network with sequences of windows, such that the embeddings of
 # multiple consecutive windows can be concatenated and provided to a final
 # classifier. We can achieve this by defining Sampler objects that return
@@ -186,10 +167,8 @@ from braindecode.samplers import SequenceSampler
 n_windows = 3  # Sequences of 3 consecutive windows
 n_windows_stride = 1  # Maximally overlapping sequences
 
-train_sampler = SequenceSampler(
-    train_set.get_metadata(), n_windows, n_windows_stride)
-valid_sampler = SequenceSampler(
-    valid_set.get_metadata(), n_windows, n_windows_stride)
+train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
+valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
 print(len(train_sampler))
@@ -198,7 +177,6 @@ print(len(valid_sampler))
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
 # sequence to use it as target.
-#
 
 
 # Use label of center window in the sequence
@@ -220,21 +198,16 @@ valid_set.target_transform = get_center_label
 from sklearn.utils.class_weight import compute_class_weight
 
 y_train = [train_set[idx][1] for idx in train_sampler]
-class_weights = compute_class_weight(
-    'balanced', classes=np.unique(y_train), y=y_train)
+class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
 
 
 ######################################################################
 # Create model
 # ------------
 #
-
-
-######################################################################
 # We can now create the deep learning model. In this tutorial, we use the sleep
 # staging architecture introduced in [1]_, which is a four-layer convolutional
 # neural network.
-#
 
 import torch
 from torch import nn
@@ -299,23 +272,18 @@ if cuda:
 # Training
 # --------
 #
-
-
-######################################################################
 # We can now train our network. :class:`braindecode.EEGClassifier` is a
 # braindecode object that is responsible for managing the training of neural
 # networks. It inherits from :class:`skorch.NeuralNetClassifier`, so the
 # training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
-
-
-######################################################################
-#    **Note**: We use different hyperparameters from [1]_, as
-#    these hyperparameters were optimized on a different dataset (MASS SS3) and
-#    with a different number of recordings. Generally speaking, it is
-#    recommended to perform hyperparameter optimization if reusing this code on
-#    a different dataset or with more recordings.
+# .. note::
+#    We use different hyperparameters from [1]_, as these hyperparameters were
+#    optimized on a different dataset (MASS SS3) and with a different number of
+#    recordings. Generally speaking, it is recommended to perform
+#    hyperparameter optimization if reusing this code on a different dataset or
+#    with more recordings.
 #
 
 from skorch.helper import predefined_split
@@ -358,9 +326,6 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # Plot results
 # ------------
 #
-
-
-######################################################################
 # We use the history stored by Skorch during training to plot the performance of
 # the model throughout training. Specifically, we plot the loss and the balanced
 # misclassification rate (1 - balanced accuracy) for the training and validation
@@ -410,8 +375,7 @@ plt.tight_layout()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix, classification_report
 
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
@@ -426,8 +390,8 @@ print(classification_report(y_true, y_pred))
 # about 36% in a 5-class classification task (chance-level = 20%) on held-out
 # data.
 #
-# To further improve performance, more recordings should be included in the
-# training set, and hyperparameters should be selected accordingly. Increasing
-# the sequence length was also shown in [1]_ to help improve performance,
-# especially when few EEG channels are available.
-#
+# .. note::
+#    To further improve performance, more recordings should be included in the
+#    training set, and hyperparameters should be selected accordingly.
+#    Increasing the sequence length was also shown in [1]_ to help improve
+#    performance, especially when few EEG channels are available.

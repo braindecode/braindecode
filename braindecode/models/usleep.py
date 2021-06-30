@@ -46,12 +46,16 @@ class _EncoderBlock(nn.Module):
                 nn.BatchNorm1d(num_features=out_channels),
             )
 
+        self.pad = nn.ConstantPad1d(padding=1, value=0)
+        self.maxpool = nn.MaxPool1d(
+            kernel_size=self.downsample, stride=self.downsample)
+
     def forward(self, x):
         x = self.block_prepool(x)
         residual = x
         if x.shape[-1] % 2:
-            x = nn.ConstantPad1d(padding=1, value=0)(x)
-        x = nn.MaxPool1d(kernel_size=self.downsample, stride=self.downsample)(x)
+            x = self.pad(x)
+        x = self.maxpool(x)
         return x, residual
 
 
@@ -102,14 +106,17 @@ class _DecoderBlock(nn.Module):
 class USleep(nn.Module):
     """Sleep staging architecture from Perslev et al 2021.
 
-    U-Net (autoencoder with skip connections) feature-extractor for sleep staging described in [1]_.
+    U-Net (autoencoder with skip connections) feature-extractor for sleep
+    staging described in [1]_.
 
     For the encoder ('down'):
         -- the temporal dimension shrinks (via maxpooling in the time-domain)
-        -- the spatial dimension expands (via more conv1d filters in the time-domain)
+        -- the spatial dimension expands (via more conv1d filters in the
+           time-domain)
     For the decoder ('up'):
         -- the temporal dimension expands (via upsampling in the time-domain)
-        -- the spatial dimension shrinks (via fewer conv1d filters in the time-domain)
+        -- the spatial dimension shrinks (via fewer conv1d filters in the
+           time-domain)
     Both do so at exponential rates.
 
     Parameters
@@ -118,27 +125,18 @@ class USleep(nn.Module):
         Number of EEG or EOG channels. Set to 2 in [1]_ (1 EEG, 1 EOG).
     sfreq : float
         EEG sampling frequency. Set to 128 in [1]_.
-    depth : int
-        Number of encoding (resp. decoding) blocks in the U-Net.
-        Set to 12 in [1]_ with sfreq=128. Here we set it to 10 with sfreq=100.
-    time_conv_size_s : float
-        Size of filters in temporal convolution layers, in seconds.
-        Set to 0.070 s in [1]_ (9 samples at sfreq=128).
-    max_pool_size_s : float
-        Max pooling size, in seconds. Set to 0.016 in [1]_ (2 samples at
-        sfreq=128).
-    n_time_filters : int
-        Number of channels (i.e. of temporal filters) of the output.
-        Set to 5 in [1]_.
     complexity_factor : float
         Multiplicative factor for number of channels at each layer of the U-Net.
         Set to sqrt(2) in [1]_.
-    input_size_s : float
-        Size of the input, in seconds. Set to 30.
+    with_skip_connection : bool
+        If True, use skip connections in decoder blocks.
     n_classes : int
         Number of classes. Set to 5.
-    apply_batch_norm : bool
-        If True, apply batch normalization after temporal convolutional layers.
+    input_size_s : float
+        Size of the input, in seconds. Set to 30.
+    apply_softmax : bool
+        If True, apply softmax on output (e.g. when using nn.NLLLoss). Use
+        False if using nn.CrossEntropyLoss.
 
     References
     ----------
@@ -153,6 +151,7 @@ class USleep(nn.Module):
                  with_skip_connection=True,
                  n_classes=5,
                  input_size_s=30,
+                 apply_softmax=False
                  ):
         super().__init__()
 
@@ -237,7 +236,8 @@ class USleep(nn.Module):
                 stride=1,
                 padding=0,
             ),
-            nn.Softmax(dim=1),  # output is (B, n_classes, S)
+            nn.Softmax(dim=1) if apply_softmax else nn.Identity(),
+            # output is (B, n_classes, S)
         )
 
     def forward(self, x):

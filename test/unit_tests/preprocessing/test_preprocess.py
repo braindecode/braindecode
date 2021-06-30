@@ -3,6 +3,7 @@
 #
 # License: BSD-3
 
+from braindecode.datasets.base import BaseConcatDataset
 import copy
 
 import pytest
