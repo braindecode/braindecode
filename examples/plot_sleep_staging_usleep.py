@@ -65,8 +65,9 @@ dataset = SleepPhysionet(
 # done in [1]_ so that we keep the example as light as possible. No filtering
 # is described in [1]_.
 
-from braindecode.preprocessing import preprocess, Preprocessor, zscore  # XXX To be changed with robust_scale
+from braindecode.preprocessing import preprocess, Preprocessor, zscore
 
+# XXX To be changed with robust_scale
 preprocessors = [Preprocessor(zscore, channel_wise=True)]
 
 # Transform the data
