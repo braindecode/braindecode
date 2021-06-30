@@ -23,7 +23,8 @@ References
        Research Resource for Complex Physiologic Signals.
        Circulation 101(23):e215-e220
 """
-# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+# Authors: Theo Gnassounou <theo.gnassounou@inria.fr>
+#          Omar Chehab <l-emir-omar.chehab@inria.fr>
 #
 # License: BSD (3-clause)
 
