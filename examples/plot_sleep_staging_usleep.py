@@ -65,10 +65,10 @@ dataset = SleepPhysionet(
 # done in [1]_ so that we keep the example as light as possible. No filtering
 # is described in [1]_.
 
-from braindecode.preprocessing import preprocess, Preprocessor, zscore
+from braindecode.preprocessing import preprocess, Preprocessor
+from sklearn.preprocessing import robust_scale
 
-# XXX To be changed with robust_scale
-preprocessors = [Preprocessor(zscore, channel_wise=True)]
+preprocessors = [Preprocessor(robust_scale, channel_wise=True)]
 
 # Transform the data
 preprocess(dataset, preprocessors)
@@ -105,18 +105,6 @@ windows_dataset = create_windows_from_events(
     preload=True,
     mapping=mapping,
 )
-
-
-######################################################################
-# Window preprocessing
-# ~~~~~~~~~~~~~~~~~~~
-#
-# We also preprocess the windows by applying channel-wise z-score normalization
-# in each window.
-
-from braindecode.preprocessing import zscore
-
-preprocess(windows_dataset, [Preprocessor(zscore)])
 
 
 ######################################################################
