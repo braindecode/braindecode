@@ -42,7 +42,9 @@ class Preprocessor(object):
     kwargs:
         Keyword arguments to be forwarded to the MNE function.
     """
-    def __init__(self, fn, apply_on_array=True, **kwargs):
+    def __init__(self, fn, *, apply_on_array=True, **kwargs):
+        if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
+            raise ValueError('lambda function not supported.')
         if callable(fn) and apply_on_array:
             channel_wise = kwargs.pop('channel_wise', False)
             kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise)
