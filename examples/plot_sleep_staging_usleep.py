@@ -4,7 +4,7 @@ Sleep staging on the Sleep Physionet dataset using U-Sleep network
 
 .. note::
     Please take a look at the simpler sleep staging example
-    `here <https://braindecode.org/auto_examples/plot_sleep_staging.html>`_
+    :ref:`here <sphx_glr_auto_examples_plot_sleep_staging.py>`
     before going through this example. The current example uses a more complex
     architecture and a sequence-to-sequence (seq2seq) approach.
 
