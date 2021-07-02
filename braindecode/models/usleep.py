@@ -125,6 +125,11 @@ class USleep(nn.Module):
         Number of EEG or EOG channels. Set to 2 in [1]_ (1 EEG, 1 EOG).
     sfreq : float
         EEG sampling frequency. Set to 128 in [1]_.
+    depth : int
+        Number of conv blocks in encoding layer (number of 2x2 max pools)
+        Note: each block halve the number the spatial dimensions of the features. 
+        For sfreq=100Hz (e.g. input_size=3000) -> depth < 11.
+        For sfreq=128Hz (e.g. input_size=3840) -> depth < 13.
     complexity_factor : float
         Multiplicative factor for number of channels at each layer of the U-Net.
         Set to sqrt(2) in [1]_.
@@ -147,6 +152,7 @@ class USleep(nn.Module):
     def __init__(self,
                  in_chans=2,
                  sfreq=100,
+                 depth=10,
                  complexity_factor=np.sqrt(2),
                  with_skip_connection=True,
                  n_classes=5,
@@ -158,7 +164,6 @@ class USleep(nn.Module):
         self.in_chans = in_chans
 
         # Harcoded (otherwise dims can break)
-        depth = 10
         time_conv_size = 9  # 0.09s at sfreq = 100 Hz
         max_pool_size = 2   # 0.02s at sfreq = 100 Hz
         n_time_filters = 5

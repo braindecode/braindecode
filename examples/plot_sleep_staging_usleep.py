@@ -200,6 +200,7 @@ in_chans, input_size_samples = train_set[0][0].shape
 model = USleep(
     in_chans=in_chans,
     sfreq=sfreq,
+    depth=3,
     with_skip_connection=True,
     n_classes=n_classes,
     input_size_s=input_size_samples / sfreq,
