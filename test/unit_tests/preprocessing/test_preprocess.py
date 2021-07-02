@@ -319,7 +319,7 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
     ] for ds in base_concat_ds.datasets])
 
 
-@pytest.mark.parametrize('save', [False, True])
+@pytest.mark.parametrize('save', [True, False])
 @pytest.mark.parametrize('n_jobs', [None, 1, 2])
 def test_preprocess_save_dir(base_concat_ds, tmp_path, save, n_jobs):
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]

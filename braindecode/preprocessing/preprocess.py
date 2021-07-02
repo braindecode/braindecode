@@ -19,7 +19,7 @@ from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
 from braindecode.datasets.base import BaseConcatDataset
-from braindecode.datautil.serialization import load_base_dataset, load_concat_dataset
+from braindecode.datautil.serialization import load_concat_dataset
 
 
 class Preprocessor(object):
@@ -167,7 +167,7 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
 def _replace_inplace(concat_ds, new_concat_ds):
     if len(concat_ds.datasets) != len(new_concat_ds.datasets):
         raise ValueError('Both inputs must have the same length.')
-    for i, ds in enumerate(new_concat_ds.datasets):
+    for i in range(len(new_concat_ds.datasets)):
         concat_ds.datasets[i] = new_concat_ds.datasets[i]
 
 
