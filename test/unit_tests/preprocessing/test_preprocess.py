@@ -116,6 +116,12 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
+def test_zscore_deprecated():
+    msg = 'zscore is deprecated. Use sklearn.preprocessing.scale instead.'
+    with pytest.warns(UserWarning, match=msg):
+        zscore(np.random.rand(2, 2))
+
+
 def test_zscore_continuous(base_concat_ds):
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
@@ -152,6 +158,12 @@ def test_zscore_windows(windows_concat_ds):
         expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
             windowed_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
+
+
+def test_scale_deprecated():
+    msg = 'scale is deprecated. Use numpy.multiply instead.'
+    with pytest.warns(UserWarning, match=msg):
+        scale(np.random.rand(2, 2), factor=2)
 
 
 def test_scale_continuous(base_concat_ds):

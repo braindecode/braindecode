@@ -220,7 +220,6 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     Deman the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t)`.
 
-
     Parameters
     ----------
     data: np.ndarray (n_channels, n_times)
@@ -265,6 +264,7 @@ def zscore(data):
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
+    warn('zscore is deprecated. Use sklearn.preprocessing.scale instead.')
     zscored = data - np.mean(data, keepdims=True, axis=-1)
     zscored = zscored / np.std(zscored, keepdims=True, axis=-1)
     # TODO: the overriding of protected '_data' should be implemented in the
@@ -294,6 +294,7 @@ def scale(data, factor):
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
+    warn('scale is deprecated. Use numpy.multiply instead.')
     scaled = np.multiply(data, factor)
     # TODO: the overriding of protected '_data' should be implemented in the
     # TODO: dataset when transforms are applied to windows
