@@ -50,6 +50,7 @@ class TUH(BaseConcatDataset):
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
             descriptions = descriptions[recording_ids]
+
         # create datasets gathering more info about the files touching them
         # reading the raws and potentially preloading the data
         base_datasets = self._create_datasets(

@@ -14,6 +14,7 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+from sklearn.utils import deprecated
 
 
 class Preprocessor(object):
@@ -71,6 +72,7 @@ class Preprocessor(object):
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
+@deprecated(extra='use Preprocessor with `apply_on_array=False` instead.')
 class MNEPreproc(Preprocessor):
     """Preprocessor for an MNE-raw/epoch.
 
@@ -83,11 +85,10 @@ class MNEPreproc(Preprocessor):
         Keyword arguments will be forwarded to the mne function
     """
     def __init__(self, fn, **kwargs):
-        warn('MNEPreproc is deprecated. Use Preprocessor with '
-             '`apply_on_array=False` instead.')
         super().__init__(fn, apply_on_array=False, **kwargs)
 
 
+@deprecated(extra='use Preprocessor with `apply_on_array=True` instead.')
 class NumpyPreproc(Preprocessor):
     """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
 
@@ -101,8 +102,6 @@ class NumpyPreproc(Preprocessor):
         Keyword arguments will be forwarded to the function
     """
     def __init__(self, fn, channel_wise=False, **kwargs):
-        warn('NumpyPreproc is deprecated. Use Preprocessor with '
-             '`apply_on_array=True` instead.')
         assert callable(fn), 'fn must be callable.'
         super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
                          **kwargs)
@@ -246,6 +245,7 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
+@deprecated(extra='use sklearn.preprocessing.scale instead.')
 def zscore(data):
     """Zscore normalize continuous or windowed data in-place.
 
@@ -264,7 +264,6 @@ def zscore(data):
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
-    warn('zscore is deprecated. Use sklearn.preprocessing.scale instead.')
     zscored = data - np.mean(data, keepdims=True, axis=-1)
     zscored = zscored / np.std(zscored, keepdims=True, axis=-1)
     # TODO: the overriding of protected '_data' should be implemented in the
@@ -274,6 +273,7 @@ def zscore(data):
     return zscored
 
 
+@deprecated(extra='use numpy.multiply instead.')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
 
@@ -294,7 +294,6 @@ def scale(data, factor):
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().
     """
-    warn('scale is deprecated. Use numpy.multiply instead.')
     scaled = np.multiply(data, factor)
     # TODO: the overriding of protected '_data' should be implemented in the
     # TODO: dataset when transforms are applied to windows
