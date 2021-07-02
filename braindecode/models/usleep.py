@@ -127,7 +127,7 @@ class USleep(nn.Module):
         EEG sampling frequency. Set to 128 in [1]_.
     depth : int
         Number of conv blocks in encoding layer (number of 2x2 max pools)
-        Note: each block halve the number the spatial dimensions of the features. 
+        Note: each block halve the spatial dimensions of the features.
         For sfreq=100Hz (e.g. input_size=3000) -> depth < 11.
         For sfreq=128Hz (e.g. input_size=3840) -> depth < 13.
     complexity_factor : float
