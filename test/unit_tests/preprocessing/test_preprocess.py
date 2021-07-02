@@ -56,10 +56,10 @@ def test_no_raw_or_epochs():
 
 
 def test_deprecated_preprocs(base_concat_ds):
-    msg1 = 'Class MNEPreproc is deprecated; use Preprocessor with ' \
-           '`apply_on_array=False` instead.'
-    msg2 = 'NumpyPreproc is deprecated; use Preprocessor with ' \
-           '`apply_on_array=True` instead.'
+    msg1 = 'Class MNEPreproc is deprecated; will be removed in 0.7.0. Use ' \
+           'Preprocessor with `apply_on_array=False` instead.'
+    msg2 = 'NumpyPreproc is deprecated; will be removed in 0.7.0. Use ' \
+           'Preprocessor with `apply_on_array=True` instead.'
     with pytest.warns(FutureWarning, match=msg1):
         mne_preproc = MNEPreproc('pick_types', eeg=True, meg=False, stim=False)
     factor = 1e6
@@ -117,8 +117,8 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
 
 
 def test_zscore_deprecated():
-    msg = 'Function zscore is deprecated; use sklearn.preprocessing.scale '\
-          'instead.'
+    msg = 'Function zscore is deprecated; will be removed in 0.7.0. Use ' \
+          'sklearn.preprocessing.scale instead.'
     with pytest.warns(FutureWarning, match=msg):
         zscore(np.random.rand(2, 2))
 
@@ -162,7 +162,8 @@ def test_zscore_windows(windows_concat_ds):
 
 
 def test_scale_deprecated():
-    msg = 'Function scale is deprecated; use numpy.multiply instead.'
+    msg = 'Function scale is deprecated; will be removed in 0.7.0. Use ' \
+          'numpy.multiply instead.'
     with pytest.warns(FutureWarning, match=msg):
         scale(np.random.rand(2, 2), factor=2)
 

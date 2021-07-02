@@ -72,7 +72,8 @@ class Preprocessor(object):
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
-@deprecated(extra='use Preprocessor with `apply_on_array=False` instead.')
+@deprecated(extra='will be removed in 0.7.0. Use Preprocessor with '
+                  '`apply_on_array=False` instead.')
 class MNEPreproc(Preprocessor):
     """Preprocessor for an MNE-raw/epoch.
 
@@ -88,7 +89,8 @@ class MNEPreproc(Preprocessor):
         super().__init__(fn, apply_on_array=False, **kwargs)
 
 
-@deprecated(extra='use Preprocessor with `apply_on_array=True` instead.')
+@deprecated(extra='will be removed in 0.7.0. Use Preprocessor with '
+                  '`apply_on_array=True` instead.')
 class NumpyPreproc(Preprocessor):
     """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
 
@@ -245,7 +247,8 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
-@deprecated(extra='use sklearn.preprocessing.scale instead.')
+@deprecated(extra='will be removed in 0.7.0. Use sklearn.preprocessing.scale '
+                  'instead.')
 def zscore(data):
     """Zscore normalize continuous or windowed data in-place.
 
@@ -273,7 +276,7 @@ def zscore(data):
     return zscored
 
 
-@deprecated(extra='use numpy.multiply instead.')
+@deprecated(extra='will be removed in 0.7.0. Use numpy.multiply instead.')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
 
