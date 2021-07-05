@@ -128,11 +128,9 @@ class USleep(nn.Module):
     depth : int
         Number of conv blocks in encoding layer (number of 2x2 max pools)
         Note: each block halve the spatial dimensions of the features.
-        For sfreq=100Hz (e.g. input_size=3000) -> depth < 11.
-        For sfreq=128Hz (e.g. input_size=3840) -> depth < 13.
     complexity_factor : float
         Multiplicative factor for number of channels at each layer of the U-Net.
-        Set to sqrt(2) in [1]_.
+        Set to 2 in [1]_.
     with_skip_connection : bool
         If True, use skip connections in decoder blocks.
     n_classes : int
@@ -153,7 +151,7 @@ class USleep(nn.Module):
                  in_chans=2,
                  sfreq=100,
                  depth=10,
-                 complexity_factor=np.sqrt(2),
+                 complexity_factor=2,
                  with_skip_connection=True,
                  n_classes=5,
                  input_size_s=30,
@@ -173,6 +171,7 @@ class USleep(nn.Module):
 
         # Instantiate encoder
         encoder = []
+        complexity_factor = np.sqrt(complexity_factor)
         n_time_filters_in = in_chans / complexity_factor
         n_time_filters_out = n_time_filters
         for _ in range(depth):
