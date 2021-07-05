@@ -102,20 +102,25 @@ class SequenceSampler(RecordingSampler):
 
         self.n_windows = n_windows
         self.n_windows_stride = n_windows_stride
-        self.start_inds = self._compute_seq_start_inds()
+        self.start_inds, self.file_ids = self._compute_seq_start_inds()
 
     def _compute_seq_start_inds(self):
         """Compute sequence start indices.
 
         Returns
         -------
-        np.ndarray
+        np.ndarray :
             Array of shape (n_sequences,) containing the indices of the first
             windows of possible sequences.
+        np.ndarray :
+            Array of shape (n_sequences,) containing the unique file number of
+            each sequence. Useful e.g. to do self-ensembling.
         """
         end_offset = 1 - self.n_windows if self.n_windows > 1 else None
-        return np.concatenate(self.info['index'].apply(
-            lambda x: x[:end_offset:self.n_windows_stride]).values)
+        start_inds = self.info['index'].apply(
+            lambda x: x[:end_offset:self.n_windows_stride]).values
+        file_ids = [[i] * len(inds) for i, inds in enumerate(start_inds)]
+        return np.concatenate(start_inds), np.concatenate(file_ids)
 
     def __len__(self):
         return len(self.start_inds)
