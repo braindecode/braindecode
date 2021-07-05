@@ -171,42 +171,41 @@ class USleep(nn.Module):
         # Convert between units: seconds to time-points (at sfreq)
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
-        # Define geometric sequence of channels
-        channels = (
-            n_time_filters * complexity_factor * np.sqrt(2) ** np.arange(0, depth + 1)
-        )  # len = depth + 1
-        channels = np.ceil(channels).astype(int).tolist()
-        channels = [in_chans] + channels  # len = depth + 2
-        self.channels = channels
-
         # Instantiate encoder
         encoder = []
-        for idx in range(depth):
+        n_time_filters_in = in_chans / complexity_factor
+        n_time_filters_out = n_time_filters
+        for _ in range(depth):
             encoder += [
-                _EncoderBlock(in_channels=channels[idx],
-                              out_channels=channels[idx + 1],
+                _EncoderBlock(in_channels=int(n_time_filters_in * complexity_factor),
+                              out_channels=int(n_time_filters_out * complexity_factor),
                               kernel_size=time_conv_size,
                               downsample=max_pool_size)
             ]
+
+            n_time_filters_in = n_time_filters_out
+            n_time_filters_out = int(n_time_filters_out * np.sqrt(2))
+
         self.encoder = nn.Sequential(*encoder)
 
         # Instantiate bottom (channels increase, temporal dim stays the same)
         self.bottom = nn.Sequential(
-                    nn.Conv1d(in_channels=channels[idx + 1],
-                              out_channels=channels[idx + 2],
+                    nn.Conv1d(in_channels=int(n_time_filters_in * complexity_factor),
+                              out_channels=int(n_time_filters_out * complexity_factor),
                               kernel_size=time_conv_size,
                               padding=(time_conv_size - 1) // 2),  # preserves dimension
                     nn.ELU(),
-                    nn.BatchNorm1d(num_features=channels[idx + 2]),
+                    nn.BatchNorm1d(num_features=int(n_time_filters_out * complexity_factor)),
                 )
 
         # Instantiate decoder
         decoder = []
-        channels_reverse = channels[::-1]
         for idx in range(depth):
+            n_time_filters_in = n_time_filters_out
+            n_time_filters_out = int(np.ceil(n_time_filters_out/np.sqrt(2)))
             decoder += [
-                _DecoderBlock(in_channels=channels_reverse[idx],
-                              out_channels=channels_reverse[idx + 1],
+                _DecoderBlock(in_channels=int(n_time_filters_in * complexity_factor),
+                              out_channels=int(n_time_filters_out * complexity_factor),
                               kernel_size=time_conv_size,
                               upsample=max_pool_size,
                               with_skip_connection=with_skip_connection)
@@ -218,8 +217,8 @@ class USleep(nn.Module):
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
         self.clf = nn.Sequential(
             nn.Conv1d(
-                in_channels=channels[1],
-                out_channels=channels[1],
+                in_channels=int(n_time_filters_out * complexity_factor),
+                out_channels=int(n_time_filters_out * complexity_factor),
                 kernel_size=1,
                 stride=1,
                 padding=0,
@@ -227,7 +226,7 @@ class USleep(nn.Module):
             nn.Tanh(),
             nn.AvgPool1d(input_size),  # output is (B, C, S)
             nn.Conv1d(
-                in_channels=channels[1],
+                in_channels=int(n_time_filters_out * complexity_factor),
                 out_channels=n_classes,
                 kernel_size=1,
                 stride=1,
