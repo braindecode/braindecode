@@ -53,9 +53,6 @@ def test_pad_shift_array_not_3d():
 @pytest.mark.parametrize('n_sequences,n_classes,n_windows,stride',
                          [[3, 3, 2, 2], [3, 3, 1, 1], [10, 3, 2, 1]])
 def test_aggregate_probas(n_sequences, n_classes, n_windows, stride):
-    # Aggregation should be done recording-wise, we don't want overlapping
-    # sequences from different recordings...
-
     n_outputs = (n_sequences - 1) * stride + n_windows
     y_true = np.arange(n_outputs) % n_classes
     logits = OneHotEncoder(sparse=False).fit_transform(y_true.reshape(-1, 1))
