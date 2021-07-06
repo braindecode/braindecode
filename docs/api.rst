@@ -151,6 +151,7 @@ Samplers
    RecordingSampler
    SequenceSampler
    RelativePositioningSampler
+   RandomSampler
 
 .. _augmentation_api:
 
