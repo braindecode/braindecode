@@ -87,9 +87,9 @@ def _pad_shift_array(x, stride=1):
     Returns
     -------
     np.ndarray :
-        Array of shape (n_rows, n_classes, n_rows + n_windows - 1) where each
-        row is obtained by zero-padding the corresponding row in `x` before and
-        after in the last dimension.
+        Array of shape (n_rows, n_classes, (n_rows - 1) * stride + n_windows)
+        where each row is obtained by zero-padding the corresponding row in `x`
+        before and after in the last dimension.
     """
     if x.ndim != 3:
         raise NotImplementedError(
