@@ -1,5 +1,5 @@
 """Classes to sample examples.
 """
 
-from .base import RecordingSampler, SequenceSampler
+from .base import RecordingSampler, SequenceSampler, RandomSampler
 from .ssl import RelativePositioningSampler
