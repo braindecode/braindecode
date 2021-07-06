@@ -65,6 +65,12 @@ class RecordingSampler(Sampler):
         # XXX docstring missing
         return self.rng.choice(self.n_recordings)
 
+    def sample_classe(self):
+        """Return a random recording index.
+        """
+        # XXX docstring missing
+        return self.rng.choice(self.n_classes)
+
     def sample_window(self, rec_ind=None):
         """Return a specific window.
         """
@@ -80,6 +86,10 @@ class RecordingSampler(Sampler):
     @property
     def n_recordings(self):
         return self.info.shape[0]
+
+    @property
+    def n_classes(self):
+        return self.metadata['target'].unique()
 
 
 class SequenceSampler(RecordingSampler):
@@ -135,4 +145,85 @@ class SequenceSampler(RecordingSampler):
 
     def __iter__(self):
         for start_ind in self.start_inds:
+            yield tuple(range(start_ind, start_ind + self.n_windows))
+
+
+class RandomSampler(RecordingSampler):
+    """Sample sequences of consecutive windows.
+
+    Parameters
+    ----------
+    metadata : pd.DataFrame
+        See RecordingSampler.
+    n_windows : int
+        Number of consecutive windows in a sequence.
+    seq_nbr : int
+        Number of sequences in the sampler.
+    random_state : np.random.RandomState | int | None
+        Random state.
+    """
+    def __init__(self, metadata, n_windows, seq_nbr=10,
+                 random_state=None):
+        super().__init__(metadata, random_state=random_state)
+
+        self.n_windows = n_windows
+        self.n_windows_stride = 1
+        self.seq_nbr = seq_nbr
+
+        keys = [k for k in ['subject', 'session', 'run', 'target']
+                if k in self.metadata.columns]
+        if not keys:
+            raise ValueError(
+                'metadata must contain at least one of the following columns: '
+                'subject, session or run.')
+        self.info_class = self.metadata.reset_index().groupby(keys)[
+            ['index', 'subject']].agg(['unique'])
+        self.info_class.columns = self.info.columns.get_level_values(0)
+
+    def _compute_seq_start_ind(self, rec_ind=None, class_ind=None):
+        """Randomly compute sequence start indice.
+
+        Choose a window associated with a random recording
+        and a random class and place it randomly in a sequence.
+        The function returns the beginning of this sequence.
+
+        Returns
+        -------
+        start_ind : int
+            The indice of the first windows of possible sequences.
+
+        rec_ind : int
+            The random recording choosen for the indice of the f.
+
+        class_ind : int
+            The random class choosen.
+        """
+        if rec_ind is None:
+            rec_ind = self.sample_recording()
+        if class_ind is None:
+            class_ind = self.sample_classe()
+
+        rec_index = self.info.iloc[rec_ind]['index']
+        len_rec_index = len(rec_index)
+
+        win_ind = self.rng.choice(self.info_class.iloc[rec_ind*5 + class_ind]['index'])
+        win_ind_in_rec = np.where(rec_index == win_ind)[0][0]
+
+        win_pos = self.rng.choice(
+                [i for i in range(self.n_windows)][
+                    np.max((self.n_windows - len_rec_index + win_ind_in_rec, 0)):np.min(
+                        (win_ind_in_rec, self.n_windows)
+                    )
+                ]
+            )
+
+        start_ind = win_ind - win_pos
+        return start_ind, rec_ind, class_ind
+
+    def __len__(self):
+        return self.seq_nbr
+
+    def __iter__(self):
+        for _ in range(self.seq_nbr):
+            start_ind, _, _ = self._compute_seq_start_ind()
             yield tuple(range(start_ind, start_ind + self.n_windows))
