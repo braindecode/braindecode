@@ -30,7 +30,8 @@ def test_get_output_shape_2d_model():
 @pytest.mark.parametrize('n_sequences,n_classes,n_windows,stride',
                          [[10, 3, 2, 1], [3, 3, 2, 5], [3, 3, 1, 2]])
 def test_pad_shift_array(n_sequences, n_classes, n_windows, stride, dtype):
-    dense_y = np.random.RandomState(33).rand(n_sequences, n_classes, n_windows)
+    dense_y = np.random.RandomState(33).rand(
+        n_sequences, n_classes, n_windows).astype(dtype)
 
     n_outputs = (n_sequences - 1) * stride + n_windows
     shifted_y = np.concatenate([
