@@ -122,9 +122,9 @@ def aggregate_probas(logits, n_windows_stride=1):
     Returns
     -------
     np.ndarray :
-        Array of shape (n_sequences + n_windows - 1, n_classes) containing the
-        aggregated predicted probabilities for each window contained in the
-        input sequences.
+        Array of shape ((n_rows - 1) * stride + n_windows, n_classes)
+        containing the aggregated predicted probabilities for each window
+        contained in the input sequences.
 
     References
     ----------
