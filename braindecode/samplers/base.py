@@ -95,6 +95,14 @@ class SequenceSampler(RecordingSampler):
         Number of windows between two consecutive sequences.
     random_state : np.random.RandomState | int | None
         Random state.
+
+    Attributes
+    ----------
+    info : pd.DataFrame
+        See RecordingSampler.
+    file_ids : np.ndarray of ints
+        Array of shape (n_sequences,) that indicates from which file each
+        sequence comes from. Useful e.g. to do self-ensembling.
     """
     def __init__(self, metadata, n_windows, n_windows_stride,
                  random_state=None):

@@ -124,6 +124,7 @@ def test_sequence_sampler(windows_ds, n_windows, n_windows_stride):
 
     seq_lens = [(len(ds) - n_windows) // n_windows_stride + 1
                 for ds in windows_ds.datasets]
+    file_ids = np.concatenate([[i] * l for i, l in enumerate(seq_lens)])
     n_seqs = sum(seq_lens)
     assert len(seqs) == n_seqs
     assert len(seqs[0]) == n_windows
@@ -131,3 +132,5 @@ def test_sequence_sampler(windows_ds, n_windows, n_windows_stride):
     for i in range(seq_lens[0] - 1):
         np.testing.assert_array_equal(
             seqs[i][n_windows_stride:], seqs[i + 1][:-n_windows_stride])
+
+    assert (sampler.file_ids == file_ids).all()
