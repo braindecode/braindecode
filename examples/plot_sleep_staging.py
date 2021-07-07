@@ -126,9 +126,9 @@ windows_dataset = create_windows_from_events(
 # in each window.
 #
 
-from braindecode.preprocessing.preprocess import zscore
+from sklearn.preprocessing import scale
 
-preprocess(windows_dataset, [Preprocessor(zscore)])
+preprocess(windows_dataset, [Preprocessor(scale, channel_wise=True)])
 
 
 ######################################################################

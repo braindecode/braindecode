@@ -14,6 +14,7 @@ from warnings import warn
 
 import numpy as np
 import pandas as pd
+from sklearn.utils import deprecated
 
 
 class Preprocessor(object):
@@ -71,6 +72,8 @@ class Preprocessor(object):
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
+@deprecated(extra='will be removed in 0.7.0. Use Preprocessor with '
+                  '`apply_on_array=False` instead.')
 class MNEPreproc(Preprocessor):
     """Preprocessor for an MNE-raw/epoch.
 
@@ -83,11 +86,11 @@ class MNEPreproc(Preprocessor):
         Keyword arguments will be forwarded to the mne function
     """
     def __init__(self, fn, **kwargs):
-        warn('MNEPreproc is deprecated. Use Preprocessor with '
-             '`apply_on_array=False` instead.')
         super().__init__(fn, apply_on_array=False, **kwargs)
 
 
+@deprecated(extra='will be removed in 0.7.0. Use Preprocessor with '
+                  '`apply_on_array=True` instead.')
 class NumpyPreproc(Preprocessor):
     """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
 
@@ -101,8 +104,6 @@ class NumpyPreproc(Preprocessor):
         Keyword arguments will be forwarded to the function
     """
     def __init__(self, fn, channel_wise=False, **kwargs):
-        warn('NumpyPreproc is deprecated. Use Preprocessor with '
-             '`apply_on_array=True` instead.')
         assert callable(fn), 'fn must be callable.'
         super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
                          **kwargs)
@@ -220,7 +221,6 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     Deman the data point :math:`x_t` at time `t` as:
     :math:`x'_t=(x_t - m_t)`.
 
-
     Parameters
     ----------
     data: np.ndarray (n_channels, n_times)
@@ -247,6 +247,8 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
+@deprecated(extra='will be removed in 0.7.0. Use sklearn.preprocessing.scale '
+                  'instead.')
 def zscore(data):
     """Zscore normalize continuous or windowed data in-place.
 
@@ -274,6 +276,7 @@ def zscore(data):
     return zscored
 
 
+@deprecated(extra='will be removed in 0.7.0. Use numpy.multiply instead.')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
 
