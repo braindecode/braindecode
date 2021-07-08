@@ -83,18 +83,11 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None):
                     WindowsDataset(signal, description.iloc[i_signal])
                 )
     concat_ds = BaseConcatDataset(datasets)
-    if os.path.exists(os.path.join(path, 'raw_preproc_args.json')):
-        raw_preproc_args = pd.read_json(
-            os.path.join(path, 'raw_preproc_args.json'))
-        concat_ds.raw_preproc_args = raw_preproc_args
-    if os.path.exists(os.path.join(path, 'window_args.json')):
-        window_args = pd.read_json(
-            os.path.join(path, 'window_args.json'))
-        concat_ds.window_args = window_args
-    if os.path.exists(os.path.join(path, 'window_preproc_args.json')):
-        window_preproc_args = pd.read_json(
-            os.path.join(path, 'window_preproc_args.json'))
-        concat_ds.window_preproc_args = window_preproc_args
+    for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs', 'window_preproc_kwargs']:
+        kwarg_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
+        if os.path.exists(kwarg_path):
+            kwargs = pd.read_json(kwarg_path)
+            setattr(concat_ds, kwarg_name, kwargs)
     return concat_ds
 
 
