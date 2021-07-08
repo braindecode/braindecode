@@ -12,6 +12,11 @@ This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We adapt the U-Sleep approach of [1]_ to learn on sequences of EEG
 windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
 
+.. warning::
+    The example is written to have a very short excecution time.
+    This number of epochs is here too small and very few recordings are used.
+    To obtain competitive results you need to use more data and more epochs.
+
 References
 ----------
 .. [1] Perslev M, Darkner S, Kempfner L, Nikolic M, Jennum PJ, Igel C.
