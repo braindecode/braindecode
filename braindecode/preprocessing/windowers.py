@@ -104,11 +104,7 @@ def create_windows_from_events(
         window_size_samples, window_stride_samples)
 
     # save input arguments to store to dataset
-    input_args = locals()
-    input_args.pop('concat_ds')
-    raw_preproc_args = None
-    if hasattr(concat_ds, 'raw_preproc_args'):
-        raw_preproc_args = concat_ds.raw_preproc_args
+    windowing_kwargs = _get_windowing_kwargs(locals())
 
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
@@ -124,10 +120,12 @@ def create_windows_from_events(
             mapping, preload, drop_bad_windows, picks, reject, flat,
             'error') for ds in concat_ds.datasets)
 
-    windowing_args = {k: v for k, v in input_args.items()}
+    raw_preproc_kwargs = None
+    if hasattr(concat_ds, 'raw_preproc_kwargs'):
+        raw_preproc_kwargs = concat_ds.raw_preproc_kwargs
     concat_ds = BaseConcatDataset(list_of_windows_ds)
-    concat_ds.raw_preproc_args = raw_preproc_args
-    concat_ds.window_args = input_args
+    concat_ds.raw_preproc_kwargs = raw_preproc_kwargs
+    concat_ds.window_kwargs = windowing_kwargs
     return concat_ds
 
 
@@ -191,11 +189,7 @@ def create_fixed_length_windows(
         drop_last_window)
 
     # save input arguments to store to dataset
-    input_args = locals()
-    input_args.pop('concat_ds')
-    raw_preproc_args = None
-    if hasattr(concat_ds, 'raw_preproc_args'):
-        raw_preproc_args = concat_ds.raw_preproc_args
+    windowing_kwargs = _get_windowing_kwargs(locals())
 
     # check if recordings are of different lengths
     lengths = np.array([ds.raw.n_times - ds.raw.first_samp for ds in concat_ds.datasets])
@@ -209,10 +203,12 @@ def create_fixed_length_windows(
             drop_bad_windows, picks, reject, flat, on_missing)
         for ds in concat_ds.datasets)
 
-    windowing_args = {k: v for k, v in input_args.items()}
+    raw_preproc_kwargs = None
+    if hasattr(concat_ds, 'raw_preproc_kwargs'):
+        raw_preproc_kwargs = concat_ds.raw_preproc_kwargs
     concat_ds = BaseConcatDataset(list_of_windows_ds)
-    concat_ds.raw_preproc_args = raw_preproc_args
-    concat_ds.window_args = input_args
+    concat_ds.raw_preproc_kwargs = raw_preproc_kwargs
+    concat_ds.window_kwargs = windowing_kwargs
     return concat_ds
 
 
@@ -515,3 +511,13 @@ def _check_and_set_fixed_length_window_arguments(start_offset_samples, stop_offs
            (drop_last_window is None)
 
     return stop_offset_samples, drop_last_window
+
+
+def _get_windowing_kwargs(windowing_func_locals):
+    input_kwargs = windowing_func_locals
+    input_kwargs.pop('concat_ds')
+    windowing_kwargs = [
+        (create_windows_from_events.__name__,
+         {k: v for k, v in input_kwargs.items()})
+    ]
+    return windowing_kwargs

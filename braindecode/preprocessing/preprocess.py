@@ -133,21 +133,18 @@ def preprocess(concat_ds, preprocessors):
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
-    # save the preprocessing arguments to the dataset
-    preproc_args = {}
-    for p in preprocessors:
-        if 'fun' in p.__dict__:
-            preproc_args.update({p.__dict__['fun']: p.__dict__['kwargs']})
-        else:
-            preproc_args.update({p.__dict__['fn']: p.__dict__['kwargs']})
+    # get the preprocessing keyword arguments
+    preproc_kwargs = _get_preproc_kwargs(preprocessors)
 
     for ds in concat_ds.datasets:
         if hasattr(ds, 'raw'):
             _preprocess(ds.raw, preprocessors)
-            setattr(concat_ds, 'raw_preproc_args', preproc_args)
+            # store raw preprocessing keyword arguments to the dataset
+            setattr(concat_ds, 'raw_preproc_kwargs', preproc_kwargs)
         elif hasattr(ds, 'windows'):
             _preprocess(ds.windows, preprocessors)
-            setattr(concat_ds, 'window_preproc_args', preproc_args)
+            # store window preprocessing keyword arguments to the dataset
+            setattr(concat_ds, 'window_preproc_kwargs', preproc_kwargs)
         else:
             raise ValueError(
                 'Can only preprocess concatenation of BaseDataset or '
@@ -171,6 +168,21 @@ def _preprocess(raw_or_epochs, preprocessors):
     """
     for preproc in preprocessors:
         preproc.apply(raw_or_epochs)
+
+
+def _get_preproc_kwargs(preprocessors):
+    preproc_kwargs = []
+    for p in preprocessors:
+        # in case of a mne function, fn is a str, kwargs is a dict
+        func_name = p.fn
+        func_kwargs = p.kwargs
+        # in case of another function, fn is a function 'fun' partially
+        # initialized with keywords
+        if 'fun' in p.fn:
+            func_name = p.kwargs['fun'].func.__name__
+            func_kwargs = p.kwargs['fun'].keywords
+        preproc_kwargs.append((func_name, func_kwargs))
+    return preproc_kwargs
 
 
 def exponential_moving_standardize(
