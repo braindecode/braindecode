@@ -410,7 +410,7 @@ def create_windows_from_target_channels(
 def _create_windows_from_target_channels(
         ds, window_size_samples, preload=False, drop_bad_windows=True, picks=None,
         reject=None, flat=None, last_target_only=True, on_missing='error'):
-    """Create WindowsDataset from BaseDataset with sliding windows.
+    """Create WindowsDataset from BaseDataset using targets `misc` channels from mne.Raw.
 
     Parameters
     ----------
@@ -426,9 +426,7 @@ def _create_windows_from_target_channels(
     """
     stop = ds.raw.n_times + ds.raw.first_samp
 
-    target_ch_names = [ch_name for ch_name in ds.raw.ch_names
-                       if ch_name.startswith('target_')]
-    target = ds.raw.get_data(picks=target_ch_names)
+    target = ds.raw.get_data(picks='misc')
     # TODO: handle multi targets present only for some events
     stops = np.nonzero((~np.isnan(target[0, :])))[0]
     stops = stops[(stops < stop) & (stops >= window_size_samples)]

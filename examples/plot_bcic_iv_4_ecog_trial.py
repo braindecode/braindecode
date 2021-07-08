@@ -42,6 +42,7 @@ Braindecode on ECoG BCI IV competition dataset 4.
 # to each finger flexion. This is different than standard decoding setup for EEG with
 # multiple trials and usually one target per trial. Here, fingers flexions change in time
 # and are recorded with sampling frequency equals to 25 Hz.
+
 DATASET_PATH = '/home/maciej/projects/braindecode/BCICIV_4_mat'
 
 import numpy as np
@@ -101,7 +102,8 @@ preprocess(dataset, preprocessors)
 # Extract sampling frequency, check that they are same in all datasets
 sfreq = dataset.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
-
+# Extract target sampling frequency
+target_sfreq = dataset.datasets[0].raw.info['target_sfreq']
 # ######################################################################
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -112,9 +114,10 @@ assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # for training and validation and `test` for final evaluation.
 
 subsets = dataset.split('session')
+del dataset
 dataset_train = subsets['train']
 dataset_test = subsets['test']
-
+del subsets
 # ######################################################################
 # Cut Compute Windows
 # ~~~~~~~~~~~~~~~~~~~
@@ -130,22 +133,20 @@ dataset_test = subsets['test']
 from braindecode.preprocessing.windowers import create_windows_from_target_channels
 
 windows_dataset = create_windows_from_target_channels(
-    dataset,
+    dataset_train,
     window_size_samples=1000,
     preload=True,
     last_target_only=True
 )
 
 windows_dataset_test = create_windows_from_target_channels(
-    dataset,
+    dataset_test,
     window_size_samples=1000,
-    preload=True,
     last_target_only=True
 )
 
-
-from sklearn.model_selection import train_test_split
 import torch
+from sklearn.model_selection import train_test_split
 
 # We can split train dataset into training and validation datasets using
 # `sklearn.model_selection.train_test_split` and `torch.utils.data.Subset`
@@ -213,8 +214,6 @@ if cuda:
 # Training
 # --------
 #
-
-
 ######################################################################
 # Now we train the network! EEGRegressor is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
@@ -227,16 +226,26 @@ if cuda:
 #    encourage you to perform your own hyperparameter and preprocessing optimization using
 #    cross validation on your training data.
 #
-from skorch.callbacks import LRScheduler
+from skorch.callbacks import LRScheduler, EpochScoring
 from skorch.helper import predefined_split
+from mne import set_log_level
 
 from braindecode import EEGRegressor
 
-# These values we found good for shallow network:
+# These values we found good for shallow network for EEG MI decoding:
 lr = 0.0625 * 0.01
 weight_decay = 0
 batch_size = 64
 n_epochs = 4
+
+
+def pearson_r_score(net, dataset, y):
+    preds = net.predict(dataset)
+    corr_coeffs = []
+    for i in range(y.shape[1]):
+        corr_coeffs.append(np.corrcoef(y[:, i], preds[:, i])[0, 1])
+    return np.mean(corr_coeffs)
+
 
 regressor = EEGRegressor(
     model,
@@ -248,6 +257,10 @@ regressor = EEGRegressor(
     batch_size=batch_size,
     callbacks=[
         'r2',
+        ('valid_pearson_r', EpochScoring(pearson_r_score, lower_is_better=False,
+                                         name='valid_pearson_r')),
+        ('train_pearson_r', EpochScoring(pearson_r_score, lower_is_better=False, on_train=True,
+                                         name='train_pearson_r')),
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
@@ -256,58 +269,57 @@ regressor = EEGRegressor(
 # in the dataset.
 regressor.fit(windows_dataset, y=None, epochs=n_epochs)
 
+old_level = set_log_level(verbose='WARNING', return_old_level=True)
 preds_test = regressor.predict(windows_dataset_test)
+set_log_level(verbose=old_level)
 
+y_test = np.stack([data[1] for data in windows_dataset_test])
+
+######################################################################
+# Plot Results
+# ------------
+######################################################################
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import pandas as pd
 
-# plt.plot()
-#
-# ######################################################################
-# # Plot Results
-# # ------------
-# #
-#
-#
-# ######################################################################
-# # Now we use the history stored by Skorch throughout training to plot
-# # accuracy and loss curves.
-# #
-#
-# import matplotlib.pyplot as plt
-# from matplotlib.lines import Line2D
-# import pandas as pd
-#
-# # Extract loss and accuracy values for plotting from history object
-# results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
-# df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns,
-#                   index=clf.history[:, 'epoch'])
-#
-# # get percent of misclass for better visual comparison to loss
-# df = df.assign(train_misclass=100 - 100 * df.train_accuracy,
-#                valid_misclass=100 - 100 * df.valid_accuracy)
-#
-# plt.style.use('seaborn')
-# fig, ax1 = plt.subplots(figsize=(8, 3))
-# df.loc[:, ['train_loss', 'valid_loss']].plot(
-#     ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14)
-#
-# ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
-# ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
-#
-# ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-#
-# df.loc[:, ['train_misclass', 'valid_misclass']].plot(
-#     ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
-# ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
-# ax2.set_ylabel("Misclassification Rate [%]", color='tab:red', fontsize=14)
-# ax2.set_ylim(ax2.get_ylim()[0], 85)  # make some room for legend
-# ax1.set_xlabel("Epoch", fontsize=14)
-#
-# # where some data has already been plotted to ax
-# handles = []
-# handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-',
-# label='Train'))
-# handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':',
-# label='Valid'))
-# plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
-# plt.tight_layout()
+# We can plot target and predicted finger flexion on the test set.
+plt.style.use('seaborn')
+fig, ax1 = plt.subplots(figsize=(8, 3))
+ax1.plot(np.arange(0, y_test.shape[0]) / target_sfreq, y_test[:, 0], label='Target')
+ax1.plot(np.arange(0, preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label='Predicted')
+ax1.set_xlabel('Time [s]')
+ax1.set_ylabel('Finger flexion')
+ax1.legend()
+
+# Now we use the history stored by Skorch throughout training to plot
+# accuracy and loss curves.
+
+# Extract loss and accuracy values for plotting from history object
+results_columns = ['train_loss', 'valid_loss', 'train_pearson_r', 'valid_pearson_r']
+df = pd.DataFrame(regressor.history[:, results_columns], columns=results_columns,
+                  index=regressor.history[:, 'epoch'])
+
+fig, ax1 = plt.subplots(figsize=(8, 3))
+df.loc[:, ['train_loss', 'valid_loss']].plot(
+    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14)
+
+ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
+ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
+
+ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+df.loc[:, ['train_pearson_r', 'valid_pearson_r']].plot(
+    ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
+ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
+ax2.set_ylabel("Pearson correlation coefficient", color='tab:red', fontsize=14)
+ax1.set_xlabel("Epoch", fontsize=14)
+
+# where some data has already been plotted to ax
+handles = []
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-',
+                      label='Train'))
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':',
+                      label='Valid'))
+plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc='center right')
+plt.tight_layout()
