@@ -56,14 +56,14 @@ def test_no_raw_or_epochs():
 
 
 def test_deprecated_preprocs(base_concat_ds):
-    msg1 = 'MNEPreproc is deprecated. Use Preprocessor with ' \
-           '`apply_on_array=False` instead.'
-    msg2 = 'NumpyPreproc is deprecated. Use Preprocessor with ' \
-           '`apply_on_array=True` instead.'
-    with pytest.warns(UserWarning, match=msg1):
+    msg1 = 'Class MNEPreproc is deprecated; will be removed in 0.7.0. Use ' \
+           'Preprocessor with `apply_on_array=False` instead.'
+    msg2 = 'NumpyPreproc is deprecated; will be removed in 0.7.0. Use ' \
+           'Preprocessor with `apply_on_array=True` instead.'
+    with pytest.warns(FutureWarning, match=msg1):
         mne_preproc = MNEPreproc('pick_types', eeg=True, meg=False, stim=False)
     factor = 1e6
-    with pytest.warns(UserWarning, match=msg2):
+    with pytest.warns(FutureWarning, match=msg2):
         np_preproc = NumpyPreproc(scale, factor=factor)
 
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
@@ -116,6 +116,13 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
+def test_zscore_deprecated():
+    msg = 'Function zscore is deprecated; will be removed in 0.7.0. Use ' \
+          'sklearn.preprocessing.scale instead.'
+    with pytest.warns(FutureWarning, match=msg):
+        zscore(np.random.rand(2, 2))
+
+
 def test_zscore_continuous(base_concat_ds):
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
@@ -152,6 +159,13 @@ def test_zscore_windows(windows_concat_ds):
         expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
             windowed_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
+
+
+def test_scale_deprecated():
+    msg = 'Function scale is deprecated; will be removed in 0.7.0. Use ' \
+          'numpy.multiply instead.'
+    with pytest.warns(FutureWarning, match=msg):
+        scale(np.random.rand(2, 2), factor=2)
 
 
 def test_scale_continuous(base_concat_ds):
