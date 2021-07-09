@@ -82,7 +82,6 @@ class RecordingSampler(Sampler):
         return self.info.shape[0]
 
 
-
 class SequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.
 
@@ -211,11 +210,13 @@ class BalancedSequenceSampler(RecordingSampler):
         win_ind = self.rng.choice(self.info_class.loc[rec_ind].loc[class_ind]['index'])
         win_ind_in_rec = np.where(rec_inds == win_ind)[0][0]
 
-        posmax = np.min((win_ind_in_rec+1, self.n_windows))  # position maximal in the sequence
-        posmin = np.max((self.n_windows - len_rec_inds + win_ind_in_rec, 0))  # position minimal in the sequence
+        # position maximal in the sequence
+        posmax = np.min((win_ind_in_rec+1, self.n_windows))
+        # position minimal in the sequence
+        posmin = np.max((self.n_windows - len_rec_inds + win_ind_in_rec, 0))
 
         win_pos = self.rng.randint(posmin, posmax)
-          
+
         start_ind = win_ind - win_pos
         return start_ind, rec_ind, class_ind
 
