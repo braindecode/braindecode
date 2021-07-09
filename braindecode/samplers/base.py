@@ -65,7 +65,7 @@ class RecordingSampler(Sampler):
         # XXX docstring missing
         return self.rng.choice(self.n_recordings)
 
-    def sample_classe(self):
+    def sample_class(self):
         """Return a random recording index.
         """
         # XXX docstring missing
