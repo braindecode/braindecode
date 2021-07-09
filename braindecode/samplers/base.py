@@ -148,7 +148,7 @@ class SequenceSampler(RecordingSampler):
             yield tuple(range(start_ind, start_ind + self.n_windows))
 
 
-class RandomSampler(RecordingSampler):
+class BalancedSequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.
 
     Parameters
