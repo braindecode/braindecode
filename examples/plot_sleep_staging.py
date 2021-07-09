@@ -184,7 +184,7 @@ valid_set = splitted['valid']
 from braindecode.samplers import SequenceSampler
 
 n_windows = 3  # Sequences of 3 consecutive windows
-n_windows_stride = 1  # Maximally overlapping sequences
+n_windows_stride = 3  # Maximally overlapping sequences
 
 train_sampler = SequenceSampler(
     train_set.get_metadata(), n_windows, n_windows_stride)

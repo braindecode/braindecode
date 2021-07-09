@@ -66,7 +66,7 @@ class RecordingSampler(Sampler):
         return self.rng.choice(self.n_recordings)
 
     def sample_class(self):
-        """Return a random recording index.
+        """Return a random class index.
         """
         # XXX docstring missing
         return self.rng.choice(self.n_classes)
@@ -201,7 +201,7 @@ class BalancedSequenceSampler(RecordingSampler):
         if rec_ind is None:
             rec_ind = self.sample_recording()
         if class_ind is None:
-            class_ind = self.sample_classe()
+            class_ind = self.sample_class()
 
         rec_index = self.info.iloc[rec_ind]['index']
         len_rec_index = len(rec_index)
@@ -209,14 +209,11 @@ class BalancedSequenceSampler(RecordingSampler):
         win_ind = self.rng.choice(self.info_class.iloc[rec_ind*5 + class_ind]['index'])
         win_ind_in_rec = np.where(rec_index == win_ind)[0][0]
 
-        win_pos = self.rng.choice(
-                [i for i in range(self.n_windows)][
-                    np.max((self.n_windows - len_rec_index + win_ind_in_rec, 0)):np.min(
-                        (win_ind_in_rec, self.n_windows)
-                    )
-                ]
-            )
+        posmax = np.min((win_ind_in_rec+1, self.n_windows))  # position maximal in the sequence
+        posmin = np.max((self.n_windows - len_rec_index + win_ind_in_rec, 0))  # position maximal in the sequence
 
+        win_pos = self.rng.randint(posmin, posmax)
+            
         start_ind = win_ind - win_pos
         return start_ind, rec_ind, class_ind
 
