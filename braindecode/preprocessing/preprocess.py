@@ -178,9 +178,10 @@ def _get_preproc_kwargs(preprocessors):
         func_kwargs = p.kwargs
         # in case of another function, fn is a function 'fun' partially
         # initialized with keywords
-        if 'fun' in p.fn:
-            func_name = p.kwargs['fun'].func.__name__
-            func_kwargs = p.kwargs['fun'].keywords
+        if isinstance(p.fn, dict):
+            if 'fun' in p.fn:
+                func_name = p.kwargs['fun'].func.__name__
+                func_kwargs = p.kwargs['fun'].keywords
         preproc_kwargs.append((func_name, func_kwargs))
     return preproc_kwargs
 

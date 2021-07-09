@@ -417,8 +417,8 @@ class BaseConcatDataset(ConcatDataset):
         self.description.to_json(description_file_name)
         for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs', 'window_preproc_kwargs']:
             if hasattr(self, kwarg_name):
-                getattr(self, kwarg_name).to_json(
-                    os.path.join(path, '.'.join([kwarg_name, 'json'])))
+                kwargs_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
+                json.dump(getattr(self, kwarg_name), open(kwargs_path, 'w'))
 
     @property
     def description(self):
