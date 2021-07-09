@@ -19,7 +19,7 @@ plt.style.use('seaborn')
 import mne
 
 from braindecode.datasets import TUH
-from braindecode.preprocessing import preprocess, Preprocessor, create_fixed_length_windows
+from braindecode.preprocessing import preprocess, Preprocessor, create_fixed_length_windows, scale
 from braindecode.datautil.serialization import load_concat_dataset
 
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
@@ -190,8 +190,8 @@ preprocessors = [
     Preprocessor(custom_rename_channels, mapping=ch_mapping,
                  apply_on_array=False),
     Preprocessor('pick_channels', ch_names=short_ch_names, ordered=True),
-    Preprocessor(lambda x: x * 1e6),
-    Preprocessor(fn=np.clip, a_min=-800, a_max=800, apply_on_array=True),
+    Preprocessor(scale, factor=1e6, apply_on_array=True),
+    Preprocessor(np.clip, a_min=-800, a_max=800, apply_on_array=True),
     Preprocessor('resample', sfreq=sfreq),
 ]
 

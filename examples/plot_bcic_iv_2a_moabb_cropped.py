@@ -87,7 +87,7 @@ subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 from braindecode.preprocessing.preprocess import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+    exponential_moving_standardize, preprocess, Preprocessor, scale)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -97,7 +97,7 @@ init_block_size = 1000
 
 preprocessors = [
     Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
-    Preprocessor(lambda x: x * 1e6),  # Convert from V to uV
+    Preprocessor(scale, factor=1e6, apply_on_array=True),  # Convert from V to uV
     Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
     Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
                  factor_new=factor_new, init_block_size=init_block_size)

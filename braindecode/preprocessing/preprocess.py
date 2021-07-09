@@ -176,13 +176,16 @@ def _get_preproc_kwargs(preprocessors):
         # in case of a mne function, fn is a str, kwargs is a dict
         func_name = p.fn
         func_kwargs = p.kwargs
-        # in case of another function, fn is a function 'fun' partially
-        # initialized with keywords
-        if isinstance(p.fn, dict):
+        # in case of another function
+        # if apply_on_array=False
+        if callable(p.fn):
+            func_name = p.fn.__name__
+        # if apply_on_array=True
+        else:
             if 'fun' in p.fn:
                 func_name = p.kwargs['fun'].func.__name__
                 func_kwargs = p.kwargs['fun'].keywords
-        preproc_kwargs.append((func_name, func_kwargs))
+        preproc_kwargs.append({func_name: func_kwargs})
     return preproc_kwargs
 
 

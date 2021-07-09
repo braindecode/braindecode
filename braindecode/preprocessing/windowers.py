@@ -516,8 +516,8 @@ def _check_and_set_fixed_length_window_arguments(start_offset_samples, stop_offs
 def _get_windowing_kwargs(windowing_func_locals):
     input_kwargs = windowing_func_locals
     input_kwargs.pop('concat_ds')
-    windowing_kwargs = [
-        (create_windows_from_events.__name__,
-         {k: v for k, v in input_kwargs.items()})
-    ]
+    windowing_kwargs = [{
+        create_windows_from_events.__name__:
+            {k: v for k, v in input_kwargs.items()}
+    }]
     return windowing_kwargs
