@@ -190,7 +190,7 @@ class RandomSampler(RecordingSampler):
         Returns
         -------
         start_ind : int
-            The indice of the first windows of possible sequences.
+            The index of the first window of a possible sequence.
 
         rec_ind : int
             The random recording choosen for the indice of the f.
