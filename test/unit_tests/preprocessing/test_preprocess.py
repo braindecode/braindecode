@@ -334,3 +334,17 @@ def test_preprocess_save_dir(base_concat_ds, tmp_path, save, n_jobs):
         save_dirs = [os.path.join(save_dir, str(i))
                      for i in range(len(base_concat_ds.datasets))]
         assert set(glob(save_dir + '/*')) == set(save_dirs)
+
+
+def test_preprocess_overwrite_false(base_concat_ds, tmp_path):
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+
+    # Create temporary directory with preexisting files
+    save_dir = str(tmp_path)
+    description_fname = os.path.join(save_dir, 'description.json')
+    target_fname = os.path.join(save_dir, 'target_name.json')
+    open(description_fname, 'a').close()
+    open(target_fname, 'a').close()
+
+    with pytest.raises(FileExistsError):
+        preprocess(base_concat_ds, preprocessors, save_dir, overwrite=False)

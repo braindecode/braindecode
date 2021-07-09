@@ -131,15 +131,29 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         directory.
     overwrite : bool
         When `save_dir` is provided, controls whether to overwrite existing
-        files with the same name.
+        files in `save_dir`.
     n_jobs : int | None
         Number of jobs for parallel execution.
 
     Returns
     -------
-    None | BaseConcatDataset:
-        Preprocessed dataset, if inplace is False.
+    BaseConcatDataset:
+        Preprocessed dataset.
     """
+    # In case of serialization, make sure directory is available before
+    # preprocessing
+    if save_dir is not None and not overwrite:
+        # XXX The following could go in a helper function in serialization.py
+        #     and reused in BaseConcatDataset.save().
+        description_fname = os.path.join(save_dir, 'description.json')
+        target_fname = os.path.join(save_dir, 'target_name.json')
+        if (os.path.exists(description_fname) or
+                os.path.exists(target_fname)):
+            raise FileExistsError(
+                f'{description_fname} or {target_fname} exist in {save_dir}. '
+                'Provide a different ``save_dir`` or set ``overwrite`` to '
+                'True.')
+
     if not isinstance(preprocessors, Iterable):
         raise ValueError(
             'preprocessors must be a list of Preprocessor objects.')
@@ -163,6 +177,8 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         else:  # joblib made copies
             _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
 
+    return concat_ds
+
 
 def _replace_inplace(concat_ds, new_concat_ds):
     if len(concat_ds.datasets) != len(new_concat_ds.datasets):
@@ -176,7 +192,7 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
 
     Parameters
     ----------
-    ds: BaseDataset
+    ds: BaseDataset | WindowsDataset
         Dataset object to preprocess.
     ds_index : int
         Index of the BaseDataset in its BaseConcatDataset. Ignored if save_dir
