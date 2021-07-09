@@ -126,9 +126,9 @@ windows_dataset = create_windows_from_events(
 # in each window.
 #
 
-from sklearn.preprocessing import scale as standardize
+from sklearn.preprocessing import scale as standard_scale
 
-preprocess(windows_dataset, [Preprocessor(standardize, channel_wise=True)])
+preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 
 
 ######################################################################

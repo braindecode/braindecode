@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 
 from braindecode.datasets.moabb import MOABBDataset
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import (
+    create_windows_from_events, Preprocessor, preprocess)
 from braindecode.datautil.serialization import (
     save_concat_dataset, load_concat_dataset)
 
@@ -125,3 +126,16 @@ def test_load_multiple_concat_windows_dataset(setup_concat_windows_dataset,
             len(loaded_concat_windows_datasets.datasets))
     assert (2 * len(concat_windows_dataset.description) ==
             len(loaded_concat_windows_datasets.description))
+
+
+def test_load_save_raw_preproc_kwargs(setup_concat_raw_dataset, tmpdir):
+    concat_raw_dataset = setup_concat_raw_dataset
+    preprocess(concat_raw_dataset, [
+        Preprocessor('pick_channels', ch_names=['C3']),
+    ])
+    concat_raw_dataset.save(tmpdir, overwrite=False)
+    assert os.path.exists(os.path.join(tmpdir, 'raw_preproc_kwargs.json'))
+    loaded_concat_raw_dataset = load_concat_dataset(tmpdir, preload=False)
+    assert loaded_concat_raw_dataset.raw_preproc_kwargs == [
+        {'pick_channels': {'ch_names': ['C3']}},
+    ]

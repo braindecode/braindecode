@@ -82,7 +82,7 @@ from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
 high_cut_hz = 30
 
 preprocessors = [
-    Preprocessor(scale, factor=1e6),
+    Preprocessor(scale, factor=1e6, apply_on_array=True),
     Preprocessor('filter', l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs)
 ]
 
@@ -136,9 +136,9 @@ windows_dataset = create_windows_from_events(
 # We also preprocess the windows by applying channel-wise z-score normalization.
 #
 
-from sklearn.preprocessing import scale as standardize
+from sklearn.preprocessing import scale as standard_scale
 
-preprocess(windows_dataset, [Preprocessor(standardize, channel_wise=True)])
+preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 
 
 ######################################################################

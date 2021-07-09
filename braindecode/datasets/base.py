@@ -397,6 +397,10 @@ class BaseConcatDataset(ConcatDataset):
                 os.remove(target_file_name)
             if os.path.isfile(description_file_name):
                 os.remove(description_file_name)
+            for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs', 'window_preproc_kwargs']:
+                kwarg_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
+                if os.path.exists(kwarg_path):
+                    os.remove(kwarg_path)
 
         concat_of_raws = hasattr(self.datasets[0], 'raw')
         file_name = file_names_[0] if concat_of_raws else file_names_[1]
@@ -419,7 +423,8 @@ class BaseConcatDataset(ConcatDataset):
             if hasattr(self, kwarg_name):
                 kwargs_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
                 kwargs = getattr(self, kwarg_name)
-                json.dump(kwargs, open(kwargs_path, 'w'))
+                if kwargs is not None:
+                    json.dump(kwargs, open(kwargs_path, 'w'))
 
     @property
     def description(self):
