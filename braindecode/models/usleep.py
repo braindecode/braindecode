@@ -151,20 +151,22 @@ class USleep(nn.Module):
                  in_chans=2,
                  sfreq=100,
                  depth=10,
+                 n_time_filters_init=5,
                  complexity_factor=2,
                  with_skip_connection=True,
                  n_classes=5,
                  input_size_s=30,
+                 time_conv_size=9,
                  apply_softmax=False
                  ):
         super().__init__()
 
         self.in_chans = in_chans
 
-        # Harcoded (otherwise dims can break)
-        time_conv_size = 9  # 0.09s at sfreq = 100 Hz
-        max_pool_size = 2   # 0.02s at sfreq = 100 Hz
-        n_time_filters = 5
+        max_pool_size = 2  # Hardcoded to avoid dimensional errors
+
+        if time_conv_size % 2 == 0:
+            raise ValueError('time_conv_size need to be odd')
 
         # Convert between units: seconds to time-points (at sfreq)
         input_size = np.ceil(input_size_s * sfreq).astype(int)
@@ -173,7 +175,7 @@ class USleep(nn.Module):
         encoder = []
         complexity_factor = np.sqrt(complexity_factor)
         n_time_filters_in = in_chans / complexity_factor
-        n_time_filters_out = n_time_filters
+        n_time_filters_out = n_time_filters_init
         for _ in range(depth):
             encoder += [
                 _EncoderBlock(in_channels=int(n_time_filters_in * complexity_factor),
@@ -199,7 +201,7 @@ class USleep(nn.Module):
 
         # Instantiate decoder
         decoder = []
-        for idx in range(depth):
+        for _ in range(depth):
             n_time_filters_in = n_time_filters_out
             n_time_filters_out = int(np.ceil(n_time_filters_out/np.sqrt(2)))
             decoder += [
