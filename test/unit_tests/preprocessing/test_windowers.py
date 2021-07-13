@@ -465,6 +465,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
             'flat': flat, 'on_missing': on_missing, 'n_jobs': 1}}
     ]
 
+
 def test_window_sizes_from_events(concat_ds_targets):
     # no fixed window size, no offsets
     expected_n_samples = 1000

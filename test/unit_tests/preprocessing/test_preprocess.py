@@ -96,6 +96,7 @@ def test_preprocess_windows_str(windows_concat_ds):
         'crop': {'tmin': 0, 'tmax': 0.1, 'include_tmax': False},
     }]
 
+
 def test_preprocess_raw_callable_on_array(base_concat_ds):
     # Case tested in test_zscore_continuous
     pass
@@ -211,6 +212,7 @@ def test_scale_windows(windows_concat_ds):
         {'pick_types': {'eeg': True, 'meg': False, 'stim': False}},
         {'scale': {'factor': 1e6}},
     ]
+
 
 @pytest.fixture(scope='module')
 def mock_data():
