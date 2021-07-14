@@ -348,6 +348,9 @@ def _create_fixed_length_windows(
         window_size_samples = stop - start_offset_samples
     if window_stride_samples is None:
         window_stride_samples = window_size_samples
+    if window_size_samples > ds.raw.n_times:
+        raise ValueError(f'Window size {window_size_samples} exceeds trial '
+                         f'duration {ds.raw.n_times}.')
 
     stop = stop - window_size_samples + ds.raw.first_samp
     # already includes last incomplete window start
@@ -427,6 +430,9 @@ def _compute_window_inds(
 
     starts += start_offset
     stops += stop_offset
+    if any(size > (stops-starts)):
+        raise ValueError(f'Window size {size} exceeds trial duration '
+                         f'{(stops-starts).min()}.')
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
