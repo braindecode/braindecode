@@ -91,8 +91,9 @@ class MOABBDataset(BaseConcatDataset):
     Parameters
     ----------
     dataset_name: name of dataset included in moabb to be fetched
-    subject_ids: list(int) | int
-        (list of) int of subject(s) to be fetched
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be fetched. If None, data of all
+        subjects is fetched.
     """
     def __init__(self, dataset_name, subject_ids):
         raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
@@ -102,16 +103,30 @@ class MOABBDataset(BaseConcatDataset):
 
 
 class BNCI2014001(MOABBDataset):
-    doc = """See moabb.datasets.bnci.BNCI2014001"""
+    doc = """See moabb.datasets.bnci.BNCI2014001
+    
+    Parameters
+    ----------
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be fetched. If None, data of all 
+        subjects is fetched.
+    """
     __doc__ = _update_moabb_docstring(BNCI2014001, doc)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__("BNCI2014001", *args, **kwargs)
+    def __init__(self, subject_ids):
+        super().__init__("BNCI2014001", subject_ids=subject_ids)
 
 
 class HGD(MOABBDataset):
-    doc = """See moabb.datasets.schirrmeister2017.Schirrmeister2017"""
+    doc = """See moabb.datasets.schirrmeister2017.Schirrmeister2017
+        
+    Parameters
+    ----------
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be fetched. If None, data of all 
+        subjects is fetched.
+    """
     __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__("Schirrmeister2017", *args, **kwargs)
+    def __init__(self, subject_ids):
+        super().__init__("Schirrmeister2017", subject_ids=subject_ids)
