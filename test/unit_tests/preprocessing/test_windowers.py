@@ -22,7 +22,7 @@ from braindecode.util import create_mne_dummy_raw
 
 def _get_raw(tmpdir_factory, description=None):
     _, fnames = create_mne_dummy_raw(
-        2, 20000, 100, description=description,
+        n_channels=2, n_times=20000, sfreq=100, description=description,
         savedir=tmpdir_factory.mktemp('data'), save_format='fif',
         random_state=87)
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
