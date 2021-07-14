@@ -197,6 +197,9 @@ def create_fixed_length_windows(
     lengths = np.array([ds.raw.n_times - ds.raw.first_samp for ds in concat_ds.datasets])
     if (np.diff(lengths) != 0).any():
         warnings.warn('Recordings have different lengths, they will not be batch-able!')
+    if any(window_size_samples > lengths):
+        raise ValueError(f'Window size {window_size_samples} exceeds trial '
+                         f'duration {lengths.min()}.')
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_fixed_length_windows)(
@@ -348,9 +351,6 @@ def _create_fixed_length_windows(
         window_size_samples = stop - start_offset_samples
     if window_stride_samples is None:
         window_stride_samples = window_size_samples
-    if window_size_samples > ds.raw.n_times:
-        raise ValueError(f'Window size {window_size_samples} exceeds trial '
-                         f'duration {ds.raw.n_times}.')
 
     stop = stop - window_size_samples + ds.raw.first_samp
     # already includes last incomplete window start
