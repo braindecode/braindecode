@@ -128,7 +128,7 @@ def test_load_save_raw_preproc_kwargs(setup_concat_raw_dataset, tmpdir):
     assert os.path.exists(os.path.join(tmpdir, 'raw_preproc_kwargs.json'))
     loaded_concat_raw_dataset = load_concat_dataset(tmpdir, preload=False)
     assert loaded_concat_raw_dataset.raw_preproc_kwargs == [
-        {'pick_channels': {'ch_names': ['C3']}},
+        ('pick_channels', {'ch_names': ['C3']}),
     ]
 
 
@@ -145,13 +145,13 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
     assert os.path.exists(os.path.join(tmpdir, 'window_preproc_kwargs.json'))
     loaded_concat_windows_dataset = load_concat_dataset(tmpdir, preload=False)
     assert loaded_concat_windows_dataset.window_kwargs == [
-        {'create_windows_from_events': {
+        ('create_windows_from_events', {
             'trial_start_offset_samples': 0, 'trial_stop_offset_samples': 0,
             'window_size_samples': None, 'window_stride_samples': None,
             'drop_last_window': False, 'mapping': None, 'preload': False,
             'drop_bad_windows': True, 'picks': None, 'reject': None,
-            'flat': None, 'on_missing': 'error', 'n_jobs': 1}}
+            'flat': None, 'on_missing': 'error', 'n_jobs': 1})
     ]
     assert loaded_concat_windows_dataset.window_preproc_kwargs == [
-        {'pick_channels': {'ch_names': ['Cz']}},
+        ('pick_channels', {'ch_names': ['Cz']}),
     ]
