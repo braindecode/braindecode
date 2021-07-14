@@ -51,12 +51,14 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
 
 TUH_PATH = 'please insert actual path to data here'
+N_jobs = 1  # specify the number of jobs for loading and windowing
 tuh = TUH(
     path=TUH_PATH,
     recording_ids=None,
     target_name=None,
     preload=False,
     add_physician_reports=False,
+    n_jobs=N_jobs,
 )
 
 
@@ -200,9 +202,8 @@ preprocessors = [
 
 
 ###############################################################################
-# The preprocessing loop works as follows. For every recording, we apply the
-# preprocessors as defined above. Then, we update the description of the rec,
-# since we have altered the duration, the reference, and the sampling
+# We apply the preprocessors as defined above and we update the description of
+# the rec, since we have altered the duration, the reference, and the sampling
 # frequency. Afterwards, we store each recording to a unique subdirectory that
 # is named corresponding to the rec id. To save memory we delete the raw
 # dataset after storing. This gives us the option to try different windowing
@@ -225,7 +226,7 @@ for rec_i, tuh_subset in tuh_splits.items():
 ###############################################################################
 # We reload the preprocessed data again in a lazy fashion (`preload=False`).
 
-tuh_loaded = load_concat_dataset(OUT_PATH, preload=False)
+tuh_loaded = load_concat_dataset(OUT_PATH, preload=False, n_jobs=N_jobs)
 
 
 ###############################################################################
@@ -241,7 +242,8 @@ tuh_windows = create_fixed_length_windows(
     stop_offset_samples=None,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=False
+    drop_last_window=False,
+    n_jobs=N_jobs,
 )
 
 for x, y, ind in tuh_windows:
