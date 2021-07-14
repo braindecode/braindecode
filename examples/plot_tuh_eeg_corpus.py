@@ -10,7 +10,6 @@ including simple preprocessing steps as well as cutting of compute windows.
 #
 # License: BSD (3-clause)
 
-import os
 import tempfile
 
 import numpy as np
@@ -50,12 +49,14 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
 
 TUH_PATH = 'please insert actual path to data here'
+N_jobs = 1  # specify the number of jobs for loading and windowing
 tuh = TUH(
     path=TUH_PATH,
     recording_ids=None,
     target_name=None,
     preload=False,
     add_physician_reports=False,
+    n_jobs=N_jobs,
 )
 
 
@@ -197,39 +198,28 @@ preprocessors = [
 
 
 ###############################################################################
-# The preprocessing loop works as follows. For every recording, we apply the
-# preprocessors as defined above. Then, we update the description of the rec,
-# since we have altered the duration, the reference, and the sampling
+# We apply the preprocessors as defined above and we update the description of
+# the rec, since we have altered the duration, the reference, and the sampling
 # frequency. Afterwards, we store each recording to a unique subdirectory that
 # is named corresponding to the rec id. To save memory we delete the raw
 # dataset after storing. This gives us the option to try different windowing
 # parameters after reloading the data.
 
 OUT_PATH = tempfile.mkdtemp()  # plaese insert actual output directory here
-tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])
-for rec_i, tuh_subset in tuh_splits.items():
-    preprocess(tuh_subset, preprocessors)
-
-    # update description of the recording(s)
-    tuh_subset.set_description({
-        'sfreq': len(tuh_subset.datasets) * [sfreq],
-        'reference': len(tuh_subset.datasets) * ['ar'],
-        'n_samples': [len(d) for d in tuh_subset.datasets],
-    }, overwrite=True)
-
-    # create one directory for every recording
-    rec_path = os.path.join(OUT_PATH, str(rec_i))
-    if not os.path.exists(rec_path):
-        os.makedirs(rec_path)
-    tuh_subset.save(rec_path)
-    # save memory by deleting raw recording
-    del tuh_subset.datasets[0].raw
+preprocess(tuh, preprocessors)
+# update description of the recording(s)
+tuh.set_description({
+    'sfreq': len(tuh.datasets) * [sfreq],
+    'reference': len(tuh.datasets) * ['ar'],
+    'n_samples': [len(d) for d in tuh.datasets],
+}, overwrite=True)
+tuh.save(OUT_PATH)
 
 
 ###############################################################################
 # We reload the preprocessed data again in a lazy fashion (`preload=False`).
 
-tuh_loaded = load_concat_dataset(OUT_PATH, preload=False)
+tuh_loaded = load_concat_dataset(OUT_PATH, preload=False, n_jobs=N_jobs)
 
 
 ###############################################################################
@@ -245,7 +235,8 @@ tuh_windows = create_fixed_length_windows(
     stop_offset_samples=None,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=False
+    drop_last_window=False,
+    n_jobs=N_jobs,
 )
 # store the number of windows required for loading later on
 tuh_windows.set_description({

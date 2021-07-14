@@ -45,7 +45,7 @@ class TUH(BaseConcatDataset):
         Number of jobs to be used to read files in parallel.
     """
     def __init__(self, path, recording_ids=None, target_name=None,
-                 preload=False, add_physician_reports=False, n_jobs=-1):
+                 preload=False, add_physician_reports=False, n_jobs=1):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
@@ -202,7 +202,7 @@ class TUHAbnormal(TUH):
         description.
     """
     def __init__(self, path, recording_ids=None, target_name='pathological',
-                 preload=False, add_physician_reports=False, n_jobs=-1):
+                 preload=False, add_physician_reports=False, n_jobs=1):
         super().__init__(path=path, recording_ids=recording_ids,
                          preload=preload,
                          add_physician_reports=add_physician_reports,
@@ -282,10 +282,11 @@ class _TUHMock(TUH):
     @mock.patch('braindecode.datasets.tuh._read_edf_header',
                 new=_get_header)
     def __init__(self, mock_glob, path, recording_ids=None, target_name=None,
-                 preload=False, add_physician_reports=False):
+                 preload=False, add_physician_reports=False, n_jobs=1):
         super().__init__(path=path, recording_ids=recording_ids,
                          target_name=target_name, preload=preload,
-                         add_physician_reports=add_physician_reports)
+                         add_physician_reports=add_physician_reports,
+                         n_jobs=n_jobs)
 
 
 class _TUHAbnormalMock(TUHAbnormal):
@@ -298,7 +299,8 @@ class _TUHAbnormalMock(TUHAbnormal):
                 return_value='simple_test')
     def __init__(self, mock_glob, mock_report, path, recording_ids=None,
                  target_name='pathological', preload=False,
-                 add_physician_reports=False):
+                 add_physician_reports=False, n_jobs=1):
         super().__init__(path=path, recording_ids=recording_ids,
                          target_name=target_name, preload=preload,
-                         add_physician_reports=add_physician_reports)
+                         add_physician_reports=add_physician_reports,
+                         n_jobs=n_jobs)
