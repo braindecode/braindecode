@@ -104,8 +104,8 @@ def create_windows_from_events(
         window_size_samples, window_stride_samples)
 
     # save input arguments to store to dataset
-    windowing_kwargs = [{
-        create_windows_from_events.__name__: _get_windowing_kwargs(locals())}]
+    windowing_kwargs = [(
+        create_windows_from_events.__name__, _get_windowing_kwargs(locals()))]
 
     # If user did not specify mapping, we extract all events from all datasets
     # and map them to increasing integers starting from 0
@@ -190,8 +190,8 @@ def create_fixed_length_windows(
         drop_last_window)
 
     # save input arguments to store to dataset
-    windowing_kwargs = [{
-        create_fixed_length_windows.__name__: _get_windowing_kwargs(locals())}]
+    windowing_kwargs = [(
+        create_fixed_length_windows.__name__, _get_windowing_kwargs(locals()))]
 
     # check if recordings are of different lengths
     lengths = np.array([ds.raw.n_times - ds.raw.first_samp for ds in concat_ds.datasets])

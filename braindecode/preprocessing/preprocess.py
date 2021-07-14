@@ -185,7 +185,7 @@ def _get_preproc_kwargs(preprocessors):
             if 'fun' in p.fn:
                 func_name = p.kwargs['fun'].func.__name__
                 func_kwargs = p.kwargs['fun'].keywords
-        preproc_kwargs.append({func_name: func_kwargs})
+        preproc_kwargs.append((func_name, func_kwargs))
     return preproc_kwargs
 
 
