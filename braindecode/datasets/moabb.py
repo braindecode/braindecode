@@ -104,11 +104,11 @@ class MOABBDataset(BaseConcatDataset):
 
 class BNCI2014001(MOABBDataset):
     doc = """See moabb.datasets.bnci.BNCI2014001
-    
+
     Parameters
     ----------
     subject_ids: list(int) | int | None
-        (list of) int of subject(s) to be fetched. If None, data of all 
+        (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
     """
     __doc__ = _update_moabb_docstring(BNCI2014001, doc)
@@ -119,11 +119,11 @@ class BNCI2014001(MOABBDataset):
 
 class HGD(MOABBDataset):
     doc = """See moabb.datasets.schirrmeister2017.Schirrmeister2017
-        
+
     Parameters
     ----------
     subject_ids: list(int) | int | None
-        (list of) int of subject(s) to be fetched. If None, data of all 
+        (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
     """
     __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
