@@ -462,10 +462,10 @@ class BaseConcatDataset(ConcatDataset):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
-    def save(self, path, overwrite=False):
+    def save(self, path, overwrite=False, offset=None):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
-            target_name.json (if target_name is not None)
+            target_name.json (if target_name is not None and dataset is raw)
             0/
                 0-raw.fif | 0-epo.fif
                 description.json
@@ -481,6 +481,11 @@ class BaseConcatDataset(ConcatDataset):
         overwrite : bool
             Whether to delete old files (target_name.json, description.json,
              -raw.fif, -epo.fif) in specified directory prior to saving.
+        offset : int | None
+            If provided the integer is added to the id of the datasets in the
+            concat. This is useful in the setting of very large datasets, where
+            one dataset has to be processed and saved at a time to account for
+            its original position.
         """
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
@@ -495,33 +500,37 @@ class BaseConcatDataset(ConcatDataset):
         for file_name in file_name_pattern:
             fif_files.extend(
                 glob(os.path.join(path, f"**/*{file_name.lstrip('{}')}")))
-        if not overwrite:
-            if len(description_files) + len(fif_files) != 0:
-                raise FileExistsError(
-                    'Another dataset was already saved to this directory. '
-                    'Please clean up manually, set overwrite to True, or save '
-                    'to another directory.')
-        else:
+        if overwrite:
             self._clear_up_directory(path, description_files, fif_files)
         is_raw = hasattr(self.datasets[0], 'raw')
         file_name = file_name_pattern[0] if is_raw else file_name_pattern[1]
-        self._save_datasets_and_description(path, overwrite, file_name, is_raw)
+        self._save_datasets_and_description(
+            path, overwrite, file_name, is_raw, offset)
         if is_raw:
             self._save_target_name(path)
 
-    def _save_datasets_and_description(self, path, overwrite, file_name, is_raw):
+    def _save_datasets_and_description(
+            self, path, overwrite, file_name, is_raw, offset):
+        if offset is None:
+            offset = 0
         # save all the datasets and description
         for i_ds, ds in enumerate(self.datasets):
             # create one subdirectory per dataset
-            this_path = os.path.join(path, str(i_ds))
+            this_path = os.path.join(path, str(i_ds+offset))
             if not os.path.exists(this_path):
                 os.makedirs(this_path)
-            full_file_path = os.path.join(this_path, file_name.format(i_ds))
+            fif_file_path = os.path.join(
+                this_path, file_name.format(i_ds+offset))
+            description_file = os.path.join(this_path, 'description.json')
+            if not overwrite:
+                # we do not accept fif files or description files
+                self._raise_error_if_file_exists(fif_file_path)
+                self._raise_error_if_file_exists(description_file)
             if is_raw:
-                ds.raw.save(full_file_path)
+                ds.raw.save(fif_file_path)
             else:
-                ds.windows.save(full_file_path)
-            ds.description.to_json(os.path.join(this_path, 'description.json'))
+                ds.windows.save(fif_file_path)
+            ds.description.to_json(description_file)
 
     def _save_target_name(self, path):
         # make sure we do not have an inconsistency in the target name
@@ -529,7 +538,14 @@ class BaseConcatDataset(ConcatDataset):
         assert all([expected_target_name == ds.target_name
                     for ds in self.datasets]), (
             "All datasets should have same target name")
-        with open(os.path.join(path, 'target_name.json'), 'w') as f:
+        target_name_file = os.path.join(path, 'target_name.json')
+        # always write / overwrite target name. if it already existed, it is
+        # not a dealbreaker. code will always crash if overwrite = False and
+        # fif files / description files exist. if code did not crash there, we
+        # likely have a use case as in plot_tuh_eeg.py where a dataset is split
+        # into smaller chunks and saved one dataset at a time. there, the
+        # target name is the same for all datasets
+        with open(target_name_file, 'w') as f:
             json.dump({'target_name': expected_target_name}, f)
 
     @staticmethod
@@ -540,9 +556,19 @@ class BaseConcatDataset(ConcatDataset):
             os.remove(fif_file)
             os.remove(description_file)
             subdir_name = os.path.dirname(fif_file)
+            # remove subdirectory if empty
             if len(os.listdir(subdir_name)) == 0:
                 os.rmdir(subdir_name)
         # remove target name file if it exists
         target_file_name = os.path.join(path, 'target_name.json')
         if os.path.isfile(target_file_name):
             os.remove(target_file_name)
+
+    @staticmethod
+    def _raise_error_if_file_exists(file_path):
+        if os.path.exists(file_path):
+            raise FileExistsError(
+                f'Another dataset was already saved to this directory. '
+                f'{file_path} exists. '
+                'Please clean up manually, set overwrite to True, or save '
+                'to another directory.')
