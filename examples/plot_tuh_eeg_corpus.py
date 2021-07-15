@@ -219,7 +219,6 @@ for rec_i, tuh_subset in tuh_splits.items():  # will be unnecessary with PR277
         # n_jobs=N_JOBS,  # will be available with PR277
         # save_dir=OUT_PATH,  # will be available with PR277
     )
-
     tuh_subset.save(OUT_PATH, offset_id=int(rec_i))  # will be unnecessary with PR277
     # save memory by deleting raw recording
     del tuh_subset.datasets[0].raw  # will be unnecessary with PR277
