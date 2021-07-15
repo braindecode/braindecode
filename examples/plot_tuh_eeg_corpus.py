@@ -224,7 +224,7 @@ for rec_i, tuh_subset in tuh_splits.items():  # will be unnecessary with PR277
         'n_samples': [len(d) for d in tuh_subset.datasets],
     }, overwrite=True)
 
-    tuh_subset.save(OUT_PATH, offset_id=int(rec_i))  # will be unnecessary with PR277
+    tuh_subset.save(OUT_PATH, offset=int(rec_i))  # will be unnecessary with PR277
     # save memory by deleting raw recording
     del tuh_subset.datasets[0].raw  # will be unnecessary with PR277
 
@@ -249,7 +249,3 @@ tuh_windows = create_fixed_length_windows(
     drop_last_window=False,
     n_jobs=N_JOBS,
 )
-# TODO: is this actually required or just nice to have?
-# store the number of windows required for loading later on
-tuh_windows.set_description({
-    "n_windows": [len(d) for d in tuh_windows.datasets]})
