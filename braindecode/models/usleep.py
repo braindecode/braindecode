@@ -151,7 +151,7 @@ class USleep(nn.Module):
                  in_chans=2,
                  sfreq=100,
                  depth=10,
-                 n_time_filters_init=5,
+                 n_time_filters=5,
                  complexity_factor=2,
                  with_skip_connection=True,
                  n_classes=5,
@@ -171,42 +171,42 @@ class USleep(nn.Module):
         # Convert between units: seconds to time-points (at sfreq)
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
+        channels = [n_time_filters]
+        for _ in range(depth):
+            channels.append(np.floor(channels[-1]*np.sqrt(2)))
+            channels[-1] = int(channels[-1]*complexity_factor)
+
+        channels = [in_chans] + channels  # len = depth + 2
+        self.channels = channels
+
         # Instantiate encoder
         encoder = []
-        complexity_factor = np.sqrt(complexity_factor)
-        n_time_filters_in = in_chans / complexity_factor
-        n_time_filters_out = n_time_filters_init
-        for _ in range(depth):
+        for idx in range(depth):
             encoder += [
-                _EncoderBlock(in_channels=int(n_time_filters_in * complexity_factor),
-                              out_channels=int(n_time_filters_out * complexity_factor),
+                _EncoderBlock(in_channels=channels[idx],
+                              out_channels=channels[idx + 1],
                               kernel_size=time_conv_size,
                               downsample=max_pool_size)
             ]
-
-            n_time_filters_in = n_time_filters_out
-            n_time_filters_out = int(n_time_filters_out * np.sqrt(2))
-
         self.encoder = nn.Sequential(*encoder)
 
         # Instantiate bottom (channels increase, temporal dim stays the same)
         self.bottom = nn.Sequential(
-                    nn.Conv1d(in_channels=int(n_time_filters_in * complexity_factor),
-                              out_channels=int(n_time_filters_out * complexity_factor),
+                    nn.Conv1d(in_channels=channels[idx + 1],
+                              out_channels=channels[idx + 2],
                               kernel_size=time_conv_size,
                               padding=(time_conv_size - 1) // 2),  # preserves dimension
                     nn.ELU(),
-                    nn.BatchNorm1d(num_features=int(n_time_filters_out * complexity_factor)),
+                    nn.BatchNorm1d(num_features=channels[idx + 2]),
                 )
 
         # Instantiate decoder
         decoder = []
-        for _ in range(depth):
-            n_time_filters_in = n_time_filters_out
-            n_time_filters_out = int(np.ceil(n_time_filters_out/np.sqrt(2)))
+        channels_reverse = channels[::-1]
+        for idx in range(depth):
             decoder += [
-                _DecoderBlock(in_channels=int(n_time_filters_in * complexity_factor),
-                              out_channels=int(n_time_filters_out * complexity_factor),
+                _DecoderBlock(in_channels=channels_reverse[idx],
+                              out_channels=channels_reverse[idx + 1],
                               kernel_size=time_conv_size,
                               upsample=max_pool_size,
                               with_skip_connection=with_skip_connection)
@@ -218,8 +218,8 @@ class USleep(nn.Module):
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
         self.clf = nn.Sequential(
             nn.Conv1d(
-                in_channels=int(n_time_filters_out * complexity_factor),
-                out_channels=int(n_time_filters_out * complexity_factor),
+                in_channels=channels[1],
+                out_channels=channels[1],
                 kernel_size=1,
                 stride=1,
                 padding=0,
@@ -227,7 +227,7 @@ class USleep(nn.Module):
             nn.Tanh(),
             nn.AvgPool1d(input_size),  # output is (B, C, S)
             nn.Conv1d(
-                in_channels=int(n_time_filters_out * complexity_factor),
+                in_channels=channels[1],
                 out_channels=n_classes,
                 kernel_size=1,
                 stride=1,
