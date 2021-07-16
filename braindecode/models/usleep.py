@@ -150,7 +150,7 @@ class USleep(nn.Module):
     def __init__(self,
                  in_chans=2,
                  sfreq=100,
-                 depth=10,
+                 depth=12,
                  n_time_filters=5,
                  complexity_factor=2,
                  with_skip_connection=True,
@@ -174,7 +174,8 @@ class USleep(nn.Module):
         channels = [n_time_filters]
         for _ in range(depth):
             channels.append(np.floor(channels[-1]*np.sqrt(2)))
-            channels[-1] = int(channels[-1]*complexity_factor)
+        for i in range(depth+1):
+            channels[i] = int(channels[i]*complexity_factor)
 
         channels = [in_chans] + channels  # len = depth + 2
         self.channels = channels

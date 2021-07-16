@@ -209,6 +209,7 @@ model = USleep(
     with_skip_connection=True,
     n_classes=n_classes,
     input_size_s=input_size_samples / sfreq,
+    apply_softmax=True
 )
 
 # Send model to GPU
