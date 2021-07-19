@@ -506,8 +506,8 @@ def _check_and_set_fixed_length_window_arguments(start_offset_samples, stop_offs
 
     if window_size_samples is not None and window_stride_samples is not None and \
             drop_last_window is None:
-        raise ValueError('drop_last_window must be set if window_size_samples &'
-                         ' window_stride_samples are not set')
+        raise ValueError('drop_last_window must be set if both window_size_samples &'
+                         ' window_stride_samples have also been set')
     elif window_size_samples is None and\
             window_stride_samples is None and\
             drop_last_window is False:
