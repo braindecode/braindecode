@@ -42,7 +42,9 @@ class Preprocessor(object):
     kwargs:
         Keyword arguments to be forwarded to the MNE function.
     """
-    def __init__(self, fn, apply_on_array=True, **kwargs):
+    def __init__(self, fn, *, apply_on_array=True, **kwargs):
+        if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
+            warn('Preprocessing choices with lambda functions cannot be saved.')
         if callable(fn) and apply_on_array:
             channel_wise = kwargs.pop('channel_wise', False)
             kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise)
@@ -131,11 +133,18 @@ def preprocess(concat_ds, preprocessors):
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
+    # get the preprocessing keyword arguments
+    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+
     for ds in concat_ds.datasets:
         if hasattr(ds, 'raw'):
             _preprocess(ds.raw, preprocessors)
+            # store raw preprocessing keyword arguments to the dataset
+            setattr(concat_ds, 'raw_preproc_kwargs', preproc_kwargs)
         elif hasattr(ds, 'windows'):
             _preprocess(ds.windows, preprocessors)
+            # store window preprocessing keyword arguments to the dataset
+            setattr(concat_ds, 'window_preproc_kwargs', preproc_kwargs)
         else:
             raise ValueError(
                 'Can only preprocess concatenation of BaseDataset or '
@@ -159,6 +168,25 @@ def _preprocess(raw_or_epochs, preprocessors):
     """
     for preproc in preprocessors:
         preproc.apply(raw_or_epochs)
+
+
+def _get_preproc_kwargs(preprocessors):
+    preproc_kwargs = []
+    for p in preprocessors:
+        # in case of a mne function, fn is a str, kwargs is a dict
+        func_name = p.fn
+        func_kwargs = p.kwargs
+        # in case of another function
+        # if apply_on_array=False
+        if callable(p.fn):
+            func_name = p.fn.__name__
+        # if apply_on_array=True
+        else:
+            if 'fun' in p.fn:
+                func_name = p.kwargs['fun'].func.__name__
+                func_kwargs = p.kwargs['fun'].keywords
+        preproc_kwargs.append((func_name, func_kwargs))
+    return preproc_kwargs
 
 
 def exponential_moving_standardize(
