@@ -10,11 +10,12 @@ from glob import glob
 import pytest
 import numpy as np
 
-from braindecode.datasets import MOABBDataset
+from braindecode.datasets import MOABBDataset, BaseConcatDataset
 from braindecode.preprocessing.preprocess import preprocess, zscore, scale, \
     Preprocessor, filterbank, exponential_moving_demean, \
-    exponential_moving_standardize, MNEPreproc, NumpyPreproc
+    exponential_moving_standardize, MNEPreproc, NumpyPreproc, _replace_inplace
 from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.datautil.serialization import load_concat_dataset
 
 
 # We can't use fixtures with scope='module' as the dataset objects are modified
@@ -319,32 +320,55 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
     ] for ds in base_concat_ds.datasets])
 
 
+def test_replace_inplace(base_concat_ds):
+    base_concat_ds2 = copy.deepcopy(base_concat_ds)
+    for i in range(len(base_concat_ds2.datasets)):
+        base_concat_ds2.datasets[i].raw.crop(0, 10, include_tmax=False)
+    _replace_inplace(base_concat_ds, base_concat_ds2)
+
+    assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
+
+
 @pytest.mark.parametrize('save', [True, False])
 @pytest.mark.parametrize('n_jobs', [None, 1, 2])
 def test_preprocess_save_dir(base_concat_ds, tmp_path, save, n_jobs):
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
 
     save_dir = str(tmp_path) if save else None
-    preprocess(base_concat_ds, preprocessors, save_dir, overwrite=False,
-               n_jobs=n_jobs)
+    base_concat_ds = preprocess(
+        base_concat_ds, preprocessors, save_dir, overwrite=False,
+        n_jobs=n_jobs)
 
     assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
-    if save_dir is not None:
+
+    if save_dir is None:
+        assert all([ds.raw.preload for ds in base_concat_ds.datasets])
+    else:
         assert all([not ds.raw.preload for ds in base_concat_ds.datasets])
         save_dirs = [os.path.join(save_dir, str(i))
                      for i in range(len(base_concat_ds.datasets))]
         assert set(glob(save_dir + '/*')) == set(save_dirs)
 
 
-def test_preprocess_overwrite_false(base_concat_ds, tmp_path):
+@pytest.mark.parametrize('overwrite', [True, False])
+def test_preprocess_overwrite(base_concat_ds, tmp_path, overwrite):
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
 
     # Create temporary directory with preexisting files
     save_dir = str(tmp_path)
-    description_fname = os.path.join(save_dir, 'description.json')
-    target_fname = os.path.join(save_dir, 'target_name.json')
-    open(description_fname, 'a').close()
-    open(target_fname, 'a').close()
+    for i, ds in enumerate(base_concat_ds.datasets):
+        concat_ds = BaseConcatDataset([ds])
+        save_subdir = os.path.join(save_dir, str(i))
+        os.makedirs(save_subdir)
+        concat_ds.save(save_subdir, overwrite=True)
 
-    with pytest.raises(FileExistsError):
-        preprocess(base_concat_ds, preprocessors, save_dir, overwrite=False)
+    if overwrite:
+        preprocess(base_concat_ds, preprocessors, save_dir, overwrite=True)
+        # Make sure the serialized data is preprocessed
+        preproc_concat_ds = load_concat_dataset(save_dir, True)
+        assert all([len(ds.raw.times) == 2500
+                    for ds in preproc_concat_ds.datasets])
+    else:
+        with pytest.raises(FileExistsError):
+            preprocess(base_concat_ds, preprocessors, save_dir,
+                       overwrite=False)
