@@ -128,7 +128,8 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         List of Preprocessor objects to apply to the dataset.
     save_dir : str | None
         If a string, the preprocessed data will be saved under the specified
-        directory.
+        directory and the datasets in ``concat_ds`` will be reloaded with
+        `preload=False`.
     overwrite : bool
         When `save_dir` is provided, controls whether to overwrite existing
         files in `save_dir`.
