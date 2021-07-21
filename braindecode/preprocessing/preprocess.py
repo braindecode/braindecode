@@ -178,6 +178,13 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         else:  # joblib made copies
             _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
 
+    # Store preprocessing keyword arguments in the dataset
+    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
+    # XXX The kwargs are not currently saved along the datasets when `save_dir`
+    #     is provided.
+    setattr(concat_ds, concat_kind + '_preproc_kwargs', preproc_kwargs)
+
     return concat_ds
 
 
