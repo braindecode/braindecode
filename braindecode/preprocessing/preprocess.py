@@ -19,7 +19,8 @@ from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
 from braindecode.datasets.base import BaseConcatDataset
-from braindecode.datautil.serialization import load_concat_dataset
+from braindecode.datautil.serialization import (
+    load_concat_dataset, check_save_dir_empty)
 
 
 class Preprocessor(object):
@@ -144,16 +145,7 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
     # In case of serialization, make sure directory is available before
     # preprocessing
     if save_dir is not None and not overwrite:
-        # XXX The following could go in a helper function in serialization.py
-        #     and reused in BaseConcatDataset.save().
-        description_fname = os.path.join(save_dir, 'description.json')
-        target_fname = os.path.join(save_dir, 'target_name.json')
-        if (os.path.exists(description_fname) or
-                os.path.exists(target_fname)):
-            raise FileExistsError(
-                f'{description_fname} or {target_fname} exist in {save_dir}. '
-                'Provide a different ``save_dir`` or set ``overwrite`` to '
-                'True.')
+        check_save_dir_empty(save_dir)
 
     if not isinstance(preprocessors, Iterable):
         raise ValueError(

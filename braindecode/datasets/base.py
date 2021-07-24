@@ -400,11 +400,8 @@ class BaseConcatDataset(ConcatDataset):
         description_file_name = os.path.join(path, 'description.json')
         target_file_name = os.path.join(path, 'target_name.json')
         if not overwrite:
-            if (os.path.exists(description_file_name) or
-                    os.path.exists(target_file_name)):
-                raise FileExistsError(
-                    f'{description_file_name} or {target_file_name} exist in '
-                    f'{path}.')
+            from braindecode.datautil.serialization import check_save_dir_empty
+            check_save_dir_empty(path)
         else:
             for file_name_template in file_name_templates:
                 file_names = glob(os.path.join(

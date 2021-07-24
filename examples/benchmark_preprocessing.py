@@ -1,5 +1,6 @@
-"""Benchmarking preprocessing with parallelization and serialization
-====================================================================
+"""
+Benchmarking preprocessing with parallelization and serialization
+=================================================================
 
 In this example, we compare the execution time and memory requirements of
 preprocessing data with the parallelization and serialization functionalities

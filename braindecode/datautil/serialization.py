@@ -227,3 +227,27 @@ def _is_outdated_saved(path):
             os.path.exists(os.path.join(path, '0-epo.fif')) or
             multiple or
             kwargs_in_path)
+
+
+def check_save_dir_empty(save_dir):
+    """Make sure a BaseConcatDataset can be saved under a given directory.
+
+    Parameters
+    ----------
+    save_dir : str
+        Directory under which ``concat_ds`` will be saved.
+
+    Raises
+    -------
+    FileExistsError
+        If ``save_dir`` is not a valid directory for saving, i.e., the
+        description.json and/or target_name.json files already exist.
+    """
+    description_fname = os.path.join(save_dir, 'description.json')
+    target_fname = os.path.join(save_dir, 'target_name.json')
+    if (os.path.exists(description_fname) or
+            os.path.exists(target_fname)):
+        raise FileExistsError(
+            f'{description_fname} or {target_fname} exist in {save_dir}. '
+            'Provide a different ``save_dir`` or set ``overwrite`` to '
+            'True.')

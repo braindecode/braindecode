@@ -3,7 +3,8 @@ Utilities for data manipulation.
 """
 
 
-from .serialization import save_concat_dataset, load_concat_dataset
+from .serialization import (
+    save_concat_dataset, load_concat_dataset, check_save_dir_empty)
 
 
 def __getattr__(name):
