@@ -258,19 +258,8 @@ class EEGRegressor(NeuralNetRegressor):
 
         Parameters
         ----------
-        X : input data, compatible with skorch.dataset.Dataset
-          By default, you should be able to pass:
-
-            * numpy arrays
-            * torch tensors
-            * pandas DataFrame or Series
-            * scipy sparse CSR matrices
-            * a dictionary of the former three
-            * a list/tuple of the former three
-            * a Dataset
-
-          If this doesn't work with your data, you have to pass a
-          ``Dataset`` that can deal with the data.
+        X : braindecode.datasets.BaseConcatDataset
+            A braindecode dataset to be predicted.
 
         Returns
         -------
