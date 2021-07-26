@@ -102,7 +102,7 @@ class BaseDataset(Dataset):
         """
         description = _create_description(description)
         for key, value in description.items():
-            # if they key is already in the existing description, drop it
+            # if the key is already in the existing description, drop it
             if key in self._description:
                 assert overwrite, (f"'{key}' already in description. Please "
                                    f"rename or set overwrite to True.")
@@ -121,7 +121,9 @@ class BaseDataset(Dataset):
             # check if target name(s) can be read from description
             for name in target_name:
                 if name not in self.description:
-                    raise ValueError(f"'{name}' not in description.")
+                    warnings.warn(f"'{name}' not in description. '__getitem__'"
+                                  f"will fail unless an appropriate target is"
+                                  f" added to description.", UserWarning)
         # return a list of str if there are multiple targets and a str otherwise
         return target_name if len(target_name) > 1 else target_name[0]
 

@@ -196,7 +196,7 @@ class TUHAbnormal(TUH):
     def __init__(self, path, recording_ids=None, target_name='pathological',
                  preload=False, add_physician_reports=False):
         super().__init__(path=path, recording_ids=recording_ids,
-                         preload=preload,
+                         preload=preload, target_name=target_name,
                          add_physician_reports=add_physician_reports)
         additional_descriptions = []
         for file_path in self.description.path:
@@ -205,9 +205,6 @@ class TUHAbnormal(TUH):
             additional_descriptions.append(additional_description)
         additional_descriptions = pd.DataFrame(additional_descriptions)
         self.set_description(additional_descriptions, overwrite=True)
-        # update target names
-        for ds in self.datasets:
-            ds.target_name = target_name
 
     @staticmethod
     def _parse_additional_description_from_file_path(file_path):
