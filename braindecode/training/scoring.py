@@ -308,6 +308,10 @@ def predict_trials(module, dataset):
         A pytorch model implementing forward.
     dataset: braindecode.datasets.BaseConcatDataset
         A braindecode dataset to be predicted.
+
+    Returns
+    -------
+    trial_predictions, trial_labels: tuple(np.ndarray, np.ndarray)
     """
     loader = DataLoader(
         dataset=dataset,
