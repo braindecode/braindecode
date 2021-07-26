@@ -1,5 +1,6 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -10,7 +11,8 @@ from skorch.classifier import NeuralNet
 from skorch.regressor import NeuralNetRegressor
 from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
 
-from .training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
+from .training.scoring import (PostEpochTrainScoring, CroppedTrialEpochScoring,
+                               predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
@@ -250,3 +252,28 @@ class EEGRegressor(NeuralNetRegressor):
             return y_pred.mean(-1)
         else:
             return y_pred
+
+    def predict_trials(self, X):
+        """Return trialwise predictions and targets.
+
+        Parameters
+        ----------
+        X : input data, compatible with skorch.dataset.Dataset
+          By default, you should be able to pass:
+
+            * numpy arrays
+            * torch tensors
+            * pandas DataFrame or Series
+            * scipy sparse CSR matrices
+            * a dictionary of the former three
+            * a list/tuple of the former three
+            * a Dataset
+
+          If this doesn't work with your data, you have to pass a
+          ``Dataset`` that can deal with the data.
+
+        Returns
+        -------
+        trial_predictions, trial_labels: tuple(np.ndarray, np.ndarray)
+        """
+        return predict_trials(self.module, X)

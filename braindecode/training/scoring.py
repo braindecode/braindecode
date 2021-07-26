@@ -1,6 +1,7 @@
 # Authors: Maciej Sliwowski
 #          Robin Tibor Schirrmeister
 #          Alexandre Gramfort
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
 
@@ -11,6 +12,7 @@ import torch
 from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
+from torch.utils.data import DataLoader
 
 
 def trial_preds_from_window_preds(
@@ -295,3 +297,33 @@ class PostEpochTrainScoring(EpochScoring):
                 cached_net, dataset_train, self.y_trues_
             )
         self._record_score(net.history, current_score)
+
+
+def predict_trials(module, dataset):
+    """Generate trialwise predictions and labels from dataset given module.
+
+    Parameters
+    ----------
+    module: torch.nn.Module
+        A pytorch model implementing forward.
+    dataset: braindecode.datasets.BaseConcatDataset
+        A braindecode dataset returning X, y, and ind.
+    """
+    loader = DataLoader(
+        dataset=dataset,
+        batch_size=1,
+        shuffle=False,
+    )
+    all_preds, all_ys, all_inds = [], [], []
+    with torch.no_grad():
+        for X, y, ind in loader:
+            preds = module(X)
+            all_preds.extend(preds.cpu().numpy().astype(np.float32))
+            all_ys.extend(y.cpu().numpy().astype(np.float32))
+            all_inds.extend(ind)
+    all_ys = np.array(all_ys)
+    trial_ys = all_ys[np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1]
+    preds_per_trial = trial_preds_from_window_preds(
+        all_preds, torch.cat(all_inds[0::3]), torch.cat(all_inds[2::3]))
+    trial_preds = np.array([p.mean(axis=-1) for p in preds_per_trial])
+    return trial_preds, trial_ys
