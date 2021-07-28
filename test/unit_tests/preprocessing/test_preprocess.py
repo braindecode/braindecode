@@ -82,9 +82,9 @@ def test_preprocess_raw_str(base_concat_ds):
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
     preprocess(base_concat_ds, preprocessors)
     assert len(base_concat_ds.datasets[0].raw.times) == 2500
-    assert base_concat_ds.raw_preproc_kwargs == [
+    assert all([ds.raw_preproc_kwargs == [
         ('crop', {'tmax': 10, 'include_tmax': False}),
-    ]
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_preprocess_windows_str(windows_concat_ds):
@@ -92,9 +92,9 @@ def test_preprocess_windows_str(windows_concat_ds):
         Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
     assert windows_concat_ds[0][0].shape[1] == 25
-    assert windows_concat_ds.window_preproc_kwargs == [
+    assert all([ds.window_preproc_kwargs == [
         ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False}),
-    ]
+    ] for ds in windows_concat_ds.datasets])
 
 
 def test_preprocess_raw_callable_on_array(base_concat_ds):
@@ -146,10 +146,10 @@ def test_zscore_continuous(base_concat_ds):
         expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
             raw_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
-    assert base_concat_ds.raw_preproc_kwargs == [
+    assert all([ds.raw_preproc_kwargs == [
         ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
         ('zscore', {}),
-    ]
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_zscore_windows(windows_concat_ds):
@@ -169,10 +169,10 @@ def test_zscore_windows(windows_concat_ds):
         expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
             windowed_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
-    assert windows_concat_ds.window_preproc_kwargs == [
+    assert all([ds.window_preproc_kwargs == [
         ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
         ('zscore', {}),
-    ]
+    ] for ds in windows_concat_ds.datasets])
 
 
 def test_scale_deprecated():
@@ -192,10 +192,10 @@ def test_scale_continuous(base_concat_ds):
     preprocess(base_concat_ds, preprocessors)
     np.testing.assert_allclose(base_concat_ds[0][0], raw_timepoint * factor,
                                rtol=1e-4, atol=1e-4)
-    assert base_concat_ds.raw_preproc_kwargs == [
+    assert all([ds.raw_preproc_kwargs == [
         ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
         ('scale', {'factor': 1e6}),
-    ]
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_scale_windows(windows_concat_ds):
@@ -208,10 +208,10 @@ def test_scale_windows(windows_concat_ds):
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
                                rtol=1e-4, atol=1e-4)
-    assert windows_concat_ds.window_preproc_kwargs == [
+    assert all([ds.window_preproc_kwargs == [
         ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
         ('scale', {'factor': 1e6}),
-    ]
+    ] for ds in windows_concat_ds.datasets])
 
 
 @pytest.fixture(scope='module')
@@ -288,11 +288,11 @@ def test_filterbank(base_concat_ds):
         'C4', 'C4_0-4', 'C4_4-8', 'C4_8-13',
         'Cz', 'Cz_0-4', 'Cz_4-8', 'Cz_8-13',
     ])
-    assert base_concat_ds.raw_preproc_kwargs == [
+    assert all([ds.raw_preproc_kwargs == [
         ('pick_channels', {'ch_names': ['C4', 'Cz'], 'ordered': True}),
         ('filterbank', {'frequency_bands': [(0, 4), (4, 8), (8, 13)],
                         'drop_original_signals': False}),
-    ]
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_filterbank_order_channels_by_freq(base_concat_ds):
@@ -309,9 +309,9 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
         'C4', 'Cz', 'C4_0-4', 'Cz_0-4',
         'C4_4-8', 'Cz_4-8', 'C4_8-13', 'Cz_8-13'
     ])
-    assert base_concat_ds.raw_preproc_kwargs == [
+    assert all([ds.raw_preproc_kwargs == [
         ('pick_channels', {'ch_names': ['C4', 'Cz'], 'ordered': True}),
         ('filterbank', {'frequency_bands': [(0, 4), (4, 8), (8, 13)],
                         'drop_original_signals': False,
                         'order_by_frequency_band': True}),
-    ]
+    ] for ds in base_concat_ds.datasets])

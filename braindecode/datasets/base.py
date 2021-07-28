@@ -12,6 +12,7 @@ Dataset classes.
 
 import os
 import json
+import shutil
 from typing import Iterable
 import warnings
 from glob import glob
@@ -409,7 +410,8 @@ class BaseConcatDataset(ConcatDataset):
                 os.remove(target_file_name)
             if os.path.isfile(description_file_name):
                 os.remove(description_file_name)
-            for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs', 'window_preproc_kwargs']:
+            for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
+                               'window_preproc_kwargs']:
                 kwarg_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
                 if os.path.exists(kwarg_path):
                     os.remove(kwarg_path)
@@ -432,7 +434,8 @@ class BaseConcatDataset(ConcatDataset):
         if is_raw:
             json.dump({'target_name': target_name}, open(target_file_name, 'w'))
         self.description.to_json(description_file_name)
-        for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs', 'window_preproc_kwargs']:
+        for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
+                           'window_preproc_kwargs']:
             if hasattr(self, kwarg_name):
                 kwargs_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
                 kwargs = getattr(self, kwarg_name)
@@ -462,7 +465,7 @@ class BaseConcatDataset(ConcatDataset):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
-    def save(self, path, overwrite=False, offset=None):
+    def save(self, path, overwrite=False, offset=0):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
             0/
@@ -484,12 +487,12 @@ class BaseConcatDataset(ConcatDataset):
         Parameters
         ----------
         path : str
-            Directory to which -raw.fif | -epo.fif and .json files are stored.
+            Directory in which subdirectories are created to store
+             -raw.fif | -epo.fif and .json files to.
         overwrite : bool
-            Whether to delete old files (target_name.json, description.json,
-             -raw.fif, -epo.fif) in specified directory prior to saving.
-        offset : int | None
-            If provided the integer is added to the id of the datasets in the
+            Whether to delete old subdirectories.
+        offset : int
+            If provided, the integer is added to the id of the dataset in the
             concat. This is useful in the setting of very large datasets, where
             one dataset has to be processed and saved at a time to account for
             its original position.
@@ -500,82 +503,76 @@ class BaseConcatDataset(ConcatDataset):
                 self.datasets[0], 'windows')):
             raise ValueError("dataset should have either raw or windows "
                              "attribute")
-        description_files = glob(os.path.join(path, '**/description.json'))
-        file_name_pattern = ["{}-raw.fif", "{}-epo.fif"]
-        # read all -epo.fif and -raw.fif files
-        fif_files = []
-        for file_name in file_name_pattern:
-            fif_files.extend(
-                glob(os.path.join(path, f"**/*{file_name.lstrip('{}')}")))
-        if overwrite:
-            self._clear_up_directory(path, description_files, fif_files)
-        is_raw = hasattr(self.datasets[0], 'raw')
-        file_name = file_name_pattern[0] if is_raw else file_name_pattern[1]
-        self._save_datasets_and_description(
-            path, overwrite, file_name, is_raw, offset)
-        if is_raw:
-            self._save_target_name(path)
-
-    def _save_datasets_and_description(
-            self, path, overwrite, file_name, is_raw, offset):
-        if offset is None:
-            offset = 0
-        # save all the datasets and description
+        path_contents = os.listdir(path)
+        n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
         for i_ds, ds in enumerate(self.datasets):
-            # create one subdirectory per dataset
-            this_path = os.path.join(path, str(i_ds+offset))
-            if not os.path.exists(this_path):
-                os.makedirs(this_path)
-            fif_file_path = os.path.join(
-                this_path, file_name.format(i_ds+offset))
-            description_file = os.path.join(this_path, 'description.json')
-            if not overwrite:
-                # we do not accept fif files or description files
-                self._raise_error_if_file_exists(fif_file_path)
-                self._raise_error_if_file_exists(description_file)
-            if is_raw:
-                ds.raw.save(fif_file_path)
-            else:
-                ds.windows.save(fif_file_path)
-            ds.description.to_json(description_file)
-
-    def _save_target_name(self, path):
-        # make sure we do not have an inconsistency in the target name
-        expected_target_name = self.datasets[0].target_name
-        assert all([expected_target_name == ds.target_name
-                    for ds in self.datasets]), (
-            "All datasets should have same target name")
-        target_name_file = os.path.join(path, 'target_name.json')
-        # always write / overwrite target name. if it already existed, it is
-        # not a dealbreaker. code will always crash if overwrite = False and
-        # fif files / description files exist. if code did not crash there, we
-        # likely have a use case as in plot_tuh_eeg.py where a dataset is split
-        # into smaller chunks and saved one dataset at a time. there, the
-        # target name is the same for all datasets
-        with open(target_name_file, 'w') as f:
-            json.dump({'target_name': expected_target_name}, f)
-
-    @staticmethod
-    def _clear_up_directory(path, description_files, fif_files):
-        # remove all existing "{}-raw.fif" | "{}-epo.fif" and description.json
-        # files. afterwards delete subdirectories if empty
-        for fif_file, description_file in zip(fif_files, description_files):
-            os.remove(fif_file)
-            os.remove(description_file)
-            subdir_name = os.path.dirname(fif_file)
-            # remove subdirectory if empty
-            if len(os.listdir(subdir_name)) == 0:
-                os.rmdir(subdir_name)
-        # remove target name file if it exists
-        target_file_name = os.path.join(path, 'target_name.json')
-        if os.path.isfile(target_file_name):
-            os.remove(target_file_name)
+            # remove subdirectory from list of untouched files / subdirectories
+            if str(i_ds + offset) in path_contents:
+                path_contents.remove(str(i_ds + offset))
+            # save_dir/i_ds/
+            sub_dir = os.path.join(path, str(i_ds + offset))
+            if os.path.exists(sub_dir):
+                if overwrite:
+                    shutil.rmtree(sub_dir)
+                else:
+                    raise FileExistsError(
+                        f'Subdirectory {sub_dir} already exists. Please select'
+                        f' a different directory, set overwrite=True, or '
+                        f'resolve manually.')
+            os.makedirs(sub_dir)
+            # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
+            self._save_signals(sub_dir, ds, i_ds, offset)
+            # save_dir/{i_ds+offset}/description.json
+            self._save_description(sub_dir, ds.description)
+            # save_dir/{i_ds+offset}/raw_preproc_kwargs.json
+            # save_dir/{i_ds+offset}/window_kwargs.json,
+            # save_dir/{i_ds+offset}/window_preproc_kwargs.json
+            self._save_kwargs(sub_dir, ds)
+            # save_dir/{i_ds+offset}/target_name.json
+            self._save_target_name(sub_dir, ds)
+        if overwrite:
+            # the following will be True for all datasets preprocessed and
+            # stored in parallel with braindecode.preprocessing.preprocess
+            if i_ds+1+offset != n_sub_dirs:
+                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
+                              f"does not match the number of existing "
+                              f"subdirectories ({n_sub_dirs}). You may now "
+                              f"encounter a mix of differently preprocessed "
+                              f"datasets!", UserWarning)
+        # if path contains files or directories that were not touched, raise
+        # warning
+        if path_contents:
+            warnings.warn(f'Chosen directory {path} contains other '
+                          f'subdirectories or files {path_contents}.')
 
     @staticmethod
-    def _raise_error_if_file_exists(file_path):
-        if os.path.exists(file_path):
-            raise FileExistsError(
-                f'Another dataset was already saved to this directory. '
-                f'{file_path} exists. '
-                'Please clean up manually, set overwrite to True, or save '
-                'to another directory.')
+    def _save_signals(sub_dir, ds, i_ds, offset):
+        raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'epo'
+        fif_file_name = f'{i_ds + offset}-{raw_or_epo}.fif'
+        fif_file_path = os.path.join(sub_dir, fif_file_name)
+        raw_or_epo = 'raw' if raw_or_epo == 'raw' else 'windows'
+        getattr(ds, raw_or_epo).save(fif_file_path)
+
+    @staticmethod
+    def _save_description(sub_dir, description):
+        description_file_path = os.path.join(sub_dir, 'description.json')
+        description.to_json(description_file_path)
+
+    @staticmethod
+    def _save_kwargs(sub_dir, ds):
+        for kwargs_name in ['raw_preproc_kwargs', 'window_kwargs',
+                            'window_preproc_kwargs']:
+            if hasattr(ds, kwargs_name):
+                kwargs_file_name = '.'.join([kwargs_name, 'json'])
+                kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
+                kwargs = getattr(ds, kwargs_name)
+                if kwargs is not None:
+                    with open(kwargs_file_path, 'w') as f:
+                        json.dump(kwargs, f)
+
+    @staticmethod
+    def _save_target_name(sub_dir, ds):
+        if hasattr(ds, 'target_name'):
+            target_file_path = os.path.join(sub_dir, 'target_name.json')
+            with open(target_file_path, 'w') as f:
+                json.dump({'target_name': ds.target_name}, f)

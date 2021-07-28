@@ -140,11 +140,11 @@ def preprocess(concat_ds, preprocessors):
         if hasattr(ds, 'raw'):
             _preprocess(ds.raw, preprocessors)
             # store raw preprocessing keyword arguments to the dataset
-            setattr(concat_ds, 'raw_preproc_kwargs', preproc_kwargs)
+            setattr(ds, 'raw_preproc_kwargs', preproc_kwargs)
         elif hasattr(ds, 'windows'):
             _preprocess(ds.windows, preprocessors)
             # store window preprocessing keyword arguments to the dataset
-            setattr(concat_ds, 'window_preproc_kwargs', preproc_kwargs)
+            setattr(ds, 'window_preproc_kwargs', preproc_kwargs)
         else:
             raise ValueError(
                 'Can only preprocess concatenation of BaseDataset or '

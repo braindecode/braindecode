@@ -437,14 +437,16 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.ch_names == picks
     assert epochs.reject == reject
     assert epochs.flat == flat
-    assert windows.window_kwargs == [
-        ('create_windows_from_events', {
-            'trial_start_offset_samples': 0, 'trial_stop_offset_samples': 0,
-            'window_size_samples': 100, 'window_stride_samples': 100,
-            'drop_last_window': False, 'mapping': None, 'preload': False,
-            'drop_bad_windows': True, 'picks': picks, 'reject': reject,
-            'flat': flat, 'on_missing': on_missing, 'n_jobs': 1})
-    ]
+    for ds in windows.datasets:
+        assert ds.window_kwargs == [
+            ('create_windows_from_events', {
+                'infer_mapping': True, 'infer_window_size_stride': False,
+                'trial_start_offset_samples': 0, 'trial_stop_offset_samples': 0,
+                'window_size_samples': 100, 'window_stride_samples': 100,
+                'drop_last_window': False, 'mapping': {'test': 0}, 'preload': False,
+                'drop_bad_windows': True, 'picks': picks, 'reject': reject,
+                'flat': flat, 'on_missing': on_missing})
+        ]
 
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset, start_offset_samples=0,
@@ -456,14 +458,15 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.ch_names == picks
     assert epochs.reject == reject
     assert epochs.flat == flat
-    assert windows.window_kwargs == [
-        ('create_fixed_length_windows', {
-            'start_offset_samples': 0, 'stop_offset_samples': None,
-            'window_size_samples': 100, 'window_stride_samples': 100,
-            'drop_last_window': False, 'mapping': None, 'preload': False,
-            'drop_bad_windows': True, 'picks': picks, 'reject': reject,
-            'flat': flat, 'on_missing': on_missing, 'n_jobs': 1})
-    ]
+    for ds in windows.datasets:
+        assert ds.window_kwargs == [
+            ('create_fixed_length_windows', {
+                'start_offset_samples': 0, 'stop_offset_samples': None,
+                'window_size_samples': 100, 'window_stride_samples': 100,
+                'drop_last_window': False, 'mapping': None, 'preload': False,
+                'drop_bad_windows': True, 'picks': picks, 'reject': reject,
+                'flat': flat, 'on_missing': on_missing})
+        ]
 
 
 def test_window_sizes_from_events(concat_ds_targets):

@@ -162,36 +162,45 @@ def test_load_save_raw_preproc_kwargs(setup_concat_raw_dataset, tmpdir):
         Preprocessor('pick_channels', ch_names=['C3']),
     ])
     concat_raw_dataset.save(tmpdir, overwrite=False)
-    assert os.path.exists(os.path.join(tmpdir, 'raw_preproc_kwargs.json'))
+    for i in range(len(concat_raw_dataset.datasets)):
+        assert os.path.exists(os.path.join(tmpdir, str(i), 'raw_preproc_kwargs.json'))
     loaded_concat_raw_dataset = load_concat_dataset(tmpdir, preload=False)
-    assert loaded_concat_raw_dataset.raw_preproc_kwargs == [
-        ('pick_channels', {'ch_names': ['C3']}),
-    ]
+    for ds in loaded_concat_raw_dataset.datasets:
+        assert ds.raw_preproc_kwargs == [
+            ('pick_channels', {'ch_names': ['C3']}),
+        ]
 
 
 def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     concat_windows_dataset.save(tmpdir, overwrite=False)
-    assert os.path.exists(os.path.join(tmpdir, 'window_kwargs.json'))
+    for i in range(len(concat_windows_dataset.datasets)):
+        subdir = os.path.join(tmpdir, str(i))
+        assert os.path.exists(os.path.join(subdir, 'window_kwargs.json'))
 
     preprocess(concat_windows_dataset, [
         Preprocessor('pick_channels', ch_names=['Cz']),
     ])
     concat_windows_dataset.save(tmpdir, overwrite=True)
-    assert os.path.exists(os.path.join(tmpdir, 'window_kwargs.json'))
-    assert os.path.exists(os.path.join(tmpdir, 'window_preproc_kwargs.json'))
+    for i in range(len(concat_windows_dataset.datasets)):
+        subdir = os.path.join(tmpdir, str(i))
+        assert os.path.exists(os.path.join(subdir, 'window_kwargs.json'))
+        assert os.path.exists(os.path.join(subdir, 'window_preproc_kwargs.json'))
     loaded_concat_windows_dataset = load_concat_dataset(tmpdir, preload=False)
-    assert loaded_concat_windows_dataset.window_kwargs == [
-        ('create_windows_from_events', {
-            'trial_start_offset_samples': 0, 'trial_stop_offset_samples': 0,
-            'window_size_samples': None, 'window_stride_samples': None,
-            'drop_last_window': False, 'mapping': None, 'preload': False,
-            'drop_bad_windows': True, 'picks': None, 'reject': None,
-            'flat': None, 'on_missing': 'error', 'n_jobs': 1})
-    ]
-    assert loaded_concat_windows_dataset.window_preproc_kwargs == [
-        ('pick_channels', {'ch_names': ['Cz']}),
-    ]
+    for ds in loaded_concat_windows_dataset.datasets:
+        assert ds.window_kwargs == [
+            ('create_windows_from_events', {
+                'infer_mapping': True, 'infer_window_size_stride': True,
+                'trial_start_offset_samples': 0, 'trial_stop_offset_samples': 0,
+                'window_size_samples': None, 'window_stride_samples': None,
+                'drop_last_window': False, 'mapping':  {
+                    'feet': 0, 'left_hand': 1, 'right_hand': 2, 'tongue': 3},
+                'preload': False, 'drop_bad_windows': True, 'picks': None,
+                'reject': None, 'flat': None, 'on_missing': 'error'})
+        ]
+        assert ds.window_preproc_kwargs == [
+            ('pick_channels', {'ch_names': ['Cz']}),
+        ]
 
 
 def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
@@ -202,9 +211,10 @@ def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
         concat_raw_dataset.save(path=tmpdir, overwrite=False)
         assert len(raised_warnings) == 0
     for raw_i in range(n_raw_datasets):
-        assert os.path.exists(os.path.join(tmpdir, f"{raw_i}", "description.json"))
-        assert os.path.exists(os.path.join(tmpdir, f"{raw_i}", f"{raw_i}-raw.fif"))
-    assert not os.path.exists(os.path.join(tmpdir, f"{n_raw_datasets}-raw.fif"))
+        subdir = os.path.join(tmpdir, str(raw_i))
+        assert os.path.exists(os.path.join(subdir, "description.json"))
+        assert os.path.exists(os.path.join(subdir, f"{raw_i}-raw.fif"))
+    assert not os.path.exists(os.path.join(tmpdir, f"{n_raw_datasets}"))
 
 
 def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
@@ -215,9 +225,10 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         concat_windows_dataset.save(path=tmpdir, overwrite=False)
         assert len(raised_warnings) == 0
     for windows_i in range(n_windows_datasets):
-        assert os.path.exists(os.path.join(tmpdir, f"{windows_i}", "description.json"))
-        assert os.path.exists(os.path.join(tmpdir, f"{windows_i}", f"{windows_i}-epo.fif"))
-    assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}-epo.fif"))
+        subdir = os.path.join(tmpdir, str(windows_i))
+        assert os.path.exists(os.path.join(subdir, "description.json"))
+        assert os.path.exists(os.path.join(subdir, f"{windows_i}-epo.fif"))
+    assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}"))
 
 
 def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
@@ -272,3 +283,19 @@ def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpd
         np.testing.assert_array_equal(crop_inds, actual_crop_inds)
     pd.testing.assert_frame_equal(concat_windows_dataset.description,
                                   loaded_concat_windows_dataset.description)
+
+
+def test_save_varying_number_of_datasets_with_overwrite(setup_concat_windows_dataset, tmpdir):
+    concat_windows_dataset = setup_concat_windows_dataset
+    concat_windows_dataset.save(path=tmpdir, overwrite=False)
+    subset = concat_windows_dataset.split([0])['0']
+    with pytest.warns(UserWarning, match='The number of saved datasets'):
+        subset.save(path=tmpdir, overwrite=True)
+
+
+def test_other_subdirectories_exist(setup_concat_windows_dataset, tmpdir):
+    with open(os.path.join(tmpdir, 'test.txt'), 'w') as f:
+        f.write('test')
+    concat_windows_dataset = setup_concat_windows_dataset
+    with pytest.warns(UserWarning, match='Chosen directory'):
+        concat_windows_dataset.save(tmpdir)

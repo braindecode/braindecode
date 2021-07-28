@@ -153,25 +153,17 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
             path=path, preload=preload, ids_to_load=ids_to_load,
             target_name=target_name)
 
-    # else we have a dataset saved in the new way with
-    # - subdirectories in path for every dataset
-    # - description.json and -epo.fif or -raw.fif in every subdirectory
-    # - target_name.json in path if we were given raws and target specified
-    # grab all the fif and json files, numbers have to match
-    fif_files = glob(os.path.join(path, '**/*.fif'))
-    assert len(fif_files) > 0, 'No fif files found.'
-    description_files = glob(os.path.join(path, '**/description.json'))
-    assert len(fif_files) == len(description_files), (
-        'Number of descriptions and .fif files does not match.')
-    # sort files by id of the datasets
-    fif_files = sorted(fif_files, key=lambda p: int(p.split(os.sep)[-2]))
-    description_files = sorted(description_files,
-                               key=lambda p: int(p.split(os.sep)[-2]))
-    # optionally make a selection of files
-    if ids_to_load is not None:
-        fif_files = [fif_files[i] for i in ids_to_load]
-        description_files = [description_files[i] for i in ids_to_load]
-    is_raw = fif_files[0].endswith('-raw.fif')
+    # else we have a dataset saved in the new way with subdirectories in path
+    # for every dataset with description.json and -epo.fif or -raw.fif,
+    # target_name.json, raw_preproc_kwargs.json, window_kwargs.json,
+    # window_preproc_kwargs.json
+    if ids_to_load is None:
+        ids_to_load = [os.path.split(p)[-1] for p in os.listdir(path)]
+        ids_to_load = sorted(ids_to_load, key=lambda i: int(i))
+    ids_to_load = [str(i) for i in ids_to_load]
+    first_raw_fif_path = os.path.join(
+        path, ids_to_load[0], f'{ids_to_load[0]}-raw.fif')
+    is_raw = os.path.exists(first_raw_fif_path)
     # Parallelization of mne.read_epochs with preload=False fails with
     # 'TypeError: cannot pickle '_io.BufferedReader' object'.
     # So ignore n_jobs in that case and load with a single job.
@@ -181,23 +173,39 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
             'windowed data. Will use `n_jobs=1`.', UserWarning)
         n_jobs = 1
     datasets = Parallel(n_jobs)(
-        delayed(_load_parallel)(
-            fif_files[i], description_files[i], path, preload, is_raw)
-        for i in range(len(fif_files)))
+        delayed(_load_parallel)(path, i, preload, is_raw)
+        for i in ids_to_load)
     return BaseConcatDataset(datasets)
 
 
-def _load_parallel(fif_file, description_file, path, preload, is_raw):
-    signals = _load_signals(fif_file, preload, is_raw)
-    description = pd.read_json(description_file, typ='series')
+def _load_parallel(path, i, preload, is_raw):
+    sub_dir = os.path.join(path, i)
+    file_name_patterns = ['{}-raw.fif', '{}-epo.fif']
+    if all([os.path.exists(os.path.join(sub_dir, p.format(i))) for p in file_name_patterns]):
+        raise FileExistsError('Found -raw.fif and -epo.fif in directory.')
+    fif_name_pattern = file_name_patterns[0] if is_raw else file_name_patterns[1]
+    fif_file_name = fif_name_pattern.format(i)
+    fif_file_path = os.path.join(sub_dir, fif_file_name)
+    signals = _load_signals(fif_file_path, preload, is_raw)
+    description_file_path = os.path.join(sub_dir, 'description.json')
+    description = pd.read_json(description_file_path, typ='series')
+    target_file_path = os.path.join(sub_dir, 'target_name.json')
+    target_name = None
+    if os.path.exists(target_file_path):
+        target_name = json.load(open(target_file_path, "r"))['target_name']
+
     if is_raw:
-        target_name = None
-        target_file = os.path.join(path, 'target_name.json')
-        if os.path.exists(target_file):
-            target_name = json.load(open(target_file, "r"))['target_name']
         dataset = BaseDataset(signals, description, target_name)
     else:
         dataset = WindowsDataset(signals, description)
+    for kwargs_name in ['raw_preproc_kwargs', 'window_kwargs',
+                        'window_preproc_kwargs']:
+        kwargs_file_name = '.'.join([kwargs_name, 'json'])
+        kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
+        if os.path.exists(kwargs_file_path):
+            kwargs = json.load(open(kwargs_file_path, 'r'))
+            kwargs = [tuple(kwarg) for kwarg in kwargs]
+            setattr(dataset, kwargs_name, kwargs)
     return dataset
 
 
@@ -208,7 +216,12 @@ def _is_outdated_saved(path):
     description_files = glob(os.path.join(path, '**/description.json'))
     fif_files = glob(os.path.join(path, '**/*.fif'))
     multiple = len(description_files) != len(fif_files)
+    kwargs_in_path = any(
+        [os.path.exists(os.path.join(path, kwarg_name))
+         for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
+                            'window_preproc_kwargs']])
     return (os.path.exists(os.path.join(path, 'description.json')) or
             os.path.exists(os.path.join(path, '0-raw.fif')) or
             os.path.exists(os.path.join(path, '0-epo.fif')) or
-            multiple)
+            multiple or
+            kwargs_in_path)
