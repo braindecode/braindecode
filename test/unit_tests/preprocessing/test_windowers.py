@@ -22,7 +22,7 @@ from braindecode.util import create_mne_dummy_raw
 
 def _get_raw(tmpdir_factory, description=None):
     _, fnames = create_mne_dummy_raw(
-        2, 20000, 100, description=description,
+        n_channels=2, n_times=20000, sfreq=100, description=description,
         savedir=tmpdir_factory.mktemp('data'), save_format='fif',
         random_state=87)
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
@@ -533,3 +533,27 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
+
+
+def test_window_sizes_too_large(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    window_size = len(concat_ds.datasets[0]) + 1
+    with pytest.raises(
+            ValueError, match=f'Window size {window_size} exceeds trial durat'):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            drop_last_window=False,
+        )
+
+    with pytest.raises(
+            ValueError, match=f'Window size {window_size} exceeds trial durat'):
+        create_fixed_length_windows(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            drop_last_window=False,
+        )

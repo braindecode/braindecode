@@ -194,9 +194,12 @@ def create_fixed_length_windows(
         create_fixed_length_windows.__name__, _get_windowing_kwargs(locals()))]
 
     # check if recordings are of different lengths
-    lengths = np.array([ds.raw.n_times - ds.raw.first_samp for ds in concat_ds.datasets])
-    if (np.diff(lengths) != 0).any():
+    lengths = np.array([ds.raw.n_times for ds in concat_ds.datasets])
+    if (np.diff(lengths) != 0).any() and window_size_samples is None:
         warnings.warn('Recordings have different lengths, they will not be batch-able!')
+    if any(window_size_samples > lengths):
+        raise ValueError(f'Window size {window_size_samples} exceeds trial '
+                         f'duration {lengths.min()}.')
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_fixed_length_windows)(
@@ -427,6 +430,9 @@ def _compute_window_inds(
 
     starts += start_offset
     stops += stop_offset
+    if any(size > (stops-starts)):
+        raise ValueError(f'Window size {size} exceeds trial duration '
+                         f'{(stops-starts).min()}.')
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
@@ -500,8 +506,8 @@ def _check_and_set_fixed_length_window_arguments(start_offset_samples, stop_offs
 
     if window_size_samples is not None and window_stride_samples is not None and \
             drop_last_window is None:
-        raise ValueError('drop_last_window must be set if window_size_samples &'
-                         ' window_stride_samples are not set')
+        raise ValueError('drop_last_window must be set if both window_size_samples &'
+                         ' window_stride_samples have also been set')
     elif window_size_samples is None and\
             window_stride_samples is None and\
             drop_last_window is False:
