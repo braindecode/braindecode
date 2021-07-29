@@ -24,7 +24,7 @@ def test_variable_length_trials_cropped_decoding():
     set_random_seeds(seed=20210726, cuda=cuda)
 
     # create fake tuh abnormal dataset
-    tuh = _TUHAbnormalMock('')
+    tuh = _TUHAbnormalMock(path='')
     # fake variable length trials by cropping first recording
     splits = tuh.split([[i] for i in range(len(tuh.datasets))])
     preprocess(
