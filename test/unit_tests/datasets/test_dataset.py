@@ -100,7 +100,7 @@ def test_len_concat_dataset(concat_ds_targets):
 def test_target_in_subject_info(set_up):
     raw, _, _, _, _, _ = set_up
     desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
-    with pytest.raises(ValueError, match="'does_not_exist' not in description"):
+    with pytest.warns(UserWarning, match="'does_not_exist' not in description"):
         BaseDataset(raw, desc, target_name='does_not_exist')
 
 
