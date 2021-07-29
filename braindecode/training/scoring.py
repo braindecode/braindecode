@@ -37,8 +37,8 @@ def trial_preds_from_window_preds(
         Predictions in each trial, duplicates removed
 
     """
-    assert len(preds) == len(i_window_in_trials)
-    assert len(i_window_in_trials) == len(i_stop_in_trials)
+    assert len(preds) == len(i_window_in_trials) == len(i_stop_in_trials), (
+        f'{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}')
 
     # Algorithm for assigning window predictions to trials
     # while removing duplicate predictions:
@@ -299,8 +299,10 @@ class PostEpochTrainScoring(EpochScoring):
         self._record_score(net.history, current_score)
 
 
-def predict_trials(module, dataset):
-    """Generate trialwise predictions and labels from dataset given module.
+def predict_trials(module, dataset, return_targets=True):
+    """Create trialswise predictions (n_trials x n_classes x n_predictions),
+    and optionally also return trialwise labels (n_trials x n_targets) from
+    dataset given module.
 
     Parameters
     ----------
@@ -308,6 +310,8 @@ def predict_trials(module, dataset):
         A pytorch model implementing forward.
     dataset: braindecode.datasets.BaseConcatDataset
         A braindecode dataset to be predicted.
+    return_targets: bool
+        If True, additionally returns the trial targets.
 
     Returns
     -------
@@ -325,9 +329,15 @@ def predict_trials(module, dataset):
             all_preds.extend(preds.cpu().numpy().astype(np.float32))
             all_ys.extend(y.cpu().numpy().astype(np.float32))
             all_inds.extend(ind)
-    all_ys = np.array(all_ys)
-    trial_ys = all_ys[np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1]
     preds_per_trial = trial_preds_from_window_preds(
-        all_preds, torch.cat(all_inds[0::3]), torch.cat(all_inds[2::3]))
-    trial_preds = np.array([p.mean(axis=-1) for p in preds_per_trial])
-    return trial_preds, trial_ys
+        preds=all_preds,
+        i_window_in_trials=torch.cat(all_inds[0::3]),
+        i_stop_in_trials=torch.cat(all_inds[2::3]),
+    )
+    preds_per_trial = np.array(preds_per_trial)
+    if return_targets:
+        all_ys = np.array(all_ys)
+        trial_ys = all_ys[
+            np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1]
+        return preds_per_trial, trial_ys
+    return preds_per_trial

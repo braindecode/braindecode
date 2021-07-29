@@ -271,16 +271,23 @@ class EEGClassifier(NeuralNetClassifier):
         """
         return self.predict_proba(X).argmax(1)
 
-    def predict_trials(self, X):
-        """Return trialwise predictions and targets.
+    def predict_trials(self, X, return_targets=True):
+        """Create trialwise predictions (n_trials x n_classes x n_predictions),
+        and optionally also return trialwise labels (n_trials x n_targets).
 
         Parameters
         ----------
-        X : braindecode.datasets.BaseConcatDataset
+        X: braindecode.datasets.BaseConcatDataset
             A braindecode dataset to be predicted.
+        return_targets: bool
+            If True, additionally returns the trial targets.
 
         Returns
         -------
         trial_predictions, trial_labels: tuple(np.ndarray, np.ndarray)
         """
-        return predict_trials(self.module, X)
+        return predict_trials(
+            module=self.module,
+            dataset=X,
+            return_targets=return_targets,
+        )
