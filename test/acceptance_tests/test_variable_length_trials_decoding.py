@@ -1,4 +1,5 @@
 # Authors: Lukas Gemein <l.gemein@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
 
@@ -81,9 +82,9 @@ def test_variable_length_trials_cropped_decoding():
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
         np.array([
-            0.6917598843574524,
-            0.13793791830539703,
-            0.007187204901129007,
+            0.689495325088501,
+            0.1353449523448944,
+            0.006638816092163324,
         ]
         ),
         rtol=1e-3,
@@ -93,9 +94,9 @@ def test_variable_length_trials_cropped_decoding():
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
         np.array([
-            1.9708236455917358,
-            3.301658868789673,
-            3.808318614959717,
+            2.9394328594207764,
+            3.6401562690734863,
+            4.262846946716309,
         ]
         ),
         rtol=1e-3,
