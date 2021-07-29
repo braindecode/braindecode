@@ -11,7 +11,7 @@ def test_parse_from_tuh_file_path():
     file_path = ("v2.0.0/edf/01_tcp_ar/000/00000021/"
                  "s004_2013_08_15/00000021_s004_t000.edf")
     description = _parse_description_from_file_path(file_path)
-    assert len(description) == 9
+    assert len(description) == 8
     assert description['path'] == file_path
     assert description['year'] == 2013
     assert description['month'] == 8
@@ -19,7 +19,6 @@ def test_parse_from_tuh_file_path():
     assert description['subject'] == 21
     assert description['session'] == 4
     assert description['segment'] == 0
-    assert description['reference'] == 'ar'
     assert description['version'] == 'v2.0.0'
 
 
@@ -102,7 +101,7 @@ def test_tuh():
         path='',
     )
     assert len(tuh.datasets) == 5
-    assert tuh.description.shape == (5, 13)
+    assert tuh.description.shape == (5, 10)
     assert len(tuh) == 18000
     assert tuh.description.age.to_list() == [0, 53, 39, 37, 83]
     assert tuh.description.gender.to_list() == ['M', 'F', 'M', 'M', 'F']
@@ -113,9 +112,6 @@ def test_tuh():
     assert tuh.description.subject.to_list() == [58, 9932, 12331, 0, 14928]
     assert tuh.description.session.to_list() == [1, 4, 3, 1, 4]
     assert tuh.description.segment.to_list() == [0, 13, 2, 0, 7]
-    assert tuh.description.reference.to_list() == ['le', 'ar', 'ar', 'ar', 'ar']
-    assert tuh.description.sfreq.to_list() == [10, 10, 10, 10, 10]
-    assert tuh.description.n_samples.to_list() == [3600, 3600, 3600, 3600, 3600]
     x, y = tuh[0]
     assert x.shape == (21, 1)
     assert y is None
@@ -137,7 +133,7 @@ def test_tuh_abnormal():
         add_physician_reports=True,
     )
     assert len(tuh_ab.datasets) == 5
-    assert tuh_ab.description.shape == (5, 16)
+    assert tuh_ab.description.shape == (5, 13)
     assert tuh_ab.description.version.to_list() == [
         'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0']
     assert tuh_ab.description.pathological.to_list() == [True, False, True, False, True]

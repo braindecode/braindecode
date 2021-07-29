@@ -66,11 +66,7 @@ class TUH(BaseConcatDataset):
             age, gender = _parse_age_and_gender_from_edf_header(file_path)
             raw = mne.io.read_raw_edf(file_path, preload=preload)
             # read info relevant for preprocessing from raw without loading it
-            sfreq = raw.info['sfreq']
-            n_samples = raw.n_times
             d = {
-                'sfreq': float(sfreq),
-                'n_samples': int(n_samples),
                 'age': int(age),
                 'gender': gender,
             }
@@ -115,7 +111,6 @@ def _parse_description_from_file_path(file_path):
     subject_id = tokens[-3]
     session = tokens[-2].split('_')[0]
     segment = tokens[-1].split('_')[-1].split('.')[-2]
-    reference = tokens[-5].split('_')[2]
     return {
         'path': file_path,
         'version': version,
@@ -125,7 +120,6 @@ def _parse_description_from_file_path(file_path):
         'subject': int(subject_id),
         'session': int(session[1:]),
         'segment': int(segment[1:]),
-        'reference': reference,
     }
 
 
