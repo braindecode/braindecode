@@ -20,7 +20,7 @@ from joblib import Parallel, delayed
 
 from braindecode.datasets.base import BaseConcatDataset
 from braindecode.datautil.serialization import (
-    load_concat_dataset, check_save_dir_empty)
+    load_concat_dataset, _check_save_dir_empty)
 
 
 class Preprocessor(object):
@@ -145,7 +145,7 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
     # In case of serialization, make sure directory is available before
     # preprocessing
     if save_dir is not None and not overwrite:
-        check_save_dir_empty(save_dir)
+        _check_save_dir_empty(save_dir)
 
     if not isinstance(preprocessors, Iterable):
         raise ValueError(
@@ -174,21 +174,6 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         _set_preproc_kwargs(concat_ds, preprocessors)
 
     return concat_ds
-
-
-def _set_preproc_kwargs(concat_ds, preprocessors):
-    """Record preprocessing keyword arguments in BaseConcatDataset.
-
-    Parameters
-    ----------
-    concat_ds : BaseConcatDataset
-        Dataset in which to record preprocessing keyword arguments.
-    preprocessors : list
-        List of preprocessors.
-    """
-    preproc_kwargs = _get_preproc_kwargs(preprocessors)
-    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
-    setattr(concat_ds, concat_kind + '_preproc_kwargs', preproc_kwargs)
 
 
 def _replace_inplace(concat_ds, new_concat_ds):
@@ -278,6 +263,21 @@ def _get_preproc_kwargs(preprocessors):
                 func_kwargs = p.kwargs['fun'].keywords
         preproc_kwargs.append((func_name, func_kwargs))
     return preproc_kwargs
+
+
+def _set_preproc_kwargs(concat_ds, preprocessors):
+    """Record preprocessing keyword arguments in BaseConcatDataset.
+
+    Parameters
+    ----------
+    concat_ds : BaseConcatDataset
+        Dataset in which to record preprocessing keyword arguments.
+    preprocessors : list
+        List of preprocessors.
+    """
+    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
+    setattr(concat_ds, concat_kind + '_preproc_kwargs', preproc_kwargs)
 
 
 def exponential_moving_standardize(

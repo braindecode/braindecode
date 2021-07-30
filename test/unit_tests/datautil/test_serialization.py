@@ -12,7 +12,7 @@ from braindecode.datasets import BaseConcatDataset, MOABBDataset
 from braindecode.preprocessing import (
     create_windows_from_events, Preprocessor, preprocess)
 from braindecode.datautil.serialization import (
-    load_concat_dataset, check_save_dir_empty)
+    load_concat_dataset, _check_save_dir_empty)
 
 
 @pytest.fixture()
@@ -330,7 +330,7 @@ def test_subdirectory_already_exist(setup_concat_windows_dataset, tmpdir):
 
 
 def test_check_save_dir_empty(setup_concat_raw_dataset, tmpdir):
-    check_save_dir_empty(tmpdir)
+    _check_save_dir_empty(tmpdir)
     setup_concat_raw_dataset.save(tmpdir)
     with pytest.raises(FileExistsError):
-        check_save_dir_empty(tmpdir)
+        _check_save_dir_empty(tmpdir)

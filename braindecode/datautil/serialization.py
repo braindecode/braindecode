@@ -229,7 +229,7 @@ def _is_outdated_saved(path):
             kwargs_in_path)
 
 
-def check_save_dir_empty(save_dir):
+def _check_save_dir_empty(save_dir):
     """Make sure a BaseConcatDataset can be saved under a given directory.
 
     Parameters

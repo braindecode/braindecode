@@ -400,8 +400,9 @@ class BaseConcatDataset(ConcatDataset):
         description_file_name = os.path.join(path, 'description.json')
         target_file_name = os.path.join(path, 'target_name.json')
         if not overwrite:
-            from braindecode.datautil.serialization import check_save_dir_empty
-            check_save_dir_empty(path)
+            from braindecode.datautil.serialization import \
+                _check_save_dir_empty  # Import here to avoid circular import
+            _check_save_dir_empty(path)
         else:
             for file_name_template in file_name_templates:
                 file_names = glob(os.path.join(
