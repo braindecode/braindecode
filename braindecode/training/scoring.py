@@ -300,9 +300,8 @@ class PostEpochTrainScoring(EpochScoring):
 
 
 def predict_trials(module, dataset, return_targets=True):
-    """Create trialswise predictions (n_trials x n_classes x n_predictions),
-    and optionally also return trialwise labels (n_trials x n_targets) from
-    dataset given module.
+    """Create trialwise predictions and optionally also return trialwise
+    labels from cropped dataset given module.
 
     Parameters
     ----------
@@ -315,8 +314,21 @@ def predict_trials(module, dataset, return_targets=True):
 
     Returns
     -------
-    trial_predictions, trial_labels: tuple(np.ndarray, np.ndarray)
+        trial_predictions: np.ndarray
+            3-dimensional array (n_trials x n_classes x n_predictions), where
+            the number of predictions depend on the chosen window size and the
+            receptive field of the network.
+        trial_labels: np.ndarray
+            2-dimensional array (n_trials x n_targets) where the number of
+            targets depends on the decoding paradigm and can be either a single
+            value, multiple values, or a sequence.
     """
+    # we have a cropped dataset if there exists at least one trial with more
+    # than one compute window
+    cropped_data = sum(dataset.get_metadata()['i_window_in_trial'] != 0) > 0
+    if not cropped_data:
+        raise ValueError('This function was designed to predict trials from '
+                         'cropped datasets. This is a trialwise dataset.')
     loader = DataLoader(
         dataset=dataset,
         batch_size=1,

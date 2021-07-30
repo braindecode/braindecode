@@ -6,6 +6,7 @@
 
 
 import numpy as np
+import pytest
 import sklearn.datasets
 import torch
 from sklearn.metrics import f1_score, accuracy_score
@@ -286,7 +287,7 @@ def test_three_windows_two_trials_no_overlap():
     _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
 
-def test_predict_trials_cropped_decoding():
+def test_predict_trials():
     ds = MOABBDataset('BNCI2014001', subject_ids=1)
     ds1 = ds.split([0])['0']
 
@@ -318,8 +319,9 @@ def test_predict_trials_cropped_decoding():
     # the number of samples required to get 1 output
     receptive_field_size = window_size_samples - output_shape[-1] + 1
 
-    preds, targets = predict_trials(model, windows_ds1, return_targets=True)
+    preds, targets = predict_trials(model, windows_ds1)
 
+    # some model, cropped data
     assert preds.shape[-1] + receptive_field_size - 1 == trial_size
     assert preds.shape[1] == n_classes
     assert preds.shape[0] == targets.shape[0]
@@ -327,3 +329,30 @@ def test_predict_trials_cropped_decoding():
     expected_targets = metadata[metadata['i_window_in_trial'] == 0][
         'target'].values
     np.testing.assert_array_equal(expected_targets, targets)
+
+    # some model, trialwise data
+    windows_ds2 = create_windows_from_events(ds1)
+    with pytest.raises(ValueError, match='This function was designed to predict'
+                                         ' trials from cropped datasets. This '
+                                         'is a trialwise dataset.'):
+        predict_trials(model, windows_ds2)
+
+    # croped EEGClassifier, cropped data
+    clf = EEGClassifier(
+        model,
+        criterion=torch.nn.NLLLoss,
+        optimizer=optim.AdamW,
+        train_split=None,
+        optimizer__lr=0.0625 * 0.01,
+        optimizer__weight_decay=0,
+        batch_size=64,
+    )
+    clf.initialize()
+    clf.predict_trials(windows_ds1)
+
+    # cropped EEGClassifier, trialwise data
+    with pytest.warns(UserWarning, match="This method was designed to predict "
+                                         "trials in cropped mode. Calling it "
+                                         "when cropped is False will give the "
+                                         "same result as '.predict'."):
+        clf.predict_trials(windows_ds2)
