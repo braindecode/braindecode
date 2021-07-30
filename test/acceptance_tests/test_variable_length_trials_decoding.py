@@ -1,4 +1,5 @@
 # Authors: Lukas Gemein <l.gemein@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
 
@@ -23,7 +24,7 @@ def test_variable_length_trials_cropped_decoding():
     set_random_seeds(seed=20210726, cuda=cuda)
 
     # create fake tuh abnormal dataset
-    tuh = _TUHAbnormalMock('')
+    tuh = _TUHAbnormalMock(path='')
     # fake variable length trials by cropping first recording
     splits = tuh.split([[i] for i in range(len(tuh.datasets))])
     preprocess(
@@ -34,6 +35,8 @@ def test_variable_length_trials_cropped_decoding():
     )
     variable_tuh = BaseConcatDataset(
         [splits[str(i)] for i in range(len(tuh.datasets))])
+    # make sure we actually have different length trials
+    assert any(np.diff([ds.raw.n_times for ds in variable_tuh.datasets]) != 0)
 
     # create windows
     variable_tuh_windows = create_fixed_length_windows(
@@ -81,23 +84,23 @@ def test_variable_length_trials_cropped_decoding():
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
         np.array([
-            0.6917598843574524,
-            0.13793791830539703,
-            0.007187204901129007,
+            0.689495325088501,
+            0.1353449523448944,
+            0.006638816092163324,
         ]
         ),
         rtol=1e-3,
-        atol=1e-4,
+        atol=1e-3,
     )
 
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
         np.array([
-            1.9708236455917358,
-            3.301658868789673,
-            3.808318614959717,
+            2.925871,
+            3.611423,
+            4.23494,
         ]
         ),
-        rtol=1e-3,
-        atol=1e-3,
+        rtol=1e-2,
+        atol=1e-2,
     )
