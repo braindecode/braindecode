@@ -11,9 +11,10 @@ import pytest
 import numpy as np
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset
-from braindecode.preprocessing.preprocess import preprocess, zscore, scale, \
-    Preprocessor, filterbank, exponential_moving_demean, \
-    exponential_moving_standardize, MNEPreproc, NumpyPreproc, _replace_inplace
+from braindecode.preprocessing.preprocess import (
+    preprocess, zscore, scale, Preprocessor, filterbank,
+    exponential_moving_demean, exponential_moving_standardize, MNEPreproc,
+    NumpyPreproc, _replace_inplace, _set_preproc_kwargs)
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 
@@ -329,9 +330,26 @@ def test_replace_inplace(base_concat_ds):
     assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
 
 
+def test_set_raw_preproc_kwargs(base_concat_ds):
+    raw_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+    _set_preproc_kwargs(base_concat_ds, preprocessors)
+    assert hasattr(base_concat_ds, 'raw_preproc_kwargs')
+    assert base_concat_ds.raw_preproc_kwargs == raw_preproc_kwargs
+
+
+def test_set_window_preproc_kwargs(windows_concat_ds):
+    window_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+    _set_preproc_kwargs(windows_concat_ds, preprocessors)
+    assert hasattr(windows_concat_ds, 'window_preproc_kwargs')
+    assert windows_concat_ds.window_preproc_kwargs == window_preproc_kwargs
+
+
 @pytest.mark.parametrize('save', [True, False])
 @pytest.mark.parametrize('n_jobs', [None, 1, 2])
 def test_preprocess_save_dir(base_concat_ds, tmp_path, save, n_jobs):
+    raw_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
 
     save_dir = str(tmp_path) if save else None
@@ -340,6 +358,9 @@ def test_preprocess_save_dir(base_concat_ds, tmp_path, save, n_jobs):
         n_jobs=n_jobs)
 
     assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
+    assert all([hasattr(ds, 'target_name') for ds in base_concat_ds.datasets])
+    assert hasattr(base_concat_ds, 'raw_preproc_kwargs')
+    assert base_concat_ds.raw_preproc_kwargs == raw_preproc_kwargs
 
     if save_dir is None:
         assert all([ds.raw.preload for ds in base_concat_ds.datasets])

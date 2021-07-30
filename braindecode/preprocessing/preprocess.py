@@ -170,21 +170,47 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         else:  # joblib made copies
             _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
 
-    # Store preprocessing keyword arguments in the dataset
-    preproc_kwargs = _get_preproc_kwargs(preprocessors)
-    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
-    # XXX The kwargs are not currently saved along the datasets when `save_dir`
-    #     is provided.
-    setattr(concat_ds, concat_kind + '_preproc_kwargs', preproc_kwargs)
+        # Store preprocessing keyword arguments in the dataset
+        _set_preproc_kwargs(concat_ds, preprocessors)
 
     return concat_ds
 
 
+def _set_preproc_kwargs(concat_ds, preprocessors):
+    """Record preprocessing keyword arguments in BaseConcatDataset.
+
+    Parameters
+    ----------
+    concat_ds : BaseConcatDataset
+        Dataset in which to record preprocessing keyword arguments.
+    preprocessors : list
+        List of preprocessors.
+    """
+    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
+    setattr(concat_ds, concat_kind + '_preproc_kwargs', preproc_kwargs)
+
+
 def _replace_inplace(concat_ds, new_concat_ds):
+    """Inplace modification of a BaseConcatDataset with another's attributes.
+
+    Parameters
+    ----------
+    concat_ds : BaseConcatDataset
+        Dataset to modify inplace.
+    new_concat_ds : BaseConcatDataset
+        Dataset to use to modify ``concat_ds``.
+    """
     if len(concat_ds.datasets) != len(new_concat_ds.datasets):
         raise ValueError('Both inputs must have the same length.')
     for i in range(len(new_concat_ds.datasets)):
         concat_ds.datasets[i] = new_concat_ds.datasets[i]
+
+    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
+    preproc_kwargs_attr = concat_kind + '_preproc_kwargs'
+    if hasattr(new_concat_ds, preproc_kwargs_attr):
+        setattr(concat_ds, preproc_kwargs_attr,
+                getattr(new_concat_ds, preproc_kwargs_attr))
 
 
 def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
@@ -221,8 +247,11 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
 
     if save_dir is not None:
         concat_ds = BaseConcatDataset([ds])
+
+        # Store preprocessing keyword arguments in the dataset
+        _set_preproc_kwargs(concat_ds, preprocessors)
+
         save_subdir = os.path.join(save_dir, str(ds_index))
-        # XXX Save target_name.json if ds is a BaseDataset
         if not os.path.exists(save_subdir):
             os.makedirs(save_subdir)
         concat_ds.save(save_subdir, overwrite=overwrite)
