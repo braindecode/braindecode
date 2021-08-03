@@ -95,8 +95,8 @@ def prepare_data(n_recs, save, preload, n_jobs):
 
     # Preprocess the windowed data
     preprocessors = [Preprocessor(scale, channel_wise=True)]
-    preprocess(windows_ds, preprocessors, save_dir=save_dir, overwrite=True,
-               n_jobs=n_jobs)
+    # preprocess(windows_ds, preprocessors, save_dir=save_dir, overwrite=True,
+    #            n_jobs=n_jobs)
 
 
 ###############################################################################
