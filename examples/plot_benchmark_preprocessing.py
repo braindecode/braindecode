@@ -55,7 +55,7 @@ from itertools import product
 
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
+# import seaborn as sns
 from sklearn.preprocessing import scale
 from memory_profiler import memory_usage
 
@@ -103,14 +103,20 @@ def prepare_data(n_recs, save, preload, n_jobs):
 # Next, we can run our function and measure its run time and peak memory usage
 # for each one of our 4 cases above. We call the function multiple times with
 # each configuration to get better estimates.
+#
+# .. note::
+#   To better characterize the runtime vs. memory usage tradeoff for your
+#   specific configuration (as this will differ based on available hardware,
+#   data size and preprocessing operations), we recommend adapting this example
+#   to your use case and running it on your machine.
 
-n_repets = 5
-all_n_recs = [8]  # Load and preprocess 8 recordings
-all_n_jobs = [1, 8]
+n_repets = 2  # Number of repetitions
+all_n_recs = 2  # Number of recordings to load and preprocess
+all_n_jobs = [1, 2]  # Number of parallel processes
 
 results = list()
 for _, n_recs, save, n_jobs in product(
-        range(n_repets), all_n_recs, [True, False], all_n_jobs):
+        range(n_repets), [all_n_recs], [True, False], all_n_jobs):
 
     start = time.time()
     mem = max(memory_usage(
@@ -130,21 +136,28 @@ for _, n_recs, save, n_jobs in product(
 # Finally, we can plot the results:
 
 df = pd.DataFrame(results)
-ax = sns.scatterplot(
-    data=df, x='time', y='max_mem', style='n_jobs', hue='save',
-    palette='colorblind')
-ax.set_xlabel('Time (s)')
+
+fig, ax = plt.subplots(figsize=(6, 4))
+colors = {True: 'tab:orange', False: 'tab:blue'}
+markers = {n: m for n, m in zip(all_n_jobs, ['o', 'x', '.'])}
+for (save, n_jobs), sub_df in df.groupby(['save', 'n_jobs']):
+    ax.scatter(x=sub_df['time'], y=sub_df['max_mem'], color=colors[save],
+               marker=markers[n_jobs], label=f'save={save}, {n_jobs} jobs')
+ax.legend()
+ax.set_xlabel('Execution time (s)')
 ax.set_ylabel('Memory usage (MiB)')
-ax.set_title('Loading and preprocessing 8 recordings from Sleep Physionet')
+ax.set_title(f'Loading and preprocessing {all_n_recs} recordings from Sleep '
+             'Physionet')
 plt.show()
 
 
 ###############################################################################
 # We see that parallel preprocessing without serialization (blue crosses) is
-# faster than simple sequential processing (blue circles), however it uses
-# significantly more memory.
+# faster than simple sequential processing (blue circles), however it uses more
+# memory.
 #
-# Combining parallel preprocessing and serialization (yellow crosses) reduces
+# Combining parallel preprocessing and serialization (orange crosses) reduces
 # memory usage significantly, however it increases run time by a few seconds.
-# Depending on available resources (e.g. limited memory), it might therefore be
-# more advantageous to use both parallelization and serialization.
+# Depending on available resources (e.g. in limited memory settings), it might
+# therefore be more advantageous to use both parallelization and serialization
+# together.

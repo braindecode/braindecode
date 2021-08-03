@@ -235,7 +235,7 @@ def _check_save_dir_empty(save_dir):
     Parameters
     ----------
     save_dir : str
-        Directory under which ``concat_ds`` will be saved.
+        Directory under which a `BaseConcatDataset` will be saved.
 
     Raises
     -------
