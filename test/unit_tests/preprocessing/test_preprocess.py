@@ -9,7 +9,6 @@ from glob import glob
 
 import pytest
 import numpy as np
-from sklearn.preprocessing import scale
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset
 from braindecode.preprocessing.preprocess import (
