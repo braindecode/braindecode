@@ -34,7 +34,7 @@ class Preprocessor(object):
     `apply_function` method of Raw and Epochs object will be used to apply the
     function on the internal arrays of Raw and Epochs.
     If `apply_on_array` is False, the callable must directly modify the Raw or
-    Epochs object (e.g., by calling its method(s) or directly moraw_timepoint
+    Epochs object (e.g., by calling its method(s) or modifying its attributes).
 
     Parameters
     ----------

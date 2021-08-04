@@ -9,12 +9,14 @@ from glob import glob
 
 import pytest
 import numpy as np
+from sklearn.preprocessing import scale
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset
 from braindecode.preprocessing.preprocess import (
-    preprocess, zscore, scale, Preprocessor, filterbank,
-    exponential_moving_demean, exponential_moving_standardize, MNEPreproc,
-    NumpyPreproc, _replace_inplace, _set_preproc_kwargs)
+    preprocess, zscore, Preprocessor, filterbank, exponential_moving_demean,
+    exponential_moving_standardize, MNEPreproc, NumpyPreproc, _replace_inplace,
+    _set_preproc_kwargs)
+from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 
@@ -68,7 +70,7 @@ def test_deprecated_preprocs(base_concat_ds):
         mne_preproc = MNEPreproc('pick_types', eeg=True, meg=False, stim=False)
     factor = 1e6
     with pytest.warns(FutureWarning, match=msg2):
-        np_preproc = NumpyPreproc(scale, factor=factor)
+        np_preproc = NumpyPreproc(deprecated_scale, factor=factor)
 
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(base_concat_ds, [mne_preproc, np_preproc])
@@ -183,14 +185,14 @@ def test_scale_deprecated():
     msg = 'Function scale is deprecated; will be removed in 0.7.0. Use ' \
           'numpy.multiply instead.'
     with pytest.warns(FutureWarning, match=msg):
-        scale(np.random.rand(2, 2), factor=2)
+        deprecated_scale(np.random.rand(2, 2), factor=2)
 
 
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(scale, factor=factor)
+        Preprocessor(deprecated_scale, factor=factor)
     ]
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(base_concat_ds, preprocessors)
@@ -206,7 +208,7 @@ def test_scale_windows(windows_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(scale, factor=factor)
+        Preprocessor(deprecated_scale, factor=factor)
     ]
     raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(windows_concat_ds, preprocessors)
@@ -346,28 +348,43 @@ def test_set_window_preproc_kwargs(windows_concat_ds):
     assert windows_concat_ds.window_preproc_kwargs == window_preproc_kwargs
 
 
+@pytest.mark.parametrize('kind', ['raw', 'windows'])
 @pytest.mark.parametrize('save', [True, False])
+@pytest.mark.parametrize('overwrite', [True, False])
 @pytest.mark.parametrize('n_jobs', [None, 1, 2])
-def test_preprocess_save_dir(base_concat_ds, tmp_path, save, n_jobs):
-    raw_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
-    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
+                             kind, save, overwrite, n_jobs):
+    preproc_kwargs = [
+        ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False})]
+    preprocessors = [
+        Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
 
     save_dir = str(tmp_path) if save else None
-    base_concat_ds = preprocess(
-        base_concat_ds, preprocessors, save_dir, overwrite=False,
-        n_jobs=n_jobs)
+    if kind == 'raw':
+        concat_ds = base_concat_ds
+        preproc_kwargs_name = 'raw_preproc_kwargs'
+    elif kind == 'windows':
+        concat_ds = windows_concat_ds
+        preproc_kwargs_name = 'window_preproc_kwargs'
 
-    assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
-    assert all([hasattr(ds, 'target_name') for ds in base_concat_ds.datasets])
-    assert hasattr(base_concat_ds, 'raw_preproc_kwargs')
-    assert base_concat_ds.raw_preproc_kwargs == raw_preproc_kwargs
+    concat_ds = preprocess(
+        concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs)
+
+    assert hasattr(concat_ds, preproc_kwargs_name)
+    assert getattr(concat_ds, preproc_kwargs_name) == preproc_kwargs
+    assert all([len(getattr(ds, kind).times) == 25
+                for ds in concat_ds.datasets])
+    if kind == 'raw':
+        assert all([hasattr(ds, 'target_name') for ds in concat_ds.datasets])
 
     if save_dir is None:
-        assert all([ds.raw.preload for ds in base_concat_ds.datasets])
+        assert all([getattr(ds, kind).preload
+                    for ds in concat_ds.datasets])
     else:
-        assert all([not ds.raw.preload for ds in base_concat_ds.datasets])
+        assert all([not getattr(ds, kind).preload
+                    for ds in concat_ds.datasets])
         save_dirs = [os.path.join(save_dir, str(i))
-                     for i in range(len(base_concat_ds.datasets))]
+                     for i in range(len(concat_ds.datasets))]
         assert set(glob(save_dir + '/*')) == set(save_dirs)
 
 

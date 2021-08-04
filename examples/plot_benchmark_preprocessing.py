@@ -7,6 +7,7 @@ preprocessing data with the parallelization and serialization functionalities
 available in :func:`braindecode.preprocessing.preprocess`.
 
 We compare 4 cases:
+
 1. Sequential, no serialization
 2. Sequential, with serialization
 3. Parallel, no serialization
@@ -18,7 +19,7 @@ other. In this scenario, :func:`braindecode.preprocessing.preprocess` acts
 inplace, which means memory usage will likely stay stable (depending on the
 preprocessing operations) if recordings have been preloaded. However, two
 potential issues arise when working with large datasets: (1) if recordings have
-not been preloaded before preprocessing, `preprocess` will need to load them
+not been preloaded before preprocessing, `preprocess()` will need to load them
 and keep them in memory, in which case memory can become a bottleneck, and (2)
 sequential preprocessing can take a considerable amount of time to run when
 working with many recordings.
@@ -55,7 +56,6 @@ from itertools import product
 
 import pandas as pd
 import matplotlib.pyplot as plt
-# import seaborn as sns
 from sklearn.preprocessing import scale
 from memory_profiler import memory_usage
 
@@ -82,7 +82,7 @@ def prepare_data(n_recs, save, preload, n_jobs):
 
     # (2) Preprocess the continuous data
     preprocessors = [
-        Preprocessor(lambda x: x * 1e6),
+        Preprocessor('crop', tmin=10),
         Preprocessor('filter', l_freq=None, h_freq=30)
     ]
     preprocess(concat_ds, preprocessors, save_dir=save_dir, overwrite=True,
@@ -90,13 +90,13 @@ def prepare_data(n_recs, save, preload, n_jobs):
 
     # (3) Window the data
     windows_ds = create_fixed_length_windows(
-        concat_ds, 0, 0, int(30 * sfreq), int(30 * sfreq), True,
+        concat_ds, 0, None, int(30 * sfreq), int(30 * sfreq), True,
         preload=preload, n_jobs=n_jobs)
 
     # Preprocess the windowed data
     preprocessors = [Preprocessor(scale, channel_wise=True)]
-    # preprocess(windows_ds, preprocessors, save_dir=save_dir, overwrite=True,
-    #            n_jobs=n_jobs)
+    preprocess(windows_ds, preprocessors, save_dir=save_dir, overwrite=True,
+               n_jobs=n_jobs)
 
 
 ###############################################################################
@@ -105,12 +105,12 @@ def prepare_data(n_recs, save, preload, n_jobs):
 # each configuration to get better estimates.
 #
 # .. note::
-#   To better characterize the runtime vs. memory usage tradeoff for your
+#   To better characterize the run time vs. memory usage tradeoff for your
 #   specific configuration (as this will differ based on available hardware,
 #   data size and preprocessing operations), we recommend adapting this example
 #   to your use case and running it on your machine.
 
-n_repets = 2  # Number of repetitions
+n_repets = 3  # Number of repetitions
 all_n_recs = 2  # Number of recordings to load and preprocess
 all_n_jobs = [1, 2]  # Number of parallel processes
 
