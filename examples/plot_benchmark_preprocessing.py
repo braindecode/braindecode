@@ -142,7 +142,7 @@ colors = {True: 'tab:orange', False: 'tab:blue'}
 markers = {n: m for n, m in zip(all_n_jobs, ['o', 'x', '.'])}
 for (save, n_jobs), sub_df in df.groupby(['save', 'n_jobs']):
     ax.scatter(x=sub_df['time'], y=sub_df['max_mem'], color=colors[save],
-               marker=markers[n_jobs], label=f'save={save}, {n_jobs} jobs')
+               marker=markers[n_jobs], label=f'save={save}, n_jobs={n_jobs}')
 ax.legend()
 ax.set_xlabel('Execution time (s)')
 ax.set_ylabel('Memory usage (MiB)')
