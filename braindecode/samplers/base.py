@@ -251,8 +251,12 @@ class BalancedSequenceSampler(RecordingSampler):
         rec_inds = self.info.iloc[rec_ind]['index']
         len_rec_inds = len(rec_inds)
 
+        row = self.info.iloc[rec_ind].name
+        if not isinstance(row, tuple):
+            # Theres's only one category, e.g. "subject"
+            row = tuple([row])
         available_indices = self.info_class.loc[
-            self.info.iloc[rec_ind].name + tuple([class_ind]), 'index']
+            row + tuple([class_ind]), 'index']
         win_ind = self.rng.choice(available_indices)
         win_ind_in_rec = np.where(rec_inds == win_ind)[0][0]
 

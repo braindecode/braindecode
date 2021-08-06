@@ -181,6 +181,22 @@ def test_balanced_sequence_sampler(target_windows_ds, n_sequences, n_windows):
         assert rec_info == tuple(rec_info_md.tolist())
 
 
+def test_balanced_sequence_sampler_single_category(target_windows_ds):
+    """Test the case where there's only one category in the metadata, e.g.
+    'subject'.
+    """
+    n_windows = 3
+    n_sequences = 10
+
+    md = target_windows_ds.get_metadata().drop(columns=['session', 'run'])
+    sampler = BalancedSequenceSampler(
+        md, n_windows, n_sequences=n_sequences, random_state=87)
+
+    seqs = [seq for seq in sampler]
+    assert len(seqs) == n_sequences
+    assert all([len(s) == n_windows for s in seqs])
+
+
 def test_balanced_sequence_sampler_no_targets(windows_ds):
     md = windows_ds.get_metadata().drop(columns='target')
     with pytest.raises(ValueError):
