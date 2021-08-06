@@ -64,6 +64,7 @@ Models
     SleepStagerChambon2018
     TIDNet
     get_output_shape
+    TimeDistributed
 
 Training
 ========

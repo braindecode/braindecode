@@ -1,8 +1,10 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
 
 import torch
+from torch import nn
 import numpy as np
 from scipy.special import log_softmax
 
@@ -136,3 +138,60 @@ def aggregate_probas(logits, n_windows_stride=1):
     """
     log_probas = log_softmax(logits, axis=1)
     return _pad_shift_array(log_probas, stride=n_windows_stride).sum(axis=0).T
+
+
+class TimeDistributed(nn.Module):
+    """Extract features for multiple windows, concatenate then classify them.
+
+    Extract features from a sequence of windows using a provided feature
+    extractor, then concatenate the features and pass them to a classifier (by
+    default, a linear layer with dropout).
+    Useful when training a sequence-to-prediction model (e.g. sleep stager
+    which must map a sequence of consecutive windows to the label of the middle
+    window in the sequence).
+
+    Parameters
+    ----------
+    feat_extractor : nn.Module
+        Model that extracts features from input arrays. The output of
+        ``feat_extractor`` will be flattened into a 1D array.
+    feat_size : int | None
+        Number of elements in the output of ``feat_extractor``. Ignored if
+        ``clf`` is provided.
+    n_windows : int | None
+        Number of windows whose features must be concatenated. Ignored if
+        ``clf`` is provided.
+    n_classes : int | None
+        Number of classes. Ignored if ``clf`` is provided.
+    dropout : float
+        Dropout to be applied before the linear layer. Ignored if ``clf`` is
+        provided.
+    clf : nn.Module | None
+        If provided, module that will receive the concatenated features and
+        produce a prediction. If None, a simple linear layer with dropout
+        is used, as defined using parameters ``feat_size``, ``n_windows``,
+        ``n_classes`` and ``dropout``.
+    """
+    def __init__(self, feat_extractor, feat_size=None, n_windows=None,
+                 n_classes=None, dropout=0.25, clf=None):
+        super().__init__()
+        self.feat_extractor = feat_extractor
+        if clf is None:
+            self.clf = nn.Sequential(
+                nn.Dropout(dropout),
+                nn.Linear(feat_size * n_windows, n_classes)
+            )
+        else:
+            self.clf = clf
+
+    def forward(self, x):
+        """
+        Parameters
+        ----------
+        x : torch.Tensor
+            Sequence of windows, of shape (batch_size, seq_len, n_channels,
+            n_times).
+        """
+        feats = [self.feat_extractor(x[:, i]) for i in range(x.shape[1])]
+        feats = torch.stack(feats, dim=1).flatten(start_dim=1)
+        return self.clf(feats)

@@ -237,9 +237,8 @@ class_weights = compute_class_weight(
 #
 
 import torch
-from torch import nn
 from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018
+from braindecode.models import SleepStagerChambon2018, TimeDistributed
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -252,40 +251,15 @@ n_classes = 5
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = train_set[0][0].shape
 
-
-class TimeDistributedNet(nn.Module):
-    """Extract features for multiple windows then concatenate & classify them.
-    """
-    def __init__(self, feat_extractor, len_last_layer, n_windows, n_classes,
-                 dropout=0.25):
-        super().__init__()
-        self.feat_extractor = feat_extractor
-        self.clf = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(len_last_layer * n_windows, n_classes)
-        )
-
-    def forward(self, x):
-        """
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input sequence of windows, of shape (batch_size, seq_len,
-            n_channels, n_times).
-        """
-        feats = [self.feat_extractor.embed(x[:, i]) for i in range(x.shape[1])]
-        feats = torch.stack(feats, dim=1).flatten(start_dim=1)
-        return self.clf(feats)
-
-
 feat_extractor = SleepStagerChambon2018(
     n_channels,
     sfreq,
     n_classes=n_classes,
-    input_size_s=input_size_samples / sfreq
+    input_size_s=input_size_samples / sfreq,
+    return_feats=True
 )
 
-model = TimeDistributedNet(
+model = TimeDistributed(
     feat_extractor, feat_extractor.len_last_layer, n_windows, n_classes,
     dropout=0.5)
 
