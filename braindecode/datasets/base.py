@@ -159,7 +159,7 @@ class WindowsDataset(BaseDataset):
         Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
         channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-    def __init__(self, windows, description=None, transform=None, targets_from='channels',
+    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
                  last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)

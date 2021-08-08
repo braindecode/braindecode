@@ -33,16 +33,13 @@ In Braindecode, there are two supported configurations created for training mode
 #
 import copy
 
+import numpy as np
 import sklearn
 
-DATASET_PATH = '/home/fattouh/data/BCICIV_4_mat'
-
-import numpy as np
-
-from braindecode.datasets.ecog_bci_competition import EcogBCICompetition4
+from braindecode.datasets.bcicomp import BCICompetitionDataset4
 
 subject_id = 1
-dataset = EcogBCICompetition4(DATASET_PATH, subject_ids=[subject_id])
+dataset = BCICompetitionDataset4(subject_ids=[subject_id])
 dataset = dataset.split('session')['train']
 
 from braindecode.preprocessing.preprocess import (
@@ -201,7 +198,7 @@ train_windows_dataset = create_fixed_length_windows(
     window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
-    raw_targets='target',
+    targets_from='channels',
     last_target_only=False,
     preload=True
 )
@@ -213,7 +210,7 @@ valid_windows_dataset = create_fixed_length_windows(
     window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
-    raw_targets='target',
+    targets_from='channels',
     last_target_only=False,
     preload=True
 )
@@ -225,7 +222,7 @@ test_windows_dataset = create_fixed_length_windows(
     window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
-    raw_targets='target',
+    targets_from='channels',
     last_target_only=False,
     preload=True
 )

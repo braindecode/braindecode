@@ -1,22 +1,28 @@
+import glob
+import os.path as osp
+from os import remove
+from shutil import unpack_archive
+
 import mne
 import numpy as np
 import scipy.io
+from mne.utils import _url_to_local_path
+from moabb.datasets.download import data_dl, get_dataset_path
 
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 
+DATASET_URL = 'https://stacks.stanford.edu/file/druid:zk881ps0522/BCI_Competion4_dataset4_data_fingerflexions.zip'
 
-class EcogBCICompetition4(BaseConcatDataset):
-    """BCI competition IV ECoG dataset with finger movements.
+
+class BCICompetitionDataset4(BaseConcatDataset):
+    """BCI competition IV dataset 4.
 
     Contains ECoG recordings for three patients moving fingers during the experiment.
     Targets correspond to the time courses of the flexion of each of five fingers.
-    See http://www.bbci.de/competition/iv/desc_4.pdf for the dataset description.
+    See http://www.bbci.de/competition/iv/desc_4.pdf and
+    http://www.bbci.de/competition/iv/ for the dataset description.
 
-    Test labels can be downloaded from:
-    http://www.bbci.de/competition/iv/results/ds4/true_labels.zip
-
-    Data can be downloaded from (Dataset 4):
-    http://www.bbci.de/competition/iv/#dataset4
+    ECoG library contatining the dataset: https://searchworks.stanford.edu/view/zk881ps0522
 
     Notes
     -----
@@ -24,29 +30,25 @@ class EcogBCICompetition4(BaseConcatDataset):
 
     Parameters
     ----------
-    path : str
-        Path to the folder with BCI competition IV dataset 4. All .mat files are
-        expected to be in this directory.
     subject_ids : list(int) | int | None
         (list of) int of subject(s) to be loaded. If None, load all available
         subjects. Should be in range 1-3.
 
     References
     ----------
-    .. [1] Schalk, G., Kubanek, J., Miller, K.J., Anderson, N.R., Leuthardt, E.C.,
-        Ojemann, J.G., Limbrick, D., Moran, D.W., Gerhardt, L.A., and Wolpaw, J.R.
-        Decoding Two Dimensional Movement Trajectories Using Electrocorticographic Signals
-        in Humans, J Neural Eng, 4: 264-275, 2007.
+    .. [1] Miller, Kai J. "A library of human electrocorticographic data and analyses."
+    Nature human behaviour 3, no. 11 (2019): 1225-1235. https://doi.org/10.1038/s41562-019-0678-3
     """
     possible_subjects = [1, 2, 3]
 
-    def __init__(self, path, subject_ids=None):
+    def __init__(self, subject_ids=None):
+        data_path = self.download()
         if isinstance(subject_ids, int):
             subject_ids = [subject_ids]
         if subject_ids is None:
             subject_ids = self.possible_subjects
         self._validate_subjects(subject_ids)
-        files_list = [f'{path}/sub{i}_comp.mat' for i in subject_ids]
+        files_list = [f'{data_path}/sub{i}_comp.mat' for i in subject_ids]
         datasets = []
         for file_path in files_list:
             raw_train, raw_test = self._load_data_to_mne(file_path)
@@ -63,6 +65,42 @@ class EcogBCICompetition4(BaseConcatDataset):
             datasets.append(BaseDataset(raw_train, description=desc_train))
             datasets.append(BaseDataset(raw_test, description=desc_test))
         super().__init__(datasets)
+
+    @staticmethod
+    def download(path=None, force_update=False, verbose=None):
+        """Download the dataset.
+
+        Parameters
+        ----------
+        path  (None | str) – Location of where to look for the data storing location.
+        If None, the environment variable or config parameter
+        MNE_DATASETS_(dataset)_PATH is used. If it doesn’t exist, the “~/mne_data”
+        directory is used. If the dataset is not found under the given path, the data
+        will be automatically downloaded to the specified folder.
+        force_update (bool) – Force update of the dataset even if a local copy exists.
+        verbose (bool, str, int, or None) – If not None, override default verbose level
+        (see mne.verbose())
+
+        Returns
+        -------
+
+        """
+        sign = 'BCICompetitionIVDataset4'
+        # Check if the dataset already exists (unpacked). We have to do that manually
+        # because we are removing .zip file from disk to save disk space.
+        path = get_dataset_path(sign, path)
+        key_dest = "MNE-{:s}-data".format(sign.lower())
+        destination = _url_to_local_path(DATASET_URL, osp.join(path, key_dest))[
+                      :-4] + '/BCI_Competion4_dataset4_data_fingerflexions'
+        if len(list(glob.glob(destination + '/*.mat'))) == 6:
+            return destination
+
+        data_path = data_dl(DATASET_URL, sign, path=path,
+                            force_update=force_update, verbose=verbose)
+        unpack_archive(data_path, data_path[:-4])
+        # removes .zip file that the data was unpacked from
+        remove(data_path)
+        return destination
 
     @staticmethod
     def _prepare_targets(upsampled_targets, targets_stride):

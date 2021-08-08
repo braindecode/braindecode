@@ -43,14 +43,12 @@ Braindecode on ECoG BCI IV competition dataset 4.
 # multiple trials and usually one target per trial. Here, fingers flexions change in time
 # and are recorded with sampling frequency equals to 25 Hz.
 
-DATASET_PATH = '/home/maciej/projects/braindecode/BCICIV_4_mat'
-
 import numpy as np
 
-from braindecode.datasets.ecog_bci_competition import EcogBCICompetition4
+from braindecode.datasets.bcicomp import BCICompetitionDataset4
 
 subject_id = 1
-dataset = EcogBCICompetition4(DATASET_PATH, subject_ids=[subject_id])
+dataset = BCICompetitionDataset4(subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing
@@ -271,9 +269,8 @@ regressor.fit(windows_dataset, y=None, epochs=n_epochs)
 
 old_level = set_log_level(verbose='WARNING', return_old_level=True)
 preds_test = regressor.predict(windows_dataset_test)
-set_log_level(verbose=old_level)
-
 y_test = np.stack([data[1] for data in windows_dataset_test])
+set_log_level(verbose=old_level)
 
 ######################################################################
 # Plot Results

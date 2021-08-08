@@ -64,9 +64,7 @@ def concat_ds_targets():
     return concat_ds, targets
 
 
-# TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")
-# TODO: add test for transformers and case when subject_info is used
 def dataset_target_time_series():
     rng = np.random.RandomState(42)
     signal_sfreq = 50
@@ -75,31 +73,56 @@ def dataset_target_time_series():
                            ch_types=['eeg', 'eeg', 'misc', 'misc'])
     signal = rng.randn(2, 1000)
     targets = np.full((2, 1000), np.nan)
-    targets_sfreq = 25
+    targets_sfreq = 10
     targets_stride = int(signal_sfreq / targets_sfreq)
     targets[:, ::targets_stride] = rng.randn(2, int(targets.shape[1] / targets_stride))
 
-    targets_positions = np.arange(0, signal.shape[1], targets_stride, dtype=int)
-
     raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
     desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
-    base_dataset = BaseDataset(raw, desc, target_name='age')
+    base_dataset = BaseDataset(raw, desc, target_name=None)
     concat_ds = BaseConcatDataset([base_dataset])
     windows_dataset = create_windows_from_target_channels(
         concat_ds,
         window_size_samples=100,
     )
 
-    return concat_ds, targets_positions, windows_dataset
+    return concat_ds, windows_dataset, targets, signal
 
 
-def test_creating_windows_from_raw(dataset_target_time_series):
-    _, target_positions, windows_dataset = dataset_target_time_series
-    assert len(windows_dataset) == 450
+def test_windows_with_target_from_channels(dataset_target_time_series):
+    _, windows_dataset, targets, signal = dataset_target_time_series
+    assert len(windows_dataset) == 180
+    for i in range(180):
+        epoch, y, window_inds = windows_dataset[i]
+        target_idx = (i + 20) * 5
+        np.testing.assert_array_almost_equal(targets[:, target_idx], y)
+        np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
+        np.testing.assert_array_almost_equal(np.array([i, i*5, target_idx]), window_inds)
+
+
+def test_windows_with_target_from_channels_all_targets(dataset_target_time_series):
+    concat_ds, _, targets, signal = dataset_target_time_series
+    windows_dataset = create_windows_from_target_channels(
+        concat_ds,
+        window_size_samples=100,
+        last_target_only=False
+    )
+    assert len(windows_dataset) == 180
+    for i in range(180):
+        epoch, y, window_inds = windows_dataset[i]
+        target_idx = (i + 20) * 5
+        np.testing.assert_array_almost_equal(targets[:, target_idx-99: target_idx + 1], y)
+        np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
+        np.testing.assert_array_almost_equal(np.array([i, i*5, target_idx]), window_inds)
+
+
+def test_windows_dataset_from_target_raise_valuerror():
+    with pytest.raises(ValueError):
+        WindowsDataset(None, None, targets_from='non-existing')
 
 
 def test_preprocessors(dataset_target_time_series):
-    concat_ds, target_positions, _ = dataset_target_time_series
+    concat_ds = dataset_target_time_series[0]
     concat_ds_before = copy.deepcopy(concat_ds)
     preprocessors = [
         Preprocessor('pick_types', eeg=True, misc=True),
@@ -115,32 +138,6 @@ def test_preprocessors(dataset_target_time_series):
         concat_ds.datasets[0].raw.get_data()[-2:, :],
         concat_ds_before.datasets[0].raw.get_data()[-2:, :]
     )
-
-    #
-    # events = np.array([[100, 0, 1],
-    #                    [200, 0, 2],
-    #                    [300, 0, 1],
-    #                    [400, 0, 4],
-    #                    [500, 0, 3]])
-    # window_idxs = [(0, 0, 100),
-    #                (0, 100, 200),
-    #                (1, 0, 100),
-    #                (2, 0, 100),
-    #                (2, 50, 150)]
-    # i_window_in_trial, i_start_in_trial, i_stop_in_trial = list(
-    #     zip(*window_idxs))
-    # metadata = pd.DataFrame(
-    #     {'sample': events[:, 0],
-    #      'x': events[:, 1],
-    #      'target': events[:, 2],
-    #      'i_window_in_trial': i_window_in_trial,
-    #      'i_start_in_trial': i_start_in_trial,
-    #      'i_stop_in_trial': i_stop_in_trial})
-    #
-    # mne_epochs = mne.Epochs(raw=raw, events=events, metadata=metadata)
-    # windows_dataset = WindowsDataset(mne_epochs, desc)
-    #
-    # return raw, base_dataset, mne_epochs, windows_dataset, events, window_idxs
 
 
 @pytest.fixture(scope='module')

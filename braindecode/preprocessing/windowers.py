@@ -392,14 +392,9 @@ def _create_fixed_length_windows(
     return windows_ds
 
 
-# TODO: rethink trial/session naming for ECoG
 def create_windows_from_target_channels(
         concat_ds, window_size_samples=None, preload=False, drop_bad_windows=True,
         picks=None, reject=None, flat=None, n_jobs=1, last_target_only=True):
-    # _check_windowing_arguments(
-    #     trial_start_offset_samples, trial_stop_offset_samples,
-    #     window_size_samples, None)
-
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
             ds, window_size_samples, preload, drop_bad_windows, picks, reject,
