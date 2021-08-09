@@ -34,6 +34,7 @@ Enhancements
 - Preprocessing and windowing choices are now saved on the level of individual datasets (:gh:`288` by `Lukas Gemein`_)
 - Serialization now happens entirely on dataset level creating subsets for individual datasets that contain 'fif' and 'json' files (:gh:`288` `Lukas Gemein`_)
 - Instantiation of TUH :class:`braindecode.datasets.tuh.TUH` and TUHAbnormal :class:`braindecode.datasets.tuh.TUHAbnormal`, as well as loading :func:`braindecode.datautil.serialization.load_concat_dataset` of stored datasets now support multiple workers (:gh:`288` by `Lukas Gemein`_)
+- Adding balanced sampling of sequences of windows with :class:`braindecode.samplers.BalancedSequenceSampler `  as proposed in U-Sleep paper (:gh:`` by `Theo Gnassounou`_ and `Hubert Banville`_)
 
 Bugs
 ~~~~

@@ -151,6 +151,7 @@ Samplers
    RecordingSampler
    SequenceSampler
    RelativePositioningSampler
+   BalancedSequenceSampler
 
 .. _augmentation_api:
 
@@ -223,5 +224,4 @@ Visualization
 
     compute_amplitude_gradients
     plot_confusion_matrix
-
 
