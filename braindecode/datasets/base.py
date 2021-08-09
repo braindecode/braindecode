@@ -397,7 +397,7 @@ class BaseConcatDataset(ConcatDataset):
                 self.datasets[0], 'windows')):
             raise ValueError("dataset should have either raw or windows "
                              "attribute")
-        file_names_ = ["{}-raw.fif", "{}-epo.fif"]
+        file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, 'description.json')
         target_file_name = os.path.join(path, 'target_name.json')
         if not overwrite:
@@ -407,9 +407,9 @@ class BaseConcatDataset(ConcatDataset):
                     f'{description_file_name} or {target_file_name} exist in '
                     f'{path}.')
         else:
-            for file_name in file_names_:
+            for file_name_temple in file_name_templates:
                 file_names = glob(os.path.join(
-                    path, f"*{file_name.lstrip('{}')}"))
+                    path, f"*{file_name_temple.lstrip('{}')}"))
                 _ = [os.remove(f) for f in file_names]
             if os.path.isfile(target_file_name):
                 os.remove(target_file_name)
@@ -422,13 +422,16 @@ class BaseConcatDataset(ConcatDataset):
                     os.remove(kwarg_path)
 
         is_raw = hasattr(self.datasets[0], 'raw')
-        file_name = file_names_[0] if is_raw else file_names_[1]
         if is_raw:
+            file_name_template = file_name_templates[0]
             # for checks that all have same target name and for
             # saving later
             target_name = self.datasets[0].target_name
+        else:
+            file_name_template = file_name_templates[1]
+
         for i_ds, ds in enumerate(self.datasets):
-            full_file_path = os.path.join(path, file_name.format(i_ds))
+            full_file_path = os.path.join(path, file_name_template.format(i_ds))
             if is_raw:
                 ds.raw.save(full_file_path, overwrite=overwrite)
                 assert ds.target_name == target_name, (
@@ -495,7 +498,8 @@ class BaseConcatDataset(ConcatDataset):
             Directory in which subdirectories are created to store
              -raw.fif | -epo.fif and .json files to.
         overwrite : bool
-            Whether to delete old subdirectories.
+            Whether to delete old subdirectories that will be saved to in this
+            call.
         offset : int
             If provided, the integer is added to the id of the dataset in the
             concat. This is useful in the setting of very large datasets, where
@@ -524,13 +528,14 @@ class BaseConcatDataset(ConcatDataset):
                         f'Subdirectory {sub_dir} already exists. Please select'
                         f' a different directory, set overwrite=True, or '
                         f'resolve manually.')
+            # save_dir/{i_ds+offset}/
             os.makedirs(sub_dir)
             # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
             self._save_signals(sub_dir, ds, i_ds, offset)
             # save_dir/{i_ds+offset}/description.json
             self._save_description(sub_dir, ds.description)
             # save_dir/{i_ds+offset}/raw_preproc_kwargs.json
-            # save_dir/{i_ds+offset}/window_kwargs.json,
+            # save_dir/{i_ds+offset}/window_kwargs.json
             # save_dir/{i_ds+offset}/window_preproc_kwargs.json
             self._save_kwargs(sub_dir, ds)
             # save_dir/{i_ds+offset}/target_name.json
@@ -538,7 +543,7 @@ class BaseConcatDataset(ConcatDataset):
         if overwrite:
             # the following will be True for all datasets preprocessed and
             # stored in parallel with braindecode.preprocessing.preprocess
-            if i_ds+1+offset != n_sub_dirs:
+            if i_ds+1+offset < n_sub_dirs:
                 warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
                               f"does not match the number of existing "
                               f"subdirectories ({n_sub_dirs}). You may now "

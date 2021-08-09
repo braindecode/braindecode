@@ -8,7 +8,7 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from braindecode.datasets.moabb import MOABBDataset
+from braindecode.datasets import BaseConcatDataset, MOABBDataset
 from braindecode.preprocessing import (
     create_windows_from_events, Preprocessor, preprocess)
 from braindecode.datautil.serialization import load_concat_dataset
@@ -291,6 +291,18 @@ def test_save_varying_number_of_datasets_with_overwrite(setup_concat_windows_dat
     subset = concat_windows_dataset.split([0])['0']
     with pytest.warns(UserWarning, match='The number of saved datasets'):
         subset.save(path=tmpdir, overwrite=True)
+
+    # assert no warning raised when there are as many subdirectories than before
+    with pytest.warns(None) as raised_warnings:
+        concat_windows_dataset.save(path=tmpdir, overwrite=True)
+        assert len(raised_warnings) == 0
+
+    # assert no warning raised when there are more subdirectories than before
+    double_concat_windows_dataset = BaseConcatDataset(
+        [concat_windows_dataset, concat_windows_dataset])
+    with pytest.warns(None) as raised_warnings:
+        double_concat_windows_dataset.save(path=tmpdir, overwrite=True)
+        assert len(raised_warnings) == 0
 
 
 def test_directory_contains_file(setup_concat_windows_dataset, tmpdir):
