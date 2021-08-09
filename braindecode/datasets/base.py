@@ -407,9 +407,9 @@ class BaseConcatDataset(ConcatDataset):
                     f'{description_file_name} or {target_file_name} exist in '
                     f'{path}.')
         else:
-            for file_name_temple in file_name_templates:
+            for file_name_template in file_name_templates:
                 file_names = glob(os.path.join(
-                    path, f"*{file_name_temple.lstrip('{}')}"))
+                    path, f"*{file_name_template.lstrip('{}')}"))
                 _ = [os.remove(f) for f in file_names]
             if os.path.isfile(target_file_name):
                 os.remove(target_file_name)
