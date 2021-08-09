@@ -104,13 +104,18 @@ class BaseDataset(Dataset):
         description = _create_description(description)
         for key, value in description.items():
             # if the key is already in the existing description, drop it
-            if key in self._description:
+            if self._description is not None and key in self._description:
                 assert overwrite, (f"'{key}' already in description. Please "
                                    f"rename or set overwrite to True.")
                 self._description.pop(key)
-        self._description = pd.concat([self.description, description])
+        if self._description is None:
+            self._description = description
+        else:
+            self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
+        if target_name is not None and type(target_name) not in [str, tuple]:
+            raise ValueError('target_name has to be None, str, tuple')
         if target_name is None:
             return target_name
         else:
@@ -121,7 +126,7 @@ class BaseDataset(Dataset):
                 target_name = [target_name]
             # check if target name(s) can be read from description
             for name in target_name:
-                if name not in self.description:
+                if self.description is None or name not in self.description:
                     warnings.warn(f"'{name}' not in description. '__getitem__'"
                                   f"will fail unless an appropriate target is"
                                   f" added to description.", UserWarning)
@@ -309,7 +314,7 @@ class BaseConcatDataset(ConcatDataset):
         if property is not None or split_ids is not None:
             warnings.warn("Keyword arguments `property` and `split_ids` "
                           "are deprecated and will be removed in the future. "
-                          "Use `by` instead.")
+                          "Use `by` instead.", DeprecationWarning)
             by = property if property is not None else split_ids
         if isinstance(by, str):
             split_ids = {

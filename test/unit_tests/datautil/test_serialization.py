@@ -293,9 +293,23 @@ def test_save_varying_number_of_datasets_with_overwrite(setup_concat_windows_dat
         subset.save(path=tmpdir, overwrite=True)
 
 
-def test_other_subdirectories_exist(setup_concat_windows_dataset, tmpdir):
+def test_directory_contains_file(setup_concat_windows_dataset, tmpdir):
     with open(os.path.join(tmpdir, 'test.txt'), 'w') as f:
         f.write('test')
     concat_windows_dataset = setup_concat_windows_dataset
     with pytest.warns(UserWarning, match='Chosen directory'):
+        concat_windows_dataset.save(tmpdir)
+
+
+def test_other_subdirectories_exist(setup_concat_windows_dataset, tmpdir):
+    os.mkdir(os.path.join(tmpdir, '999'))
+    concat_windows_dataset = setup_concat_windows_dataset
+    with pytest.warns(UserWarning, match='Chosen directory'):
+        concat_windows_dataset.save(tmpdir)
+
+
+def test_subdirectory_already_exist(setup_concat_windows_dataset, tmpdir):
+    os.mkdir(os.path.join(tmpdir, '0'))
+    concat_windows_dataset = setup_concat_windows_dataset
+    with pytest.raises(FileExistsError, match='Subdirectory'):
         concat_windows_dataset.save(tmpdir)
