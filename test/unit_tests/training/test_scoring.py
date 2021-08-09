@@ -332,9 +332,8 @@ def test_predict_trials():
 
     # some model, trialwise data
     windows_ds2 = create_windows_from_events(ds1)
-    with pytest.raises(ValueError, match='This function was designed to predict'
-                                         ' trials from cropped datasets. This '
-                                         'is a trialwise dataset.'):
+    with pytest.warns(UserWarning, match='This function was designed to predict'
+                                         ' trials from cropped datasets.'):
         predict_trials(model, windows_ds2)
 
     # cropped EEGClassifier, cropped data
