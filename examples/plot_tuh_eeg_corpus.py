@@ -10,7 +10,6 @@ including simple preprocessing steps as well as cutting of compute windows.
 #
 # License: BSD (3-clause)
 
-import os
 import tempfile
 
 import numpy as np
@@ -20,7 +19,7 @@ import mne
 
 from braindecode.datasets import TUH
 from braindecode.preprocessing import (
-    preprocess, Preprocessor, create_fixed_length_windows, scale)
+    preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
 from braindecode.datautil.serialization import load_concat_dataset
 
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
@@ -51,12 +50,14 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
 
 TUH_PATH = 'please insert actual path to data here'
+N_JOBS = 1  # specify the number of jobs for loading and windowing
 tuh = TUH(
     path=TUH_PATH,
     recording_ids=None,
     target_name=None,
     preload=False,
     add_physician_reports=False,
+    n_jobs=N_JOBS,
 )
 
 
@@ -159,8 +160,8 @@ tuh = select_by_channels(tuh, ch_mapping)
 # #. re-reference all recordings to 'ar' (requires load)
 # #. rename channels to short channel names
 # #. pick channels of interest
-# #. scale signals to microvolts (requires load)
-# #. clip outlier values to +/- 800 microvolts (requires load)
+# #. scale signals to micro volts (requires load)
+# #. clip outlier values to +/- 800 micro volts (requires load)
 # #. resample recordings to a common frequency (requires load)
 
 def custom_rename_channels(raw, mapping):
@@ -193,7 +194,7 @@ preprocessors = [
     Preprocessor(custom_rename_channels, mapping=ch_mapping,
                  apply_on_array=False),
     Preprocessor('pick_channels', ch_names=short_ch_names, ordered=True),
-    Preprocessor(scale, factor=1e6, apply_on_array=True),
+    Preprocessor(multiply, factor=1e6, apply_on_array=True),
     Preprocessor(np.clip, a_min=-800, a_max=800, apply_on_array=True),
     Preprocessor('resample', sfreq=sfreq),
 ]
@@ -209,23 +210,23 @@ preprocessors = [
 # parameters after reloading the data.
 
 OUT_PATH = tempfile.mkdtemp()  # plaese insert actual output directory here
-tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])
-for rec_i, tuh_subset in tuh_splits.items():
-    preprocess(tuh_subset, preprocessors)
-
-    # create one directory for every recording
-    rec_path = os.path.join(OUT_PATH, str(rec_i))
-    if not os.path.exists(rec_path):
-        os.makedirs(rec_path)
-    tuh_subset.save(rec_path)
+tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])  # will be unnecessary with PR277
+for rec_i, tuh_subset in tuh_splits.items():  # will be unnecessary with PR277
+    preprocess(
+        concat_ds=tuh_subset,
+        preprocessors=preprocessors,
+        # n_jobs=N_JOBS,  # will be available with PR277
+        # save_dir=OUT_PATH,  # will be available with PR277
+    )
+    tuh_subset.save(OUT_PATH, offset=int(rec_i))  # will be unnecessary with PR277
     # save memory by deleting raw recording
-    del tuh_subset.datasets[0].raw
+    del tuh_subset.datasets[0].raw  # will be unnecessary with PR277
 
 
 ###############################################################################
 # We reload the preprocessed data again in a lazy fashion (`preload=False`).
 
-tuh_loaded = load_concat_dataset(OUT_PATH, preload=False)
+tuh_loaded = load_concat_dataset(OUT_PATH, preload=False, n_jobs=N_JOBS)
 
 
 ###############################################################################
@@ -237,11 +238,10 @@ window_stride_samples = 1000
 # generate compute windows here and store them to disk
 tuh_windows = create_fixed_length_windows(
     tuh_loaded,
-    start_offset_samples=0,
-    stop_offset_samples=None,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=False
+    drop_last_window=False,
+    n_jobs=N_JOBS,
 )
 
 for x, y, ind in tuh_windows:
