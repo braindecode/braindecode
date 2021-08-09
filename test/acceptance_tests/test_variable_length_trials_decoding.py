@@ -89,7 +89,7 @@ def test_variable_length_trials_cropped_decoding():
             0.006638816092163324,
         ]
         ),
-        rtol=2e-1,
+        rtol=1e-1,
         atol=1e-1,
     )
 
@@ -101,6 +101,6 @@ def test_variable_length_trials_cropped_decoding():
             4.23494,
         ]
         ),
-        rtol=2e-1,
+        rtol=1e-1,
         atol=1e-1,
     )
