@@ -80,6 +80,7 @@ Training
     PostEpochTrainScoring
     mixup_criterion
     trial_preds_from_window_preds
+    predict_trials
 
 Datasets
 ========

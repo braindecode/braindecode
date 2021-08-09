@@ -1,16 +1,19 @@
-# Authors: Maciej Sliwowski
-#          Robin Tibor Schirrmeister
-#          Alexandre Gramfort
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
+#          Alexandre Gramfort <alexandre.gramfort@inria.fr>
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
 
 from contextlib import contextmanager
+import warnings
 
 import numpy as np
 import torch
 from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
+from torch.utils.data import DataLoader
 
 
 def trial_preds_from_window_preds(
@@ -35,8 +38,8 @@ def trial_preds_from_window_preds(
         Predictions in each trial, duplicates removed
 
     """
-    assert len(preds) == len(i_window_in_trials)
-    assert len(i_window_in_trials) == len(i_stop_in_trials)
+    assert len(preds) == len(i_window_in_trials) == len(i_stop_in_trials), (
+        f'{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}')
 
     # Algorithm for assigning window predictions to trials
     # while removing duplicate predictions:
@@ -295,3 +298,61 @@ class PostEpochTrainScoring(EpochScoring):
                 cached_net, dataset_train, self.y_trues_
             )
         self._record_score(net.history, current_score)
+
+
+def predict_trials(module, dataset, return_targets=True):
+    """Create trialwise predictions and optionally also return trialwise
+    labels from cropped dataset given module.
+
+    Parameters
+    ----------
+    module: torch.nn.Module
+        A pytorch model implementing forward.
+    dataset: braindecode.datasets.BaseConcatDataset
+        A braindecode dataset to be predicted.
+    return_targets: bool
+        If True, additionally returns the trial targets.
+
+    Returns
+    -------
+        trial_predictions: np.ndarray
+            3-dimensional array (n_trials x n_classes x n_predictions), where
+            the number of predictions depend on the chosen window size and the
+            receptive field of the network.
+        trial_labels: np.ndarray
+            2-dimensional array (n_trials x n_targets) where the number of
+            targets depends on the decoding paradigm and can be either a single
+            value, multiple values, or a sequence.
+    """
+    # we have a cropped dataset if there exists at least one trial with more
+    # than one compute window
+    more_than_one_window = sum(dataset.get_metadata()['i_window_in_trial'] != 0) > 0
+    if not more_than_one_window:
+        warnings.warn('This function was designed to predict trials from '
+                      'cropped datasets, which typically have multiple compute '
+                      'windows per trial. The given dataset has exactly one '
+                      'window per trial.')
+    loader = DataLoader(
+        dataset=dataset,
+        batch_size=1,
+        shuffle=False,
+    )
+    all_preds, all_ys, all_inds = [], [], []
+    with torch.no_grad():
+        for X, y, ind in loader:
+            preds = module(X)
+            all_preds.extend(preds.cpu().numpy().astype(np.float32))
+            all_ys.extend(y.cpu().numpy().astype(np.float32))
+            all_inds.extend(ind)
+    preds_per_trial = trial_preds_from_window_preds(
+        preds=all_preds,
+        i_window_in_trials=torch.cat(all_inds[0::3]),
+        i_stop_in_trials=torch.cat(all_inds[2::3]),
+    )
+    preds_per_trial = np.array(preds_per_trial)
+    if return_targets:
+        all_ys = np.array(all_ys)
+        trial_ys = all_ys[
+            np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1]
+        return preds_per_trial, trial_ys
+    return preds_per_trial
