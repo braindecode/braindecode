@@ -1,6 +1,6 @@
-# Authors: Maciej Sliwowski
-#          Lukas Gemein
-#          Robin Tibor Schirrmeister
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
 
@@ -337,7 +337,7 @@ def test_predict_trials():
                                          'is a trialwise dataset.'):
         predict_trials(model, windows_ds2)
 
-    # croped EEGClassifier, cropped data
+    # cropped EEGClassifier, cropped data
     clf = EEGClassifier(
         model,
         criterion=torch.nn.NLLLoss,
@@ -348,7 +348,7 @@ def test_predict_trials():
         batch_size=64,
     )
     clf.initialize()
-    clf.predict_trials(windows_ds1)
+    clf.predict_trials(windows_ds1, return_targets=True)
 
     # cropped EEGClassifier, trialwise data
     with pytest.warns(UserWarning, match="This method was designed to predict "

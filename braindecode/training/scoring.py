@@ -1,6 +1,6 @@
-# Authors: Maciej Sliwowski
-#          Robin Tibor Schirrmeister
-#          Alexandre Gramfort
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Robin Tibor Schirrmeister <robintibor@gmail.com>
+#          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
