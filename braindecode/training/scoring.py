@@ -6,6 +6,7 @@
 # License: BSD-3
 
 from contextlib import contextmanager
+import warnings
 
 import numpy as np
 import torch
@@ -325,10 +326,12 @@ def predict_trials(module, dataset, return_targets=True):
     """
     # we have a cropped dataset if there exists at least one trial with more
     # than one compute window
-    cropped_data = sum(dataset.get_metadata()['i_window_in_trial'] != 0) > 0
-    if not cropped_data:
-        raise ValueError('This function was designed to predict trials from '
-                         'cropped datasets. This is a trialwise dataset.')
+    more_than_one_window = sum(dataset.get_metadata()['i_window_in_trial'] != 0) > 0
+    if not more_than_one_window:
+        warnings.warn('This function was designed to predict trials from '
+                      'cropped datasets, which typically have multiple compute '
+                      'windows per trial. The given dataset has exactly one '
+                      'window per trial.')
     loader = DataLoader(
         dataset=dataset,
         batch_size=1,
