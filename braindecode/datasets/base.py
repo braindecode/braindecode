@@ -19,7 +19,6 @@ from glob import glob
 
 import numpy as np
 import pandas as pd
-
 from torch.utils.data import Dataset, ConcatDataset
 
 
@@ -401,11 +400,9 @@ class BaseConcatDataset(ConcatDataset):
         description_file_name = os.path.join(path, 'description.json')
         target_file_name = os.path.join(path, 'target_name.json')
         if not overwrite:
-            if (os.path.exists(description_file_name) or
-                    os.path.exists(target_file_name)):
-                raise FileExistsError(
-                    f'{description_file_name} or {target_file_name} exist in '
-                    f'{path}.')
+            from braindecode.datautil.serialization import \
+                _check_save_dir_empty  # Import here to avoid circular import
+            _check_save_dir_empty(path)
         else:
             for file_name_template in file_name_templates:
                 file_names = glob(os.path.join(
@@ -561,6 +558,13 @@ class BaseConcatDataset(ConcatDataset):
         fif_file_name = f'{i_ds + offset}-{raw_or_epo}.fif'
         fif_file_path = os.path.join(sub_dir, fif_file_name)
         raw_or_epo = 'raw' if raw_or_epo == 'raw' else 'windows'
+
+        # The following appears to be necessary to avoid a CI failure when
+        # preprocessing WindowsDatasets with serialization enabled. The failure
+        # comes from `mne.epochs._check_consistency` which ensures the Epochs's
+        # object `times` attribute is not writeable.
+        getattr(ds, raw_or_epo).times.flags['WRITEABLE'] = False
+
         getattr(ds, raw_or_epo).save(fif_file_path)
 
     @staticmethod

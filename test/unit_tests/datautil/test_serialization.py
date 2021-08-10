@@ -11,7 +11,8 @@ import pandas as pd
 from braindecode.datasets import BaseConcatDataset, MOABBDataset
 from braindecode.preprocessing import (
     create_windows_from_events, Preprocessor, preprocess)
-from braindecode.datautil.serialization import load_concat_dataset
+from braindecode.datautil.serialization import (
+    load_concat_dataset, _check_save_dir_empty)
 
 
 @pytest.fixture()
@@ -187,6 +188,7 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
         assert os.path.exists(os.path.join(subdir, 'window_kwargs.json'))
         assert os.path.exists(os.path.join(subdir, 'window_preproc_kwargs.json'))
     loaded_concat_windows_dataset = load_concat_dataset(tmpdir, preload=False)
+
     for ds in loaded_concat_windows_dataset.datasets:
         assert ds.window_kwargs == [
             ('create_windows_from_events', {
@@ -325,3 +327,10 @@ def test_subdirectory_already_exist(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     with pytest.raises(FileExistsError, match='Subdirectory'):
         concat_windows_dataset.save(tmpdir)
+
+
+def test_check_save_dir_empty(setup_concat_raw_dataset, tmpdir):
+    _check_save_dir_empty(tmpdir)
+    setup_concat_raw_dataset.save(tmpdir)
+    with pytest.raises(FileExistsError):
+        _check_save_dir_empty(tmpdir)

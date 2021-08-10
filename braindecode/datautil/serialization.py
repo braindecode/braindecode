@@ -6,10 +6,10 @@ Convenience functions for storing and loading of windows datasets.
 #
 # License: BSD (3-clause)
 
-import json
 import os
-from glob import glob
+import json
 import warnings
+from glob import glob
 
 import mne
 import pandas as pd
@@ -116,8 +116,10 @@ def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
 def _load_signals(fif_file, preload, is_raw):
     if is_raw:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
-    else:
+    elif fif_file.endswith('-epo.fif'):
         signals = mne.read_epochs(fif_file, preload=preload)
+    else:
+        raise ValueError('fif_file must end with raw.fif or epo.fif.')
     return signals
 
 
@@ -225,3 +227,25 @@ def _is_outdated_saved(path):
             os.path.exists(os.path.join(path, '0-epo.fif')) or
             multiple or
             kwargs_in_path)
+
+
+def _check_save_dir_empty(save_dir):
+    """Make sure a BaseConcatDataset can be saved under a given directory.
+
+    Parameters
+    ----------
+    save_dir : str
+        Directory under which a `BaseConcatDataset` will be saved.
+
+    Raises
+    -------
+    FileExistsError
+        If ``save_dir`` is not a valid directory for saving.
+    """
+    sub_dirs = [os.path.basename(s).isdigit()
+                for s in glob(os.path.join(save_dir, '*'))]
+    if any(sub_dirs):
+        raise FileExistsError(
+            f'Directory {save_dir} already contains subdirectories. Please '
+            'select a different directory, set overwrite=True, or resolve '
+            'manually.')

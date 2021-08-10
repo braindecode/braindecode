@@ -20,7 +20,7 @@ import mne
 from braindecode.datasets import TUH
 from braindecode.preprocessing import (
     preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
-from braindecode.datautil.serialization import load_concat_dataset
+
 
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
@@ -50,14 +50,15 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
 
 TUH_PATH = 'please insert actual path to data here'
-N_JOBS = 1  # specify the number of jobs for loading and windowing
+N_JOBS = 2  # specify the number of jobs for loading and windowing
 tuh = TUH(
     path=TUH_PATH,
     recording_ids=None,
     target_name=None,
     preload=False,
     add_physician_reports=False,
-    n_jobs=N_JOBS,
+    n_jobs=1 if TUH.__name__ == '_TUHMock' else N_JOBS,  # Mock dataset can't
+    # be loaded in parallel
 )
 
 
@@ -201,43 +202,37 @@ preprocessors = [
 
 
 ###############################################################################
-# The preprocessing loop works as follows. For every recording, we apply the
-# preprocessors as defined above. Then, we update the description of the rec,
-# since we have altered the duration, the reference, and the sampling
-# frequency. Afterwards, we store each recording to a unique subdirectory that
-# is named corresponding to the rec id. To save memory we delete the raw
-# dataset after storing. This gives us the option to try different windowing
-# parameters after reloading the data.
+# Next, we apply the preprocessors on the selected recordings in parallel.
+# We additionally use the serialization functionality of
+# :func:`braindecode.preprocessing.preprocess` to limit memory usage during
+# preprocessing (as each file must be loaded into memory for some of the
+# preprocessing steps to work). This also makes it possible to use the lazy
+# loading capabilities of :class:`braindecode.datasets.BaseConcatDataset`, as
+# the preprocessed data is automatically reloaded with ``preload=False``.
+#
+# .. note::
+#    Here we use ``n_jobs=2`` as the machines the documentation is build on
+#    only have two cores. This number should be modified based on the machine
+#    that is available for preprocessing.
 
-OUT_PATH = tempfile.mkdtemp()  # plaese insert actual output directory here
-tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])  # will be unnecessary with PR277
-for rec_i, tuh_subset in tuh_splits.items():  # will be unnecessary with PR277
-    preprocess(
-        concat_ds=tuh_subset,
-        preprocessors=preprocessors,
-        # n_jobs=N_JOBS,  # will be available with PR277
-        # save_dir=OUT_PATH,  # will be available with PR277
-    )
-    tuh_subset.save(OUT_PATH, offset=int(rec_i))  # will be unnecessary with PR277
-    # save memory by deleting raw recording
-    del tuh_subset.datasets[0].raw  # will be unnecessary with PR277
-
-
-###############################################################################
-# We reload the preprocessed data again in a lazy fashion (`preload=False`).
-
-tuh_loaded = load_concat_dataset(OUT_PATH, preload=False, n_jobs=N_JOBS)
+OUT_PATH = tempfile.mkdtemp()  # please insert actual output directory here
+tuh_preproc = preprocess(
+    concat_ds=tuh,
+    preprocessors=preprocessors,
+    n_jobs=N_JOBS,
+    save_dir=OUT_PATH
+)
 
 
 ###############################################################################
-# We generate compute windows. The resulting dataset is now ready to be used
-# for model training.
+# We can finally generate compute windows. The resulting dataset is now ready
+# to be used for model training.
 
 window_size_samples = 1000
 window_stride_samples = 1000
 # generate compute windows here and store them to disk
 tuh_windows = create_fixed_length_windows(
-    tuh_loaded,
+    tuh_preproc,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
     drop_last_window=False,
