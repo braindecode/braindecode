@@ -131,8 +131,10 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         directory and the datasets in ``concat_ds`` will be reloaded with
         `preload=False`.
     overwrite : bool
-        When `save_dir` is provided, controls whether to overwrite existing
-        files in `save_dir`.
+        When `save_dir` is provided, controls whether to delete the old
+        subdirectories that will be written to under `save_dir`. If False and
+        the corresponding subdirectories already exist, a ``FileExistsError``
+        will be raised.
     n_jobs : int | None
         Number of jobs for parallel execution.
 
@@ -173,7 +175,7 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
 
 
 def _replace_inplace(concat_ds, new_concat_ds):
-    """Inplace modification of a BaseConcatDataset with another's attributes.
+    """Replace subdatasets and preproc_kwargs of a BaseConcatDataset inplace.
 
     Parameters
     ----------
