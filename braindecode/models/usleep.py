@@ -35,16 +35,15 @@ class _EncoderBlock(nn.Module):
         self.out_channels = out_channels
         self.kernel_size = kernel_size
         self.downsample = downsample
-        padding = (kernel_size - 1) // 2   # chosen to preserve dimension
 
         self.block_prepool = nn.Sequential(
-                nn.Conv1d(in_channels=in_channels,
-                          out_channels=out_channels,
-                          kernel_size=kernel_size,
-                          padding=padding),
-                nn.ELU(),
-                nn.BatchNorm1d(num_features=out_channels),
-            )
+            nn.Conv1d(in_channels=in_channels,
+                      out_channels=out_channels,
+                      kernel_size=kernel_size,
+                      padding='same'),
+            nn.ELU(),
+            nn.BatchNorm1d(num_features=out_channels),
+        )
 
         self.pad = nn.ConstantPad1d(padding=1, value=0)
         self.maxpool = nn.MaxPool1d(
@@ -73,26 +72,26 @@ class _DecoderBlock(nn.Module):
         self.kernel_size = kernel_size
         self.upsample = upsample
         self.with_skip_connection = with_skip_connection
-        padding = (kernel_size - 1) // 2   # chosen to preserve dimension
 
         self.block_preskip = nn.Sequential(
-                    nn.Upsample(scale_factor=upsample),
-                    nn.Conv1d(in_channels=in_channels,
-                              out_channels=out_channels,
-                              kernel_size=kernel_size,
-                              padding=padding),
-                    nn.ELU(),
-                    nn.BatchNorm1d(num_features=out_channels),
-                )
+            nn.Upsample(scale_factor=upsample),
+            nn.Conv1d(in_channels=in_channels,
+                      out_channels=out_channels,
+                      kernel_size=2,
+                      padding='same'),
+            nn.ELU(),
+            nn.BatchNorm1d(num_features=out_channels),
+        )
         self.block_postskip = nn.Sequential(
-                    nn.Conv1d(in_channels=(
-                            2 * out_channels if with_skip_connection else out_channels),
-                              out_channels=out_channels,
-                              kernel_size=kernel_size,
-                              padding=padding),  # to preserve dimension (check)
-                    nn.ELU(),
-                    nn.BatchNorm1d(num_features=out_channels),
-                )
+            nn.Conv1d(
+                in_channels=(
+                    2 * out_channels if with_skip_connection else out_channels),
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                padding='same'),
+            nn.ELU(),
+            nn.BatchNorm1d(num_features=out_channels),
+        )
 
     def forward(self, x, residual):
         x = self.block_preskip(x)
@@ -128,6 +127,8 @@ class USleep(nn.Module):
     depth : int
         Number of conv blocks in encoding layer (number of 2x2 max pools)
         Note: each block halve the spatial dimensions of the features.
+    n_time_filters : int
+        Initial number of convolutional filters. Set to 5 in [1]_.
     complexity_factor : float
         Multiplicative factor for number of channels at each layer of the U-Net.
         Set to 2 in [1]_.
@@ -136,7 +137,10 @@ class USleep(nn.Module):
     n_classes : int
         Number of classes. Set to 5.
     input_size_s : float
-        Size of the input, in seconds. Set to 30.
+        Size of the input, in seconds. Set to 30 in [1]_.
+    time_conv_size_s : float
+        Size of the temporal convolution kernel, in seconds. Set to 9 / 128 in
+        [1]_.
     apply_softmax : bool
         If True, apply softmax on output (e.g. when using nn.NLLLoss). Use
         False if using nn.CrossEntropyLoss.
@@ -152,36 +156,35 @@ class USleep(nn.Module):
                  sfreq=100,
                  depth=12,
                  n_time_filters=5,
-                 complexity_factor=2,
+                 complexity_factor=1.67,
                  with_skip_connection=True,
                  n_classes=5,
                  input_size_s=30,
-                 time_conv_size=9,
+                 time_conv_size_s=9 / 128,
                  apply_softmax=False
                  ):
         super().__init__()
 
         self.in_chans = in_chans
-
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
-
+        time_conv_size = int(time_conv_size_s * sfreq)
         if time_conv_size % 2 == 0:
-            raise ValueError('time_conv_size need to be odd')
+            raise ValueError(
+                'time_conv_size must be an odd number to accomodate the '
+                'upsampling step in the decoder blocks.')
 
         # Convert between units: seconds to time-points (at sfreq)
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
-        channels = [n_time_filters]
-        for _ in range(depth):
-            channels.append(np.floor(channels[-1]*np.sqrt(2)))
-        for i in range(depth+1):
-            channels[i] = int(channels[i]*complexity_factor)
-
-        channels = [in_chans] + channels  # len = depth + 2
+        channels = [in_chans]
+        n_filters = n_time_filters
+        for _ in range(depth + 1):
+            channels.append(int(n_filters * np.sqrt(complexity_factor)))
+            n_filters = int(n_filters * np.sqrt(2))
         self.channels = channels
 
         # Instantiate encoder
-        encoder = []
+        encoder = list()
         for idx in range(depth):
             encoder += [
                 _EncoderBlock(in_channels=channels[idx],
@@ -193,16 +196,16 @@ class USleep(nn.Module):
 
         # Instantiate bottom (channels increase, temporal dim stays the same)
         self.bottom = nn.Sequential(
-                    nn.Conv1d(in_channels=channels[idx + 1],
-                              out_channels=channels[idx + 2],
+                    nn.Conv1d(in_channels=channels[-2],
+                              out_channels=channels[-1],
                               kernel_size=time_conv_size,
                               padding=(time_conv_size - 1) // 2),  # preserves dimension
                     nn.ELU(),
-                    nn.BatchNorm1d(num_features=channels[idx + 2]),
+                    nn.BatchNorm1d(num_features=channels[-1]),
                 )
 
         # Instantiate decoder
-        decoder = []
+        decoder = list()
         channels_reverse = channels[::-1]
         for idx in range(depth):
             decoder += [
