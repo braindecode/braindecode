@@ -559,7 +559,10 @@ class BaseConcatDataset(ConcatDataset):
         fif_file_path = os.path.join(sub_dir, fif_file_name)
         raw_or_epo = 'raw' if raw_or_epo == 'raw' else 'windows'
 
-        # XXX Test to understand CI fail
+        # The following appears to be necessary to avoid a CI failure when
+        # preprocessing WindowsDatasets with serialization enabled. The failure
+        # comes from `mne.epochs._check_consistency` which ensures the Epochs's
+        # object `times` attribute is not writeable.
         getattr(ds, raw_or_epo).times.flags['WRITEABLE'] = False
 
         getattr(ds, raw_or_epo).save(fif_file_path)
