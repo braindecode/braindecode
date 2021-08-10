@@ -72,7 +72,11 @@ from braindecode.preprocessing import (
 
 
 def prepare_data(n_recs, save, preload, n_jobs):
-    save_dir = tempfile.TemporaryDirectory().name if save else None
+    if save:
+        tmp_dir = tempfile.TemporaryDirectory()
+        save_dir = tmp_dir.name
+    else:
+        save_dir = None
 
     # (1) Load the data
     concat_ds = SleepPhysionet(

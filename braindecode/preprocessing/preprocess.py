@@ -8,7 +8,6 @@
 #
 # License: BSD (3-clause)
 
-import os
 from warnings import warn
 from functools import partial
 from collections.abc import Iterable
@@ -18,7 +17,7 @@ import pandas as pd
 from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
-from braindecode.datasets.base import BaseConcatDataset
+from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 
@@ -170,9 +169,6 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         else:  # joblib made copies
             _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
 
-        # Store preprocessing keyword arguments in the dataset
-        _set_preproc_kwargs(concat_ds, preprocessors)
-
     return concat_ds
 
 
@@ -230,18 +226,12 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
             'Can only preprocess concatenation of BaseDataset or '
             'WindowsDataset, with either a `raw` or `windows` attribute.')
 
+    # Store preprocessing keyword arguments in the dataset
+    _set_preproc_kwargs(ds, preprocessors)
+
     if save_dir is not None:
         concat_ds = BaseConcatDataset([ds])
-
-        # Store preprocessing keyword arguments in the dataset
-        _set_preproc_kwargs(concat_ds, preprocessors)
-
-        save_subdir = os.path.join(save_dir, str(ds_index))
-        if not os.path.exists(save_subdir):
-            os.makedirs(save_subdir)
-        concat_ds.save(save_subdir, overwrite=overwrite)
-        del concat_ds, ds  # Delete if processing is happening inplace (will be
-        # reloaded anyways)
+        concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
     else:
         return ds
 
@@ -265,19 +255,25 @@ def _get_preproc_kwargs(preprocessors):
     return preproc_kwargs
 
 
-def _set_preproc_kwargs(concat_ds, preprocessors):
-    """Record preprocessing keyword arguments in BaseConcatDataset.
+def _set_preproc_kwargs(ds, preprocessors):
+    """Record preprocessing keyword arguments in BaseDataset or WindowsDataset.
 
     Parameters
     ----------
-    concat_ds : BaseConcatDataset
+    ds : BaseDataset | WindowsDataset
         Dataset in which to record preprocessing keyword arguments.
     preprocessors : list
         List of preprocessors.
     """
     preproc_kwargs = _get_preproc_kwargs(preprocessors)
-    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
-    setattr(concat_ds, concat_kind + '_preproc_kwargs', preproc_kwargs)
+    if isinstance(ds, WindowsDataset):
+        kind = 'window'
+    elif isinstance(ds, BaseDataset):
+        kind = 'raw'
+    else:
+        raise TypeError(
+            f'ds must be a BaseDataset or a WindowsDataset, got {type(ds)}')
+    setattr(ds, kind + '_preproc_kwargs', preproc_kwargs)
 
 
 def exponential_moving_standardize(

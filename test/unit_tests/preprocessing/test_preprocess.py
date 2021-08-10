@@ -334,23 +334,33 @@ def test_replace_inplace(base_concat_ds):
 def test_set_raw_preproc_kwargs(base_concat_ds):
     raw_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
-    _set_preproc_kwargs(base_concat_ds, preprocessors)
-    assert hasattr(base_concat_ds, 'raw_preproc_kwargs')
-    assert base_concat_ds.raw_preproc_kwargs == raw_preproc_kwargs
+    ds = base_concat_ds.datasets[0]
+    _set_preproc_kwargs(ds, preprocessors)
+
+    assert hasattr(ds, 'raw_preproc_kwargs')
+    assert ds.raw_preproc_kwargs == raw_preproc_kwargs
 
 
 def test_set_window_preproc_kwargs(windows_concat_ds):
     window_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
-    _set_preproc_kwargs(windows_concat_ds, preprocessors)
-    assert hasattr(windows_concat_ds, 'window_preproc_kwargs')
-    assert windows_concat_ds.window_preproc_kwargs == window_preproc_kwargs
+    ds = windows_concat_ds.datasets[0]
+    _set_preproc_kwargs(ds, preprocessors)
+
+    assert hasattr(ds, 'window_preproc_kwargs')
+    assert ds.window_preproc_kwargs == window_preproc_kwargs
+
+
+def test_set_preproc_kwargs_wrong_type(base_concat_ds):
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+    with pytest.raises(TypeError):
+        _set_preproc_kwargs(base_concat_ds, preprocessors)
 
 
 @pytest.mark.parametrize('kind', ['raw', 'windows'])
 @pytest.mark.parametrize('save', [True, False])
 @pytest.mark.parametrize('overwrite', [True, False])
-@pytest.mark.parametrize('n_jobs', [None, 1, 2])
+@pytest.mark.parametrize('n_jobs', [1, 2, None])
 def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
                              kind, save, overwrite, n_jobs):
     preproc_kwargs = [
@@ -369,8 +379,9 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
     concat_ds = preprocess(
         concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs)
 
-    assert hasattr(concat_ds, preproc_kwargs_name)
-    assert getattr(concat_ds, preproc_kwargs_name) == preproc_kwargs
+    assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
+    assert all([getattr(ds, preproc_kwargs_name) == preproc_kwargs
+                for ds in concat_ds.datasets])
     assert all([len(getattr(ds, kind).times) == 25
                 for ds in concat_ds.datasets])
     if kind == 'raw':

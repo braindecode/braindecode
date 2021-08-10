@@ -240,14 +240,12 @@ def _check_save_dir_empty(save_dir):
     Raises
     -------
     FileExistsError
-        If ``save_dir`` is not a valid directory for saving, i.e., the
-        description.json and/or target_name.json files already exist.
+        If ``save_dir`` is not a valid directory for saving.
     """
-    description_fname = os.path.join(save_dir, 'description.json')
-    target_fname = os.path.join(save_dir, 'target_name.json')
-    if (os.path.exists(description_fname) or
-            os.path.exists(target_fname)):
+    sub_dirs = [os.path.basename(s).isdigit()
+                for s in glob(os.path.join(save_dir, '*'))]
+    if any(sub_dirs):
         raise FileExistsError(
-            f'{description_fname} or {target_fname} exist in {save_dir}. '
-            'Provide a different ``save_dir`` or set ``overwrite`` to '
-            'True.')
+            f'Directory {save_dir} already contains subdirectories. Please '
+            'select a different directory, set overwrite=True, or resolve '
+            'manually.')
