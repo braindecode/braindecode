@@ -558,6 +558,10 @@ class BaseConcatDataset(ConcatDataset):
         fif_file_name = f'{i_ds + offset}-{raw_or_epo}.fif'
         fif_file_path = os.path.join(sub_dir, fif_file_name)
         raw_or_epo = 'raw' if raw_or_epo == 'raw' else 'windows'
+
+        # XXX Test to understand CI fail
+        getattr(ds, raw_or_epo).times.flags['WRITEABLE'] = False
+
         getattr(ds, raw_or_epo).save(fif_file_path)
 
     @staticmethod
