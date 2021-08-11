@@ -465,10 +465,9 @@ class BaseConcatDataset(ConcatDataset):
             Has to be True if a key in description already exists in the
             dataset description.
         """
-        description = pd.DataFrame(description)
-        for key, value in description.items():
-            for ds, value_ in zip(self.datasets, value):
-                ds.set_description({key: value_}, overwrite=overwrite)
+        description = pd.DataFrame(description).T
+        for ds_i, ds in enumerate(self.datasets):
+            ds.set_description(description[ds_i], overwrite=overwrite)
 
     def save(self, path, overwrite=False, offset=0):
         """Save datasets to files by creating one subdirectory for each dataset:

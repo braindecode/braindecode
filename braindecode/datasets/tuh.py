@@ -48,46 +48,56 @@ class TUH(BaseConcatDataset):
                  preload=False, add_physician_reports=False, n_jobs=1):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
-        file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
-        descriptions = _create_chronological_description(file_paths)
-        # limit to specified recording ids before doing slow stuff
-        if recording_ids is not None:
-            descriptions = descriptions[recording_ids]
-        # this is the second loop (slow)
-        # create datasets gathering more info about the files touching them
-        # reading the raws and potentially preloading the data
-        # disable joblib for tests. mocking seems to fail otherwise
-        if n_jobs == 1:
-            base_datasets = [self._create_dataset(
-                descriptions[i], target_name, preload, add_physician_reports)
-                for i in descriptions.columns]
-        else:
-            base_datasets = Parallel(n_jobs)(delayed(
-                self._create_dataset)(
-                descriptions[i], target_name, preload, add_physician_reports
-            ) for i in descriptions.columns)
+        base_datasets = _create_datasets(
+            path=path, recording_ids=recording_ids,
+            target_name=target_name, preload=preload,
+            add_physician_reports=add_physician_reports, n_jobs=n_jobs,
+        )
         super().__init__(base_datasets)
 
-    @staticmethod
-    def _create_dataset(description, target_name, preload,
-                        add_physician_reports):
-        file_path = description.loc['path']
-        # parse age and gender information from EDF header
-        age, gender = _parse_age_and_gender_from_edf_header(file_path)
-        raw = mne.io.read_raw_edf(file_path, preload=preload)
-        # read info relevant for preprocessing from raw without loading it
-        d = {
-            'age': int(age),
-            'gender': gender,
-        }
-        if add_physician_reports:
-            physician_report = _read_physician_report(file_path)
-            d['report'] = physician_report
-        additional_description = pd.Series(d)
-        description = pd.concat([description, additional_description])
-        base_dataset = BaseDataset(raw, description,
-                                   target_name=target_name)
-        return base_dataset
+
+def _create_datasets(path, recording_ids=None, target_name=None,
+                     preload=False, add_physician_reports=False, n_jobs=1):
+    file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
+    descriptions = _create_chronological_description(file_paths)
+    # limit to specified recording ids before doing slow stuff
+    if recording_ids is not None:
+        descriptions = descriptions.loc[recording_ids]
+    # this is the second loop (slow)
+    # create datasets gathering more info about the files touching them
+    # reading the raws and potentially preloading the data
+    # disable joblib for tests. mocking seems to fail otherwise
+    if n_jobs == 1:
+        base_datasets = [_create_dataset(
+            descriptions.loc[i], target_name, preload, add_physician_reports)
+            for i in range(len(descriptions))]
+    else:
+        base_datasets = Parallel(n_jobs)(delayed(
+            _create_dataset)(
+            descriptions.loc[i], target_name, preload, add_physician_reports
+        ) for i in range(len(descriptions)))
+    return base_datasets
+
+
+def _create_dataset(description, target_name, preload,
+                    add_physician_reports):
+    file_path = description.loc['path']
+    # parse age and gender information from EDF header
+    age, gender = _parse_age_and_gender_from_edf_header(file_path)
+    raw = mne.io.read_raw_edf(file_path, preload=preload)
+    # read info relevant for preprocessing from raw without loading it
+    d = {
+        'age': int(age),
+        'gender': gender,
+    }
+    if add_physician_reports:
+        physician_report = _read_physician_report(file_path)
+        d['report'] = physician_report
+    additional_description = pd.Series(d)
+    description = pd.concat([description, additional_description])
+    base_dataset = BaseDataset(raw, description,
+                               target_name=target_name)
+    return base_dataset
 
 
 def _create_chronological_description(file_paths):
@@ -95,14 +105,12 @@ def _create_chronological_description(file_paths):
     descriptions = []
     for file_path in file_paths:
         description = _parse_description_from_file_path(file_path)
-        descriptions.append(pd.Series(description))
-    descriptions = pd.concat(descriptions, axis=1)
+        descriptions.append(description)
+    descriptions = pd.DataFrame(descriptions)
     # order descriptions chronologically
     descriptions.sort_values(
         ["year", "month", "day", "subject", "session", "segment"],
-        axis=1, inplace=True)
-    # https://stackoverflow.com/questions/42284617/reset-column-index-pandas
-    descriptions = descriptions.T.reset_index(drop=True).T
+        inplace=True, ignore_index=True)
     return descriptions
 
 
@@ -173,7 +181,7 @@ def _parse_age_and_gender_from_edf_header(file_path):
     return age, gender
 
 
-class TUHAbnormal(TUH):
+class TUHAbnormal(BaseConcatDataset):
     """Temple University Hospital (TUH) Abnormal EEG Corpus.
     see www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tuab
 
@@ -194,13 +202,17 @@ class TUHAbnormal(TUH):
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
+    n_jobs: int
+        Number of jobs to be used to read files in parallel.
     """
     def __init__(self, path, recording_ids=None, target_name='pathological',
                  preload=False, add_physician_reports=False, n_jobs=1):
-        super().__init__(path=path, recording_ids=recording_ids,
-                         preload=preload, target_name=target_name,
-                         add_physician_reports=add_physician_reports,
-                         n_jobs=n_jobs)
+        base_datasets = _create_datasets(
+            path=path, recording_ids=recording_ids,
+            target_name=target_name, preload=preload,
+            add_physician_reports=add_physician_reports, n_jobs=n_jobs,
+        )
+        super().__init__(base_datasets)
         additional_descriptions = []
         for file_path in self.description.path:
             additional_description = (
