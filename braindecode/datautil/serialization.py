@@ -215,9 +215,6 @@ def _is_outdated_saved(path):
     """Data was saved in the old way if there are 'description.json', '-raw.fif'
     or '-epo.fif' in path (no subdirectories) OR if there are more 'fif' files
     than 'description.json' files."""
-    description_files = glob(os.path.join(path, '**/description.json'))
-    fif_files = glob(os.path.join(path, '**/*.fif'))
-    multiple = len(description_files) != len(fif_files)
     kwargs_in_path = any(
         [os.path.exists(os.path.join(path, kwarg_name))
          for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
@@ -225,8 +222,27 @@ def _is_outdated_saved(path):
     return (os.path.exists(os.path.join(path, 'description.json')) or
             os.path.exists(os.path.join(path, '0-raw.fif')) or
             os.path.exists(os.path.join(path, '0-epo.fif')) or
-            multiple or
+            _multiple(path) or
             kwargs_in_path)
+
+
+def _multiple(path):
+    multiple = False
+    i = 0
+    while True:
+        this_path = os.path.join(path, str(i))
+        # stop if old save detected or all subdirs checked
+        if multiple or not os.path.exists(this_path):
+            break
+
+        this_files = os.listdir(this_path)
+        # if there is more than one fif file in this subdir, it was saved in the
+        # old way
+        if f'{i+1}-raw.fif' in this_files or f'{i+1}-epo.fif' in this_files:
+            multiple = True
+
+        i += 1
+    return multiple
 
 
 def _check_save_dir_empty(save_dir):
