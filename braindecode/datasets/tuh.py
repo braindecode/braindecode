@@ -62,19 +62,19 @@ def _create_datasets(path, recording_ids=None, target_name=None,
     descriptions = _create_chronological_description(file_paths)
     # limit to specified recording ids before doing slow stuff
     if recording_ids is not None:
-        descriptions = descriptions.loc[recording_ids]
+        descriptions = descriptions.iloc[recording_ids]
     # this is the second loop (slow)
     # create datasets gathering more info about the files touching them
     # reading the raws and potentially preloading the data
     # disable joblib for tests. mocking seems to fail otherwise
     if n_jobs == 1:
         base_datasets = [_create_dataset(
-            descriptions.loc[i], target_name, preload, add_physician_reports)
+            descriptions.iloc[i], target_name, preload, add_physician_reports)
             for i in range(len(descriptions))]
     else:
         base_datasets = Parallel(n_jobs)(delayed(
             _create_dataset)(
-            descriptions.loc[i], target_name, preload, add_physician_reports
+            descriptions.iloc[i], target_name, preload, add_physician_reports
         ) for i in range(len(descriptions)))
     return base_datasets
 

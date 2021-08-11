@@ -92,7 +92,7 @@ def test_sort_chronologically():
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010839/s001_2013_11_22/"
         "00010839_s001_t000.edf",
     ]
-    for p1, p2 in zip(expected, description.T.path):
+    for p1, p2 in zip(expected, description.path):
         assert p1 == p2
 
 
