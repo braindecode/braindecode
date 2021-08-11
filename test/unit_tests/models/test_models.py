@@ -137,15 +137,15 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
 
 
 @pytest.mark.parametrize('in_chans,sfreq,n_classes,input_size_s',
-                         [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
+                         [(20, 128, 5, 30), (10, 100, 4, 20), (1, 64, 2, 30)])
 def test_usleep(in_chans, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     n_examples = 10
     seq_length = 3
 
     model = USleep(
-        in_chans=in_chans, sfreq=sfreq,
-        n_classes=n_classes, input_size_s=input_size_s)
+        in_chans=in_chans, sfreq=sfreq, n_classes=n_classes,
+        input_size_s=input_size_s, ensure_odd_conv_size=True)
     model.eval()
 
     X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
@@ -160,6 +160,19 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
     assert y_pred3.shape == (n_examples, n_classes, seq_length)
     np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
                                y_pred2.detach().cpu().numpy())
+
+
+def test_usleep_n_params():
+    """Make sure the number of parameters is the same as in the paper when
+    using the same architecture hyperparameters.
+    """
+    model = USleep(
+        in_chans=2, sfreq=128, depth=12, n_time_filters=5,
+        complexity_factor=1.67, with_skip_connection=True, n_classes=5,
+        input_size_s=30, time_conv_size_s=9 / 128)
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 3114337  # From paper's supplementary materials, Table 2
 
 
 def test_tidnet(input_sizes):

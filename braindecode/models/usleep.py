@@ -141,6 +141,11 @@ class USleep(nn.Module):
     time_conv_size_s : float
         Size of the temporal convolution kernel, in seconds. Set to 9 / 128 in
         [1]_.
+    ensure_odd_conv_size : bool
+        If True and the size of the convolutional kernel is an even number, one
+        will be added to it to ensure it is odd, so that the decoder blocks can
+        work. This can ne useful when using different sampling rates from 128
+        or 100 Hz.
     apply_softmax : bool
         If True, apply softmax on output (e.g. when using nn.NLLLoss). Use
         False if using nn.CrossEntropyLoss.
@@ -153,7 +158,7 @@ class USleep(nn.Module):
     """
     def __init__(self,
                  in_chans=2,
-                 sfreq=100,
+                 sfreq=128,
                  depth=12,
                  n_time_filters=5,
                  complexity_factor=1.67,
@@ -161,17 +166,21 @@ class USleep(nn.Module):
                  n_classes=5,
                  input_size_s=30,
                  time_conv_size_s=9 / 128,
+                 ensure_odd_conv_size=False,
                  apply_softmax=False
                  ):
         super().__init__()
 
         self.in_chans = in_chans
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
-        time_conv_size = int(time_conv_size_s * sfreq)
+        time_conv_size = np.round(time_conv_size_s * sfreq).astype(int)
         if time_conv_size % 2 == 0:
-            raise ValueError(
-                'time_conv_size must be an odd number to accomodate the '
-                'upsampling step in the decoder blocks.')
+            if ensure_odd_conv_size:
+                time_conv_size += 1
+            else:
+                raise ValueError(
+                    'time_conv_size must be an odd number to accomodate the '
+                    'upsampling step in the decoder blocks.')
 
         # Convert between units: seconds to time-points (at sfreq)
         input_size = np.ceil(input_size_s * sfreq).astype(int)
