@@ -124,7 +124,7 @@ def _load_signals(fif_file, preload, is_raw):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
-                        n_jobs=1):
+                        n_jobs=1, run_deprecation_check=True):
     """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
     files.
 
@@ -148,12 +148,13 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     """
     # if we encounter a dataset that was saved in 'the old way', call the
     # corresponding 'old' loading function
-    if _is_outdated_saved(path):
-        warnings.warn("The way your dataset was saved is deprecated by now. "
-                      "Please save it again using dataset.save().", UserWarning)
-        return _outdated_load_concat_dataset(
-            path=path, preload=preload, ids_to_load=ids_to_load,
-            target_name=target_name)
+    if run_deprecation_check:
+        if _is_outdated_saved(path):
+            warnings.warn("The way your dataset was saved is deprecated by now. "
+                          "Please save it again using dataset.save().", UserWarning)
+            return _outdated_load_concat_dataset(
+                path=path, preload=preload, ids_to_load=ids_to_load,
+                target_name=target_name)
 
     # else we have a dataset saved in the new way with subdirectories in path
     # for every dataset with description.json and -epo.fif or -raw.fif,
@@ -190,7 +191,8 @@ def _load_parallel(path, i, preload, is_raw):
     fif_file_path = os.path.join(sub_dir, fif_file_name)
     signals = _load_signals(fif_file_path, preload, is_raw)
     description_file_path = os.path.join(sub_dir, 'description.json')
-    description = pd.read_json(description_file_path, typ='series')
+    with open(description_file_path, 'r') as json_file:
+        description = pd.Series(json.load(json_file))
     target_file_path = os.path.join(sub_dir, 'target_name.json')
     target_name = None
     if os.path.exists(target_file_path):
