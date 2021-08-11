@@ -146,9 +146,9 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     -------
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
     """
-    # if we encounter a dataset that was saved in 'the old way', call the
-    # corresponding 'old' loading function
     if run_deprecation_check:
+        # if we encounter a dataset that was saved in 'the old way', call the
+        # corresponding 'old' loading function
         if _is_outdated_saved(path):
             warnings.warn("The way your dataset was saved is deprecated by now. "
                           "Please save it again using dataset.save().", UserWarning)
@@ -175,9 +175,12 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
             'Parallelized reading with `preload=False` is not supported for '
             'windowed data. Will use `n_jobs=1`.', UserWarning)
         n_jobs = 1
-    datasets = Parallel(n_jobs)(
-        delayed(_load_parallel)(path, i, preload, is_raw)
-        for i in ids_to_load)
+    if n_jobs == 1:
+        datasets = [_load_parallel(path, i, preload, is_raw) for i in ids_to_load]
+    else:
+        datasets = Parallel(n_jobs)(
+            delayed(_load_parallel)(path, i, preload, is_raw)
+            for i in ids_to_load)
     return BaseConcatDataset(datasets)
 
 
