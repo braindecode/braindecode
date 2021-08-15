@@ -111,130 +111,11 @@ def _cache_net_forward_iter(net, use_caching, y_preds):
         del net.__dict__["forward_iter"]
 
 
-class CroppedTimeSeriesEpochScoring(EpochScoring):
-    """
-    Class to compute scores for trials from a model that predicts (super)crops.
-    """
-    # XXX needs a docstring !!!
-
-    def __init__(
-        self,
-        scoring,
-        lower_is_better=True,
-        on_train=False,
-        name=None,
-        target_extractor=to_numpy,
-        use_caching=True,
-    ):
-        super().__init__(
-            scoring=scoring,
-            lower_is_better=lower_is_better,
-            on_train=on_train,
-            name=name,
-            target_extractor=target_extractor,
-            use_caching=use_caching,
-        )
-        if not self.on_train:
-            self.window_inds_ = []
-
-    def _initialize_cache(self):
-        super()._initialize_cache()
-        self.crops_to_trials_computed = False
-        self.y_trues_ = []
-        self.y_preds_ = []
-        if not self.on_train:
-            self.window_inds_ = []
-
-    def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
-        assert self.use_caching
-        if not self.crops_to_trials_computed:
-            if self.on_train:
-                # Prevent that rng state of torch is changed by
-                # creation+usage of iterator
-                rng_state = torch.random.get_rng_state()
-                pred_results = net.predict_with_window_inds_and_ys(
-                    dataset_train)
-                torch.random.set_rng_state(rng_state)
-            else:
-                pred_results = {}
-                pred_results['i_window_in_trials'] = np.concatenate(
-                    [i[0].cpu().numpy() for i in self.window_inds_]
-                )
-                pred_results['i_window_stops'] = np.concatenate(
-                    [i[2].cpu().numpy() for i in self.window_inds_]
-                )
-                pred_results['preds'] = np.concatenate(
-                    [y_pred.cpu().numpy() for y_pred in self.y_preds_])
-                pred_results['window_ys'] = np.concatenate(
-                    [y.cpu().numpy() for y in self.y_trues_])
-
-            num_preds = pred_results['preds'][-1].shape[-1]
-            # slice the targets to fit preds shape
-            pred_results['window_ys'] = [targets[:, -num_preds:] for targets in pred_results['window_ys']]
-            # A new trial starts
-            # when the index of the window in trials
-            # does not increment by 1
-            # Add dummy infinity at start
-
-            trial_preds = trial_preds_from_window_preds(
-                pred_results['preds'],
-                pred_results['i_window_in_trials'],
-                pred_results['i_window_stops'])
-
-            trial_ys = trial_preds_from_window_preds(
-                pred_results['window_ys'],
-                pred_results['i_window_in_trials'],
-                pred_results['i_window_stops'])
-
-            # the output is a list of predictions/targets per trial where each item is a
-            # timeseries of predictions/targets of shape (n_classes x timesteps)
-
-            # mask NaNs form targets
-            preds = np.hstack(trial_preds) # n_classes x timesteps in all trials
-            targets = np.hstack(trial_ys)
-            # create valid targets mask
-            mask = ~np.isnan(targets)
-            # select valid targets that have a matching predictions
-            masked_targets = targets[mask]
-            masked_preds = preds[mask]
-            # batch_sizes = [0] + [len(batch_preds) for batch_preds in pred_results['preds']]
-            # batch_start_idx = np.cumsum(batch_sizes)
-            # batch_end_idx = batch_start_idx[1:] + [-1]
-            # pred_results['preds'] = [masked_preds[start_idx: end_idx, ...]
-            #                          for start_idx, end_idx in zip(batch_start_idx, batch_end_idx)]
-            # pred_results['window_ys'] = [masked_targets[start_idx: end_idx, ...]
-            #                              for start_idx, end_idx in zip(batch_start_idx, batch_end_idx)]
-            #
-
-            # Store the computed trial preds for all Cropped Callbacks
-            # that are also on same set
-            cbs = net._default_callbacks + net.callbacks
-            epoch_cbs = [
-                cb for name, cb in cbs if
-                isinstance(cb, CroppedTimeSeriesEpochScoring) and (
-                    cb.on_train == self.on_train)
-            ]
-            masked_preds = [torch.tensor(masked_preds.T)]
-            for cb in epoch_cbs:
-                cb.y_preds_ = masked_preds
-                cb.y_trues_ = masked_targets.T
-                cb.crops_to_trials_computed = True
-
-        dataset = dataset_train if self.on_train else dataset_valid
-
-        with _cache_net_forward_iter(
-            net, self.use_caching, self.y_preds_
-        ) as cached_net:
-            current_score = self._scoring(cached_net, dataset, self.y_trues_)
-        self._record_score(net.history, current_score)
-
-        return
-
-
 class CroppedTrialEpochScoring(EpochScoring):
     """
     Class to compute scores for trials from a model that predicts (super)crops.
     """
+    # XXX needs a docstring !!!
 
     def __init__(
             self,
@@ -331,6 +212,88 @@ class CroppedTrialEpochScoring(EpochScoring):
         self._record_score(net.history, current_score)
 
         return
+
+
+class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
+    """
+    Class to compute scores for trials from a model that predicts (super)crops with
+    time series target.
+    """
+    def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
+        assert self.use_caching
+        if not self.crops_to_trials_computed:
+            if self.on_train:
+                # Prevent that rng state of torch is changed by
+                # creation+usage of iterator
+                rng_state = torch.random.get_rng_state()
+                pred_results = net.predict_with_window_inds_and_ys(
+                    dataset_train)
+                torch.random.set_rng_state(rng_state)
+            else:
+                pred_results = {}
+                pred_results['i_window_in_trials'] = np.concatenate(
+                    [i[0].cpu().numpy() for i in self.window_inds_]
+                )
+                pred_results['i_window_stops'] = np.concatenate(
+                    [i[2].cpu().numpy() for i in self.window_inds_]
+                )
+                pred_results['preds'] = np.concatenate(
+                    [y_pred.cpu().numpy() for y_pred in self.y_preds_])
+                pred_results['window_ys'] = np.concatenate(
+                    [y.cpu().numpy() for y in self.y_trues_])
+
+            num_preds = pred_results['preds'][-1].shape[-1]
+            # slice the targets to fit preds shape
+            pred_results['window_ys'] = [targets[:, -num_preds:] for targets in pred_results['window_ys']]
+
+            trial_preds = trial_preds_from_window_preds(
+                pred_results['preds'],
+                pred_results['i_window_in_trials'],
+                pred_results['i_window_stops'])
+
+            trial_ys = trial_preds_from_window_preds(
+                pred_results['window_ys'],
+                pred_results['i_window_in_trials'],
+                pred_results['i_window_stops'])
+
+            # the output is a list of predictions/targets per trial where each item is a
+            # timeseries of predictions/targets of shape (n_classes x timesteps)
+
+            # mask NaNs form targets
+            preds = np.hstack(trial_preds) # n_classes x timesteps in all trials
+            targets = np.hstack(trial_ys)
+            # create valid targets mask
+            mask = ~np.isnan(targets)
+            # select valid targets that have a matching predictions
+            masked_targets = targets[mask]
+            if mask.shape[0] == 1:
+                masked_preds = preds[:, mask[0, :]]
+            else:
+                masked_preds = preds[mask]
+
+            # Store the computed trial preds for all Cropped Callbacks
+            # that are also on same set
+            cbs = net._default_callbacks + net.callbacks
+            epoch_cbs = [
+                cb for name, cb in cbs if
+                isinstance(cb, CroppedTimeSeriesEpochScoring) and (
+                    cb.on_train == self.on_train)
+            ]
+            masked_preds = [torch.tensor(masked_preds.T)]
+            for cb in epoch_cbs:
+                cb.y_preds_ = masked_preds
+                cb.y_trues_ = masked_targets.T
+                cb.crops_to_trials_computed = True
+
+        dataset = dataset_train if self.on_train else dataset_valid
+
+        with _cache_net_forward_iter(
+            net, self.use_caching, self.y_preds_
+        ) as cached_net:
+            current_score = self._scoring(cached_net, dataset, self.y_trues_)
+        self._record_score(net.history, current_score)
+
+
 class PostEpochTrainScoring(EpochScoring):
     """
     Epoch Scoring class that recomputes predictions after the epoch
