@@ -50,7 +50,7 @@ class EEGRegressor(NeuralNetRegressor):
         shuffle the train dataset by default this one overwrites this option.
 
     aggregate_predictions: bool (default=True)
-        Whether to average cropped predictions to obtain window predictions. Used only in the 
+        Whether to average cropped predictions to obtain window predictions. Used only in the
         cropped mode.
 
     """  # noqa: E501

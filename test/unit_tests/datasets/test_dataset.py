@@ -2,7 +2,6 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD (3-clause)
-import copy
 
 import mne
 import numpy as np
@@ -12,9 +11,7 @@ import pytest
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
-    create_windows_from_events, create_fixed_length_windows,
-    create_windows_from_target_channels)
-from braindecode.preprocessing import Preprocessor, preprocess
+    create_windows_from_events, create_fixed_length_windows)
 
 
 # TODO: split file up into files with proper matching names
@@ -62,82 +59,6 @@ def concat_ds_targets():
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
     return concat_ds, targets
-
-
-@pytest.fixture(scope="module")
-def dataset_target_time_series():
-    rng = np.random.RandomState(42)
-    signal_sfreq = 50
-    info = mne.create_info(ch_names=['0', '1', 'target_0', 'target_1'],
-                           sfreq=signal_sfreq,
-                           ch_types=['eeg', 'eeg', 'misc', 'misc'])
-    signal = rng.randn(2, 1000)
-    targets = np.full((2, 1000), np.nan)
-    targets_sfreq = 10
-    targets_stride = int(signal_sfreq / targets_sfreq)
-    targets[:, ::targets_stride] = rng.randn(2, int(targets.shape[1] / targets_stride))
-
-    raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
-    desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
-    base_dataset = BaseDataset(raw, desc, target_name=None)
-    concat_ds = BaseConcatDataset([base_dataset])
-    windows_dataset = create_windows_from_target_channels(
-        concat_ds,
-        window_size_samples=100,
-    )
-
-    return concat_ds, windows_dataset, targets, signal
-
-
-def test_windows_with_target_from_channels(dataset_target_time_series):
-    _, windows_dataset, targets, signal = dataset_target_time_series
-    assert len(windows_dataset) == 180
-    for i in range(180):
-        epoch, y, window_inds = windows_dataset[i]
-        target_idx = (i + 20) * 5
-        np.testing.assert_array_almost_equal(targets[:, target_idx], y)
-        np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
-        np.testing.assert_array_almost_equal(np.array([i, i*5, target_idx]), window_inds)
-
-
-def test_windows_with_target_from_channels_all_targets(dataset_target_time_series):
-    concat_ds, _, targets, signal = dataset_target_time_series
-    windows_dataset = create_windows_from_target_channels(
-        concat_ds,
-        window_size_samples=100,
-        last_target_only=False
-    )
-    assert len(windows_dataset) == 180
-    for i in range(180):
-        epoch, y, window_inds = windows_dataset[i]
-        target_idx = (i + 20) * 5
-        np.testing.assert_array_almost_equal(targets[:, target_idx-99: target_idx + 1], y)
-        np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
-        np.testing.assert_array_almost_equal(np.array([i, i*5, target_idx]), window_inds)
-
-
-def test_windows_dataset_from_target_raise_valuerror():
-    with pytest.raises(ValueError):
-        WindowsDataset(None, None, targets_from='non-existing')
-
-
-def test_preprocessors(dataset_target_time_series):
-    concat_ds = dataset_target_time_series[0]
-    concat_ds_before = copy.deepcopy(concat_ds)
-    preprocessors = [
-        Preprocessor('pick_types', eeg=True, misc=True),
-        Preprocessor(lambda x: x / 1e6),
-    ]
-
-    preprocess(concat_ds, preprocessors)
-
-    # Check whether preprocessing has not affected the targets
-    # This is only valid for preprocessors that use mne functions which do not modify
-    # `misc` channels.
-    np.testing.assert_array_equal(
-        concat_ds.datasets[0].raw.get_data()[-2:, :],
-        concat_ds_before.datasets[0].raw.get_data()[-2:, :]
-    )
 
 
 @pytest.fixture(scope='module')
@@ -467,3 +388,8 @@ def test_target_name_not_in_description(set_up):
     base_dataset.set_description(
         {'pathological': True, 'gender': 'M', 'age': 48})
     x, y = base_dataset[0]
+
+
+def test_windows_dataset_from_target_channels_raise_valuerror():
+    with pytest.raises(ValueError):
+        WindowsDataset(None, None, targets_from='non-existing')
