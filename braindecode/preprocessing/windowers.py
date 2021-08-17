@@ -123,7 +123,8 @@ def create_fixed_length_windows(
         concat_ds, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=None, window_stride_samples=None, drop_last_window=None,
         mapping=None, preload=False, drop_bad_windows=True, picks=None,
-        reject=None, flat=None, on_missing='error', n_jobs=1):
+        reject=None, flat=None, targets_from='metadata', last_target_only=True,
+        on_missing='error', n_jobs=1):
     """Windower that creates sliding windows.
 
     Parameters
@@ -190,8 +191,9 @@ def create_fixed_length_windows(
         delayed(_create_fixed_length_windows)(
             ds, start_offset_samples, stop_offset_samples, window_size_samples,
             window_stride_samples, drop_last_window, mapping, preload,
-            drop_bad_windows, picks, reject, flat, on_missing)
-        for ds in concat_ds.datasets)
+            drop_bad_windows, picks, reject, flat, targets_from, last_target_only,
+            on_missing) for ds in concat_ds.datasets)
+
     return BaseConcatDataset(list_of_windows_ds)
 
 
@@ -315,8 +317,8 @@ def _create_windows_from_events(
 def _create_fixed_length_windows(
         ds, start_offset_samples, stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window, mapping=None, preload=False,
-        drop_bad_windows=True, picks=None, reject=None, flat=None,
-        on_missing='error'):
+        drop_bad_windows=True, picks=None, reject=None, flat=None, targets_from='metadata',
+        last_target_only=True, on_missing='error'):
     """Create WindowsDataset from BaseDataset with sliding windows.
 
     Parameters
@@ -383,7 +385,8 @@ def _create_fixed_length_windows(
     if drop_bad_windows:
         mne_epochs.drop_bad()
 
-    windows_ds = WindowsDataset(mne_epochs, ds.description)
+    windows_ds = WindowsDataset(mne_epochs, ds.description, targets_from=targets_from,
+                                last_target_only=last_target_only)
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, 'window_kwargs', window_kwargs)
     kwargs_name = 'raw_preproc_kwargs'
