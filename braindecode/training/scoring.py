@@ -244,7 +244,9 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
 
             num_preds = pred_results['preds'][-1].shape[-1]
             # slice the targets to fit preds shape
-            pred_results['window_ys'] = [targets[:, -num_preds:] for targets in pred_results['window_ys']]
+            pred_results['window_ys'] = [
+                targets[:, -num_preds:] for targets in pred_results['window_ys']
+            ]
 
             trial_preds = trial_preds_from_window_preds(
                 pred_results['preds'],
@@ -260,7 +262,7 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
             # timeseries of predictions/targets of shape (n_classes x timesteps)
 
             # mask NaNs form targets
-            preds = np.hstack(trial_preds) # n_classes x timesteps in all trials
+            preds = np.hstack(trial_preds)  # n_classes x timesteps in all trials
             targets = np.hstack(trial_ys)
             # create valid targets mask
             mask = ~np.isnan(targets)

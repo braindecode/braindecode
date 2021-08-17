@@ -21,24 +21,22 @@ Braindecode on ECoG BCI IV competition dataset 4.
 ######################################################################
 # First, we load the data. In this tutorial, we use the functionality of braindecode
 # to load `BCI IV competition dataset 4
-# <http://www.bbci.de/competition/iv/#dataset4>`__ [1]
+# <http://www.bbci.de/competition/iv/#dataset4>`__ [1].
+# The dataset is available as a part of ECoG library:
+# https://searchworks.stanford.edu/view/zk881ps0522
 #
-# To run this tutorial you have to download the dataset and test labels from:
-# Test labels: http://www.bbci.de/competition/iv/results/ds4/true_labels.zip
-# Data: http://www.bbci.de/competition/iv/#dataset4
+# If this dataset is used please cite [1]_.
 #
-# [1] Schalk, G., Kubanek, J., Miller, K.J., Anderson, N.R., Leuthardt, E.C.,
-#     Ojemann, J.G., Limbrick, D., Moran, D.W., Gerhardt, L.A., and Wolpaw, J.R.
-#     Decoding Two Dimensional Movement Trajectories Using Electrocorticographic Signals
-#     in Humans, J Neural Eng, 4: 264-275, 2007.
-#
+# [1] Miller, Kai J. "A library of human electrocorticographic data and analyses."
+#     Nature human behaviour 3, no. 11 (2019): 1225-1235. https://doi.org/10.1038/s41562-019-0678-3
+
 # .. note::
 #    To load your own datasets either via mne or from
 #    preprocessed X/y numpy arrays, see `MNE Dataset
 #    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
-# This dataset contains ECoG signal and time series of 5 targets corresponding
+# The dataset contains ECoG signal and time series of 5 targets corresponding
 # to each finger flexion. This is different than standard decoding setup for EEG with
 # multiple trials and usually one target per trial. Here, fingers flexions change in time
 # and are recorded with sampling frequency equals to 25 Hz.
@@ -79,12 +77,12 @@ factor_new = 1e-3
 init_block_size = 1000
 
 # We select only first 30 seconds of signal to limit time and memory to run this example.
-# To obtain results on the whole datasets one should remove this line.
+# To obtain results on the whole datasets you should remove this line.
 preprocess(dataset, [Preprocessor('crop', tmin=0, tmax=30)])
 
 # In time series targets setup, targets variables are stored in mne.Raw object as channels
 # of type `misc`. Thus those channels have to be selected for further processing. However,
-# many mne functions ignore`misc` channels and perform operations only on data channels
+# many mne functions ignore `misc` channels and perform operations only on data channels
 # (see https://mne.tools/stable/glossary.html#term-data-channels).
 preprocessors = [
     Preprocessor('pick_types', ecog=True, misc=True),
@@ -130,7 +128,7 @@ del subsets
 # are stored as target channels in mne.Raw
 from braindecode.preprocessing.windowers import create_windows_from_target_channels
 
-windows_dataset = create_windows_from_target_channels(
+windows_dataset_train = create_windows_from_target_channels(
     dataset_train,
     window_size_samples=1000,
     preload=True,
@@ -148,30 +146,28 @@ from sklearn.model_selection import train_test_split
 
 # We can split train dataset into training and validation datasets using
 # `sklearn.model_selection.train_test_split` and `torch.utils.data.Subset`
-idx_train, idx_valid = train_test_split(np.arange(len(windows_dataset)),
+idx_train, idx_valid = train_test_split(np.arange(len(windows_dataset_train)),
                                         random_state=100,
                                         test_size=0.2,
                                         shuffle=False)
 
-train_set = torch.utils.data.Subset(windows_dataset, idx_train)
-valid_set = torch.utils.data.Subset(windows_dataset, idx_valid)
+train_set = torch.utils.data.Subset(windows_dataset_train, idx_train)
+valid_set = torch.utils.data.Subset(windows_dataset_train, idx_valid)
 
 # ######################################################################
-# # Create model
-# # ------------
-# #
-#
+# Create model
+# ------------
 #
 # ######################################################################
-# # Now we create the deep learning model! Braindecode comes with some
-# # predefined convolutional neural network architectures for raw
-# # time-domain EEG. Here, we use the shallow ConvNet model from `Deep
-# # learning with convolutional neural networks for EEG decoding and
-# # visualization <https://arxiv.org/abs/1703.05051>`__. These models are
-# # pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
-# # to use your own model, it just has to be a normal PyTorch
-# # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
-# #
+# Now we create the deep learning model! Braindecode comes with some
+# predefined convolutional neural network architectures for raw
+# time-domain EEG. Here, we use the shallow ConvNet model from `Deep
+# learning with convolutional neural networks for EEG decoding and
+# visualization <https://arxiv.org/abs/1703.05051>`__. These models are
+# pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
+# to use your own model, it just has to be a normal PyTorch
+# `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
+
 
 from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
@@ -265,7 +261,7 @@ regressor = EEGRegressor(
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-regressor.fit(windows_dataset, y=None, epochs=n_epochs)
+regressor.fit(windows_dataset_train, y=None, epochs=n_epochs)
 
 old_level = set_log_level(verbose='WARNING', return_old_level=True)
 preds_test = regressor.predict(windows_dataset_test)

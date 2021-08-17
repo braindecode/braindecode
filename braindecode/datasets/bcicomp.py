@@ -1,3 +1,8 @@
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Mohammed Fattouh <mo.fattouh@gmail.com>
+#
+# License: BSD (3-clause)
+
 import glob
 import os.path as osp
 from os import remove
@@ -11,7 +16,8 @@ from moabb.datasets.download import data_dl, get_dataset_path
 
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 
-DATASET_URL = 'https://stacks.stanford.edu/file/druid:zk881ps0522/BCI_Competion4_dataset4_data_fingerflexions.zip'
+DATASET_URL = 'https://stacks.stanford.edu/file/druid:zk881ps0522/' \
+              'BCI_Competion4_dataset4_data_fingerflexions.zip'
 
 
 class BCICompetitionDataset4(BaseConcatDataset):
@@ -20,13 +26,13 @@ class BCICompetitionDataset4(BaseConcatDataset):
     Contains ECoG recordings for three patients moving fingers during the experiment.
     Targets correspond to the time courses of the flexion of each of five fingers.
     See http://www.bbci.de/competition/iv/desc_4.pdf and
-    http://www.bbci.de/competition/iv/ for the dataset description.
+    http://www.bbci.de/competition/iv/ for the dataset and competition description.
 
-    ECoG library contatining the dataset: https://searchworks.stanford.edu/view/zk881ps0522
+    ECoG library containing the dataset: https://searchworks.stanford.edu/view/zk881ps0522
 
     Notes
     -----
-    When using this dataset in publications please cite [1]_ .
+    When using this dataset please cite [1]_ .
 
     Parameters
     ----------
@@ -147,5 +153,5 @@ class BCICompetitionDataset4(BaseConcatDataset):
                 )
         else:
             raise ValueError(
-                f'Wrong subject_ids format. Expected types: None, list, tuple, int.'
+                'Wrong subject_ids format. Expected types: None, list, tuple, int.'
             )

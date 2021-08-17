@@ -4,7 +4,9 @@ Cropped Decoding on BCIC IV 2a Dataset
 
 Building on the Trialwise decoding tutorial, we now do more data-efficient cropped decoding!
 
-In Braindecode, there are two supported configurations created for training models: trialwise decoding and cropped decoding. We will explain this visually by comparing trialwise to cropped decoding.
+In Braindecode, there are two supported configurations created for training models: trialwise
+decoding and cropped decoding. We will explain this visually by comparing trialwise to cropped
+decoding.
 """
 
 ######################################################################
