@@ -50,13 +50,18 @@ class EEGClassifier(NeuralNetClassifier):
         Defines whether train dataset will be shuffled. As skorch does not
         shuffle the train dataset by default this one overwrites this option.
 
+    aggregate_predictions: bool (default=True)
+        Whether to average cropped predictions to obtain window predictions. Used only in the 
+        cropped mode.
+
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetClassifier, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True, **kwargs):
+                 iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
         callbacks = self._parse_callbacks(callbacks)
+        self.aggregate_predictions = aggregate_predictions
 
         super().__init__(*args,
                          callbacks=callbacks,
@@ -83,6 +88,7 @@ class EEGClassifier(NeuralNetClassifier):
                     train_name = f'train_{callback}'
                     valid_name = f'valid_{callback}'
                     if self.cropped:
+                        # TODO: use CroppedTimeSeriesEpochScoring when time series target
                         # In case of cropped decoding we are using braindecode
                         # specific scoring created for cropped decoding
                         train_scoring = CroppedTrialEpochScoring(
@@ -244,7 +250,7 @@ class EEGClassifier(NeuralNetClassifier):
         # Predictions may be already averaged in CroppedTrialEpochScoring (y_pred.shape==2).
         # However, when predictions are computed outside of CroppedTrialEpochScoring
         # we have to average predictions, hence the check if len(y_pred.shape) == 3
-        if self.cropped and len(y_pred.shape) == 3:
+        if self.cropped and self.aggregate_predictions and len(y_pred.shape) == 3:
             return y_pred.mean(axis=-1)
         else:
             return y_pred

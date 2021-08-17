@@ -49,6 +49,10 @@ class EEGRegressor(NeuralNetRegressor):
         Defines whether train dataset will be shuffled. As skorch does not
         shuffle the train dataset by default this one overwrites this option.
 
+    aggregate_predictions: bool (default=True)
+        Whether to average cropped predictions to obtain window predictions. Used only in the 
+        cropped mode.
+
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
@@ -56,7 +60,6 @@ class EEGRegressor(NeuralNetRegressor):
                  iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
         callbacks = self._parse_callbacks(callbacks)
-        # TODO: docstring for aggregate predictions
         self.aggregate_predictions = aggregate_predictions
 
         super().__init__(*args,
