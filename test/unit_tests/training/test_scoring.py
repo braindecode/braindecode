@@ -208,7 +208,7 @@ def test_cropped_time_series_trial_epoch_scoring():
         predictions_cases, y_true_cases, expected_accuracies_cases
     ):
         dataset_valid = create_from_X_y(
-            np.zeros((4, 1, 10)), np.concatenate(y_true),
+            np.zeros((4, 1, 10)), np.concatenate(y_true), sfreq=100,
             window_size_samples=10, window_stride_samples=4, drop_last_window=False)
 
         mock_skorch_net = MockSkorchNet()
