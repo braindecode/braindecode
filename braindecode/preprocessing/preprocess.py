@@ -53,8 +53,9 @@ class Preprocessor(object):
         if callable(fn) and apply_on_array:
             channel_wise = kwargs.pop('channel_wise', False)
             picks = kwargs.pop('picks', None)
+            n_jobs = kwargs.pop('n_jobs', 1)
             kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise,
-                          picks=picks)
+                          picks=picks, n_jobs=n_jobs)
             fn = 'apply_function'
         self.fn = fn
         self.kwargs = kwargs
