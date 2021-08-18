@@ -100,20 +100,7 @@ sfreq = dataset.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Extract target sampling frequency
 target_sfreq = dataset.datasets[0].raw.info['target_sfreq']
-# ######################################################################
-# Split dataset into train and valid
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# ######################################################################
-# We can easily split the dataset using additional info stored in the
-# description attribute, in this case ``session`` column. We select `train` dataset
-# for training and validation and `test` for final evaluation.
 
-subsets = dataset.split('session')
-del dataset
-dataset_train = subsets['train']
-dataset_test = subsets['test']
-del subsets
 # ######################################################################
 # Cut Compute Windows
 # ~~~~~~~~~~~~~~~~~~~
@@ -128,31 +115,38 @@ del subsets
 # are stored as target channels in mne.Raw
 from braindecode.preprocessing.windowers import create_windows_from_target_channels
 
-windows_dataset_train = create_windows_from_target_channels(
-    dataset_train,
+windows_dataset = create_windows_from_target_channels(
+    dataset,
     window_size_samples=1000,
-    preload=True,
+    preload=False,
     last_target_only=True
 )
 
-windows_dataset_test = create_windows_from_target_channels(
-    dataset_test,
-    window_size_samples=1000,
-    last_target_only=True
-)
+# ######################################################################
+# Split dataset into train and test
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# ######################################################################
+# We can easily split the dataset using additional info stored in the
+# description attribute, in this case ``session`` column. We select `train` dataset
+# for training and validation and `test` for final evaluation.
+
+subsets = windows_dataset.split('session')
+train_set = subsets['train']
+test_set = subsets['test']
 
 import torch
 from sklearn.model_selection import train_test_split
 
 # We can split train dataset into training and validation datasets using
 # `sklearn.model_selection.train_test_split` and `torch.utils.data.Subset`
-idx_train, idx_valid = train_test_split(np.arange(len(windows_dataset_train)),
+idx_train, idx_valid = train_test_split(np.arange(len(train_set)),
                                         random_state=100,
                                         test_size=0.2,
                                         shuffle=False)
 
-train_set = torch.utils.data.Subset(windows_dataset_train, idx_train)
-valid_set = torch.utils.data.Subset(windows_dataset_train, idx_valid)
+valid_set = torch.utils.data.Subset(train_set, idx_valid)
+train_set = torch.utils.data.Subset(train_set, idx_train)
 
 # ######################################################################
 # Create model
@@ -261,11 +255,11 @@ regressor = EEGRegressor(
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-regressor.fit(windows_dataset_train, y=None, epochs=n_epochs)
+regressor.fit(train_set, y=None, epochs=n_epochs)
 
 old_level = set_log_level(verbose='WARNING', return_old_level=True)
-preds_test = regressor.predict(windows_dataset_test)
-y_test = np.stack([data[1] for data in windows_dataset_test])
+preds_test = regressor.predict(test_set)
+y_test = np.stack([data[1] for data in test_set])
 set_log_level(verbose=old_level)
 
 ######################################################################

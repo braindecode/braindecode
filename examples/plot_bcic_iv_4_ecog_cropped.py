@@ -42,12 +42,11 @@ from braindecode.datasets.bcicomp import BCICompetitionDataset4
 
 subject_id = 1
 dataset = BCICompetitionDataset4(subject_ids=[subject_id])
-dataset = dataset.split('session')['train']
 
 from braindecode.preprocessing.preprocess import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
-low_cut_hz = 4.  # low cut frequency for filtering
+low_cut_hz = 1.  # low cut frequency for filtering
 high_cut_hz = 200.  # high cut frequency for filtering
 # Parameters for exponential moving standardization
 factor_new = 1e-3
@@ -63,20 +62,6 @@ preprocessors = [
 ]
 # Transform the data
 preprocess(dataset, preprocessors)
-
-# crop dataset into train, valid and test
-train_dataset = copy.deepcopy(dataset)
-# for speed up the tarining we will use the first 10 secs for training
-preprocess(train_dataset, [Preprocessor('crop', tmin=0, tmax=10)])
-
-valid_dataset = copy.deepcopy(dataset)
-# for speed up the tarining we will use the first 10 secs for training
-preprocess(valid_dataset, [Preprocessor('crop', tmin=20, tmax=30)])
-
-test_dataset = copy.deepcopy(dataset)
-# for speed up the tarining we will use the first 10 secs for training
-preprocess(test_dataset, [Preprocessor('crop', tmin=30, tmax=40)])
-
 
 ######################################################################
 # Create model and compute windowing parameters
@@ -161,11 +146,8 @@ to_dense_prediction_model(model)
 #
 
 n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
-n_preds_per_input
 
-
-
-# ######################################################################
+######################################################################
 # # Cut Compute Windows
 # # ~~~~~~~~~~~~~~~~~~~
 # #
@@ -193,8 +175,8 @@ assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Create windows using braindecode function for this. It needs parameters to define how
 # trials should be used.
 
-train_windows_dataset = create_fixed_length_windows(
-    train_dataset,
+windows_dataset = create_fixed_length_windows(
+    dataset,
     start_offset_samples=0,
     stop_offset_samples=None,
     window_size_samples=input_window_samples,
@@ -205,29 +187,6 @@ train_windows_dataset = create_fixed_length_windows(
     preload=True
 )
 
-valid_windows_dataset = create_fixed_length_windows(
-    valid_dataset,
-    start_offset_samples=0,
-    stop_offset_samples=None,
-    window_size_samples=input_window_samples,
-    window_stride_samples=n_preds_per_input,
-    drop_last_window=False,
-    targets_from='channels',
-    last_target_only=False,
-    preload=True
-)
-
-test_windows_dataset = create_fixed_length_windows(
-    test_dataset,
-    start_offset_samples=0,
-    stop_offset_samples=None,
-    window_size_samples=input_window_samples,
-    window_stride_samples=n_preds_per_input,
-    drop_last_window=False,
-    targets_from='channels',
-    last_target_only=False,
-    preload=True
-)
 # ######################################################################
 # # Split dataset into train and valid
 # # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -240,8 +199,23 @@ test_windows_dataset = create_fixed_length_windows(
 # # ``session_T`` for training and ``session_E`` for validation.
 # #
 #
+subsets = windows_dataset.split('session')
+train_set = subsets['train']
+test_set = subsets['test']
 
-######################################################################
+import torch
+from sklearn.model_selection import train_test_split
+
+# We can split train dataset into training and validation datasets using
+# `sklearn.model_selection.train_test_split` and `torch.utils.data.Subset`
+idx_train, idx_valid = train_test_split(np.arange(len(train_set)),
+                                        random_state=100,
+                                        test_size=0.2,
+                                        shuffle=False)
+valid_set = train_set
+# valid_set = torch.utils.data.Subset(train_set, idx_valid)
+# train_set = torch.utils.data.Subset(train_set, idx_train)
+#####################################################################
 # Training
 # --------
 #
@@ -288,7 +262,7 @@ regressor = EEGRegressor(
     criterion=TimeSeriesLoss,
     criterion__loss_function=torch.nn.functional.mse_loss,
     optimizer=torch.optim.AdamW,
-    train_split=predefined_split(valid_windows_dataset),
+    train_split=predefined_split(valid_set),
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
     iterator_train__shuffle=True,
@@ -310,11 +284,11 @@ regressor = EEGRegressor(
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-regressor.fit(train_windows_dataset, y=None, epochs=n_epochs)
+regressor.fit(train_set, y=None, epochs=n_epochs)
 
 ys_valid, i_window_in_trials_valid, i_window_stops_valid  = [], [], []
 
-for batch in valid_windows_dataset:
+for batch in valid_set:
     ys_valid.append(batch[1])
     i_window_in_trials_valid.append(batch[2][0])
     i_window_stops_valid.append(batch[2][2])
@@ -322,15 +296,15 @@ for batch in valid_windows_dataset:
 ys_valid = np.stack(ys_valid)
 
 ys_test, i_window_in_trials_test, i_window_stops_test  = [], [], []
-for batch in test_windows_dataset:
+for batch in test_set:
     ys_test.append(batch[1])
     i_window_in_trials_test.append(batch[2][0])
     i_window_stops_test.append(batch[2][2])
 
 ys_test = np.stack(ys_test)
 
-preds_valid = regressor.predict(valid_windows_dataset)
-preds_test = regressor.predict(test_windows_dataset)
+preds_valid = regressor.predict(valid_set)
+preds_test = regressor.predict(test_set)
 
 import numpy as np
 
