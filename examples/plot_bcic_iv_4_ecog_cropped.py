@@ -1,5 +1,5 @@
 """
-Cropped Decoding on BCIC IV 2a Dataset
+Cropped Decoding on BCIC IV 4 Dataset
 ========================================
 
 Building on the Trialwise decoding tutorial, we now do more data-efficient cropped decoding!
@@ -33,8 +33,6 @@ decoding.
 #    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
-import copy
-
 import numpy as np
 import sklearn
 
@@ -286,7 +284,7 @@ regressor = EEGRegressor(
 # in the dataset.
 regressor.fit(train_set, y=None, epochs=n_epochs)
 
-ys_valid, i_window_in_trials_valid, i_window_stops_valid  = [], [], []
+ys_valid, i_window_in_trials_valid, i_window_stops_valid = [], [], []
 
 for batch in valid_set:
     ys_valid.append(batch[1])
@@ -295,7 +293,7 @@ for batch in valid_set:
 
 ys_valid = np.stack(ys_valid)
 
-ys_test, i_window_in_trials_test, i_window_stops_test  = [], [], []
+ys_test, i_window_in_trials_test, i_window_stops_test = [], [], []
 for batch in test_set:
     ys_test.append(batch[1])
     i_window_in_trials_test.append(batch[2][0])

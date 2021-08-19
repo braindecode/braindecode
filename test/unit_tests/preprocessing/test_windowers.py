@@ -468,7 +468,8 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                 'window_size_samples': 100, 'window_stride_samples': 100,
                 'drop_last_window': False, 'mapping': None, 'preload': False,
                 'drop_bad_windows': True, 'picks': picks, 'reject': reject,
-                'flat': flat, 'on_missing': on_missing})
+                'flat': flat, 'targets_from': 'metadata', 'last_target_only': True,
+                'on_missing': on_missing})
         ]
 
 
