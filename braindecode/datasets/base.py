@@ -173,6 +173,11 @@ class WindowsDataset(BaseDataset):
             :, ['i_window_in_trial', 'i_start_in_trial',
                 'i_stop_in_trial']].to_numpy()
 
+        self.window_kwargs = {
+            'targets_from': targets_from,
+            'last_target_only': last_target_only
+        }
+
     def __getitem__(self, index):
         """Get a window and its target.
 
