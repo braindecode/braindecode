@@ -199,16 +199,27 @@ def _load_parallel(path, i, preload, is_raw):
     if is_raw:
         dataset = BaseDataset(signals, description, target_name)
     else:
-        dataset = WindowsDataset(signals, description)
-    for kwargs_name in ['raw_preproc_kwargs', 'window_kwargs',
-                        'window_preproc_kwargs']:
-        kwargs_file_name = '.'.join([kwargs_name, 'json'])
-        kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
-        if os.path.exists(kwargs_file_path):
-            kwargs = json.load(open(kwargs_file_path, 'r'))
-            kwargs = [tuple(kwarg) for kwarg in kwargs]
-            setattr(dataset, kwargs_name, kwargs)
+        window_kwargs = _load_kwargs_json('window_kwargs', sub_dir)
+        windows_dataset_kwargs = [kwargs[1] for kwargs in window_kwargs if kwargs[0] == 'WindowsDataset']
+        windows_dataset_kwargs = windows_dataset_kwargs[0] if len(windows_dataset_kwargs) == 1 else {}
+        dataset = WindowsDataset(signals, description,
+                                 targets_from=windows_dataset_kwargs.get('targets_from', 'metadata'),
+                                 last_target_only=windows_dataset_kwargs.get('last_target_only', True)
+                                 )
+        setattr(dataset, 'window_kwargs', window_kwargs)
+    for kwargs_name in ['raw_preproc_kwargs', 'window_preproc_kwargs']:
+        kwargs = _load_kwargs_json(kwargs_name, sub_dir)
+        setattr(dataset, kwargs_name, kwargs)
     return dataset
+
+
+def _load_kwargs_json(kwargs_name, sub_dir):
+    kwargs_file_name = '.'.join([kwargs_name, 'json'])
+    kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
+    if os.path.exists(kwargs_file_path):
+        kwargs = json.load(open(kwargs_file_path, 'r'))
+        kwargs = [tuple(kwarg) for kwarg in kwargs]
+        return kwargs
 
 
 def _is_outdated_saved(path):

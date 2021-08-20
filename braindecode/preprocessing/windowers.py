@@ -385,6 +385,9 @@ def _create_fixed_length_windows(
     if drop_bad_windows:
         mne_epochs.drop_bad()
 
+    window_kwargs.append(
+        (WindowsDataset.__name__, {'targets_from': targets_from, 'last_target_only': last_target_only})
+    )
     windows_ds = WindowsDataset(mne_epochs, ds.description, targets_from=targets_from,
                                 last_target_only=last_target_only)
     # add window_kwargs and raw_preproc_kwargs to windows dataset
@@ -422,6 +425,9 @@ def _create_windows_from_target_channels(
     WindowsDataset :
         Windowed dataset.
     """
+    window_kwargs = [
+        (create_windows_from_target_channels.__name__, _get_windowing_kwargs(locals())),
+    ]
     stop = ds.raw.n_times + ds.raw.first_samp
 
     target = ds.raw.get_data(picks='misc')
@@ -448,8 +454,16 @@ def _create_windows_from_target_channels(
     if drop_bad_windows:
         mne_epochs.drop_bad()
 
-    return WindowsDataset(mne_epochs, ds.description, targets_from='channels',
-                          last_target_only=last_target_only)
+    window_kwargs.append(
+        (WindowsDataset.__name__, {'targets_from': 'channels', 'last_target_only': last_target_only})
+    )
+    windows_ds = WindowsDataset(mne_epochs, ds.description, targets_from='channels',
+                                last_target_only=last_target_only)
+    setattr(windows_ds, 'window_kwargs', window_kwargs)
+    kwargs_name = 'raw_preproc_kwargs'
+    if hasattr(ds, kwargs_name):
+        setattr(windows_ds, kwargs_name, getattr(ds, kwargs_name))
+    return windows_ds
 
 
 def _compute_window_inds(
