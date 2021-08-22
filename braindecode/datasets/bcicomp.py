@@ -20,7 +20,7 @@ DATASET_URL = 'https://stacks.stanford.edu/file/druid:zk881ps0522/' \
               'BCI_Competion4_dataset4_data_fingerflexions.zip'
 
 
-class BCICompetitionDataset4(BaseConcatDataset):
+class BCICompetitionIVDataset4(BaseConcatDataset):
     """BCI competition IV dataset 4.
 
     Contains ECoG recordings for three patients moving fingers during the experiment.

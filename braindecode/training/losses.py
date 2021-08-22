@@ -53,9 +53,9 @@ class TimeSeriesLoss(nn.Module):
         targets: torch.Tensor
             Target labels with shape (batch_size, n_classes, n_times).
         """
-        num_preds = preds.shape[-1]
+        n_preds = preds.shape[-1]
         # slice the targets to fit preds shape
-        targets = targets[:, :, -num_preds:]
+        targets = targets[:, :, -n_preds:]
         # create valid targets mask
         mask = ~torch.isnan(targets)
         # select valid targets that have a matching predictions

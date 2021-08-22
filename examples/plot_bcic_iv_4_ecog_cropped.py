@@ -1,6 +1,6 @@
 """
-Cropped Decoding on BCIC IV 4 Dataset
-========================================
+Fingers flexion cropped decoding on BCIC IV 4 ECoG Dataset
+==========================================================
 
 Building on the Trialwise decoding tutorial, we now do more data-efficient cropped decoding!
 
@@ -36,10 +36,10 @@ decoding.
 import numpy as np
 import sklearn
 
-from braindecode.datasets.bcicomp import BCICompetitionDataset4
+from braindecode.datasets.bcicomp import BCICompetitionIVDataset4
 
 subject_id = 1
-dataset = BCICompetitionDataset4(subject_ids=[subject_id])
+dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 
 from braindecode.preprocessing.preprocess import (
     exponential_moving_standardize, preprocess, Preprocessor)

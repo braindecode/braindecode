@@ -1,6 +1,6 @@
 """
 Fingers flexion decoding on BCIC IV 4 ECoG Dataset
-========================================
+==================================================
 
 This tutorial shows you how to train and test deep learning models with
 Braindecode on ECoG BCI IV competition dataset 4.
@@ -43,10 +43,10 @@ Braindecode on ECoG BCI IV competition dataset 4.
 
 import numpy as np
 
-from braindecode.datasets.bcicomp import BCICompetitionDataset4
+from braindecode.datasets.bcicomp import BCICompetitionIVDataset4
 
 subject_id = 1
-dataset = BCICompetitionDataset4(subject_ids=[subject_id])
+dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing
