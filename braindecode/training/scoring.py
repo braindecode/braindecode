@@ -2,6 +2,7 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          Mohammed Fattouh <mo.fattouh@gmail.com>
 #
 # License: BSD-3
 

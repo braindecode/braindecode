@@ -9,6 +9,8 @@
 #          Ann-Kathrin Kiessner <ann-kathrin.kiessner@gmx.de>
 #          Vytautas Jankauskas <vytauto.jankausko@gmail.com>
 #          Dan Wilson <dan.c.wil@gmail.com>
+#          Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Mohammed Fattouh <mo.fattouh@gmail.com>
 #
 # License: BSD (3-clause)
 

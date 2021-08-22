@@ -3,8 +3,17 @@ Fingers flexion decoding on BCIC IV 4 ECoG Dataset
 ==================================================
 
 This tutorial shows you how to train and test deep learning models with
-Braindecode on ECoG BCI IV competition dataset 4.
+Braindecode on ECoG BCI IV competition dataset 4. For this dataset we will
+predict 5 regression targets corresponding to flexion of each finger.
+The targets were recorded as a time series (each 25 Hz), so this tutorial is
+an example of time series target prediction.
 """
+
+
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Mohammed Fattouh <mo.fattouh@gmail.com>
+#
+# License: BSD (3-clause)
 
 ######################################################################
 # Loading and preprocessing the dataset
@@ -21,20 +30,14 @@ Braindecode on ECoG BCI IV competition dataset 4.
 ######################################################################
 # First, we load the data. In this tutorial, we use the functionality of braindecode
 # to load `BCI IV competition dataset 4
-# <http://www.bbci.de/competition/iv/#dataset4>`__ [1].
+# <http://www.bbci.de/competition/iv/#dataset4>`.
 # The dataset is available as a part of ECoG library:
 # https://searchworks.stanford.edu/view/zk881ps0522
 #
-# If this dataset is used please cite [1]_.
+# If this dataset is used please cite [1].
 #
-# [1] Miller, Kai J. "A library of human electrocorticographic data and analyses."
-#     Nature human behaviour 3, no. 11 (2019): 1225-1235. https://doi.org/10.1038/s41562-019-0678-3
-
-# .. note::
-#    To load your own datasets either via mne or from
-#    preprocessed X/y numpy arrays, see `MNE Dataset
-#    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
-#    Tutorial <./plot_custom_dataset_example.html>`__.
+# [1] Miller, Kai J. "A library of human electrocorticographic data and analyses.
+# "Nature human behaviour 3, no. 11 (2019): 1225-1235. https://doi.org/10.1038/s41562-019-0678-3
 #
 # The dataset contains ECoG signal and time series of 5 targets corresponding
 # to each finger flexion. This is different than standard decoding setup for EEG with
@@ -47,6 +50,7 @@ from braindecode.datasets.bcicomp import BCICompetitionIVDataset4
 
 subject_id = 1
 dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
+
 
 ######################################################################
 # Preprocessing
@@ -101,12 +105,13 @@ assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Extract target sampling frequency
 target_sfreq = dataset.datasets[0].raw.info['target_sfreq']
 
-# ######################################################################
+
+######################################################################
 # Cut Compute Windows
 # ~~~~~~~~~~~~~~~~~~~
 #
-#
-#
+
+
 ######################################################################
 # Now we cut out compute windows, the inputs for the deep networks during
 # training. In the case of trialwise decoding of time series targets, we just have to
@@ -122,11 +127,12 @@ windows_dataset = create_windows_from_target_channels(
     last_target_only=True
 )
 
-# ######################################################################
-# Split dataset into train and test
+
+######################################################################
+# Split dataset into train, valid, and test
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# ######################################################################
+######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select `train` dataset
 # for training and validation and `test` for final evaluation.
@@ -148,11 +154,12 @@ idx_train, idx_valid = train_test_split(np.arange(len(train_set)),
 valid_set = torch.utils.data.Subset(train_set, idx_valid)
 train_set = torch.utils.data.Subset(train_set, idx_train)
 
-# ######################################################################
+
+######################################################################
 # Create model
 # ------------
 #
-# ######################################################################
+######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
 # time-domain EEG. Here, we use the shallow ConvNet model from `Deep
@@ -198,7 +205,8 @@ model = new_model
 if cuda:
     model.cuda()
 
-# ######################################################################
+
+#######################################################################
 # Training
 # --------
 #
@@ -261,6 +269,7 @@ old_level = set_log_level(verbose='WARNING', return_old_level=True)
 preds_test = regressor.predict(test_set)
 y_test = np.stack([data[1] for data in test_set])
 set_log_level(verbose=old_level)
+
 
 ######################################################################
 # Plot Results

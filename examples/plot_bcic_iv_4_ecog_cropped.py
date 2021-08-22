@@ -9,6 +9,13 @@ decoding and cropped decoding. We will explain this visually by comparing trialw
 decoding.
 """
 
+
+# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Mohammed Fattouh <mo.fattouh@gmail.com>
+#
+# License: BSD (3-clause)
+
+
 ######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
@@ -61,6 +68,7 @@ preprocessors = [
 # Transform the data
 preprocess(dataset, preprocessors)
 
+
 ######################################################################
 # Create model and compute windowing parameters
 # ---------------------------------------------
@@ -85,22 +93,23 @@ preprocess(dataset, preprocessors)
 
 input_window_samples = 1000
 
-# ######################################################################
-# # Create model
-# # ------------
-# #
+
+######################################################################
+# Create model
+# ------------
 #
+
+
+######################################################################
+# Now we create the deep learning model! Braindecode comes with some
+# predefined convolutional neural network architectures for raw
+# time-domain EEG. Here, we use the shallow ConvNet model from `Deep
+# learning with convolutional neural networks for EEG decoding and
+# visualization <https://arxiv.org/abs/1703.05051>`__. These models are
+# pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
+# to use your own model, it just has to be a normal PyTorch
+# `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
 #
-# ######################################################################
-# # Now we create the deep learning model! Braindecode comes with some
-# # predefined convolutional neural network architectures for raw
-# # time-domain EEG. Here, we use the shallow ConvNet model from `Deep
-# # learning with convolutional neural networks for EEG decoding and
-# # visualization <https://arxiv.org/abs/1703.05051>`__. These models are
-# # pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
-# # to use your own model, it just has to be a normal PyTorch
-# # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
-# #
 
 import torch
 from braindecode.util import set_random_seeds
@@ -138,27 +147,28 @@ if cuda:
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
 to_dense_prediction_model(model)
 
+
 ######################################################################
 # To know the models’ receptive field, we calculate the shape of model
 # output for a dummy input.
-#
 
 n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
+
 ######################################################################
-# # Cut Compute Windows
-# # ~~~~~~~~~~~~~~~~~~~
-# #
+# Cut Compute Windows
+# ~~~~~~~~~~~~~~~~~~~
 #
+
+
+######################################################################
+# Now we cut out compute windows, the inputs for the deep networks during
+# training. In the case of trialwise decoding, we just have to decide if
+# we want to cut out some part before and/or after the trial. For this
+# dataset, in our work, it often was beneficial to also cut out 500 ms
+# before the trial.
 #
-# ######################################################################
-# # Now we cut out compute windows, the inputs for the deep networks during
-# # training. In the case of trialwise decoding, we just have to decide if
-# # we want to cut out some part before and/or after the trial. For this
-# # dataset, in our work, it often was beneficial to also cut out 500 ms
-# # before the trial.
-# #
-#
+
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 
 # Extract sampling frequency, check that they are same in all datasets
@@ -185,18 +195,19 @@ windows_dataset = create_fixed_length_windows(
     preload=True
 )
 
-# ######################################################################
-# # Split dataset into train and valid
-# # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# #
+
+######################################################################
+# Split dataset into train and valid
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
+
+
+######################################################################
+# We can easily split the dataset using additional info stored in the
+# description attribute, in this case ``session`` column. We select
+# ``session_T`` for training and ``session_E`` for validation.
 #
-# ######################################################################
-# # We can easily split the dataset using additional info stored in the
-# # description attribute, in this case ``session`` column. We select
-# # ``session_T`` for training and ``session_E`` for validation.
-# #
-#
+
 subsets = windows_dataset.split('session')
 train_set = subsets['train']
 test_set = subsets['test']
@@ -213,6 +224,8 @@ idx_train, idx_valid = train_test_split(np.arange(len(train_set)),
 valid_set = train_set
 # valid_set = torch.utils.data.Subset(train_set, idx_valid)
 # train_set = torch.utils.data.Subset(train_set, idx_train)
+
+
 #####################################################################
 # Training
 # --------

@@ -1,4 +1,6 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Mohammed Fattouh <mo.fattouh@gmail.com>
 #
 # License: BSD (3-clause)
 
