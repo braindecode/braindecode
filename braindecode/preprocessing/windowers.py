@@ -386,7 +386,8 @@ def _create_fixed_length_windows(
         mne_epochs.drop_bad()
 
     window_kwargs.append(
-        (WindowsDataset.__name__, {'targets_from': targets_from, 'last_target_only': last_target_only})
+        (WindowsDataset.__name__, {'targets_from': targets_from,
+                                   'last_target_only': last_target_only})
     )
     windows_ds = WindowsDataset(mne_epochs, ds.description, targets_from=targets_from,
                                 last_target_only=last_target_only)
@@ -455,7 +456,8 @@ def _create_windows_from_target_channels(
         mne_epochs.drop_bad()
 
     window_kwargs.append(
-        (WindowsDataset.__name__, {'targets_from': 'channels', 'last_target_only': last_target_only})
+        (WindowsDataset.__name__, {'targets_from': 'channels',
+                                   'last_target_only': last_target_only})
     )
     windows_ds = WindowsDataset(mne_epochs, ds.description, targets_from='channels',
                                 last_target_only=last_target_only)

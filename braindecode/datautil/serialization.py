@@ -200,11 +200,11 @@ def _load_parallel(path, i, preload, is_raw):
         dataset = BaseDataset(signals, description, target_name)
     else:
         window_kwargs = _load_kwargs_json('window_kwargs', sub_dir)
-        windows_dataset_kwargs = [kwargs[1] for kwargs in window_kwargs if kwargs[0] == 'WindowsDataset']
-        windows_dataset_kwargs = windows_dataset_kwargs[0] if len(windows_dataset_kwargs) == 1 else {}
+        windows_ds_kwargs = [kwargs[1] for kwargs in window_kwargs if kwargs[0] == 'WindowsDataset']
+        windows_ds_kwargs = windows_ds_kwargs[0] if len(windows_ds_kwargs) == 1 else {}
         dataset = WindowsDataset(signals, description,
-                                 targets_from=windows_dataset_kwargs.get('targets_from', 'metadata'),
-                                 last_target_only=windows_dataset_kwargs.get('last_target_only', True)
+                                 targets_from=windows_ds_kwargs.get('targets_from', 'metadata'),
+                                 last_target_only=windows_ds_kwargs.get('last_target_only', True)
                                  )
         setattr(dataset, 'window_kwargs', window_kwargs)
     for kwargs_name in ['raw_preproc_kwargs', 'window_preproc_kwargs']:
