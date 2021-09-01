@@ -335,24 +335,19 @@ plt.scatter(preds_masked, ys_masked)
 # Trial-wise correlation coefficient score
 from braindecode.training.scoring import trial_preds_from_window_preds
 
-for target_ch_idx in range(ys_test.shape[1]):
-    ys_cropped = ys_test[:, target_ch_idx, -preds_test.shape[2]:]
+preds = regressor.predict_trials(test_set, return_targets=False)
 
-    trials_preds = trial_preds_from_window_preds(
-        np.expand_dims(preds_test[:, target_ch_idx, :], 1),
-        i_window_in_trials_test,
-        i_window_stops_test
-    )
+ys_cropped = np.transpose(ys_test[:, :, -n_preds_per_input:], (0, 2, 1))
 
-    trials_ys = trial_preds_from_window_preds(
-        np.expand_dims(ys_cropped, 1),
-        i_window_in_trials_test,
-        i_window_stops_test
-    )
+trials_ys = trial_preds_from_window_preds(
+    np.expand_dims(ys_cropped, 1),
+    i_window_in_trials_test,
+    i_window_stops_test
+)
 
-    for trial_idx, (trial_preds, trial_ys) in enumerate(zip(trials_preds, trials_ys)):
-        mask = ~np.isnan(trial_ys)
-        ys_masked = trial_ys[mask]
-        preds_masked = trial_preds[mask]
-        print(f'corr. coeff. for target {target_ch_idx} trial {trial_idx}: ',
-              np.corrcoef(preds_masked, ys_masked)[0, 1])
+for trial_idx, (trial_preds, trial_ys) in enumerate(zip(preds, trials_ys)):
+    mask = ~np.isnan(trial_ys)
+    ys_masked = trial_ys[mask]
+    preds_masked = trial_preds[mask]
+    print(f'corr. coeff. for target {target_ch_idx} trial {trial_idx}: ',
+          np.corrcoef(preds_masked, ys_masked)[0, 1])
