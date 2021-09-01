@@ -216,7 +216,7 @@ def _is_outdated_saved(path):
     or '-epo.fif' in path (no subdirectories) OR if there are more 'fif' files
     than 'description.json' files."""
     description_files = glob(os.path.join(path, '**/description.json'))
-    fif_files = glob(os.path.join(path, '**/*.fif'))
+    fif_files = glob(os.path.join(path, '**/*-raw.fif')) + glob(os.path.join(path, '**/*-epo.fif'))
     multiple = len(description_files) != len(fif_files)
     kwargs_in_path = any(
         [os.path.exists(os.path.join(path, kwarg_name))
