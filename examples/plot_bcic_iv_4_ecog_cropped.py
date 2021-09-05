@@ -2,11 +2,7 @@
 Fingers flexion cropped decoding on BCIC IV 4 ECoG Dataset
 ==========================================================
 
-Building on the Trialwise decoding tutorial, we now do more data-efficient cropped decoding!
-
-In Braindecode, there are two supported configurations created for training models: trialwise
-decoding and cropped decoding. We will explain this visually by comparing trialwise to cropped
-decoding.
+We train a neural network to predict fingers flexion wusing cropped decoding.
 """
 
 
@@ -29,30 +25,61 @@ decoding.
 
 
 ######################################################################
-# First, we load the data. In this tutorial, we use the functionality of
-# braindecode to load datasets through
-# `MOABB <https://github.com/NeuroTechX/moabb>`__ to load the BCI
-# Competition IV 2a data.
+# First, we load the data. In this tutorial, we use the functionality of braindecode
+# to load `BCI IV competition dataset 4
+# <http://www.bbci.de/competition/iv/#dataset4>`.
+# The dataset is available as a part of ECoG library:
+# https://searchworks.stanford.edu/view/zk881ps0522
 #
-# .. note::
-#    To load your own datasets either via mne or from
-#    preprocessed X/y numpy arrays, see `MNE Dataset
-#    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
-#    Tutorial <./plot_custom_dataset_example.html>`__.
+# If this dataset is used please cite [1].
 #
+# [1] Miller, Kai J. "A library of human electrocorticographic data and analyses.
+# "Nature human behaviour 3, no. 11 (2019): 1225-1235. https://doi.org/10.1038/s41562-019-0678-3
+#
+# The dataset contains ECoG signal and time series of 5 targets corresponding
+# to each finger flexion. This is different than standard decoding setup for EEG with
+# multiple trials and usually one target per trial. Here, fingers flexions change in time
+# and are recorded with sampling frequency equals to 25 Hz.
 import numpy as np
 import sklearn
+from matplotlib.lines import Line2D
+from mne import set_log_level
 
 from braindecode.datasets.bcicomp import BCICompetitionIVDataset4
 
 subject_id = 1
 dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 
+
+######################################################################
+# Preprocessing
+# ~~~~~~~~~~~~~
+#
+######################################################################
+# Now we apply preprocessing like bandpass filtering to our dataset. You
+# can either apply functions provided by
+# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
+# `mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`__
+# or apply your own functions, either to the MNE object or the underlying
+# numpy array.
+#
+# .. note::
+#    These prepocessings are now directly applied to the loaded
+#    data, and not on-the-fly applied as transformations in
+#    PyTorch-libraries like
+#    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
+#
+
+
 from braindecode.preprocessing.preprocess import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
+# We select only first 30 seconds of signal to limit time and memory to run this example.
+# To obtain results on the whole datasets you should remove this line.
+preprocess(dataset, [Preprocessor('crop', tmin=0, tmax=30)])
+
 low_cut_hz = 1.  # low cut frequency for filtering
-high_cut_hz = 200.  # high cut frequency for filtering
+high_cut_hz = 200.  # high cut frequency for filtering, for ECoG higher than for EEG
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
@@ -67,6 +94,12 @@ preprocessors = [
 ]
 # Transform the data
 preprocess(dataset, preprocessors)
+
+# Extract sampling frequency, check that they are same in all datasets
+sfreq = dataset.datasets[0].raw.info['sfreq']
+assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
+# Extract target sampling frequency
+target_sfreq = dataset.datasets[0].raw.info['target_sfreq']
 
 
 ######################################################################
@@ -88,7 +121,7 @@ preprocess(dataset, preprocessors)
 # network during training This has to be larger than the networks
 # receptive field size and can otherwise be chosen for computational
 # efficiency (see explanations in the beginning of this tutorial). Here we
-# choose 1000 samples, which are 4 seconds for the 250 Hz sampling rate.
+# choose 1000 samples, which is 1 second for the 1000 Hz sampling rate.
 #
 
 input_window_samples = 1000
@@ -132,7 +165,7 @@ model = ShallowFBCSPNet(
     n_classes,
     final_conv_length=2,
 )
-
+# We are removing the softmax layer to make it a regression model
 new_model = torch.nn.Sequential()
 for name, module_ in model.named_children():
     if "softmax" in name:
@@ -161,24 +194,7 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 #
 
 
-######################################################################
-# Now we cut out compute windows, the inputs for the deep networks during
-# training. In the case of trialwise decoding, we just have to decide if
-# we want to cut out some part before and/or after the trial. For this
-# dataset, in our work, it often was beneficial to also cut out 500 ms
-# before the trial.
-#
-
 from braindecode.preprocessing.windowers import create_fixed_length_windows
-
-# Extract sampling frequency, check that they are same in all datasets
-sfreq = dataset.datasets[0].raw.info['sfreq']
-assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
-
-
-# Extract sampling frequency, check that they are same in all datasets
-sfreq = dataset.datasets[0].raw.info['sfreq']
-assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 
 # Create windows using braindecode function for this. It needs parameters to define how
 # trials should be used.
@@ -192,7 +208,7 @@ windows_dataset = create_fixed_length_windows(
     drop_last_window=False,
     targets_from='channels',
     last_target_only=False,
-    preload=True
+    preload=False
 )
 
 
@@ -200,13 +216,10 @@ windows_dataset = create_fixed_length_windows(
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select
 # ``session_T`` for training and ``session_E`` for validation.
-#
 
 subsets = windows_dataset.split('session')
 train_set = subsets['train']
@@ -221,7 +234,7 @@ idx_train, idx_valid = train_test_split(np.arange(len(train_set)),
                                         random_state=100,
                                         test_size=0.2,
                                         shuffle=False)
-valid_set = train_set
+valid_set = test_set
 # valid_set = torch.utils.data.Subset(train_set, idx_valid)
 # train_set = torch.utils.data.Subset(train_set, idx_train)
 
@@ -243,7 +256,7 @@ valid_set = train_set
 ######################################################################
 # .. note::
 #    In this tutorial, we use some default parameters that we
-#    have found to work well for motor decoding, however we strongly
+#    have found to work well for EEG motor decoding, however we strongly
 #    encourage you to perform your own hyperparameter optimization using
 #    cross validation on your training data.
 #
@@ -264,7 +277,7 @@ weight_decay = 0
 # weight_decay = 0.5 * 0.001
 
 batch_size = 64
-n_epochs = 4
+n_epochs = 10
 
 regressor = EEGRegressor(
     model,
@@ -293,61 +306,78 @@ regressor = EEGRegressor(
     ],
     device=device,
 )
+set_log_level(verbose='WARNING')
+
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
 regressor.fit(train_set, y=None, epochs=n_epochs)
 
-ys_valid, i_window_in_trials_valid, i_window_stops_valid = [], [], []
+# We compute predictions for each finger flexion
+preds_test, y_test = regressor.predict_trials(test_set, return_targets=True)
 
-for batch in valid_set:
-    ys_valid.append(batch[1])
-    i_window_in_trials_valid.append(batch[2][0])
-    i_window_stops_valid.append(batch[2][2])
+preds_test = np.pad(preds_test,
+                    ((0, 0), (0, 0), (y_test.shape[2] - preds_test.shape[2], 0)),
+               'constant',
+                    constant_values=0)
 
-ys_valid = np.stack(ys_valid)
+mask = ~np.isnan(y_test[0, 0, :])
+preds_test = np.squeeze(preds_test[..., mask], 0)
+y_test = np.squeeze(y_test[..., mask], 0)
 
-ys_test, i_window_in_trials_test, i_window_stops_test = [], [], []
-for batch in test_set:
-    ys_test.append(batch[1])
-    i_window_in_trials_test.append(batch[2][0])
-    i_window_stops_test.append(batch[2][2])
 
-ys_test = np.stack(ys_test)
-
-preds_valid = regressor.predict(valid_set)
-preds_test = regressor.predict(test_set)
-
-import numpy as np
-
-# Window correlation coefficient score
-for i in range(ys_test.shape[1]):
-    ys_cropped = ys_test[:, i, -preds_test.shape[2]:]
-    mask = ~np.isnan(ys_cropped)
-    ys_masked = ys_cropped[mask]
-    preds_masked = preds_test[:, i, :][mask]
-    print(np.corrcoef(preds_masked, ys_masked)[0, 1])
-
+######################################################################
+# Plot Results
+# ------------
 ######################################################################
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import pandas as pd
 
-plt.scatter(preds_masked, ys_masked)
-######################################################################
-# Trial-wise correlation coefficient score
-from braindecode.training.scoring import trial_preds_from_window_preds
+# Now we use the history stored by Skorch throughout training to plot
+# accuracy and loss curves.
 
-preds = regressor.predict_trials(test_set, return_targets=False)
+# Extract loss and accuracy values for plotting from history object
+results_columns = ['train_loss', 'valid_loss', 'train_pearson_r', 'valid_pearson_r']
+df = pd.DataFrame(regressor.history[:, results_columns], columns=results_columns,
+                  index=regressor.history[:, 'epoch'])
 
-ys_cropped = np.transpose(ys_test[:, :, -n_preds_per_input:], (0, 2, 1))
+fig, ax1 = plt.subplots(figsize=(8, 3))
+df.loc[:, ['train_loss', 'valid_loss']].plot(
+    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14)
 
-trials_ys = trial_preds_from_window_preds(
-    np.expand_dims(ys_cropped, 1),
-    i_window_in_trials_test,
-    i_window_stops_test
-)
+ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
+ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
 
-for trial_idx, (trial_preds, trial_ys) in enumerate(zip(preds, trials_ys)):
-    mask = ~np.isnan(trial_ys)
-    ys_masked = trial_ys[mask]
-    preds_masked = trial_preds[mask]
-    print(f'corr. coeff. for target {target_ch_idx} trial {trial_idx}: ',
-          np.corrcoef(preds_masked, ys_masked)[0, 1])
+ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+df.loc[:, ['train_pearson_r', 'valid_pearson_r']].plot(
+    ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
+ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
+ax2.set_ylabel("Pearson correlation coefficient", color='tab:red', fontsize=14)
+ax1.set_xlabel("Epoch", fontsize=14)
+
+# where some data has already been plotted to ax
+handles = []
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-',
+                      label='Train'))
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':',
+                      label='Valid'))
+plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc='center right')
+plt.tight_layout()
+
+# We can compute correlation coefficients for each finger
+corr_coeffs = []
+for dim in range(y_test.shape[0]):
+    corr_coeffs.append(
+        np.corrcoef(preds_test[dim, :], y_test[dim, :])[0, 1]
+    )
+print('Correlation coefficient for each dimension: ', corr_coeffs)
+
+# We plot predicted and target finger flexion
+x_time = np.linspace(0, preds_test.shape[1] / sfreq, preds_test.shape[1])
+fig, ax1 = plt.subplots(figsize=(8, 3))
+ax1.plot(x_time, y_test[0, :], label='Target')
+ax1.plot(x_time, preds_test[0, :], label='Predicted')
+ax1.xlabel('Time [s]')
+ax1.ylabel('Finger flexion')
+plt.legend()

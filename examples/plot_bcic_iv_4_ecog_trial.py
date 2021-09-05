@@ -71,6 +71,7 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
 
+
 from braindecode.preprocessing.preprocess import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
@@ -235,6 +236,7 @@ batch_size = 64
 n_epochs = 4
 
 
+# Function to compute Pearson correlation coefficient
 def pearson_r_score(net, dataset, y):
     preds = net.predict(dataset)
     corr_coeffs = []
@@ -261,14 +263,13 @@ regressor = EEGRegressor(
     ],
     device=device,
 )
+set_log_level(verbose='WARNING')
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
 regressor.fit(train_set, y=None, epochs=n_epochs)
 
-old_level = set_log_level(verbose='WARNING', return_old_level=True)
 preds_test = regressor.predict(test_set)
 y_test = np.stack([data[1] for data in test_set])
-set_log_level(verbose=old_level)
 
 
 ######################################################################
@@ -278,15 +279,6 @@ set_log_level(verbose=old_level)
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import pandas as pd
-
-# We can plot target and predicted finger flexion on the test set.
-plt.style.use('seaborn')
-fig, ax1 = plt.subplots(figsize=(8, 3))
-ax1.plot(np.arange(0, y_test.shape[0]) / target_sfreq, y_test[:, 0], label='Target')
-ax1.plot(np.arange(0, preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label='Predicted')
-ax1.set_xlabel('Time [s]')
-ax1.set_ylabel('Finger flexion')
-ax1.legend()
 
 # Now we use the history stored by Skorch throughout training to plot
 # accuracy and loss curves.
@@ -319,3 +311,20 @@ handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':',
                       label='Valid'))
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc='center right')
 plt.tight_layout()
+
+# We can compute correlation coefficients for each finger
+corr_coeffs = []
+for dim in range(y_test.shape[0]):
+    corr_coeffs.append(
+        np.corrcoef(preds_test[dim, :], y_test[dim, :])[0, 1]
+    )
+print('Correlation coefficient for each dimension: ', corr_coeffs)
+
+# We plot target and predicted finger flexion on the test set.
+plt.style.use('seaborn')
+fig, ax1 = plt.subplots(figsize=(8, 3))
+ax1.plot(np.arange(0, y_test.shape[0]) / target_sfreq, y_test[:, 0], label='Target')
+ax1.plot(np.arange(0, preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label='Predicted')
+ax1.set_xlabel('Time [s]')
+ax1.set_ylabel('Finger flexion')
+ax1.legend()

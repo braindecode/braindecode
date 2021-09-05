@@ -291,7 +291,7 @@ class EEGRegressor(NeuralNetRegressor):
                 "'.predict'.", UserWarning)
             preds = self.predict(X)
             if return_targets:
-                return preds, X.get_metadata()['target'].to_numpy()
+                return preds, np.concatenate([X[i][1] for i in range(len(X))])
             return preds
         return predict_trials(
             module=self.module,
