@@ -27,4 +27,4 @@ def test_time_distributed():
     out2 = torch.stack(out2, dim=1).flatten(start_dim=2)
 
     assert out.shape == (batch_size, n_windows, feat_size)
-    assert (out == out2).all()
+    assert torch.allclose(out, out2)
