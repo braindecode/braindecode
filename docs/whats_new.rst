@@ -40,6 +40,7 @@ Enhancements
 Bugs
 ~~~~
 - Correctly computing recording length in :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` in case recording was cropped (:gh:`304` by `Lukas Gemein`_)
+- Fixing :class:`braindecode.datasets.SleepPhysionet` to allow serialization and avoid mismatch in channel names attributes (:gh:`327` by `Hubert Banville`_)
 
 API changes
 ~~~~~~~~~~~

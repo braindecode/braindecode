@@ -68,7 +68,7 @@ class SleepPhysionet(BaseConcatDataset):
             'Temp rectal': 'misc',
             'Event marker': 'misc'
         }
-        exclude = ch_mapping.keys() if load_eeg_only else ()
+        exclude = list(ch_mapping.keys()) if load_eeg_only else ()
 
         raw = mne.io.read_raw_edf(raw_fname, preload=preload, exclude=exclude)
         annots = mne.read_annotations(ann_fname)
@@ -89,7 +89,7 @@ class SleepPhysionet(BaseConcatDataset):
         # Rename EEG channels
         ch_names = {
             i: i.replace('EEG ', '') for i in raw.ch_names if 'EEG' in i}
-        mne.rename_channels(raw.info, ch_names)
+        raw.rename_channels(ch_names)
 
         if not load_eeg_only:
             raw.set_channel_types(ch_mapping)
