@@ -192,8 +192,8 @@ valid_sampler = SequenceSampler(
     valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
-print(len(train_sampler))
-print(len(valid_sampler))
+print('Training examples: ', len(train_sampler))
+print('Validation examples: ', len(valid_sampler))
 
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
@@ -233,10 +233,13 @@ class_weights = compute_class_weight(
 ######################################################################
 # We can now create the deep learning model. In this tutorial, we use the sleep
 # staging architecture introduced in [1]_, which is a four-layer convolutional
-# neural network.
+# neural network. We use the time distributed version of the model, where the
+# feature vectors of a sequence of windows are concatenated and passed to a
+# linear layer for classification.
 #
 
 import torch
+from torch import nn
 from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerChambon2018, TimeDistributed
 
@@ -259,10 +262,14 @@ feat_extractor = SleepStagerChambon2018(
     return_feats=True
 )
 
-model = TimeDistributed(
-    feat_extractor, feat_extractor.len_last_layer, n_windows, n_classes,
-    dropout=0.5)
-
+model = nn.Sequential(
+    TimeDistributed(feat_extractor),  # apply model on each 30-s window
+    nn.Sequential(  # apply linear layer on concatenated feature vectors
+        nn.Flatten(start_dim=1),
+        nn.Dropout(0.5),
+        nn.Linear(feat_extractor.len_last_layer * n_windows, n_classes)
+    )
+)
 
 # Send model to GPU
 if cuda:

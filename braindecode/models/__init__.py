@@ -10,4 +10,5 @@ from .eegresnet import EEGResNet
 from .tcn import TCN
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .tidnet import TIDNet
-from .util import get_output_shape, TimeDistributed
+from .util import get_output_shape
+from .modules import TimeDistributed

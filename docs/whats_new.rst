@@ -36,7 +36,7 @@ Enhancements
 - Instantiation of TUH :class:`braindecode.datasets.tuh.TUH` and TUHAbnormal :class:`braindecode.datasets.tuh.TUHAbnormal`, as well as loading :func:`braindecode.datautil.serialization.load_concat_dataset` of stored datasets now support multiple workers (:gh:`288` by `Lukas Gemein`_)
 - Adding balanced sampling of sequences of windows with :class:`braindecode.samplers.BalancedSequenceSampler `  as proposed in U-Sleep paper (:gh:`` by `Theo Gnassounou`_ and `Hubert Banville`_)
 - :func:`braindecode.preprocessing.preprocess` can now work in parallel and serialize datasets to enable lazy-loading (i.e. `preload=False`) (:gh:`277` by `Hubert Banville`_)
-- Adding :class:`braindecode.models.TimeDistributed` to use a feature extractor model on a sequence-to-prediction task (:gh:`318` by `Hubert Banville`_)
+- Adding :class:`braindecode.models.TimeDistributed` to apply a module on a sequence (:gh:`318` by `Hubert Banville`_)
 
 Bugs
 ~~~~
