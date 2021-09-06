@@ -31,7 +31,7 @@ def test_crop_wake():
 
 def test_serializable():
     """Make sure the object can be pickled. There used to be a bug (<=0.5.1)
-    where the object couldn't be pickled because raw.exlude was a dict_keys
+    where the object couldn't be pickled because raw.exclude was a dict_keys
     object.
     """
     sp = SleepPhysionet(
@@ -42,5 +42,5 @@ def test_serializable():
 def test_ch_names_orig_units_match():
     sp = SleepPhysionet(
         subject_ids=[0], recording_ids=[1], preload=True, load_eeg_only=True)
-    assert all([sp.datasets[0].raw._orig_units.keys() ==
-                set(sp.datasets[0].raw.ch_names) for ds in sp.datasets])
+    assert all([ds.raw._orig_units.keys() == set(ds.raw.ch_names)
+                for ds in sp.datasets])
