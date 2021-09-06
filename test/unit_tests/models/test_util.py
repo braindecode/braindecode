@@ -5,13 +5,12 @@
 
 import pytest
 import numpy as np
-import torch
 from torch import nn
 from sklearn.preprocessing import OneHotEncoder
 
 from braindecode.models.modules import Expression
 from braindecode.models.util import (
-    get_output_shape, aggregate_probas, _pad_shift_array, TimeDistributed)
+    get_output_shape, aggregate_probas, _pad_shift_array)
 
 
 def test_get_output_shape_1d_model():
