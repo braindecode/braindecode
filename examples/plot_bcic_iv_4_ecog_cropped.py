@@ -335,7 +335,7 @@ import pandas as pd
 # accuracy and loss curves.
 
 # Extract loss and accuracy values for plotting from history object
-results_columns = ['train_loss', 'valid_loss', 'train_pearson_r', 'valid_pearson_r']
+results_columns = ['train_loss', 'valid_loss', 'r2_train', 'r2_valid']
 df = pd.DataFrame(regressor.history[:, results_columns], columns=results_columns,
                   index=regressor.history[:, 'epoch'])
 
@@ -348,7 +348,7 @@ ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
 
 ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
-df.loc[:, ['train_pearson_r', 'valid_pearson_r']].plot(
+df.loc[:, ['r2_train', 'r2_valid']].plot(
     ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
 ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
 ax2.set_ylabel("Pearson correlation coefficient", color='tab:red', fontsize=14)
@@ -376,6 +376,6 @@ x_time = np.linspace(0, preds_test.shape[1] / sfreq, preds_test.shape[1])
 fig, ax1 = plt.subplots(figsize=(8, 3))
 ax1.plot(x_time, y_test[0, :], label='Target')
 ax1.plot(x_time, preds_test[0, :], label='Predicted')
-ax1.xlabel('Time [s]')
-ax1.ylabel('Finger flexion')
+ax1.set_xlabel('Time [s]')
+ax1.set_ylabel('Finger flexion')
 plt.legend()
