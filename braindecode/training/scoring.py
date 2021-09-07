@@ -434,11 +434,16 @@ def predict_trials(module, dataset, return_targets=True):
     )
     preds_per_trial = np.array(preds_per_trial)
     if return_targets:
-        ys_per_trial = trial_preds_from_window_preds(
-            preds=all_ys,
-            i_window_in_trials=torch.cat(all_inds[0::3]),
-            i_stop_in_trials=torch.cat(all_inds[2::3]),
-        )
-        ys_per_trial = np.array(ys_per_trial)
+        if all_ys[0].shape == ():
+            all_ys = np.array(all_ys)
+            ys_per_trial = all_ys[
+                np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1]
+        else:
+            ys_per_trial = trial_preds_from_window_preds(
+                preds=all_ys,
+                i_window_in_trials=torch.cat(all_inds[0::3]),
+                i_stop_in_trials=torch.cat(all_inds[2::3]),
+            )
+            ys_per_trial = np.array(ys_per_trial)
         return preds_per_trial, ys_per_trial
     return preds_per_trial

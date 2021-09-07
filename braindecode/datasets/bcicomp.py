@@ -10,9 +10,9 @@ from shutil import unpack_archive
 
 import mne
 import numpy as np
-import scipy.io
 from mne.utils import _url_to_local_path
 from moabb.datasets.download import data_dl, get_dataset_path
+from scipy.io import loadmat
 
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 
@@ -115,8 +115,8 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         return original_targets
 
     def _load_data_to_mne(self, file_path):
-        data = scipy.io.loadmat(file_path)
-        test_labels = scipy.io.loadmat(file_path.replace('comp.mat', 'testlabels.mat'))
+        data = loadmat(file_path)
+        test_labels = loadmat(file_path.replace('comp.mat', 'testlabels.mat'))
         train_data = data['train_data']
         test_data = data['test_data']
         upsampled_train_targets = data['train_dg']
@@ -148,7 +148,7 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         if isinstance(subject_ids, (list, tuple)):
             if not all((subject in self.possible_subjects for subject in subject_ids)):
                 raise ValueError(
-                    f'Wrong subject_ids parameter. Possible values: {subject_ids}. '
+                    f'Wrong subject_ids parameter. Possible values: {self.possible_subjects}. '
                     f'Provided {subject_ids}.'
                 )
         else:
