@@ -42,7 +42,6 @@ We train a neural network to predict fingers flexion wusing cropped decoding.
 # and are recorded with sampling frequency equals to 25 Hz.
 import numpy as np
 import sklearn
-from matplotlib.lines import Line2D
 from mne import set_log_level
 
 from braindecode.datasets.bcicomp import BCICompetitionIVDataset4
@@ -218,8 +217,7 @@ windows_dataset = create_fixed_length_windows(
 #
 ######################################################################
 # We can easily split the dataset using additional info stored in the
-# description attribute, in this case ``session`` column. We select
-# ``session_T`` for training and ``session_E`` for validation.
+# description attribute, in this case ``session`` column.
 
 subsets = windows_dataset.split('session')
 train_set = subsets['train']
@@ -317,7 +315,7 @@ preds_test, y_test = regressor.predict_trials(test_set, return_targets=True)
 
 preds_test = np.pad(preds_test,
                     ((0, 0), (0, 0), (y_test.shape[2] - preds_test.shape[2], 0)),
-               'constant',
+                    'constant',
                     constant_values=0)
 
 mask = ~np.isnan(y_test[0, 0, :])
