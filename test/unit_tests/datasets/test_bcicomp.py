@@ -48,6 +48,10 @@ def _mock_loadmat(x, values):
     return values[file_name]
 
 
+def _mock_download(self):
+    return 'abc'
+
+
 def _validate_dataset(ds, subject, input_data, is_train_dataset):
     file_name = f'sub{subject}_comp.mat'
     if is_train_dataset:
@@ -81,6 +85,7 @@ def _validate_dataset(ds, subject, input_data, is_train_dataset):
     np.testing.assert_almost_equal(ds.raw.get_data(), expected_array.T)
 
 
+@patch.object(BCICompetitionIVDataset4, 'download', _mock_download)
 def test_bci_competition_iv_dataset_4(input_data):
     with patch('braindecode.datasets.bcicomp.loadmat',
                side_effect=partial(_mock_loadmat, values=input_data)):
@@ -93,6 +98,7 @@ def test_bci_competition_iv_dataset_4(input_data):
                           is_train_dataset=False)
 
 
+@patch.object(BCICompetitionIVDataset4, 'download', _mock_download)
 def test_wrong_subjects_ids():
     with pytest.raises(
             ValueError,
@@ -101,6 +107,7 @@ def test_wrong_subjects_ids():
         BCICompetitionIVDataset4(5)
 
 
+@patch.object(BCICompetitionIVDataset4, 'download', _mock_download)
 def test_wrong_type_subjects_ids():
     with pytest.raises(
             ValueError,
