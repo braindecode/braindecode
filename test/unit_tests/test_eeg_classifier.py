@@ -1,7 +1,9 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
 
+import pytest
 import numpy as np
 import torch
 from skorch.utils import to_tensor
@@ -71,3 +73,26 @@ def test_cropped_predict_and_predict_proba():
     np.testing.assert_array_equal(preds.mean(-1).argmax(1), clf.predict(MockDataset()))
     # for cropped decoding classifier returns values for each trial (average over all crops)
     np.testing.assert_array_equal(preds.mean(-1), clf.predict_proba(MockDataset()))
+
+
+def test_predict_trials():
+    preds = np.array(
+        [
+            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
+            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
+            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
+            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
+        ]
+    )
+    clf = EEGClassifier(
+        MockModule(preds),
+        cropped=False,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=32
+    )
+    clf.initialize()
+    with pytest.warns(UserWarning, match="This method was designed to predict "
+                                         "trials in cropped mode."):
+        clf.predict_trials(MockDataset(), return_targets=False)

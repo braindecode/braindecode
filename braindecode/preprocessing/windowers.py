@@ -115,8 +115,7 @@ def create_windows_from_events(
             trial_start_offset_samples, trial_stop_offset_samples,
             window_size_samples, window_stride_samples, drop_last_window,
             mapping, preload, drop_bad_windows, picks, reject, flat,
-            'error') for ds in concat_ds.datasets)
-
+            on_missing) for ds in concat_ds.datasets)
     return BaseConcatDataset(list_of_windows_ds)
 
 
@@ -180,9 +179,12 @@ def create_fixed_length_windows(
         drop_last_window)
 
     # check if recordings are of different lengths
-    lengths = np.array([ds.raw.n_times - ds.raw.first_samp for ds in concat_ds.datasets])
-    if (np.diff(lengths) != 0).any():
+    lengths = np.array([ds.raw.n_times for ds in concat_ds.datasets])
+    if (np.diff(lengths) != 0).any() and window_size_samples is None:
         warnings.warn('Recordings have different lengths, they will not be batch-able!')
+    if any(window_size_samples > lengths):
+        raise ValueError(f'Window size {window_size_samples} exceeds trial '
+                         f'duration {lengths.min()}.')
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_fixed_length_windows)(
@@ -190,7 +192,6 @@ def create_fixed_length_windows(
             window_stride_samples, drop_last_window, mapping, preload,
             drop_bad_windows, picks, reject, flat, on_missing)
         for ds in concat_ds.datasets)
-
     return BaseConcatDataset(list_of_windows_ds)
 
 
@@ -221,6 +222,10 @@ def _create_windows_from_events(
     WindowsDataset :
         Windowed dataset.
     """
+    # catch window_kwargs to store to dataset
+    window_kwargs = [
+        (create_windows_from_events.__name__, _get_windowing_kwargs(locals())),
+    ]
     if infer_mapping:
         unique_events = np.unique(ds.raw.annotations.description)
         new_unique_events = [x for x in unique_events if x not in mapping]
@@ -298,7 +303,13 @@ def _create_windows_from_events(
     if drop_bad_windows:
         mne_epochs.drop_bad()
 
-    return WindowsDataset(mne_epochs, ds.description)
+    windows_ds = WindowsDataset(mne_epochs, ds.description)
+    # add window_kwargs and raw_preproc_kwargs to windows dataset
+    setattr(windows_ds, 'window_kwargs', window_kwargs)
+    kwargs_name = 'raw_preproc_kwargs'
+    if hasattr(ds, kwargs_name):
+        setattr(windows_ds, kwargs_name, getattr(ds, kwargs_name))
+    return windows_ds
 
 
 def _create_fixed_length_windows(
@@ -320,6 +331,10 @@ def _create_fixed_length_windows(
     WindowsDataset :
         Windowed dataset.
     """
+    # catch window_kwargs to store to dataset
+    window_kwargs = [
+        (create_fixed_length_windows.__name__, _get_windowing_kwargs(locals())),
+    ]
     stop = ds.raw.n_times \
         if stop_offset_samples is None else stop_offset_samples
 
@@ -368,7 +383,13 @@ def _create_fixed_length_windows(
     if drop_bad_windows:
         mne_epochs.drop_bad()
 
-    return WindowsDataset(mne_epochs, ds.description)
+    windows_ds = WindowsDataset(mne_epochs, ds.description)
+    # add window_kwargs and raw_preproc_kwargs to windows dataset
+    setattr(windows_ds, 'window_kwargs', window_kwargs)
+    kwargs_name = 'raw_preproc_kwargs'
+    if hasattr(ds, kwargs_name):
+        setattr(windows_ds, kwargs_name, getattr(ds, kwargs_name))
+    return windows_ds
 
 
 def _compute_window_inds(
@@ -407,6 +428,9 @@ def _compute_window_inds(
 
     starts += start_offset
     stops += stop_offset
+    if any(size > (stops-starts)):
+        raise ValueError(f'Window size {size} exceeds trial duration '
+                         f'{(stops-starts).min()}.')
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
@@ -480,8 +504,8 @@ def _check_and_set_fixed_length_window_arguments(start_offset_samples, stop_offs
 
     if window_size_samples is not None and window_stride_samples is not None and \
             drop_last_window is None:
-        raise ValueError('drop_last_window must be set if window_size_samples &'
-                         ' window_stride_samples are not set')
+        raise ValueError('drop_last_window must be set if both window_size_samples &'
+                         ' window_stride_samples have also been set')
     elif window_size_samples is None and\
             window_stride_samples is None and\
             drop_last_window is False:
@@ -493,3 +517,10 @@ def _check_and_set_fixed_length_window_arguments(start_offset_samples, stop_offs
            (drop_last_window is None)
 
     return stop_offset_samples, drop_last_window
+
+
+def _get_windowing_kwargs(windowing_func_locals):
+    input_kwargs = windowing_func_locals
+    input_kwargs.pop('ds')
+    windowing_kwargs = {k: v for k, v in input_kwargs.items()}
+    return windowing_kwargs

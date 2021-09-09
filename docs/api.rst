@@ -65,6 +65,7 @@ Models
     USleep
     TIDNet
     get_output_shape
+    TimeDistributed
 
 Training
 ========
@@ -81,6 +82,7 @@ Training
     PostEpochTrainScoring
     mixup_criterion
     trial_preds_from_window_preds
+    predict_trials
 
 Datasets
 ========
@@ -151,6 +153,7 @@ Samplers
    RecordingSampler
    SequenceSampler
    RelativePositioningSampler
+   BalancedSequenceSampler
 
 .. _augmentation_api:
 
@@ -223,5 +226,4 @@ Visualization
 
     compute_amplitude_gradients
     plot_confusion_matrix
-
 

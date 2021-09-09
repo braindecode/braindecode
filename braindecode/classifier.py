@@ -1,7 +1,10 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD (3-clause)
+
+import warnings
 
 import numpy as np
 from sklearn.metrics import get_scorer
@@ -10,7 +13,8 @@ from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
 
-from .training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
+from .training.scoring import (PostEpochTrainScoring, CroppedTrialEpochScoring,
+                               predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
@@ -268,3 +272,40 @@ class EEGClassifier(NeuralNetClassifier):
 
         """
         return self.predict_proba(X).argmax(1)
+
+    def predict_trials(self, X, return_targets=True):
+        """Create trialwise predictions and optionally also return trialwise
+        labels from cropped dataset.
+
+        Parameters
+        ----------
+        X: braindecode.datasets.BaseConcatDataset
+            A braindecode dataset to be predicted.
+        return_targets: bool
+            If True, additionally returns the trial targets.
+
+        Returns
+        -------
+        trial_predictions: np.ndarray
+            3-dimensional array (n_trials x n_classes x n_predictions), where
+            the number of predictions depend on the chosen window size and the
+            receptive field of the network.
+        trial_labels: np.ndarray
+            2-dimensional array (n_trials x n_targets) where the number of
+            targets depends on the decoding paradigm and can be either a single
+            value, multiple values, or a sequence.
+        """
+        if not self.cropped:
+            warnings.warn(
+                "This method was designed to predict trials in cropped mode. "
+                "Calling it when cropped is False will give the same result as "
+                "'.predict'.", UserWarning)
+            preds = self.predict(X)
+            if return_targets:
+                return preds, X.get_metadata()['target'].to_numpy()
+            return preds
+        return predict_trials(
+            module=self.module,
+            dataset=X,
+            return_targets=return_targets,
+        )

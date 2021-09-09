@@ -22,7 +22,7 @@ from braindecode.util import create_mne_dummy_raw
 
 def _get_raw(tmpdir_factory, description=None):
     _, fnames = create_mne_dummy_raw(
-        2, 20000, 100, description=description,
+        n_channels=2, n_times=20000, sfreq=100, description=description,
         savedir=tmpdir_factory.mktemp('data'), save_format='fif',
         random_state=87)
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
@@ -437,6 +437,16 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.ch_names == picks
     assert epochs.reject == reject
     assert epochs.flat == flat
+    for ds in windows.datasets:
+        assert ds.window_kwargs == [
+            ('create_windows_from_events', {
+                'infer_mapping': True, 'infer_window_size_stride': False,
+                'trial_start_offset_samples': 0, 'trial_stop_offset_samples': 0,
+                'window_size_samples': 100, 'window_stride_samples': 100,
+                'drop_last_window': False, 'mapping': {'test': 0}, 'preload': False,
+                'drop_bad_windows': True, 'picks': picks, 'reject': reject,
+                'flat': flat, 'on_missing': on_missing})
+        ]
 
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset, start_offset_samples=0,
@@ -448,6 +458,15 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.ch_names == picks
     assert epochs.reject == reject
     assert epochs.flat == flat
+    for ds in windows.datasets:
+        assert ds.window_kwargs == [
+            ('create_fixed_length_windows', {
+                'start_offset_samples': 0, 'stop_offset_samples': None,
+                'window_size_samples': 100, 'window_stride_samples': 100,
+                'drop_last_window': False, 'mapping': None, 'preload': False,
+                'drop_bad_windows': True, 'picks': picks, 'reject': reject,
+                'flat': flat, 'on_missing': on_missing})
+        ]
 
 
 def test_window_sizes_from_events(concat_ds_targets):
@@ -517,3 +536,27 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
+
+
+def test_window_sizes_too_large(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    window_size = len(concat_ds.datasets[0]) + 1
+    with pytest.raises(
+            ValueError, match=f'Window size {window_size} exceeds trial durat'):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            drop_last_window=False,
+        )
+
+    with pytest.raises(
+            ValueError, match=f'Window size {window_size} exceeds trial durat'):
+        create_fixed_length_windows(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            drop_last_window=False,
+        )

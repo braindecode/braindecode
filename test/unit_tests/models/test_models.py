@@ -175,6 +175,25 @@ def test_usleep_n_params():
     assert n_params == 3114337  # From paper's supplementary materials, Table 2
 
 
+def test_sleep_stager_return_feats():
+    n_channels = 2
+    sfreq = 10
+    input_size_s = 30
+    n_classes = 3
+
+    model = SleepStagerChambon2018(
+        n_channels, sfreq, n_conv_chs=8, input_size_s=input_size_s,
+        n_classes=n_classes, return_feats=True)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(10, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(X)
+    assert out.shape == (10, model.len_last_layer)
+
+
 def test_tidnet(input_sizes):
     model = TIDNet(
         input_sizes['n_channels'], input_sizes['n_classes'],

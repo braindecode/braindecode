@@ -61,12 +61,12 @@ dataset = SleepPhysionet(
 # a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
 # Physionet data is already sampled at a lower 100 Hz.
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor
+from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
 
 high_cut_hz = 30
 
 preprocessors = [
-    Preprocessor(lambda x: x * 1e6),
+    Preprocessor(scale, factor=1e6, apply_on_array=True),
     Preprocessor('filter', l_freq=None, h_freq=high_cut_hz)
 ]
 
@@ -114,9 +114,9 @@ windows_dataset = create_windows_from_events(
 # We also preprocess the windows by applying channel-wise z-score normalization
 # in each window.
 
-from sklearn.preprocessing import scale
+from sklearn.preprocessing import scale as standard_scale
 
-preprocess(windows_dataset, [Preprocessor(scale, channel_wise=True)])
+preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 
 
 ######################################################################
@@ -165,14 +165,14 @@ valid_set = splitted['valid']
 from braindecode.samplers import SequenceSampler
 
 n_windows = 3  # Sequences of 3 consecutive windows
-n_windows_stride = 1  # Maximally overlapping sequences
+n_windows_stride = 3  # Maximally overlapping sequences
 
 train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
-print(len(train_sampler))
-print(len(valid_sampler))
+print('Training examples: ', len(train_sampler))
+print('Validation examples: ', len(valid_sampler))
 
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
@@ -207,12 +207,15 @@ class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y
 #
 # We can now create the deep learning model. In this tutorial, we use the sleep
 # staging architecture introduced in [1]_, which is a four-layer convolutional
-# neural network.
+# neural network. We use the time distributed version of the model, where the
+# feature vectors of a sequence of windows are concatenated and passed to a
+# linear layer for classification.
+#
 
 import torch
 from torch import nn
 from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018
+from braindecode.models import SleepStagerChambon2018, TimeDistributed
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -225,43 +228,22 @@ n_classes = 5
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = train_set[0][0].shape
 
-
-class TimeDistributedNet(nn.Module):
-    """Extract features for multiple windows then concatenate & classify them.
-    """
-    def __init__(self, feat_extractor, len_last_layer, n_windows, n_classes,
-                 dropout=0.25):
-        super().__init__()
-        self.feat_extractor = feat_extractor
-        self.clf = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(len_last_layer * n_windows, n_classes)
-        )
-
-    def forward(self, x):
-        """
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input sequence of windows, of shape (batch_size, seq_len,
-            n_channels, n_times).
-        """
-        feats = [self.feat_extractor.embed(x[:, i]) for i in range(x.shape[1])]
-        feats = torch.stack(feats, dim=1).flatten(start_dim=1)
-        return self.clf(feats)
-
-
 feat_extractor = SleepStagerChambon2018(
     n_channels,
     sfreq,
     n_classes=n_classes,
-    input_size_s=input_size_samples / sfreq
+    input_size_s=input_size_samples / sfreq,
+    return_feats=True
 )
 
-model = TimeDistributedNet(
-    feat_extractor, feat_extractor.len_last_layer, n_windows, n_classes,
-    dropout=0.5)
-
+model = nn.Sequential(
+    TimeDistributed(feat_extractor),  # apply model on each 30-s window
+    nn.Sequential(  # apply linear layer on concatenated feature vectors
+        nn.Flatten(start_dim=1),
+        nn.Dropout(0.5),
+        nn.Linear(feat_extractor.len_last_layer * n_windows, n_classes)
+    )
+)
 
 # Send model to GPU
 if cuda:

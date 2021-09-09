@@ -8,13 +8,18 @@
 #
 # License: BSD (3-clause)
 
-from collections.abc import Iterable
-from functools import partial
 from warnings import warn
+from functools import partial
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
 from sklearn.utils import deprecated
+from joblib import Parallel, delayed
+
+from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
+from braindecode.datautil.serialization import (
+    load_concat_dataset, _check_save_dir_empty)
 
 
 class Preprocessor(object):
@@ -28,7 +33,7 @@ class Preprocessor(object):
     `apply_function` method of Raw and Epochs object will be used to apply the
     function on the internal arrays of Raw and Epochs.
     If `apply_on_array` is False, the callable must directly modify the Raw or
-    Epochs object (e.g., by calling its method(s) or directly moraw_timepoint
+    Epochs object (e.g., by calling its method(s) or modifying its attributes).
 
     Parameters
     ----------
@@ -42,7 +47,9 @@ class Preprocessor(object):
     kwargs:
         Keyword arguments to be forwarded to the MNE function.
     """
-    def __init__(self, fn, apply_on_array=True, **kwargs):
+    def __init__(self, fn, *, apply_on_array=True, **kwargs):
+        if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
+            warn('Preprocessing choices with lambda functions cannot be saved.')
         if callable(fn) and apply_on_array:
             channel_wise = kwargs.pop('channel_wise', False)
             kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise)
@@ -109,7 +116,8 @@ class NumpyPreproc(Preprocessor):
                          **kwargs)
 
 
-def preprocess(concat_ds, preprocessors):
+def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
+               n_jobs=None):
     """Apply preprocessors to a concat dataset.
 
     Parameters
@@ -118,12 +126,28 @@ def preprocess(concat_ds, preprocessors):
         A concat of BaseDataset or WindowsDataset datasets to be preprocessed.
     preprocessors: list(Preprocessor)
         List of Preprocessor objects to apply to the dataset.
+    save_dir : str | None
+        If a string, the preprocessed data will be saved under the specified
+        directory and the datasets in ``concat_ds`` will be reloaded with
+        `preload=False`.
+    overwrite : bool
+        When `save_dir` is provided, controls whether to delete the old
+        subdirectories that will be written to under `save_dir`. If False and
+        the corresponding subdirectories already exist, a ``FileExistsError``
+        will be raised.
+    n_jobs : int | None
+        Number of jobs for parallel execution.
 
     Returns
     -------
     BaseConcatDataset:
         Preprocessed dataset.
     """
+    # In case of serialization, make sure directory is available before
+    # preprocessing
+    if save_dir is not None and not overwrite:
+        _check_save_dir_empty(save_dir)
+
     if not isinstance(preprocessors, Iterable):
         raise ValueError(
             'preprocessors must be a list of Preprocessor objects.')
@@ -131,34 +155,127 @@ def preprocess(concat_ds, preprocessors):
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
-    for ds in concat_ds.datasets:
-        if hasattr(ds, 'raw'):
-            _preprocess(ds.raw, preprocessors)
-        elif hasattr(ds, 'windows'):
-            _preprocess(ds.windows, preprocessors)
-        else:
-            raise ValueError(
-                'Can only preprocess concatenation of BaseDataset or '
-                'WindowsDataset, with either a `raw` or `windows` attribute.')
+    list_of_ds = Parallel(n_jobs=n_jobs)(
+        delayed(_preprocess)(ds, i, preprocessors, save_dir, overwrite)
+        for i, ds in enumerate(concat_ds.datasets))
 
-    # Recompute cumulative sizes as the transforms might have changed them
-    # XXX: Ultimately, the best solution would be to have cumulative_size be
-    #      a property of BaseConcatDataset.
-    concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
+    if save_dir is not None:  # Reload datasets and replace in concat_ds
+        concat_ds_reloaded = load_concat_dataset(
+            save_dir, preload=False, target_name=None)
+        _replace_inplace(concat_ds, concat_ds_reloaded)
+    else:
+        if n_jobs is None or n_jobs == 1:  # joblib did not make copies, the
+            # preprocessing happened in-place
+            # Recompute cumulative sizes as transforms might have changed them
+            concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
+        else:  # joblib made copies
+            _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
+
+    return concat_ds
 
 
-def _preprocess(raw_or_epochs, preprocessors):
+def _replace_inplace(concat_ds, new_concat_ds):
+    """Replace subdatasets and preproc_kwargs of a BaseConcatDataset inplace.
+
+    Parameters
+    ----------
+    concat_ds : BaseConcatDataset
+        Dataset to modify inplace.
+    new_concat_ds : BaseConcatDataset
+        Dataset to use to modify ``concat_ds``.
+    """
+    if len(concat_ds.datasets) != len(new_concat_ds.datasets):
+        raise ValueError('Both inputs must have the same length.')
+    for i in range(len(new_concat_ds.datasets)):
+        concat_ds.datasets[i] = new_concat_ds.datasets[i]
+
+    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
+    preproc_kwargs_attr = concat_kind + '_preproc_kwargs'
+    if hasattr(new_concat_ds, preproc_kwargs_attr):
+        setattr(concat_ds, preproc_kwargs_attr,
+                getattr(new_concat_ds, preproc_kwargs_attr))
+
+
+def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
     """Apply preprocessor(s) to Raw or Epochs object.
 
     Parameters
     ----------
-    raw_or_epochs: mne.io.Raw or mne.Epochs
-        Object to preprocess.
+    ds: BaseDataset | WindowsDataset
+        Dataset object to preprocess.
+    ds_index : int
+        Index of the BaseDataset in its BaseConcatDataset. Ignored if save_dir
+        is None.
     preprocessors: list(Preprocessor)
         List of preprocessors to apply to the dataset.
+    save_dir : str | None
+        If provided, save the preprocessed BaseDataset in the
+        specified directory.
+    overwrite : bool
+        If True, overwrite existing file with the same name.
     """
-    for preproc in preprocessors:
-        preproc.apply(raw_or_epochs)
+
+    def _preprocess_raw_or_epochs(raw_or_epochs, preprocessors):
+        for preproc in preprocessors:
+            preproc.apply(raw_or_epochs)
+
+    if hasattr(ds, 'raw'):
+        _preprocess_raw_or_epochs(ds.raw, preprocessors)
+    elif hasattr(ds, 'windows'):
+        _preprocess_raw_or_epochs(ds.windows, preprocessors)
+    else:
+        raise ValueError(
+            'Can only preprocess concatenation of BaseDataset or '
+            'WindowsDataset, with either a `raw` or `windows` attribute.')
+
+    # Store preprocessing keyword arguments in the dataset
+    _set_preproc_kwargs(ds, preprocessors)
+
+    if save_dir is not None:
+        concat_ds = BaseConcatDataset([ds])
+        concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
+    else:
+        return ds
+
+
+def _get_preproc_kwargs(preprocessors):
+    preproc_kwargs = []
+    for p in preprocessors:
+        # in case of a mne function, fn is a str, kwargs is a dict
+        func_name = p.fn
+        func_kwargs = p.kwargs
+        # in case of another function
+        # if apply_on_array=False
+        if callable(p.fn):
+            func_name = p.fn.__name__
+        # if apply_on_array=True
+        else:
+            if 'fun' in p.fn:
+                func_name = p.kwargs['fun'].func.__name__
+                func_kwargs = p.kwargs['fun'].keywords
+        preproc_kwargs.append((func_name, func_kwargs))
+    return preproc_kwargs
+
+
+def _set_preproc_kwargs(ds, preprocessors):
+    """Record preprocessing keyword arguments in BaseDataset or WindowsDataset.
+
+    Parameters
+    ----------
+    ds : BaseDataset | WindowsDataset
+        Dataset in which to record preprocessing keyword arguments.
+    preprocessors : list
+        List of preprocessors.
+    """
+    preproc_kwargs = _get_preproc_kwargs(preprocessors)
+    if isinstance(ds, WindowsDataset):
+        kind = 'window'
+    elif isinstance(ds, BaseDataset):
+        kind = 'raw'
+    else:
+        raise TypeError(
+            f'ds must be a BaseDataset or a WindowsDataset, got {type(ds)}')
+    setattr(ds, kind + '_preproc_kwargs', preproc_kwargs)
 
 
 def exponential_moving_standardize(
