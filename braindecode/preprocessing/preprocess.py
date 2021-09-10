@@ -410,6 +410,7 @@ def scale(data, factor):
     scaled: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
     n_times)
         normalized continuous or windowed data
+
     ..note:
         If this function is supposed to preprocess continuous data, it should be
         given to raw.apply_function().

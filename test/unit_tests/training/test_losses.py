@@ -5,6 +5,7 @@
 import pytest
 import numpy as np
 import torch
+
 from braindecode.training.losses import mixup_criterion
 
 
