@@ -27,7 +27,6 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
     Targets correspond to the time courses of the flexion of each of five fingers.
     See http://www.bbci.de/competition/iv/desc_4.pdf and
     http://www.bbci.de/competition/iv/ for the dataset and competition description.
-
     ECoG library containing the dataset: https://searchworks.stanford.edu/view/zk881ps0522
 
     Notes

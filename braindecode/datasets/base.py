@@ -343,7 +343,7 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds])
+            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):

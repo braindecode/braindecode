@@ -37,11 +37,13 @@ Enhancements
 - Adding balanced sampling of sequences of windows with :class:`braindecode.samplers.BalancedSequenceSampler `  as proposed in U-Sleep paper (:gh:`` by `Theo Gnassounou`_ and `Hubert Banville`_)
 - :func:`braindecode.preprocessing.preprocess` can now work in parallel and serialize datasets to enable lazy-loading (i.e. `preload=False`) (:gh:`277` by `Hubert Banville`_)
 - Adding :class:`braindecode.models.TimeDistributed` to apply a module on a sequence (:gh:`318` by `Hubert Banville`_)
+- Adding time series targets decoding together with :class:`braindecode.datasets.BCICompetitionIVDataset4` and fingers flexion decoding from ECoG examples (:gh:`261` by `Maciej Śliwowski`_ and `Mohammed Fattouh`_)
 
 Bugs
 ~~~~
 - Correctly computing recording length in :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` in case recording was cropped (:gh:`304` by `Lukas Gemein`_)
 - Fixing :class:`braindecode.datasets.SleepPhysionet` to allow serialization and avoid mismatch in channel names attributes (:gh:`327` by `Hubert Banville`_)
+- Propagating `target_transform` to all datasets when usign :method:`braindecode.datasets.BaseConcatDataset.subset` (:gh:`261` by `Maciej Śliwowski`_)
 
 API changes
 ~~~~~~~~~~~
@@ -107,3 +109,4 @@ Authors
 .. _Cedric Rommel: https://cedricrommel.github.io
 .. _Simon Brandt: https://github.com/sbbrandt
 .. _Thomas Moreau: https://tommoral.github.io
+.. _Mohammed Fattouh: https://github.com/MFattouh
