@@ -90,17 +90,17 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         -------
 
         """
-        sign = 'BCICompetitionIVDataset4'
+        signature = 'BCICompetitionIVDataset4'
         # Check if the dataset already exists (unpacked). We have to do that manually
         # because we are removing .zip file from disk to save disk space.
-        path = get_dataset_path(sign, path)
-        key_dest = "MNE-{:s}-data".format(sign.lower())
+        path = get_dataset_path(signature, path)
+        key_dest = "MNE-{:s}-data".format(signature.lower())
         destination = _url_to_local_path(DATASET_URL, osp.join(path, key_dest))[
                       :-4] + '/BCI_Competion4_dataset4_data_fingerflexions'
         if len(list(glob.glob(destination + '/*.mat'))) == 6:
             return destination
 
-        data_path = data_dl(DATASET_URL, sign, path=path,
+        data_path = data_dl(DATASET_URL, signature, path=path,
                             force_update=force_update, verbose=verbose)
         unpack_archive(data_path, data_path[:-4])
         # removes .zip file that the data was unpacked from

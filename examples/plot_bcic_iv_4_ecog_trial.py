@@ -279,7 +279,7 @@ regressor = EEGRegressor(
     batch_size=batch_size,
     callbacks=[
         'r2',
-        ('valid_pearson_r', EpochScoring(pearson_r_score, lower_is_better=False,
+        ('valid_pearson_r', EpochScoring(pearson_r_score, lower_is_better=False, on_train=False,
                                          name='valid_pearson_r')),
         ('train_pearson_r', EpochScoring(pearson_r_score, lower_is_better=False, on_train=True,
                                          name='train_pearson_r')),
