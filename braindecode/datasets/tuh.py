@@ -11,6 +11,7 @@ import re
 import os
 import glob
 from unittest import mock
+from datetime import datetime, timezone
 
 import pandas as pd
 import numpy as np
@@ -72,9 +73,17 @@ class TUH(BaseConcatDataset):
     def _create_dataset(description, target_name, preload,
                         add_physician_reports):
         file_path = description.loc['path']
+
         # parse age and gender information from EDF header
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
         raw = mne.io.read_raw_edf(file_path, preload=preload)
+
+        # Use recording date from path as EDF header is sometimes wrong
+        meas_date = datetime(1, 1, 1, tzinfo=timezone.utc) \
+            if raw.info['meas_date'] is None else raw.info['meas_date']
+        raw.info['meas_date'] = meas_date.replace(
+            *description[['year', 'month', 'day']])
+
         # read info relevant for preprocessing from raw without loading it
         d = {
             'age': int(age),
