@@ -4,14 +4,16 @@
 # License: BSD (3-clause)
 
 import glob
+import os
 import os.path as osp
 from os import remove
 from shutil import unpack_archive
 
 import mne
 import numpy as np
-from mne.utils import _url_to_local_path
-from moabb.datasets.download import data_dl, get_dataset_path
+from mne.utils import verbose
+from moabb.datasets.download import get_dataset_path
+from pooch import file_hash, retrieve
 from scipy.io import loadmat
 
 from braindecode.datasets import BaseDataset, BaseConcatDataset
@@ -91,18 +93,18 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
 
         """
         signature = 'BCICompetitionIVDataset4'
+        folder_name = 'BCI_Competion4_dataset4_data_fingerflexions'
         # Check if the dataset already exists (unpacked). We have to do that manually
         # because we are removing .zip file from disk to save disk space.
         path = get_dataset_path(signature, path)
         key_dest = "MNE-{:s}-data".format(signature.lower())
-        destination = _url_to_local_path(DATASET_URL, osp.join(path, key_dest))[
-                      :-4] + '/BCI_Competion4_dataset4_data_fingerflexions'
-        if len(list(glob.glob(destination + '/*.mat'))) == 6:
+        # We do not use mne _url_to_local_path due to ':' in the url that causes problems on Windows
+        destination = osp.join(path, key_dest, folder_name)
+        if len(list(glob.glob(osp.join(destination, '*.mat')))) == 6:
             return destination
-
-        data_path = data_dl(DATASET_URL, signature, path=path,
-                            force_update=force_update, verbose=verbose)
-        unpack_archive(data_path, data_path[:-4])
+        data_path = _data_dl(DATASET_URL, osp.join(destination, folder_name, signature),
+                             force_update=force_update)
+        unpack_archive(data_path, osp.dirname(destination))
         # removes .zip file that the data was unpacked from
         remove(data_path)
         return destination
@@ -154,3 +156,22 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
             raise ValueError(
                 'Wrong subject_ids format. Expected types: None, list, tuple, int.'
             )
+
+
+@verbose
+def _data_dl(url, destination, force_update=False, verbose=None):
+    # Code taken from moabb due to problem with ':' occurring in path
+    # On Windows ':' is a forbidden in folder name
+    # moabb/datasets/download.py
+    if not osp.isfile(destination) or force_update:
+        if osp.isfile(destination):
+            os.remove(destination)
+        if not osp.isdir(osp.dirname(destination)):
+            os.makedirs(osp.dirname(destination))
+        known_hash = None
+    else:
+        known_hash = file_hash(destination)
+    data_path = retrieve(
+        url, known_hash, fname=osp.basename(url), path=osp.dirname(destination)
+    )
+    return data_path
