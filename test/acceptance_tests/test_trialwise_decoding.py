@@ -85,7 +85,7 @@ def test_trialwise_decoding():
         device = 'cuda'
     else:
         device = 'cpu'
-    set_random_seeds(seed=20170629, cuda=cuda)
+    set_random_seeds(seed=20170629, cuda=cuda, deterministic=False)
     n_classes = 2
     in_chans = train_set[0][0].shape[0]
     input_window_samples = train_set[0][0].shape[1]

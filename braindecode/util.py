@@ -14,8 +14,9 @@ import torch
 from sklearn.utils import check_random_state
 
 
-def set_random_seeds(seed, cuda):
-    """Set seeds for python random module numpy.random and torch.
+def set_random_seeds(seed, cuda, deterministic=True):
+    """Set seeds for python random module numpy.random and torch. For more details see
+    https://pytorch.org/docs/stable/notes/randomness.html
 
     Parameters
     ----------
@@ -23,10 +24,21 @@ def set_random_seeds(seed, cuda):
         Random seed.
     cuda: bool
         Whether to set cuda seed with torch.
+    deterministic: bool (default=True)
+        Whether pytorch will use deterministic algorithms. When set to True it may slow down
+        computations.
+
+    Notes
+    -----
+    In some cases setting environment variable `PYTHONHASHSEED` may be needed before running a
+    script to ensure full reproducibility. See
+    https://forums.fast.ai/t/solved-reproducibility-where-is-the-randomness-coming-in/31628/14
     """
     random.seed(seed)
     torch.manual_seed(seed)
+    torch.use_deterministic_algorithms(deterministic)
     if cuda:
+        torch.backends.cudnn.benchmark = not deterministic
         torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
 

@@ -121,7 +121,7 @@ def test_eeg_classifier():
     # Set if you want to use GPU
     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
     cuda = False
-    set_random_seeds(seed=20170629, cuda=cuda)
+    set_random_seeds(seed=20170629, cuda=cuda, deterministic=False)
 
     # This will determine how many crops are processed in parallel
     input_window_samples = 450

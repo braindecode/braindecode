@@ -21,7 +21,7 @@ from braindecode.training import CroppedLoss
 
 def test_variable_length_trials_cropped_decoding():
     cuda = False
-    set_random_seeds(seed=20210726, cuda=cuda)
+    set_random_seeds(seed=20210726, cuda=cuda, deterministic=False)
 
     # create fake tuh abnormal dataset
     tuh = _TUHAbnormalMock(path='')
