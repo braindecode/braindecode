@@ -267,8 +267,8 @@ test_set = create_fixed_length_windows(
 # We select only the thumb's finger flexion to create one model per finger.
 #
 # .. note::
-#    Methods to predict all 5 fingers flexion with the same model may be cnosidered as well.
-#    We encourage you to find your own way to use braindecode models to predict finers fexions.
+#    Methods to predict all 5 fingers flexion with the same model may be considered as well.
+#    We encourage you to find your own way to use braindecode models to predict fingers flexions.
 #
 train_set.target_transform = lambda x: x[0: 1]
 valid_set.target_transform = lambda x: x[0: 1]

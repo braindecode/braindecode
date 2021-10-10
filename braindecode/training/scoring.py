@@ -269,7 +269,8 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
             mask = ~np.isnan(targets)
             # select valid targets that have a matching predictions
             masked_targets = targets[mask]
-            if mask.shape[0] == 1:
+            # For classification there is only one row in targets and n_classes rows in preds
+            if mask.shape[0] != preds.shape[0]:
                 masked_preds = preds[:, mask[0, :]]
             else:
                 masked_preds = preds[mask]
