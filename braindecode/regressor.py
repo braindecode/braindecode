@@ -13,7 +13,9 @@ from skorch.classifier import NeuralNet
 from skorch.regressor import NeuralNetRegressor
 from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
 
-from .training.scoring import (PostEpochTrainScoring, CroppedTrialEpochScoring,
+from .training.scoring import (PostEpochTrainScoring,
+                               CroppedTrialEpochScoring,
+                               CroppedTimeSeriesEpochScoring,
                                predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
@@ -47,13 +49,18 @@ class EEGRegressor(NeuralNetRegressor):
         Defines whether train dataset will be shuffled. As skorch does not
         shuffle the train dataset by default this one overwrites this option.
 
+    aggregate_predictions: bool (default=True)
+        Whether to average cropped predictions to obtain window predictions. Used only in the
+        cropped mode.
+
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True, **kwargs):
+                 iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
         callbacks = self._parse_callbacks(callbacks)
+        self.aggregate_predictions = aggregate_predictions
 
         super().__init__(*args,
                          callbacks=callbacks,
@@ -149,7 +156,7 @@ class EEGRegressor(NeuralNetRegressor):
             cbs = self._default_callbacks + self.callbacks
             epoch_cbs = []
             for name, cb in cbs:
-                if (cb.__class__.__name__ == 'CroppedTrialEpochScoring') and (
+                if isinstance(cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)) and (
                         hasattr(cb, 'window_inds_')) and (not cb.on_train):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
@@ -250,7 +257,7 @@ class EEGRegressor(NeuralNetRegressor):
         # Predictions may be already averaged in CroppedTrialEpochScoring (y_pred.shape==2).
         # However, when predictions are computed outside of CroppedTrialEpochScoring
         # we have to average predictions, hence the check if len(y_pred.shape) == 3
-        if self.cropped and len(y_pred.shape) == 3:
+        if self.cropped and self.aggregate_predictions and len(y_pred.shape) == 3:
             return y_pred.mean(-1)
         else:
             return y_pred
@@ -284,7 +291,7 @@ class EEGRegressor(NeuralNetRegressor):
                 "'.predict'.", UserWarning)
             preds = self.predict(X)
             if return_targets:
-                return preds, X.get_metadata()['target'].to_numpy()
+                return preds, np.concatenate([X[i][1] for i in range(len(X))])
             return preds
         return predict_trials(
             module=self.module,

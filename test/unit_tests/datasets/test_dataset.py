@@ -388,3 +388,8 @@ def test_target_name_not_in_description(set_up):
     base_dataset.set_description(
         {'pathological': True, 'gender': 'M', 'age': 48})
     x, y = base_dataset[0]
+
+
+def test_windows_dataset_from_target_channels_raise_valuerror():
+    with pytest.raises(ValueError):
+        WindowsDataset(None, None, targets_from='non-existing')

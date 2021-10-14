@@ -155,13 +155,20 @@ class WindowsDataset(BaseDataset):
         Holds additional info about the windows.
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
+    targets_from : str
+        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
+        channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-    def __init__(self, windows, description=None, transform=None):
+    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
+                 last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
+        self.last_target_only = last_target_only
+        if targets_from not in ('metadata', 'channels'):
+            raise ValueError('Wrong value for parameter `targets_from`.')
+        self.targets_from = targets_from
 
-        self.y = self.windows.metadata.loc[:, 'target'].to_list()
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
                 'i_stop_in_trial']].to_numpy()
@@ -186,11 +193,19 @@ class WindowsDataset(BaseDataset):
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
-        y = self.y[index]
+        if self.targets_from == 'metadata':
+            y = self.windows.metadata.loc[index, 'target']
+        else:
+            misc_mask = np.array(self.windows.get_channel_types()) == 'misc'
+            if self.last_target_only:
+                y = X[misc_mask, -1]
+            else:
+                y = X[misc_mask, :]
+            # remove the target channels from raw
+            X = X[~misc_mask, :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
-
         return X, y, crop_inds
 
     def __len__(self):
@@ -328,7 +343,7 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds])
+            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):

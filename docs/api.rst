@@ -78,7 +78,9 @@ Training
    :toctree: generated/
 
     CroppedLoss
+    TimeSeriesLoss
     CroppedTrialEpochScoring
+    CroppedTimeSeriesEpochScoring
     PostEpochTrainScoring
     mixup_criterion
     trial_preds_from_window_preds
@@ -103,6 +105,7 @@ Datasets
     TUH
     TUHAbnormal
     SleepPhysionet
+    BCICompetitionIVDataset4
     create_from_X_y
     create_from_mne_raw
     create_from_mne_epochs
@@ -119,6 +122,7 @@ Preprocessing
 
     create_windows_from_events
     create_fixed_length_windows
+    create_windows_from_target_channels
     exponential_moving_demean
     exponential_moving_standardize
     zscore
