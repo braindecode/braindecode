@@ -11,8 +11,6 @@
 import pandas as pd
 import mne
 
-from moabb.datasets import Schirrmeister2017, BNCI2014001
-
 from .base import BaseDataset, BaseConcatDataset
 from braindecode.util import _update_moabb_docstring
 
@@ -111,7 +109,11 @@ class BNCI2014001(MOABBDataset):
         (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
     """
-    __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+    try:
+        from moabb.datasets import BNCI2014001
+        __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+    except ModuleNotFoundError:
+        pass # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
         super().__init__("BNCI2014001", subject_ids=subject_ids)
@@ -126,7 +128,11 @@ class HGD(MOABBDataset):
         (list of) int of subject(s) to be fetched. If None, data of all
         subjects is fetched.
     """
-    __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
+    try:
+        from moabb.datasets import Schirrmeister2017
+        __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
+    except ModuleNotFoundError:
+        pass # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
 
     def __init__(self, subject_ids):
         super().__init__("Schirrmeister2017", subject_ids=subject_ids)
