@@ -18,7 +18,7 @@ What's new
 
 .. _current:
 
-Current (0.5.2.dev0)
+Version 0.6 (2021-10-18)
 --------------------
 
 Enhancements
