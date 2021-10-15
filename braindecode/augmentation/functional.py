@@ -6,12 +6,12 @@
 from numbers import Real
 
 import numpy as np
+import torch
+from mne.filter import notch_filter
 from scipy.interpolate import Rbf
 from sklearn.utils import check_random_state
-import torch
 from torch.fft import fft, ifft
-from torch.nn.functional import pad, one_hot
-from mne.filter import notch_filter
+from torch.nn.functional import one_hot, pad
 
 
 def identity(X, y):
@@ -444,7 +444,7 @@ def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
     t = torch.arange(seq_len, device=X.device).float()
     t = t.repeat(batch_size, n_channels, 1)
     mask_start_per_sample = mask_start_per_sample.view(-1, 1, 1)
-    s = 1000 * 10**-np.log10(seq_len)
+    s = 1000 / seq_len
     mask = 2 - (
         torch.sigmoid(s * (t - mask_start_per_sample)) +
         torch.sigmoid(s * -(t - mask_start_per_sample - mask_len_samples))
@@ -508,7 +508,7 @@ def bandstop_filter(X, y, sfreq, bandwidth, freqs_to_notch):
     return transformed_X, y
 
 
-def _hilbert_transform(x):
+def _analytic_transform(x):
     if torch.is_complex(x):
         raise ValueError("x must be real.")
 
@@ -542,7 +542,7 @@ def _frequency_shift(X, fs, f_shift):
     N_padded = 2 ** _nextpow2(N_orig)
     t = torch.arange(N_padded, device=X.device) / fs
     padded = pad(X, (0, N_padded - N_orig))
-    analytical = _hilbert_transform(padded)
+    analytical = _analytic_transform(padded)
     if isinstance(f_shift, (float, int, np.ndarray, list)):
         f_shift = torch.as_tensor(f_shift).float()
     reshaped_f_shift = f_shift.repeat(
