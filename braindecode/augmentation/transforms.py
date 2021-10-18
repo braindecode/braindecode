@@ -720,8 +720,10 @@ class SensorsRotation(Transform):
             )
         assert isinstance(sensors_positions_matrix, torch.Tensor),\
             "sensors_positions should be an Tensor"
-        assert isinstance(max_degrees, Real) and max_degrees >= 0,\
-            "max_degrees should be non-negative float."
+        assert (
+            isinstance(max_degrees, (Real, torch.Tensor)) and
+            max_degrees >= 0
+        ), "max_degrees should be non-negative float."
         assert isinstance(axis, str) and axis in ['x', 'y', 'z'],\
             "axis can be either x, y or z."
         assert sensors_positions_matrix.shape[0] == 3,\

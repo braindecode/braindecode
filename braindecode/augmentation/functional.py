@@ -208,8 +208,6 @@ def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
        Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
        preprint arXiv:1806.08675.
     """
-    if magnitude == 0:
-        return X, y
     transformed_X = _ft_surrogate(
         x=X,
         eps=phase_noise_magnitude,
@@ -261,8 +259,6 @@ def channels_dropout(X, y, p_drop, random_state=None):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-    if p_drop == 0:
-        return X, y
     mask = _pick_channels_randomly(X, p_drop, random_state=random_state)
     return X * mask.unsqueeze(-1), y
 
@@ -439,8 +435,6 @@ def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
-    if mask_len_samples == 0:
-        return X, y
     batch_size, n_channels, seq_len = X.shape
     t = torch.arange(seq_len, device=X.device).float()
     t = t.repeat(batch_size, n_channels, 1)
