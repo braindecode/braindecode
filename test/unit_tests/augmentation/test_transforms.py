@@ -44,7 +44,7 @@ def ch_aranged_batch(time_aranged_batch):
 
 
 @pytest.mark.parametrize("probability", [1.0, 0.5])
-def test_flip_transform(time_aranged_batch, probability):
+def test_time_reverse_transform(time_aranged_batch, probability):
     X, y = time_aranged_batch
     flip_transform = TimeReverse(probability)
 
@@ -64,7 +64,7 @@ def test_flip_transform(time_aranged_batch, probability):
 
 
 @pytest.mark.parametrize("probability", [1.0, 0.5])
-def test_sign_transform(time_aranged_batch, probability):
+def test_sign_flip_transform(time_aranged_batch, probability):
     X, y = time_aranged_batch
     sign_flip_transform = SignFlip(probability)
 
@@ -127,7 +127,7 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
 
 
 @pytest.mark.parametrize("p_drop", [0.25, 0.5])
-def test_missing_channels_transform(rng_seed, p_drop):
+def test_channels_dropout_transform(rng_seed, p_drop):
     ones_batch = ones_and_zeros_batch()
     X, y = ones_batch
     p_drop = nn.Parameter(torch.empty(1).fill_(p_drop))
@@ -148,7 +148,7 @@ def test_missing_channels_transform(rng_seed, p_drop):
 
 
 @pytest.mark.parametrize("p_shuffle", [0.25, 0.5])
-def test_shuffle_channels(rng_seed, ch_aranged_batch, p_shuffle):
+def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
     X, y = ch_aranged_batch
     transform = ChannelsShuffle(
         1, p_shuffle=p_shuffle, random_state=rng_seed
@@ -180,7 +180,7 @@ def test_shuffle_channels(rng_seed, ch_aranged_batch, p_shuffle):
 
 
 @pytest.mark.parametrize("probability", [1.0, 0.5])
-def test_gaussian_noise(rng_seed, probability):
+def test_gaussian_noise_transform(rng_seed, probability):
     ones_batch = ones_and_zeros_batch(shape=(1000, 1000))
     X, y = ones_batch
     std = nn.Parameter(torch.Tensor([2.0]))
@@ -206,7 +206,7 @@ def test_gaussian_noise(rng_seed, probability):
 
 
 @pytest.mark.parametrize("probability", [1.0, 0.5])
-def test_channel_symmetry(probability):
+def test_channels_symmetry_transform(probability):
     batch_size = 5
     seq_len = 64
     X = torch.stack([torch.stack([torch.arange(21)] * seq_len).T] * batch_size)
@@ -241,7 +241,12 @@ def test_channel_symmetry(probability):
     (5, False),
     (10, False),
 ])
-def test_time_mask(rng_seed, random_batch, mask_len_samples, fail):
+def test_smooth_time_mask_transform(
+    rng_seed,
+    random_batch,
+    mask_len_samples,
+    fail
+):
     if fail:
         # Check max length smaller than 1 cannot be instantiated
         with pytest.raises(AssertionError):
@@ -282,7 +287,7 @@ def test_time_mask(rng_seed, random_batch, mask_len_samples, fail):
     (1, False),
     (0., False),
 ])
-def test_bandstop_filter(rng_seed, random_batch, bandwidth, fail):
+def test_bandstop_filter_transform(rng_seed, random_batch, bandwidth, fail):
     sfreq = 100
     if fail:
         # Check Bandstopfilter with bandwdth higher than max_freq cannot be
@@ -405,7 +410,7 @@ def test_frequency_shift_transform(
     assert np.abs(effective_frequency_shifts).max() <= max_shift
 
 
-def test_rotate_signals():
+def test_sensors_rotation_functional():
     channels = ['C4', 'C3']
     batch_size = 5
     positions_matrix = torch.as_tensor(
@@ -435,7 +440,7 @@ def test_rotate_signals():
     (SensorsZRotation, 15, False),
     (SensorsZRotation, -15, True),
 ])
-def test_random_rotations(
+def test_sensors_rotation_transforms(
     rng_seed,
     random_batch,
     rotation,
@@ -474,7 +479,7 @@ def test_random_rotations(
     (0.5, True),
     (-.1, True)
 ])
-def test_mixup(rng_seed, random_batch, alpha, beta_per_sample):
+def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
     transform = Mixup(
         alpha=alpha,
         beta_per_sample=beta_per_sample,

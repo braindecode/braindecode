@@ -256,8 +256,7 @@ class GaussianNoise(Transform):
     probability : float
         Float setting the probability of applying the operation.
     std : float, optional
-        Standard deviation to use for the additive noise. Will be ignored if
-        magnitude is not set to None. Defaults to 0.1.
+        Standard deviation to use for the additive noise. Defaults to 0.1.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -396,7 +395,7 @@ class SmoothTimeMask(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    mask_len_samples : int, optional
+    mask_len_samples : int | torch.Tensor, optional
         Number of consecutive samples to zero out. Will be ignored if
         magnitude is not set to None. Defaults to 100.
     random_state: int | numpy.random.Generator, optional
@@ -470,8 +469,7 @@ class BandstopFilter(Transform):
         Float setting the probability of applying the operation.
     bandwidth : float, optional
         Bandwidth of the filter, i.e. distance between the low and high cut
-        frequencies. Will be ignored if magnitude is not set to None. Defaults
-        to 1Hz.
+        frequencies. Defaults to 1Hz.
     sfreq : float, optional
         Sampling frequency of the signals to be filtered. Defaults to 100 Hz.
     max_freq : float | None, optional
