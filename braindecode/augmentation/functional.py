@@ -447,7 +447,7 @@ def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
     s = 1000 / seq_len
     mask = (torch.sigmoid(s * -(t - mask_start_per_sample)) +
             torch.sigmoid(s * (t - mask_start_per_sample - mask_len_samples))
-    ).float().to(X.device)
+            ).float().to(X.device)
     return X * mask, y
 
 
