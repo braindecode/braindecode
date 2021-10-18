@@ -99,15 +99,15 @@ class FTSurrogate(Transform):
         phase_noise_magnitude=1,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
         assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)),\
             "phase_noise_magnitude should be a float."
         assert 0 <= phase_noise_magnitude <= 1,\
             "phase_noise_magnitude should be between 0 and 1."
         self.phase_noise_magnitude = phase_noise_magnitude
-        super().__init__(
-            probability=probability,
-            random_state=random_state
-        )
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -160,11 +160,11 @@ class ChannelsDropout(Transform):
         p_drop=0.2,
         random_state=None
     ):
-        self.p_drop = p_drop
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        self.p_drop = p_drop
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -219,11 +219,11 @@ class ChannelsShuffle(Transform):
         p_shuffle=0.2,
         random_state=None
     ):
-        self.p_shuffle = p_shuffle
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        self.p_shuffle = p_shuffle
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -283,11 +283,11 @@ class GaussianNoise(Transform):
         std=0.1,
         random_state=None
     ):
-        self.std = std
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+        self.std = std
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -342,6 +342,10 @@ class ChannelsSymmetry(Transform):
         ordered_ch_names,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
         assert (
             isinstance(ordered_ch_names, list) and
             all(isinstance(ch, str) for ch in ordered_ch_names)
@@ -363,11 +367,6 @@ class ChannelsSymmetry(Transform):
                     new_position = ordered_ch_names.index(new_channel)
             permutation.append(new_position)
         self.permutation = permutation
-
-        super().__init__(
-            probability=probability,
-            random_state=random_state,
-        )
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -421,16 +420,16 @@ class SmoothTimeMask(Transform):
         mask_len_samples=100,
         random_state=None
     ):
-        assert (
-            isinstance(mask_len_samples, int) and
-            mask_len_samples > 0
-        ), "mask_len_samples has to be a positive integer"
-        self.mask_len_samples = mask_len_samples
-
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+
+        assert (
+            isinstance(mask_len_samples, (int, torch.Tensor)) and
+            mask_len_samples > 0
+        ), "mask_len_samples has to be a positive integer"
+        self.mask_len_samples = mask_len_samples
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -503,6 +502,10 @@ class BandstopFilter(Transform):
         max_freq=None,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
         assert isinstance(bandwidth, Real) and bandwidth >= 0,\
             "bandwidth should be a non-negative float."
         assert isinstance(sfreq, Real) and sfreq > 0,\
@@ -525,10 +528,6 @@ class BandstopFilter(Transform):
         self.sfreq = sfreq
         self.max_freq = max_freq
         self.bandwidth = bandwidth
-        super().__init__(
-            probability=probability,
-            random_state=random_state,
-        )
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -711,6 +710,10 @@ class SensorsRotation(Transform):
         spherical_splines=True,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
         if isinstance(sensors_positions_matrix, (np.ndarray, list)):
             sensors_positions_matrix = torch.as_tensor(
                 sensors_positions_matrix
@@ -729,11 +732,6 @@ class SensorsRotation(Transform):
         self.axis = axis
         self.spherical_splines = spherical_splines
         self.max_degrees = max_degrees
-
-        super().__init__(
-            probability=probability,
-            random_state=random_state
-        )
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -976,12 +974,12 @@ class Mixup(Transform):
         beta_per_sample=False,
         random_state=None
     ):
-        self.alpha = alpha
-        self.beta_per_sample = beta_per_sample
         super().__init__(
             probability=1.0,  # Mixup has to be applied to whole batches
             random_state=random_state
         )
+        self.alpha = alpha
+        self.beta_per_sample = beta_per_sample
 
     def get_params(self, X, y):
         """Return transform parameters.
