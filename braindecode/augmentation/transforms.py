@@ -571,14 +571,11 @@ class FrequencyShift(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    delta_freq_range : tuple of two floats | None, optional
-        Range of possible values for ``max_shift`` settable using the magnitude
-        (see ``magnitude``). If omitted the range [0, 5] Hz will be used.
-    max_shift : float, optional
-        Random frequency shifts will be samples uniformly in the interval
-        ``[0, max_shift]``. Defaults to 2 Hz.
-    sfreq : float, optional
-        Sampling frequency of the signals to be transformed. Default to 100 Hz.
+    sfreq : float
+        Sampling frequency of the signals to be transformed.
+    max_delta_freq : float | torch.Tensor, optional
+        Maximum shift in Hz that can be sampled (in absolute value).
+        Defaults to 2 (shift sampled between -2 and 2 Hz).
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -589,20 +586,18 @@ class FrequencyShift(Transform):
         self,
         probability,
         sfreq,
-        delta_freq_range=(-2, 2),
+        max_delta_freq=2,
         random_state=None
     ):
-        assert isinstance(sfreq, Real) and sfreq > 0,\
-            "sfreq should be a positive float."
-        self.sfreq = sfreq
-
-        # override max_shift value when a magnitude is passed
-        self.delta_freq_range = delta_freq_range
-
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+        assert isinstance(sfreq, Real) and sfreq > 0,\
+            "sfreq should be a positive float."
+        self.sfreq = sfreq
+
+        self.max_delta_freq = max_delta_freq
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -621,14 +616,11 @@ class FrequencyShift(Transform):
         sfreq : float
             Sampling frequency of the signals to be transformed.
         """
-        min_delta_freq, max_delta_freq = self.delta_freq_range
         u = torch.as_tensor(
             self.rng.uniform(size=X.shape[0]),
             device=X.device
         )
-        delta_freq = u * (
-            max_delta_freq - min_delta_freq
-        ) + min_delta_freq
+        delta_freq = u * 2 * self.max_delta_freq - self.max_delta_freq
         return delta_freq, self.sfreq
 
 

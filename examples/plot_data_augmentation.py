@@ -109,7 +109,7 @@ from braindecode.augmentation import FrequencyShift
 transform = FrequencyShift(
     probability=1.,  # defines the probability of actually modifying the input
     sfreq=sfreq,
-    delta_freq_range=(10., 10.)  # -> fixed frequency shift for visualization
+    max_delta_freq=10.  # -> fixed frequency shift for visualization
 )
 
 ######################################################################
@@ -207,7 +207,7 @@ from braindecode.augmentation import AugmentedDataLoader, SignFlip
 freq_shift = FrequencyShift(
     probability=.5,
     sfreq=sfreq,
-    delta_freq_range=(-2., 2.)  # the frequency shifts are sampled now between -2 and 2 Hz
+    max_delta_freq=-2.  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
 sign_flip = SignFlip(probability=.1)
