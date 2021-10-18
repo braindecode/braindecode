@@ -75,10 +75,10 @@ class FTSurrogate(Transform):
     ----------
     probability: float
         Float setting the probability of applying the operation.
-    magnitude : object, optional
+    phase_noise_magnitude : float | torch.Tensor, optional
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled: ``[0, magnitude * 2 * pi]``. Defaults
-        to 1.
+        pertubation is uniformly sampled:
+        ``[0, phase_noise_magnitude * 2 * pi]``. Defaults to 1.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -96,13 +96,14 @@ class FTSurrogate(Transform):
     def __init__(
         self,
         probability,
-        magnitude=1,
+        phase_noise_magnitude=1,
         random_state=None
     ):
-        assert isinstance(magnitude, (float, int)),\
-            "magnitude should be a float."
-        assert 0 <= magnitude <= 1, "magnitude should be between 0 and 1."
-        self.magnitude = magnitude
+        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)),\
+            "phase_noise_magnitude should be a float."
+        assert 0 <= phase_noise_magnitude <= 1,\
+            "phase_noise_magnitude should be between 0 and 1."
+        self.phase_noise_magnitude = phase_noise_magnitude
         super().__init__(
             probability=probability,
             random_state=random_state
@@ -120,12 +121,12 @@ class FTSurrogate(Transform):
 
         Returns
         -------
-        magnitude : float
+        phase_noise_magnitude : float
             The magnitude of the transformation.
         rng : numpy.random.Generator
             The generator to use.
         """
-        return self.magnitude, self.rng
+        return self.phase_noise_magnitude, self.rng
 
 
 class ChannelsDropout(Transform):

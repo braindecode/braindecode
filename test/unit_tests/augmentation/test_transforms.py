@@ -82,7 +82,7 @@ def test_sign_transform(time_aranged_batch, probability):
     )
 
 
-@pytest.mark.parametrize("even,magnitude", [
+@pytest.mark.parametrize("even,phase_noise_magnitude", [
     (False, 1,),
     (True, 1),
     (True, 0.5),
@@ -90,14 +90,14 @@ def test_sign_transform(time_aranged_batch, probability):
 def test_ft_surrogate_transforms(
     random_batch,
     even,
-    magnitude,
+    phase_noise_magnitude,
 ):
     if even:
         X, y = random_batch
         random_batch = X.repeat(1, 1, 2), y
     transform = FTSurrogate(
         probability=1,
-        magnitude=magnitude,
+        phase_noise_magnitude=phase_noise_magnitude,
     )
     common_tranform_assertions(random_batch, transform(*random_batch))
 

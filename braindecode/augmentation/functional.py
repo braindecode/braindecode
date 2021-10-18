@@ -175,7 +175,7 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
     return shifted.real.float()
 
 
-def ft_surrogate(X, y, magnitude, random_state=None):
+def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -187,9 +187,10 @@ def ft_surrogate(X, y, magnitude, random_state=None):
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    magnitude: float
+    phase_noise_magnitude: float
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled: [0, `magnitude` * 2 * `pi`].
+        pertubation is uniformly sampled:
+        [0, `phase_noise_magnitude` * 2 * `pi`].
     random_state: int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
 
@@ -211,7 +212,7 @@ def ft_surrogate(X, y, magnitude, random_state=None):
         return X, y
     transformed_X = _ft_surrogate(
         x=X,
-        eps=magnitude,
+        eps=phase_noise_magnitude,
         random_state=random_state
     )
     return transformed_X, y
