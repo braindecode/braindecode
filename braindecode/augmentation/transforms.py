@@ -75,10 +75,10 @@ class FTSurrogate(Transform):
     ----------
     probability: float
         Float setting the probability of applying the operation.
-    magnitude : object, optional
+    phase_noise_magnitude : float | torch.Tensor, optional
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled: ``[0, magnitude * 2 * pi]``. Defaults
-        to 1.
+        pertubation is uniformly sampled:
+        ``[0, phase_noise_magnitude * 2 * pi]``. Defaults to 1.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -96,17 +96,18 @@ class FTSurrogate(Transform):
     def __init__(
         self,
         probability,
-        magnitude=1,
+        phase_noise_magnitude=1,
         random_state=None
     ):
-        assert isinstance(magnitude, (float, int)),\
-            "magnitude should be a float."
-        assert 0 <= magnitude <= 1, "magnitude should be between 0 and 1."
-        self.magnitude = magnitude
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)),\
+            "phase_noise_magnitude should be a float."
+        assert 0 <= phase_noise_magnitude <= 1,\
+            "phase_noise_magnitude should be between 0 and 1."
+        self.phase_noise_magnitude = phase_noise_magnitude
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -120,12 +121,12 @@ class FTSurrogate(Transform):
 
         Returns
         -------
-        magnitude : float
+        phase_noise_magnitude : float
             The magnitude of the transformation.
         rng : numpy.random.Generator
             The generator to use.
         """
-        return self.magnitude, self.rng
+        return self.phase_noise_magnitude, self.rng
 
 
 class ChannelsDropout(Transform):
@@ -159,11 +160,11 @@ class ChannelsDropout(Transform):
         p_drop=0.2,
         random_state=None
     ):
-        self.p_drop = p_drop
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        self.p_drop = p_drop
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -218,11 +219,11 @@ class ChannelsShuffle(Transform):
         p_shuffle=0.2,
         random_state=None
     ):
-        self.p_shuffle = p_shuffle
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        self.p_shuffle = p_shuffle
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -255,8 +256,7 @@ class GaussianNoise(Transform):
     probability : float
         Float setting the probability of applying the operation.
     std : float, optional
-        Standard deviation to use for the additive noise. Will be ignored if
-        magnitude is not set to None. Defaults to 0.1.
+        Standard deviation to use for the additive noise. Defaults to 0.1.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -282,11 +282,11 @@ class GaussianNoise(Transform):
         std=0.1,
         random_state=None
     ):
-        self.std = std
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+        self.std = std
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -341,6 +341,10 @@ class ChannelsSymmetry(Transform):
         ordered_ch_names,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
         assert (
             isinstance(ordered_ch_names, list) and
             all(isinstance(ch, str) for ch in ordered_ch_names)
@@ -362,11 +366,6 @@ class ChannelsSymmetry(Transform):
                     new_position = ordered_ch_names.index(new_channel)
             permutation.append(new_position)
         self.permutation = permutation
-
-        super().__init__(
-            probability=probability,
-            random_state=random_state,
-        )
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -396,7 +395,7 @@ class SmoothTimeMask(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    mask_len_samples : int, optional
+    mask_len_samples : int | torch.Tensor, optional
         Number of consecutive samples to zero out. Will be ignored if
         magnitude is not set to None. Defaults to 100.
     random_state: int | numpy.random.Generator, optional
@@ -420,16 +419,16 @@ class SmoothTimeMask(Transform):
         mask_len_samples=100,
         random_state=None
     ):
-        assert (
-            isinstance(mask_len_samples, int) and
-            mask_len_samples > 0
-        ), "mask_len_samples has to be a positive integer"
-        self.mask_len_samples = mask_len_samples
-
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+
+        assert (
+            isinstance(mask_len_samples, (int, torch.Tensor)) and
+            mask_len_samples > 0
+        ), "mask_len_samples has to be a positive integer"
+        self.mask_len_samples = mask_len_samples
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -470,8 +469,7 @@ class BandstopFilter(Transform):
         Float setting the probability of applying the operation.
     bandwidth : float, optional
         Bandwidth of the filter, i.e. distance between the low and high cut
-        frequencies. Will be ignored if magnitude is not set to None. Defaults
-        to 1Hz.
+        frequencies. Defaults to 1Hz.
     sfreq : float, optional
         Sampling frequency of the signals to be filtered. Defaults to 100 Hz.
     max_freq : float | None, optional
@@ -502,6 +500,10 @@ class BandstopFilter(Transform):
         max_freq=None,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
         assert isinstance(bandwidth, Real) and bandwidth >= 0,\
             "bandwidth should be a non-negative float."
         assert isinstance(sfreq, Real) and sfreq > 0,\
@@ -524,10 +526,6 @@ class BandstopFilter(Transform):
         self.sfreq = sfreq
         self.max_freq = max_freq
         self.bandwidth = bandwidth
-        super().__init__(
-            probability=probability,
-            random_state=random_state,
-        )
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -571,14 +569,11 @@ class FrequencyShift(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    delta_freq_range : tuple of two floats | None, optional
-        Range of possible values for ``max_shift`` settable using the magnitude
-        (see ``magnitude``). If omitted the range [0, 5] Hz will be used.
-    max_shift : float, optional
-        Random frequency shifts will be samples uniformly in the interval
-        ``[0, max_shift]``. Defaults to 2 Hz.
-    sfreq : float, optional
-        Sampling frequency of the signals to be transformed. Default to 100 Hz.
+    sfreq : float
+        Sampling frequency of the signals to be transformed.
+    max_delta_freq : float | torch.Tensor, optional
+        Maximum shift in Hz that can be sampled (in absolute value).
+        Defaults to 2 (shift sampled between -2 and 2 Hz).
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -589,20 +584,18 @@ class FrequencyShift(Transform):
         self,
         probability,
         sfreq,
-        delta_freq_range=(-2, 2),
+        max_delta_freq=2,
         random_state=None
     ):
-        assert isinstance(sfreq, Real) and sfreq > 0,\
-            "sfreq should be a positive float."
-        self.sfreq = sfreq
-
-        # override max_shift value when a magnitude is passed
-        self.delta_freq_range = delta_freq_range
-
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+        assert isinstance(sfreq, Real) and sfreq > 0,\
+            "sfreq should be a positive float."
+        self.sfreq = sfreq
+
+        self.max_delta_freq = max_delta_freq
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -621,14 +614,11 @@ class FrequencyShift(Transform):
         sfreq : float
             Sampling frequency of the signals to be transformed.
         """
-        min_delta_freq, max_delta_freq = self.delta_freq_range
         u = torch.as_tensor(
             self.rng.uniform(size=X.shape[0]),
             device=X.device
         )
-        delta_freq = u * (
-            max_delta_freq - min_delta_freq
-        ) + min_delta_freq
+        delta_freq = u * 2 * self.max_delta_freq - self.max_delta_freq
         return delta_freq, self.sfreq
 
 
@@ -710,14 +700,20 @@ class SensorsRotation(Transform):
         spherical_splines=True,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
         if isinstance(sensors_positions_matrix, (np.ndarray, list)):
             sensors_positions_matrix = torch.as_tensor(
                 sensors_positions_matrix
             )
         assert isinstance(sensors_positions_matrix, torch.Tensor),\
             "sensors_positions should be an Tensor"
-        assert isinstance(max_degrees, Real) and max_degrees >= 0,\
-            "max_degrees should be non-negative float."
+        assert (
+            isinstance(max_degrees, (Real, torch.Tensor)) and
+            max_degrees >= 0
+        ), "max_degrees should be non-negative float."
         assert isinstance(axis, str) and axis in ['x', 'y', 'z'],\
             "axis can be either x, y or z."
         assert sensors_positions_matrix.shape[0] == 3,\
@@ -728,11 +724,6 @@ class SensorsRotation(Transform):
         self.axis = axis
         self.spherical_splines = spherical_splines
         self.max_degrees = max_degrees
-
-        super().__init__(
-            probability=probability,
-            random_state=random_state
-        )
 
     def get_params(self, X, y):
         """Return transform parameters.
@@ -975,12 +966,12 @@ class Mixup(Transform):
         beta_per_sample=False,
         random_state=None
     ):
-        self.alpha = alpha
-        self.beta_per_sample = beta_per_sample
         super().__init__(
             probability=1.0,  # Mixup has to be applied to whole batches
             random_state=random_state
         )
+        self.alpha = alpha
+        self.beta_per_sample = beta_per_sample
 
     def get_params(self, X, y):
         """Return transform parameters.
