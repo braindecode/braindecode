@@ -581,7 +581,13 @@ def _torch_normalize_vectors(rr):
     new_rr = rr.clone()
     size = torch.linalg.norm(rr, axis=1)
     mask = (size > 0)
-    new_rr[mask] = rr[mask] / size[mask].unsqueeze(-1)
+    if not torch.all(mask):
+        new_rr[mask] = rr[mask] / size[mask].unsqueeze(-1)
+    else:
+        # For some reason, this distinction is necessary when the input (rr)
+        # depends on learnable parameters. Passing a mask made of all True
+        # will lead to a RuntimeError: number of dims don't match in permute
+        new_rr = rr / size.unsqueeze(-1)
     return new_rr
 
 
