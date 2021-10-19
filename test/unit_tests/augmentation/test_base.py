@@ -37,7 +37,12 @@ def dummy_transform():
     return DummyTransform()
 
 
-def common_tranform_assertions(input_batch, output_batch, expected_X=None):
+def common_tranform_assertions(
+    input_batch,
+    output_batch,
+    expected_X=None,
+    diff_param=None,
+):
     """ Assert whether shapes and devices are conserved. Also, (optional)
     checks whether the expected features matrix is produced.
 
@@ -53,6 +58,8 @@ def common_tranform_assertions(input_batch, output_batch, expected_X=None):
     expected_X : torch.Tensor, optional
         The expected first element of output_batch, which will be compared to
         it. By default None.
+    diff_param : torch.Tensor | None, optional
+        Parameter which should have grads.
     """
     X, y = input_batch
     tr_X, tr_y = output_batch
@@ -62,6 +69,10 @@ def common_tranform_assertions(input_batch, output_batch, expected_X=None):
     assert X.device == tr_X.device
     if expected_X is not None:
         assert torch.equal(tr_X, expected_X)
+    if diff_param is not None:
+        loss = (tr_X - X).sum()
+        loss.backward()
+        assert diff_param.grad is not None
 
 
 def test_transform_call_with_no_label(random_batch, dummy_transform):
