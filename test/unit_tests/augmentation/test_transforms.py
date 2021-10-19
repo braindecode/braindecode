@@ -93,10 +93,12 @@ def test_ft_surrogate_transforms(
     even,
     phase_noise_magnitude,
 ):
-    magnitude = nn.Parameter(torch.empty(1).fill_(phase_noise_magnitude))
+    X, y = random_batch
     if even:
-        X, y = random_batch
         random_batch = X.repeat(1, 1, 2), y
+    magnitude = nn.Parameter(
+        torch.empty(1).fill_(phase_noise_magnitude).to(X.device)
+    )
     transform = FTSurrogate(
         probability=1,
         phase_noise_magnitude=magnitude,
@@ -130,7 +132,7 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
 def test_channels_dropout_transform(rng_seed, p_drop):
     ones_batch = ones_and_zeros_batch()
     X, y = ones_batch
-    p_drop = nn.Parameter(torch.empty(1).fill_(p_drop))
+    p_drop = nn.Parameter(torch.empty(1).fill_(p_drop).to(X.device))
     transform = ChannelsDropout(
         1, p_drop=p_drop, random_state=rng_seed
     )
@@ -183,7 +185,7 @@ def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
 def test_gaussian_noise_transform(rng_seed, probability):
     ones_batch = ones_and_zeros_batch(shape=(1000, 1000))
     X, y = ones_batch
-    std = nn.Parameter(torch.Tensor([2.0]))
+    std = nn.Parameter(torch.Tensor([2.0]).to(X.device))
     transform = GaussianNoise(
         probability,
         std=std,
@@ -243,7 +245,6 @@ def test_channels_symmetry_transform(probability):
 ])
 def test_smooth_time_mask_transform(
     rng_seed,
-    random_batch,
     mask_len_samples,
     fail
 ):
@@ -256,13 +257,15 @@ def test_smooth_time_mask_transform(
                 random_state=rng_seed
             )
     else:
-        mask_len_samples = nn.Parameter(torch.empty(1).fill_(mask_len_samples))
+        ones_batch = ones_and_zeros_batch()
+        mask_len_samples = nn.Parameter(
+            torch.empty(1).fill_(mask_len_samples).to(ones_batch[0].device)
+        )
         transform = SmoothTimeMask(
             1.0,
             mask_len_samples=mask_len_samples,
             random_state=rng_seed
         )
-        ones_batch = ones_and_zeros_batch()
         transformed_batch = transform(*ones_batch)
         common_tranform_assertions(
             ones_batch, transformed_batch, diff_param=mask_len_samples)
@@ -377,7 +380,9 @@ def test_frequency_shift_transform(
     rng_seed, random_batch, make_sinusoid, max_shift,
 ):
     sfreq = 100
-    max_shift = nn.Parameter(torch.empty(1).fill_(max_shift))
+    max_shift = nn.Parameter(
+        torch.empty(1).fill_(max_shift).to(random_batch[0].device)
+    )
     transform = FrequencyShift(
         probability=1.0,
         sfreq=sfreq,
@@ -462,7 +467,9 @@ def test_sensors_rotation_transforms(
         X, y = random_batch
         X = X[:, :6, :]
         cropped_random_batch = X, y
-        max_degrees = nn.Parameter(torch.empty(1).fill_(max_degrees))
+        max_degrees = nn.Parameter(
+            torch.empty(1).fill_(max_degrees).to(X.device)
+        )
         transform = rotation(
             1.0,
             channels,
@@ -494,7 +501,7 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
     idx, idx_perm, lam = y_t
 
     # y_t[0] should equal y
-    assert torch.equal(idx, y)
+    assert torch.equal(idx.cpu(), y)
     # basic mixup
     for i in range(batch_size):
         mixed = lam[i] * X[i] \

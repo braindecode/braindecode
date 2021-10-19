@@ -170,7 +170,7 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
         device=device,
         random_state=random_state
     )
-    f_shifted = f * torch.exp(eps * random_phase)
+    f_shifted = f * torch.exp(eps.to(device) * random_phase)
     shifted = ifft(f_shifted, dim=-1)
     return shifted.real.float()
 
@@ -226,7 +226,7 @@ def _pick_channels_randomly(X, p_pick, random_state):
         device=X.device,
     )
     # equivalent to a 0s and 1s mask
-    return torch.sigmoid(1000*(unif_samples - p_pick)).to(X.device)
+    return torch.sigmoid(1000*(unif_samples - p_pick))
 
 
 def channels_dropout(X, y, p_drop, random_state=None):
@@ -365,8 +365,8 @@ def gaussian_noise(X, y, std, random_state=None):
         rng.normal(
             loc=np.zeros(X.shape),
             scale=1
-        )
-    ).float().to(X.device) * std
+        ),
+    ).float().to(X.device) * std.to(X.device)
     transformed_X = X + noise
     return transformed_X, y
 
