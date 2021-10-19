@@ -15,6 +15,7 @@ from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
 from torch.utils.data import DataLoader
+from sklearn.metrics import get_scorer
 
 
 def trial_preds_from_window_preds(
@@ -448,3 +449,60 @@ def predict_trials(module, dataset, return_targets=True):
             ys_per_trial = np.array(ys_per_trial)
         return preds_per_trial, ys_per_trial
     return preds_per_trial
+
+
+def parse_callbacks(callbacks, cropped):
+    """
+
+    Parameters
+    ----------
+    callbacks: list
+        ...
+    cropped: bool
+        ...
+
+    Returns
+    -------
+    callbacks: list
+        ...
+    """
+    callbacks_list = []
+    if callbacks is not None:
+        for callback in callbacks:
+            if isinstance(callback, tuple):
+                callbacks_list.append(callback)
+            else:
+                assert isinstance(callback, str)
+                scoring = get_scorer(callback)
+                scoring_name = scoring._score_func.__name__
+                assert scoring_name.endswith(
+                    ('_score', '_error', '_deviance', '_loss'))
+                if (scoring_name.endswith('_score') or
+                        callback.startswith('neg_')):
+                    lower_is_better = False
+                else:
+                    lower_is_better = True
+                train_name = f'train_{callback}'
+                valid_name = f'valid_{callback}'
+                if cropped:
+                    # In case of cropped decoding we are using braindecode
+                    # specific scoring created for cropped decoding
+                    train_scoring = CroppedTrialEpochScoring(
+                        callback, lower_is_better, on_train=True, name=train_name
+                    )
+                    valid_scoring = CroppedTrialEpochScoring(
+                        callback, lower_is_better, on_train=False, name=valid_name
+                    )
+                else:
+                    train_scoring = PostEpochTrainScoring(
+                        callback, lower_is_better, name=train_name
+                    )
+                    valid_scoring = EpochScoring(
+                        callback, lower_is_better, on_train=False, name=valid_name
+                    )
+                callbacks_list.extend([
+                    (train_name, train_scoring),
+                    (valid_name, valid_scoring)
+                ])
+
+    return callbacks_list
