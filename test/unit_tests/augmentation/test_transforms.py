@@ -19,6 +19,7 @@ from braindecode.augmentation.transforms import (
 from braindecode.augmentation.functional import (
     _frequency_shift, sensors_rotation
 )
+from braindecode.augmentation.functional import _torch_normalize_vectors
 from test.unit_tests.augmentation.test_base import common_tranform_assertions
 
 
@@ -413,6 +414,28 @@ def test_frequency_shift_transform(
 
     # ... and that shifts are within desired range
     assert np.abs(effective_frequency_shifts).max() <= max_shift
+
+
+@pytest.mark.parametrize("cuda", [False, True])
+@pytest.mark.parametrize("grads_on", [False, True])
+def test_torch_normalize_vectors(cuda, grads_on):
+    device = "cpu"
+    if torch.cuda.is_available() and cuda:
+        device = "cuda"
+    for rr in [
+        torch.cat([torch.ones((1, 3)), torch.zeros((1, 3))], dim=0).to(device),
+        torch.ones((2, 3), device=device),
+        torch.zeros((2, 3), device=device),
+    ]:
+        if grads_on:
+            rr.requires_grad = True
+
+        new_rr = _torch_normalize_vectors(rr)
+        assert new_rr.shape == rr.shape
+        assert all([
+            r in [0, pytest.approx(1)]
+            for r in torch.linalg.norm(new_rr, axis=1).cpu().detach().numpy()
+        ])
 
 
 def test_sensors_rotation_functional():
