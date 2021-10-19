@@ -9,6 +9,7 @@ from .shallow_fbcsp import ShallowFBCSPNet
 from .eegresnet import EEGResNet
 from .tcn import TCN
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
+from .attn_sleep import AttnSleep
 from .tidnet import TIDNet
 from .usleep import USleep
 from .util import get_output_shape
