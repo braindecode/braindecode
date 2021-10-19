@@ -23,8 +23,6 @@ class AttnSleep(nn.Module):
 
     Parameters
     ----------
-    n_channels : int
-        Number of EEG channels.
     sfreq : float
         EEG sampling frequency.
     n_tce : int
@@ -59,15 +57,11 @@ class AttnSleep(nn.Module):
     pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
     """
 
-    def __init__(self, n_channels, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1, input_size_s=30,
+    def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1, input_size_s=30,
                  n_classes=5, afr_reduced_cnn_size=30, return_feats=False):
         super(AttnSleep, self).__init__()
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)
-
-        self.n_channels = n_channels
-        if n_channels > 1:
-            self.spatial_conv = nn.Conv2d(1, n_channels, (n_channels, 1))
 
         mrcnn = _MRCNN(afr_reduced_cnn_size)
         attn = _MultiHeadedAttention(n_attn_heads, d_model, afr_reduced_cnn_size)
@@ -77,16 +71,16 @@ class AttnSleep(nn.Module):
             mrcnn,
             tce
         )
-        self.len_last_layer = self._len_last_layer(n_channels, input_size)
+        self.len_last_layer = self._len_last_layer(input_size)
         self.return_feats = return_feats
         if not return_feats:
             self.fc = nn.Linear(d_model * afr_reduced_cnn_size, n_classes)
 
-    def _len_last_layer(self, n_channels, input_size):
+    def _len_last_layer(self, input_size):
         self.feature_extractor.eval()
         with torch.no_grad():
             out = self.feature_extractor(
-                torch.Tensor(1, n_channels, input_size))
+                torch.Tensor(1, 1, input_size))
         self.feature_extractor.train()
         return len(out.flatten())
 
@@ -100,12 +94,6 @@ class AttnSleep(nn.Module):
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
         """
 
-        if self.n_channels > 1:
-            x = self.spatial_conv(x)
-            x = x.transpose(1, 2)
-
-        # x_feat = self.mrcnn(x)
-        # encoded_features = self.tce(x_feat)
         encoded_features = self.feature_extractor(x)
         encoded_features = encoded_features.contiguous().view(encoded_features.shape[0], -1)
 
