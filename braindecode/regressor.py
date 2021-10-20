@@ -7,12 +7,14 @@
 import warnings
 
 import numpy as np
-from skorch.callbacks import EpochTimer, BatchScoring, PrintLog
+from sklearn.metrics import get_scorer
+from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
 from skorch.regressor import NeuralNetRegressor
 from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
 
-from .training.scoring import (CroppedTrialEpochScoring,
+from .training.scoring import (PostEpochTrainScoring,
+                               CroppedTrialEpochScoring,
                                CroppedTimeSeriesEpochScoring,
                                predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
@@ -55,16 +57,61 @@ class EEGRegressor(NeuralNetRegressor):
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True, aggregate_predictions=True,
-                 _last_window_inds=None, **kwargs):
+                 iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
+        self.callbacks = callbacks
         self.aggregate_predictions = aggregate_predictions
-        self._last_window_inds = _last_window_inds
+        self._last_window_inds = None
 
         super().__init__(*args,
                          callbacks=callbacks,
                          iterator_train__shuffle=iterator_train__shuffle,
                          **kwargs)
+
+    def _uniquely_named_callbacks(self):
+        callbacks_list = []
+        if self.callbacks is not None:
+            for callback in self.callbacks:
+                if isinstance(callback, tuple):
+                    callbacks_list.append(callback)
+                else:
+                    assert isinstance(callback, str)
+                    scoring = get_scorer(callback)
+                    scoring_name = scoring._score_func.__name__
+                    assert scoring_name.endswith(
+                        ('_score', '_error', '_deviance', '_loss'))
+                    if (scoring_name.endswith('_score') or
+                            callback.startswith('neg_')):
+                        lower_is_better = False
+                    else:
+                        lower_is_better = True
+                    train_name = f'train_{callback}'
+                    valid_name = f'valid_{callback}'
+                    if self.cropped:
+                        # In case of cropped decoding we are using braindecode
+                        # specific scoring created for cropped decoding
+                        train_scoring = CroppedTrialEpochScoring(
+                            callback, lower_is_better, on_train=True,
+                            name=train_name
+                        )
+                        valid_scoring = CroppedTrialEpochScoring(
+                            callback, lower_is_better, on_train=False,
+                            name=valid_name
+                        )
+                    else:
+                        train_scoring = PostEpochTrainScoring(
+                            callback, lower_is_better, name=train_name
+                        )
+                        valid_scoring = EpochScoring(
+                            callback, lower_is_better, on_train=False,
+                            name=valid_name
+                        )
+                    callbacks_list.extend([
+                        (train_name, train_scoring),
+                        (valid_name, valid_scoring)
+                    ])
+
+        return callbacks_list + self.get_default_callbacks()
 
     # pylint: disable=arguments-differ
     def get_loss(self, y_pred, y_true, *args, **kwargs):

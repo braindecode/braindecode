@@ -60,18 +60,19 @@ class EEGClassifier(NeuralNetClassifier):
     def __init__(self, *args, cropped=False, callbacks=None,
                  iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
-        callbacks = self._parse_callbacks(callbacks)
+        self.callbacks = callbacks
         self.aggregate_predictions = aggregate_predictions
+        self._last_window_inds = None
 
         super().__init__(*args,
                          callbacks=callbacks,
                          iterator_train__shuffle=iterator_train__shuffle,
                          **kwargs)
 
-    def _parse_callbacks(self, callbacks):
+    def _uniquely_named_callbacks(self):
         callbacks_list = []
-        if callbacks is not None:
-            for callback in callbacks:
+        if self.callbacks is not None:
+            for callback in self.callbacks:
                 if isinstance(callback, tuple):
                     callbacks_list.append(callback)
                 else:
@@ -92,17 +93,20 @@ class EEGClassifier(NeuralNetClassifier):
                         # In case of cropped decoding we are using braindecode
                         # specific scoring created for cropped decoding
                         train_scoring = CroppedTrialEpochScoring(
-                            callback, lower_is_better, on_train=True, name=train_name
+                            callback, lower_is_better, on_train=True,
+                            name=train_name
                         )
                         valid_scoring = CroppedTrialEpochScoring(
-                            callback, lower_is_better, on_train=False, name=valid_name
+                            callback, lower_is_better, on_train=False,
+                            name=valid_name
                         )
                     else:
                         train_scoring = PostEpochTrainScoring(
                             callback, lower_is_better, name=train_name
                         )
                         valid_scoring = EpochScoring(
-                            callback, lower_is_better, on_train=False, name=valid_name
+                            callback, lower_is_better, on_train=False,
+                            name=valid_name
                         )
                     callbacks_list.extend([
                         (train_name, train_scoring),
@@ -164,10 +168,10 @@ class EEGClassifier(NeuralNetClassifier):
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
             if len(epoch_cbs) > 0:
-                assert hasattr(self, '_last_window_inds')
+                assert self._last_window_inds is None
                 for cb in epoch_cbs:
                     cb.window_inds_.append(self._last_window_inds)
-                del self._last_window_inds
+                self._last_window_inds = None
 
     def predict_with_window_inds_and_ys(self, dataset):
         preds = []
