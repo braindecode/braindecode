@@ -89,23 +89,30 @@ def test_sign_flip_transform(time_aranged_batch, probability):
     (True, 1),
     (True, 0.5),
 ])
+@pytest.mark.parametrize("diff", [False, True])
 def test_ft_surrogate_transforms(
     random_batch,
     even,
     phase_noise_magnitude,
+    diff,
 ):
     X, y = random_batch
     if even:
         random_batch = X.repeat(1, 1, 2), y
-    magnitude = nn.Parameter(
-        torch.empty(1).fill_(phase_noise_magnitude).to(X.device)
-    )
+    if diff:
+        phase_noise_magnitude = nn.Parameter(
+            torch.empty(1).fill_(phase_noise_magnitude).to(X.device)
+        )
+
     transform = FTSurrogate(
         probability=1,
-        phase_noise_magnitude=magnitude,
+        phase_noise_magnitude=phase_noise_magnitude,
     )
     common_tranform_assertions(
-        random_batch, transform(*random_batch), diff_param=magnitude)
+        random_batch,
+        transform(*random_batch),
+        diff_param=phase_noise_magnitude if diff else None,
+    )
 
 
 def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
@@ -130,19 +137,28 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
 
 
 @pytest.mark.parametrize("p_drop", [0.25, 0.5])
-def test_channels_dropout_transform(rng_seed, p_drop):
+@pytest.mark.parametrize("diff", [False, True])
+def test_channels_dropout_transform(rng_seed, p_drop, diff):
     ones_batch = ones_and_zeros_batch()
     X, y = ones_batch
-    p_drop = nn.Parameter(torch.empty(1).fill_(p_drop).to(X.device))
+    if diff:
+        p_drop = nn.Parameter(torch.empty(1).fill_(p_drop).to(X.device))
     transform = ChannelsDropout(
         1, p_drop=p_drop, random_state=rng_seed
     )
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(ones_batch, new_batch, diff_param=p_drop)
+    common_tranform_assertions(
+        ones_batch,
+        new_batch,
+        diff_param=p_drop if diff else None
+    )
     zeros_mask = np.all(tr_X.detach().cpu().numpy() <= 1e-3, axis=-1)
     average_nb_of_zero_rows = np.mean(np.sum(zeros_mask.astype(int), axis=-1))
-    expected_nb_zero_rows = transform.p_drop.detach().cpu() * X.shape[-2]
+    proportion_of_zeros = transform.p_drop
+    if isinstance(proportion_of_zeros, torch.Tensor):
+        proportion_of_zeros = proportion_of_zeros.detach().cpu()
+    expected_nb_zero_rows = proportion_of_zeros * X.shape[-2]
     # test that the expected number of channels was set to zero
     assert np.abs(average_nb_of_zero_rows - expected_nb_zero_rows) <= 1
     # test that channels are conserved (same across it)
@@ -183,10 +199,14 @@ def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
 
 
 @pytest.mark.parametrize("probability", [1.0, 0.5])
-def test_gaussian_noise_transform(rng_seed, probability):
+@pytest.mark.parametrize("diff", [False, True])
+def test_gaussian_noise_transform(rng_seed, probability, diff):
     ones_batch = ones_and_zeros_batch(shape=(1000, 1000))
     X, y = ones_batch
-    std = nn.Parameter(torch.Tensor([2.0]).to(X.device))
+    std = 2.0
+
+    if diff:
+        std = nn.Parameter(torch.Tensor([std]).to(X.device))
     transform = GaussianNoise(
         probability,
         std=std,
@@ -194,7 +214,11 @@ def test_gaussian_noise_transform(rng_seed, probability):
     )
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(ones_batch, new_batch, diff_param=std)
+    common_tranform_assertions(
+        ones_batch,
+        new_batch,
+        diff_param=std if diff else None
+    )
 
     if probability == 1.0:
         # check that the values of X changed, but the rows and cols means are
@@ -239,15 +263,17 @@ def test_channels_symmetry_transform(probability):
     )
 
 
-@pytest.mark.parametrize("mask_len_samples,fail", [
-    (0.5, True),
-    (5, False),
-    (10, False),
+@pytest.mark.parametrize("mask_len_samples,fail,diff", [
+    (0.5, True, False),
+    (5, False, False),
+    (10, False, False),
+    (10, False, True),
 ])
 def test_smooth_time_mask_transform(
     rng_seed,
     mask_len_samples,
-    fail
+    fail,
+    diff,
 ):
     if fail:
         # Check max length smaller than 1 cannot be instantiated
@@ -259,9 +285,10 @@ def test_smooth_time_mask_transform(
             )
     else:
         ones_batch = ones_and_zeros_batch()
-        mask_len_samples = nn.Parameter(
-            torch.empty(1).fill_(mask_len_samples).to(ones_batch[0].device)
-        )
+        if diff:
+            mask_len_samples = nn.Parameter(
+                torch.empty(1).fill_(mask_len_samples).to(ones_batch[0].device)
+            )
         transform = SmoothTimeMask(
             1.0,
             mask_len_samples=mask_len_samples,
@@ -269,7 +296,10 @@ def test_smooth_time_mask_transform(
         )
         transformed_batch = transform(*ones_batch)
         common_tranform_assertions(
-            ones_batch, transformed_batch, diff_param=mask_len_samples)
+            ones_batch,
+            transformed_batch,
+            diff_param=mask_len_samples if diff else None
+        )
 
         # Check that masks are the same for all channels
         transformed_X = transformed_batch[0]
@@ -281,8 +311,10 @@ def test_smooth_time_mask_transform(
                 )
         # check that the number of zeros in the masked matrix is +- equal to
         # the mask length
+        if isinstance(mask_len_samples, torch.Tensor):
+            mask_len_samples = mask_len_samples.detach().cpu()
         assert np.abs(
-            np.sum(first_channel_zeros) - mask_len_samples.detach().cpu()) <= 1
+            np.sum(first_channel_zeros) - mask_len_samples) <= 1
 
 
 @pytest.mark.parametrize("bandwidth,fail", [
@@ -376,14 +408,16 @@ def test_frequency_shift_funcion(make_sinusoid, shift):
     assert np.max(diff) / np.max(psd_orig) < 0.4
 
 
-@ pytest.mark.parametrize("max_shift", [0., 1., 2])
+@pytest.mark.parametrize("max_shift", [0., 1., 2])
+@pytest.mark.parametrize("diff", [False, True])
 def test_frequency_shift_transform(
-    rng_seed, random_batch, make_sinusoid, max_shift,
+    rng_seed, random_batch, make_sinusoid, max_shift, diff,
 ):
     sfreq = 100
-    max_shift = nn.Parameter(
-        torch.empty(1).fill_(max_shift).to(random_batch[0].device)
-    )
+    if diff:
+        max_shift = nn.Parameter(
+            torch.empty(1).fill_(max_shift).to(random_batch[0].device)
+        )
     transform = FrequencyShift(
         probability=1.0,
         sfreq=sfreq,
@@ -393,7 +427,10 @@ def test_frequency_shift_transform(
 
     transformed_batch = transform(*random_batch)
     common_tranform_assertions(
-        random_batch, transformed_batch, diff_param=max_shift)
+        random_batch,
+        transformed_batch,
+        diff_param=max_shift if diff else None
+    )
 
     # Transform a pure sinusoid with known frequency...
     freq = 5
@@ -462,18 +499,20 @@ def test_sensors_rotation_functional():
     assert torch.all(torch.abs(expected_X - transformed_X) < 0.02)
 
 
-@ pytest.mark.parametrize("rotation,max_degrees,fail", [
-    (SensorsXRotation, 15, False),
-    (SensorsYRotation, 15, False),
-    (SensorsZRotation, 15, False),
-    (SensorsZRotation, -15, True),
+@ pytest.mark.parametrize("rotation,max_degrees,fail,diff", [
+    (SensorsXRotation, 15, False, False),
+    (SensorsYRotation, 15, False, False),
+    (SensorsZRotation, 15, False, False),
+    (SensorsZRotation, 15, False, True),
+    (SensorsZRotation, -15, True, False),
 ])
 def test_sensors_rotation_transforms(
     rng_seed,
     random_batch,
     rotation,
     max_degrees,
-    fail
+    fail,
+    diff,
 ):
     channels = ['O2', 'C4', 'C3', 'F4', 'F3', 'O1']
     if fail:
@@ -490,9 +529,10 @@ def test_sensors_rotation_transforms(
         X, y = random_batch
         X = X[:, :6, :]
         cropped_random_batch = X, y
-        max_degrees = nn.Parameter(
-            torch.empty(1).fill_(max_degrees).to(X.device)
-        )
+        if diff:
+            max_degrees = nn.Parameter(
+                torch.empty(1).fill_(max_degrees).to(X.device)
+            )
         transform = rotation(
             1.0,
             channels,
@@ -501,7 +541,10 @@ def test_sensors_rotation_transforms(
         )
         transformed_batch = transform(*cropped_random_batch)
         common_tranform_assertions(
-            cropped_random_batch, transformed_batch, diff_param=max_degrees)
+            cropped_random_batch,
+            transformed_batch,
+            diff_param=max_degrees if diff else None
+        )
 
 
 @ pytest.mark.parametrize("alpha,beta_per_sample", [

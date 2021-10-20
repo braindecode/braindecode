@@ -170,7 +170,9 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
         device=device,
         random_state=random_state
     )
-    f_shifted = f * torch.exp(eps.to(device) * random_phase)
+    if isinstance(eps, torch.Tensor):
+        eps = eps.to(device)
+    f_shifted = f * torch.exp(eps * random_phase)
     shifted = ifft(f_shifted, dim=-1)
     return shifted.real.float()
 
@@ -361,12 +363,14 @@ def gaussian_noise(X, y, std, random_state=None):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
     rng = check_random_state(random_state)
+    if isinstance(std, torch.Tensor):
+        std = std.to(X.device)
     noise = torch.from_numpy(
         rng.normal(
             loc=np.zeros(X.shape),
             scale=1
         ),
-    ).float().to(X.device) * std.to(X.device)
+    ).float().to(X.device) * std
     transformed_X = X + noise
     return transformed_X, y
 
