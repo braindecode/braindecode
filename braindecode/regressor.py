@@ -57,11 +57,12 @@ class EEGRegressor(NeuralNetRegressor):
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
+                 iterator_train__shuffle=True, aggregate_predictions=True,
+                 **kwargs):
         self.cropped = cropped
         self.callbacks = callbacks
         self.aggregate_predictions = aggregate_predictions
-        self._last_window_inds = None
+        self._last_window_inds_ = None
 
         super().__init__(*args,
                          callbacks=callbacks,
@@ -166,10 +167,10 @@ class EEGRegressor(NeuralNetRegressor):
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
             if len(epoch_cbs) > 0:
-                assert self._last_window_inds is None
+                assert self._last_window_inds_ is None
                 for cb in epoch_cbs:
-                    cb.window_inds_.append(self._last_window_inds)
-                self._last_window_inds = None
+                    cb.window_inds_.append(self._last_window_inds_)
+                self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
         preds = []
