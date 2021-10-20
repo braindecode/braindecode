@@ -238,7 +238,7 @@ class WindowsDataset(BaseDataset):
         """
         description = _create_description(description)
         for key, value in description.items():
-            # if they key is already in the existing description, drop it
+            # if the key is already in the existing description, drop it
             if self._description is not None and key in self._description:
                 assert overwrite, (f"'{key}' already in description. Please "
                                    f"rename or set overwrite to True.")
