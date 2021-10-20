@@ -15,6 +15,7 @@ class AttnSleep(nn.Module):
     """Sleep Staging Architecture from Eldele et al 2021.
 
     Attention based Neural Net for sleep staging as described in [Eldele2021]_.
+    The code for the paper and this model is also available at [1]_.
     Takes single channel EEG as input.
     Feature extraction module based on multi-resolution convolutional neural network (MRCNN)
     and adaptive feature recalibration (AFR).
@@ -55,6 +56,8 @@ class AttnSleep(nn.Module):
     .. [Eldele2021] E. Eldele et al., "An Attention-Based Deep Learning Approach for Sleep Stage Classification
     With Single-Channel EEG," in IEEE Transactions on Neural Systems and Rehabilitation Engineering, vol. 29,
     pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
+
+    .. [1] https://github.com/emadeldeen24/AttnSleep
     """
 
     def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1, input_size_s=30,
@@ -157,21 +160,11 @@ class _SEBasicBlock(nn.Module):
         return out
 
 
-class _GELU(nn.Module):
-    # for older versions of PyTorch.  For new versions you can use nn._GELU() instead.
-    def __init__(self):
-        super(_GELU, self).__init__()
-
-    def forward(self, x):
-        x = torch.nn.functional.gelu(x)
-        return x
-
-
 class _MRCNN(nn.Module):
     def __init__(self, afr_reduced_cnn_size):
         super(_MRCNN, self).__init__()
         drate = 0.5
-        self.GELU = _GELU()  # for older versions of PyTorch.  For new versions use nn._GELU() instead.
+        self.GELU = nn.GELU()
         self.features1 = nn.Sequential(
             nn.Conv1d(1, 64, kernel_size=50, stride=6, bias=False, padding=24),
             nn.BatchNorm1d(64),
@@ -240,7 +233,7 @@ class _MRCNN(nn.Module):
 ##########################################################################################
 
 
-def attention(query, key, value, dropout=None):
+def _attention(query, key, value, dropout=None):
     """Implementation of Scaled dot product attention"""
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
@@ -287,7 +280,7 @@ class _MultiHeadedAttention(nn.Module):
         self.d_k = d_model // h
         self.h = h
 
-        self.convs = clones(_CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size, kernel_size=7, stride=1), 3)
+        self.convs = _clones(_CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size, kernel_size=7, stride=1), 3)
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
@@ -299,7 +292,7 @@ class _MultiHeadedAttention(nn.Module):
         key = self.convs[1](key).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
         value = self.convs[2](value).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
 
-        x, self.attn = attention(query, key, value, dropout=self.dropout)
+        x, self.attn = _attention(query, key, value, dropout=self.dropout)
 
         x = x.transpose(1, 2).contiguous() \
             .view(nbatches, -1, self.h * self.d_k)
@@ -307,29 +300,14 @@ class _MultiHeadedAttention(nn.Module):
         return self.linear(x)
 
 
-class LayerNorm(nn.Module):
-    """Construct a layer normalization module."""
-
-    def __init__(self, features, eps=1e-6):
-        super(LayerNorm, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
-
-
-class SublayerOutput(nn.Module):
+class _SublayerOutput(nn.Module):
     """
     A residual connection followed by a layer norm.
     """
 
     def __init__(self, size, dropout):
-        super(SublayerOutput, self).__init__()
-        self.norm = LayerNorm(size)
+        super(_SublayerOutput, self).__init__()
+        self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, sublayer):
@@ -337,21 +315,21 @@ class SublayerOutput(nn.Module):
         return x + self.dropout(sublayer(self.norm(x)))
 
 
-def clones(module, N):
-    """Produce N identical layers."""
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+def _clones(module, n):
+    """Produce n identical layers."""
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(n)])
 
 
 class _TCE(nn.Module):
     """
     Transformer Encoder
-    It is a stack of N layers.
+    It is a stack of n layers.
     """
 
-    def __init__(self, layer, N):
+    def __init__(self, layer, n):
         super(_TCE, self).__init__()
-        self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
+        self.layers = _clones(layer, n)
+        self.norm = nn.LayerNorm(layer.size, eps=1e-6)
 
     def forward(self, x):
         for layer in self.layers:
@@ -363,14 +341,14 @@ class _EncoderLayer(nn.Module):
     """
     An encoder layer
     Made up of self-attention and a feed forward layer.
-    Each of these sublayers have residual and layer norm, implemented by SublayerOutput.
+    Each of these sublayers have residual and layer norm, implemented by _SublayerOutput.
     """
 
     def __init__(self, size, self_attn, feed_forward, afr_reduced_cnn_size, dropout):
         super(_EncoderLayer, self).__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
-        self.sublayer_output = clones(SublayerOutput(size, dropout), 2)
+        self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
         self.size = size
         self.conv = _CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size, kernel_size=7, stride=1, dilation=1)
 
