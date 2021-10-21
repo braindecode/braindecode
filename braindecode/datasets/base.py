@@ -172,6 +172,8 @@ class WindowsDataset(BaseDataset):
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
                 'i_stop_in_trial']].to_numpy()
+        if self.targets_from == 'metadata':
+            self.y = self.windows.metadata.loc[:, 'target'].to_list()
 
     def __getitem__(self, index):
         """Get a window and its target.
@@ -194,7 +196,7 @@ class WindowsDataset(BaseDataset):
         if self.transform is not None:
             X = self.transform(X)
         if self.targets_from == 'metadata':
-            y = self.windows.metadata.loc[index, 'target']
+            y = self.y[index]
         else:
             misc_mask = np.array(self.windows.get_channel_types()) == 'misc'
             if self.last_target_only:
