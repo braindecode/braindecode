@@ -98,7 +98,7 @@ def test_cropped_trial_epoch_scoring():
         mock_skorch_net = MockSkorchNet()
         cropped_trial_epoch_scoring = CroppedTrialEpochScoring(
             "accuracy", on_train=False)
-        mock_skorch_net.callbacks = [(
+        mock_skorch_net.callbacks_ = [(
             "", cropped_trial_epoch_scoring)]
         cropped_trial_epoch_scoring.initialize()
         cropped_trial_epoch_scoring.y_preds_ = [
@@ -149,7 +149,7 @@ def test_cropped_trial_epoch_scoring_none_x_test():
     cropped_trial_epoch_scoring.window_inds_ = window_inds
 
     mock_skorch_net = MockSkorchNet()
-    mock_skorch_net.callbacks = [(
+    mock_skorch_net.callbacks_ = [(
         "", cropped_trial_epoch_scoring)]
     output = cropped_trial_epoch_scoring.on_epoch_end(
         mock_skorch_net, dataset_train, dataset_valid
@@ -212,7 +212,7 @@ def test_cropped_time_series_trial_epoch_scoring():
         mock_skorch_net = MockSkorchNet()
         cropped_trial_epoch_scoring = CroppedTimeSeriesEpochScoring(
             "accuracy", on_train=False)
-        mock_skorch_net.callbacks = [(
+        mock_skorch_net.callbacks_ = [(
             "", cropped_trial_epoch_scoring)]
         cropped_trial_epoch_scoring.initialize()
         cropped_trial_epoch_scoring.y_preds_ = [
