@@ -83,7 +83,7 @@ class EEGRegressor(NeuralNetRegressor):
         assert scoring_name.endswith(
                         ('_score', '_error', '_deviance', '_loss'))
         if (scoring_name.endswith('_score') or
-                callback.startswith('neg_')):
+                cb_supplied_name.startswith('neg_')):
             lower_is_better = False
         else:
             lower_is_better = True

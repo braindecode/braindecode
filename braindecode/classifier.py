@@ -67,7 +67,6 @@ class EEGClassifier(NeuralNetClassifier):
                          iterator_train__shuffle=iterator_train__shuffle,
                          **kwargs)
 
-
     def _yield_callbacks(self):
         # Here we parse the callbacks supplied as strings,
         # e.g. 'accuracy', to the callbacks skorch expects
@@ -85,7 +84,7 @@ class EEGClassifier(NeuralNetClassifier):
         assert scoring_name.endswith(
                         ('_score', '_error', '_deviance', '_loss'))
         if (scoring_name.endswith('_score') or
-                callback.startswith('neg_')):
+                cb_supplied_name.startswith('neg_')):
             lower_is_better = False
         else:
             lower_is_better = True
