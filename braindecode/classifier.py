@@ -60,7 +60,8 @@ class EEGClassifier(NeuralNetClassifier):
     def __init__(self, *args, cropped=False, callbacks=None,
                  iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
-        callbacks = self._parse_callbacks(callbacks)
+        if callbacks is not None and any([isinstance(c, str) for c in callbacks]):
+            callbacks = self._parse_callbacks(callbacks)
         self.aggregate_predictions = aggregate_predictions
 
         super().__init__(*args,

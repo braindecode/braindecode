@@ -119,3 +119,23 @@ def test_predict_trials():
     with pytest.warns(UserWarning, match="This method was designed to predict "
                                          "trials in cropped mode."):
         clf.predict_trials(MockDataset(), return_targets=False)
+
+from sklearn.base import clone
+def test_eeg_classifier_clonable():
+    preds = np.array(
+        [
+            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
+            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
+            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
+            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
+        ]
+    )
+    clf = EEGClassifier(
+        MockModule(preds),
+        cropped=False,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=32
+    )
+    clone(clf)
