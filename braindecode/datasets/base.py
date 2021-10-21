@@ -238,8 +238,8 @@ class WindowsDataset(BaseDataset):
         """
         description = _create_description(description)
         for key, value in description.items():
-            # if the key is already in the existing description, drop it
-            if self._description is not None and key in self._description:
+            # if they key is already in the existing description, drop it
+            if key in self._description:
                 assert overwrite, (f"'{key}' already in description. Please "
                                    f"rename or set overwrite to True.")
                 self._description.pop(key)
@@ -363,9 +363,8 @@ class BaseConcatDataset(ConcatDataset):
         all_dfs = list()
         for ds in self.datasets:
             df = ds.windows.metadata
-            if ds.description is not None:
-                for k, v in ds.description.items():
-                    df[k] = v
+            for k, v in ds.description.items():
+                df[k] = v
             all_dfs.append(df)
 
         return pd.concat(all_dfs)
@@ -465,10 +464,7 @@ class BaseConcatDataset(ConcatDataset):
 
     @property
     def description(self):
-        all_description = [ds.description for ds in self.datasets]
-        if all([d is None for d in all_description]):
-            return None
-        df = pd.DataFrame(all_description)
+        df = pd.DataFrame([ds.description for ds in self.datasets])
         df.reset_index(inplace=True, drop=True)
         return df
 
