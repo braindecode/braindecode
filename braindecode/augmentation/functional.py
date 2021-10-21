@@ -583,15 +583,10 @@ def frequency_shift(X, y, delta_freq, sfreq):
 def _torch_normalize_vectors(rr):
     """Normalize surface vertices."""
     new_rr = rr.clone()
-    size = torch.linalg.norm(rr, axis=1)
-    mask = (size > 0)
-    if not torch.all(mask):
-        new_rr[mask] = rr[mask] / size[mask].unsqueeze(-1)
-    else:
-        # For some reason, this distinction is necessary when the input (rr)
-        # depends on learnable parameters. Passing a mask made of all True
-        # will lead to a RuntimeError: number of dims don't match in permute
-        new_rr = rr / size.unsqueeze(-1)
+    norm = torch.linalg.norm(rr, axis=1, keepdim=True)
+    mask = (norm > 0)
+    norm[~mask] = 1  # in case norm is zero, divide by 1
+    new_rr = rr / norm
     return new_rr
 
 
