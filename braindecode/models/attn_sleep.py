@@ -54,8 +54,8 @@ class AttnSleep(nn.Module):
     References
     ----------
     .. [Eldele2021] E. Eldele et al., "An Attention-Based Deep Learning Approach for Sleep Stage Classification
-    With Single-Channel EEG," in IEEE Transactions on Neural Systems and Rehabilitation Engineering, vol. 29,
-    pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
+        With Single-Channel EEG," in IEEE Transactions on Neural Systems and Rehabilitation Engineering, vol. 29,
+        pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
 
     .. [1] https://github.com/emadeldeen24/AttnSleep
     """
