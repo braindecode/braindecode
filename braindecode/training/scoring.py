@@ -136,7 +136,7 @@ class CroppedTrialEpochScoring(EpochScoring):
             use_caching=use_caching,
         )
         if not self.on_train:
-            self.window_inds_ = []
+            self._window_inds_ = []
 
     def _initialize_cache(self):
         super()._initialize_cache()
@@ -144,7 +144,7 @@ class CroppedTrialEpochScoring(EpochScoring):
         self.y_trues_ = []
         self.y_preds_ = []
         if not self.on_train:
-            self.window_inds_ = []
+            self._window_inds_ = []
 
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching
@@ -159,10 +159,10 @@ class CroppedTrialEpochScoring(EpochScoring):
             else:
                 pred_results = {}
                 pred_results['i_window_in_trials'] = np.concatenate(
-                    [i[0].cpu().numpy() for i in self.window_inds_]
+                    [i[0].cpu().numpy() for i in self._window_inds_]
                 )
                 pred_results['i_window_stops'] = np.concatenate(
-                    [i[2].cpu().numpy() for i in self.window_inds_]
+                    [i[2].cpu().numpy() for i in self._window_inds_]
                 )
                 pred_results['preds'] = np.concatenate(
                     [y_pred.cpu().numpy() for y_pred in self.y_preds_])
@@ -233,10 +233,10 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
             else:
                 pred_results = {}
                 pred_results['i_window_in_trials'] = np.concatenate(
-                    [i[0].cpu().numpy() for i in self.window_inds_]
+                    [i[0].cpu().numpy() for i in self._window_inds_]
                 )
                 pred_results['i_window_stops'] = np.concatenate(
-                    [i[2].cpu().numpy() for i in self.window_inds_]
+                    [i[2].cpu().numpy() for i in self._window_inds_]
                 )
                 pred_results['preds'] = np.concatenate(
                     [y_pred.cpu().numpy() for y_pred in self.y_preds_])

@@ -160,7 +160,7 @@ class EEGClassifier(NeuralNetClassifier):
         # If training is false, assume that our loader has indices for this
         # batch
         if not training:
-            cbs = self._default_callbacks + self.callbacks
+            cbs = self._uniquely_named_callbacks()
             epoch_cbs = []
             for name, cb in cbs:
                 if isinstance(cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)) and (
