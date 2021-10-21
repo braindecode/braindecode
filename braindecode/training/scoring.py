@@ -193,7 +193,7 @@ class CroppedTrialEpochScoring(EpochScoring):
 
             # Store the computed trial preds for all Cropped Callbacks
             # that are also on same set
-            cbs = net._default_callbacks + net.callbacks
+            cbs = net._uniquely_named_callbacks()
             epoch_cbs = [
                 cb for name, cb in cbs if
                 isinstance(cb, CroppedTrialEpochScoring) and (
@@ -365,7 +365,7 @@ class PostEpochTrainScoring(EpochScoring):
             # Skorch-Net (NeuralNet, BraindecodeClassifier etc.)
             # (They will be reinitialized to empty lists by skorch
             # each epoch)
-            cbs = net._default_callbacks + net.callbacks
+            cbs = net._uniquely_named_callbacks()
             epoch_cbs = [
                 cb for name, cb in cbs if isinstance(cb, PostEpochTrainScoring)
             ]

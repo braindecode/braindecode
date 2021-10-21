@@ -46,6 +46,9 @@ class MockSkorchNet:
     def get_iterator(self, X_test, training):
         return DataLoader(X_test, batch_size=2)
 
+    def _uniquely_named_callbacks(self):
+        return []
+
 
 def test_cropped_trial_epoch_scoring():
 
@@ -106,7 +109,7 @@ def test_cropped_trial_epoch_scoring():
             to_tensor(predictions[2:], device="cpu"),
         ]
         cropped_trial_epoch_scoring.y_trues_ = y_true
-        cropped_trial_epoch_scoring.window_inds_ = window_inds
+        cropped_trial_epoch_scoring._window_inds_ = window_inds
 
         cropped_trial_epoch_scoring.on_epoch_end(
             mock_skorch_net, dataset_train, dataset_valid
@@ -146,7 +149,7 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         to_tensor(predictions[2:], device="cpu"),
     ]
     cropped_trial_epoch_scoring.y_trues_ = y_true
-    cropped_trial_epoch_scoring.window_inds_ = window_inds
+    cropped_trial_epoch_scoring._window_inds_ = window_inds
 
     mock_skorch_net = MockSkorchNet()
     mock_skorch_net.callbacks = [(
@@ -220,7 +223,7 @@ def test_cropped_time_series_trial_epoch_scoring():
             to_tensor(predictions[2:], device="cpu"),
         ]
         cropped_trial_epoch_scoring.y_trues_ = y_true
-        cropped_trial_epoch_scoring.window_inds_ = window_inds
+        cropped_trial_epoch_scoring._window_inds_ = window_inds
 
         cropped_trial_epoch_scoring.on_epoch_end(
             mock_skorch_net, dataset_train, dataset_valid
