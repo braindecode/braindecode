@@ -41,7 +41,7 @@ jobs:
       run: pip install moabb
     # Use skorch master
     - name: Install Skorch master from git repo
-      run: pip install git@github.com:skorch-dev/skorch.git
+      run: pip install git+https://github.com/skorch-dev/skorch.git
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
