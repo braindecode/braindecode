@@ -47,7 +47,7 @@ class MockSkorchNet:
         return DataLoader(X_test, batch_size=2)
 
     def _uniquely_named_callbacks(self):
-        return []
+        return self.callbacks
 
 
 def test_cropped_trial_epoch_scoring():

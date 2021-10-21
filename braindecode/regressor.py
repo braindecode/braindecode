@@ -162,7 +162,7 @@ class EEGRegressor(NeuralNetRegressor):
             epoch_cbs = []
             for name, cb in cbs:
                 if isinstance(cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)) and (
-                        hasattr(cb, 'window_inds_')) and (not cb.on_train):
+                        hasattr(cb, '_window_inds_')) and (not cb.on_train):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
