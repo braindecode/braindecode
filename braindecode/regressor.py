@@ -60,7 +60,7 @@ class EEGRegressor(NeuralNetRegressor):
                  iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
         self.aggregate_predictions = aggregate_predictions
-        self._last_window_inds = None
+        self._last_window_inds_ = None
         super().__init__(*args,
                          callbacks=callbacks,
                          iterator_train__shuffle=iterator_train__shuffle,
