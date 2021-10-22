@@ -582,7 +582,6 @@ def frequency_shift(X, y, delta_freq, sfreq):
 
 def _torch_normalize_vectors(rr):
     """Normalize surface vertices."""
-    new_rr = rr.clone()
     norm = torch.linalg.norm(rr, axis=1, keepdim=True)
     mask = (norm > 0)
     norm[~mask] = 1  # in case norm is zero, divide by 1
