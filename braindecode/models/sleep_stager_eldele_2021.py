@@ -11,7 +11,7 @@ import copy
 from copy import deepcopy
 
 
-class AttnSleep(nn.Module):
+class SleepStagerEldele2021(nn.Module):
     """Sleep Staging Architecture from Eldele et al 2021.
 
     Attention based Neural Net for sleep staging as described in [Eldele2021]_.
@@ -53,23 +53,24 @@ class AttnSleep(nn.Module):
 
     References
     ----------
-    .. [Eldele2021] E. Eldele et al., "An Attention-Based Deep Learning Approach for Sleep Stage Classification
-        With Single-Channel EEG," in IEEE Transactions on Neural Systems and Rehabilitation Engineering, vol. 29,
-        pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
+    .. [Eldele2021] E. Eldele et al., "An Attention-Based Deep Learning Approach for Sleep Stage
+        Classification With Single-Channel EEG," in IEEE Transactions on Neural Systems and
+        Rehabilitation Engineering, vol. 29, pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
 
     .. [1] https://github.com/emadeldeen24/AttnSleep
     """
 
-    def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1, input_size_s=30,
-                 n_classes=5, afr_reduced_cnn_size=30, return_feats=False):
-        super(AttnSleep, self).__init__()
+    def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1,
+                 input_size_s=30, n_classes=5, afr_reduced_cnn_size=30, return_feats=False):
+        super(SleepStagerEldele2021, self).__init__()
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
         mrcnn = _MRCNN(afr_reduced_cnn_size)
         attn = _MultiHeadedAttention(n_attn_heads, d_model, afr_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, dropout)
-        tce = _TCE(_EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), afr_reduced_cnn_size, dropout), n_tce)
+        tce = _TCE(_EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), afr_reduced_cnn_size,
+                                 dropout), n_tce)
         self.feature_extractor = nn.Sequential(
             mrcnn,
             tce
@@ -280,7 +281,8 @@ class _MultiHeadedAttention(nn.Module):
         self.d_k = d_model // h
         self.h = h
 
-        self.convs = _clones(_CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size, kernel_size=7, stride=1), 3)
+        self.convs = _clones(_CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size,
+                                           kernel_size=7, stride=1), 3)
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
@@ -350,12 +352,14 @@ class _EncoderLayer(nn.Module):
         self.feed_forward = feed_forward
         self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
         self.size = size
-        self.conv = _CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size, kernel_size=7, stride=1, dilation=1)
+        self.conv = _CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size, kernel_size=7,
+                                  stride=1, dilation=1)
 
     def forward(self, x_in):
         """Transformer Encoder"""
         query = self.conv(x_in)
-        x = self.sublayer_output[0](query, lambda x: self.self_attn(query, x_in, x_in))  # Encoder self-attention
+        # Encoder self-attention
+        x = self.sublayer_output[0](query, lambda x: self.self_attn(query, x_in, x_in))
         return self.sublayer_output[1](x, self.feed_forward)
 
 

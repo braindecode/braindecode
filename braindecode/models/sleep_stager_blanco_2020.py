@@ -25,7 +25,8 @@ class SleepStagerBlanco2020(nn.Module):
         Number of convolutional channels. Set to 20 in [Blanco2020]_.
     n_groups : int
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.
-        controls the connections between inputs and outputs. n_channels and n_conv_chans must be divisible by n_groups.
+        controls the connections between inputs and outputs. n_channels and n_conv_chans must be
+        divisible by n_groups.
     input_size_s : float
         Size of the input, in seconds.
     n_classes : int
