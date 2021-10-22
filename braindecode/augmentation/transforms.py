@@ -451,10 +451,13 @@ class SmoothTimeMask(Transform):
             Number of consecutive samples to zero out.
         """
         seq_length = torch.as_tensor(X.shape[-1], device=X.device)
+        mask_len_samples = self.mask_len_samples
+        if isinstance(mask_len_samples, torch.Tensor):
+            mask_len_samples = mask_len_samples.to(X.device)
         mask_start = torch.as_tensor(self.rng.uniform(
             low=0, high=1, size=X.shape[0],
-        ), device=X.device) * (seq_length - self.mask_len_samples)
-        return mask_start, self.mask_len_samples
+        ), device=X.device) * (seq_length - mask_len_samples)
+        return mask_start, mask_len_samples
 
 
 class BandstopFilter(Transform):
@@ -618,7 +621,10 @@ class FrequencyShift(Transform):
             self.rng.uniform(size=X.shape[0]),
             device=X.device
         )
-        delta_freq = u * 2 * self.max_delta_freq - self.max_delta_freq
+        max_delta_freq = self.max_delta_freq
+        if isinstance(max_delta_freq, torch.Tensor):
+            max_delta_freq = max_delta_freq.to(X.device)
+        delta_freq = u * 2 * max_delta_freq - max_delta_freq
         return delta_freq, self.sfreq
 
 
@@ -757,8 +763,11 @@ class SensorsRotation(Transform):
             high=1,
             size=X.shape[0]
         )
+        max_degrees = self.max_degrees
+        if isinstance(max_degrees, torch.Tensor):
+            max_degrees = max_degrees.to(X.device)
         random_angles = torch.as_tensor(
-            u, device=X.device) * 2 * self.max_degrees - self.max_degrees
+            u, device=X.device) * 2 * max_degrees - max_degrees
         return (
             self.sensors_positions_matrix,
             self.axis,
