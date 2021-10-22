@@ -153,7 +153,7 @@ class EEGRegressor(NeuralNetRegressor):
         else:
             return iterator
 
-    def on_batch_end(self, net, batch, training=False, **kwargs):
+    def on_batch_end(self, net, *batch, training=False, **kwargs):
         # If training is false, assume that our loader has indices for this
         # batch
         if not training:

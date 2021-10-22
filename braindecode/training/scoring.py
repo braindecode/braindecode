@@ -11,6 +11,7 @@ import warnings
 
 import numpy as np
 import torch
+import skorch
 from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
@@ -352,9 +353,13 @@ class PostEpochTrainScoring(EpochScoring):
             y_preds = []
             y_test = []
             for batch in iterator:
-                _, batch_y = unpack_data(batch)
+                batch_X, batch_y = unpack_data(batch)
+                # TODO: remove after skorch 0.10 release
+                if skorch.__version__.split('.')[1] == '9':
+                    yp = net.evaluation_step(batch_X, training=False)
                 # X, y unpacking has been pushed downstream in skorch 0.10
-                yp = net.evaluation_step(batch, training=False)
+                else:
+                    yp = net.evaluation_step(batch, training=False)
                 yp = yp.to(device="cpu")
                 y_test.append(self.target_extractor(batch_y))
                 y_preds.append(yp)
