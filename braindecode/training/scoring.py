@@ -351,9 +351,10 @@ class PostEpochTrainScoring(EpochScoring):
             iterator = net.get_iterator(dataset, training=False)
             y_preds = []
             y_test = []
-            for data in iterator:
-                batch_X, batch_y = unpack_data(data)
-                yp = net.evaluation_step(batch_X, training=False)
+            for batch in iterator:
+                _, batch_y = unpack_data(batch)
+                # X, y unpacking has been pushed downstream in skorch 0.10
+                yp = net.evaluation_step(batch, training=False)
                 yp = yp.to(device="cpu")
                 y_test.append(self.target_extractor(batch_y))
                 y_preds.append(yp)
