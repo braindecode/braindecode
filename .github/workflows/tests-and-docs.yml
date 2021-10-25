@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        skorch_version: ['github', 'conda']
+        skorch_version: ['main', 'stable']
     defaults:
       run:
         shell: bash -l {0}
@@ -43,8 +43,8 @@ jobs:
     - name: Install MOABB
       run: pip install moabb
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
-    - name: Install Skorch master from git repo
-      if: ${{ matrix.skorch_version == 'github' }}
+    - name: Install Skorch development version from git repo
+      if: ${{ matrix.skorch_version == 'main' }}
       run: pip install git+https://github.com/skorch-dev/skorch.git
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
@@ -86,7 +86,7 @@ jobs:
         path: ./docs/_build/
 
     - name: Deploy to Github Pages if on Master
-      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && matrix.skorch_version == 'conda'}}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && matrix.skorch_version == 'stable'}}
       uses: peaceiris/actions-gh-pages@v3
       with:
         deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
