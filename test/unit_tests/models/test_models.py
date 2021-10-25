@@ -12,7 +12,7 @@ import pytest
 
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
-    SleepStagerChambon2018, USleep, TIDNet)
+    SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep, TIDNet)
 from braindecode.util import set_random_seeds
 
 
@@ -199,3 +199,83 @@ def test_tidnet(input_sizes):
         input_sizes['n_channels'], input_sizes['n_classes'],
         input_sizes['n_in_times'],)
     check_forward_pass(model, input_sizes)
+
+
+@pytest.mark.parametrize('n_classes',
+                         [5, 4, 2])
+def test_eldele_2021(n_classes):
+    rng = np.random.RandomState(42)
+    sfreq = 100
+    input_size_s = 30
+    n_channels = 1
+    n_examples = 10
+
+    model = SleepStagerEldele2021(sfreq=sfreq, n_classes=n_classes, input_size_s=input_size_s,
+                                  return_feats=False)
+    model.eval()
+
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred1 = model(X)  # 3D inputs
+    assert y_pred1.shape == (n_examples, n_classes)
+
+
+def test_eldele_2021_feats():
+    n_channels = 1
+    sfreq = 100
+    input_size_s = 30
+    n_classes = 3
+    n_examples = 10
+
+    model = SleepStagerEldele2021(sfreq, input_size_s=input_size_s, n_classes=n_classes,
+                                  return_feats=True)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(X)
+    assert out.shape == (n_examples, model.len_last_layer)
+
+
+@pytest.mark.parametrize('n_channels,sfreq,n_groups,n_classes,input_size_s',
+                         [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)])
+def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
+    rng = np.random.RandomState(42)
+    n_examples = 10
+
+    model = SleepStagerBlanco2020(n_channels=n_channels, sfreq=sfreq, n_groups=n_groups,
+                                  input_size_s=input_size_s, n_classes=n_classes,
+                                  return_feats=False)
+    model.eval()
+
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred1 = model(X)  # 3D inputs
+    y_pred2 = model(X.unsqueeze(2))  # 4D inputs
+    assert y_pred1.shape == (n_examples, n_classes)
+    assert y_pred2.shape == (n_examples, n_classes)
+    np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
+                               y_pred2.detach().cpu().numpy())
+
+
+def test_blanco_2020_feats():
+    n_channels = 2
+    sfreq = 50
+    input_size_s = 30
+    n_classes = 3
+    n_examples = 10
+
+    model = SleepStagerBlanco2020(n_channels, sfreq, input_size_s=input_size_s,
+                                  n_classes=n_classes, return_feats=True)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(X)
+    assert out.shape == (n_examples, model.len_last_layer)

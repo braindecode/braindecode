@@ -36,6 +36,7 @@ class SleepStagerBlanco2020(nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
+
     References
     ----------
     .. [Blanco2020] Fernandez-Blanco, E., Rivero, D. & Pazos, A. Convolutional

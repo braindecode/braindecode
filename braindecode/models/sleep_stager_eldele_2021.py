@@ -25,7 +25,7 @@ class SleepStagerEldele2021(nn.Module):
     Parameters
     ----------
     sfreq : float
-        EEG sampling frequency.
+        EEG sampling frequency. Model is rigid to 100Hz for now.
     n_tce : int
         Number of TCE clones.
     d_model : int
@@ -41,7 +41,7 @@ class SleepStagerEldele2021(nn.Module):
     dropout : float
         Dropout rate in the PositionWiseFeedforward layer and the TCE layers.
     input_size_s : float
-        Size of the input, in seconds.
+        Size of the input, in seconds. Model is rigid to 30s for now.
     n_classes : int
         Number of classes.
     afr_reduced_cnn_size : int
@@ -71,10 +71,7 @@ class SleepStagerEldele2021(nn.Module):
         ff = _PositionwiseFeedForward(d_model, d_ff, dropout)
         tce = _TCE(_EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), afr_reduced_cnn_size,
                                  dropout), n_tce)
-        self.feature_extractor = nn.Sequential(
-            mrcnn,
-            tce
-        )
+        self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = self._len_last_layer(input_size)
         self.return_feats = return_feats
         if not return_feats:
@@ -141,16 +138,12 @@ class _SEBasicBlock(nn.Module):
         self.se = _SELayer(planes, reduction)
         self.downsample = downsample
         self.stride = stride
+        self.features = nn.Sequential(self.conv1, self.bn1, self.relu, self.conv2, self.bn2,
+                                      self.se)
 
     def forward(self, x):
         residual = x
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-
-        out = self.conv2(out)
-        out = self.bn2(out)
-        out = self.se(out)
+        out = self.features(x)
 
         if self.downsample is not None:
             residual = self.downsample(x)
