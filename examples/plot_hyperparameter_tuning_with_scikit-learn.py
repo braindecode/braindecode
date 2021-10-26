@@ -212,14 +212,14 @@ clf = EEGClassifier(
 ######################################################################
 # Use scikit-learn GridSearchCV to tune hyperparameters. To be able
 # to do this, we slice the braindecode datasets that by default return
-# a 3-tuple to return X and y respectively.
+# a 3-tuple to return X and y, respectively.
 #
 
 ######################################################################
 #    **Note**: The KFold object splits the datasets based on their
 #    length which corresponds to the number of compute windows. In
 #    this (trialwise) example this is fine to do. In a cropped setting
-#    this is not advisable since this might slip compute windows
+#    this is not advisable since this might split compute windows
 #    of a single trial into both train and valid set.
 #
 
