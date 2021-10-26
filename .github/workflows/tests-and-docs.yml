@@ -9,6 +9,7 @@ jobs:
   Install-Test-Doc-Braindecode:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         skorch_version: ['main', 'stable']
     defaults:
