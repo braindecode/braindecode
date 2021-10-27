@@ -109,7 +109,7 @@ from braindecode.augmentation import FrequencyShift
 transform = FrequencyShift(
     probability=1.,  # defines the probability of actually modifying the input
     sfreq=sfreq,
-    max_delta_freq=10.  # -> fixed frequency shift for visualization
+    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
 ######################################################################
@@ -124,7 +124,9 @@ import torch
 
 epochs = train_set.datasets[0].windows  # original epochs
 X = epochs.get_data()
-X_tr = transform(X).numpy()
+# This allows to apply the transform with a fixed shift (10 Hz) for
+# visualization instead of sampling the shift randomly between -2 and 2 Hz
+X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
 
 ######################################################################
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
@@ -145,7 +147,7 @@ def plot_psd(data, axis, label, color):
 
 _, ax = plt.subplots()
 plot_psd(X, ax, 'original', 'k')
-plot_psd(X_tr, ax, 'shifted', 'r')
+plot_psd(X_tr.numpy(), ax, 'shifted', 'r')
 
 ax.set(title='Multitaper PSD (gradiometers)', xlabel='Frequency (Hz)',
        ylabel='Power Spectral Density (dB)')
@@ -207,7 +209,7 @@ from braindecode.augmentation import AugmentedDataLoader, SignFlip
 freq_shift = FrequencyShift(
     probability=.5,
     sfreq=sfreq,
-    max_delta_freq=-2.  # the frequency shifts are sampled now between -2 and 2 Hz
+    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
 sign_flip = SignFlip(probability=.1)
