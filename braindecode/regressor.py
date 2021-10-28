@@ -301,3 +301,8 @@ class EEGRegressor(NeuralNetRegressor):
             dataset=X,
             return_targets=return_targets,
         )
+
+    def fit(self, X, y, **kwargs):
+        if y.ndim == 1:
+            y = np.array(y).reshape(-1, 1)
+        super().fit(X=X, y=y, **kwargs)
