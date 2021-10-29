@@ -472,7 +472,7 @@ def _create_windows_from_target_channels(
 
 def _compute_window_inds(
         starts, stops, start_offset, stop_offset, size, stride,
-        drop_last_window):
+        drop_last_window, accepted_bads_ratio=0.1):
     """Compute window start and stop indices.
 
     Create window starts from trial onsets (shifted by start_offset) to trial
@@ -495,6 +495,11 @@ def _compute_window_inds(
         Stride between windows.
     drop_last_window: bool
         Toggles of shifting last window within range or dropping last samples.
+    accepted_bads_ratio: float, optional
+        Acceptable proportion of bad trials within a raw. If the number of
+        trials whose length is exceeded by the window size is smaller than
+        this, then only the corresponding trials are dropped, but the
+        computation continues. Otherwise, an error is raised.
 
     Returns
     -------
@@ -507,8 +512,17 @@ def _compute_window_inds(
     starts += start_offset
     stops += stop_offset
     if any(size > (stops-starts)):
-        raise ValueError(f'Window size {size} exceeds trial duration '
-                         f'{(stops-starts).min()}.')
+        bads_mask = size > (stops-starts)
+        min_duration = (stops-starts).min()
+        if sum(bads_mask) < accepted_bads_ratio * len(starts):
+            starts = starts[np.logical_not(bads_mask)]
+            stops = stops[np.logical_not(bads_mask)]
+            warnings.warn(
+                f'Trials {np.where(bads_mask)[0]} are being dropped as the'
+                f'window size {size} exceeds theur duration {min_duration}.')
+        else:
+            raise ValueError(f'Window size {size} exceeds trial duration '
+                             f'for too many trials {min_duration}.')
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
