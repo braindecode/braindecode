@@ -518,8 +518,8 @@ def _compute_window_inds(
             starts = starts[np.logical_not(bads_mask)]
             stops = stops[np.logical_not(bads_mask)]
             warnings.warn(
-                f'Trials {np.where(bads_mask)[0]} are being dropped as the'
-                f'window size {size} exceeds theur duration {min_duration}.')
+                f'Trials {np.where(bads_mask)[0]} are being dropped as the '
+                f'window size ({size}) exceeds their duration {min_duration}.')
         else:
             raise ValueError(f'Window size {size} exceeds trial duration '
                              f'for too many trials {min_duration}.')
