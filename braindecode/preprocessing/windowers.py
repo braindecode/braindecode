@@ -522,7 +522,7 @@ def _compute_window_inds(
                 f'window size ({size}) exceeds their duration {min_duration}.')
         else:
             raise ValueError(f'Window size {size} exceeds trial duration '
-                             f'for too many trials {min_duration}.')
+                             f'({min_duration}) for too many trials.')
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
