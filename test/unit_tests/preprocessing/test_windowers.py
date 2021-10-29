@@ -446,7 +446,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                 'window_size_samples': 100, 'window_stride_samples': 100,
                 'drop_last_window': False, 'mapping': {'test': 0}, 'preload': False,
                 'drop_bad_windows': True, 'picks': picks, 'reject': reject,
-                'flat': flat, 'on_missing': on_missing})
+                'flat': flat, 'on_missing': on_missing, 'accepted_bads_ratio': 0.1})
         ]
 
     windows = create_fixed_length_windows(
@@ -594,6 +594,8 @@ def test_window_sizes_too_large(concat_ds_targets):
             trial_start_offset_samples=0,
             trial_stop_offset_samples=0,
             drop_last_window=False,
+            accepted_bads_ratio=0.5,
+            on_missing='ignore'
         )
 
 
