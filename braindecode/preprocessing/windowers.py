@@ -30,7 +30,7 @@ def create_windows_from_events(
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
-        on_missing='error', accepted_bads_ratio=0.1, n_jobs=1):
+        on_missing='error', accepted_bads_ratio=0.0, n_jobs=1):
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
@@ -98,7 +98,7 @@ def create_windows_from_events(
         the number of trials whose length is exceeded by the window size is
         smaller than this, then only the corresponding trials are dropped, but
         the computation continues. Otherwise, an error is raised. Defaults to
-        0.1.
+        0.0 (raise an error).
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
 
@@ -211,7 +211,7 @@ def _create_windows_from_events(
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
-        on_missing='error', accepted_bads_ratio=0.1):
+        on_missing='error', accepted_bads_ratio=0.0):
     """Create WindowsDataset from BaseDataset based on events.
 
     Parameters
@@ -520,15 +520,19 @@ def _compute_window_inds(
     if any(size > (stops-starts)):
         bads_mask = size > (stops-starts)
         min_duration = (stops-starts).min()
-        if sum(bads_mask) < accepted_bads_ratio * len(starts):
+        if sum(bads_mask) <= accepted_bads_ratio * len(starts):
             starts = starts[np.logical_not(bads_mask)]
             stops = stops[np.logical_not(bads_mask)]
             warnings.warn(
                 f'Trials {np.where(bads_mask)[0]} are being dropped as the '
                 f'window size ({size}) exceeds their duration {min_duration}.')
         else:
+            current_ratio = sum(bads_mask) / len(starts)
             raise ValueError(f'Window size {size} exceeds trial duration '
-                             f'({min_duration}) for too many trials.')
+                             f'({min_duration}) for too many trials '
+                             f'({current_ratio * 100}%). Set '
+                             f'accepted_bads_ratio to at least {current_ratio}'
+                             'and restart training to be able to continue.')
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
