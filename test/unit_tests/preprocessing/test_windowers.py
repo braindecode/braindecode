@@ -446,7 +446,8 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                 'window_size_samples': 100, 'window_stride_samples': 100,
                 'drop_last_window': False, 'mapping': {'test': 0}, 'preload': False,
                 'drop_bad_windows': True, 'picks': picks, 'reject': reject,
-                'flat': flat, 'on_missing': on_missing})
+                'flat': flat, 'on_missing': on_missing,
+                'accepted_bads_ratio': 0.0})
         ]
 
     windows = create_fixed_length_windows(
@@ -546,6 +547,7 @@ def test_window_sizes_from_events(concat_ds_targets):
 
 def test_window_sizes_too_large(concat_ds_targets):
     concat_ds, targets = concat_ds_targets
+    # Window size larger than all trials
     window_size = len(concat_ds.datasets[0]) + 1
     with pytest.raises(
             ValueError, match=f'Window size {window_size} exceeds trial durat'):
@@ -565,6 +567,36 @@ def test_window_sizes_too_large(concat_ds_targets):
             window_size_samples=window_size,
             window_stride_samples=window_size,
             drop_last_window=False,
+        )
+
+    # Window size larger than one single trial
+    annots = concat_ds.datasets[0].raw.annotations
+    annot_0 = annots[0]
+    # Window equal original trials size
+    window_size = int(
+        annot_0["duration"] * concat_ds.datasets[0].raw.info['sfreq'])
+
+    # Make first trial 1 second shorter
+    annot_0["duration"] -= 1
+
+    # Replace first trial by a new shorter one
+    annots.delete(0)
+    del annot_0["orig_time"]
+    annots.append(**annot_0)
+    concat_ds.datasets[0].raw.set_annotations(annots)
+    with pytest.warns(
+            UserWarning,
+            match=".* are being dropped as the window size .*"
+    ):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            drop_last_window=False,
+            accepted_bads_ratio=0.5,
+            on_missing='ignore'
         )
 
 
