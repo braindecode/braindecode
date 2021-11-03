@@ -109,7 +109,6 @@ class SleepStagerBlanco2020(nn.Module):
 
     def forward(self, x):
         """Forward pass.
-        
         Parameters
         ----------
         x: torch.Tensor
