@@ -177,7 +177,9 @@ device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 
-# Set random seed to be able to reproduce results
+# Set random seed to be able to roughly reproduce results
+# Note that with cudnn benchmark set to True, GPU indeterminism
+# may still make results substantially different between runs
 seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 

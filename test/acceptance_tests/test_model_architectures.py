@@ -11,7 +11,7 @@ from braindecode.util import set_random_seeds
 
 
 def test_tcn():
-    set_random_seeds(0, False, deterministic=False)
+    set_random_seeds(0, False)
     tcn = TCN(
         n_in_chans=21,
         n_outputs=2,

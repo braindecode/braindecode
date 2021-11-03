@@ -265,7 +265,9 @@ from braindecode.models import SleepStagerChambon2018
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if device == 'cuda':
     torch.backends.cudnn.benchmark = True
-# Set random seed to be able to reproduce results
+# Set random seed to be able to roughly reproduce results
+# Note that with cudnn benchmark set to True, GPU indeterminism
+# may still make results substantially different between runs
 set_random_seeds(seed=random_state, cuda=device == 'cuda')
 
 # Extract number of channels and time steps from dataset
