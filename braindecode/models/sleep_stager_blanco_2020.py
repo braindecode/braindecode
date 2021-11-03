@@ -1,6 +1,6 @@
 # Authors: Divyesh Narayanan <divyesh.narayanan@gmail.com>
-# #
-# # License: BSD (3-clause)
+#
+# License: BSD (3-clause)
 
 import numpy as np
 import torch
@@ -36,6 +36,10 @@ class SleepStagerBlanco2020(nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
+    return_feats : bool
+        If True, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If False, pass the features through
+        the final linear layer.
 
     References
     ----------
@@ -104,8 +108,8 @@ class SleepStagerBlanco2020(nn.Module):
         return len(out.flatten())
 
     def forward(self, x):
-        """
-        Forward pass.
+        """Forward pass.
+        
         Parameters
         ----------
         x: torch.Tensor

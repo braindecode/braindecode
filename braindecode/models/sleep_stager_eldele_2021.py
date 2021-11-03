@@ -2,13 +2,16 @@
 #
 # License: BSD (3-clause)
 
-import torch
-from torch import nn
-import torch.nn.functional as F
-import numpy as np
 import math
 import copy
 from copy import deepcopy
+import warnings
+
+import numpy as np
+
+import torch
+from torch import nn
+import torch.nn.functional as F
 
 
 class SleepStagerEldele2021(nn.Module):
@@ -22,10 +25,13 @@ class SleepStagerEldele2021(nn.Module):
     The second module is the temporal context encoder (TCE) that leverages a multi-head attention
     mechanism to capture the temporal dependencies among the extracted features.
 
+    Warning - This model was designed for signals of 30 seconds at 100Hz, to use any other input is
+    likely to make the model perform in unintended ways.
+
     Parameters
     ----------
     sfreq : float
-        EEG sampling frequency. Model is rigid to 100Hz for now.
+        EEG sampling frequency.
     n_tce : int
         Number of TCE clones.
     d_model : int
@@ -33,18 +39,19 @@ class SleepStagerEldele2021(nn.Module):
         Also the input dimension of the first FC layer in the feed forward
         and the output of the second FC layer in the same.
         Increase for higher sampling rate/signal length.
+        It should be divisible by n_attn_heads
     d_ff : int
         Output dimension of the first FC layer in the feed forward and the
         input dimension of the second FC layer in the same.
     n_attn_heads : int
-        Number of attention heads.
+        Number of attention heads. It should be a factor of d_model
     dropout : float
         Dropout rate in the PositionWiseFeedforward layer and the TCE layers.
     input_size_s : float
-        Size of the input, in seconds. Model is rigid to 30s for now.
+        Size of the input, in seconds.
     n_classes : int
         Number of classes.
-    afr_reduced_cnn_size : int
+    after_reduced_cnn_size : int
         Number of output channels produced by the convolution in the AFR module.
     return_feats : bool
         If True, return the features, i.e. the output of the feature extractor
@@ -61,27 +68,32 @@ class SleepStagerEldele2021(nn.Module):
     """
 
     def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1,
-                 input_size_s=30, n_classes=5, afr_reduced_cnn_size=30, return_feats=False):
+                 input_size_s=30, n_classes=5, after_reduced_cnn_size=30, return_feats=False):
         super(SleepStagerEldele2021, self).__init__()
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
-        mrcnn = _MRCNN(afr_reduced_cnn_size)
-        attn = _MultiHeadedAttention(n_attn_heads, d_model, afr_reduced_cnn_size)
+        if input_size_s != 30 or sfreq != 100 or d_model != 80:
+            warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
+                          "with d_model at 80 to use anything other than this may "
+                          "cause errors or cause the model to perform in other ways that intended",
+                          UserWarning)
+        mrcnn = _MRCNN(after_reduced_cnn_size)
+        attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, dropout)
-        tce = _TCE(_EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), afr_reduced_cnn_size,
+        tce = _TCE(_EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size,
                                  dropout), n_tce)
+
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = self._len_last_layer(input_size)
         self.return_feats = return_feats
         if not return_feats:
-            self.fc = nn.Linear(d_model * afr_reduced_cnn_size, n_classes)
+            self.fc = nn.Linear(d_model * after_reduced_cnn_size, n_classes)
 
     def _len_last_layer(self, input_size):
         self.feature_extractor.eval()
         with torch.no_grad():
-            out = self.feature_extractor(
-                torch.Tensor(1, 1, input_size))
+            out = self.feature_extractor(torch.Tensor(1, 1, input_size))
         self.feature_extractor.train()
         return len(out.flatten())
 
@@ -155,7 +167,7 @@ class _SEBasicBlock(nn.Module):
 
 
 class _MRCNN(nn.Module):
-    def __init__(self, afr_reduced_cnn_size):
+    def __init__(self, after_reduced_cnn_size):
         super(_MRCNN, self).__init__()
         drate = 0.5
         self.GELU = nn.GELU()
@@ -196,7 +208,7 @@ class _MRCNN(nn.Module):
         )
         self.dropout = nn.Dropout(drate)
         self.inplanes = 128
-        self.AFR = self._make_layer(_SEBasicBlock, afr_reduced_cnn_size, 1)
+        self.AFR = self._make_layer(_SEBasicBlock, after_reduced_cnn_size, 1)
 
     def _make_layer(self, block, planes, blocks, stride=1):  # makes residual SE block
         downsample = None
@@ -229,6 +241,7 @@ class _MRCNN(nn.Module):
 
 def _attention(query, key, value, dropout=None):
     """Implementation of Scaled dot product attention"""
+    # d_k - dimension of the query and key vectors
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
 
@@ -267,14 +280,14 @@ class _CausalConv1d(torch.nn.Conv1d):
 
 
 class _MultiHeadedAttention(nn.Module):
-    def __init__(self, h, d_model, afr_reduced_cnn_size, dropout=0.1):
+    def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
         super(_MultiHeadedAttention, self).__init__()
         assert d_model % h == 0
-        self.d_k = d_model // h
+        self.d_per_head = d_model // h
         self.h = h
 
-        self.convs = _clones(_CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size,
+        self.convs = _clones(_CausalConv1d(after_reduced_cnn_size, after_reduced_cnn_size,
                                            kernel_size=7, stride=1), 3)
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
@@ -283,18 +296,20 @@ class _MultiHeadedAttention(nn.Module):
         """Implements Multi-head attention"""
         nbatches = query.size(0)
 
-        query = query.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-        key = self.convs[1](key).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-        value = self.convs[2](value).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+        query = query.view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
+        key = self.convs[1](key).view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
+        value = self.convs[2](value).view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
 
         x, self.attn = _attention(query, key, value, dropout=self.dropout)
 
         x = x.transpose(1, 2).contiguous() \
-            .view(nbatches, -1, self.h * self.d_k)
+            .view(nbatches, -1, self.h * self.d_per_head)
 
         return self.linear(x)
 
 
+#
+# class _LayerNorm(nn.Module):
 class _SublayerOutput(nn.Module):
     """
     A residual connection followed by a layer norm.
@@ -339,13 +354,13 @@ class _EncoderLayer(nn.Module):
     Each of these sublayers have residual and layer norm, implemented by _SublayerOutput.
     """
 
-    def __init__(self, size, self_attn, feed_forward, afr_reduced_cnn_size, dropout):
+    def __init__(self, size, self_attn, feed_forward, after_reduced_cnn_size, dropout):
         super(_EncoderLayer, self).__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
         self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
         self.size = size
-        self.conv = _CausalConv1d(afr_reduced_cnn_size, afr_reduced_cnn_size, kernel_size=7,
+        self.conv = _CausalConv1d(after_reduced_cnn_size, after_reduced_cnn_size, kernel_size=7,
                                   stride=1, dilation=1)
 
     def forward(self, x_in):
