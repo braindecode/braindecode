@@ -29,7 +29,7 @@ class DummyTransform(Transform):
         super().__init__(probability=probability, random_state=random_state)
 
     def get_params(self, X, y):
-        return {"k": self.k,}
+        return {"k": self.k}
 
 
 @pytest.fixture
