@@ -208,7 +208,7 @@ class ChannelsShuffle(Transform):
         Float setting the probability of applying the operation.
     p_shuffle: float | None, optional
         Float between 0 and 1 setting the probability of including the channel
-        in the set of permutted channels. Defaults to 0.2.
+        in the set of permuted channels. Defaults to 0.2.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -251,7 +251,7 @@ class ChannelsShuffle(Transform):
             Contains
             * p_shuffle : float
                 Float between 0 and 1 setting the probability of including the
-                channel in the set of permutted channels.
+                channel in the set of permuted channels.
             * random_state : numpy.random.Generator
                 The generator to use.
         """
