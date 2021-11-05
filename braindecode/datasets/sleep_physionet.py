@@ -62,11 +62,11 @@ class SleepPhysionet(BaseConcatDataset):
     def _load_raw(raw_fname, ann_fname, preload, load_eeg_only=True,
                   crop_wake_mins=False):
         ch_mapping = {
-            'EOG horizontal': 'eog',
-            'Resp oro-nasal': 'misc',
-            'EMG submental': 'misc',
-            'Temp rectal': 'misc',
-            'Event marker': 'misc'
+            'horizontal': 'eog',
+            'oro-nasal': 'misc',
+            'submental': 'misc',
+            'rectal': 'misc',
+            'marker': 'misc'
         }
         exclude = list(ch_mapping.keys()) if load_eeg_only else ()
 

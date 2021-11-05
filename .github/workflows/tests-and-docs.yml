@@ -28,7 +28,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/mne_data
-        key: ${{ runner.os }}-v2
+        key: ${{ runner.os }}-v3
     - name: Setting Up Conda Braindecode Environment
       uses: conda-incubator/setup-miniconda@v2
       with:
