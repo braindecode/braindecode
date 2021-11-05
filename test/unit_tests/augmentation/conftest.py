@@ -46,7 +46,7 @@ class MockModule(torch.nn.Module):
 
 
 @pytest.fixture
-def mock_clf():
+def augmented_mock_clf():
     return EEGClassifier(
         MockModule(np.random.rand(4, 2)),
         optimizer=optim.Adam,

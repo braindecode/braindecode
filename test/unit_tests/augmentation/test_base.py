@@ -176,11 +176,11 @@ def test_dataset_with_transform(concat_windows_dataset):
     assert torch.all(transformed_X == factor)
 
 
-def test_set_params(mock_clf, random_batch):
-    mock_clf.set_params(
+def test_set_params(augmented_mock_clf, random_batch):
+    augmented_mock_clf.set_params(
         train_split=predefined_split(random_batch)
     )
     assert isinstance(
-        mock_clf.train_split,
+        augmented_mock_clf.train_split,
         type(predefined_split(random_batch))
     )
