@@ -50,7 +50,7 @@ class Transform(torch.nn.Module):
         self._probability = probability
         self.rng = check_random_state(random_state)
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         return dict()
 
     def forward(self, X: Tensor, y: Tensor = None) -> Output:
