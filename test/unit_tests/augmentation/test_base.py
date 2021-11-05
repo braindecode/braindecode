@@ -2,15 +2,16 @@
 #
 # License: BSD (3-clause)
 
-import pytest
-import numpy as np
-from sklearn.utils import check_random_state
-import torch
 import mne
+import numpy as np
+import pytest
+import torch
+from sklearn.utils import check_random_state
+from skorch.helper import predefined_split
 
-from braindecode.augmentation.base import (
-    Transform, Compose, AugmentedDataLoader
-)
+from braindecode.augmentation.base import AugmentedDataLoader
+from braindecode.augmentation.base import Compose
+from braindecode.augmentation.base import Transform
 from braindecode.datautil import create_from_mne_epochs
 
 
@@ -173,3 +174,13 @@ def test_dataset_with_transform(concat_windows_dataset):
     concat_windows_dataset.transform = transform
     transformed_X = concat_windows_dataset[0][0]
     assert torch.all(transformed_X == factor)
+
+
+def test_set_params(mock_clf, random_batch):
+    mock_clf.set_params(
+        train_split=predefined_split(random_batch)
+    )
+    assert isinstance(
+        mock_clf.train_split,
+        type(predefined_split(random_batch))
+    )
