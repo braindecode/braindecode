@@ -19,16 +19,16 @@ class SleepStagerChambon2018(nn.Module):
     sfreq : float
         EEG sampling frequency.
     n_conv_chs : int
-        Number of convolutional channels. Set to 8 in [1]_.
+        Number of convolutional channels. Set to 8 in [Chambon2018]_.
     time_conv_size_s : float
         Size of filters in temporal convolution layers, in seconds. Set to 0.5
-        in [1]_ (64 samples at sfreq=128).
+        in [Chambon2018]_ (64 samples at sfreq=128).
     max_pool_size_s : float
-        Max pooling size, in seconds. Set to 0.125 in [1]_ (16 samples at
-        sfreq=128).
+        Max pooling size, in seconds. Set to 0.125 in [Chambon2018]_ (16
+        samples at sfreq=128).
     pad_size_s : float
-        Paddind size, in seconds. Set to 0.25 in [1]_ (half the temporal
-        convolution kernel size).
+        Paddind size, in seconds. Set to 0.25 in [Chambon2018]_ (half the
+        temporal convolution kernel size).
     input_size_s : float
         Size of the input, in seconds.
     n_classes : int
