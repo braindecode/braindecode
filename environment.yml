@@ -18,5 +18,5 @@ dependencies:
 - joblib
 - memory_profiler
 - pip:
-  - mne==0.23.0
+  - mne
   - https://github.com/braindecode/braindecode/zipball/master
