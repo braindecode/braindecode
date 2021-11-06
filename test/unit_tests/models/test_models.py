@@ -207,8 +207,6 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     # (100, 5, 30, 80) - Physionet Sleep
     # (125, 4, 30, 100) - SHHS
     rng = np.random.RandomState(42)
-    sfreq = 100
-    input_size_s = 30
     n_channels = 1
     n_examples = 10
 
