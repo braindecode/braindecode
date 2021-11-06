@@ -13,7 +13,8 @@ from .base import BaseDataset, BaseConcatDataset, WindowsDataset
 def create_from_mne_raw(
         raws, trial_start_offset_samples, trial_stop_offset_samples,
         window_size_samples, window_stride_samples, drop_last_window,
-        descriptions=None, mapping=None, preload=False, drop_bad_windows=True):
+        descriptions=None, mapping=None, preload=False, drop_bad_windows=True,
+        accepted_bads_ratio=0.0):
     """Create WindowsDatasets from mne.RawArrays
 
     Parameters
@@ -42,6 +43,12 @@ def create_from_mne_raw(
         step allows identifying e.g., windows that fall outside of the
         continuous recording. It is suggested to run this step here as otherwise
         the BaseConcatDataset has to be updated as well.
+    accepted_bads_ratio: float, optional
+        Acceptable proportion of trials withinconsistent length in a raw. If
+        the number of trials whose length is exceeded by the window size is
+        smaller than this, then only the corresponding trials are dropped, but
+        the computation continues. Otherwise, an error is raised. Defaults to
+        0.0 (raise an error).
 
     Returns
     -------
@@ -71,7 +78,8 @@ def create_from_mne_raw(
         drop_last_window=drop_last_window,
         mapping=mapping,
         drop_bad_windows=drop_bad_windows,
-        preload=preload
+        preload=preload,
+        accepted_bads_ratio=accepted_bads_ratio,
     )
     return windows_datasets
 

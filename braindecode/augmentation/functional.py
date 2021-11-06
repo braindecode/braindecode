@@ -170,6 +170,8 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
         device=device,
         random_state=random_state
     )
+    if isinstance(eps, torch.Tensor):
+        eps = eps.to(device)
     f_shifted = f * torch.exp(eps * random_phase)
     shifted = ifft(f_shifted, dim=-1)
     return shifted.real.float()
@@ -226,7 +228,7 @@ def _pick_channels_randomly(X, p_pick, random_state):
         device=X.device,
     )
     # equivalent to a 0s and 1s mask
-    return torch.sigmoid(1000*(unif_samples - p_pick)).to(X.device)
+    return torch.sigmoid(1000*(unif_samples - p_pick))
 
 
 def channels_dropout(X, y, p_drop, random_state=None):
@@ -361,11 +363,13 @@ def gaussian_noise(X, y, std, random_state=None):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
     rng = check_random_state(random_state)
+    if isinstance(std, torch.Tensor):
+        std = std.to(X.device)
     noise = torch.from_numpy(
         rng.normal(
             loc=np.zeros(X.shape),
             scale=1
-        )
+        ),
     ).float().to(X.device) * std
     transformed_X = X + noise
     return transformed_X, y
@@ -578,10 +582,10 @@ def frequency_shift(X, y, delta_freq, sfreq):
 
 def _torch_normalize_vectors(rr):
     """Normalize surface vertices."""
-    new_rr = rr.clone()
-    size = torch.linalg.norm(rr, axis=1)
-    mask = (size > 0)
-    new_rr[mask] = rr[mask] / size[mask].unsqueeze(-1)
+    norm = torch.linalg.norm(rr, axis=1, keepdim=True)
+    mask = (norm > 0)
+    norm[~mask] = 1  # in case norm is zero, divide by 1
+    new_rr = rr / norm
     return new_rr
 
 

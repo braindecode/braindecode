@@ -198,7 +198,8 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
                 'drop_last_window': False, 'mapping':  {
                     'feet': 0, 'left_hand': 1, 'right_hand': 2, 'tongue': 3},
                 'preload': False, 'drop_bad_windows': True, 'picks': None,
-                'reject': None, 'flat': None, 'on_missing': 'error'})
+                'reject': None, 'flat': None, 'on_missing': 'error',
+                'accepted_bads_ratio': 0.0})
         ]
         assert ds.window_preproc_kwargs == [
             ('pick_channels', {'ch_names': ['Cz']}),

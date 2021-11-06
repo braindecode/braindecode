@@ -30,7 +30,7 @@ def create_windows_from_events(
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
-        on_missing='error', n_jobs=1):
+        on_missing='error', accepted_bads_ratio=0.0, n_jobs=1):
     """Create windows based on events in mne.Raw.
 
     This function extracts windows of size window_size_samples in the interval
@@ -93,6 +93,12 @@ def create_windows_from_events(
     on_missing: str
         What to do if one or several event ids are not found in the recording.
         Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
+    accepted_bads_ratio: float, optional
+        Acceptable proportion of trials withinconsistent length in a raw. If
+        the number of trials whose length is exceeded by the window size is
+        smaller than this, then only the corresponding trials are dropped, but
+        the computation continues. Otherwise, an error is raised. Defaults to
+        0.0 (raise an error).
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
 
@@ -117,7 +123,7 @@ def create_windows_from_events(
             trial_start_offset_samples, trial_stop_offset_samples,
             window_size_samples, window_stride_samples, drop_last_window,
             mapping, preload, drop_bad_windows, picks, reject, flat,
-            on_missing) for ds in concat_ds.datasets)
+            on_missing, accepted_bads_ratio) for ds in concat_ds.datasets)
     return BaseConcatDataset(list_of_windows_ds)
 
 
@@ -205,7 +211,7 @@ def _create_windows_from_events(
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
-        on_missing='error'):
+        on_missing='error', accepted_bads_ratio=0.0):
     """Create WindowsDataset from BaseDataset based on events.
 
     Parameters
@@ -280,7 +286,7 @@ def _create_windows_from_events(
     i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
         onsets, stops, trial_start_offset_samples,
         trial_stop_offset_samples, window_size_samples,
-        window_stride_samples, drop_last_window)
+        window_stride_samples, drop_last_window, accepted_bads_ratio)
 
     events = [[start, window_size_samples, description[i_trials[i_start]]]
               for i_start, start in enumerate(starts)]
@@ -472,7 +478,7 @@ def _create_windows_from_target_channels(
 
 def _compute_window_inds(
         starts, stops, start_offset, stop_offset, size, stride,
-        drop_last_window):
+        drop_last_window, accepted_bads_ratio):
     """Compute window start and stop indices.
 
     Create window starts from trial onsets (shifted by start_offset) to trial
@@ -495,6 +501,11 @@ def _compute_window_inds(
         Stride between windows.
     drop_last_window: bool
         Toggles of shifting last window within range or dropping last samples.
+    accepted_bads_ratio: float
+        Acceptable proportion of bad trials within a raw. If the number of
+        trials whose length is exceeded by the window size is smaller than
+        this, then only the corresponding trials are dropped, but the
+        computation continues. Otherwise, an error is raised.
 
     Returns
     -------
@@ -507,8 +518,21 @@ def _compute_window_inds(
     starts += start_offset
     stops += stop_offset
     if any(size > (stops-starts)):
-        raise ValueError(f'Window size {size} exceeds trial duration '
-                         f'{(stops-starts).min()}.')
+        bads_mask = size > (stops-starts)
+        min_duration = (stops-starts).min()
+        if sum(bads_mask) <= accepted_bads_ratio * len(starts):
+            starts = starts[np.logical_not(bads_mask)]
+            stops = stops[np.logical_not(bads_mask)]
+            warnings.warn(
+                f'Trials {np.where(bads_mask)[0]} are being dropped as the '
+                f'window size ({size}) exceeds their duration {min_duration}.')
+        else:
+            current_ratio = sum(bads_mask) / len(starts)
+            raise ValueError(f'Window size {size} exceeds trial duration '
+                             f'({min_duration}) for too many trials '
+                             f'({current_ratio * 100}%). Set '
+                             f'accepted_bads_ratio to at least {current_ratio}'
+                             'and restart training to be able to continue.')
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):

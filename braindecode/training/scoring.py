@@ -11,6 +11,7 @@ import warnings
 
 import numpy as np
 import torch
+from mne.utils.check import check_version
 from skorch.callbacks.scoring import EpochScoring
 from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
@@ -193,7 +194,7 @@ class CroppedTrialEpochScoring(EpochScoring):
 
             # Store the computed trial preds for all Cropped Callbacks
             # that are also on same set
-            cbs = net._default_callbacks + net.callbacks
+            cbs = net.callbacks_
             epoch_cbs = [
                 cb for name, cb in cbs if
                 isinstance(cb, CroppedTrialEpochScoring) and (
@@ -277,7 +278,7 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
 
             # Store the computed trial preds for all Cropped Callbacks
             # that are also on same set
-            cbs = net._default_callbacks + net.callbacks
+            cbs = net.callbacks_
             epoch_cbs = [
                 cb for name, cb in cbs if
                 isinstance(cb, CroppedTimeSeriesEpochScoring) and (
@@ -351,9 +352,14 @@ class PostEpochTrainScoring(EpochScoring):
             iterator = net.get_iterator(dataset, training=False)
             y_preds = []
             y_test = []
-            for data in iterator:
-                batch_X, batch_y = unpack_data(data)
-                yp = net.evaluation_step(batch_X, training=False)
+            for batch in iterator:
+                batch_X, batch_y = unpack_data(batch)
+                # TODO: remove after skorch 0.10 release
+                if not check_version('skorch', min_version='0.10.1'):
+                    yp = net.evaluation_step(batch_X, training=False)
+                # X, y unpacking has been pushed downstream in skorch 0.10
+                else:
+                    yp = net.evaluation_step(batch, training=False)
                 yp = yp.to(device="cpu")
                 y_test.append(self.target_extractor(batch_y))
                 y_preds.append(yp)
@@ -365,7 +371,7 @@ class PostEpochTrainScoring(EpochScoring):
             # Skorch-Net (NeuralNet, BraindecodeClassifier etc.)
             # (They will be reinitialized to empty lists by skorch
             # each epoch)
-            cbs = net._default_callbacks + net.callbacks
+            cbs = net.callbacks_
             epoch_cbs = [
                 cb for name, cb in cbs if isinstance(cb, PostEpochTrainScoring)
             ]
