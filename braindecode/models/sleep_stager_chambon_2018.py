@@ -27,7 +27,7 @@ class SleepStagerChambon2018(nn.Module):
         Max pooling size, in seconds. Set to 0.125 in [Chambon2018]_ (16
         samples at sfreq=128).
     pad_size_s : float
-        Paddind size, in seconds. Set to 0.25 in [Chambon2018]_ (half the
+        Padding size, in seconds. Set to 0.25 in [Chambon2018]_ (half the
         temporal convolution kernel size).
     input_size_s : float
         Size of the input, in seconds.
