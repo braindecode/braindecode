@@ -201,9 +201,11 @@ def test_tidnet(input_sizes):
     check_forward_pass(model, input_sizes)
 
 
-@pytest.mark.parametrize('n_classes',
-                         [5, 4, 2])
-def test_eldele_2021(n_classes):
+@pytest.mark.parametrize('sfreq,n_classes,input_size_s,d_model',
+                         [(100, 5, 30, 80), (125, 4, 30, 100)])
+def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
+    # (100, 5, 30, 80) - Physionet Sleep
+    # (125, 4, 30, 100) - SHHS
     rng = np.random.RandomState(42)
     sfreq = 100
     input_size_s = 30
@@ -211,7 +213,7 @@ def test_eldele_2021(n_classes):
     n_examples = 10
 
     model = SleepStagerEldele2021(sfreq=sfreq, n_classes=n_classes, input_size_s=input_size_s,
-                                  return_feats=False)
+                                  d_model=d_model, return_feats=False)
     model.eval()
 
     X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
