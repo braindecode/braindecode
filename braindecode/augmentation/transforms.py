@@ -123,6 +123,7 @@ class FTSurrogate(Transform):
         -------
         params : dict
             Contains:
+
             * phase_noise_magnitude : float
                 The magnitude of the transformation.
             * random_state : numpy.random.Generator
@@ -185,6 +186,7 @@ class ChannelsDropout(Transform):
         -------
         params : dict
             Contains
+
             * p_drop : float
                 Float between 0 and 1 setting the probability of dropping each
                 channel.
@@ -249,6 +251,7 @@ class ChannelsShuffle(Transform):
         -------
         params : dict
             Contains
+
             * p_shuffle : float
                 Float between 0 and 1 setting the probability of including the
                 channel in the set of permuted channels.
@@ -317,6 +320,7 @@ class GaussianNoise(Transform):
         -------
         params : dict
             Contains
+
             * std : float
                 Standard deviation to use for the additive noise.
             * random_state : numpy.random.Generator
@@ -401,6 +405,7 @@ class ChannelsSymmetry(Transform):
         -------
         params : dict
             Contains
+
             * permutation : float
                 List of integers defining the new channels order.
         """
@@ -466,6 +471,7 @@ class SmoothTimeMask(Transform):
         -------
         params : dict
             Contains two elements:
+
             * mask_start_per_sample : torch.tensor
                 Tensor of integers containing the position (in last dimension)
                 where to start masking the signal. Should have the same size as
@@ -571,6 +577,7 @@ class BandstopFilter(Transform):
         -------
         params : dict
             Contains
+
             * sfreq : float
                 Sampling frequency of the signals to be filtered.
             * bandwidth : float
@@ -648,6 +655,7 @@ class FrequencyShift(Transform):
         -------
         params : dict
             Contains
+
             * delta_freq : float
                 The amplitude of the frequency shift (in Hz).
             * sfreq : float
@@ -784,6 +792,7 @@ class SensorsRotation(Transform):
         -------
         params : dict
             Contains four elements:
+
             * sensors_positions_matrix : numpy.ndarray
                 Matrix giving the positions of each sensor in a 3D cartesian
                 coordinate system. Should have shape (3, n_channels), where
