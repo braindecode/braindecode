@@ -121,12 +121,18 @@ class FTSurrogate(Transform):
 
         Returns
         -------
-        phase_noise_magnitude : float
-            The magnitude of the transformation.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains:
+
+            * phase_noise_magnitude : float
+                The magnitude of the transformation.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.phase_noise_magnitude, self.rng
+        return {
+            "phase_noise_magnitude": self.phase_noise_magnitude,
+            "random_state": self.rng,
+        }
 
 
 class ChannelsDropout(Transform):
@@ -178,13 +184,19 @@ class ChannelsDropout(Transform):
 
         Returns
         -------
-        p_drop : float
-            Float between 0 and 1 setting the probability of dropping each
-            channel.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains
+
+            * p_drop : float
+                Float between 0 and 1 setting the probability of dropping each
+                channel.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.p_drop, self.rng
+        return {
+            "p_drop": self.p_drop,
+            "random_state": self.rng,
+        }
 
 
 class ChannelsShuffle(Transform):
@@ -198,7 +210,7 @@ class ChannelsShuffle(Transform):
         Float setting the probability of applying the operation.
     p_shuffle: float | None, optional
         Float between 0 and 1 setting the probability of including the channel
-        in the set of permutted channels. Defaults to 0.2.
+        in the set of permuted channels. Defaults to 0.2.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -237,13 +249,19 @@ class ChannelsShuffle(Transform):
 
         Returns
         -------
-        p_shuffle : float
-            Float between 0 and 1 setting the probability of including the
-            channel in the set of permutted channels.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains
+
+            * p_shuffle : float
+                Float between 0 and 1 setting the probability of including the
+                channel in the set of permuted channels.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.p_shuffle, self.rng
+        return {
+            "p_shuffle": self.p_shuffle,
+            "random_state": self.rng,
+        }
 
 
 class GaussianNoise(Transform):
@@ -300,12 +318,18 @@ class GaussianNoise(Transform):
 
         Returns
         -------
-        std : float
-            Standard deviation to use for the additive noise.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains
+
+            * std : float
+                Standard deviation to use for the additive noise.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.std, self.rng
+        return {
+            "std": self.std,
+            "random_state": self.rng,
+        }
 
 
 class ChannelsSymmetry(Transform):
@@ -379,10 +403,13 @@ class ChannelsSymmetry(Transform):
 
         Returns
         -------
-        permutation : float
-            List of integers defining the new channels order.
+        params : dict
+            Contains
+
+            * permutation : float
+                List of integers defining the new channels order.
         """
-        return (self.permutation,)
+        return {"permutation": self.permutation}
 
 
 class SmoothTimeMask(Transform):
@@ -442,13 +469,16 @@ class SmoothTimeMask(Transform):
 
         Returns
         -------
-        mask_start_per_sample : torch.tensor
-            Tensor of integers containing the position (in last dimension)
-            where to start masking the signal. Should have the same size as the
-            first dimension of X (i.e. one start position per example in the
-            batch).
-        mask_len_samples : int
-            Number of consecutive samples to zero out.
+        params : dict
+            Contains two elements:
+
+            * mask_start_per_sample : torch.tensor
+                Tensor of integers containing the position (in last dimension)
+                where to start masking the signal. Should have the same size as
+                the first dimension of X (i.e. one start position per example
+                in the batch).
+            * mask_len_samples : int
+                Number of consecutive samples to zero out.
         """
         seq_length = torch.as_tensor(X.shape[-1], device=X.device)
         mask_len_samples = self.mask_len_samples
@@ -457,7 +487,10 @@ class SmoothTimeMask(Transform):
         mask_start = torch.as_tensor(self.rng.uniform(
             low=0, high=1, size=X.shape[0],
         ), device=X.device) * (seq_length - mask_len_samples)
-        return mask_start, mask_len_samples
+        return {
+            "mask_start_per_sample": mask_start,
+            "mask_len_samples": mask_len_samples,
+        }
 
 
 class BandstopFilter(Transform):
@@ -542,17 +575,21 @@ class BandstopFilter(Transform):
 
         Returns
         -------
-        sfreq : float
-            Sampling frequency of the signals to be filtered.
-        bandwidth : float
-            Bandwidth of the filter, i.e. distance between the low and high cut
-            frequencies.
-        freqs_to_notch : array-like | None
-            Array of floats of size ``(batch_size,)`` containing the center of
-            the frequency band to filter out for each sample in the batch.
-            Frequencies should be greater than ``bandwidth/2 + transition`` and
-            lower than ``sfreq/2 - bandwidth/2 - transition`` (where
-            ``transition = 1 Hz``).
+        params : dict
+            Contains
+
+            * sfreq : float
+                Sampling frequency of the signals to be filtered.
+            * bandwidth : float
+                Bandwidth of the filter, i.e. distance between the low and high
+                cut frequencies.
+            * freqs_to_notch : array-like | None
+                Array of floats of size ``(batch_size,)`` containing the center
+                of the frequency band to filter out for each sample in the
+                batch. Frequencies should be greater than
+                ``bandwidth/2 + transition`` and lower than
+                ``sfreq/2 - bandwidth/2 - transition`` (where
+                ``transition = 1 Hz``).
         """
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
@@ -560,7 +597,11 @@ class BandstopFilter(Transform):
             high=self.max_freq - 1 - 2 * self.bandwidth,
             size=X.shape[0]
         )
-        return self.sfreq, self.bandwidth, notched_freqs
+        return {
+            "sfreq": self.sfreq,
+            "bandwidth": self.bandwidth,
+            "freqs_to_notch": notched_freqs,
+        }
 
 
 class FrequencyShift(Transform):
@@ -612,10 +653,13 @@ class FrequencyShift(Transform):
 
         Returns
         -------
-        delta_freq : float
-            The amplitude of the frequency shift (in Hz).
-        sfreq : float
-            Sampling frequency of the signals to be transformed.
+        params : dict
+            Contains
+
+            * delta_freq : float
+                The amplitude of the frequency shift (in Hz).
+            * sfreq : float
+                Sampling frequency of the signals to be transformed.
         """
         u = torch.as_tensor(
             self.rng.uniform(size=X.shape[0]),
@@ -625,7 +669,10 @@ class FrequencyShift(Transform):
         if isinstance(max_delta_freq, torch.Tensor):
             max_delta_freq = max_delta_freq.to(X.device)
         delta_freq = u * 2 * max_delta_freq - max_delta_freq
-        return delta_freq, self.sfreq
+        return {
+            "delta_freq": delta_freq,
+            "sfreq": self.sfreq,
+        }
 
 
 def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
@@ -743,20 +790,24 @@ class SensorsRotation(Transform):
 
         Returns
         -------
-        sensors_positions_matrix : numpy.ndarray
-            Matrix giving the positions of each sensor in a 3D cartesian
-            coordinate system. Should have shape (3, n_channels), where
-            n_channels is the number of channels.
-        axis : 'x' | 'y' | 'z'
-            Axis around which to rotate.
-        angles : array-like
-            Array of float of shape ``(batch_size,)`` containing the rotation
-            angles (in degrees) for each element of the input batch, sampled
-            uniformly between ``-max_degrees``and ``max_degrees``.
-        spherical_splines : bool
-            Whether to use spherical splines for the interpolation or not. When
-            `False`, standard scipy.interpolate.Rbf (with quadratic kernel)
-            will be used (as in the original paper).
+        params : dict
+            Contains four elements:
+
+            * sensors_positions_matrix : numpy.ndarray
+                Matrix giving the positions of each sensor in a 3D cartesian
+                coordinate system. Should have shape (3, n_channels), where
+                n_channels is the number of channels.
+            * axis : 'x' | 'y' | 'z'
+                Axis around which to rotate.
+            * angles : array-like
+                Array of float of shape ``(batch_size,)`` containing the
+                rotation angles (in degrees) for each element of the input
+                batch, sampled uniformly between ``-max_degrees``and
+                ``max_degrees``.
+            * spherical_splines : bool
+                Whether to use spherical splines for the interpolation or not.
+                When ``False``, standard scipy.interpolate.Rbf (with quadratic
+                kernel) will be used (as in the original paper).
         """
         u = self.rng.uniform(
             low=0,
@@ -768,12 +819,12 @@ class SensorsRotation(Transform):
             max_degrees = max_degrees.to(X.device)
         random_angles = torch.as_tensor(
             u, device=X.device) * 2 * max_degrees - max_degrees
-        return (
-            self.sensors_positions_matrix,
-            self.axis,
-            random_angles,
-            self.spherical_splines
-        )
+        return {
+            "sensors_positions_matrix": self.sensors_positions_matrix,
+            "axis": self.axis,
+            "angles": random_angles,
+            "spherical_splines": self.spherical_splines
+        }
 
 
 class SensorsZRotation(SensorsRotation):
@@ -994,11 +1045,11 @@ class Mixup(Transform):
 
         Returns
         -------
-        lam : torch.Tensor
-            Values sampled uniformly between 0 and 1 setting the linear
-            interpolation between examples.
-        idx_perm: torch.Tensor
-            Shuffled indices of example that are mixed into original examples.
+        params: dict
+            Contains the values sampled uniformly between 0 and 1 setting the
+            linear interpolation between examples (lam) and the shuffled
+            indices of examples that are mixed into original examples
+            (idx_perm).
         """
         device = X.device
         batch_size, _, _ = X.shape
@@ -1016,4 +1067,7 @@ class Mixup(Transform):
 
         idx_perm = torch.as_tensor(self.rng.permutation(batch_size,))
 
-        return lam, idx_perm
+        return {
+            "lam": lam,
+            "idx_perm": idx_perm,
+        }
