@@ -27,7 +27,9 @@ def set_random_seeds(seed, cuda, cudnn_benchmark=None):
     cuda: bool
         Whether to set cuda seed with torch.
     cudnn_benchmark: bool (default=None)
-        Whether pytorch will use cudnn benchmark. When set to True, results may not be reproducible.
+        Whether pytorch will use cudnn benchmark. When set to `None` it will not modify
+        torch.backends.cudnn.benchmark (displays warning in the case of possible lack of
+        reproducibility). When set to True, results may not be reproducible (no warning displayed).
         When set to False it may slow down computations.
 
     Notes
