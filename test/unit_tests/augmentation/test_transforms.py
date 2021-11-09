@@ -2,25 +2,39 @@
 #
 # License: BSD (3-clause)
 
-import pytest
+from test.unit_tests.augmentation.test_base import common_tranform_assertions
+
 import numpy as np
-from scipy.fft import fft, fftfreq, fftshift
-from scipy.signal import find_peaks, welch
-from sklearn.utils import check_random_state
+import pytest
 import torch
+from scipy.fft import fft
+from scipy.fft import fftfreq
+from scipy.fft import fftshift
+from scipy.signal import find_peaks
+from scipy.signal import welch
+from sklearn.utils import check_random_state
+from skorch.helper import predefined_split
 from torch import nn
 
-from braindecode.augmentation.transforms import (
-    TimeReverse, SignFlip, FTSurrogate, ChannelsDropout, ChannelsShuffle,
-    GaussianNoise, ChannelsSymmetry, SmoothTimeMask, BandstopFilter,
-    FrequencyShift, SensorsZRotation, SensorsYRotation, SensorsXRotation,
-    Mixup, _get_standard_10_20_positions
-)
-from braindecode.augmentation.functional import (
-    _frequency_shift, sensors_rotation
-)
+from braindecode.augmentation import IdentityTransform
+from braindecode.augmentation.functional import _frequency_shift
 from braindecode.augmentation.functional import _torch_normalize_vectors
-from test.unit_tests.augmentation.test_base import common_tranform_assertions
+from braindecode.augmentation.functional import sensors_rotation
+from braindecode.augmentation.transforms import BandstopFilter
+from braindecode.augmentation.transforms import ChannelsDropout
+from braindecode.augmentation.transforms import ChannelsShuffle
+from braindecode.augmentation.transforms import ChannelsSymmetry
+from braindecode.augmentation.transforms import FrequencyShift
+from braindecode.augmentation.transforms import FTSurrogate
+from braindecode.augmentation.transforms import GaussianNoise
+from braindecode.augmentation.transforms import Mixup
+from braindecode.augmentation.transforms import SensorsXRotation
+from braindecode.augmentation.transforms import SensorsYRotation
+from braindecode.augmentation.transforms import SensorsZRotation
+from braindecode.augmentation.transforms import SignFlip
+from braindecode.augmentation.transforms import SmoothTimeMask
+from braindecode.augmentation.transforms import TimeReverse
+from braindecode.augmentation.transforms import _get_standard_10_20_positions
 
 
 @pytest.fixture
@@ -580,3 +594,37 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
     if alpha < 0:
         assert torch.equal(lam, torch.ones_like(lam))
         assert torch.equal(X_t, X)
+
+
+# TODO: Add the missing spatial domain augmentation to the test. They are not
+# currently tested because they require ch_names, though the random_batch has
+# a number of channels that doesn't match any EEG device structure.
+
+@ pytest.mark.parametrize("augmentation,kwargs", [
+    (IdentityTransform, {"probability": 0.5}),
+    (BandstopFilter, {"probability": 0.5}),
+    (ChannelsDropout, {"probability": 0.5}),
+    (ChannelsShuffle, {"probability": 0.5}),
+    (FrequencyShift, {"probability": 0.5, "sfreq": 100}),
+    (FTSurrogate, {"probability": 0.5}),
+    (GaussianNoise, {"probability": 0.5}),
+    (SignFlip, {"probability": 0.5}),
+    (SmoothTimeMask, {"probability": 0.5}),
+    (TimeReverse, {"probability": 0.5})
+]
+)
+def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
+    """Asserts that changing the parameters of a classifier instantiated with
+    the `AugmentedDataLoader` is possible. Ensures that
+    `braindecode.augmentation` is consistent with `Skorch` API.
+    """
+    augmented_mock_clf.set_params(
+        iterator_train__transforms=augmentation(**kwargs)
+    )
+    augmented_mock_clf.set_params(
+        train_split=predefined_split(random_batch)
+    )
+    assert isinstance(
+        augmented_mock_clf.train_split,
+        type(predefined_split(random_batch))
+    )
