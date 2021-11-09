@@ -602,7 +602,7 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
 
 @ pytest.mark.parametrize("augmentation,kwargs", [
     (IdentityTransform, {"probability": 0.5}),
-    (BandstopFilter, {"probability": 0.5}),
+    (BandstopFilter, {"probability": 0.5, "sfreq": 100}),
     (ChannelsDropout, {"probability": 0.5}),
     (ChannelsShuffle, {"probability": 0.5}),
     (FrequencyShift, {"probability": 0.5, "sfreq": 100}),

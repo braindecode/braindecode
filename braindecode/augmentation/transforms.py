@@ -514,9 +514,9 @@ class BandstopFilter(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    bandwidth : float, optional
+    bandwidth : float
         Bandwidth of the filter, i.e. distance between the low and high cut
-        frequencies. Defaults to 1Hz.
+        frequencies.
     sfreq : float, optional
         Sampling frequency of the signals to be filtered. Defaults to 100 Hz.
     max_freq : float | None, optional
