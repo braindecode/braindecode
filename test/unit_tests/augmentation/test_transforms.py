@@ -596,9 +596,29 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
         assert torch.equal(X_t, X)
 
 
-# TODO: Add the missing spatial domain augmentation to the test. They are not
-# currently tested because they require ch_names, though the random_batch has
-# a number of channels that doesn't match any EEG device structure.
+MONTAGE_10_20 = ['Fz',
+                 'FC3',
+                 'FC1',
+                 'FCz',
+                 'FC2',
+                 'FC4',
+                 'C5',
+                 'C3',
+                 'C1',
+                 'Cz',
+                 'C2',
+                 'C4',
+                 'C6',
+                 'CP3',
+                 'CP1',
+                 'CPz',
+                 'CP2',
+                 'CP4',
+                 'P1',
+                 'Pz',
+                 'P2',
+                 'POz']
+
 
 @ pytest.mark.parametrize("augmentation,kwargs", [
     (IdentityTransform, {"probability": 0.5}),
@@ -610,7 +630,23 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
     (GaussianNoise, {"probability": 0.5}),
     (SignFlip, {"probability": 0.5}),
     (SmoothTimeMask, {"probability": 0.5}),
-    (TimeReverse, {"probability": 0.5})
+    (TimeReverse, {"probability": 0.5}),
+    (ChannelsSymmetry, {
+        "probability": 0.5,
+        "ordered_ch_names": MONTAGE_10_20
+    }),
+    (SensorsXRotation, {
+        "probability": 0.5,
+        "ordered_ch_names": MONTAGE_10_20
+    }),
+    (SensorsYRotation, {
+        "probability": 0.5,
+        "ordered_ch_names": MONTAGE_10_20
+    }),
+    (SensorsZRotation, {
+        "probability": 0.5,
+        "ordered_ch_names": MONTAGE_10_20
+    }),
 ]
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
