@@ -1074,6 +1074,7 @@ class Mixup(Transform):
             indices of examples that are mixed into original examples
             (idx_perm).
         """
+        X = batch[0]
         device = X.device
         batch_size, _, _ = X.shape
 
