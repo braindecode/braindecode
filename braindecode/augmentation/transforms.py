@@ -3,19 +3,26 @@
 #
 # License: BSD (3-clause)
 
-from numbers import Real
 import warnings
+from numbers import Real
 
 import numpy as np
 import torch
 from mne.channels import make_standard_montage
 
 from .base import Transform
-from .functional import (
-    time_reverse, sign_flip, ft_surrogate, channels_dropout, channels_shuffle,
-    gaussian_noise, channels_permute, smooth_time_mask, bandstop_filter,
-    frequency_shift, sensors_rotation, mixup
-)
+from .functional import bandstop_filter
+from .functional import channels_dropout
+from .functional import channels_permute
+from .functional import channels_shuffle
+from .functional import frequency_shift
+from .functional import ft_surrogate
+from .functional import gaussian_noise
+from .functional import mixup
+from .functional import sensors_rotation
+from .functional import sign_flip
+from .functional import smooth_time_mask
+from .functional import time_reverse
 
 
 class TimeReverse(Transform):
@@ -109,7 +116,7 @@ class FTSurrogate(Transform):
             "phase_noise_magnitude should be between 0 and 1."
         self.phase_noise_magnitude = phase_noise_magnitude
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -172,7 +179,7 @@ class ChannelsDropout(Transform):
         )
         self.p_drop = p_drop
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -237,7 +244,7 @@ class ChannelsShuffle(Transform):
         )
         self.p_shuffle = p_shuffle
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -306,7 +313,7 @@ class GaussianNoise(Transform):
         )
         self.std = std
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -391,7 +398,7 @@ class ChannelsSymmetry(Transform):
             permutation.append(new_position)
         self.permutation = permutation
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -457,7 +464,7 @@ class SmoothTimeMask(Transform):
         ), "mask_len_samples has to be a positive integer"
         self.mask_len_samples = mask_len_samples
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -480,6 +487,10 @@ class SmoothTimeMask(Transform):
             * mask_len_samples : int
                 Number of consecutive samples to zero out.
         """
+        if len(batch) == 0:
+            return super().get_params(*batch)
+        X = batch[0]
+
         seq_length = torch.as_tensor(X.shape[-1], device=X.device)
         mask_len_samples = self.mask_len_samples
         if isinstance(mask_len_samples, torch.Tensor):
@@ -503,9 +514,9 @@ class BandstopFilter(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    bandwidth : float, optional
+    bandwidth : float
         Bandwidth of the filter, i.e. distance between the low and high cut
-        frequencies. Defaults to 1Hz.
+        frequencies.
     sfreq : float, optional
         Sampling frequency of the signals to be filtered. Defaults to 100 Hz.
     max_freq : float | None, optional
@@ -563,7 +574,7 @@ class BandstopFilter(Transform):
         self.max_freq = max_freq
         self.bandwidth = bandwidth
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -591,6 +602,10 @@ class BandstopFilter(Transform):
                 ``sfreq/2 - bandwidth/2 - transition`` (where
                 ``transition = 1 Hz``).
         """
+        if len(batch) == 0:
+            return super().get_params(*batch)
+        X = batch[0]
+
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
             low=1 + 2 * self.bandwidth,
@@ -641,7 +656,7 @@ class FrequencyShift(Transform):
 
         self.max_delta_freq = max_delta_freq
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -661,6 +676,10 @@ class FrequencyShift(Transform):
             * sfreq : float
                 Sampling frequency of the signals to be transformed.
         """
+        if len(batch) == 0:
+            return super().get_params(*batch)
+        X = batch[0]
+
         u = torch.as_tensor(
             self.rng.uniform(size=X.shape[0]),
             device=X.device
@@ -778,7 +797,7 @@ class SensorsRotation(Transform):
         self.spherical_splines = spherical_splines
         self.max_degrees = max_degrees
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -809,6 +828,10 @@ class SensorsRotation(Transform):
                 When ``False``, standard scipy.interpolate.Rbf (with quadratic
                 kernel) will be used (as in the original paper).
         """
+        if len(batch) == 0:
+            return super().get_params(*batch)
+        X = batch[0]
+
         u = self.rng.uniform(
             low=0,
             high=1,
@@ -1033,7 +1056,7 @@ class Mixup(Transform):
         self.alpha = alpha
         self.beta_per_sample = beta_per_sample
 
-    def get_params(self, X, y):
+    def get_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -1051,6 +1074,7 @@ class Mixup(Transform):
             indices of examples that are mixed into original examples
             (idx_perm).
         """
+        X = batch[0]
         device = X.device
         batch_size, _, _ = X.shape
 

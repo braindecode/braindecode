@@ -7,7 +7,6 @@ import numpy as np
 import pytest
 import torch
 from sklearn.utils import check_random_state
-from skorch.helper import predefined_split
 
 from braindecode.augmentation.base import AugmentedDataLoader
 from braindecode.augmentation.base import Compose
@@ -174,17 +173,3 @@ def test_dataset_with_transform(concat_windows_dataset):
     concat_windows_dataset.transform = transform
     transformed_X = concat_windows_dataset[0][0]
     assert torch.all(transformed_X == factor)
-
-
-def test_set_params(augmented_mock_clf, random_batch):
-    """Asserts that changing the parameters of a classifier instantiated with
-    the `AugmentedDataLoader` is possible. Ensures that
-    `braindecode.augmentation` is consistent with `Skorch` API.
-    """
-    augmented_mock_clf.set_params(
-        train_split=predefined_split(random_batch)
-    )
-    assert isinstance(
-        augmented_mock_clf.train_split,
-        type(predefined_split(random_batch))
-    )

@@ -31,7 +31,7 @@ def random_batch(rng_seed, batch_size=5):
     """
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     rng = check_random_state(rng_seed)
-    X = torch.from_numpy(rng.random((batch_size, 66, 51))).float().to(device)
+    X = torch.from_numpy(rng.random((batch_size, 22, 51))).float().to(device)
     return X, torch.zeros(batch_size)
 
 
