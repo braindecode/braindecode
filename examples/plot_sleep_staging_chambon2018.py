@@ -1,6 +1,6 @@
 """
-Sleep staging on the Sleep Physionet dataset
-============================================
+Sleep staging on the Sleep Physionet dataset using Chambon2018 network
+======================================================================
 
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We adapt the time distributed approach of [1]_ to learn on
@@ -215,7 +215,7 @@ class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y
 import torch
 from torch import nn
 from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018, TimeDistributed
+from braindecode.models import SleepStagerChambon2018, SleepStagerBlanco2020, TimeDistributed
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -248,6 +248,27 @@ model = nn.Sequential(
 # Send model to GPU
 if cuda:
     model.cuda()
+
+feat_extractor2 = SleepStagerBlanco2020(
+    n_channels,
+    sfreq,
+    n_classes=n_classes,
+    input_size_s=input_size_samples / sfreq,
+    return_feats=True
+)
+
+model2 = nn.Sequential(
+    TimeDistributed(feat_extractor2),  # apply model on each 30-s window
+    nn.Sequential(  # apply linear layer on concatenated feature vectors
+        nn.Flatten(start_dim=1),
+        nn.Dropout(0.5),
+        nn.Linear(feat_extractor2.len_last_layer * n_windows, n_classes)
+    )
+)
+
+# Send model to GPU
+if cuda:
+    model2.cuda()
 
 
 ######################################################################
