@@ -76,7 +76,7 @@ class SleepStagerEldele2021(nn.Module):
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
-        if not ((input_size_s == 30 and sfreq == 100 and d_model == 80) or 
+        if not ((input_size_s == 30 and sfreq == 100 and d_model == 80) or
                 (input_size_s == 30 and sfreq == 125 and d_model == 100)):
             warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
                           "with d_model at 80 or at 125Hz, with d_model at 100, to use anything "
