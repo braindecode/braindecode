@@ -25,8 +25,9 @@ class SleepStagerEldele2021(nn.Module):
     The second module is the temporal context encoder (TCE) that leverages a multi-head attention
     mechanism to capture the temporal dependencies among the extracted features.
 
-    Warning - This model was designed for signals of 30 seconds at 100Hz, to use any other input is
-    likely to make the model perform in unintended ways.
+    Warning - This model was designed for signals of 30 seconds at 100Hz or 125Hz (in which case
+    the reference architecture from [1]_ which was validated on SHHS dataset [2]_ will be used)
+    to use any other input is likely to make the model perform in unintended ways.
 
     Parameters
     ----------
@@ -65,6 +66,8 @@ class SleepStagerEldele2021(nn.Module):
         Rehabilitation Engineering, vol. 29, pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
 
     .. [1] https://github.com/emadeldeen24/AttnSleep
+
+    .. [2] https://sleepdata.org/datasets/shhs
     """
 
     def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1,
@@ -73,18 +76,20 @@ class SleepStagerEldele2021(nn.Module):
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
-        # exception case for shhs to make modification in mrcnn as per implementation in the paper
-        shhs = False
-        if input_size_s == 30 and sfreq == 125 and d_model == 100:
-            shhs = True
-
-        if not ((input_size_s == 30 and sfreq == 100 and d_model == 80) or (shhs is True)):
+        if not ((input_size_s == 30 and sfreq == 100 and d_model == 80) or 
+                (input_size_s == 30 and sfreq == 125 and d_model == 100)):
             warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
                           "with d_model at 80 or at 125Hz, with d_model at 100, to use anything "
                           "other than this may cause errors or cause the model to perform in "
                           "other  ways that intended", UserWarning)
 
-        mrcnn = _MRCNN(after_reduced_cnn_size, shhs)
+        # the usual kernel size for the mrcnn, for sfreq 100
+        kernel_size = 7
+
+        if sfreq == 125:
+            kernel_size = 6
+
+        mrcnn = _MRCNN(after_reduced_cnn_size, kernel_size)
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, dropout)
         tce = _TCE(_EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size,
@@ -173,7 +178,7 @@ class _SEBasicBlock(nn.Module):
 
 
 class _MRCNN(nn.Module):
-    def __init__(self, after_reduced_cnn_size, shhs):
+    def __init__(self, after_reduced_cnn_size, kernel_size=7):
         super(_MRCNN, self).__init__()
         drate = 0.5
         self.GELU = nn.GELU()
@@ -194,42 +199,24 @@ class _MRCNN(nn.Module):
 
             nn.MaxPool1d(kernel_size=4, stride=4, padding=2)
         )
-        if not shhs:
-            self.features2 = nn.Sequential(
-                nn.Conv1d(1, 64, kernel_size=400, stride=50, bias=False, padding=200),
-                nn.BatchNorm1d(64),
-                self.GELU,
-                nn.MaxPool1d(kernel_size=4, stride=2, padding=2),
-                nn.Dropout(drate),
 
-                nn.Conv1d(64, 128, kernel_size=7, stride=1, bias=False, padding=3),
-                nn.BatchNorm1d(128),
-                self.GELU,
+        self.features2 = nn.Sequential(
+            nn.Conv1d(1, 64, kernel_size=400, stride=50, bias=False, padding=200),
+            nn.BatchNorm1d(64),
+            self.GELU,
+            nn.MaxPool1d(kernel_size=4, stride=2, padding=2),
+            nn.Dropout(drate),
 
-                nn.Conv1d(128, 128, kernel_size=7, stride=1, bias=False, padding=3),
-                nn.BatchNorm1d(128),
-                self.GELU,
+            nn.Conv1d(64, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3),
+            nn.BatchNorm1d(128),
+            self.GELU,
 
-                nn.MaxPool1d(kernel_size=2, stride=2, padding=1)
-            )
-        else:
-            self.features2 = nn.Sequential(
-                nn.Conv1d(1, 64, kernel_size=400, stride=50, bias=False, padding=200),
-                nn.BatchNorm1d(64),
-                self.GELU,
-                nn.MaxPool1d(kernel_size=4, stride=2, padding=2),
-                nn.Dropout(drate),
+            nn.Conv1d(128, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3),
+            nn.BatchNorm1d(128),
+            self.GELU,
 
-                nn.Conv1d(64, 128, kernel_size=6, stride=1, bias=False, padding=3),
-                nn.BatchNorm1d(128),
-                self.GELU,
-
-                nn.Conv1d(128, 128, kernel_size=6, stride=1, bias=False, padding=3),
-                nn.BatchNorm1d(128),
-                self.GELU,
-
-                nn.MaxPool1d(kernel_size=2, stride=2, padding=1)
-            )
+            nn.MaxPool1d(kernel_size=2, stride=2, padding=1)
+        )
 
         self.dropout = nn.Dropout(drate)
         self.inplanes = 128
