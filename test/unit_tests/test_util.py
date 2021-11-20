@@ -7,8 +7,10 @@ import os
 import mne
 import numpy as np
 import h5py
+import pytest
+import torch
 
-from braindecode.util import create_mne_dummy_raw
+from braindecode.util import create_mne_dummy_raw, set_random_seeds
 
 
 def test_create_mne_dummy_raw(tmp_path):
@@ -28,3 +30,17 @@ def test_create_mne_dummy_raw(tmp_path):
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
     with h5py.File(fnames['hdf5'], 'r') as hf:
         _ = np.array(hf['fake_raw'])
+
+
+def test_set_random_seeds_raise_value_error():
+    with pytest.raises(ValueError, match="cudnn_benchmark expected to be bool or None, got 'abc'"):
+        set_random_seeds(100, True, "abc")
+
+
+def test_set_random_seeds_warning():
+    torch.backends.cudnn.benchmark = True
+    with pytest.warns(UserWarning,
+                      match="torch.backends.cudnn.benchmark was set to True which may results in "
+                            "lack of reproducibility. In some cases to ensure reproducibility you "
+                            "may need to set torch.backends.cudnn.benchmark to False."):
+        set_random_seeds(100, True)

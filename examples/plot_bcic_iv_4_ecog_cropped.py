@@ -181,8 +181,13 @@ cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses t
 device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
-seed = 20200220  # random seed to make results reproducible
-# Set random seed to be able to reproduce results
+# Set random seed to be able to roughly reproduce results
+# Note that with cudnn benchmark set to True, GPU indeterminism
+# may still make results substantially different between runs.
+# To obtain more consistent results at the cost of increased computation time,
+# you can set `cudnn_benchmark=False` in `set_random_seeds`
+# or remove `torch.backends.cudnn.benchmark = True`
+seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 1

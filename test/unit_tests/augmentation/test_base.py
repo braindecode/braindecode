@@ -2,15 +2,15 @@
 #
 # License: BSD (3-clause)
 
-import pytest
-import numpy as np
-from sklearn.utils import check_random_state
-import torch
 import mne
+import numpy as np
+import pytest
+import torch
+from sklearn.utils import check_random_state
 
-from braindecode.augmentation.base import (
-    Transform, Compose, AugmentedDataLoader
-)
+from braindecode.augmentation.base import AugmentedDataLoader
+from braindecode.augmentation.base import Compose
+from braindecode.augmentation.base import Transform
 from braindecode.datautil import create_from_mne_epochs
 
 
@@ -29,7 +29,7 @@ class DummyTransform(Transform):
         super().__init__(probability=probability, random_state=random_state)
 
     def get_params(self, X, y):
-        return (self.k,)
+        return {"k": self.k}
 
 
 @pytest.fixture
