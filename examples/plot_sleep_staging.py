@@ -50,7 +50,8 @@ from numbers import Integral
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 dataset = SleepPhysionet(
-    subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
+    subject_ids=list(range(50)), recording_ids=[2], crop_wake_mins=30)
+    # subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
 
 
 ######################################################################
@@ -61,7 +62,7 @@ dataset = SleepPhysionet(
 # a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
 # Physionet data is already sampled at a lower 100 Hz.
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
+from braindecode.preprocessing import preprocess, Preprocessor, scale
 
 high_cut_hz = 30
 
@@ -274,21 +275,25 @@ if cuda:
 #
 
 from skorch.helper import predefined_split
-from skorch.callbacks import EpochScoring
+from skorch.callbacks import EpochScoring, EarlyStopping
 from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
 n_epochs = 10
 
+early_stopping = EarlyStopping(patience=10)
 train_bal_acc = EpochScoring(
     scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
     lower_is_better=False)
 valid_bal_acc = EpochScoring(
     scoring='balanced_accuracy', on_train=False, name='valid_bal_acc',
     lower_is_better=False)
-callbacks = [('train_bal_acc', train_bal_acc),
-             ('valid_bal_acc', valid_bal_acc)]
+callbacks = [
+    ('patience', early_stopping),
+    ('train_acc', train_bal_acc),
+    ('valid_acc', valid_bal_acc)
+]
 
 clf = EEGClassifier(
     model,
