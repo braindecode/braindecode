@@ -103,6 +103,7 @@ windows_dataset = create_windows_from_events(
     trial_stop_offset_samples=0,
     window_size_samples=window_size_samples,
     window_stride_samples=window_size_samples,
+    picks=['Fpz-Cz', 'Pz-Oz'],
     preload=True,
     mapping=mapping
 )
@@ -116,8 +117,10 @@ windows_dataset = create_windows_from_events(
 # in each window.
 
 from sklearn.preprocessing import scale as standard_scale
-
 preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
+
+# from scipy.stats import zscore
+# preprocess(windows_dataset, [Preprocessor(zscore, channel_wise=True)])
 
 
 ######################################################################
@@ -280,7 +283,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 10
+n_epochs = 100
 
 early_stopping = EarlyStopping(patience=10)
 train_bal_acc = EpochScoring(
