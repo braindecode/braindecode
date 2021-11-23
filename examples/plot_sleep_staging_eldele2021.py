@@ -1,6 +1,6 @@
 """
-Sleep staging on the Sleep Physionet dataset
-============================================
+Sleep staging on the Sleep Physionet dataset usng Eldele2021
+============================================================
 
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We use the attention-based model from [1]_ with the time distributed approach of [2]_
@@ -60,8 +60,7 @@ dataset = SleepPhysionet(
 # ~~~~~~~~~~~~~
 #
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
-# a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
-# Physionet data is already sampled at a lower 100 Hz.
+# a lowpass filter.
 
 from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
 
@@ -152,13 +151,13 @@ valid_set = splitted['valid']
 # Create sequence samplers
 # ------------------------
 #
-# Following the time distributed approach of [1]_, we need to provide our
+# Following the time distributed approach of [2]_, we need to provide our
 # neural network with sequences of windows, such that the embeddings of
 # multiple consecutive windows can be concatenated and provided to a final
 # classifier. We can achieve this by defining Sampler objects that return
 # sequences of window indices.
 # To simplify the example, we train the whole model end-to-end on sequences,
-# rather than using the two-step approach of [1]_ (i.e. training the feature
+# rather than using the two-step approach of [2]_ (i.e. training the feature
 # extractor on single windows, then freezing its weights and training the
 # classifier).
 #
@@ -207,7 +206,7 @@ class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y
 # ------------
 #
 # We can now create the deep learning model. In this tutorial, we use the sleep
-# staging architecture introduced in [1]_, which is a four-layer convolutional
+# staging architecture introduced in [1]_, which is an attention-based
 # neural network. We use the time distributed version of the model, where the
 # feature vectors of a sequence of windows are concatenated and passed to a
 # linear layer for classification.
@@ -259,13 +258,6 @@ if cuda:
 # training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
-# .. note::
-#    We use different hyperparameters from [1]_, as these hyperparameters were
-#    optimized on a different dataset (MASS SS3) and with a different number of
-#    recordings. Generally speaking, it is recommended to perform
-#    hyperparameter optimization if reusing this code on a different dataset or
-#    with more recordings.
-#
 
 from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
@@ -273,7 +265,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 10
+n_epochs = 1
 
 train_bal_acc = EpochScoring(
     scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
@@ -368,9 +360,13 @@ print(classification_report(y_true, y_pred))
 ######################################################################
 # The model was able to learn despite the low amount of data that was available
 # (only two recordings in this example) and reached a balanced accuracy of
-# about 45% in a 5-class classification task (chance-level = 20%) on held-out
-# data.
+# about 43% in a 5-class classification task (chance-level = 20%) on held-out
+# data over 10 epochs.
 #
 # .. note::
-#    To further improve performance, more recordings should be included in the
-#    training set, and hyperparameters should be selected accordingly.
+#    To further improve performance, the number of epochs should be increased.
+#    It has been reduced here for faster run-time in document generation. In
+#    testing, 10 epochs provided reasonable performance with around 89% balanced
+#    accuracy on training data and around 43% on held out validation data.
+#    Increasing the number of training recordings and optimizing the hyperparameters
+#    will also help increase performance
