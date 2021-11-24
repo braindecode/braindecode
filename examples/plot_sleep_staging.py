@@ -249,7 +249,7 @@ model = nn.Sequential(
     TimeDistributed(feat_extractor),  # apply model on each 30-s window
     nn.Sequential(  # apply linear layer on concatenated feature vectors
         nn.Flatten(start_dim=1),
-        nn.Dropout(0.5),
+        nn.Dropout(0.9),
         nn.Linear(feat_extractor.len_last_layer * n_windows, n_classes)
     )
 )
