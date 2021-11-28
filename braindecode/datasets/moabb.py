@@ -5,6 +5,7 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
+#          Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)
 
