@@ -78,7 +78,7 @@ def fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs=None):
         (list of) int of subject(s) to be fetched
     dataset_kwargs: dict, optional
         optional dictionary containing keyword arguments
-        to pass to the moabb dataset when instanciating it.
+        to pass to the moabb dataset when instantiating it.
     Returns
     -------
     raws: mne.Raw
@@ -101,7 +101,7 @@ class MOABBDataset(BaseConcatDataset):
         subjects is fetched.
     dataset_kwargs: dict, optional
         optional dictionary containing keyword arguments
-        to pass to the moabb dataset when instanciating it.
+        to pass to the moabb dataset when instantiating it.
     """
     def __init__(self, dataset_name, subject_ids, dataset_kwargs=None):
         raws, description = fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs)
