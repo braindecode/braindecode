@@ -79,6 +79,7 @@ def fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs=None):
     dataset_kwargs: dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
+
     Returns
     -------
     raws: mne.Raw
