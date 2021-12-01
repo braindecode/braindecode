@@ -62,7 +62,7 @@ dataset = SleepPhysionet(
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
 # a lowpass filter.
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
+from braindecode.preprocessing import preprocess, Preprocessor, scale
 
 high_cut_hz = 30
 

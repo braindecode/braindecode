@@ -81,7 +81,7 @@ class SleepStagerEldele2021(nn.Module):
             warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
                           "with d_model at 80 or at 125Hz, with d_model at 100, to use anything "
                           "other than this may cause errors or cause the model to perform in "
-                          "other  ways that intended", UserWarning)
+                          "other ways than intended", UserWarning)
 
         # the usual kernel size for the mrcnn, for sfreq 100
         kernel_size = 7
