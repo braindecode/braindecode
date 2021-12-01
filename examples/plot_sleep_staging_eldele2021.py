@@ -1,31 +1,34 @@
 """
-Sleep staging on the Sleep Physionet dataset
-============================================
+Sleep staging on the Sleep Physionet dataset usng Eldele2021
+============================================================
 
 This tutorial shows how to train and test a sleep staging neural network with
-Braindecode. We adapt the time distributed approach of [1]_ to learn on
-sequences of EEG windows using the openly accessible Sleep Physionet dataset
-[2]_ [3]_.
+Braindecode. We use the attention-based model from [1]_ with the time distributed approach of [2]_
+to learn on sequences of EEG windows using the openly accessible Sleep Physionet dataset [3]_ [4]_.
 
 References
 ----------
-.. [1] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
+.. [1] E. Eldele et al., "An Attention-Based Deep Learning Approach for Sleep Stage
+        Classification With Single-Channel EEG," in IEEE Transactions on Neural Systems and
+        Rehabilitation Engineering, vol. 29, pp. 809-818, 2021, doi: 10.1109/TNSRE.2021.3076234.
+
+.. [2] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
       (2018)A Deep Learning Architecture for Temporal Sleep Stage
       Classification Using Multivariate and Multimodal Time Series.
       IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
       (758-769)
 
-.. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
+.. [3] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
        a sleep-dependent neuronal feedback loop: the slow-wave
        microcontinuity of the EEG. IEEE-BME 47(9):1185-1194 (2000).
 
-.. [3] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
+.. [4] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
        Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. (2000)
        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
        Research Resource for Complex Physiologic Signals.
        Circulation 101(23):e215-e220
 """
-# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+# Authors: Divyesh Narayanan <divyesh.narayanan@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -52,16 +55,14 @@ from braindecode.datasets.sleep_physionet import SleepPhysionet
 dataset = SleepPhysionet(
     subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
 
-
 ######################################################################
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
-# a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
-# Physionet data is already sampled at a lower 100 Hz.
+# a lowpass filter.
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
+from braindecode.preprocessing import preprocess, Preprocessor, scale
 
 high_cut_hz = 30
 
@@ -73,15 +74,15 @@ preprocessors = [
 # Transform the data
 preprocess(dataset, preprocessors)
 
-
 ######################################################################
 # Extract windows
 # ~~~~~~~~~~~~~~~
 #
 # We extract 30-s windows to be used in the classification task.
+# The Eldele2021 model takes a single channel as input. Here, the Fpz-Cz channel is used as it
+# was found to give better performance than using the Pz-Oz channel
 
 from braindecode.preprocessing import create_windows_from_events
-
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
     'Sleep stage W': 0,
@@ -102,10 +103,10 @@ windows_dataset = create_windows_from_events(
     trial_stop_offset_samples=0,
     window_size_samples=window_size_samples,
     window_stride_samples=window_size_samples,
+    picks="Fpz-Cz",  # the other option is Pz-Oz,
     preload=True,
     mapping=mapping
 )
-
 
 ######################################################################
 # Window preprocessing
@@ -117,7 +118,6 @@ windows_dataset = create_windows_from_events(
 from sklearn.preprocessing import scale as standard_scale
 
 preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
-
 
 ######################################################################
 # Split dataset into train and valid
@@ -151,13 +151,13 @@ valid_set = splitted['valid']
 # Create sequence samplers
 # ------------------------
 #
-# Following the time distributed approach of [1]_, we need to provide our
+# Following the time distributed approach of [2]_, we need to provide our
 # neural network with sequences of windows, such that the embeddings of
 # multiple consecutive windows can be concatenated and provided to a final
 # classifier. We can achieve this by defining Sampler objects that return
 # sequences of window indices.
 # To simplify the example, we train the whole model end-to-end on sequences,
-# rather than using the two-step approach of [1]_ (i.e. training the feature
+# rather than using the two-step approach of [2]_ (i.e. training the feature
 # extractor on single windows, then freezing its weights and training the
 # classifier).
 #
@@ -173,6 +173,7 @@ valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_s
 # Print number of examples per class
 print('Training examples: ', len(train_sampler))
 print('Validation examples: ', len(valid_sampler))
+
 
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
@@ -200,13 +201,12 @@ from sklearn.utils.class_weight import compute_class_weight
 y_train = [train_set[idx][1] for idx in train_sampler]
 class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
 
-
 ######################################################################
 # Create model
 # ------------
 #
 # We can now create the deep learning model. In this tutorial, we use the sleep
-# staging architecture introduced in [1]_, which is a four-layer convolutional
+# staging architecture introduced in [1]_, which is an attention-based
 # neural network. We use the time distributed version of the model, where the
 # feature vectors of a sequence of windows are concatenated and passed to a
 # linear layer for classification.
@@ -215,31 +215,24 @@ class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y
 import torch
 from torch import nn
 from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018, TimeDistributed
+from braindecode.models import SleepStagerEldele2021, TimeDistributed
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
-# Set random seed to be able to roughly reproduce results
-# Note that with cudnn benchmark set to True, GPU indeterminism
-# may still make results substantially different between runs.
-# To obtain more consistent results at the cost of increased computation time,
-# you can set `cudnn_benchmark=False` in `set_random_seeds`
-# or remove `torch.backends.cudnn.benchmark = True`
+# Set random seed to be able to reproduce results
 set_random_seeds(seed=random_state, cuda=cuda)
 
 n_classes = 5
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = train_set[0][0].shape
 
-feat_extractor = SleepStagerChambon2018(
-    n_channels,
+feat_extractor = SleepStagerEldele2021(
     sfreq,
     n_classes=n_classes,
     input_size_s=input_size_samples / sfreq,
-    return_feats=True
-)
+    return_feats=True)
 
 model = nn.Sequential(
     TimeDistributed(feat_extractor),  # apply model on each 30-s window
@@ -265,13 +258,6 @@ if cuda:
 # training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
-# .. note::
-#    We use different hyperparameters from [1]_, as these hyperparameters were
-#    optimized on a different dataset (MASS SS3) and with a different number of
-#    recordings. Generally speaking, it is recommended to perform
-#    hyperparameter optimization if reusing this code on a different dataset or
-#    with more recordings.
-#
 
 from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
@@ -279,7 +265,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 10
+n_epochs = 1
 
 train_bal_acc = EpochScoring(
     scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
@@ -372,13 +358,15 @@ print(classification_report(y_true, y_pred))
 
 
 ######################################################################
-# Our model was able to learn despite the low amount of data that was available
+# The model was able to learn despite the low amount of data that was available
 # (only two recordings in this example) and reached a balanced accuracy of
-# about 36% in a 5-class classification task (chance-level = 20%) on held-out
-# data.
+# about 43% in a 5-class classification task (chance-level = 20%) on held-out
+# data over 10 epochs.
 #
 # .. note::
-#    To further improve performance, more recordings should be included in the
-#    training set, and hyperparameters should be selected accordingly.
-#    Increasing the sequence length was also shown in [1]_ to help improve
-#    performance, especially when few EEG channels are available.
+#    To further improve performance, the number of epochs should be increased.
+#    It has been reduced here for faster run-time in document generation. In
+#    testing, 10 epochs provided reasonable performance with around 89% balanced
+#    accuracy on training data and around 43% on held out validation data.
+#    Increasing the number of training recordings and optimizing the hyperparameters
+#    will also help increase performance
