@@ -18,7 +18,7 @@ What's new
 
 .. _current:
 
-Version 0.6 (2021-10-18)
+Version 0.6 (2021-12-06)
 --------------------
 
 Enhancements
