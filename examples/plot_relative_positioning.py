@@ -219,7 +219,7 @@ for name, values in split_ids.items():
 # lower number of 250 pairs per recording to reduce training time.
 #
 
-from braindecode.samplers.ssl import RelativePositioningSampler
+from braindecode.samplers import RelativePositioningSampler
 
 tau_pos, tau_neg = int(sfreq * 60), int(sfreq * 15 * 60)
 n_examples_train = 250 * len(splitted['train'].datasets)
@@ -243,8 +243,6 @@ test_sampler = RelativePositioningSampler(
 # Creating the model
 # ------------------
 #
-
-######################################################################
 # We can now create the deep learning model. In this tutorial, we use a
 # modified version of the sleep staging architecture introduced in [4]_ -
 # a four-layer convolutional neural network - as our embedder.
@@ -321,9 +319,6 @@ model = ContrastiveNet(emb, emb_size).to(device)
 # Training
 # --------
 #
-
-
-######################################################################
 # We can now train our network on the pretext task. We use similar
 # hyperparameters as in [1]_, but reduce the number of epochs and increase the
 # learning rate to account for the smaller setting of this example.
@@ -381,13 +376,9 @@ os.remove('./params.pt')  # Delete parameters file
 # Visualizing the results
 # -----------------------
 #
-
-######################################################################
 # Inspecting pretext task performance
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # We plot the loss and pretext task performance for the training and validation
 # sets.
 #
@@ -450,8 +441,6 @@ print(classification_report(y_true, y_pred))
 # Using the learned representation for sleep staging
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # We can now use the trained convolutional neural network as a feature
 # extractor. We perform sleep stage classification from the learned feature
 # representation using a linear logistic regression classifier.
@@ -505,7 +494,6 @@ print(classification_report(data['test'][1], test_y_pred))
 #
 
 from sklearn.decomposition import PCA
-# from sklearn.manifold import TSNE
 from matplotlib import cm
 
 X = np.concatenate([v[0] for k, v in data.items()])
@@ -530,13 +518,9 @@ ax.legend()
 # visualizations. Using a similar approach, the embedding space could also be
 # explored with respect to subject-level features, e.g., age and sex.
 #
-
-######################################################################
 # Conclusion
 # ----------
 #
-
-######################################################################
 # In this example, we used self-supervised learning (SSL) as a way to learn
 # representations from unlabelled raw EEG data. Specifically, we used the
 # relative positioning (RP) pretext task to train a feature extractor on a

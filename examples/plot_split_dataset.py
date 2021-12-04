@@ -10,7 +10,7 @@ In this example, we show multiple ways of how to split datasets.
 # License: BSD (3-clause)
 
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import create_windows_from_events
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,

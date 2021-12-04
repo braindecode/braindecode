@@ -20,15 +20,14 @@ transform on the input signals.
 ######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
-
-######################################################################
+#
 # Loading
 # ~~~~~~~
-#
 
-from braindecode import EEGClassifier
 from skorch.helper import predefined_split
 from skorch.callbacks import LRScheduler
+
+from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
@@ -94,13 +93,10 @@ valid_set = splitted['session_E']
 # Defining a Transform
 # --------------------
 #
-
-######################################################################
 # Data can be manipulated by transforms, which are callable objects. A
 # transform is usually handled by a custom data loader, but can also be called
 # directly on input data, as demonstrated below for illutrative purposes.
 #
-
 # First, we need to define a Transform. Here we chose the FrequencyShift, which
 # randomly translates all frequencies within a given range.
 
@@ -116,7 +112,7 @@ transform = FrequencyShift(
 # Manipulating one session and visualizing the transformed data
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
+#
 # Next, let us augment one session to show the resulting frequency shift. The
 # data of an mne Epoch is used here to make usage of mne functions.
 
@@ -165,8 +161,6 @@ plt.show()
 # Create model
 # ~~~~~~~~~~~~
 #
-
-######################################################################
 # The model to be trained is defined as usual.
 
 from braindecode.util import set_random_seeds
@@ -203,8 +197,6 @@ model = ShallowFBCSPNet(
 # Create an EEGClassifier with the desired augmentation
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # In order to train with data augmentation, a custom data loader can be
 # for the training. Multiple transforms can be passed to it and will be applied
 # sequentially to the batched data within the ``AugmentedDataLoader`` object.
