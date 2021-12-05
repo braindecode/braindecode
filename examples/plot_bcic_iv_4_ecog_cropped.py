@@ -122,7 +122,7 @@ preprocess(test_set, preprocessors)
 sfreq = train_set.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in train_set.datasets])
 # Extract target sampling frequency
-target_sfreq = dataset.datasets[0].raw.info['temp']['target_sfreq']
+target_sfreq = train_set.datasets[0].raw.info['temp']['target_sfreq']
 
 
 ######################################################################
