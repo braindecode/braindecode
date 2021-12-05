@@ -251,7 +251,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 1
+n_epochs = 2  # we use few epochs for speed and but more than one for plotting
 
 early_stopping = EarlyStopping(patience=10)
 train_bal_acc = EpochScoring(
