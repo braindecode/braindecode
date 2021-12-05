@@ -136,7 +136,7 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         ch_types += ['misc' for _ in range(original_targets.shape[1])]
 
         info = mne.create_info(sfreq=signal_sfreq, ch_names=ch_names, ch_types=ch_types)
-        info['target_sfreq'] = original_target_sfreq
+        info['temp'] = dict(target_sfreq=original_target_sfreq)
         train_data = np.concatenate([train_data, original_targets], axis=1)
         test_data = np.concatenate([test_data, original_test_targets], axis=1)
 
