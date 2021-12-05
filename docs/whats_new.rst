@@ -42,6 +42,7 @@ Enhancements
 - Allow to raise a warning when a few trials are shorter than the windows length, instead of raising an error and stopping all computation. (:gh:`353` by `Cedric Rommel`_)
 - Setting `torch.backends.cudnn.benchmark` in :func:`braindecode.util.set_random_seeds`, adding warning and more info to the docstring to imporve reproducibility (:gh:`333` by `Maciej Śliwowski`_)
 - Adding option to pass arguments through :class:`braindecode.datasets.MOABBDataset` (:gh:`365` by `Pierre Guetschel`_)
+- Adding a possibility to use a dict to split a BaseConcatDataset in :meth:`braindecode.datasets.BaseConcatDataset.split` (:gh:`367` by `Alex Gramfort`_)
 
 Bugs
 ~~~~
