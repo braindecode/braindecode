@@ -206,7 +206,6 @@ def test_split_dataset(concat_ds_targets):
     assert (splits["test"].description["run"] == "run_2").all()
 
 
-
 def test_metadata(concat_windows_dataset):
     md = concat_windows_dataset.get_metadata()
     assert isinstance(md, pd.DataFrame)
