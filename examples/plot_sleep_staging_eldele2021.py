@@ -53,8 +53,10 @@ from numbers import Integral
 from braindecode.datasets import SleepPhysionet
 
 subject_ids = [0, 1]
+crop = (0, 30 * 400)  # we only keep 400 windows of 30s to speed example
 dataset = SleepPhysionet(
-    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30)
+    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30,
+    crop=crop)
 
 ######################################################################
 # Preprocessing
@@ -251,7 +253,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 2  # we use few epochs for speed and but more than one for plotting
+n_epochs = 3  # we use few epochs for speed and but more than one for plotting
 
 early_stopping = EarlyStopping(patience=10)
 train_bal_acc = EpochScoring(

@@ -43,6 +43,7 @@ Enhancements
 - Setting `torch.backends.cudnn.benchmark` in :func:`braindecode.util.set_random_seeds`, adding warning and more info to the docstring to imporve reproducibility (:gh:`333` by `Maciej Śliwowski`_)
 - Adding option to pass arguments through :class:`braindecode.datasets.MOABBDataset` (:gh:`365` by `Pierre Guetschel`_)
 - Adding a possibility to use a dict to split a BaseConcatDataset in :meth:`braindecode.datasets.BaseConcatDataset.split` (:gh:`367` by `Alex Gramfort`_)
+- Adding ``crop`` parameter to :class:`braindecode.datasets.SleepPhysionet` dataset to speed up examples (:gh:`367` by `Alex Gramfort`_)
 
 Bugs
 ~~~~
