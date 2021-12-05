@@ -46,6 +46,15 @@ print(splits)
 splits["2"].description
 
 ###############################################################################
+# If we want to split based on a list of indices but you want to specify
+# the keys in the output dictionary you can pass a dict as:
+splits = dataset.split(
+    {"train": [0, 1, 5], "valid": [2, 3, 4], "test": [6, 7, 8, 9, 10, 11]}
+)
+print(splits)
+splits["test"].description
+
+###############################################################################
 # Similarly, we can split datasets after creating windows
 windows = create_windows_from_events(
     dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0)
@@ -58,4 +67,8 @@ splits
 
 ###############################################################################
 splits = windows.split([[4, 8], [5, 9, 11]])
+splits
+
+###############################################################################
+splits = windows.split(dict(train=[4, 8], test=[5, 9, 11]))
 splits

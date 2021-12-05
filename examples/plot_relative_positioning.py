@@ -47,17 +47,12 @@ n_jobs = 1
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
-
-######################################################################
 # Loading the raw recordings
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # First, we load a few recordings from the Sleep Physionet dataset. Running
 # this example with more recordings should yield better representations and
 # downstream classification performance.
-#
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
@@ -69,13 +64,9 @@ dataset = SleepPhysionet(
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
 # a lowpass filter. Since the Sleep Physionet data is already sampled at 100 Hz
 # we don't need to apply resampling.
-#
 
 from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
 
@@ -94,16 +85,12 @@ preprocess(dataset, preprocessors)
 # Extracting windows
 # ~~~~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We extract 30-s windows to be used in both the pretext and downstream tasks.
 # As RP (and SSL in general) don't require labelled data, the pretext task
 # could be performed using unlabelled windows extracted with
 # :func:`braindecode.datautil.windower.create_fixed_length_window`.
 # Here however, purely for convenience, we directly extract labelled windows so
 # that we can reuse them in the sleep staging downstream task later.
-#
 
 from braindecode.preprocessing.windowers import create_windows_from_events
 
@@ -130,11 +117,7 @@ windows_dataset = create_windows_from_events(
 # Preprocessing windows
 # ~~~~~~~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We also preprocess the windows by applying channel-wise z-score normalization.
-#
 
 from sklearn.preprocessing import scale as standard_scale
 
@@ -145,13 +128,10 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 # Splitting dataset into train, valid and test sets
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # We randomly split the recordings by subject into train, validation and
 # testing sets. We further define a new Dataset class which can receive a pair
 # of indices and return the corresponding windows. This will be needed when
 # training and evaluating on the pretext task.
-#
 
 import numpy as np
 from sklearn.model_selection import train_test_split
@@ -200,8 +180,6 @@ for name, values in split_ids.items():
 # Creating samplers
 # ~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # Next, we need to create samplers. These samplers will be used to randomly
 # sample pairs of examples to train and validate our model with
 # self-supervision.
@@ -217,7 +195,6 @@ for name, values in split_ids.items():
 # `n_examples`). This number can be large to help regularize the pretext task
 # training, for instance 2,000 pairs per recording as in [1]_. Here, we use a
 # lower number of 250 pairs per recording to reduce training time.
-#
 
 from braindecode.samplers import RelativePositioningSampler
 
@@ -253,7 +230,6 @@ test_sampler = RelativePositioningSampler(
 # We further wrap the model into a siamese architecture using the
 # # :class:`ContrastiveNet` class defined below. This allows us to train the
 # feature extractor end-to-end.
-#
 
 import torch
 from torch import nn
@@ -322,7 +298,7 @@ model = ContrastiveNet(emb, emb_size).to(device)
 # We can now train our network on the pretext task. We use similar
 # hyperparameters as in [1]_, but reduce the number of epochs and increase the
 # learning rate to account for the smaller setting of this example.
-#
+
 import os
 
 from skorch.helper import predefined_split
@@ -381,7 +357,6 @@ os.remove('./params.pt')  # Delete parameters file
 #
 # We plot the loss and pretext task performance for the training and validation
 # sets.
-#
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -423,7 +398,6 @@ plt.tight_layout()
 ######################################################################
 # We also display the confusion matrix and classification report for the
 # pretext task:
-#
 
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
@@ -444,7 +418,6 @@ print(classification_report(y_true, y_pred))
 # We can now use the trained convolutional neural network as a feature
 # extractor. We perform sleep stage classification from the learned feature
 # representation using a linear logistic regression classifier.
-#
 
 from torch.utils.data import DataLoader
 from sklearn.metrics import balanced_accuracy_score
@@ -491,7 +464,6 @@ print(classification_report(data['test'][1], test_y_pred))
 # The balanced accuracy is much higher than chance-level (i.e., 20% for our
 # 5-class classification problem). Finally, we perform a quick 2D visualization
 # of the feature space using a PCA:
-#
 
 from sklearn.decomposition import PCA
 from matplotlib import cm

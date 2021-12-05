@@ -124,15 +124,12 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We split the dataset into training and validation set using additional info
-# stored in the `description` attribute of
-# :class:`braindecode.datasets.BaseDataset`, in this case using the ``subject``
-# column.
+# We split the dataset into training and validation set taking
+# every other subject as train or valid.
 
-subject_ids_train = subject_ids[::2]
-subject_ids_valid = subject_ids[1::2]
-splits = windows_dataset.split(split_ids=[subject_ids_train, subject_ids_valid])
-train_set, valid_set = splits.values()
+split_ids = dict(train=subject_ids[::2], valid=subject_ids[1::2])
+splits = windows_dataset.split(split_ids)
+train_set, valid_set = splits["train"], splits["valid"]
 
 ######################################################################
 # Create sequence samplers
@@ -167,6 +164,7 @@ print('Validation examples: ', len(valid_sampler))
 # sequence to use it as target.
 
 import numpy as np
+
 
 # Use label of center window in the sequence
 def get_center_label(x):

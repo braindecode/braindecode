@@ -124,14 +124,12 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We split the dataset into training and validation. We take here
-# for simplicity half of the subjects for training and hald for
-# validation.
+# We split the dataset into training and validation set taking
+# every other subject as train or valid.
 
-subject_ids_train = subject_ids[::2]
-subject_ids_valid = subject_ids[1::2]
-splits = windows_dataset.split(split_ids=[subject_ids_train, subject_ids_valid])
-train_set, valid_set = splits.values()
+split_ids = dict(train=subject_ids[::2], valid=subject_ids[1::2])
+splits = windows_dataset.split(split_ids)
+train_set, valid_set = splits["train"], splits["valid"]
 
 ######################################################################
 # Create sequence samplers

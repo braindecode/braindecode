@@ -304,15 +304,17 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        by : str | list
+        by : str | list | dict
             If ``by`` is a string, splitting is performed based on the
             description DataFrame column with this name.
             If ``by`` is a (list of) list of integers, the position in the first
             list corresponds to the split id and the integers to the
             datapoints of that split.
+            If a dict then each key will be used in the returned
+            splits dict and each value should be a list of int.
         property : str
             Some property which is listed in info DataFrame.
-        split_ids : list
+        split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
 
@@ -337,6 +339,8 @@ class BaseConcatDataset(ConcatDataset):
                 k: list(v)
                 for k, v in self.description.groupby(by).groups.items()
             }
+        elif isinstance(by, dict):
+            split_ids = by
         else:
             # assume list(int)
             if not isinstance(by[0], list):
