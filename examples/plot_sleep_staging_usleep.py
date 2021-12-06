@@ -55,10 +55,13 @@ References
 # .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
 #
 
-from braindecode.datasets.sleep_physionet import SleepPhysionet
+from braindecode.datasets import SleepPhysionet
 
+subject_ids = [0, 1]
+crop = (0, 30 * 400)  # we only keep 400 windows of 30s to speed example
 dataset = SleepPhysionet(
-    subject_ids=[0, 1], recording_ids=[2], crop_wake_mins=30)
+    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30,
+    crop=crop)
 
 
 ######################################################################
@@ -111,37 +114,16 @@ windows_dataset = create_windows_from_events(
     mapping=mapping,
 )
 
-
 ######################################################################
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# We split the dataset into training and validation set using additional info
-# stored in the `description` attribute of
-# :class:`braindecode.datasets.BaseDataset`, in this case using the ``subject``
-# column.
+# We split the dataset into training and validation set taking
+# every other subject as train or valid.
 
-import numpy as np
-from sklearn.model_selection import train_test_split
-from braindecode.datasets import BaseConcatDataset
-
-random_state = 31
-subjects = np.unique(windows_dataset.description['subject'])
-subj_train, subj_valid = train_test_split(
-    subjects, test_size=0.5, random_state=random_state
-)
-
-split_ids = {'train': subj_train, 'valid': subj_valid}
-splitted = dict()
-for name, values in split_ids.items():
-    splitted[name] = BaseConcatDataset(
-        [ds for ds in windows_dataset.datasets
-         if ds.description['subject'] in values]
-    )
-
-train_set = splitted['train']
-valid_set = splitted['valid']
-
+split_ids = dict(train=subject_ids[::2], valid=subject_ids[1::2])
+splits = windows_dataset.split(split_ids)
+train_set, valid_set = splits["train"], splits["valid"]
 
 ######################################################################
 # Create sequence samplers
@@ -173,7 +155,8 @@ print(len(valid_sampler))
 # avoid overfitting to the more frequent classes, we compute weights that we
 # will provide to the loss function when training.
 
-from sklearn.utils.class_weight import compute_class_weight
+import numpy as np
+from sklearn.utils import compute_class_weight
 
 y_train = [train_set[idx][1][1] for idx in train_sampler]
 class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
@@ -201,7 +184,7 @@ if cuda:
 # To obtain more consistent results at the cost of increased computation time,
 # you can set `cudnn_benchmark=False` in `set_random_seeds`
 # or remove `torch.backends.cudnn.benchmark = True`
-set_random_seeds(seed=random_state, cuda=cuda)
+set_random_seeds(seed=31, cuda=cuda)
 
 n_classes = 5
 # Extract number of channels and time steps from dataset
@@ -245,7 +228,7 @@ from braindecode import EEGClassifier
 
 lr = 1e-3
 batch_size = 32
-n_epochs = 1  # this number is kept too small to reduce running time in the doc
+n_epochs = 3  # we use few epochs for speed and but more than one for plotting
 
 from sklearn.metrics import balanced_accuracy_score
 
@@ -267,8 +250,10 @@ valid_bal_acc = EpochScoring(
     name='valid_bal_acc',
     lower_is_better=False,
 )
-callbacks = [('train_bal_acc', train_bal_acc),
-             ('valid_bal_acc', valid_bal_acc)]
+callbacks = [
+    ('train_bal_acc', train_bal_acc),
+    ('valid_bal_acc', valid_bal_acc)
+]
 
 clf = EEGClassifier(
     model,
@@ -288,57 +273,29 @@ clf = EEGClassifier(
 # supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
-
 ######################################################################
 # Plot results
 # ------------
 #
 # We use the history stored by Skorch during training to plot the performance of
 # the model throughout training. Specifically, we plot the loss and the balanced
-# misclassification rate (1 - balanced accuracy) for the training and validation
-# sets.
+# balanced accuracy for the training and validation sets.
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
 
 # Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
-df[['train_mis_clf', 'valid_mis_clf']] = (
-    100 - df[['train_bal_acc', 'valid_bal_acc']] * 100
-)
-
-# get percent of misclass for better visual comparison to loss
-plt.style.use('seaborn-talk')
-fig, ax1 = plt.subplots(figsize=(8, 3))
-df.loc[:, ['train_loss', 'valid_loss']].plot(
-    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14
-)
-
-ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
-ax1.set_ylabel('Loss', color='tab:blue', fontsize=14)
-
-ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-
-df.loc[:, ['train_mis_clf', 'valid_mis_clf']].plot(
-    ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False
-)
-ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
-ax2.set_ylabel('Balanced misclassification rate [%]', color='tab:red', fontsize=14)
-ax2.set_ylim(ax2.get_ylim()[0], 85)  # make some room for legend
-ax1.set_xlabel('Epoch', fontsize=14)
-
-# where some data has already been plotted to ax
-handles = []
-handles.append(
-    Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train')
-)
-handles.append(
-    Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid')
-)
-plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
-plt.tight_layout()
-
+df.index.name = "Epoch"
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
+df[['train_loss', 'valid_loss']].plot(color=['r', 'b'], ax=ax1)
+df[['train_bal_acc', 'valid_bal_acc']].plot(color=['r', 'b'], ax=ax2)
+ax1.set_ylabel('Loss')
+ax2.set_ylabel('Balanced accuracy')
+ax1.legend(['Train', 'Valid'])
+ax2.legend(['Train', 'Valid'])
+fig.tight_layout()
+plt.show()
 
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
@@ -350,7 +307,6 @@ y_pred = clf.predict(valid_set)
 
 print(confusion_matrix(y_true.flatten(), y_pred.flatten()))
 print(classification_report(y_true.flatten(), y_pred.flatten()))
-
 
 ######################################################################
 # Our model was able to learn, as shown by the decreasing training and

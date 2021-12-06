@@ -17,17 +17,11 @@ an example of time series target prediction.
 
 ######################################################################
 # Loading and preparing the dataset
-# -------------------------------------
+# ---------------------------------
 #
-
-
-######################################################################
 # Loading
 # ~~~~~~~
 #
-
-
-######################################################################
 # First, we load the data. In this tutorial, we use the functionality of braindecode
 # to load `BCI IV competition dataset 4 <http://www.bbci.de/competition/iv/#dataset4>`__.
 # The dataset is available as a part of ECoG library:
@@ -48,7 +42,7 @@ import numpy as np
 import sklearn
 from mne import set_log_level
 
-from braindecode.datasets.bcicomp import BCICompetitionIVDataset4
+from braindecode.datasets import BCICompetitionIVDataset4
 
 subject_id = 1
 dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
@@ -57,9 +51,6 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 # Split dataset into train and test
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select `train` dataset
 # for training and validation and `test` for final evaluation.
@@ -71,9 +62,6 @@ test_set = dataset['test']
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
-
-
-######################################################################
 # Now we apply preprocessing like bandpass filtering to our dataset. You
 # can either apply functions provided by
 # `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
@@ -94,7 +82,7 @@ test_set = dataset['test']
 #
 
 
-from braindecode.preprocessing.preprocess import (
+from braindecode.preprocessing import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
 low_cut_hz = 1.  # low cut frequency for filtering
@@ -134,24 +122,18 @@ preprocess(test_set, preprocessors)
 sfreq = train_set.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in train_set.datasets])
 # Extract target sampling frequency
-target_sfreq = train_set.datasets[0].raw.info['target_sfreq']
+target_sfreq = train_set.datasets[0].raw.info['temp']['target_sfreq']
 
 
 ######################################################################
 # Create model
 # ------------
 #
-
-
-######################################################################
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
 # know the receptive field of the network to know how large the window
 # stride should be.
 #
-
-
-######################################################################
 # We first choose the compute/input window size that will be fed to the
 # network during training This has to be larger than the networks
 # receptive field size and can otherwise be chosen for computational
@@ -211,7 +193,8 @@ model = new_model
 if cuda:
     model.cuda()
 
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.models import to_dense_prediction_model, get_output_shape
+
 to_dense_prediction_model(model)
 
 
@@ -227,8 +210,7 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 # ~~~~~~~~~~~~~~~~~~~
 #
 
-
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.preprocessing import create_fixed_length_windows
 
 # Create windows using braindecode function for this. It needs parameters to define how
 # trials should be used.
@@ -283,9 +265,6 @@ test_set.target_transform = lambda x: x[0: 1]
 # Training
 # --------
 #
-
-
-######################################################################
 # In difference to trialwise decoding, we now should supply
 # ``cropped=True`` to the EEGClassifier, and ``CroppedLoss`` as the
 # criterion, as well as ``criterion__loss_function`` as the loss function
@@ -303,7 +282,7 @@ from skorch.helper import predefined_split
 
 from braindecode.training import TimeSeriesLoss
 from braindecode import EEGRegressor
-from braindecode.training.scoring import CroppedTimeSeriesEpochScoring
+from braindecode.training import CroppedTimeSeriesEpochScoring
 
 # These values we found good for shallow network for EEG MI decoding:
 lr = 0.0625 * 0.01
@@ -392,22 +371,22 @@ plt.style.use('seaborn')
 fig, axes = plt.subplots(3, 1, figsize=(8, 9))
 
 axes[0].set_title('Training dataset')
-axes[0].plot(np.arange(0, y_train.shape[0]) / target_sfreq, y_train[:, 0], label='Target')
-axes[0].plot(np.arange(0, preds_train.shape[0]) / target_sfreq, preds_train[:, 0],
+axes[0].plot(np.arange(y_train.shape[0]) / target_sfreq, y_train[:, 0], label='Target')
+axes[0].plot(np.arange(preds_train.shape[0]) / target_sfreq, preds_train[:, 0],
              label='Predicted')
 axes[0].set_ylabel('Finger flexion')
 axes[0].legend()
 
 axes[1].set_title('Validation dataset')
-axes[1].plot(np.arange(0, y_valid.shape[0]) / target_sfreq, y_valid[:, 0], label='Target')
-axes[1].plot(np.arange(0, preds_valid.shape[0]) / target_sfreq, preds_valid[:, 0],
+axes[1].plot(np.arange(y_valid.shape[0]) / target_sfreq, y_valid[:, 0], label='Target')
+axes[1].plot(np.arange(preds_valid.shape[0]) / target_sfreq, preds_valid[:, 0],
              label='Predicted')
 axes[1].set_ylabel('Finger flexion')
 axes[1].legend()
 
 axes[2].set_title('Test dataset')
-axes[2].plot(np.arange(0, y_test.shape[0]) / target_sfreq, y_test[:, 0], label='Target')
-axes[2].plot(np.arange(0, preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label='Predicted')
+axes[2].plot(np.arange(y_test.shape[0]) / target_sfreq, y_test[:, 0], label='Target')
+axes[2].plot(np.arange(preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label='Predicted')
 axes[2].set_xlabel('Time [s]')
 axes[2].set_ylabel('Finger flexion')
 axes[2].legend()

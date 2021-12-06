@@ -14,9 +14,9 @@ with Braindecode.
 import matplotlib.pyplot as plt
 
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing.windowers import \
+from braindecode.preprocessing import \
     create_windows_from_events, create_fixed_length_windows
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor
+from braindecode.preprocessing import preprocess, Preprocessor
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,

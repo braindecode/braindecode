@@ -10,9 +10,6 @@ Cropped Decoding on BCIC IV 2a Dataset
 # tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__, we now do more
 # data-efficient cropped decoding!
 #
-
-
-######################################################################
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
 # explain this visually by comparing trialwise to cropped decoding.
@@ -50,9 +47,6 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     -  Crop size and window size together define how many predictions the
 #        network makes per window: ``#window−#crop+1=#predictions``
 #
-
-
-######################################################################
 # .. note::
 #     For cropped decoding, the above training setup is mathematically
 #     identical to sampling crops in your dataset, pushing them through the
@@ -68,25 +62,18 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     log-softmax outputs and negative log likelihood loss that is typically
 #     used for classification in PyTorch.
 #
-
-
-######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
-
-
-######################################################################
 # Loading and preprocessing stays the same as in the `Trialwise decoding
 # tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__.
-#
 
-from braindecode.datasets.moabb import MOABBDataset
+from braindecode.datasets import MOABBDataset
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
-from braindecode.preprocessing.preprocess import (
+from braindecode.preprocessing import (
     exponential_moving_standardize, preprocess, Preprocessor, scale)
 
 low_cut_hz = 4.  # low cut frequency for filtering
@@ -111,17 +98,11 @@ preprocess(dataset, preprocessors)
 # Create model and compute windowing parameters
 # ---------------------------------------------
 #
-
-
-######################################################################
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
 # know the receptive field of the network to know how large the window
 # stride should be.
 #
-
-
-######################################################################
 # We first choose the compute/input window size that will be fed to the
 # network during training This has to be larger than the networks
 # receptive field size and can otherwise be chosen for computational
@@ -180,7 +161,8 @@ if cuda:
 # crops.
 #
 
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.models import to_dense_prediction_model, get_output_shape
+
 to_dense_prediction_model(model)
 
 
@@ -196,14 +178,11 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 # Cut the data into windows
 # -------------------------
 #
-
-
-######################################################################
 # In contrast to trialwise decoding, we have to supply an explicit window size and
 # window stride to the ``create_windows_from_events`` function.
 #
 
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -242,17 +221,11 @@ valid_set = splitted['session_E']
 # Training
 # --------
 #
-
-
-######################################################################
 # In difference to trialwise decoding, we now should supply
 # ``cropped=True`` to the EEGClassifier, and ``CroppedLoss`` as the
 # criterion, as well as ``criterion__loss_function`` as the loss function
 # applied to the meaned predictions.
 #
-
-
-######################################################################
 # .. note::
 #    In this tutorial, we use some default parameters that we
 #    have found to work well for motor decoding, however we strongly
@@ -264,7 +237,7 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-from braindecode.training.losses import CroppedLoss
+from braindecode.training import CroppedLoss
 
 # These values we found good for shallow network:
 lr = 0.0625 * 0.01
@@ -302,9 +275,6 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # Plot Results
 # ------------
 #
-
-
-######################################################################
 # This is again the same code as in trialwise decoding.
 #
 # .. note::
@@ -354,12 +324,8 @@ plt.tight_layout()
 # Plot Confusion Matrix
 # ---------------------
 #
-
-
-#######################################################################
 # Generate a confusion matrix as in https://onlinelibrary.wiley.com/doi/full/10.1002/hbm.23730
 #
-
 
 from sklearn.metrics import confusion_matrix
 from braindecode.visualization import plot_confusion_matrix

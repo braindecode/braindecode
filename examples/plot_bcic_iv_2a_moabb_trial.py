@@ -33,7 +33,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
 
-from braindecode.datasets.moabb import MOABBDataset
+from braindecode.datasets import MOABBDataset
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
@@ -60,7 +60,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
 
-from braindecode.preprocessing.preprocess import (
+from braindecode.preprocessing import (
     exponential_moving_standardize, preprocess, Preprocessor, scale)
 
 low_cut_hz = 4.  # low cut frequency for filtering
@@ -95,7 +95,7 @@ preprocess(dataset, preprocessors)
 # before the trial.
 #
 
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets

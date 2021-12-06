@@ -1,5 +1,6 @@
-"""Process a big data EEG resource (TUH EEG Corpus)
-===================================================
+"""
+Process a big data EEG resource (TUH EEG Corpus)
+================================================
 
 In this example, we showcase usage of the Temple University Hospital EEG Corpus
 (https://www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg)
@@ -14,7 +15,6 @@ import tempfile
 
 import numpy as np
 import matplotlib.pyplot as plt
-plt.style.use('seaborn')
 import mne
 
 from braindecode.datasets import TUH
@@ -22,6 +22,7 @@ from braindecode.preprocessing import (
     preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
 
 
+plt.style.use('seaborn')
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
 
@@ -222,7 +223,6 @@ tuh_preproc = preprocess(
     n_jobs=N_JOBS,
     save_dir=OUT_PATH
 )
-
 
 ###############################################################################
 # We can finally generate compute windows. The resulting dataset is now ready
