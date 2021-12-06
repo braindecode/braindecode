@@ -1,6 +1,6 @@
 """
 Sleep staging on the Sleep Physionet dataset using Eldele2021
-============================================================
+=============================================================
 
 This tutorial shows how to train and test a sleep staging neural network with
 Braindecode. We use the attention-based model from [1]_ with the time distributed approach of [2]_
