@@ -1,5 +1,5 @@
 """
-Sleep staging on the Sleep Physionet dataset usng Eldele2021
+Sleep staging on the Sleep Physionet dataset using Eldele2021
 ============================================================
 
 This tutorial shows how to train and test a sleep staging neural network with
