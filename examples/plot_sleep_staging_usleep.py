@@ -223,7 +223,7 @@ if cuda:
 #    recordings.
 
 from skorch.helper import predefined_split
-from skorch.callbacks import EpochScoring, EarlyStopping
+from skorch.callbacks import EpochScoring
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -238,7 +238,6 @@ def balanced_accuracy_multi(model, X, y):
     return balanced_accuracy_score(y.flatten(), y_pred.flatten())
 
 
-early_stopping = EarlyStopping(patience=10)
 train_bal_acc = EpochScoring(
     scoring=balanced_accuracy_multi,
     on_train=True,
@@ -252,7 +251,6 @@ valid_bal_acc = EpochScoring(
     lower_is_better=False,
 )
 callbacks = [
-    ('patience', early_stopping),
     ('train_bal_acc', train_bal_acc),
     ('valid_bal_acc', valid_bal_acc)
 ]
