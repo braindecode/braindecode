@@ -113,14 +113,16 @@ class BaseDataset(Dataset):
             self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
-        if target_name is not None and type(target_name) not in [str, tuple]:
-            raise ValueError('target_name has to be None, str, tuple')
+        if target_name is not None and type(target_name) not in [str, tuple, list]:
+            raise ValueError('target_name has to be None, str, tuple, list')
         if target_name is None:
             return target_name
         else:
             # convert tuple of names or single name to list
             if isinstance(target_name, tuple):
                 target_name = [name for name in target_name]
+            elif isinstance(target_name, list):
+                target_name = target_name
             else:
                 target_name = [target_name]
             # check if target name(s) can be read from description
