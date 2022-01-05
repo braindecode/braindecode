@@ -18,6 +18,21 @@ What's new
 
 .. _current:
 
+Current (0.7.dev0)
+--------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Allowing target_names as list for BaseDataset (:gh:`371` by `Mohammad Javad D`_ and `Robin Tibor Schirrmeister`_)
+
+Bugs
+~~~~
+
+API changes
+~~~~~~~~~~~
+
+.. _changes_0_6_0:
+
 Version 0.6 (2021-12-06)
 --------------------
 
@@ -119,3 +134,4 @@ Authors
 .. _Thomas Moreau: https://tommoral.github.io
 .. _Mohammed Fattouh: https://github.com/MFattouh
 .. _Pierre Guetschel: https://github.com/PierreGtch
+.. _Mohammad Javad D: https://github.com/MohammadJavadD

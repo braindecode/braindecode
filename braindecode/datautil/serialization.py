@@ -134,9 +134,9 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
         Path to the directory of the .fif / -epo.fif and .json files.
     preload: bool
         Whether to preload the data.
-    ids_to_load: None | list(int)
+    ids_to_load: list of int | None
         Ids of specific files to load.
-    target_name: None or str
+    target_name: str | list | None
         Load specific description column as target. If not given, take saved
         target name.
     n_jobs: int
