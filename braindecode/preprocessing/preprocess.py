@@ -330,7 +330,7 @@ def exponential_moving_standardize(
             data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
         init_block_standardized = (
-                                          data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
+            data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
