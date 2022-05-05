@@ -8,14 +8,15 @@
 #
 # License: BSD (3-clause)
 
+from warnings import warn
+from functools import partial
+from collections.abc import Iterable
+
 import numpy as np
 import pandas as pd
-from collections.abc import Iterable
-from functools import partial
-from joblib import Parallel, delayed
 from mne import create_info
 from sklearn.utils import deprecated
-from warnings import warn
+from joblib import Parallel, delayed
 
 from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
 from braindecode.datautil.serialization import (
