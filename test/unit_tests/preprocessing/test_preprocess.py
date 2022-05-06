@@ -279,7 +279,7 @@ def test_filterbank(base_concat_ds):
     preprocessors = [
         Preprocessor('pick_channels', ch_names=sorted(['C4', 'Cz']),
                      ordered=True),
-        Preprocessor(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
+        Preprocessor(fn=filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
                      drop_original_signals=False, apply_on_array=False)
     ]
     preprocess(base_concat_ds, preprocessors)
