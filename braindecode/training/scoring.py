@@ -430,6 +430,8 @@ def predict_trials(module, dataset, return_targets=True):
     all_preds, all_ys, all_inds = [], [], []
     with torch.no_grad():
         for X, y, ind in loader:
+            device = next(module.parameters()).device
+            X = X.to(device)
             preds = module(X)
             all_preds.extend(preds.cpu().numpy().astype(np.float32))
             all_ys.extend(y.cpu().numpy().astype(np.float32))
