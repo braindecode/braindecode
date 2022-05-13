@@ -179,7 +179,7 @@ class EEGClassifier(NeuralNetClassifier):
         for X, y, i in self.get_iterator(dataset, drop_index=False):
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
-            preds.append(to_numpy(self.forward(X)))
+            preds.append(to_numpy(self.module.forward(X)))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
