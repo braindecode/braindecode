@@ -319,5 +319,5 @@ class EEGClassifier(NeuralNetClassifier):
             dataset=X,
             return_targets=return_targets,
             batch_size=self.batch_size,
-            num_workers=clf.get_iterator(X, training=False).loader.num_workers,
+            num_workers=self.get_iterator(X, training=False).loader.num_workers,
         )
