@@ -147,6 +147,17 @@ class CroppedTrialEpochScoring(EpochScoring):
         if not self.on_train:
             self.window_inds_ = []
 
+    def on_batch_end(
+             self, net, batch, y_pred, training, **kwargs):
+        # Skorch saves the predictions without moving them from GPU
+        # https://github.com/skorch-dev/skorch/blob/fe71e3d55a4ae5f5f94ef7bdfc00fca3b3fd267f/skorch/callbacks/scoring.py#L385
+        # This can cause memory issues in case of a large number of predictions
+        # Therefore here we move them to CPU already
+        super().on_batch_end(net, batch, y_pred, training, **kwargs)
+        if self.use_caching and training == self.on_train:
+            self.y_preds_[-1] = self.y_preds_[-1].cpu()
+
+
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching
         if not self.crops_to_trials_computed:
@@ -169,6 +180,7 @@ class CroppedTrialEpochScoring(EpochScoring):
                     [y_pred.cpu().numpy() for y_pred in self.y_preds_])
                 pred_results['window_ys'] = np.concatenate(
                     [y.cpu().numpy() for y in self.y_trues_])
+
 
             # A new trial starts
             # when the index of the window in trials
@@ -412,7 +424,7 @@ def predict_trials(module, dataset, return_targets=True):
         trial_labels: np.ndarray
             2-dimensional array (n_trials x n_targets) where the number of
             targets depends on the decoding paradigm and can be either a single
-            value, multiple values, or a sequence.
+            value, multiple values, or al sequence.
     """
     # we have a cropped dataset if there exists at least one trial with more
     # than one compute window
