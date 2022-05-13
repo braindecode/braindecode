@@ -318,5 +318,6 @@ class EEGClassifier(NeuralNetClassifier):
             module=self.module,
             dataset=X,
             return_targets=return_targets,
+            batch_size=self.batch_size,
             num_workers=self.iterator_valid__num_workers,
         )

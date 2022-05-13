@@ -390,7 +390,7 @@ class PostEpochTrainScoring(EpochScoring):
         self._record_score(net.history, current_score)
 
 
-def predict_trials(module, dataset, return_targets=True, num_workers=0):
+def predict_trials(module, dataset, return_targets=True, batch_size=1, num_workers=0):
     """Create trialwise predictions and optionally also return trialwise
     labels from cropped dataset given module.
 
@@ -402,6 +402,8 @@ def predict_trials(module, dataset, return_targets=True, num_workers=0):
         A braindecode dataset to be predicted.
     return_targets: bool
         If True, additionally returns the trial targets.
+    batch_size: int
+        The batch size used to iterate the dataset.
     num_workers: int
         Number of workers used in DataLoader to iterate the dataset.
 
@@ -426,7 +428,7 @@ def predict_trials(module, dataset, return_targets=True, num_workers=0):
                       'window per trial.')
     loader = DataLoader(
         dataset=dataset,
-        batch_size=1,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
     )
