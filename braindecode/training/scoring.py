@@ -157,7 +157,6 @@ class CroppedTrialEpochScoring(EpochScoring):
         if self.use_caching and training == self.on_train:
             self.y_preds_[-1] = self.y_preds_[-1].cpu()
 
-
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching
         if not self.crops_to_trials_computed:
