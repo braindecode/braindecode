@@ -318,4 +318,5 @@ class EEGClassifier(NeuralNetClassifier):
             module=self.module,
             dataset=X,
             return_targets=return_targets,
+            num_workers=self.iterator_valid__num_workers,
         )
