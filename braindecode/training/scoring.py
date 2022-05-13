@@ -181,7 +181,6 @@ class CroppedTrialEpochScoring(EpochScoring):
                 pred_results['window_ys'] = np.concatenate(
                     [y.cpu().numpy() for y in self.y_trues_])
 
-
             # A new trial starts
             # when the index of the window in trials
             # does not increment by 1
@@ -424,7 +423,7 @@ def predict_trials(module, dataset, return_targets=True):
         trial_labels: np.ndarray
             2-dimensional array (n_trials x n_targets) where the number of
             targets depends on the decoding paradigm and can be either a single
-            value, multiple values, or al sequence.
+            value, multiple values, or a sequence.
     """
     # we have a cropped dataset if there exists at least one trial with more
     # than one compute window
