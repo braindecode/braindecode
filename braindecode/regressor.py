@@ -301,7 +301,7 @@ class EEGRegressor(NeuralNetRegressor):
             dataset=X,
             return_targets=return_targets,
             batch_size=self.batch_size,
-            num_workers=self.iterator_valid__num_workers,
+            num_workers=clf.get_iterator(X, training=False).loader.num_workers,
         )
 
     def fit(self, X, y, **kwargs):
