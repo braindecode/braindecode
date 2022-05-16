@@ -147,6 +147,16 @@ class CroppedTrialEpochScoring(EpochScoring):
         if not self.on_train:
             self.window_inds_ = []
 
+    def on_batch_end(
+             self, net, batch, y_pred, training, **kwargs):
+        # Skorch saves the predictions without moving them from GPU
+        # https://github.com/skorch-dev/skorch/blob/fe71e3d55a4ae5f5f94ef7bdfc00fca3b3fd267f/skorch/callbacks/scoring.py#L385
+        # This can cause memory issues in case of a large number of predictions
+        # Therefore here we move them to CPU already
+        super().on_batch_end(net, batch, y_pred, training, **kwargs)
+        if self.use_caching and training == self.on_train:
+            self.y_preds_[-1] = self.y_preds_[-1].cpu()
+
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching
         if not self.crops_to_trials_computed:
