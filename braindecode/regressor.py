@@ -74,7 +74,8 @@ class EEGRegressor(NeuralNetRegressor):
             if name == 'str':
                 train_cb, valid_cb = self._parse_str_callback(cb)
                 yield train_cb
-                yield valid_cb
+                if self.train_split is not None:
+                    yield valid_cb
             else:
                 yield name, cb, named_by_user
 
