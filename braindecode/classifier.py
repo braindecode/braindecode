@@ -12,6 +12,7 @@ from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
+import torch
 
 from .training.scoring import (PostEpochTrainScoring,
                                CroppedTrialEpochScoring,
@@ -172,6 +173,7 @@ class EEGClassifier(NeuralNetClassifier):
                 self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
+        self.module.eval()
         preds = []
         i_window_in_trials = []
         i_window_stops = []
@@ -179,7 +181,8 @@ class EEGClassifier(NeuralNetClassifier):
         for X, y, i in self.get_iterator(dataset, drop_index=False):
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
-            preds.append(to_numpy(self.module.forward(X)))
+            with torch.no_grad():
+                preds.append(to_numpy(self.module.forward(X.to(self.device))))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
