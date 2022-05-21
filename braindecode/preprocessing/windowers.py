@@ -26,10 +26,10 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset
 
 # XXX it's called concat_ds...
 def create_windows_from_events(
-        concat_ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
-        window_size_samples=None, window_stride_samples=None,
-        drop_last_window=False, mapping=None, preload=False,
-        drop_bad_windows=True, picks=None, reject=None, flat=None,
+        concat_ds, drop_bad_windows, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, window_size_samples=None,
+        window_stride_samples=None, drop_last_window=False, mapping=None,
+        preload=False, picks=None, reject=None, flat=None,
         on_missing='error', accepted_bads_ratio=0.0, n_jobs=1):
     """Create windows based on events in mne.Raw.
 
@@ -54,6 +54,13 @@ def create_windows_from_events(
     ----------
     concat_ds: BaseConcatDataset
         A concat of base datasets each holding raw and description.
+    drop_bad_windows: bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as otherwise
+        the BaseConcatDataset has to be updated as well. Caution: very slow!
+        Setting this to True will increase runtime of this function by a
+        factor of over 7.
     trial_start_offset_samples: int
         Start offset from original trial onsets, in samples. Defaults to zero.
     trial_stop_offset_samples: int
@@ -76,11 +83,6 @@ def create_windows_from_events(
         If True, preload the data of the Epochs objects. This is useful to
         reduce disk reading overhead when returning windows in a training
         scenario, however very large data might not fit into memory.
-    drop_bad_windows: bool
-        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifying e.g., windows that fall outside of the
-        continuous recording. It is suggested to run this step here as otherwise
-        the BaseConcatDataset has to be updated as well.
     picks: str | list | slice | None
         Channels to include. If None, all available channels are used. See
         mne.Epochs.
@@ -128,17 +130,23 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-        concat_ds, start_offset_samples=0, stop_offset_samples=None,
+        concat_ds, drop_bad_windows, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=None, window_stride_samples=None, drop_last_window=None,
-        mapping=None, preload=False, drop_bad_windows=True, picks=None,
-        reject=None, flat=None, targets_from='metadata', last_target_only=True,
-        on_missing='error', n_jobs=1):
+        mapping=None, preload=False, picks=None, reject=None, flat=None,
+        targets_from='metadata', last_target_only=True, on_missing='error', n_jobs=1):
     """Windower that creates sliding windows.
 
     Parameters
     ----------
     concat_ds: ConcatDataset
         A concat of base datasets each holding raw and description.
+    drop_bad_windows: bool
+        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
+        step allows identifying e.g., windows that fall outside of the
+        continuous recording. It is suggested to run this step here as otherwise
+        the BaseConcatDataset has to be updated as well. Caution: very slow!
+        Setting this to True will increase runtime of this function by a
+        factor of over 7.
     start_offset_samples: int
         Start offset from beginning of recording in samples.
     stop_offset_samples: int | None
@@ -158,11 +166,6 @@ def create_fixed_length_windows(
         Mapping from event description to target value.
     preload: bool
         If True, preload the data of the Epochs objects.
-    drop_bad_windows: bool
-        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifying e.g., windows that fall outside of the
-        continuous recording. It is suggested to run this step here as
-        otherwise the BaseConcatDataset has to be updated as well.
     picks: str | list | slice | None
         Channels to include. If None, all available channels are used. See
         mne.Epochs.
