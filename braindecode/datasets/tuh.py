@@ -10,6 +10,7 @@ TUH Abnormal EEG Corpus.
 import re
 import os
 import glob
+from warnings import warn
 from unittest import mock
 from datetime import datetime, timezone
 
@@ -29,12 +30,14 @@ class TUH(BaseConcatDataset):
     ----------
     path: str
         Parent directory of the dataset.
-    recording_ids: list(int) | int
-        A (list of) int of recording id(s) to be read (order matters and will
-        overwrite default chronological order, e.g. if recording_ids=[1,0],
-        then the first recording returned by this class will be chronologically
+    select: list | callable
+        If a callable, receives the description DataFrame of all recordings
+        in path and returns a DataFrame which potentially describes only a
+        subset to be loaded. If a list, selects recordings accordingly and
+        overwrites default chronological order, e.g. if recording_ids=[1,0],
+        the first recording returned by this class will be chronologically
         later then the second recording. Provide recording_ids in ascending
-        order to preserve chronological order.).
+        order to preserve chronological order.
     target_name: str
         Can be 'gender', or 'age'.
     preload: bool
@@ -42,17 +45,37 @@ class TUH(BaseConcatDataset):
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
+    verbose: str
+        Verbosity level when calling mne.io.read_raw_edf.
     n_jobs: int
         Number of jobs to be used to read files in parallel.
+    recording_ids: list(int) | int
+        Deprecated.
+        A (list of) int of recording id(s) to be read (order matters and will
+        overwrite default chronological order, e.g. if recording_ids=[1,0],
+        then the first recording returned by this class will be chronologically
+        later then the second recording. Provide recording_ids in ascending
+        order to preserve chronological order.).
     """
-    def __init__(self, path, recording_ids=None, target_name=None,
-                 preload=False, add_physician_reports=False, n_jobs=1):
+    def __init__(self, path, select=None, target_name=None,
+                 preload=False, add_physician_reports=False,
+                 verbose='ERROR', n_jobs=1, recording_ids=None):
+        if (select is not None and recording_ids is not None):
+            raise ValueError("Please only use argument 'select'.")
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
         descriptions = _create_chronological_description(file_paths)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
+            warn("'recording_ids' argument is deprecated. Please use argument"
+                 " 'select' instead.")
+            select = recording_ids
+        if select is not None:
+            if not callable(select):
+                descriptions = descriptions[select]
+            else:
+                descriptions = select(descriptions)
             descriptions = descriptions[recording_ids]
         # this is the second loop (slow)
         # create datasets gathering more info about the files touching them
@@ -60,23 +83,23 @@ class TUH(BaseConcatDataset):
         # disable joblib for tests. mocking seems to fail otherwise
         if n_jobs == 1:
             base_datasets = [self._create_dataset(
-                descriptions[i], target_name, preload, add_physician_reports)
-                for i in descriptions.columns]
+                descriptions[i], target_name, preload, add_physician_reports,
+                verbose=verbose) for i in descriptions.columns]
         else:
             base_datasets = Parallel(n_jobs)(delayed(
                 self._create_dataset)(
-                descriptions[i], target_name, preload, add_physician_reports
-            ) for i in descriptions.columns)
+                descriptions[i], target_name, preload, add_physician_reports,
+                verbose=verbose) for i in descriptions.columns)
         super().__init__(base_datasets)
 
     @staticmethod
     def _create_dataset(description, target_name, preload,
-                        add_physician_reports):
+                        add_physician_reports, verbose):
         file_path = description.loc['path']
 
         # parse age and gender information from EDF header
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
-        raw = mne.io.read_raw_edf(file_path, preload=preload)
+        raw = mne.io.read_raw_edf(file_path, preload=preload, verbose=verbose)
 
         # Use recording date from path as EDF header is sometimes wrong
         meas_date = datetime(1, 1, 1, tzinfo=timezone.utc) \
@@ -190,12 +213,14 @@ class TUHAbnormal(TUH):
     ----------
     path: str
         Parent directory of the dataset.
-    recording_ids: list(int) | int
-        A (list of) int of recording id(s) to be read (order matters and will
-        overwrite default chronological order, e.g. if recording_ids=[1,0],
-        then the first recording returned by this class will be chronologically
+    select: list | callable
+        If a callable, receives the description DataFrame of all recordings
+        in path and returns a DataFrame which potentially describes only a
+        subset to be loaded. If a list, selects recordings accordingly and
+        overwrites default chronological order, e.g. if recording_ids=[1,0],
+        the first recording returned by this class will be chronologically
         later then the second recording. Provide recording_ids in ascending
-        order to preserve chronological order.).
+        order to preserve chronological order.
     target_name: str
         Can be 'pathological', 'gender', or 'age'.
     preload: bool
@@ -203,13 +228,25 @@ class TUHAbnormal(TUH):
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
+    verbose: str
+        Verbosity level when calling mne.io.read_raw_edf.
+    n_jobs: int
+        Number of jobs to be used to read files in parallel.
+    recording_ids: list(int) | int
+        Deprecated.
+        A (list of) int of recording id(s) to be read (order matters and will
+        overwrite default chronological order, e.g. if recording_ids=[1,0],
+        then the first recording returned by this class will be chronologically
+        later then the second recording. Provide recording_ids in ascending
+        order to preserve chronological order.).
     """
-    def __init__(self, path, recording_ids=None, target_name='pathological',
-                 preload=False, add_physician_reports=False, n_jobs=1):
-        super().__init__(path=path, recording_ids=recording_ids,
-                         preload=preload, target_name=target_name,
+    def __init__(self, path, target_name='pathological', select=None,
+                 preload=False, add_physician_reports=False, verbose='ERROR',
+                 recording_ids=None, n_jobs=1):
+        super().__init__(path=path, preload=preload, target_name=target_name,
                          add_physician_reports=add_physician_reports,
-                         n_jobs=n_jobs)
+                         select=select, verbose=verbose,
+                         recording_ids=recording_ids, n_jobs=n_jobs)
         additional_descriptions = []
         for file_path in self.description.path:
             additional_description = (
