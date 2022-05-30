@@ -125,12 +125,6 @@ class BaseDataset(Dataset):
                 assert isinstance(target_name, str)
                 target_name = [target_name]
             assert isinstance(target_name, list)
-            # check if target name(s) can be read from description
-            for name in target_name:
-                if self.description is None or name not in self.description:
-                    warnings.warn(f"'{name}' not in description. '__getitem__'"
-                                  f"will fail unless an appropriate target is"
-                                  f" added to description.", UserWarning)
         # return a list of str if there are multiple targets and a str otherwise
         return target_name if len(target_name) > 1 else target_name[0]
 

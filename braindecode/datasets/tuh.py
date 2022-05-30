@@ -76,7 +76,6 @@ class TUH(BaseConcatDataset):
                 descriptions = descriptions[select]
             else:
                 descriptions = select(descriptions)
-            descriptions = descriptions[recording_ids]
         # this is the second loop (slow)
         # create datasets gathering more info about the files touching them
         # reading the raws and potentially preloading the data
