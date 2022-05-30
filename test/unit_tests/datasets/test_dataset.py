@@ -97,13 +97,6 @@ def test_len_concat_dataset(concat_ds_targets):
     assert len(concat_ds) == sum([len(c) for c in concat_ds.datasets])
 
 
-def test_target_in_subject_info(set_up):
-    raw, _, _, _, _, _ = set_up
-    desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
-    with pytest.warns(UserWarning, match="'does_not_exist' not in description"):
-        BaseDataset(raw, desc, target_name='does_not_exist')
-
-
 def test_description_concat_dataset(concat_ds_targets):
     concat_ds = concat_ds_targets[0]
     assert isinstance(concat_ds.description, pd.DataFrame)
@@ -395,18 +388,6 @@ def test_target_name_incorrect_type(set_up):
     with pytest.raises(
             ValueError, match='target_name has to be None, str, tuple or list'):
         BaseDataset(raw, target_name={'target': 1})
-
-
-def test_target_name_not_in_description(set_up):
-    raw, _, _, _, _, _ = set_up
-    with pytest.warns(UserWarning):
-        base_dataset = BaseDataset(
-            raw, target_name=('pathological', 'gender', 'age'))
-    with pytest.raises(TypeError):
-        x, y = base_dataset[0]
-    base_dataset.set_description(
-        {'pathological': True, 'gender': 'M', 'age': 48})
-    x, y = base_dataset[0]
 
 
 def test_windows_dataset_from_target_channels_raise_valuerror():
