@@ -4,8 +4,7 @@
 
 from datetime import datetime
 
-from braindecode.datasets.tuh import (
-    TUH, TUHAbnormal, _TUHMock, _TUHAbnormalMock)
+from braindecode.datasets.tuh import _TUHMock, _TUHAbnormalMock
 
 
 def test_parse_from_tuh_file_path():
