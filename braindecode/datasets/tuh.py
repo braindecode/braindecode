@@ -30,23 +30,39 @@ class TUH(BaseConcatDataset):
     ----------
     path: str
         Parent directory of the dataset.
-    select: list | callable
-        If a callable, receives the description DataFrame of all recordings
-        in path and returns a DataFrame which potentially describes only a
-        subset to be loaded. If a list, selects recordings accordingly and
-        overwrites default chronological order, e.g. if recording_ids=[1,0],
-        the first recording returned by this class will be chronologically
-        later then the second recording. Provide recording_ids in ascending
-        order to preserve chronological order.
+    indexer: None | callable
+        When called, receives the path of the dataset and is supposed to return
+        a list of absolute recording file paths. By default, glob is used to
+        search for .edf files.
+        Note that the order of the file paths matters.
+    parser: None | callable
+        When called, receives a list of absolute recording file paths and is
+        supposed to return a list of dictionaries that describe the recordings.
+        The dictionaries are required to contain {'path': file_path}.
+        By default, extracts version, year, month, day, subject, session,
+        segment.
+        Note that the order of the descriptions matters.
+    reader: None | callable
+        When called, receives an absolute recording file path and is supposed
+        to return a mne.io.Raw object. By default, uses mne.io.read_raw_edf with
+        preload=False and verbose='ERROR'.
+    selector: None | callable | list
+        If callable, receives the description of one recording and is supposed
+        to return a boolean whether or not to include this recording in the
+        dataset.
+        If a list, it is assumed to contain integer ids that are then used to
+        slice descriptions. Exists to assure backwards compatibility with
+        'recording_ids'.
     target_name: str
         Can be 'gender', or 'age'.
-    preload: bool
-        If True, preload the data of the Raw objects.
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
-    verbose: str
-        Verbosity level when calling mne.io.read_raw_edf.
+    load: bool
+        If False, only creates the index of .edf file paths through indexer and
+        the descriptions thereof through parser (fast).
+        If True, additionally touches all .edf files and creates nme.io.Raw
+        objects through reader (slow).
     n_jobs: int
         Number of jobs to be used to read files in parallel.
     recording_ids: list(int) | int
@@ -54,154 +70,186 @@ class TUH(BaseConcatDataset):
         A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
-        later then the second recording. Provide recording_ids in ascending
+        later than the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
+    preload: bool
+        Deprecated.
+        If True, preload the data of the Raw objects.
     """
-    def __init__(self, path, select=None, target_name=None,
-                 preload=False, add_physician_reports=False,
-                 verbose='ERROR', n_jobs=1, recording_ids=None):
-        if (select is not None and recording_ids is not None):
-            raise ValueError("Please only use argument 'select'.")
-        # create an index of all files and gather easily accessible info
-        # without actually touching the files
-        file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
-        descriptions = _create_chronological_description(file_paths)
-        # limit to specified recording ids before doing slow stuff
+    def __init__(
+            self, path, indexer=None, parser=None, reader=None, selector=None,
+            target_name=None, add_physician_reports=False, load=True, n_jobs=1,
+            # deprecated
+            recording_ids=None, preload=False,
+    ):
+        # deprecated
+        if recording_ids is not None or preload:
+            warn(
+                "Arguments 'recording_ids' and 'preload'"
+                " are deprecated. For selecting recordings use 'selector'."
+                " To change file reading parameters use 'reader'.")
+        if recording_ids is not None and selector is not None:
+            raise ValueError("Please only use 'selector'.")
         if recording_ids is not None:
-            warn("'recording_ids' argument is deprecated. Please use argument"
-                 " 'select' instead.")
-            select = recording_ids
-        if select is not None:
-            if not callable(select):
-                descriptions = descriptions[select]
-            else:
-                descriptions = select(descriptions)
-        # this is the second loop (slow)
-        # create datasets gathering more info about the files touching them
-        # reading the raws and potentially preloading the data
-        # disable joblib for tests. mocking seems to fail otherwise
-        if n_jobs == 1:
-            base_datasets = [self._create_dataset(
-                descriptions[i], target_name, preload, add_physician_reports,
-                verbose=verbose) for i in descriptions.columns]
-        else:
-            base_datasets = Parallel(n_jobs)(delayed(
-                self._create_dataset)(
-                descriptions[i], target_name, preload, add_physician_reports,
-                verbose=verbose) for i in descriptions.columns)
-        super().__init__(base_datasets)
+            selector = recording_ids
+        self._preload = preload
+        # deprecated end
+        self._path = path
+        self._indexer = self._indexer if indexer is None else indexer
+        self._parser = self._parser if parser is None else parser
+        self._reader = self._reader if reader is None else reader
+        self._selector = selector
+        self._target_name = target_name
+        self._add_physician_reports = add_physician_reports
+        self._n_jobs = n_jobs
+        self._file_paths = self._indexer(path)
+        self._descriptions = self._parser(self._file_paths)
+        assert 'path' in self._descriptions[0]
+        if self._selector is not None and not callable(self._selector):
+            self._descriptions = [self._descriptions[i] for i in self._selector]
+        if load:
+            self.load(n_jobs=self._n_jobs)
 
     @staticmethod
-    def _create_dataset(description, target_name, preload,
-                        add_physician_reports, verbose):
-        file_path = description.loc['path']
+    def _indexer(path):
+        return glob.glob(path + '**/*.edf', recursive=True)
 
-        # parse age and gender information from EDF header
-        age, gender = _parse_age_and_gender_from_edf_header(file_path)
-        raw = mne.io.read_raw_edf(file_path, preload=preload, verbose=verbose)
+    def _parser(self, descriptions):
+        descriptions = [self._parse(d) for d in descriptions]
+        key = ('year', 'month', 'day', 'subject', 'session', 'segment')
+        descriptions = sorted(
+            descriptions,
+            key=lambda d: [d[k] for k in key],
+        )
+        return descriptions
 
+    def _parse(self, path):
+        # /tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000013/s001_2002_09_03/
+        #  00000013_s001_t002.edf
+        pattern = os.sep.join([
+            r'(v\d.\d.\d)',  # version
+            r'\w+',
+            r'\w+',
+            r'\d+',
+            r'(\d+)',  # subject
+            r's(\d+)_(\d+)_(\d+)_(\d+)',  # session, year, month, day
+            r'\d+_s(\d+)_t(\d+)\.edf$',  # session, segment
+        ])
+        pattern = re.compile(pattern)
+        matches = re.findall(pattern, path)[0]
+        (version, subject, session, year, month, day, _, segment) = matches
+        d = {
+            'path': path,
+            'version': version,
+            'year': int(year),
+            'month': int(month),
+            'day': int(day),
+            'subject': int(subject),
+            'session': int(session),
+            'segment': int(segment),
+        }
+        return d
+
+    def load(self, n_jobs):
+        n_jobs = self._n_jobs if n_jobs == 1 else n_jobs
+        args = (
+            self._reader, self._selector,
+            self._target_name, self._add_physician_reports,
+            # deprecated
+            self._preload,
+        )
+        if n_jobs == 1:
+            datasets = [
+                self._create_dataset(i, d, *args)
+                for i, d in enumerate(self._descriptions)
+            ]
+        else:
+            datasets = Parallel(n_jobs=n_jobs)(
+                delayed(self._create_dataset)(i, d, *args)
+                for i, d in enumerate(self._descriptions)
+            )
+        if self._selector is not None:
+            datasets = [d for d in datasets if d is not None]
+        super().__init__(datasets)
+
+    @staticmethod
+    def _create_dataset(
+            i, d, reader, selector, target_name, add_physician_reports,
+            # deprecated
+            preload,
+    ):
+        age, gender = TUH._parse_age_and_gender_from_edf_header(d['path'])
+        if add_physician_reports:
+            report = TUH._read_physician_report(d['path'])
+            d['report'] = report
+        s = pd.Series({
+            **d,
+            'age': age,
+            'gender': gender,
+        }, name=i)
+        if selector is not None and callable(selector):
+            if not selector(s):
+                return
+        raw = reader(
+            s,
+            # deprecated
+            preload=preload,
+            verbose='ERROR',
+        )
+        return BaseDataset(raw, s, target_name=target_name)
+
+    @staticmethod
+    def _reader(d, preload, verbose):
+        raw = mne.io.read_raw_edf(d.path, preload=preload, verbose=verbose)
         # Use recording date from path as EDF header is sometimes wrong
         meas_date = datetime(1, 1, 1, tzinfo=timezone.utc) \
             if raw.info['meas_date'] is None else raw.info['meas_date']
         raw.set_meas_date(meas_date.replace(
-            *description[['year', 'month', 'day']]))
+            *d[['year', 'month', 'day']]))
+        return raw
 
-        # read info relevant for preprocessing from raw without loading it
-        d = {
-            'age': int(age),
-            'gender': gender,
-        }
-        if add_physician_reports:
-            physician_report = _read_physician_report(file_path)
-            d['report'] = physician_report
-        additional_description = pd.Series(d)
-        description = pd.concat([description, additional_description])
-        base_dataset = BaseDataset(raw, description,
-                                   target_name=target_name)
-        return base_dataset
+    @staticmethod
+    def _read_physician_report(file_path):
+        directory = os.path.dirname(file_path)
+        txt_file = glob.glob(
+            os.path.join(directory, '**/*.txt'), recursive=True)
+        # check that there is at most one txt file in the same directory
+        assert len(txt_file) in [0, 1]
+        report = ''
+        if txt_file:
+            txt_file = txt_file[0]
+            # somewhere in the corpus, encoding apparently changed
+            # first try to read as utf-8, if it does not work use latin-1
+            try:
+                with open(txt_file, 'r', encoding='utf-8') as f:
+                    report = f.read()
+            except UnicodeDecodeError:
+                with open(txt_file, 'r', encoding='latin-1') as f:
+                    report = f.read()
+        return report
 
+    @staticmethod
+    def _read_edf_header(file_path):
+        f = open(file_path, "rb")
+        header = f.read(88)
+        f.close()
+        return header
 
-def _create_chronological_description(file_paths):
-    # this is the first loop (fast)
-    descriptions = []
-    for file_path in file_paths:
-        description = _parse_description_from_file_path(file_path)
-        descriptions.append(pd.Series(description))
-    descriptions = pd.concat(descriptions, axis=1)
-    # order descriptions chronologically
-    descriptions.sort_values(
-        ["year", "month", "day", "subject", "session", "segment"],
-        axis=1, inplace=True)
-    # https://stackoverflow.com/questions/42284617/reset-column-index-pandas
-    descriptions = descriptions.T.reset_index(drop=True).T
-    return descriptions
-
-
-def _parse_description_from_file_path(file_path):
-    # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
-    file_path = os.path.normpath(file_path)
-    tokens = file_path.split(os.sep)
-    # expect file paths as tuh_eeg/version/file_type/reference/data_split/
-    #                          subject/recording session/file
-    # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
-    #                          s001_2006_04_12/00002729_s001.edf
-    version = tokens[-7]
-    year, month, day = tokens[-2].split('_')[1:]
-    subject_id = tokens[-3]
-    session = tokens[-2].split('_')[0]
-    segment = tokens[-1].split('_')[-1].split('.')[-2]
-    return {
-        'path': file_path,
-        'version': version,
-        'year': int(year),
-        'month': int(month),
-        'day': int(day),
-        'subject': int(subject_id),
-        'session': int(session[1:]),
-        'segment': int(segment[1:]),
-    }
-
-
-def _read_physician_report(file_path):
-    directory = os.path.dirname(file_path)
-    txt_file = glob.glob(os.path.join(directory, '**/*.txt'), recursive=True)
-    # check that there is at most one txt file in the same directory
-    assert len(txt_file) in [0, 1]
-    report = ''
-    if txt_file:
-        txt_file = txt_file[0]
-        # somewhere in the corpus, encoding apparently changed
-        # first try to read as utf-8, if it does not work use latin-1
-        try:
-            with open(txt_file, 'r', encoding='utf-8') as f:
-                report = f.read()
-        except UnicodeDecodeError:
-            with open(txt_file, 'r', encoding='latin-1') as f:
-                report = f.read()
-    return report
-
-
-def _read_edf_header(file_path):
-    f = open(file_path, "rb")
-    header = f.read(88)
-    f.close()
-    return header
-
-
-def _parse_age_and_gender_from_edf_header(file_path):
-    header = _read_edf_header(file_path)
-    # bytes 8 to 88 contain ascii local patient identification
-    # see https://www.teuniz.net/edfbrowser/edf%20format%20description.html
-    patient_id = header[8:].decode("ascii")
-    age = -1
-    found_age = re.findall(r"Age:(\d+)", patient_id)
-    if len(found_age) == 1:
-        age = int(found_age[0])
-    gender = "X"
-    found_gender = re.findall(r"\s([F|M])\s", patient_id)
-    if len(found_gender) == 1:
-        gender = found_gender[0]
-    return age, gender
+    @staticmethod
+    def _parse_age_and_gender_from_edf_header(file_path):
+        header = TUH._read_edf_header(file_path)
+        # bytes 8 to 88 contain ascii local patient identification
+        # see https://www.teuniz.net/edfbrowser/edf%20format%20description.html
+        patient_id = header[8:].decode("ascii")
+        age = -1
+        found_age = re.findall(r"Age:(\d+)", patient_id)
+        if len(found_age) == 1:
+            age = int(found_age[0])
+        gender = "X"
+        found_gender = re.findall(r"\s([F|M])\s", patient_id)
+        if len(found_gender) == 1:
+            gender = found_gender[0]
+        return age, gender
 
 
 class TUHAbnormal(TUH):
@@ -212,23 +260,38 @@ class TUHAbnormal(TUH):
     ----------
     path: str
         Parent directory of the dataset.
-    select: list | callable
-        If a callable, receives the description DataFrame of all recordings
-        in path and returns a DataFrame which potentially describes only a
-        subset to be loaded. If a list, selects recordings accordingly and
-        overwrites default chronological order, e.g. if recording_ids=[1,0],
-        the first recording returned by this class will be chronologically
-        later then the second recording. Provide recording_ids in ascending
-        order to preserve chronological order.
+    indexer: None | callable
+        When called, receives the path of the dataset and is supposed to return
+        a list of absolute recording file paths. By default, glob is used to
+        search for .edf files.
+        Note that the order of the file paths matters.
+    parser: None | callable
+        When called, receives a list of absolute recording file paths and is
+        supposed to return a list of dictionaries that describe the recordings.
+        The dictionaries are required to contain {'path': file_path}.
+        By default, extracts version, year, month, day, subject, session,
+        segment.
+        Note that the order of the descriptions matters.
+    reader: None | callable
+        When called, receives an absolute recording file path and is supposed
+        to return a mne.io.Raw object. By default, uses mne.io.read_raw_edf with
+        preload=False and verbose='ERROR'.
+    selector: None | callable | list
+        If callable, receives the description of one recording and is supposed
+        to return a boolean whether or not to include this recording in the
+        dataset.
+        If a list, it is assumed to contain integer ids that are then used to
+        slice descriptions.
     target_name: str
-        Can be 'pathological', 'gender', or 'age'.
-    preload: bool
-        If True, preload the data of the Raw objects.
+        Can be 'gender', or 'age'.
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
-    verbose: str
-        Verbosity level when calling mne.io.read_raw_edf.
+    load: bool
+        If False, only creates the index of .edf file paths through indexer and
+        the descriptions thereof through parser (fast).
+        If True, additionally touches all .edf files and creates nme.io.Raw
+        objects through reader (slow).
     n_jobs: int
         Number of jobs to be used to read files in parallel.
     recording_ids: list(int) | int
@@ -236,41 +299,60 @@ class TUHAbnormal(TUH):
         A (list of) int of recording id(s) to be read (order matters and will
         overwrite default chronological order, e.g. if recording_ids=[1,0],
         then the first recording returned by this class will be chronologically
-        later then the second recording. Provide recording_ids in ascending
+        later than the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
+    preload: bool
+        Deprecated.
+        If True, preload the data of the Raw objects.
     """
-    def __init__(self, path, target_name='pathological', select=None,
-                 preload=False, add_physician_reports=False, verbose='ERROR',
-                 recording_ids=None, n_jobs=1):
-        super().__init__(path=path, preload=preload, target_name=target_name,
-                         add_physician_reports=add_physician_reports,
-                         select=select, verbose=verbose,
-                         recording_ids=recording_ids, n_jobs=n_jobs)
-        additional_descriptions = []
-        for file_path in self.description.path:
-            additional_description = (
-                self._parse_additional_description_from_file_path(file_path))
-            additional_descriptions.append(additional_description)
-        additional_descriptions = pd.DataFrame(additional_descriptions)
-        self.set_description(additional_descriptions, overwrite=True)
+    def __init__(
+            self, path, indexer=None, parser=None, reader=None,
+            selector=None, target_name='pathological',
+            add_physician_reports=False, load=True, n_jobs=1,
+            # deprecated
+            recording_ids=None, preload=False,
+    ):
+        super().__init__(
+            path=path, indexer=indexer, parser=parser, reader=reader,
+            selector=selector, target_name=target_name,
+            add_physician_reports=add_physician_reports,
+            load=load, n_jobs=n_jobs,
+            # deprecated
+            recording_ids=recording_ids, preload=preload,
+        )
 
-    @staticmethod
-    def _parse_additional_description_from_file_path(file_path):
-        file_path = os.path.normpath(file_path)
-        tokens = file_path.split(os.sep)
-        # expect paths as version/file type/data_split/pathology status/
-        #                     reference/subset/subject/recording session/file
-        # e.g.            v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/
-        #                     s004_2013_08_15/00000021_s004_t000.edf
-        assert ('abnormal' in tokens or 'normal' in tokens), (
-            'No pathology labels found.')
-        assert ('train' in tokens or 'eval' in tokens), (
-            'No train or eval set information found.')
-        return {
-            'version': tokens[-9],
-            'train': 'train' in tokens,
-            'pathological': 'abnormal' in tokens,
+    def _parse(self, path):
+        # tuh_eeg_abnormal/v2.0.0/edf/eval/normal/01_tcp_ar/058/00005864/
+        #  s001_2009_09_03/00005864_s001_t000.edf
+        pattern = os.sep.join([
+            r'(v\d.\d.\d)',  # version
+            r'\w+',
+            r'(\w+)',  # train
+            r'(\w+)',  # pathological
+            r'\w+',
+            r'\d+',
+            r'(\d+)',  # subject
+            r's(\d+)_(\d+)_(\d+)_(\d+)',  # session, year, month, day
+            r'\d+_s(\d+)_t(\d+)\.edf$',  # session, segment
+        ])
+        pattern = re.compile(pattern)
+        matches = re.findall(pattern, path)[0]
+        (version, train, pathological, subject,
+         session, year, month, day, _, segment) = matches
+        d = {
+            'path': path,
+            'version': version,
+            'year': int(year),
+            'month': int(month),
+            'day': int(day),
+            'subject': int(subject),
+            'session': int(session),
+            'segment': int(segment),
+            # specific for abnormal
+            'train': train == 'train',
+            'pathological': pathological == 'abnormal',
         }
+        return d
 
 
 def _fake_raw(*args, **kwargs):
@@ -315,7 +397,7 @@ class _TUHMock(TUH):
     """Mocked class for testing and examples."""
     @mock.patch('glob.glob', return_value=_TUH_EEG_PATHS.keys())
     @mock.patch('mne.io.read_raw_edf', new=_fake_raw)
-    @mock.patch('braindecode.datasets.tuh._read_edf_header',
+    @mock.patch('braindecode.datasets.tuh.TUH._read_edf_header',
                 new=_get_header)
     def __init__(self, mock_glob, path, recording_ids=None, target_name=None,
                  preload=False, add_physician_reports=False, n_jobs=1):
@@ -329,9 +411,9 @@ class _TUHAbnormalMock(TUHAbnormal):
     """Mocked class for testing and examples."""
     @mock.patch('glob.glob', return_value=_TUH_EEG_ABNORMAL_PATHS.keys())
     @mock.patch('mne.io.read_raw_edf', new=_fake_raw)
-    @mock.patch('braindecode.datasets.tuh._read_edf_header',
+    @mock.patch('braindecode.datasets.tuh.TUH._read_edf_header',
                 new=_get_header)
-    @mock.patch('braindecode.datasets.tuh._read_physician_report',
+    @mock.patch('braindecode.datasets.tuh.TUH._read_physician_report',
                 return_value='simple_test')
     def __init__(self, mock_glob, mock_report, path, recording_ids=None,
                  target_name='pathological', preload=False,

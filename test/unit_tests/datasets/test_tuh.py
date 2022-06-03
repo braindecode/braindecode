@@ -5,14 +5,17 @@
 from datetime import datetime
 
 from braindecode.datasets.tuh import (
-    _parse_description_from_file_path, _create_chronological_description,
-    TUHAbnormal, _TUHMock, _TUHAbnormalMock)
+    TUH, TUHAbnormal, _TUHMock, _TUHAbnormalMock)
 
 
 def test_parse_from_tuh_file_path():
     file_path = ("v2.0.0/edf/01_tcp_ar/000/00000021/"
                  "s004_2013_08_15/00000021_s004_t000.edf")
-    description = _parse_description_from_file_path(file_path)
+    tuh = _TUHMock(
+        path='',
+        n_jobs=1,  # required for test to work. mocking seems to fail otherwise
+    )
+    description = tuh._parse(file_path)
     assert len(description) == 8
     assert description['path'] == file_path
     assert description['year'] == 2013
@@ -27,21 +30,26 @@ def test_parse_from_tuh_file_path():
 def test_parse_from_tuh_abnormal_file_path():
     file_path = ("v2.0.0/edf/eval/abnormal/01_tcp_ar/107/00010782/"
                  "s002_2013_10_05/00010782_s002_t001.edf")
-    additional_description = (
-        TUHAbnormal._parse_additional_description_from_file_path(file_path))
-    assert len(additional_description) == 3
-    assert additional_description['pathological']
-    assert not additional_description['train']
-    assert additional_description['version'] == 'v2.0.0'
+    tuh_ab = _TUHAbnormalMock(
+        path='',
+        add_physician_reports=True,
+        n_jobs=1,  # required for test to work. mocking seems to fail otherwise
+    )
+    description = (
+        tuh_ab._parse(file_path))
+    assert len(description) == 10
+    assert description['pathological']
+    assert not description['train']
+    assert description['version'] == 'v2.0.0'
 
     file_path = ("v2.0.0/edf/train/normal/01_tcp_ar/107/00010782/"
                  "s002_2013_10_05/00010782_s002_t001.edf")
-    additional_description = (
-        TUHAbnormal._parse_additional_description_from_file_path(file_path))
-    assert len(additional_description) == 3
-    assert not additional_description['pathological']
-    assert additional_description['train']
-    assert additional_description['version'] == 'v2.0.0'
+    description = (
+        tuh_ab._parse(file_path))
+    assert len(description) == 10
+    assert not description['pathological']
+    assert description['train']
+    assert description['version'] == 'v2.0.0'
 
 
 def test_sort_chronologically():
@@ -69,7 +77,12 @@ def test_sort_chronologically():
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010816/s001_2013_10_03/"
         "00010816_s001_t001.edf",
     ]
-    description = _create_chronological_description(file_paths)
+    tuh_ab = _TUHAbnormalMock(
+        path='',
+        add_physician_reports=True,
+        n_jobs=1,  # required for test to work. mocking seems to fail otherwise
+    )
+    description = tuh_ab._parser(file_paths)
     expected = [
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000068/s008_2010_09_28/"
         "00000068_s008_t001.edf",
@@ -94,8 +107,8 @@ def test_sort_chronologically():
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010839/s001_2013_11_22/"
         "00010839_s001_t000.edf",
     ]
-    for p1, p2 in zip(expected, description.T.path):
-        assert p1 == p2
+    for p1, p2 in zip(expected, description):
+        assert p1 == p2['path']
 
 
 def test_tuh():
