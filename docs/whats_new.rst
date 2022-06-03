@@ -31,7 +31,7 @@ Bugs
 API changes
 ~~~~~~~~~~~
 
-- Renaming the name of the function `get_params` to `get_augmentation_params` in :class:`braindecode.augmentation.base` and in all the function inside :class:`braindecode.augmentation.transforms`. Make Transform module cloneable for scikit-learn (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
+- Renaming the method `get_params` to `get_augmentation_params` in augmentation classes. This makes the Transform module compatible with scikit-learn cloning mechanism (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
 
 .. _changes_0_6_0:
 
