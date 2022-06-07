@@ -1,6 +1,6 @@
 """
 Searching the best data augmentation on BCIC IV 2a Dataset
-=======================================
+==============================================================================
 
 This tutorial shows how to perform a data augmentations search in
 braindecode framework. The best augmentation for the EEG data has
@@ -17,16 +17,23 @@ methodology proposed by [1]_ on the openly BCIC IV 2a Dataset.
     performance in a self-supervised paradigm, presenting a more diverse
     view of the data, whether in a context of pre-task or contrastive approach [2]_.
 
+
 Both approaches demand an intense comparison to find the best fit with the data.
-Here, we use the augmentation module present in braindecode to present a way to
-delivery this analysis.
+This view is supported by Paillard, J.*, Rommel, C.*, Moreau, T., & Gramfort, A. (2022),
+who writes that it is very important to the selection the right transformation and
+strength for each different type of task considered.
+Here, we use the augmentation module present in braindecode to deliver this a
+search for a best augmentation and strength in the trialwise decoding on
+dataset BCI IV 2a.
+
+.. contents:: This example covers:
+   :local:
+   :depth: 2
 
 """
 
-
 # Authors: Bruno Aristimunha <a.bruno@ufabc.edu.br>
 #          Cédric Rommel <cedric.rommel@inria.fr>
-#
 # License: BSD (3-clause)
 
 ######################################################################
@@ -36,7 +43,6 @@ delivery this analysis.
 # Loading
 # ~~~~~~~
 
-from skorch.helper import predefined_split
 from skorch.callbacks import LRScheduler
 
 from braindecode import EEGClassifier
@@ -75,6 +81,8 @@ preprocess(dataset, preprocessors)
 #
 
 from braindecode.preprocessing import create_windows_from_events
+from skorch.helper import SliceDataset
+from numpy import array
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -95,39 +103,51 @@ windows_dataset = create_windows_from_events(
 ######################################################################
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-
+# Following the rules of the BCI competition
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
-valid_set = splitted['session_E']
+eval_set = splitted['session_E']
 
 ######################################################################
-# Defining a Transform
+# Defining a list of transforms
 # --------------------
 #
-# Data can be manipulated by transforms, which are callable objects. A
-# transform is usually handled by a custom data loader, but can also be called
-# directly on input data, as demonstrated below for illutrative purposes.
+# In this tutorial, we will use three categories of augmentations.
+# This categorization has been proposed by [1]_ to explain and aggregate
+# the several possibilities of augmentations in EEG, being them: a) Frequency domain
+# augmentations, b) Time domain augmentations, and c) Spatial domain augmentations.
 #
-# First, we need to define a Transform. Here we chose the FrequencyShift, which
-# randomly translates all frequencies within a given range.
+# From this same paper, we selected the best augmentations in each type: FTSurrogate,
+# SmoothTimeMask, ChannelsDropout, respectively.
+#
+# For each augmentation, we adjustable ten values from a range for one parameter
+# inside the transformation.
+#
+# For that, we need to define three lists of transformations and range for the parameter
+# ∆φmax in FTSurrogate where ∆φmax ∈ [0, 2π); for ∆t in SmoothTimeMask is ∆t ∈ [0, 2];
+# For the method ChannelsDropout, we analyse the parameter p_drop ∈ [0, 1].
 
-from braindecode.augmentation import FTSurrogate, SmoothTimeMask, ChannelsDropout, FrequencyShift
+from numpy import linspace
+from braindecode.augmentation import FTSurrogate, SmoothTimeMask, ChannelsDropout
 
-transform = FrequencyShift(
-    probability=1.,  # defines the probability of actually modifying the input
-    sfreq=sfreq,
-    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
-)
+seed = 20200220
 
+transforms_freq = [FTSurrogate(probability=0.5, phase_noise_magnitude=phase_freq,
+                               random_state=seed) for phase_freq in linspace(0, 1, 10)]
+
+transforms_time = [SmoothTimeMask(probability=0.5, mask_len_samples=int(sfreq * second),
+                                  random_state=seed) for second in linspace(0.1, 2, 10)]
+
+transforms_spatial = [ChannelsDropout(probability=0.5, p_drop=prob,
+                                      random_state=seed) for prob in linspace(0, 1, 10)]
 
 ######################################################################
 # Training a model with data augmentation
 # ---------------------------------------
 #
-# Now that we know how to instantiate ``Transforms``, it is time to learn how
-# to use them to train a model and try to improve its generalization power.
-# Let's first create a model.
+# Now that we know how to instantiate three list of ``Transforms``, it is time to learn how
+# to use them to train a model and try to search the best for the dataset.
+# Let's first create a model for search a parameter.
 #
 # Create model
 # ~~~~~~~~~~~~
@@ -173,20 +193,7 @@ model = ShallowFBCSPNet(
 # for the training. Multiple transforms can be passed to it and will be applied
 # sequentially to the batched data within the ``AugmentedDataLoader`` object.
 
-from braindecode.augmentation import AugmentedDataLoader, SignFlip
-
-freq_shift = FrequencyShift(
-    probability=.5,
-    sfreq=sfreq,
-    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
-)
-
-sign_flip = SignFlip(probability=.1)
-
-transforms = [
-    freq_shift,
-    sign_flip
-]
+from braindecode.augmentation import AugmentedDataLoader
 
 # Send model to GPU
 if cuda:
@@ -206,10 +213,10 @@ n_epochs = 4
 clf = EEGClassifier(
     model,
     iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
-    iterator_train__transforms=transforms,  # This sets the augmentations to use
+    iterator_train__transforms=[],  # This sets is handled by GridSearchCV
     criterion=torch.nn.NLLLoss,
     optimizer=torch.optim.AdamW,
-    train_split=predefined_split(valid_set),  # using valid_set for validation
+    train_split=None,  # GridSearchCV will control the split and train/validation over the dataset
     optimizer__lr=lr,
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
@@ -219,75 +226,66 @@ clf = EEGClassifier(
     ],
     device=device,
 )
-# Model training for a specified number of epochs. `y` is None as it is already
-# supplied in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+
+#####################################################################
+# To use the skorch framework, it is necessary to transform the windows
+# dataset using the module SliceData. Also, it is mandatory to eval the
+# generator of the training.
+
+train_X = SliceDataset(train_set, idx=0)
+train_y = array([y for y in SliceDataset(train_set, idx=1)])
+
+#######################################################################
+#   Given the trialwise appoarch, here we use a the KFold approach and
+#   GridSearchCV.
+
+from sklearn.model_selection import KFold, GridSearchCV
+
+cv = KFold(n_splits=5, shuffle=True, random_state=seed)
+fit_params = {'epochs': n_epochs}
+
+transforms = transforms_freq + transforms_time + transforms_spatial
+
+param_grid = {
+    'iterator_train__transforms': transforms,
+}
+
+clf.verbose = 0
+
+search = GridSearchCV(
+    estimator=clf,
+    param_grid=param_grid,
+    cv=cv,
+    return_train_score=True,
+    scoring='accuracy',
+    refit=True,
+    verbose=1,
+    error_score='raise')
+
+search.fit(train_X, train_y, **fit_params)
 
 ######################################################################
-# Manually composing Transforms
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# It would be equivalent (although more verbose) to pass to ``EEGClassifier`` a
-# composition of the same transforms:
-
-from braindecode.augmentation import Compose
-
-composed_transforms = Compose(transforms=transforms)
-
-######################################################################
-# Setting the data augmentation at the Dataset level
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-# Also note that it is also possible for most of the transforms to pass them
-# directly to the WindowsDataset object through the `transform` argument, as
-# most commonly done in other libraries. However, it is advised to use the
-# ``AugmentedDataLoader`` as above, as it is compatible with all transforms and
-# can be more efficient.
-
-train_set.transform = composed_transforms
-
-
-
-######################################################################
-# Manipulating one session and visualizing the transformed data
+# Analysing the best fit
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 #
-# Next, let us augment one session to show the resulting frequency shift. The
-# data of an mne Epoch is used here to make usage of mne functions.
+# Next, just perform an analysis of the best fit, and the parameters,
+# remembering the order that was adjusted.
 
+import pandas as pd
 
-epochs = train_set.datasets[0].windows  # original epochs
-X = epochs.get_data()
-# This allows to apply the transform with a fixed shift (10 Hz) for
-# visualization instead of sampling the shift randomly between -2 and 2 Hz
-X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
+search_results = pd.DataFrame(search.cv_results_)
 
-######################################################################
-# The psd of the transformed session has now been shifted by 10 Hz, as one can
-# see on the psd plot.
+best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
+print(f"Best hyperparameters were {best_run['params']} which gave a validation "
+      f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
+      f"accuracy of {best_run['mean_train_score'] * 100:.2f}%).")
 
-import mne
-import matplotlib.pyplot as plt
-import numpy as np
+eval_X = SliceDataset(eval_set, idx=0)
+eval_y = SliceDataset(eval_set, idx=1)
+score = search.score(eval_X, eval_y)
+print(f"Eval accuracy is {score * 100:.2f}%.")
 
-
-def plot_psd(data, axis, label, color):
-    psds, freqs = mne.time_frequency.psd_array_multitaper(data, sfreq=sfreq,
-                                                          fmin=0.1, fmax=100)
-    psds = 10. * np.log10(psds)
-    psds_mean = psds.mean(0).mean(0)
-    axis.plot(freqs, psds_mean, color=color, label=label)
-
-
-_, ax = plt.subplots()
-plot_psd(X, ax, 'original', 'k')
-plot_psd(X_tr.numpy(), ax, 'shifted', 'r')
-
-ax.set(title='Multitaper PSD (gradiometers)', xlabel='Frequency (Hz)',
-       ylabel='Power Spectral Density (dB)')
-ax.legend()
-plt.show()
 
 # References
 # ----------
