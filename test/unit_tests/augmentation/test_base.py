@@ -28,7 +28,7 @@ class DummyTransform(Transform):
             self.k = k
         super().__init__(probability=probability, random_state=random_state)
 
-    def get_params(self, X, y):
+    def get_augmentation_params(self, X, y):
         return {"k": self.k}
 
 

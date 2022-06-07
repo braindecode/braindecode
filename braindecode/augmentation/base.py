@@ -50,7 +50,7 @@ class Transform(torch.nn.Module):
         self._probability = probability
         self.rng = check_random_state(random_state)
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         return dict()
 
     def forward(self, X: Tensor, y: Tensor = None) -> Output:
@@ -87,7 +87,7 @@ class Transform(torch.nn.Module):
             # Uses the mask to define the output
             out_X[mask, ...], tr_y = self.operation(
                 out_X[mask, ...], out_y[mask],
-                **self.get_params(out_X[mask, ...], out_y[mask])
+                **self.get_augmentation_params(out_X[mask, ...], out_y[mask])
             )
             # Apply the operation defining the Transform to the whole batch
             if type(tr_y) is tuple:
