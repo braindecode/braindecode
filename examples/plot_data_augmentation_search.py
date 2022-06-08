@@ -120,9 +120,10 @@ eval_set = splitted['session_E']
 # From this same paper, we selected the best augmentations in each type: FTSurrogate,
 # SmoothTimeMask, ChannelsDropout, respectively.
 #
-# For each augmentation, we adjustable ten values from a range for one parameter
+# For each augmentation, we adjustable three values from a range for one parameter
 # inside the transformation.
 #
+# It is important to remember that you can increase the range.
 # For that, we need to define three lists of transformations and range for the parameter
 # ∆φmax in FTSurrogate where ∆φmax ∈ [0, 2π); for ∆t in SmoothTimeMask is ∆t ∈ [0, 2];
 # For the method ChannelsDropout, we analyse the parameter p_drop ∈ [0, 1].
@@ -133,13 +134,13 @@ from braindecode.augmentation import FTSurrogate, SmoothTimeMask, ChannelsDropou
 seed = 20200220
 
 transforms_freq = [FTSurrogate(probability=0.5, phase_noise_magnitude=phase_freq,
-                               random_state=seed) for phase_freq in linspace(0, 1, 10)]
+                               random_state=seed) for phase_freq in linspace(0, 1, 3)]
 
 transforms_time = [SmoothTimeMask(probability=0.5, mask_len_samples=int(sfreq * second),
-                                  random_state=seed) for second in linspace(0.1, 2, 10)]
+                                  random_state=seed) for second in linspace(0.1, 2, 3)]
 
 transforms_spatial = [ChannelsDropout(probability=0.5, p_drop=prob,
-                                      random_state=seed) for prob in linspace(0, 1, 10)]
+                                      random_state=seed) for prob in linspace(0, 1, 3)]
 
 ######################################################################
 # Training a model with data augmentation
@@ -241,7 +242,7 @@ train_y = array([y for y in SliceDataset(train_set, idx=1)])
 
 from sklearn.model_selection import KFold, GridSearchCV
 
-cv = KFold(n_splits=5, shuffle=True, random_state=seed)
+cv = KFold(n_splits=2, shuffle=True, random_state=seed)
 fit_params = {'epochs': n_epochs}
 
 transforms = transforms_freq + transforms_time + transforms_spatial
@@ -285,6 +286,9 @@ eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)
 score = search.score(eval_X, eval_y)
 print(f"Eval accuracy is {score * 100:.2f}%.")
+
+
+
 
 
 # References
