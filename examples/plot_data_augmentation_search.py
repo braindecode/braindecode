@@ -287,10 +287,6 @@ eval_y = SliceDataset(eval_set, idx=1)
 score = search.score(eval_X, eval_y)
 print(f"Eval accuracy is {score * 100:.2f}%.")
 
-
-
-
-
 # References
 # ----------
 #
