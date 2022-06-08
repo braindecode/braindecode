@@ -30,12 +30,12 @@ class TUH(BaseConcatDataset):
     ----------
     path: str
         Parent directory of the dataset.
-    indexer: None | callable
+    indexer: None | callable | list
         When called, receives the path of the dataset and is supposed to return
         a list of absolute recording file paths. By default, glob is used to
         search for .edf files.
         Note that the order of the file paths matters.
-    parser: None | callable
+    parser: None | callable | list | DataFrame
         When called, receives a list of absolute recording file paths and is
         supposed to return a list of dictionaries that describe the recordings.
         The dictionaries are required to contain {'path': file_path}.
@@ -48,8 +48,8 @@ class TUH(BaseConcatDataset):
         preload=False and verbose='ERROR'.
     selector: None | callable | list
         If callable, receives the description of one recording and is supposed
-        to return a boolean whether or not to include this recording in the
-        dataset.
+        to return a boolean whether to include this recording in the
+        dataset or not.
         If a list, it is assumed to contain integer ids that are then used to
         slice descriptions. Exists to assure backwards compatibility with
         'recording_ids'.
@@ -59,9 +59,9 @@ class TUH(BaseConcatDataset):
         If True, the physician reports will be read from disk and added to the
         description.
     load: bool
-        If False, only creates the index of .edf file paths through indexer and
-        the descriptions thereof through parser (fast).
-        If True, additionally touches all .edf files and creates nme.io.Raw
+        If False, only creates the index of .edf file paths through indexer.
+        If True, creates the descriptions of all file paths through parser,
+        additionally touches all .edf files and creates nme.io.Raw
         objects through reader (slow).
     n_jobs: int
         Number of jobs to be used to read files in parallel.
@@ -102,11 +102,11 @@ class TUH(BaseConcatDataset):
         self._target_name = target_name
         self._add_physician_reports = add_physician_reports
         self._n_jobs = n_jobs
-        self._file_paths = self._indexer(path)
-        self._descriptions = self._parser(self._file_paths)
-        assert 'path' in self._descriptions[0]
+        self._file_paths = self._indexer(path) if callable(self._indexer) else self._indexer
+        self._descriptions = self._parser(self._file_paths) if callable(self._parser) else self._parser
+        self._descriptions = pd.DataFrame(self._descriptions).T
         if self._selector is not None and not callable(self._selector):
-            self._descriptions = [self._descriptions[i] for i in self._selector]
+            self._descriptions = self._descriptions[self._selector]
         if load:
             self.load(n_jobs=self._n_jobs)
 
@@ -114,8 +114,8 @@ class TUH(BaseConcatDataset):
     def _indexer(path):
         return glob.glob(path + '**/*.edf', recursive=True)
 
-    def _parser(self, descriptions):
-        descriptions = [self._parse(d) for d in descriptions]
+    def _parser(self, file_paths):
+        descriptions = [self._parse_one_path(p) for p in file_paths]
         key = ('year', 'month', 'day', 'subject', 'session', 'segment')
         descriptions = sorted(
             descriptions,
@@ -123,7 +123,7 @@ class TUH(BaseConcatDataset):
         )
         return descriptions
 
-    def _parse(self, path):
+    def _parse_one_path(self, path):
         # /tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000013/s001_2002_09_03/
         #  00000013_s001_t002.edf
         pattern = os.sep.join([
@@ -150,7 +150,7 @@ class TUH(BaseConcatDataset):
         }
         return d
 
-    def load(self, n_jobs):
+    def load(self, n_jobs=1):
         n_jobs = self._n_jobs if n_jobs == 1 else n_jobs
         args = (
             self._reader, self._selector,
@@ -160,13 +160,13 @@ class TUH(BaseConcatDataset):
         )
         if n_jobs == 1:
             datasets = [
-                self._create_dataset(i, d, *args)
-                for i, d in enumerate(self._descriptions)
+                self._create_dataset(c, self._descriptions[c], *args)
+                for c in self._descriptions.columns
             ]
         else:
             datasets = Parallel(n_jobs=n_jobs)(
-                delayed(self._create_dataset)(i, d, *args)
-                for i, d in enumerate(self._descriptions)
+                delayed(self._create_dataset)(c, self._descriptions[c], *args)
+                for c in self._descriptions.columns
             )
         if self._selector is not None:
             datasets = [d for d in datasets if d is not None]
@@ -321,7 +321,7 @@ class TUHAbnormal(TUH):
             recording_ids=recording_ids, preload=preload,
         )
 
-    def _parse(self, path):
+    def _parse_one_path(self, path):
         # tuh_eeg_abnormal/v2.0.0/edf/eval/normal/01_tcp_ar/058/00005864/
         #  s001_2009_09_03/00005864_s001_t000.edf
         pattern = os.sep.join([
