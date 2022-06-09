@@ -16,6 +16,7 @@ class CustomPad(nn.Module):
     def forward(self, x):
         return F.pad(x, self.padding)
 
+
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
         self.max_norm = max_norm
@@ -32,12 +33,13 @@ class EEGInception(nn.Module):
     """EEG Inception model from Santamaría-Vázquez, E. et al 2020.
 
     EEG Inception for ERP-based classification described in [Santamaria2020]]_.
-    The code for the paper and this model is also available at [Santamaria2020]_ and an adaptation for PyTorch [1]_.
+    The code for the paper and this model is also available at [Santamaria2020]_
+    and an adaptation for PyTorch [1]_.
 
     The model is highly based on the original InceptionNet for an image. The main goal is
     to extract features in parallel with different scales. The author extracted three scales
-    proportional to the window sample size. The network had three parts: 1-inception block largest,
-    2--inception block smaller and bottleneck for classification.
+    proportional to the window sample size. The network had three parts:
+    1-inception block largest, 2--inception block smaller and bottleneck for classification.
 
     One advantage of the module such EEG-Inception for EEG is that it allows a network
     to learn simultaneous components of low and high frequency associated with the signal.
@@ -59,8 +61,10 @@ class EEGInception(nn.Module):
     n_filters : int
         Initial number of convolutional filters. Set to 8 in [Santamaria2020]_.
     scales_time: list(int)
-        Windows for inception block, must be a list with proportional values of the input_window_samples.
-        Acording with the author: temporal scale (ms) of the convolutions on each Inception module.
+        Windows for inception block, must be a list with proportional values of
+        the input_window_samples.
+        Acording with the author: temporal scale (ms) of the convolutions
+        on each Inception module.
         This parameter determines the kernel sizes of the filters.
     activation: nn.Module
         Activation function as an parameter, ELU activation.
@@ -69,7 +73,8 @@ class EEGInception(nn.Module):
     ----------
     .. [Santamaria2020] Santamaria-Vazquez, E., Martinez-Cagigal, V.,
        Vaquerizo-Villar, F., & Hornero, R. (2020).
-       EEG-inception: A novel deep convolutional neural network for assistive ERP-based brain-computer interfaces.
+       EEG-inception: A novel deep convolutional neural network for assistive
+       ERP-based brain-computer interfaces.
        IEEE Transactions on Neural Systems and Rehabilitation Engineering , v. 28.
        Online: http://dx.doi.org/10.1109/TNSRE.2020.3048106
     .. [2]  Grifcc. Implementation of the EEGInception in torch (2022).
@@ -102,19 +107,20 @@ class EEGInception(nn.Module):
         self.inception_block1 = nn.ModuleList([
             nn.Sequential(
                 CustomPad((0, 0, scales_sample // 2 - 1, scales_sample // 2,)),
-                nn.Conv2d(1, n_filters, (scales_sample, 1)),# kernel_initializer='he_normal',padding='same'
+                nn.Conv2d(1, n_filters, (scales_sample, 1)),
+                # kernel_initializer='he_normal',padding='same'
                 nn.BatchNorm2d(n_filters, momentum=0.01),
                 activation,
                 nn.Dropout(drop_prob),
                 Conv2dWithConstraint(n_filters,
-                    n_filters * 2,
-                    (1, n_channels),
-                    max_norm=1,
-                    stride=1,
-                    bias=False,
-                    groups=self.n_filters,
-                    padding=(0, 0),
-                ),
+                                     n_filters * 2,
+                                     (1, n_channels),
+                                     max_norm=1,
+                                     stride=1,
+                                     bias=False,
+                                     groups=self.n_filters,
+                                     padding=(0, 0),
+                                     ),
                 nn.BatchNorm2d(n_filters * 2, momentum=0.01),
                 activation,
                 nn.Dropout(drop_prob),
@@ -131,7 +137,7 @@ class EEGInception(nn.Module):
                 nn.Conv2d(
                     len(scales_samples) * 2 * n_filters,
                     n_filters, (scales_sample // 4, 1),
-                    bias=False #kernel_initializer='he_normal', padding='same'
+                    bias=False  # kernel_initializer='he_normal', padding='same'
                 ),
                 nn.BatchNorm2d(n_filters, momentum=0.01),
                 activation,
@@ -148,7 +154,7 @@ class EEGInception(nn.Module):
             nn.Conv2d(
                 24, n_filters * len(scales_samples) // 2, (8, 1),
                 bias=False
-            ), #kernel_initializer='he_normal', padding='same'
+            ),  # kernel_initializer='he_normal', padding='same'
             nn.BatchNorm2d(n_filters * len(scales_samples) // 2, momentum=0.01),
             activation,
             nn.AvgPool2d((2, 1)),
@@ -159,7 +165,7 @@ class EEGInception(nn.Module):
                 12, n_filters * len(scales_samples) // 4, (4, 1),
                 bias=False
 
-            ), #kernel_initializer='he_normal', padding='same'
+            ),  # kernel_initializer='he_normal', padding='same'
             nn.BatchNorm2d(n_filters * len(scales_samples) // 4, momentum=0.01),
             activation,
             nn.AvgPool2d((2, 1)),
