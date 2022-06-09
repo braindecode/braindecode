@@ -269,7 +269,6 @@ search.fit(train_X, train_y, **fit_params)
 # Analysing the best fit
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-#
 # Next, just perform an analysis of the best fit, and the parameters,
 # remembering the order that was adjusted.
 
