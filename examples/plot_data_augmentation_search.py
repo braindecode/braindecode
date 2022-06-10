@@ -276,9 +276,10 @@ import pandas as pd
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
-best_aug = best_run['params'] ['iterator_train__transforms']
+best_aug = best_run['params']['iterator_train__transforms']
 validation_score = best_run['mean_test_score'] * 100
 training_score = best_run['mean_train_score'] * 100
+
 print(f"Best augmentation method was {str(best_aug)} which gave a validation "
       f"accuracy of {validation_score:.2f}% (training "
       f"accuracy of {training_score:.2f}%).")
