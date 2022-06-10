@@ -290,8 +290,8 @@ print(f"Eval accuracy is {score * 100:.2f}%.")
 #
 # .. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
 #        Data augmentation for learning predictive models on EEG:
-#        a systematic comparison. Submitted to: Journal of Neural
-#        Engineering, 1-27.
+#        a systematic comparison. Available in:
+#        https://cedricrommel.github.io/assets/pdfs/systematic_comparison.pdf
 #
 # .. [2] Banville, H., (2022). Enabling real-world EEG applications with
 #        deep learning. PhD Thesis at Université Paris-Saclay.
