@@ -1,6 +1,6 @@
 """
 Searching the best data augmentation on BCIC IV 2a Dataset
-==============================================================================
+====================================================================================
 
 This tutorial shows how to search data augmentations using braindecode.
 Indeed, it is known that the best augmentation to use often dependent on the task
@@ -276,9 +276,12 @@ import pandas as pd
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
-print(f"Best hyperparameters were {best_run['params']} which gave a validation "
-      f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
-      f"accuracy of {best_run['mean_train_score'] * 100:.2f}%).")
+best_aug = best_run['params'] ['iterator_train__transforms']
+validation_score = best_run['mean_test_score'] * 100
+training_score = best_run['mean_train_score'] * 100
+print(f"Best augmentation method was {str(best_aug)} which gave a validation "
+      f"accuracy of {validation_score:.2f}% (training "
+      f"accuracy of {training_score:.2f}%).")
 
 eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)
