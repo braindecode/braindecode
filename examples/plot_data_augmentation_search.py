@@ -288,7 +288,7 @@ print(f"Eval accuracy is {score * 100:.2f}%.")
 # References
 # ----------
 #
-# .. [1] Rommel, C.*, Paillard, J.*, Moreau, T., & Gramfort, A. (2022)
+# .. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
 #        Data augmentation for learning predictive models on EEG:
 #        a systematic comparison. Submitted to: Journal of Neural
 #        Engineering, 1-27.
