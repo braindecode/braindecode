@@ -2,10 +2,10 @@
 Searching the best data augmentation on BCIC IV 2a Dataset
 ==============================================================================
 
-This tutorial shows how to perform a data augmentations search in
-braindecode framework. The best augmentation for the EEG data has
-dependent on the task or phenomenon studied. It is following the
-methodology proposed by [1]_ on the openly BCIC IV 2a Dataset.
+This tutorial shows how to search data augmentations using braindecode.
+Indeed, it is known that the best augmentation to use often dependent on the task
+or phenomenon studied. Here we follow the methodology proposed in [1]_ on the
+openly available BCI IV 2a Dataset.
 
 
 .. topic:: Data Augmentation
@@ -13,18 +13,17 @@ methodology proposed by [1]_ on the openly BCIC IV 2a Dataset.
     Data augmentation could be a step in training deep learning models.
     For decoding brain signals, recent studies have shown that artificially
     generating samples may increase the final performance of a deep learning model [1]_.
-    Other studies have shown that data augmentation could also increase the
-    performance in a self-supervised paradigm, presenting a more diverse
-    view of the data, whether in a context of pre-task or contrastive approach [2]_.
+    Other studies have shown that data augmentation can be used to cast
+    a self-supervised paradigm, presenting a more diverse
+    view of the data, both with pretext tasks and contrastive learning [2]_.
 
 
 Both approaches demand an intense comparison to find the best fit with the data.
-This view is supported by Paillard, J.*, Rommel, C.*, Moreau, T., & Gramfort, A. (2022),
-who writes that it is very important to the selection the right transformation and
+This view is supported by Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022),
+who demonstrate the importance of the selection the right transformation and
 strength for each different type of task considered.
-Here, we use the augmentation module present in braindecode to deliver this a
-search for a best augmentation and strength in the trialwise decoding on
-dataset BCI IV 2a.
+Here, we use the augmentation module present in braindecode in the context of
+trialwise decoding with the BCI IV 2a dataset.
 
 .. contents:: This example covers:
    :local:
