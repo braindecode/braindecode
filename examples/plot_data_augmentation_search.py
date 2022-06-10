@@ -221,8 +221,8 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
-        "accuracy",
-        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        'accuracy',
+        ('lr_scheduler', LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
 )
@@ -280,14 +280,15 @@ best_aug = best_run['params']
 validation_score = best_run['mean_test_score'] * 100
 training_score = best_run['mean_train_score'] * 100
 
-print(f"Best augmentation method is saved in variable best_aug which gave a validation "
-      f"accuracy of {validation_score:.2f}% (training "
-      f"accuracy of {training_score:.2f}%).")
+report_message = 'Best augmentation method is saved in variable best_aug which gave a validation ' + \
+                 f'accuracy of {validation_score:.2f}% (training accuracy of {training_score:.2f}%).'
+
+print(report_message)
 
 eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)
 score = search.score(eval_X, eval_y)
-print(f"Eval accuracy is {score * 100:.2f}%.")
+print(f'Eval accuracy is {score * 100:.2f}%.')
 
 # References
 # ----------
