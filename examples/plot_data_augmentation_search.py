@@ -280,8 +280,8 @@ best_aug = best_run['params']
 validation_score = best_run['mean_test_score'] * 100
 training_score = best_run['mean_train_score'] * 100
 
-report_message = 'Best augmentation method is saved in variable best_aug which gave a validation ' + \
-                 f'accuracy of {validation_score:.2f}% (training accuracy of {training_score:.2f}%).'
+report_message = 'Best augmentation is saved in variable best_aug which gave a validation' + \
+                 f'accuracy of {validation_score:.2f}% (train accuracy of {training_score:.2f}%).'
 
 print(report_message)
 
