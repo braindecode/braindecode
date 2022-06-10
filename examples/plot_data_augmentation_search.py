@@ -119,7 +119,7 @@ eval_set = splitted['session_E']
 # From this same paper, we selected the best augmentations in each type: FTSurrogate,
 # SmoothTimeMask, ChannelsDropout, respectively.
 #
-# For each augmentation, we adjustable three values from a range for one parameter
+# For each augmentation, we adjustable two values from a range for one parameter
 # inside the transformation.
 #
 # It is important to remember that you can increase the range.
@@ -133,13 +133,13 @@ from braindecode.augmentation import FTSurrogate, SmoothTimeMask, ChannelsDropou
 seed = 20200220
 
 transforms_freq = [FTSurrogate(probability=0.5, phase_noise_magnitude=phase_freq,
-                               random_state=seed) for phase_freq in linspace(0, 1, 3)]
+                               random_state=seed) for phase_freq in linspace(0, 1, 2)]
 
 transforms_time = [SmoothTimeMask(probability=0.5, mask_len_samples=int(sfreq * second),
-                                  random_state=seed) for second in linspace(0.1, 2, 3)]
+                                  random_state=seed) for second in linspace(0.1, 2, 2)]
 
 transforms_spatial = [ChannelsDropout(probability=0.5, p_drop=prob,
-                                      random_state=seed) for prob in linspace(0, 1, 3)]
+                                      random_state=seed) for prob in linspace(0, 1, 2)]
 
 ######################################################################
 # Training a model with data augmentation
@@ -276,11 +276,11 @@ import pandas as pd
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
-best_aug = best_run['params']['iterator_train__transforms']
+best_aug = best_run['params']
 validation_score = best_run['mean_test_score'] * 100
 training_score = best_run['mean_train_score'] * 100
 
-print(f"Best augmentation method was {str(best_aug)} which gave a validation "
+print(f"Best augmentation method is saved in variable best_aug which gave a validation "
       f"accuracy of {validation_score:.2f}% (training "
       f"accuracy of {training_score:.2f}%).")
 
