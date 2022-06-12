@@ -236,7 +236,7 @@ train_X = SliceDataset(train_set, idx=0)
 train_y = array([y for y in SliceDataset(train_set, idx=1)])
 
 #######################################################################
-#   Given the trialwise appoarch, here we use a the KFold approach and
+#   Given the trialwise approach, here we use a the KFold approach and
 #   GridSearchCV.
 
 from sklearn.model_selection import KFold, GridSearchCV
