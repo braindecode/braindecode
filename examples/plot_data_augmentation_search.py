@@ -236,7 +236,7 @@ train_X = SliceDataset(train_set, idx=0)
 train_y = array([y for y in SliceDataset(train_set, idx=1)])
 
 #######################################################################
-#   Given the trialwise approach, here we use a the KFold approach and
+#   Given the trialwise approach, here we use the KFold approach and
 #   GridSearchCV.
 
 from sklearn.model_selection import KFold, GridSearchCV
@@ -272,16 +272,17 @@ search.fit(train_X, train_y, **fit_params)
 # remembering the order that was adjusted.
 
 import pandas as pd
+import numpy as np
 
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
 best_aug = best_run['params']
-validation_score = best_run['mean_test_score'] * 100
-training_score = best_run['mean_train_score'] * 100
+validation_score = np.around(best_run['mean_test_score'] * 100, 2).mean()
+training_score = np.around(best_run['mean_train_score'] * 100, 2).mean()
 
-report_message = 'Best augmentation is saved in variable best_aug which gave a validation' + \
-                 f'accuracy of {validation_score:.2f}% (train accuracy of {training_score:.2f}%).'
+report_message = 'Best augmentation is saved in best_aug which gave a mean validation accuracy' + \
+                 'of {}% (train accuracy of {}%).'.format(validation_score, training_score)
 
 print(report_message)
 
@@ -295,9 +296,8 @@ print(f'Eval accuracy is {score * 100:.2f}%.')
 #
 # .. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
 #        Data augmentation for learning predictive models on EEG:
-#        a systematic comparison. Available in:
-#        https://cedricrommel.github.io/assets/pdfs/systematic_comparison.pdf
+#        a systematic comparison. arXiv preprint: arXiv:XXXX.XXXX
 #
-# .. [2] Banville, H., (2022). Enabling real-world EEG applications with
-#        deep learning. PhD Thesis at Université Paris-Saclay.
-#        Chapter 2. HAL archive https://tel.archives-ouvertes.fr/tel-03602771
+# .. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
+#        Uncovering the structure of clinical EEG signals with self-supervised learning.
+#        Journal of Neural Engineering, 18(4), 046020.
