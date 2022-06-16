@@ -99,6 +99,7 @@ class EEGInception(nn.Module):
         self.input_size_s = input_size_s
         self.drop_prob = drop_prob
         self.sfreq = sfreq
+        self.n_filters = n_filters
 
         input_samples = int(input_size_s * sfreq / 1000)
         scales_samples = [int(s * sfreq / input_size_s) for s in scales_time]
