@@ -296,7 +296,8 @@ print(f'Eval accuracy is {score * 100:.2f}%.')
 #
 # .. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
 #        Data augmentation for learning predictive models on EEG:
-#        a systematic comparison. arXiv preprint: arXiv:XXXX.XXXX
+#        a systematic comparison.
+#        https://arxiv.org/abs/2206.14483
 #
 # .. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
 #        Uncovering the structure of clinical EEG signals with self-supervised learning.
