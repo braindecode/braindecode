@@ -193,13 +193,14 @@ if cuda:
 from skorch.callbacks import LRScheduler
 
 from braindecode import EEGClassifier
-batch_size = 64
-n_epochs = 10
+batch_size = 16
+n_epochs = 4
 
 clf = EEGClassifier(
     model,
     criterion=torch.nn.NLLLoss,
     optimizer=torch.optim.AdamW,
+    optimizer__lr=[],
     batch_size=batch_size,
     train_split=None,  # train /test split is handled by GridSearchCV
     callbacks=[
@@ -225,11 +226,13 @@ clf = EEGClassifier(
 
 from sklearn.model_selection import GridSearchCV, KFold
 from skorch.helper import SliceDataset
+from numpy import array
 import pandas as pd
 
 train_X = SliceDataset(train_set, idx=0)
-train_y = SliceDataset(train_set, idx=1)
-cv = KFold(n_splits=3, shuffle=True, random_state=42)
+train_y = array([y for y in SliceDataset(train_set, idx=1)])
+cv = KFold(n_splits=2, shuffle=True, random_state=42)
+
 fit_params = {'epochs': n_epochs}
 param_grid = {
     'optimizer__lr': [0.00625, 0.000625, 0.0000625],
@@ -241,9 +244,14 @@ search = GridSearchCV(
     return_train_score=True,
     scoring='accuracy',
     refit=True,
+    verbose=1,
+    error_score='raise'
 )
 
 search.fit(train_X, train_y, **fit_params)
+
+import pandas as pd
+
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
