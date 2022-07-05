@@ -50,6 +50,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
     'sphinx_gallery.gen_gallery',
+    'sphinx.ext.viewcode',
     'numpydoc',
     'gh_substitutions',
 ]
@@ -130,7 +131,7 @@ def linkcode_resolve(domain, info):
 
 
 autosummary_generate = True
-autodoc_default_options = {'inherited-members': None}
+autodoc_default_options = {'inherited-members': False}
 
 numpydoc_show_class_members = False
 
@@ -211,14 +212,22 @@ sphinx_gallery_conf = {
 # html_theme = 'alabaster'
 
 import sphinx_rtd_theme
-html_theme = "sphinx_rtd_theme"
+html_theme = "pydata_sphinx_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
-
+switcher_version_match = 'dev' if release.endswith('dev0') else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
 # documentation.
 #
-# html_theme_options = {}
+html_theme_options = {"collapse_navigation": False,
+                      "navigation_depth": 4,
+                      'show_toc_level': 1,
+                      'navbar_end': 'version-switcher',
+                      'switcher': {
+                              'json_url': 'https://raw.githubusercontent.com/bruAristimunha/braindecode/nicer-docs/docs/_static/versions.json',
+                          'version_match': switcher_version_match,
+                        }
+                      }
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -259,7 +268,6 @@ latex_documents = [
     (master_doc, 'Braindecode.tex', 'Braindecode Documentation',
      'Robin Tibor Schirrmeister', 'manual'),
 ]
-
 
 # -- Options for manual page output ---------------------------------------
 
