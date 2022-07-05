@@ -10,7 +10,8 @@ import pytest
 
 from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing.windowers import (
+    create_windows_from_events, create_fixed_length_windows)
 
 
 # TODO: split file up into files with proper matching names
@@ -99,7 +100,7 @@ def test_len_concat_dataset(concat_ds_targets):
 def test_target_in_subject_info(set_up):
     raw, _, _, _, _, _ = set_up
     desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
-    with pytest.raises(ValueError, match="'does_not_exist' not in description"):
+    with pytest.warns(UserWarning, match="'does_not_exist' not in description"):
         BaseDataset(raw, desc, target_name='does_not_exist')
 
 
@@ -159,6 +160,15 @@ def test_split_dataset_failure(concat_ds_targets):
     with pytest.raises(IndexError):
         concat_ds.split([len(concat_ds.description)])
 
+    with pytest.raises(ValueError):
+        concat_ds.split([4], [5])
+
+    with pytest.warns(DeprecationWarning, match='Keyword arguments'):
+        concat_ds.split(split_ids=[0])
+
+    with pytest.warns(DeprecationWarning, match='Keyword arguments'):
+        concat_ds.split(property='subject')
+
 
 def test_split_dataset(concat_ds_targets):
     concat_ds = concat_ds_targets[0]
@@ -186,6 +196,14 @@ def test_split_dataset(concat_ds_targets):
     for i, ds in enumerate(splits["1"].datasets):
         np.testing.assert_array_equal(
             ds.raw.get_data(), concat_ds.datasets[original_ids[i]].raw.get_data())
+
+    # Test split_ids as dict
+    split_ids = dict(train=[1], test=[2])
+    splits = concat_ds.split(split_ids)
+    assert len(splits) == len(split_ids)
+    assert splits.keys() == split_ids.keys()
+    assert (splits["train"].description["run"] == "run_1").all()
+    assert (splits["test"].description["run"] == "run_2").all()
 
 
 def test_metadata(concat_windows_dataset):
@@ -308,3 +326,89 @@ def test_set_description_windows_dataset(concat_windows_dataset):
         " True."
     ):
         window_ds.set_description(pd.Series({'wow': 'error'}), overwrite=False)
+
+
+def test_concat_dataset_get_sequence_out_of_range(concat_windows_dataset):
+    indices = [len(concat_windows_dataset)]
+    with pytest.raises(IndexError):
+        X, y = concat_windows_dataset[indices]
+
+
+def test_concat_dataset_target_transform(concat_windows_dataset):
+    indices = range(100)
+    y = concat_windows_dataset[indices][1]
+
+    concat_windows_dataset.target_transform = sum
+    y2 = concat_windows_dataset[indices][1]
+
+    assert y2 == sum(y)
+
+
+def test_concat_dataset_invalid_target_transform(concat_windows_dataset):
+    with pytest.raises(TypeError):
+        concat_windows_dataset.target_transform = 0
+
+
+def test_multi_target_dataset(set_up):
+    _, base_dataset, _, _, _, _ = set_up
+    base_dataset.target_name = ['pathological', 'gender', 'age']
+    x, y = base_dataset[0]
+    assert len(y) == 3
+    assert base_dataset.description.to_list() == y
+    concat_ds = BaseConcatDataset([base_dataset])
+    windows_ds = create_fixed_length_windows(
+        concat_ds,
+        window_size_samples=100,
+        window_stride_samples=100,
+        start_offset_samples=0,
+        stop_offset_samples=None,
+        drop_last_window=False,
+        mapping={True: 1, False: 0, 'M': 0, 'F': 1},  # map non-digit targets
+    )
+    x, y, ind = windows_ds[0]
+    assert len(y) == 3
+    assert y == [1, 0, 48]  # order matters: pathological, gender, age
+
+
+def test_target_name_list(set_up):
+    raw, _, _, _, _, _ = set_up
+    target_names = ['pathological', 'gender', 'age']
+    base_dataset = BaseDataset(
+        raw=raw,
+        description={'pathological': True, 'gender': 'M', 'age': 48},
+        target_name=target_names,
+    )
+    assert base_dataset.target_name == target_names
+
+
+def test_description_incorrect_type(set_up):
+    raw, _, _, _, _, _ = set_up
+    with pytest.raises(ValueError):
+        BaseDataset(
+            raw=raw,
+            description=('test', 4),
+        )
+
+
+def test_target_name_incorrect_type(set_up):
+    raw, _, _, _, _, _ = set_up
+    with pytest.raises(
+            ValueError, match='target_name has to be None, str, tuple or list'):
+        BaseDataset(raw, target_name={'target': 1})
+
+
+def test_target_name_not_in_description(set_up):
+    raw, _, _, _, _, _ = set_up
+    with pytest.warns(UserWarning):
+        base_dataset = BaseDataset(
+            raw, target_name=('pathological', 'gender', 'age'))
+    with pytest.raises(TypeError):
+        x, y = base_dataset[0]
+    base_dataset.set_description(
+        {'pathological': True, 'gender': 'M', 'age': 48})
+    x, y = base_dataset[0]
+
+
+def test_windows_dataset_from_target_channels_raise_valuerror():
+    with pytest.raises(ValueError):
+        WindowsDataset(None, None, targets_from='non-existing')

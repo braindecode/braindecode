@@ -8,7 +8,7 @@ parameters:
 jobs:
     fetch_docs_from_github:
       docker:
-        - image: circleci/python:3.7-stretch
+        - image: circleci/python:3.7
       environment:
         GITHUB_ARTIFACT_URL: << pipeline.parameters.github-artifact-url >>
       steps:
@@ -31,7 +31,7 @@ jobs:
              - html
     dummy_job:
       docker:
-       - image: circleci/python:3.7-stretch
+       - image: circleci/python:3.7
       steps:
         - run:
            name: Dummy echo

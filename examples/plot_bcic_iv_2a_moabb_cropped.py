@@ -12,6 +12,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #
 
 ######################################################################
+
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
 # explain this visually by comparing trialwise to cropped decoding.
@@ -51,6 +52,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #
 
 ######################################################################
+
 # .. note::
 #
 #     For cropped decoding, the above training setup is mathematically
@@ -68,23 +70,20 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     used for classification in PyTorch.
 #
 
-######################################################################
+=======
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
-
-######################################################################
 # Loading and preprocessing stays the same as in the `Trialwise decoding
 # tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__.
-#
 
-from braindecode.datasets.moabb import MOABBDataset
+from braindecode.datasets import MOABBDataset
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
-from braindecode.preprocessing.preprocess import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+from braindecode.preprocessing import (
+    exponential_moving_standardize, preprocess, Preprocessor, scale)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -94,7 +93,7 @@ init_block_size = 1000
 
 preprocessors = [
     Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
-    Preprocessor(lambda x: x * 1e6),  # Convert from V to uV
+    Preprocessor(scale, factor=1e6, apply_on_array=True),  # Convert from V to uV
     Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
     Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
                  factor_new=factor_new, init_block_size=init_block_size)
@@ -110,6 +109,7 @@ preprocess(dataset, preprocessors)
 #
 
 ######################################################################
+
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
 # know the receptive field of the network to know how large the window
@@ -117,6 +117,7 @@ preprocess(dataset, preprocessors)
 #
 
 ######################################################################
+
 # We first choose the compute/input window size that will be fed to the
 # network during training This has to be larger than the networks
 # receptive field size and can otherwise be chosen for computational
@@ -144,8 +145,13 @@ cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses t
 device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
-seed = 20200220  # random seed to make results reproducible
-# Set random seed to be able to reproduce results
+# Set random seed to be able to roughly reproduce results
+# Note that with cudnn benchmark set to True, GPU indeterminism
+# may still make results substantially different between runs.
+# To obtain more consistent results at the cost of increased computation time,
+# you can set `cudnn_benchmark=False` in `set_random_seeds`
+# or remove `torch.backends.cudnn.benchmark = True`
+seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4
@@ -170,7 +176,8 @@ if cuda:
 # crops.
 #
 
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.models import to_dense_prediction_model, get_output_shape
+
 to_dense_prediction_model(model)
 
 
@@ -185,14 +192,12 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 ######################################################################
 # Cut the data into windows
 # -------------------------
-#
-
 ######################################################################
 # In contrast to trialwise decoding, we have to supply an explicit window size and
 # window stride to the ``create_windows_from_events`` function.
 #
 
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -230,16 +235,13 @@ valid_set = splitted['session_E']
 ######################################################################
 # Training
 # --------
-#
-
-######################################################################
 # In difference to trialwise decoding, we now should supply
 # ``cropped=True`` to the EEGClassifier, and ``CroppedLoss`` as the
 # criterion, as well as ``criterion__loss_function`` as the loss function
 # applied to the meaned predictions.
 #
-
 ######################################################################
+
 # .. note::
 #
 #     In this tutorial, we use some default parameters that we
@@ -252,7 +254,7 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-from braindecode.training.losses import CroppedLoss
+from braindecode.training import CroppedLoss
 
 # These values we found good for shallow network:
 lr = 0.0625 * 0.01
@@ -290,8 +292,8 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # Plot Results
 # ------------
 #
-
 ######################################################################
+
 # This is again the same code as in trialwise decoding.
 #
 # .. note::
@@ -336,3 +338,31 @@ handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label
 handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()
+
+
+######################################################################
+# Plot Confusion Matrix
+# ---------------------
+#
+# Generate a confusion matrix as in https://onlinelibrary.wiley.com/doi/full/10.1002/hbm.23730
+#
+
+from sklearn.metrics import confusion_matrix
+from braindecode.visualization import plot_confusion_matrix
+
+# generate confusion matrices
+# get the targets
+y_true = valid_set.get_metadata().target
+y_pred = clf.predict(valid_set)
+
+# generating confusion matrix
+confusion_mat = confusion_matrix(y_true, y_pred)
+
+# add class labels
+# label_dict is class_name : str -> i_class : int
+label_dict = valid_set.datasets[0].windows.event_id.items()
+# sort the labels by values (values are integer class labels)
+labels = list(dict(sorted(list(label_dict), key=lambda kv: kv[1])).keys())
+
+# plot the basic conf. matrix
+plot_confusion_matrix(confusion_mat, class_names=labels)

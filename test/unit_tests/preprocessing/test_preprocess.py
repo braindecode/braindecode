@@ -3,16 +3,23 @@
 #
 # License: BSD-3
 
+import os
 import copy
+from glob import glob
 
+import mne
+import pandas as pd
 import pytest
 import numpy as np
 
-from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing.preprocess import preprocess, zscore, scale, \
-    Preprocessor, filterbank, exponential_moving_demean, \
-    exponential_moving_standardize, MNEPreproc, NumpyPreproc
+from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
+from braindecode.preprocessing.preprocess import (
+    preprocess, zscore, Preprocessor, filterbank, exponential_moving_demean,
+    exponential_moving_standardize, MNEPreproc, NumpyPreproc, _replace_inplace,
+    _set_preproc_kwargs)
+from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.datautil.serialization import load_concat_dataset
 
 
 # We can't use fixtures with scope='module' as the dataset objects are modified
@@ -56,15 +63,15 @@ def test_no_raw_or_epochs():
 
 
 def test_deprecated_preprocs(base_concat_ds):
-    msg1 = 'MNEPreproc is deprecated. Use Preprocessor with ' \
-           '`apply_on_array=False` instead.'
-    msg2 = 'NumpyPreproc is deprecated. Use Preprocessor with ' \
-           '`apply_on_array=True` instead.'
-    with pytest.warns(UserWarning, match=msg1):
+    msg1 = 'Class MNEPreproc is deprecated; will be removed in 0.7.0. Use ' \
+           'Preprocessor with `apply_on_array=False` instead.'
+    msg2 = 'NumpyPreproc is deprecated; will be removed in 0.7.0. Use ' \
+           'Preprocessor with `apply_on_array=True` instead.'
+    with pytest.warns(FutureWarning, match=msg1):
         mne_preproc = MNEPreproc('pick_types', eeg=True, meg=False, stim=False)
     factor = 1e6
-    with pytest.warns(UserWarning, match=msg2):
-        np_preproc = NumpyPreproc(scale, factor=factor)
+    with pytest.warns(FutureWarning, match=msg2):
+        np_preproc = NumpyPreproc(deprecated_scale, factor=factor)
 
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(base_concat_ds, [mne_preproc, np_preproc])
@@ -82,6 +89,9 @@ def test_preprocess_raw_str(base_concat_ds):
     preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
     preprocess(base_concat_ds, preprocessors)
     assert len(base_concat_ds.datasets[0].raw.times) == 2500
+    assert all([ds.raw_preproc_kwargs == [
+        ('crop', {'tmax': 10, 'include_tmax': False}),
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_preprocess_windows_str(windows_concat_ds):
@@ -89,6 +99,9 @@ def test_preprocess_windows_str(windows_concat_ds):
         Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
     assert windows_concat_ds[0][0].shape[1] == 25
+    assert all([ds.window_preproc_kwargs == [
+        ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False}),
+    ] for ds in windows_concat_ds.datasets])
 
 
 def test_preprocess_raw_callable_on_array(base_concat_ds):
@@ -116,6 +129,13 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
+def test_zscore_deprecated():
+    msg = 'Function zscore is deprecated; will be removed in 0.7.0. Use ' \
+          'sklearn.preprocessing.scale instead.'
+    with pytest.warns(FutureWarning, match=msg):
+        zscore(np.random.rand(2, 2))
+
+
 def test_zscore_continuous(base_concat_ds):
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
@@ -133,6 +153,10 @@ def test_zscore_continuous(base_concat_ds):
         expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
             raw_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
+    assert all([ds.raw_preproc_kwargs == [
+        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
+        ('zscore', {}),
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_zscore_windows(windows_concat_ds):
@@ -152,30 +176,49 @@ def test_zscore_windows(windows_concat_ds):
         expected = np.ones(shape[:-1])
         np.testing.assert_allclose(
             windowed_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
+    assert all([ds.window_preproc_kwargs == [
+        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
+        ('zscore', {}),
+    ] for ds in windows_concat_ds.datasets])
+
+
+def test_scale_deprecated():
+    msg = 'Function scale is deprecated; will be removed in 0.7.0. Use ' \
+          'numpy.multiply instead.'
+    with pytest.warns(FutureWarning, match=msg):
+        deprecated_scale(np.random.rand(2, 2), factor=2)
 
 
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(scale, factor=factor)
+        Preprocessor(deprecated_scale, factor=factor)
     ]
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(base_concat_ds, preprocessors)
     np.testing.assert_allclose(base_concat_ds[0][0], raw_timepoint * factor,
                                rtol=1e-4, atol=1e-4)
+    assert all([ds.raw_preproc_kwargs == [
+        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
+        ('scale', {'factor': 1e6}),
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_scale_windows(windows_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(scale, factor=factor)
+        Preprocessor(deprecated_scale, factor=factor)
     ]
     raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
                                rtol=1e-4, atol=1e-4)
+    assert all([ds.window_preproc_kwargs == [
+        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
+        ('scale', {'factor': 1e6}),
+    ] for ds in windows_concat_ds.datasets])
 
 
 @pytest.fixture(scope='module')
@@ -236,7 +279,7 @@ def test_filterbank(base_concat_ds):
     preprocessors = [
         Preprocessor('pick_channels', ch_names=sorted(['C4', 'Cz']),
                      ordered=True),
-        Preprocessor(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
+        Preprocessor(fn=filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
                      drop_original_signals=False, apply_on_array=False)
     ]
     preprocess(base_concat_ds, preprocessors)
@@ -252,6 +295,11 @@ def test_filterbank(base_concat_ds):
         'C4', 'C4_0-4', 'C4_4-8', 'C4_8-13',
         'Cz', 'Cz_0-4', 'Cz_4-8', 'Cz_8-13',
     ])
+    assert all([ds.raw_preproc_kwargs == [
+        ('pick_channels', {'ch_names': ['C4', 'Cz'], 'ordered': True}),
+        ('filterbank', {'frequency_bands': [(0, 4), (4, 8), (8, 13)],
+                        'drop_original_signals': False}),
+    ] for ds in base_concat_ds.datasets])
 
 
 def test_filterbank_order_channels_by_freq(base_concat_ds):
@@ -268,3 +316,137 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
         'C4', 'Cz', 'C4_0-4', 'Cz_0-4',
         'C4_4-8', 'Cz_4-8', 'C4_8-13', 'Cz_8-13'
     ])
+    assert all([ds.raw_preproc_kwargs == [
+        ('pick_channels', {'ch_names': ['C4', 'Cz'], 'ordered': True}),
+        ('filterbank', {'frequency_bands': [(0, 4), (4, 8), (8, 13)],
+                        'drop_original_signals': False,
+                        'order_by_frequency_band': True}),
+    ] for ds in base_concat_ds.datasets])
+
+
+def test_replace_inplace(base_concat_ds):
+    base_concat_ds2 = copy.deepcopy(base_concat_ds)
+    for i in range(len(base_concat_ds2.datasets)):
+        base_concat_ds2.datasets[i].raw.crop(0, 10, include_tmax=False)
+    _replace_inplace(base_concat_ds, base_concat_ds2)
+
+    assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
+
+
+def test_set_raw_preproc_kwargs(base_concat_ds):
+    raw_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+    ds = base_concat_ds.datasets[0]
+    _set_preproc_kwargs(ds, preprocessors)
+
+    assert hasattr(ds, 'raw_preproc_kwargs')
+    assert ds.raw_preproc_kwargs == raw_preproc_kwargs
+
+
+def test_set_window_preproc_kwargs(windows_concat_ds):
+    window_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+    ds = windows_concat_ds.datasets[0]
+    _set_preproc_kwargs(ds, preprocessors)
+
+    assert hasattr(ds, 'window_preproc_kwargs')
+    assert ds.window_preproc_kwargs == window_preproc_kwargs
+
+
+def test_set_preproc_kwargs_wrong_type(base_concat_ds):
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+    with pytest.raises(TypeError):
+        _set_preproc_kwargs(base_concat_ds, preprocessors)
+
+
+@pytest.mark.parametrize('kind', ['raw', 'windows'])
+@pytest.mark.parametrize('save', [True, False])
+@pytest.mark.parametrize('overwrite', [True, False])
+@pytest.mark.parametrize('n_jobs', [1, 2, None])
+def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
+                             kind, save, overwrite, n_jobs):
+    preproc_kwargs = [
+        ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False})]
+    preprocessors = [
+        Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
+
+    save_dir = str(tmp_path) if save else None
+    if kind == 'raw':
+        concat_ds = base_concat_ds
+        preproc_kwargs_name = 'raw_preproc_kwargs'
+    elif kind == 'windows':
+        concat_ds = windows_concat_ds
+        preproc_kwargs_name = 'window_preproc_kwargs'
+
+    concat_ds = preprocess(
+        concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs)
+
+    assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
+    assert all([getattr(ds, preproc_kwargs_name) == preproc_kwargs
+                for ds in concat_ds.datasets])
+    assert all([len(getattr(ds, kind).times) == 25
+                for ds in concat_ds.datasets])
+    if kind == 'raw':
+        assert all([hasattr(ds, 'target_name') for ds in concat_ds.datasets])
+
+    if save_dir is None:
+        assert all([getattr(ds, kind).preload
+                    for ds in concat_ds.datasets])
+    else:
+        assert all([not getattr(ds, kind).preload
+                    for ds in concat_ds.datasets])
+        save_dirs = [os.path.join(save_dir, str(i))
+                     for i in range(len(concat_ds.datasets))]
+        assert set(glob(save_dir + '/*')) == set(save_dirs)
+
+
+@pytest.mark.parametrize('overwrite', [True, False])
+def test_preprocess_overwrite(base_concat_ds, tmp_path, overwrite):
+    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+
+    # Create temporary directory with preexisting files
+    save_dir = str(tmp_path)
+    for i, ds in enumerate(base_concat_ds.datasets):
+        concat_ds = BaseConcatDataset([ds])
+        save_subdir = os.path.join(save_dir, str(i))
+        os.makedirs(save_subdir)
+        concat_ds.save(save_subdir, overwrite=True)
+
+    if overwrite:
+        preprocess(base_concat_ds, preprocessors, save_dir, overwrite=True)
+        # Make sure the serialized data is preprocessed
+        preproc_concat_ds = load_concat_dataset(save_dir, True)
+        assert all([len(ds.raw.times) == 2500
+                    for ds in preproc_concat_ds.datasets])
+    else:
+        with pytest.raises(FileExistsError):
+            preprocess(base_concat_ds, preprocessors, save_dir,
+                       overwrite=False)
+
+
+def test_preprocessors_with_misc_channels():
+    rng = np.random.RandomState(42)
+    signal_sfreq = 50
+    info = mne.create_info(ch_names=['0', '1', 'target_0', 'target_1'],
+                           sfreq=signal_sfreq,
+                           ch_types=['eeg', 'eeg', 'misc', 'misc'])
+    signal = rng.randn(2, 1000)
+    targets = rng.randn(2, 1000)
+    raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
+    desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
+    base_dataset = BaseDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+    preprocessors = [
+        Preprocessor('pick_types', eeg=True, misc=True),
+        Preprocessor(lambda x: x / 1e6),
+    ]
+
+    preprocess(concat_ds, preprocessors)
+
+    # Check whether preprocessing has not affected the targets
+    # This is only valid for preprocessors that use mne functions which do not modify
+    # `misc` channels.
+    np.testing.assert_array_equal(
+        concat_ds.datasets[0].raw.get_data()[-2:, :],
+        targets
+    )

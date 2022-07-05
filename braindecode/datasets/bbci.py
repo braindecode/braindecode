@@ -3,13 +3,14 @@
 # License: BSD (3-clause)
 
 import logging
-import re
-from glob import glob
 import os.path
+import re
+import warnings
+from glob import glob
 
-import numpy as np
 import h5py
 import mne
+import numpy as np
 
 log = logging.getLogger(__name__)
 
@@ -67,8 +68,9 @@ class BBCIDataset(object):
             ), "No NaNs expected in signal"
 
         if self.load_sensor_names is None:
-            ch_types = ["EEG"] * len(wanted_chan_inds)
+            ch_types = ["eeg"] * len(wanted_chan_inds)
         else:
+            warnings.warn("Setting to misc channel type as channel type not known")
             # Assume we cant know channel type here automatically
             ch_types = ["misc"] * len(wanted_chan_inds)
         info = mne.create_info(
@@ -106,11 +108,13 @@ class BBCIDataset(object):
                 len(eeg_sensor_names) == 32 or
                 len(eeg_sensor_names) == 16
             ), "Recheck this code if you have different sensors..."
-            self.load_sensor_names = eeg_sensor_names
+            wanted_sensor_names = eeg_sensor_names
+        else:
+            wanted_sensor_names = self.load_sensor_names
         chan_inds = self._determine_chan_inds(
-            all_sensor_names, self.load_sensor_names
+            all_sensor_names, wanted_sensor_names
         )
-        return chan_inds, self.load_sensor_names
+        return chan_inds, wanted_sensor_names
 
     def _determine_samplingrate(self):
         with h5py.File(self.filename, "r") as h5file:
@@ -127,7 +131,7 @@ class BBCIDataset(object):
             "All" "sensors should be there."
         )
         assert len(set(chan_inds)) == len(chan_inds), (
-            "No" "duplicated sensors wanted."
+            "No duplicated sensors wanted."
         )
         return chan_inds
 
@@ -213,13 +217,30 @@ class BBCIDataset(object):
         ]
         cnt.info["events"] = np.array(event_arr).T
 
+        # Generate Annotations
         event_times_in_sec = event_times_in_ms / 1000.0
-        # 4 second trials
-        durations = np.full(event_times_in_ms.shape, 4)
+        # Hacky way to try to find out class names for each event
+        # h5file['mrk']['y'] y contains one-hot label for event name
+        with h5py.File(self.filename, "r") as h5file:
+            y = h5file['mrk']['y'][:]
+            # seems that there are cases where for last class
+            # y is just all zero for some reason?
+            # and seems then it is last of the class names
+            # ('Stimulation')
+            # at least in the file investigated
+            y[np.sum(y, axis=1) == 0, -1] = 1
+            assert np.all(np.sum(y, axis=1) == 1)
+            event_i_classes = np.argmax(y, axis=1)
+
+        # 4 second trials for High-Gamma dataset, otherwise how to know?
+        if all_class_names == ['Right Hand', 'Left Hand', 'Rest', 'Feet']:
+            durations = np.full(event_times_in_ms.shape, 4)
+        else:
+            warnings.warn("Unknown event durations set to 0")
+            durations = np.full(event_times_in_ms.shape, 0)
+
         # Label information for this dataset
-        # have to add 1 as class labels start from 1, not 0 (due to matlab)
-        event_desc = dict([(i + 1, c) for i, c in enumerate(all_class_names)])
-        descriptions = [event_desc[y] for y in event_classes]
+        descriptions = [all_class_names[y] for y in event_i_classes]
         annots = mne.Annotations(event_times_in_sec, durations, descriptions)
         cnt.set_annotations(annots)
 

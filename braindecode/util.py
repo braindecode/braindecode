@@ -14,8 +14,11 @@ import torch
 from sklearn.utils import check_random_state
 
 
-def set_random_seeds(seed, cuda):
+def set_random_seeds(seed, cuda, cudnn_benchmark=None):
     """Set seeds for python random module numpy.random and torch.
+
+    For more details about reproducibility in pytorch see
+    https://pytorch.org/docs/stable/notes/randomness.html
 
     Parameters
     ----------
@@ -23,10 +26,36 @@ def set_random_seeds(seed, cuda):
         Random seed.
     cuda: bool
         Whether to set cuda seed with torch.
+    cudnn_benchmark: bool (default=None)
+        Whether pytorch will use cudnn benchmark. When set to `None` it will not modify
+        torch.backends.cudnn.benchmark (displays warning in the case of possible lack of
+        reproducibility). When set to True, results may not be reproducible (no warning displayed).
+        When set to False it may slow down computations.
+
+    Notes
+    -----
+    In some cases setting environment variable `PYTHONHASHSEED` may be needed before running a
+    script to ensure full reproducibility. See
+    https://forums.fast.ai/t/solved-reproducibility-where-is-the-randomness-coming-in/31628/14
+
+    Using this function may not ensure full reproducibility of the results as we do not set
+    `torch.use_deterministic_algorithms(True)`.
     """
     random.seed(seed)
     torch.manual_seed(seed)
     if cuda:
+        if isinstance(cudnn_benchmark, bool):
+            torch.backends.cudnn.benchmark = cudnn_benchmark
+        elif cudnn_benchmark is None:
+            if torch.backends.cudnn.benchmark:
+                warn(
+                    "torch.backends.cudnn.benchmark was set to True which may results in lack of "
+                    "reproducibility. In some cases to ensure reproducibility you may need to "
+                    "set torch.backends.cudnn.benchmark to False.", UserWarning)
+        else:
+            raise ValueError(
+                f"cudnn_benchmark expected to be bool or None, got '{cudnn_benchmark}'"
+            )
         torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
 
@@ -326,7 +355,7 @@ class ThrowAwayIndexLoader(object):
             if len(batch) == 3:
                 x, y, i = batch
                 # Store for scoring callbacks
-                self.net._last_window_inds = i
+                self.net._last_window_inds_ = i
             else:
                 x, y = batch
 
@@ -352,6 +381,12 @@ def update_estimator_docstring(base_class, docstring):
         filtered_doc[filtered_doc.find('Parameters'):filtered_doc.find('Attributes')] +
         splitted[1] +
         filtered_doc[filtered_doc.find('Attributes'):])
+    return out_docstring
+
+
+def _update_moabb_docstring(base_class, docstring):
+    base_doc = base_class.__doc__
+    out_docstring = base_doc + f'\n\n{docstring}'
     return out_docstring
 
 
