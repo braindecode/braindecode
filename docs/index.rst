@@ -52,8 +52,8 @@ note the examples below for better-performing training pipelines.
     from skorch.callbacks import LRScheduler
     from skorch.helper import predefined_split
     from braindecode.datasets.moabb import MOABBDataset
-    from braindecode.preprocessing.preprocess import preprocess, Preprocessor
-    from braindecode.preprocessing.windowers import create_windows_from_events
+    from braindecode.preprocessing import preprocess, Preprocessor
+    from braindecode.preprocessing import create_windows_from_events
     from braindecode.models import ShallowFBCSPNet
     from braindecode import EEGClassifier
 
