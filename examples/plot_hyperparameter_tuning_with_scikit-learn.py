@@ -250,8 +250,6 @@ search = GridSearchCV(
 
 search.fit(train_X, train_y, **fit_params)
 
-import pandas as pd
-
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
