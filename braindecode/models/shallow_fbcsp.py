@@ -21,7 +21,40 @@ class ShallowFBCSPNet(nn.Sequential):
     Parameters
     ----------
     in_chans : int
-        XXX
+        Number of EEG input channels.
+    n_classes: int
+        Number of classes to predict (number of output filters of last layer).
+    input_window_samples: int | None
+        Only used to determine the length of the last convolutional kernel if
+        final_conv_length is "auto".
+    n_filters_time: int
+        Number of temporal filters.
+    filter_time_length: int
+        Length of the temporal filter.
+    n_filters_spat: int
+        Number of spatial filters.
+    pool_time_length: int
+        Length of temporal pooling filter.
+    pool_time_stride: int
+        Length of stride between temporal pooling filters.
+    final_conv_length: int | str
+        Length of the final convolution layer.
+        If set to "auto", input_window_samples must not be None.
+    conv_nonlin: callable
+        Non-linear function to be used after convolution layers.
+    pool_mode: str
+        Method to use on pooling layers. "max" or "mean".
+    pool_nonlin: callable
+        Non-linear function to be used after pooling layers.
+    split_first_layer: bool
+        Split first layer into temporal and spatial layers (True) or just use temporal (False).
+        There would be no non-linearity between the split layers.
+    batch_norm: bool
+        Whether to use batch normalisation.
+    batch_norm_alpha: float
+        Momentum for BatchNorm2d.
+    drop_prob: float
+        Dropout probability.
 
     References
     ----------

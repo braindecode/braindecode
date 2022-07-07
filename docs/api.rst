@@ -62,6 +62,8 @@ Models
     EEGResNet
     TCN
     SleepStagerChambon2018
+    SleepStagerBlanco2020
+    SleepStagerEldele2021
     USleep
     TIDNet
     get_output_shape

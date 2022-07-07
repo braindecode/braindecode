@@ -1,5 +1,6 @@
-"""Multiple discrete targets with the TUH EEG Corpus
-====================================================
+"""
+Multiple discrete targets with the TUH EEG Corpus
+=================================================
 
 In this example, we showcase usage of multiple discrete targets per recording
 with the TUH EEG Corpus.
@@ -10,10 +11,10 @@ with the TUH EEG Corpus.
 # License: BSD (3-clause)
 
 import mne
-from torch.utils.data.dataloader import DataLoader
+from torch.utils.data import DataLoader
 
 from braindecode.datasets import TUH
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.preprocessing import create_fixed_length_windows
 
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 

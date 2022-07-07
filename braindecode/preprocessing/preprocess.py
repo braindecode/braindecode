@@ -14,6 +14,7 @@ from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
+from mne import create_info
 from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
@@ -47,6 +48,7 @@ class Preprocessor(object):
     kwargs:
         Keyword arguments to be forwarded to the MNE function.
     """
+
     def __init__(self, fn, *, apply_on_array=True, **kwargs):
         if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
             warn('Preprocessing choices with lambda functions cannot be saved.')
@@ -95,6 +97,7 @@ class MNEPreproc(Preprocessor):
     kwargs:
         Keyword arguments will be forwarded to the mne function
     """
+
     def __init__(self, fn, **kwargs):
         super().__init__(fn, apply_on_array=False, **kwargs)
 
@@ -113,6 +116,7 @@ class NumpyPreproc(Preprocessor):
     kwargs:
         Keyword arguments will be forwarded to the function
     """
+
     def __init__(self, fn, channel_wise=False, **kwargs):
         assert callable(fn), 'fn must be callable.'
         super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
@@ -466,8 +470,15 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         # when applying filters and channels cant be added if they have
         # different such parameters. Not needed when making picks as
         # high pass is not modified by filter if pick is specified
-        filtered.info["highpass"] = raw.info["highpass"]
-        filtered.info["lowpass"] = raw.info["lowpass"]
+
+        ch_names = filtered.info.ch_names
+        ch_types = filtered.info.get_channel_types()
+        sampling_freq = filtered.info['sfreq']
+
+        info = create_info(ch_names=ch_names, ch_types=ch_types, sfreq=sampling_freq)
+
+        filtered.info = info
+
         # add frequency band annotation to channel names
         # truncate to a max of 15 characters, since mne does not allow for more
         filtered.rename_channels({

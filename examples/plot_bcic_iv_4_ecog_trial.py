@@ -45,7 +45,7 @@ an example of time series target prediction.
 
 import numpy as np
 
-from braindecode.datasets.bcicomp import BCICompetitionIVDataset4
+from braindecode.datasets import BCICompetitionIVDataset4
 
 subject_id = 1
 dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
@@ -78,7 +78,7 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 #
 
 
-from braindecode.preprocessing.preprocess import (
+from braindecode.preprocessing import (
     exponential_moving_standardize, preprocess, Preprocessor)
 
 low_cut_hz = 1.  # low cut frequency for filtering
@@ -112,7 +112,7 @@ preprocess(dataset, preprocessors)
 sfreq = dataset.datasets[0].raw.info['sfreq']
 assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Extract target sampling frequency
-target_sfreq = dataset.datasets[0].raw.info['target_sfreq']
+target_sfreq = dataset.datasets[0].raw.info['temp']['target_sfreq']
 
 
 ######################################################################

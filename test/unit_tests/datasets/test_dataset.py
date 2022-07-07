@@ -197,6 +197,14 @@ def test_split_dataset(concat_ds_targets):
         np.testing.assert_array_equal(
             ds.raw.get_data(), concat_ds.datasets[original_ids[i]].raw.get_data())
 
+    # Test split_ids as dict
+    split_ids = dict(train=[1], test=[2])
+    splits = concat_ds.split(split_ids)
+    assert len(splits) == len(split_ids)
+    assert splits.keys() == split_ids.keys()
+    assert (splits["train"].description["run"] == "run_1").all()
+    assert (splits["test"].description["run"] == "run_2").all()
+
 
 def test_metadata(concat_windows_dataset):
     md = concat_windows_dataset.get_metadata()
@@ -362,6 +370,17 @@ def test_multi_target_dataset(set_up):
     assert y == [1, 0, 48]  # order matters: pathological, gender, age
 
 
+def test_target_name_list(set_up):
+    raw, _, _, _, _, _ = set_up
+    target_names = ['pathological', 'gender', 'age']
+    base_dataset = BaseDataset(
+        raw=raw,
+        description={'pathological': True, 'gender': 'M', 'age': 48},
+        target_name=target_names,
+    )
+    assert base_dataset.target_name == target_names
+
+
 def test_description_incorrect_type(set_up):
     raw, _, _, _, _, _ = set_up
     with pytest.raises(ValueError):
@@ -374,8 +393,8 @@ def test_description_incorrect_type(set_up):
 def test_target_name_incorrect_type(set_up):
     raw, _, _, _, _, _ = set_up
     with pytest.raises(
-            ValueError, match='target_name has to be None, str, tuple'):
-        BaseDataset(raw, target_name=['a', 'b'])
+            ValueError, match='target_name has to be None, str, tuple or list'):
+        BaseDataset(raw, target_name={'target': 1})
 
 
 def test_target_name_not_in_description(set_up):

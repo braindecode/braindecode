@@ -147,6 +147,16 @@ class CroppedTrialEpochScoring(EpochScoring):
         if not self.on_train:
             self.window_inds_ = []
 
+    def on_batch_end(
+             self, net, batch, y_pred, training, **kwargs):
+        # Skorch saves the predictions without moving them from GPU
+        # https://github.com/skorch-dev/skorch/blob/fe71e3d55a4ae5f5f94ef7bdfc00fca3b3fd267f/skorch/callbacks/scoring.py#L385
+        # This can cause memory issues in case of a large number of predictions
+        # Therefore here we move them to CPU already
+        super().on_batch_end(net, batch, y_pred, training, **kwargs)
+        if self.use_caching and training == self.on_train:
+            self.y_preds_[-1] = self.y_preds_[-1].cpu()
+
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching
         if not self.crops_to_trials_computed:
@@ -390,7 +400,7 @@ class PostEpochTrainScoring(EpochScoring):
         self._record_score(net.history, current_score)
 
 
-def predict_trials(module, dataset, return_targets=True):
+def predict_trials(module, dataset, return_targets=True, batch_size=1, num_workers=0):
     """Create trialwise predictions and optionally also return trialwise
     labels from cropped dataset given module.
 
@@ -402,6 +412,10 @@ def predict_trials(module, dataset, return_targets=True):
         A braindecode dataset to be predicted.
     return_targets: bool
         If True, additionally returns the trial targets.
+    batch_size: int
+        The batch size used to iterate the dataset.
+    num_workers: int
+        Number of workers used in DataLoader to iterate the dataset.
 
     Returns
     -------
@@ -424,12 +438,15 @@ def predict_trials(module, dataset, return_targets=True):
                       'window per trial.')
     loader = DataLoader(
         dataset=dataset,
-        batch_size=1,
+        batch_size=batch_size,
         shuffle=False,
+        num_workers=num_workers,
     )
+    device = next(module.parameters()).device
     all_preds, all_ys, all_inds = [], [], []
     with torch.no_grad():
         for X, y, ind in loader:
+            X = X.to(device)
             preds = module(X)
             all_preds.extend(preds.cpu().numpy().astype(np.float32))
             all_ys.extend(y.cpu().numpy().astype(np.float32))

@@ -116,7 +116,7 @@ class FTSurrogate(Transform):
             "phase_noise_magnitude should be between 0 and 1."
         self.phase_noise_magnitude = phase_noise_magnitude
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -179,7 +179,7 @@ class ChannelsDropout(Transform):
         )
         self.p_drop = p_drop
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -244,7 +244,7 @@ class ChannelsShuffle(Transform):
         )
         self.p_shuffle = p_shuffle
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -313,7 +313,7 @@ class GaussianNoise(Transform):
         )
         self.std = std
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -398,7 +398,7 @@ class ChannelsSymmetry(Transform):
             permutation.append(new_position)
         self.permutation = permutation
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -464,7 +464,7 @@ class SmoothTimeMask(Transform):
         ), "mask_len_samples has to be a positive integer"
         self.mask_len_samples = mask_len_samples
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -488,7 +488,7 @@ class SmoothTimeMask(Transform):
                 Number of consecutive samples to zero out.
         """
         if len(batch) == 0:
-            return super().get_params(*batch)
+            return super().get_augmentation_params(*batch)
         X = batch[0]
 
         seq_length = torch.as_tensor(X.shape[-1], device=X.device)
@@ -574,7 +574,7 @@ class BandstopFilter(Transform):
         self.max_freq = max_freq
         self.bandwidth = bandwidth
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -603,7 +603,7 @@ class BandstopFilter(Transform):
                 ``transition = 1 Hz``).
         """
         if len(batch) == 0:
-            return super().get_params(*batch)
+            return super().get_augmentation_params(*batch)
         X = batch[0]
 
         # Prevents transitions from going below 0 and above max_freq
@@ -656,7 +656,7 @@ class FrequencyShift(Transform):
 
         self.max_delta_freq = max_delta_freq
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -677,7 +677,7 @@ class FrequencyShift(Transform):
                 Sampling frequency of the signals to be transformed.
         """
         if len(batch) == 0:
-            return super().get_params(*batch)
+            return super().get_augmentation_params(*batch)
         X = batch[0]
 
         u = torch.as_tensor(
@@ -797,7 +797,7 @@ class SensorsRotation(Transform):
         self.spherical_splines = spherical_splines
         self.max_degrees = max_degrees
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -829,7 +829,7 @@ class SensorsRotation(Transform):
                 kernel) will be used (as in the original paper).
         """
         if len(batch) == 0:
-            return super().get_params(*batch)
+            return super().get_augmentation_params(*batch)
         X = batch[0]
 
         u = self.rng.uniform(
@@ -1056,7 +1056,7 @@ class Mixup(Transform):
         self.alpha = alpha
         self.beta_per_sample = beta_per_sample
 
-    def get_params(self, *batch):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters

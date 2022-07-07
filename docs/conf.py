@@ -50,6 +50,7 @@ extensions = [
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
     'sphinx_gallery.gen_gallery',
+    'sphinx.ext.viewcode',
     'numpydoc',
     'gh_substitutions',
 ]

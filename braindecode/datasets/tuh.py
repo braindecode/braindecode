@@ -81,8 +81,8 @@ class TUH(BaseConcatDataset):
         # Use recording date from path as EDF header is sometimes wrong
         meas_date = datetime(1, 1, 1, tzinfo=timezone.utc) \
             if raw.info['meas_date'] is None else raw.info['meas_date']
-        raw.info['meas_date'] = meas_date.replace(
-            *description[['year', 'month', 'day']])
+        raw.set_meas_date(meas_date.replace(
+            *description[['year', 'month', 'day']]))
 
         # read info relevant for preprocessing from raw without loading it
         d = {

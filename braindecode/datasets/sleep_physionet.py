@@ -38,9 +38,12 @@ class SleepPhysionet(BaseConcatDataset):
         Number of minutes of wake time to keep before the first sleep event
         and after the last sleep event. Used to reduce the imbalance in this
         dataset. Default of 30 mins.
+    crop : None | tuple
+        If not None crop the raw files (e.g. to use only the first 3h).
+        Example: ``crop=(0, 3600*3)`` to keep only the first 3h.
     """
     def __init__(self, subject_ids=None, recording_ids=None, preload=False,
-                 load_eeg_only=True, crop_wake_mins=30):
+                 load_eeg_only=True, crop_wake_mins=30, crop=None):
         if subject_ids is None:
             subject_ids = range(83)
         if recording_ids is None:
@@ -53,20 +56,20 @@ class SleepPhysionet(BaseConcatDataset):
         for p in paths:
             raw, desc = self._load_raw(
                 p[0], p[1], preload=preload, load_eeg_only=load_eeg_only,
-                crop_wake_mins=crop_wake_mins)
+                crop_wake_mins=crop_wake_mins, crop=crop)
             base_ds = BaseDataset(raw, desc)
             all_base_ds.append(base_ds)
         super().__init__(all_base_ds)
 
     @staticmethod
     def _load_raw(raw_fname, ann_fname, preload, load_eeg_only=True,
-                  crop_wake_mins=False):
+                  crop_wake_mins=False, crop=None):
         ch_mapping = {
-            'horizontal': 'eog',
-            'oro-nasal': 'misc',
-            'submental': 'misc',
-            'rectal': 'misc',
-            'marker': 'misc'
+            'EOG horizontal': 'eog',
+            'Resp oro-nasal': 'misc',
+            'EMG submental': 'misc',
+            'Temp rectal': 'misc',
+            'Event marker': 'misc'
         }
         exclude = list(ch_mapping.keys()) if load_eeg_only else ()
 
@@ -93,6 +96,9 @@ class SleepPhysionet(BaseConcatDataset):
 
         if not load_eeg_only:
             raw.set_channel_types(ch_mapping)
+
+        if crop is not None:
+            raw.crop(*crop)
 
         basename = os.path.basename(raw_fname)
         subj_nb = int(basename[3:5])
