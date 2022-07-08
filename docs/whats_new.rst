@@ -25,6 +25,7 @@ Enhancements
 ~~~~~~~~~~~~
 - Allowing target_names as list for BaseDataset (:gh:`371` by `Mohammad Javad D`_ and `Robin Tibor Schirrmeister`_)
 - Adding tutorial with GridSearchCV for data augmentation on the BCIC IV 2a with module `braindecode.augmentation` (:gh:`389` by `Bruno Aristimunha`_ and `Cedric Rommel`_)
+- Adding tutorial with GridSearchCV to exemplify how to tune hyperparameters, for instance with the learning rate (:gh:`349` by `Lukas Gemein`_ and by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
