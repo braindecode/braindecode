@@ -1,11 +1,38 @@
-Welcome to Braindecode
-======================
+.. title:: Braindecode
 
-A deep learning toolbox to decode raw time-domain EEG.
+.. The page title must be in rST for it to show in next/prev page buttons.
+   Therefore we add a special style rule to only this page that hides h1 tags
 
-For EEG researchers that want to work with deep learning and
-deep learning researchers that want to work with EEG data.
-For now focussed on convolutional networks.
+.. raw:: html
+
+    <style type="text/css">h1 {display:none;}</style>
+
+Braindecode Homepage
+===================
+
+.. LOGO
+
+.. image:: _static/braindecode.svg
+   :alt: Braindecode
+   :class: logo, mainlogo, only-light
+   :align: center
+
+.. image:: _static/braindecode.svg
+   :alt: Braindecode
+   :class: logo, mainlogo, only-dark
+   :align: center
+
+.. rst-class:: h4 text-center font-weight-light my-4
+
+    Braindecode is an open-source toolbox for decode raw neurophysiological
+    data such as MEG, EEG, sEEG, ECoG with Deep Learning models, such as
+    convolutional architecture, recurrent architecture, attention architecture.
+
+    It includes modules for data input/output, preprocessing, visualization,
+    data augmentation, classification, regression, sampler and
+    much more!
+
+.. frontpage gallery is added by a conditional in _templates/layout.html
 
 Installation
 ============
@@ -41,68 +68,6 @@ alternatively, install the latest version of braindecode via pip:
 
 Get Started
 ===========
-Here an example to give you a quick idea how Braindecode is used to load and preprocess an EEG dataset
-and train a deep network on it.
-This example may not give particularly good performance,
-note the examples below for better-performing training pipelines.
-
-.. code-block:: python
-
-    import torch
-    from skorch.callbacks import LRScheduler
-    from skorch.helper import predefined_split
-    from braindecode.datasets.moabb import MOABBDataset
-    from braindecode.preprocessing import preprocess, Preprocessor
-    from braindecode.preprocessing import create_windows_from_events
-    from braindecode.models import ShallowFBCSPNet
-    from braindecode import EEGClassifier
-
-    # Load the data
-    dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
-
-    # Preprocess the data
-    preprocessors = [
-        Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
-        Preprocessor(lambda x: x * 1e6) # Convert from V to uV
-    ]
-    preprocess(dataset, preprocessors)
-
-    # Cut trial windows from the data
-    windows_dataset = create_windows_from_events(
-        dataset,
-        start_sample=0,
-        stop_sample=0,
-        preload=True,
-    )
-
-    # Create the model
-    model = ShallowFBCSPNet(
-        in_chans=train_set[0][0].shape[0],
-        n_classes=4,
-        input_window_samples=train_set[0][0].shape[1],
-        final_conv_length='auto',
-    )
-
-    # Create the skorch classifier object for training.
-    # These learning rates and weight decay work well for the shallow network:
-    clf = EEGClassifier(
-        model,
-        criterion=torch.nn.NLLLoss,
-        optimizer=torch.optim.AdamW,
-        train_split=predefined_split(valid_set),  # using valid_set for validation
-        optimizer__lr=0.0625 * 0.01,
-        optimizer__weight_decay=0,
-        batch_size=64,
-        callbacks=[
-            "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
-        ],
-    )
-
-    # Model training for a specified number of epochs. `y` is None as it is already supplied
-    # in the dataset.
-    clf.fit(train_set, y=None, epochs=4)
-
-
 
 Learn how to use braindecode for ...
 
@@ -189,3 +154,4 @@ Indices and tables
 
 
 .. _GitHub: https://github.com/braindecode/braindecode
+

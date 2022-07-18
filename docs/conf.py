@@ -22,6 +22,7 @@ import sys
 
 import matplotlib
 matplotlib.use('agg')
+from datetime import datetime, timezone
 
 import sphinx_gallery  # noqa
 from numpydoc import numpydoc, docscrape  # noqa
@@ -33,6 +34,7 @@ from numpydoc import numpydoc, docscrape  # noqa
 # needs_sphinx = '1.0'
 
 curdir = os.path.dirname(__file__)
+sys.path.append(os.path.abspath(os.path.join(curdir, '..', 'braindecode')))
 sys.path.append(os.path.abspath(os.path.join(curdir, 'sphinxext')))
 
 # Add any Sphinx extension module names here, as strings. They can be
@@ -150,7 +152,18 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
+
+# -- Project information -----------------------------------------------------
 project = 'Braindecode'
+
+td = datetime.now(tz=timezone.utc)
+
+# We need to triage which date type we use so that incremental builds work
+# (Sphinx looks at variable changes and rewrites all files if some change)
+copyright = (
+    f'2018–{td.year}, Braindecode Developers. Last updated <time datetime="{td.isoformat()}" class="localized">{td.strftime("%Y-%m-%d %H:%M %Z")}</time>\n'  # noqa: E501
+    '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>')  # noqa: E501
+
 copyright = '2018-2021, Braindecode developers'
 author = 'Braindecode developers'
 
@@ -224,22 +237,27 @@ html_theme_options = {"collapse_navigation": False,
                       'show_toc_level': 1,
                       'navbar_end': 'version-switcher',
                       'switcher': {
-                              'json_url': 'https://raw.githubusercontent.com/bruAristimunha/braindecode/nicer-docs/docs/_static/versions.json',
+                              'json_url': 'https://raw.githubusercontent.com/robintibor/braindecode-1/nicer-docs/docs/_static/versions.json',
                           'version_match': switcher_version_match,
                         }
                       }
 
+# The name of an image file (relative to this directory) to place at the top
+# of the sidebar.
+html_logo = "_static/braindecode_small.svg"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
-
+html_css_files = [
+    'style.css',
+]
 
 # -- Options for HTMLHelp output ------------------------------------------
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'Braindecodedoc'
+htmlhelp_basename = 'Braindecode-doc'
 
 
 # -- Options for LaTeX output ---------------------------------------------
@@ -266,7 +284,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'Braindecode.tex', 'Braindecode Documentation',
+    (master_doc, 'Braindecode.tex', 'Braindecode',
      'Robin Tibor Schirrmeister', 'manual'),
 ]
 
@@ -275,7 +293,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'braindecode', 'Braindecode Documentation',
+    (master_doc, 'braindecode', 'Braindecode',
      [author], 1)
 ]
 
@@ -286,7 +304,7 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'Braindecode', 'Braindecode Documentation',
+    (master_doc, 'Braindecode', 'Braindecode',
      author, 'Braindecode', 'One line description of project.',
      'Miscellaneous'),
 ]
