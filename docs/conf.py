@@ -23,6 +23,7 @@ import sys
 import matplotlib
 matplotlib.use('agg')
 from datetime import datetime, timezone
+import faulthandler
 
 import sphinx_gallery  # noqa
 from numpydoc import numpydoc, docscrape  # noqa
@@ -132,6 +133,21 @@ def linkcode_resolve(domain, info):
        kind, fn, linespec)
 
 
+faulthandler.enable()
+os.environ['_BRAINDECODE_BROWSER_NO_BLOCK'] = 'true'
+os.environ['BRAINDECODE_BROWSER_OVERVIEW_MODE'] = 'hidden'
+os.environ['BRAINDECODE_BROWSER_THEME'] = 'light'
+
+# -- Path setup --------------------------------------------------------------
+
+# If extensions (or modules to document with autodoc) are in another directory,
+# add these directories to sys.path here. If the directory is relative to the
+# documentation root, use os.path.abspath to make it absolute, like shown here.
+curdir = os.path.dirname(__file__)
+sys.path.append(os.path.abspath(os.path.join(curdir, '..', 'mne')))
+sys.path.append(os.path.abspath(os.path.join(curdir, 'sphinxext')))
+
+
 autosummary_generate = True
 autodoc_default_options = {'inherited-members': False}
 
@@ -155,7 +171,6 @@ master_doc = 'index'
 
 # -- Project information -----------------------------------------------------
 project = 'Braindecode'
-
 td = datetime.now(tz=timezone.utc)
 
 # We need to triage which date type we use so that incremental builds work
@@ -164,7 +179,6 @@ copyright = (
     f'2018–{td.year}, Braindecode Developers. Last updated <time datetime="{td.isoformat()}" class="localized">{td.strftime("%Y-%m-%d %H:%M %Z")}</time>\n'  # noqa: E501
     '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>')  # noqa: E501
 
-copyright = '2018-2021, Braindecode developers'
 author = 'Braindecode developers'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -232,15 +246,19 @@ switcher_version_match = 'dev' if release.endswith('dev0') else version
 # further.  For a list of options available for each theme, see the
 # documentation.
 #
-html_theme_options = {"collapse_navigation": False,
+html_theme_options = {  'icon_links_label': 'Quick Links',  # for screen reader
+                        'use_edit_page_button': False,
+                        'navigation_with_keys': False,
+                      "collapse_navigation": False,
                       "navigation_depth": 4,
                       'show_toc_level': 1,
                       'navbar_end': 'version-switcher',
                       'switcher': {
-                              'json_url': 'https://raw.githubusercontent.com/robintibor/braindecode-1/nicer-docs/docs/_static/versions.json',
+                          'json_url': 'https://raw.githubusercontent.com/robintibor/braindecode-1/nicer-docs/docs/_static/versions.json',
                           'version_match': switcher_version_match,
-                        }
-                      }
+                        },
+                        'footer_items': ['copyright'],
+                     }
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
@@ -254,10 +272,44 @@ html_css_files = [
     'style.css',
 ]
 
+# If true, links to the reST sources are added to the pages.
+html_show_sourcelink = False
+html_copy_source = False
+
+# If true, "Created using Sphinx" is shown in the HTML footer. Default is True.
+html_show_sphinx = False
+
 # -- Options for HTMLHelp output ------------------------------------------
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = 'Braindecode-doc'
+
+# accommodate different logo shapes (width values in rem)
+xs = '2'
+sm = '2.5'
+md = '3'
+lg = '4.5'
+xl = '5'
+xxl = '6'
+
+html_context = {
+    'build_dev_html': bool(int(os.environ.get('BUILD_DEV_HTML', False))),
+    'default_mode': 'light',
+    'pygment_light_style': 'tango',
+    'pygment_dark_style': 'native',
+    'icon_links_label': 'Quick Links',  # for screen reader
+    'show_toc_level': 1,
+    'institutions': [
+        dict(name='University of Freiburg',
+             img='unifreiburg.png',
+             url='https://www.ieeg.uni-freiburg.de/',
+             size=lg),
+        dict(name='Institut national de recherche en informatique et en automatique',  # noqa E501
+             img='inria.png',
+             url='https://www.inria.fr/',
+             size=xl),
+    ],
+}
 
 
 # -- Options for LaTeX output ---------------------------------------------
@@ -280,6 +332,9 @@ latex_elements = {
     # 'figure_align': 'htbp',
 }
 
+latex_logo = "_static/braindecode.png"
+latex_toplevel_sectioning = 'part'
+
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
@@ -287,6 +342,52 @@ latex_documents = [
     (master_doc, 'Braindecode.tex', 'Braindecode',
      'Robin Tibor Schirrmeister', 'manual'),
 ]
+
+
+
+# -- Fontawesome support -----------------------------------------------------
+
+# here the "fab" and "fas" refer to "brand" and "solid" (determines which font
+# file to look in). "fw" indicates fixed width.
+brand_icons = ('apple', 'linux', 'windows', 'discourse', 'python')
+fixed_icons = (
+    # homepage:
+    'book', 'code-branch', 'newspaper', 'question-circle', 'quote-left',
+    # contrib guide:
+    'bug', 'comment', 'hand-sparkles', 'magic', 'pencil-alt', 'remove-format',
+    'universal-access', 'discourse', 'python',
+)
+other_icons = (
+    'hand-paper', 'question', 'rocket', 'server', 'code', 'desktop',
+    'terminal', 'cloud-download-alt', 'wrench', 'hourglass'
+)
+icons = dict()
+for icon in brand_icons + fixed_icons + other_icons:
+    font = ('fab' if icon in brand_icons else 'fas',)  # brand or solid font
+    fw = ('fa-fw',) if icon in fixed_icons else ()     # fixed-width
+    icons[icon] = font + fw
+
+prolog = ''
+for icon, classes in icons.items():
+    prolog += f'''
+.. |{icon}| raw:: html
+
+    <i class="{' '.join(classes)} fa-{icon}"></i>
+'''
+
+prolog += '''
+.. |fix-bug| raw:: html
+
+    <span class="fa-stack small-stack">
+        <i class="fas fa-bug fa-stack-1x"></i>
+        <i class="fas fa-ban fa-stack-2x"></i>
+    </span>
+'''
+
+prolog += '''
+.. |ensp| unicode:: U+2002 .. EN SPACE
+'''
+
 
 # -- Options for manual page output ---------------------------------------
 
