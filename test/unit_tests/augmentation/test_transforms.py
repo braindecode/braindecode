@@ -517,8 +517,7 @@ def test_sensors_rotation_functional():
     (SensorsXRotation, 15, False, False),
     (SensorsYRotation, 15, False, False),
     (SensorsZRotation, 15, False, False),
-    (SensorsZRotation, 15, False, True),
-    #(SensorsZRotation, -15, True, False),
+    (SensorsZRotation, -15, True, False),
 ])
 def test_sensors_rotation_transforms(
     rng_seed,
