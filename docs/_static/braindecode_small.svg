@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg
    version="1.1"
-   viewBox="0 0 217.5 107.5"
+   viewBox="0 0 625 107.5"
    fill="none"
    stroke="none"
    stroke-linecap="square"
@@ -9,7 +9,7 @@
    id="svg919"
    sodipodi:docname="braindecode_small.svg"
    inkscape:version="1.2 (56b05e47e7, 2022-06-09, custom)"
-   width="435"
+   width="1250"
    height="215"
    inkscape:export-filename="../c6c3ad4d/logos.svg"
    inkscape:export-xdpi="96"
@@ -1039,6 +1039,17 @@
          x="167.01056"
          y="147.01744" />
     </clipPath>
+    <clipPath
+       clipPathUnits="userSpaceOnUse"
+       id="clipPath5153-2-3">
+      <rect
+         style="opacity:0.339103;fill:#ffffff;fill-opacity:1;stroke:#3a6190;stroke-width:0.96168;stroke-opacity:0.937255"
+         id="rect5155-3-6"
+         width="289.54443"
+         height="160.35884"
+         x="167.01056"
+         y="147.01744" />
+    </clipPath>
   </defs>
   <sodipodi:namedview
      id="namedview921"
@@ -1050,9 +1061,9 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#d1d1d1"
      showgrid="false"
-     inkscape:zoom="1"
-     inkscape:cx="163"
-     inkscape:cy="206.5"
+     inkscape:zoom="0.5"
+     inkscape:cx="-492"
+     inkscape:cy="115"
      inkscape:window-width="1920"
      inkscape:window-height="1016"
      inkscape:window-x="0"
@@ -1063,7 +1074,7 @@
      showguides="false" />
   <g
      id="use3354"
-     transform="translate(34.264424,-1.0763879)">
+     transform="translate(35.26442,-2.0763879)">
     <path
        fill="#ffffff"
        d="m 448.86011,269.89354 c -1.21028,0 -2.18938,0.9769 -2.18938,1.94281 0.24483,0.96602 1.22394,1.55208 2.18938,1.55208 h 7.51967 c 1.21027,0 2.18932,-0.58606 2.43393,-1.55208 0,-0.96591 -0.97883,-1.94281 -2.1891,-1.94281 z"
@@ -1276,4 +1287,17 @@
        inkscape:connector-type="polyline"
        inkscape:connector-curvature="0" />
   </g>
+  <text
+     xml:space="preserve"
+     style="fill:#3a6790;fill-opacity:1;stroke:#3a6190;stroke-opacity:0.937255"
+     x="175.42206"
+     y="181.04811"
+     id="text3937"
+     clip-path="url(#clipPath5153-2-3)"
+     transform="matrix(1.5030638,0,0,3.2574419,-48.695219,-499.08677)"><tspan
+       sodipodi:role="line"
+       id="tspan3935"
+       x="175.42206"
+       y="181.04811"
+       style="font-style:normal;font-variant:normal;font-weight:bold;font-stretch:normal;font-size:33.3333px;font-family:sans-serif;-inkscape-font-specification:'sans-serif, Bold';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-variant-east-asian:normal">BRAINDECODE</tspan></text>
 </svg>
