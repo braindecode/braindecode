@@ -1,5 +1,5 @@
 :root {
-
+    --text-align: justify;
     --pst-font-size-base: 16px;
     --pst-font-size-milli: 13px;
     --pst-font-family-base: 'Source Sans Pro', var(--pst-font-family-base-system);
