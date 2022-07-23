@@ -176,8 +176,7 @@ td = datetime.now(tz=timezone.utc)
 # We need to triage which date type we use so that incremental builds work
 # (Sphinx looks at variable changes and rewrites all files if some change)
 copyright = (
-    f'2018–{td.year}, Braindecode Developers. Last updated <time datetime="{td.isoformat()}" class="localized">{td.strftime("%Y-%m-%d %H:%M %Z")}</time>\n'  # noqa: E501
-    '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>')  # noqa: E501
+    f'2018–{td.year}, Braindecode Developers.')  # noqa: E501
 
 author = 'Braindecode developers'
 
@@ -254,7 +253,7 @@ html_theme_options = {  'icon_links_label': 'Quick Links',  # for screen reader
                       'show_toc_level': 1,
                       'navbar_end': 'version-switcher',
                       'switcher': {
-                          'json_url': 'https://raw.githubusercontent.com/robintibor/braindecode-1/nicer-docs/docs/_static/versions.json',
+                          'json_url': 'https://github.com/braindecode/braindecode/raw/master/docs/_static/versions.json',
                           'version_match': switcher_version_match,
                         },
                         'footer_items': ['copyright'],
