@@ -1,15 +1,18 @@
+# -*- coding: utf-8 -*-
 """
 Cropped Decoding on BCIC IV 2a Dataset
 ======================================
 
 """
 
-
 ######################################################################
 # Building on the `Trialwise decoding
 # tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__, we now do more
 # data-efficient cropped decoding!
 #
+
+######################################################################
+
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
 # explain this visually by comparing trialwise to cropped decoding.
@@ -45,15 +48,19 @@ Cropped Decoding on BCIC IV 2a Dataset
 #        (larger window sizes should be faster). As a rule of thumb, you can
 #        set it to two times the crop size.
 #     -  Crop size and window size together define how many predictions the
-#        network makes per window: ``#window−#crop+1=#predictions``
+#        network makes per window: ``#window − #crop + 1 = #predictions``
 #
+
+######################################################################
+
 # .. note::
+#
 #     For cropped decoding, the above training setup is mathematically
 #     identical to sampling crops in your dataset, pushing them through the
 #     network and training directly on the individual crops. At the same time,
 #     the above training setup is much faster as it avoids redundant
 #     computations by using dilated convolutions, see our paper
-#     `Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_.  # noqa: E501
+#     `Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_. # noqa: E501
 #     However, the two setups are only mathematically identical in case (1)
 #     your network does not use any padding or only left padding and
 #     (2) your loss function leads
@@ -62,6 +69,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     log-softmax outputs and negative log likelihood loss that is typically
 #     used for classification in PyTorch.
 #
+
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
@@ -98,11 +106,17 @@ preprocess(dataset, preprocessors)
 # Create model and compute windowing parameters
 # ---------------------------------------------
 #
+
+######################################################################
+
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
 # know the receptive field of the network to know how large the window
 # stride should be.
 #
+
+######################################################################
+
 # We first choose the compute/input window size that will be fed to the
 # network during training This has to be larger than the networks
 # receptive field size and can otherwise be chosen for computational
@@ -177,7 +191,7 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 ######################################################################
 # Cut the data into windows
 # -------------------------
-#
+######################################################################
 # In contrast to trialwise decoding, we have to supply an explicit window size and
 # window stride to the ``create_windows_from_events`` function.
 #
@@ -220,17 +234,19 @@ valid_set = splitted['session_E']
 ######################################################################
 # Training
 # --------
-#
 # In difference to trialwise decoding, we now should supply
 # ``cropped=True`` to the EEGClassifier, and ``CroppedLoss`` as the
 # criterion, as well as ``criterion__loss_function`` as the loss function
 # applied to the meaned predictions.
 #
+######################################################################
+
 # .. note::
-#    In this tutorial, we use some default parameters that we
-#    have found to work well for motor decoding, however we strongly
-#    encourage you to perform your own hyperparameter optimization using
-#    cross validation on your training data.
+#
+#     In this tutorial, we use some default parameters that we
+#     have found to work well for motor decoding, however we strongly
+#     encourage you to perform your own hyperparameter optimization using
+#     cross validation on your training data.
 #
 
 from skorch.callbacks import LRScheduler
@@ -275,9 +291,12 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 # Plot Results
 # ------------
 #
+######################################################################
+
 # This is again the same code as in trialwise decoding.
 #
 # .. note::
+#
 #     Note that we drop further in the classification error and
 #     loss as in the trialwise decoding tutorial.
 #
