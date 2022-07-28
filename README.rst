@@ -19,13 +19,13 @@
 Braindecode
 ===========
 
-`Braindecode`_ is an open-source Python toolbox for decoding raw EEG data with
-deep learning models. It includes dataset fetchers, data preprocessing and
+Braindecode is an open-source Python toolbox for decoding raw neurophysiological
+data with deep learning models. It includes dataset fetchers, data preprocessing and
 visualization tools, as well as implementations of several deep learning
-architecture and data augmentations for EEG analysis.
+architecture and data augmentations for EEG, ECoG, MEG and others analysis.
 
-For EEG researchers who want to work with deep learning and
-deep learning researchers who want to work with EEG data.
+For brain signal researchers who want to work with deep learning and
+deep learning researchers who want to work with neurophysiological data.
 
 
 Installation Braindecode
