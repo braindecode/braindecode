@@ -29,7 +29,7 @@ Braindecode Homepage
    visualization tools, as well as implementations of several deep learning
    architecture and data augmentations for EEG, ECoG, MEG and others analysis.
 
-   For brain signal researchers who want to work with deep learning and
+   For neuroscientists who want to work with deep learning and
    deep learning researchers who want to work with neurophysiological data.
 
 .. frontpage gallery is added by a conditional in _templates/layout.html
