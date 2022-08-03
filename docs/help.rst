@@ -7,14 +7,6 @@ Frequently Asked Questions (FAQ)
 ================================
 
 
-.. highlight:: python
-
-General Braindecode issues
-===========================
-
-
-
-
 How do I cite Braindecode?
 --------------------------
 See  :ref:`cite`.
@@ -28,9 +20,6 @@ Check out if your are running the most recent version of braindecode.
 I still can't get it to work!
 -----------------------------
 
-I think I found a bug, what do I do?
-------------------------------------
-
 When you encounter an error message or unexpected results, it can be hard to
 tell whether it happened because of a bug in Braindecode, a mistake in user
 code, a corrupted data file, or irregularities in the data itself.
@@ -40,7 +29,12 @@ Your first step when asking for help should be the `Braindecode Chat
 repeating: *the GitHub issue tracker is not for usage help* — it is for
 software bugs, feature requests, and improvements to documentation. If you
 open an issue that contains only a usage question, we will close the issue and
-direct you to the chat. If you're pretty sure the problem you've encountered
+direct you to the chat.
+
+I think I found a bug, what do I do?
+------------------------------------
+
+If you're pretty sure the problem you've encountered
 is a software bug (not bad data or user error):
 
 - Make sure you're using `the most current version`_. You can check it locally
