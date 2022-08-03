@@ -15,8 +15,8 @@ General Braindecode issues
 
 
 
-How do I cite MNE?
-------------------
+How do I cite Braindecode?
+--------------------------
 See  :ref:`cite`.
 
 Help! I can't get Python and Braindecode working!
