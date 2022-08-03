@@ -19,12 +19,13 @@
 Braindecode
 ===========
 
-`Braindecode`_ is an open-source Python toolbox for decode neurophysiological data such as MEG, EEG, sEEG,
-ECoG, and more with Deep Learning models. It includes modules for data input/output, preprocessing,
-visualization, data augmentation, classification, regression, sampler and much more!
+Braindecode is an open-source Python toolbox for decoding raw electrophysiological brain
+data with deep learning models. It includes dataset fetchers, data preprocessing and
+visualization tools, as well as implementations of several deep learning
+architectures and data augmentations for analysis of EEG, ECoG and MEG.
 
-This toolbox focus only in decode raw time-domain EEG. For EEG researchers who want to work with deep learning and
-deep learning researchers who want to work with EEG data.
+For neuroscientists who want to work with deep learning and
+deep learning researchers who want to work with neurophysiological data.
 
 
 Installation Braindecode
@@ -62,13 +63,13 @@ alternatively, install the latest version of braindecode via pip:
 Documentation
 =============
 
-Documentation is online under https://braindecode.org, in the version stable and dev.
+Documentation is online under https://braindecode.org, both in the stable and dev versions.
 
 
 Contributing to Braindecode
 ===========================
 
-Please see the documentation on the braindecode github:
+Guidelines for contributing to the library can be found on the braindecode github:
 
 https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md
 
