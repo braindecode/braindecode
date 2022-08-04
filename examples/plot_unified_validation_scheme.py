@@ -4,37 +4,37 @@ Unified Validation Scheme
 
 This tutorial shows you how to properly train, tune and test your deep learning
 models with Braindecode. We will use the BCIC IV 2a dataset as a showcase example,
-however this scheme holds for any supervised trial-based decoding setting.
+however this scheme holds for standard supervised trial-based decoding setting.
 As this tutorial will include additional parts of code like loading and preprocessing,
-defining a model, etc. which are not exclusive to this page (compare `Cropped Decoding
-Tutorial <./plot_bcic_iv_2a_moabb.html>`__), feel free to skip these parts.
-In general we distinguish between 3 different schemes, one for the final training and two
+defining a model, etc. which are not exclusive to this page (compare `Trialwise Decoding
+Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__), feel free to skip these parts.
+In general we distinguish between 3 different validation schemes, one for the final training and two
 different methods for tuning/hyperparameter search.
 
 """
 
 ######################################################################
-# Why should I care about that?
+# Why should I care about model evaluation?
 # -------------------------------------
 # Short answer: To produce reliable results.
 # To train a Machine Learning model you typically use two distinct
 # datasets: one for training and one for testing. Easy - right?
 # But the story does not end here. While developing a ML model you
-# always have to adjust and tune the Hyperparamters of your model/
-# pipeline (i.e. number of layers, learning rate, number of epochs).
+# usually have to adjust and tune hyperparameters of your model/
+# pipeline (e.g., number of layers, learning rate, number of epochs).
 # If you would keep using the test dataset to evaluate your adjustment
 # you would run into something called data leakage. This means that,
-# by using the test set to adjust the Hyperparamters of your model,
+# by using the test set to adjust the hyperparameters of your model,
 # the model implicitly learns from the test set. Therefore the trained
 # model is not independent of the test set anymore (even though they
 # were never used for backpropagation!).
 # This is why you need a third split, the so called validation set, if
-# you perform any Hyperparamter tuning.
+# you perform any hyperparameter tuning.
 # This tutorial shows two different methods (Option 2 and 3) to do
-# Hyperparamter tuning.
+# hyperparameter tuning.
 # Option 1 shows how to train with a 2-fold split (train and test,
 # no validation split). Option 1 should only be used if you already
-# know your Hyperparamter configuration.
+# know your hyperparameter configuration.
 #
 
 ######################################################################
@@ -119,7 +119,7 @@ windows_dataset = create_windows_from_events(
 # .. note::
 #    No matter which of the 3 validation schemes you use, this initial
 #    two-fold split into train_set and test_set always remains the same.
-#    Remember that you are not allowed to use the test_dataset during any
+#    Remember that you are not allowed to use the test_set during any
 #    stage of training or tuning.
 #
 
@@ -172,11 +172,11 @@ if cuda:
 # splitted in two distinct sets (``train_set`` and ``test_set``).
 # As this method uses no separate validation split it should only be
 # used for the final evaluation of the (previously!) found
-# Hyperparameter configuration.
+# hyperparameters configuration.
 #
 # .. warning::
 #    If you make any use of the ``test_set`` during training
-#    (i.e. by using EarlyStopping) there will be data leakage
+#    (e.g. by using EarlyStopping) there will be data leakage
 #    which will make the reported generalization capability/decoding
 #    performance of your model less credible.
 #
@@ -220,21 +220,20 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 
 ######################################################################
 # Usually when developing a new Deep Learning model/method finding
-# the best (or at least a suitable) Hyperparameter configuration makes
+# the best (or at least a suitable) hyperparameter configuration makes
 # up a substantial part of the developement process.
-# As stated above, it is not suitable to use the ```test_set``
-# for this Hyperparamter search. Therefore we need a third split, the
+# As stated above, it is not suitable to use the ``test_set``
+# for this hyperparamter search. Therefore we need a third split, the
 # so called validation set which is a Subset of the ``train_set``.
 # This second option splits the original ``train_set`` only once
 # (instead of k times as in Option 3) to speed up the tuning process.
 # This method should only be preferred over Option 3 if either the
-# training duration is very long or the Hyperparamter search space is
+# training duration is very long or the hyperparameter search space is
 # very large.
 #
 # .. note::
 #    If your dataset is really small, the validation split can become
-#    quite small. This may lead to a problematic distribution of the
-#    validation set which may lead to unreliable tuning results. To
+#    quite small. This may lead to unreliable tuning results. To
 #    avoid this, either use Option 3 or adjust the split ratio.
 #
 
@@ -265,7 +264,7 @@ clf = EEGClassifier(
 )
 
 ######################################################################
-# We will make use of the sklearn library to do the Hyperparameter
+# We will make use of the sklearn library to do the hyperparameter
 # search. The ``train_test_split`` function will split the ``train_set``
 # into two sets. We can specify the ratio of the split via the
 # ``test_size`` parameter. Here we use a 80-20 train-val split.
@@ -287,8 +286,8 @@ y_train = np.array([y for y in SliceDataset(train_set, idx=1)])
 train_val_split = [tuple(train_test_split(X_train.indices_, test_size=0.2, shuffle=False))]
 
 ######################################################################
-# Define the ``fit_params`` and the ``paramter_grid`` i.e. list all
-# Hyperparamters you want to include in your search.
+# Define the ``fit_params`` and the ``parameter_grid`` i.e. list all
+# hyperparameters you want to include in your search.
 # Afterwards define a search strategy. As a simple example we use
 # grid search, but you can use `any strategy you want
 # <https://scikit-learn.org/stable/modules/classes.html#module-sklearn.model_selection>`__).
