@@ -840,7 +840,6 @@ def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
     try:
         C_inv = torch.linalg.inv(C)
     except torch._C._LinAlgError:
-        print("Had to fallback to pinv for one batch.")
         # There is a stability issue with pinv since torch v1.8.0
         # see https://github.com/pytorch/pytorch/issues/75494
         C_inv = torch.linalg.pinv(C.cpu()).to(device)
