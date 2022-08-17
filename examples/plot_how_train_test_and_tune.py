@@ -69,21 +69,29 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 import numpy as np
 
 from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+    exponential_moving_standardize,
+    preprocess,
+    Preprocessor,
+)
 
-low_cut_hz = 4.  # low cut frequency for filtering
-high_cut_hz = 38.  # high cut frequency for filtering
+low_cut_hz = 4.0  # low cut frequency for filtering
+high_cut_hz = 38.0  # high cut frequency for filtering
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
 
 preprocessors = [
-    Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
-    Preprocessor(lambda data, factor: np.multiply(data, factor),  # Convert from V to uV
-                 factor=1e6),
-    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-    Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
-                 factor_new=factor_new, init_block_size=init_block_size)
+    Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
+    Preprocessor(
+        lambda data, factor: np.multiply(data, factor),  # Convert from V to uV
+        factor=1e6,
+    ),
+    Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
+    Preprocessor(
+        exponential_moving_standardize,  # Exponential moving standardization
+        factor_new=factor_new,
+        init_block_size=init_block_size,
+    ),
 ]
 
 # Transform the data
@@ -98,8 +106,8 @@ from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
-sfreq = dataset.datasets[0].raw.info['sfreq']
-assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
+sfreq = dataset.datasets[0].raw.info["sfreq"]
+assert all([ds.raw.info["sfreq"] == sfreq for ds in dataset.datasets])
 # Calculate the trial start offset in samples.
 trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
@@ -122,7 +130,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
-device = 'cuda' if cuda else 'cpu'
+device = "cuda" if cuda else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 seed = 20200220
@@ -137,7 +145,7 @@ model = ShallowFBCSPNet(
     n_chans,
     n_classes,
     input_window_samples=input_window_samples,
-    final_conv_length='auto',
+    final_conv_length="auto",
 )
 
 # Send model to GPU
@@ -167,9 +175,9 @@ if cuda:
 #    stage of training or tuning.
 #
 
-splitted = windows_dataset.split('session')
-train_set = splitted['session_T']
-test_set = splitted['session_E']
+splitted = windows_dataset.split("session")
+train_set = splitted["session_T"]
+test_set = splitted["session_E"]
 
 ######################################################################
 # Option 1: Simple Train-Test Split
@@ -209,7 +217,8 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
-        "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        "accuracy",
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
 )
@@ -245,8 +254,8 @@ def plot_simple_train_test(ax, windows_dataset, train_set, test_set):
     ax.scatter(
         range(len(train_set) + len(test_set)),
         [0.5] * len(train_set) + [0.5] * len(test_set),
-        c=[braindecode_cmap[1]] * len(train_set) +
-          [braindecode_cmap[2]] * len(test_set),
+        c=[braindecode_cmap[1]] * len(train_set)
+        + [braindecode_cmap[2]] * len(test_set),
         marker="_",
         lw=50,
     )
@@ -256,24 +265,25 @@ def plot_simple_train_test(ax, windows_dataset, train_set, test_set):
         yticks=[0.5, 3.5],
         yticklabels=["Train-Test\nSplit", "Original\nDataset"],
         xlabel="Number of samples.",
-        title="Training-Testing Split"
+        title="Training-Testing Split",
     )
 
     ax.legend(
-        [Patch(color=braindecode_cmap[0]),
-         Patch(color=braindecode_cmap[1]),
-         Patch(color=braindecode_cmap[2])],
-        ["Original set",
-         "Training set",
-         "Testing set"],
+        [
+            Patch(color=braindecode_cmap[0]),
+            Patch(color=braindecode_cmap[1]),
+            Patch(color=braindecode_cmap[2]),
+        ],
+        ["Original set", "Training set", "Testing set"],
         loc=(1.02, 0.8),
     )
     return ax
 
 
 fig, ax = plt.subplots(figsize=(12, 5))
-plot_simple_train_test(ax=ax, windows_dataset=windows_dataset,
-                       train_set=train_set, test_set=test_set)
+plot_simple_train_test(
+    ax=ax, windows_dataset=windows_dataset, train_set=train_set, test_set=test_set
+)
 fig.tight_layout()
 ######################################################################
 # Option 2: Train-Val-Test Split
@@ -308,7 +318,9 @@ from skorch.helper import predefined_split, SliceDataset
 
 X_train = SliceDataset(train_set, idx=0)
 y_train = np.array([y for y in SliceDataset(train_set, idx=1)])
-train_indices, val_indices = train_test_split(X_train.indices_, test_size=0.2, shuffle=False)
+train_indices, val_indices = train_test_split(
+    X_train.indices_, test_size=0.2, shuffle=False
+)
 train_subset = Subset(train_set, train_indices)
 val_subset = Subset(train_set, val_indices)
 
@@ -329,7 +341,8 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
-        "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        "accuracy",
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
 )
@@ -345,8 +358,8 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 # Let's visualize the second option with a util function.
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def plot_train_valid_test(ax, windows_dataset, train_subset,
-                          val_subset, test_set):
+
+def plot_train_valid_test(ax, windows_dataset, train_subset, val_subset, test_set):
     """Create a sample plot for training, validation, testing."""
 
     braindecode_cmap = [
@@ -367,8 +380,8 @@ def plot_train_valid_test(ax, windows_dataset, train_subset,
         range(len(train_subset) + len(val_subset) + len(test_set)),
         [0.5] * len(train_subset) + [0.5] * len(val_subset) + [0.5] * len(test_set),
         c=[braindecode_cmap[1]] * len(train_subset)
-          + [braindecode_cmap[2]] * len(val_subset)
-          + [braindecode_cmap[3]] * len(test_set),
+        + [braindecode_cmap[2]] * len(val_subset)
+        + [braindecode_cmap[3]] * len(test_set),
         marker="_",
         lw=50,
     )
@@ -396,9 +409,13 @@ def plot_train_valid_test(ax, windows_dataset, train_subset,
 
 
 fig, ax = plt.subplots(figsize=(12, 5))
-plot_train_valid_test(ax=ax, windows_dataset=windows_dataset,
-                      train_subset=train_subset, val_subset=val_subset,
-                      test_set=test_set)
+plot_train_valid_test(
+    ax=ax,
+    windows_dataset=windows_dataset,
+    train_subset=train_subset,
+    val_subset=val_subset,
+    test_set=test_set,
+)
 fig.tight_layout()
 
 ######################################################################
@@ -441,17 +458,21 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
-        "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        "accuracy",
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
 )
 
 train_val_split = KFold(n_splits=5, shuffle=False)
-fit_params = {'epochs': n_epochs}
+fit_params = {"epochs": n_epochs}
 cv_results = cross_val_score(
-    clf, X_train, y_train, scoring='accuracy', cv=train_val_split, fit_params=fit_params)
-print(f"Validation accuracy: {np.mean(cv_results * 100):.2f}"
-      f"+-{np.std(cv_results * 100):.2f}%")
+    clf, X_train, y_train, scoring="accuracy", cv=train_val_split, fit_params=fit_params
+)
+print(
+    f"Validation accuracy: {np.mean(cv_results * 100):.2f}"
+    f"+-{np.std(cv_results * 100):.2f}%"
+)
 
 ######################################################################
 # Let's visualize the third option with a util function.
@@ -475,20 +496,16 @@ def plot_k_fold(cv, windows_dataset, X_train, y_train, test_set):
       BBC
       """
 
-    axes = plt.figure(figsize=(15, 7),
-                      constrained_layout=True).subplot_mosaic(
+    axes = plt.figure(figsize=(15, 7), constrained_layout=True).subplot_mosaic(
         mosaic,
-        gridspec_kw={
-            "height_ratios": [1.5, 5],
-            "width_ratios": [3.5, 3.5, 3.5],
-        },
+        gridspec_kw={"height_ratios": [1.5, 5], "width_ratios": [3.5, 3.5, 3.5]},
     )
 
     # Generate the training/testing visualizations for each CV split
     for ii, (tr, tt) in enumerate(cv.split(X=X_train, y=y_train)):
         # Fill in indices with the training/test groups
 
-        axes['a'].scatter(
+        axes["a"].scatter(
             range(len(windows_dataset)),
             [3.5] * len(windows_dataset),
             c=braindecode_cmap[0],
@@ -502,7 +519,7 @@ def plot_k_fold(cv, windows_dataset, X_train, y_train, test_set):
         color_indices = list(map(encode_color, indices))
 
         # Visualize the results
-        axes['B'].scatter(
+        axes["B"].scatter(
             range(len(indices)),
             [ii + 0.5] * len(indices),
             c=color_indices,
@@ -512,7 +529,7 @@ def plot_k_fold(cv, windows_dataset, X_train, y_train, test_set):
             vmax=1.2,
         )
 
-        axes['C'].scatter(
+        axes["C"].scatter(
             range(len(test_set)),
             [ii + 0.5] * len(test_set),
             c=braindecode_cmap[3],
@@ -520,25 +537,22 @@ def plot_k_fold(cv, windows_dataset, X_train, y_train, test_set):
             lw=10,
         )
 
-    axes['a'].set(
-        yticklabels=[''],
+    axes["a"].set(
+        yticklabels=[""],
         xlim=[0, len(windows_dataset) + 1],
         ylabel="Original\nData",
         ylim=[3.4, 3.6],
     )
-    axes['a'].yaxis.get_label().set_fontsize(16)
+    axes["a"].yaxis.get_label().set_fontsize(16)
 
-    axes['C'].set(
-        yticks=np.arange(5) + 0.5,
-        yticklabels=[''] * 5,
-        xlim=[0, 300],
-        ylim=[5, -0.2],
+    axes["C"].set(
+        yticks=np.arange(5) + 0.5, yticklabels=[""] * 5, xlim=[0, 300], ylim=[5, -0.2],
     )
 
     # Formatting
     yticklabels = list(range(5))
 
-    axes['B'].set(
+    axes["B"].set(
         yticks=np.arange(5) + 0.5,
         yticklabels=yticklabels,
         ylabel="CV iteration",
@@ -546,27 +560,30 @@ def plot_k_fold(cv, windows_dataset, X_train, y_train, test_set):
         xlim=[0, 300],
     )
 
-    axes['B'].yaxis.get_label().set_fontsize(16)
+    axes["B"].yaxis.get_label().set_fontsize(16)
 
-    axes["a"].set_title("Training, testing with k-Fold Cross Validation",
-                        fontsize=15)
+    axes["a"].set_title("Training, testing with k-Fold Cross Validation", fontsize=15)
 
     plt.legend(
-        [Patch(color=braindecode_cmap[0]),
-         Patch(color=braindecode_cmap[1]),
-         Patch(color=braindecode_cmap[2]),
-         Patch(color=braindecode_cmap[3])],
-        ["Original set",
-         "Training set",
-         "Validation set",
-         "Testing set"],
+        [
+            Patch(color=braindecode_cmap[0]),
+            Patch(color=braindecode_cmap[1]),
+            Patch(color=braindecode_cmap[2]),
+            Patch(color=braindecode_cmap[3]),
+        ],
+        ["Original set", "Training set", "Validation set", "Testing set"],
         loc=(1.02, 0),
     )
     plt.subplots_adjust(wspace=0.075)
 
 
-plot_k_fold(cv=train_val_split, windows_dataset=windows_dataset,
-            X_train=X_train, y_train=y_train, test_set=test_set)
+plot_k_fold(
+    cv=train_val_split,
+    windows_dataset=windows_dataset,
+    X_train=X_train,
+    y_train=y_train,
+    test_set=test_set,
+)
 ######################################################################
 # How to tune your Hyperparameters
 # --------------------------------
@@ -602,29 +619,33 @@ plot_k_fold(cv=train_val_split, windows_dataset=windows_dataset,
 import pandas as pd
 from sklearn.model_selection import GridSearchCV
 
-train_val_split = [tuple(train_test_split(X_train.indices_, test_size=0.2, shuffle=False))]
+train_val_split = [
+    tuple(train_test_split(X_train.indices_, test_size=0.2, shuffle=False))
+]
 
 param_grid = {
-    'optimizer__lr': [0.00625, 0.000625],
+    "optimizer__lr": [0.00625, 0.000625],
 }
 search = GridSearchCV(
     estimator=clf,
     param_grid=param_grid,
     cv=train_val_split,
     return_train_score=True,
-    scoring='accuracy',
+    scoring="accuracy",
     refit=True,
     verbose=1,
-    error_score='raise'
+    error_score="raise",
 )
 
 search.fit(X_train, y_train, **fit_params)
 search_results = pd.DataFrame(search.cv_results_)
 
-best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
-print(f"Best hyperparameters were {best_run['params']} which gave a validation "
-      f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
-      f"accuracy of {best_run['mean_train_score'] * 100:.2f}%).")
+best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
+print(
+    f"Best hyperparameters were {best_run['params']} which gave a validation "
+    f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
+    f"accuracy of {best_run['mean_train_score'] * 100:.2f}%)."
+)
 
 ######################################################################
 # Option 2: k-Fold Cross Validation
