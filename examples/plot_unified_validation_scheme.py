@@ -61,7 +61,6 @@ from braindecode.datasets import MOABBDataset
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
-
 ######################################################################
 # Preprocessing
 # ~~~~~~~~~~~~~
@@ -89,7 +88,6 @@ preprocessors = [
 
 # Transform the data
 preprocess(dataset, preprocessors)
-
 
 ######################################################################
 # Cut Compute Windows
@@ -173,7 +171,6 @@ splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
 test_set = splitted['session_E']
 
-
 ######################################################################
 # Option 1: Simple Train-Test Split
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -225,7 +222,59 @@ y_test = test_set.get_metadata().target
 test_acc = clf.score(test_set, y=y_test)
 print(f"Test acc: {(test_acc * 100):.2f}%")
 
+######################################################################
+# Let's visualize the first option with a util function.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+
+
+def plot_simple_train_test(ax, windows_dataset, train_set, test_set):
+    """Create a sample plot for training-testing split."""
+    braindecode_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF"]
+
+    ax.scatter(
+        range(len(windows_dataset)),
+        [3.5] * len(windows_dataset),
+        c=braindecode_cmap[0],
+        marker="_",
+        lw=50,
+    )
+
+    ax.scatter(
+        range(len(train_set) + len(test_set)),
+        [0.5] * len(train_set) + [0.5] * len(test_set),
+        c=[braindecode_cmap[1]] * len(train_set) +
+          [braindecode_cmap[2]] * len(test_set),
+        marker="_",
+        lw=50,
+    )
+
+    ax.set(
+        ylim=[-1, 5],
+        yticks=[0.5, 3.5],
+        yticklabels=["Train-Test\nSplit", "Original\nDataset"],
+        xlabel="Number of samples.",
+        title="Training-Testing Split"
+    )
+
+    ax.legend(
+        [Patch(color=braindecode_cmap[0]),
+         Patch(color=braindecode_cmap[1]),
+         Patch(color=braindecode_cmap[2])],
+        ["Original set",
+         "Training set",
+         "Testing set"],
+        loc=(1.02, 0.8),
+    )
+    return ax
+
+
+fig, ax = plt.subplots(figsize=(12, 5))
+plot_simple_train_test(ax=ax, windows_dataset=windows_dataset,
+                       train_set=train_set, test_set=test_set)
+fig.tight_layout()
 ######################################################################
 # Option 2: Train-Val-Test Split
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -291,6 +340,67 @@ y_test = test_set.get_metadata().target
 test_acc = clf.score(test_set, y=y_test)
 print(f"Test acc: {(test_acc * 100):.2f}%")
 
+
+######################################################################
+# Let's visualize the second option with a util function.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def plot_train_valid_test(ax, windows_dataset, train_subset,
+                          val_subset, test_set):
+    """Create a sample plot for training, validation, testing."""
+
+    braindecode_cmap = [
+        "#3A6190",
+        "#683E00",
+        "#2196F3",
+        "#DDF2FF",
+    ]
+    ax.scatter(
+        range(len(windows_dataset)),
+        [3.5] * len(windows_dataset),
+        c=braindecode_cmap[0],
+        marker="_",
+        lw=50,
+    )
+
+    ax.scatter(
+        range(len(train_subset) + len(val_subset) + len(test_set)),
+        [0.5] * len(train_subset) + [0.5] * len(val_subset) + [0.5] * len(test_set),
+        c=[braindecode_cmap[1]] * len(train_subset)
+          + [braindecode_cmap[2]] * len(val_subset)
+          + [braindecode_cmap[3]] * len(test_set),
+        marker="_",
+        lw=50,
+    )
+
+    ax.set(
+        ylim=[-1, 5],
+        yticks=[0.5, 3.5],
+        yticklabels=["Train-Test\nSplit", "Original\nDataset"],
+        xlabel="Number of samples.",
+        title="Train-Validation-Test Split",
+    )
+
+    ax.legend(
+        [
+            Patch(color=braindecode_cmap[0]),
+            Patch(color=braindecode_cmap[1]),
+            Patch(color=braindecode_cmap[2]),
+            Patch(color=braindecode_cmap[3]),
+        ],
+        ["Original set", "Training set", "Validation set", "Testing set"],
+        loc=(1.02, 0.8),
+    )
+
+    return ax
+
+
+fig, ax = plt.subplots(figsize=(12, 5))
+plot_train_valid_test(ax=ax, windows_dataset=windows_dataset,
+                      train_subset=train_subset, val_subset=val_subset,
+                      test_set=test_set)
+fig.tight_layout()
+
 ######################################################################
 # Option 3: k-Fold Cross Validation
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -340,9 +450,123 @@ train_val_split = KFold(n_splits=5, shuffle=False)
 fit_params = {'epochs': n_epochs}
 cv_results = cross_val_score(
     clf, X_train, y_train, scoring='accuracy', cv=train_val_split, fit_params=fit_params)
-print(f"Validation accuracy: {np.mean(cv_results*100):.2f}"
-      f"+-{np.std(cv_results*100):.2f}%")
+print(f"Validation accuracy: {np.mean(cv_results * 100):.2f}"
+      f"+-{np.std(cv_results * 100):.2f}%")
 
+######################################################################
+# Let's visualize the third option with a util function.
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+braindecode_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF"]
+
+
+def encode_color(value, br_cmap=braindecode_cmap):
+    # Util to encoder color
+    if value == 0:
+        return br_cmap[1]
+    else:
+        return br_cmap[2]
+
+
+def plot_k_fold(cv, windows_dataset, X_train, y_train, test_set):
+    braindecode_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF"]
+
+    mosaic = """
+      aaa
+      BBC
+      """
+
+    axes = plt.figure(figsize=(15, 7),
+                      constrained_layout=True).subplot_mosaic(
+        mosaic,
+        gridspec_kw={
+            "height_ratios": [1.5, 5],
+            "width_ratios": [3.5, 3.5, 3.5],
+        },
+    )
+
+    # Generate the training/testing visualizations for each CV split
+    for ii, (tr, tt) in enumerate(cv.split(X=X_train, y=y_train)):
+        # Fill in indices with the training/test groups
+
+        axes['a'].scatter(
+            range(len(windows_dataset)),
+            [3.5] * len(windows_dataset),
+            c=braindecode_cmap[0],
+            marker="_",
+            lw=20,
+        )
+        indices = np.array([np.nan] * len(X_train))
+        indices[tt] = 1
+        indices[tr] = 0
+
+        color_indices = list(map(encode_color, indices))
+
+        # Visualize the results
+        axes['B'].scatter(
+            range(len(indices)),
+            [ii + 0.5] * len(indices),
+            c=color_indices,
+            marker="_",
+            lw=10,
+            vmin=-0.2,
+            vmax=1.2,
+        )
+
+        axes['C'].scatter(
+            range(len(test_set)),
+            [ii + 0.5] * len(test_set),
+            c=braindecode_cmap[3],
+            marker="_",
+            lw=10,
+        )
+
+    axes['a'].set(
+        yticklabels=[''],
+        xlim=[0, len(windows_dataset) + 1],
+        ylabel="Original\nData",
+        ylim=[3.4, 3.6],
+    )
+    axes['a'].yaxis.get_label().set_fontsize(16)
+
+    axes['C'].set(
+        yticks=np.arange(5) + 0.5,
+        yticklabels=[''] * 5,
+        xlim=[0, 300],
+        ylim=[5, -0.2],
+    )
+
+    # Formatting
+    yticklabels = list(range(5))
+
+    axes['B'].set(
+        yticks=np.arange(5) + 0.5,
+        yticklabels=yticklabels,
+        ylabel="CV iteration",
+        ylim=[5, -0.2],
+        xlim=[0, 300],
+    )
+
+    axes['B'].yaxis.get_label().set_fontsize(16)
+
+    axes["a"].set_title("Training, testing with k-Fold Cross Validation",
+                        fontsize=15)
+
+    plt.legend(
+        [Patch(color=braindecode_cmap[0]),
+         Patch(color=braindecode_cmap[1]),
+         Patch(color=braindecode_cmap[2]),
+         Patch(color=braindecode_cmap[3])],
+        ["Original set",
+         "Training set",
+         "Validation set",
+         "Testing set"],
+        loc=(1.02, 0),
+    )
+    plt.subplots_adjust(wspace=0.075)
+
+
+plot_k_fold(cv=train_val_split, windows_dataset=windows_dataset,
+            X_train=X_train, y_train=y_train, test_set=test_set)
 ######################################################################
 # How to tune your Hyperparameters
 # --------------------------------
