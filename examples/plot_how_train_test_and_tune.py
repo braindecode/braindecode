@@ -241,7 +241,7 @@ from matplotlib.patches import Patch
 
 def plot_simple_train_test(ax, windows_dataset, train_set, test_set):
     """Create a sample plot for training-testing split."""
-    braindecode_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF"]
+    braindecode_cmap = ["#3A6190", "#683E00", "#DDF2FF", "#2196F3"]
 
     ax.scatter(
         range(len(windows_dataset)),
@@ -265,7 +265,7 @@ def plot_simple_train_test(ax, windows_dataset, train_set, test_set):
         yticks=[0.5, 3.5],
         yticklabels=["Train-Test\nSplit", "Original\nDataset"],
         xlabel="Number of samples.",
-        title="Training-Testing Split",
+        title="Train-Test Split",
     )
 
     ax.legend(
@@ -492,13 +492,13 @@ def plot_k_fold(cv, windows_dataset, X_train, y_train, test_set):
     braindecode_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF"]
 
     mosaic = """
-      aaa
-      BBC
+      aa
+      BC
       """
 
     axes = plt.figure(figsize=(15, 7), constrained_layout=True).subplot_mosaic(
         mosaic,
-        gridspec_kw={"height_ratios": [1.5, 5], "width_ratios": [3.5, 3.5, 3.5]},
+        gridspec_kw={"height_ratios": [1.5, 5], "width_ratios": [3.5, 3.5]},
     )
 
     # Generate the training/testing visualizations for each CV split
