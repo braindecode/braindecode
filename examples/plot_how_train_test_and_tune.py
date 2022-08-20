@@ -12,7 +12,7 @@ defining a model, and other details which are not exclusive to this page (compar
 will not further elaborate on these parts and you can feel free to skip them.
 
 In general we distinguish between "usual" training and evaluation and hyperparameter search.
-The Tutorial is therefore split into two parts, one for the three different training schemes
+The tutorial is therefore split into two parts, one for the three different training schemes
 and one for the two different hyperparameter tuning methods.
 
 """
@@ -26,23 +26,32 @@ and one for the two different hyperparameter tuning methods.
 # data into two parts, training and testing sets. It sounds like a
 # simple division, right? But the story does not end here.
 #
-# While developing a ML model you
-# usually have to adjust and tune hyperparameters of your model or
-# pipeline (e.g., number of layers, learning rate, number of epochs).
-# Deep learning models usually have many free parameters; they could
-# be considered complex models with many degrees of freedom.
-# If you kept using the test dataset to evaluate your adjustment
-# you would run into data leakage.
+# While developing a ML model you usually have to adjust and tune
+# hyperparameters of your model or pipeline (e.g., number of layers,
+# learning rate, number of epochs). Deep learning models usually have
+# many free parameters; they could be considered complex models with
+# many degrees of freedom. If you kept using the test dataset to
+# evaluate your adjustmentyou would run into data leakage.
 #
 # This means that if you use the test set to adjust the hyperparameters
 # of your model, the model implicitly learns or memorizes the test set.
 # Therefore, the trained model is no longer independent of the test set
-# (even though they were never used for backpropagation!).
-# If you perform any Hyperparameter tuning, you need a third split,
+# (even though it was never used for training explicitly!).
+# If you perform any hyperparameter tuning, you need a third split,
 # the so-called validation set.
 #
 # This tutorial shows the three basic schemes for training and evaluating
 # the model as well as two methods to tune your hyperparameters.
+#
+
+######################################################################
+# .. warning::
+#    You might recognize that the accuracy gets better throughout
+#    the experiments of this tutorial. The reason behind that is that
+#    we always use the same model with the same paramters in every
+#    segment to keep the tutorial short and readable. If you do your
+#    own experiments you always have to reinitialize the model before
+#    training.
 #
 
 ######################################################################
@@ -138,11 +147,11 @@ set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4
 # Extract number of chans and time steps from dataset
-n_chans = windows_dataset[0][0].shape[0]
+n_channels = windows_dataset[0][0].shape[0]
 input_window_samples = windows_dataset[0][0].shape[1]
 
 model = ShallowFBCSPNet(
-    n_chans,
+    n_channels,
     n_classes,
     input_window_samples=input_window_samples,
     final_conv_length="auto",
@@ -442,7 +451,7 @@ fig.tight_layout()
 # `cross_val_score <https://scikit-learn.org/stable/modules/generated/
 # sklearn.model_selection.cross_val_score.html>`__ and the `KFold
 # <https://scikit-learn.org/stable/modules/generated/sklearn.model_
-# selection.KFold.html>`__. cross-validator.
+# selection.KFold.html>`__. CV splitter.
 # The ``train_split`` argument has to be set to ``None``, as sklearn
 # will take care of the splitting.
 #
@@ -585,7 +594,7 @@ plot_k_fold(
     test_set=test_set,
 )
 ######################################################################
-# How to tune your Hyperparameters
+# How to tune your hyperparameters
 # --------------------------------
 #
 
@@ -657,13 +666,3 @@ print(
 # above with the ``KFold`` cross-validator from sklearn.
 
 train_val_split = KFold(n_splits=5, shuffle=False)
-
-######################################################################
-# .. note::
-#    You might have recognized that the accuracy got better throughout
-#    the experiments of this tutorial. The reason behind that is that
-#    we always use the same model with the same paramters in every
-#    segment to keep the tutorial short and readable. If you do your
-#    own experiments you always have to reinitialize the model before
-#    training.
-#
