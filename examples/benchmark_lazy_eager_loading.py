@@ -90,7 +90,7 @@ def load_example_data(preload, window_len_s, n_subjects=10):
     """
     subject_ids = list(range(n_subjects))
     ds = TUHAbnormal(
-        TUH_PATH, subject_ids=subject_ids, target_name='pathological',
+        TUH_PATH, target_name='pathological',
         preload=preload)
 
     fs = ds.datasets[0].raw.info['sfreq']
