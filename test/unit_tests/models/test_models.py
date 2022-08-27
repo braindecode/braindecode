@@ -12,8 +12,10 @@ import pytest
 
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
-    SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep, TIDNet, EEGInception)
+    SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
+    TIDNet, EEGInception)
 from braindecode.util import set_random_seeds
+
 
 @pytest.fixture(scope="module")
 def input_sizes():
@@ -126,7 +128,6 @@ def test_eeginception_n_params():
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 14926  # From paper's TABLE IV EEG-Inception Architecture Details
-
 
 
 @pytest.mark.parametrize(
