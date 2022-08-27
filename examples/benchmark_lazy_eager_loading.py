@@ -88,7 +88,6 @@ def load_example_data(preload, window_len_s, n_subjects=10):
         sampling rate. The following assumes that the files have already been
         resampled to a common sampling rate.
     """
-    subject_ids = list(range(n_subjects))
     ds = TUHAbnormal(
         TUH_PATH, target_name='pathological',
         preload=preload)
