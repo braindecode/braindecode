@@ -6,6 +6,8 @@ import torch
 import torch.nn.functional as F
 
 from torch import nn
+from .modules import Expression, Ensure4d
+from .functions import squeeze_final_output
 
 
 class CustomPad(nn.Module):
@@ -27,6 +29,10 @@ class Conv2dWithConstraint(nn.Conv2d):
             self.weight.data, p=2, dim=0, maxnorm=self.max_norm
         )
         return super(Conv2dWithConstraint, self).forward(x)
+
+
+def _transpose_to_b_1_c_0(x):
+    return x.permute(0, 3, 1, 2)
 
 
 class EEGInception(nn.Module):
@@ -85,7 +91,7 @@ class EEGInception(nn.Module):
             self,
             n_channels,  # In the original implementation named as ncha8
             n_classes,  # n_classes
-            input_size_s=1000,  # input_time
+            input_window_samples=1000,  # input_time
             sfreq=128,
             drop_prob=0.5,
             scales_time=(500, 250, 125),
@@ -96,17 +102,18 @@ class EEGInception(nn.Module):
 
         self.n_channels = n_channels
         self.n_classes = n_classes
-        self.input_size_s = input_size_s
+        self.input_window_samples = input_window_samples
         self.drop_prob = drop_prob
         self.sfreq = sfreq
         self.n_filters = n_filters
 
-        input_samples = int(input_size_s * sfreq / 1000)
-        scales_samples = [int(s * sfreq / input_size_s) for s in scales_time]
+        scales_samples = [int(s * sfreq / input_window_samples) for s in scales_time]
 
         # ========================== BLOCK 1: INCEPTION ========================== #
         self.inception_block1 = nn.ModuleList([
             nn.Sequential(
+                Ensure4d(),
+                Expression(_transpose_to_b_1_c_0),
                 CustomPad((0, 0, scales_sample // 2 - 1, scales_sample // 2,)),
                 nn.Conv2d(1, n_filters, (scales_sample, 1)),
                 # kernel_initializer='he_normal',padding='same'
@@ -172,6 +179,7 @@ class EEGInception(nn.Module):
             nn.AvgPool2d((2, 1)),
             nn.Dropout(drop_prob),
         )
+        self.squeeze = Expression(squeeze_final_output)
 
         self.dense = nn.Sequential(
             nn.Linear(4 * 1 * 6, n_classes),
