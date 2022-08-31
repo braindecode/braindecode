@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from torch import nn
 from .modules import Expression, Ensure4d
 from .functions import squeeze_final_output
+from .eegnet import _glorot_weight_zero_bias
 
 
 class CustomPad(nn.Module):
@@ -31,26 +32,98 @@ class Conv2dWithConstraint(nn.Conv2d):
         return super(Conv2dWithConstraint, self).forward(x)
 
 
+class _InceptionBlock1(nn.Module):
+
+    def __init__(self, drop_prob, n_channels, scales_samples, n_filters=8,
+                 momentum=0.01, activation=nn.ELU):
+        super().__init__()
+        self.drop_prob = drop_prob
+        self.n_filters = n_filters
+        self.scales_samples = scales_samples
+        self.momentum = momentum
+        self.activation = activation
+        self.n_channels = n_channels
+
+        self.inception_block1 = nn.ModuleList([
+            nn.Sequential(
+                CustomPad((0, 0, scales_sample // 2 - 1, scales_sample // 2,)),
+                nn.Conv2d(1, self.n_filters, (scales_sample, 1)),
+                nn.BatchNorm2d(self.n_filters, momentum=momentum),
+                activation,
+                nn.Dropout(self.drop_prob),
+                Conv2dWithConstraint(self.n_filters,
+                                     self.n_filters * 2,
+                                     (1, self.n_channels),
+                                     max_norm=1,
+                                     stride=1,
+                                     bias=False,
+                                     groups=self.n_filters,
+                                     padding=(0, 0),
+                                     ),
+                nn.BatchNorm2d(self.n_filters * 2, momentum=self.momentum),
+                activation,
+                nn.Dropout(self.drop_prob),
+            ) for scales_sample in scales_samples
+        ])
+
+    def forward(self, x):
+        x = torch.cat([net(x) for net in self.inception_block1], 1)
+
+        return x
+
+
+class _InceptionBlock2(nn.Module):
+
+    def __init__(self, n_filters, scales_samples, drop_prob,
+                 activation=nn.ELU, momentum=0.001):
+        super().__init__()
+        self.inception_block2 = nn.ModuleList([
+            nn.Sequential(
+                CustomPad((0, 0, scales_sample // 8 -
+                           1, scales_sample // 8,)),
+                nn.Conv2d(
+                    len(scales_samples) * 2 * n_filters,
+                    n_filters, (scales_sample // 4, 1),
+                    bias=False
+                ),
+                nn.BatchNorm2d(n_filters, momentum=momentum),
+                activation,
+                nn.Dropout(drop_prob),
+            ) for scales_sample in scales_samples
+        ])
+
+    def forward(self, x):
+        x = torch.cat([net(x) for net in self.inception_block2], 1)
+
+        return x
+
+
 def _transpose_to_b_1_c_0(x):
     return x.permute(0, 3, 1, 2)
 
 
-class EEGInception(nn.Module):
+class EEGInception(nn.Sequential):
     """EEG Inception model from Santamaría-Vázquez, E. et al 2020.
 
     EEG Inception for ERP-based classification described in [Santamaria2020]]_.
     The code for the paper and this model is also available at [Santamaria2020]_
-    and an adaptation for PyTorch [1]_.
+    and an adaptation for PyTorch [2]_.
 
-    The model is highly based on the original InceptionNet for an image. The main goal is
-    to extract features in parallel with different scales. The author extracted three scales
+    The model is strongly based on the original InceptionNet for an image. The main goal is
+    to extract features in parallel with different scales. The authors extracted three scales
     proportional to the window sample size. The network had three parts:
-    1-inception block largest, 2--inception block smaller and bottleneck for classification.
+    1-larger inception block largest, 2-smaller inception block followed by 3-bottleneck
+    for classification.
 
-    One advantage of the module such EEG-Inception for EEG is that it allows a network
+    One advantage of the EEG-Inception block is that it allows a network
     to learn simultaneous components of low and high frequency associated with the signal.
 
     The model is fully described in [Santamaria2020]_.
+
+    Notes
+    -----
+    This implementation is not guaranteed to be correct, has not been checked
+    by original authors, only reimplemented from the paper based on [2]_.
 
     Parameters
     ----------
@@ -58,7 +131,7 @@ class EEGInception(nn.Module):
         Number of EEG channels.
     n_classes : int
         Number of classes.
-    input_size_s : int
+    input_size_ms : int
         Size of the input, in milliseconds. Set to 1000 in [1]_.
     sfreq : float
         EEG sampling frequency.
@@ -68,12 +141,12 @@ class EEGInception(nn.Module):
         Initial number of convolutional filters. Set to 8 in [Santamaria2020]_.
     scales_time: list(int)
         Windows for inception block, must be a list with proportional values of
-        the input_window_samples.
-        Acording with the author: temporal scale (ms) of the convolutions
+        the input_size_ms, in ms.
+        Acording with the authors: temporal scale (ms) of the convolutions
         on each Inception module.
         This parameter determines the kernel sizes of the filters.
     activation: nn.Module
-        Activation function as an parameter, ELU activation.
+        Activation function, default: ELU activation.
 
     References
     ----------
@@ -89,9 +162,9 @@ class EEGInception(nn.Module):
 
     def __init__(
             self,
-            n_channels,  # In the original implementation named as ncha8
-            n_classes,  # n_classes
-            input_window_samples=1000,  # input_time
+            n_channels,
+            n_classes,
+            input_size_ms=1000,
             sfreq=128,
             drop_prob=0.5,
             scales_time=(500, 250, 125),
@@ -102,60 +175,34 @@ class EEGInception(nn.Module):
 
         self.n_channels = n_channels
         self.n_classes = n_classes
-        self.input_window_samples = input_window_samples
+        self.input_size_ms = input_size_ms
         self.drop_prob = drop_prob
         self.sfreq = sfreq
         self.n_filters = n_filters
 
-        scales_samples = [int(s * sfreq / input_window_samples) for s in scales_time]
+        scales_samples = [int(s * sfreq / input_size_ms) for s in scales_time]
 
         # ========================== BLOCK 1: INCEPTION ========================== #
-        self.inception_block1 = nn.ModuleList([
-            nn.Sequential(
-                Ensure4d(),
-                Expression(_transpose_to_b_1_c_0),
-                CustomPad((0, 0, scales_sample // 2 - 1, scales_sample // 2,)),
-                nn.Conv2d(1, n_filters, (scales_sample, 1)),
-                # kernel_initializer='he_normal',padding='same'
-                nn.BatchNorm2d(n_filters, momentum=0.01),
-                activation,
-                nn.Dropout(drop_prob),
-                Conv2dWithConstraint(n_filters,
-                                     n_filters * 2,
-                                     (1, n_channels),
-                                     max_norm=1,
-                                     stride=1,
-                                     bias=False,
-                                     groups=self.n_filters,
-                                     padding=(0, 0),
-                                     ),
-                nn.BatchNorm2d(n_filters * 2, momentum=0.01),
-                activation,
-                nn.Dropout(drop_prob),
-            ) for scales_sample in scales_samples
-        ])
 
-        self.avg_pool1 = nn.AvgPool2d((4, 1))
+        self.add_module("ensuredims", Ensure4d())
+        self.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
 
-        # ========================== BLOCK 2: INCEPTION ========================== #
-        self.inception_block2 = nn.ModuleList([
-            nn.Sequential(
-                CustomPad((0, 0, scales_sample // 8 -
-                           1, scales_sample // 8,)),
-                nn.Conv2d(
-                    len(scales_samples) * 2 * n_filters,
-                    n_filters, (scales_sample // 4, 1),
-                    bias=False  # kernel_initializer='he_normal', padding='same'
-                ),
-                nn.BatchNorm2d(n_filters, momentum=0.01),
-                activation,
-                nn.Dropout(drop_prob),
-            ) for scales_sample in scales_samples
-        ])
+        self.add_module("inception_block_1", _InceptionBlock1(scales_samples=scales_samples,
+                                                              n_filters=n_filters,
+                                                              drop_prob=drop_prob,
+                                                              momentum=0.01,
+                                                              activation=nn.ELU(),
+                                                              n_channels=n_channels))
 
-        self.avg_pool2 = nn.AvgPool2d((2, 1))
+        self.add_module("avg_pool_1", nn.AvgPool2d((4, 1)))
 
-        # ============================ BLOCK 3: OUTPUT =========================== #
+        self.add_module("inception_block_2", _InceptionBlock2(n_filters=n_filters,
+                                                              scales_samples=scales_time,
+                                                              drop_prob=drop_prob,
+                                                              momentum=0.01,
+                                                              activation=nn.ELU()))
+        self.add_module("avg_pool_2", nn.AvgPool2d((2, 1)))
+
         self.output = nn.Sequential(
 
             CustomPad((0, 0, 4, 3)),
@@ -186,12 +233,8 @@ class EEGInception(nn.Module):
             nn.Softmax(1)
         )
 
-    def forward(self, x):
-        x = torch.cat([net(x) for net in self.inception_block1], 1)
-        x = self.avg_pool1(x)
-        x = torch.cat([net(x) for net in self.inception_block2], 1)
-        x = self.avg_pool2(x)
-        x = self.output(x)
-        x = torch.flatten(x, 1)
-        x = self.dense(x)
-        return x
+        self.add_module("final_block", self.output)
+        self.add_module("flatten", nn.Flatten(start_dim=1))
+        self.add_module("classification", self.dense)
+
+        _glorot_weight_zero_bias(self)

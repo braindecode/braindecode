@@ -118,7 +118,7 @@ def test_eeginception_n_params():
     model = EEGInception(
         n_channels=8,
         n_classes=2,
-        input_window_samples=1000,  # input_time
+        input_size_ms=1000,  # input_time
         sfreq=128,
         drop_prob=0.5,
         n_filters=8,
@@ -128,6 +128,34 @@ def test_eeginception_n_params():
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 14926  # From paper's TABLE IV EEG-Inception Architecture Details
+
+@pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_ms',
+                         [(30, 128, 5, 3000), (10, 100, 4, 2000), (8, 64, 2, 1000)])
+def test_eeginception(n_channels, sfreq, n_classes, input_size_ms):
+    rng = np.random.RandomState(42)
+    n_examples = 10
+    seq_length = 3
+
+    model = EEGInception(
+        n_channels=n_channels, sfreq=sfreq, n_classes=n_classes,
+        input_size_ms=input_size_ms)
+
+    model.eval()
+
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_ms))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred1 = model(X)  # 3D inputs : (batch, channels, time)
+    y_pred2 = model(X.unsqueeze(1))  # 4D inputs : (batch, 1, channels, time)
+    y_pred3 = model(torch.stack([X for idx in range(seq_length)],
+                                axis=1))  # (batch, sequence, channels, time)
+    assert y_pred1.shape == (n_examples, n_classes)
+    assert y_pred2.shape == (n_examples, n_classes)
+    assert y_pred3.shape == (n_examples, n_classes, seq_length)
+    np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
+                               y_pred2.detach().cpu().numpy())
+
+
 
 
 @pytest.mark.parametrize(
