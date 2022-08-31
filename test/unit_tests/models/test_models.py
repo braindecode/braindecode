@@ -129,6 +129,7 @@ def test_eeginception_n_params():
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 14926  # From paper's TABLE IV EEG-Inception Architecture Details
 
+
 @pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_ms',
                          [(30, 128, 5, 3000), (10, 100, 4, 2000), (8, 64, 2, 1000)])
 def test_eeginception(n_channels, sfreq, n_classes, input_size_ms):
@@ -154,8 +155,6 @@ def test_eeginception(n_channels, sfreq, n_classes, input_size_ms):
     assert y_pred3.shape == (n_examples, n_classes, seq_length)
     np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
                                y_pred2.detach().cpu().numpy())
-
-
 
 
 @pytest.mark.parametrize(
