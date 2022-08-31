@@ -122,8 +122,8 @@ def test_eeginception_n_params():
         sfreq=128,
         drop_prob=0.5,
         n_filters=8,
-        scales_time=(500, 250, 125),
-        activation=torch.nn.ELU(inplace=True)
+        scales_samples=(500, 250, 125),
+        activation=torch.nn.ELU()
     )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

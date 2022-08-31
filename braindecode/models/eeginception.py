@@ -35,20 +35,20 @@ class Conv2dWithConstraint(nn.Conv2d):
 class _InceptionBlock1(nn.Module):
 
     def __init__(self, drop_prob, n_channels, scales_samples, n_filters=8,
-                 momentum=0.01, activation=nn.ELU):
+                 momentum=0.01, activation=nn.ELU()):
         super().__init__()
         self.drop_prob = drop_prob
         self.n_filters = n_filters
-        self.scales_samples = scales_samples
         self.momentum = momentum
         self.activation = activation
         self.n_channels = n_channels
+        self.scales_samples = scales_samples
 
         self.inception_block1 = nn.ModuleList([
             nn.Sequential(
                 CustomPad((0, 0, scales_sample // 2 - 1, scales_sample // 2,)),
                 nn.Conv2d(1, self.n_filters, (scales_sample, 1)),
-                nn.BatchNorm2d(self.n_filters, momentum=momentum),
+                nn.BatchNorm2d(self.n_filters, momentum=self.momentum),
                 activation,
                 nn.Dropout(self.drop_prob),
                 Conv2dWithConstraint(self.n_filters,
@@ -67,9 +67,7 @@ class _InceptionBlock1(nn.Module):
         ])
 
     def forward(self, x):
-        x = torch.cat([net(x) for net in self.inception_block1], 1)
-
-        return x
+        return torch.cat([net(x) for net in self.inception_block1], 1)
 
 
 class _InceptionBlock2(nn.Module):
@@ -93,9 +91,7 @@ class _InceptionBlock2(nn.Module):
         ])
 
     def forward(self, x):
-        x = torch.cat([net(x) for net in self.inception_block2], 1)
-
-        return x
+        return torch.cat([net(x) for net in self.inception_block2], 1)
 
 
 def _transpose_to_b_1_c_0(x):
@@ -137,16 +133,18 @@ class EEGInception(nn.Sequential):
         EEG sampling frequency.
     drop_prob : float
         Dropout rate inside all the network.
-    n_filters : int
-        Initial number of convolutional filters. Set to 8 in [Santamaria2020]_.
     scales_time: list(int)
         Windows for inception block, must be a list with proportional values of
         the input_size_ms, in ms.
-        Acording with the authors: temporal scale (ms) of the convolutions
+        According with the authors: temporal scale (ms) of the convolutions
         on each Inception module.
         This parameter determines the kernel sizes of the filters.
+    n_filters : int
+        Initial number of convolutional filters. Set to 8 in [Santamaria2020]_.
     activation: nn.Module
         Activation function, default: ELU activation.
+    batch_norm_alpha: float
+        Momentum for BatchNorm2d.
 
     References
     ----------
@@ -167,9 +165,10 @@ class EEGInception(nn.Sequential):
             input_size_ms=1000,
             sfreq=128,
             drop_prob=0.5,
-            scales_time=(500, 250, 125),
+            scales_samples=(64, 32, 16),
             n_filters=8,
-            activation=nn.ELU(inplace=True)
+            activation=nn.ELU(),
+            batch_norm_alpha=0.01,
     ):
         super().__init__()
 
@@ -179,62 +178,62 @@ class EEGInception(nn.Sequential):
         self.drop_prob = drop_prob
         self.sfreq = sfreq
         self.n_filters = n_filters
-
-        scales_samples = [int(s * sfreq / input_size_ms) for s in scales_time]
-
-        # ========================== BLOCK 1: INCEPTION ========================== #
+        self.scales_samples = scales_samples
+        self.activation = activation
+        self.batch_norm_alpha = batch_norm_alpha
 
         self.add_module("ensuredims", Ensure4d())
+
         self.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
 
-        self.add_module("inception_block_1", _InceptionBlock1(scales_samples=scales_samples,
-                                                              n_filters=n_filters,
-                                                              drop_prob=drop_prob,
-                                                              momentum=0.01,
-                                                              activation=nn.ELU(),
-                                                              n_channels=n_channels))
+        self.add_module("inception_block_1", _InceptionBlock1(scales_samples=self.scales_samples,
+                                                              n_filters=self.n_filters,
+                                                              drop_prob=self.drop_prob,
+                                                              momentum=self.batch_norm_alpha,
+                                                              activation=self.activation,
+                                                              n_channels=self.n_channels))
 
         self.add_module("avg_pool_1", nn.AvgPool2d((4, 1)))
 
-        self.add_module("inception_block_2", _InceptionBlock2(n_filters=n_filters,
-                                                              scales_samples=scales_time,
-                                                              drop_prob=drop_prob,
-                                                              momentum=0.01,
-                                                              activation=nn.ELU()))
+        self.add_module("inception_block_2", _InceptionBlock2(n_filters=self.n_filters,
+                                                              scales_samples=self.scales_samples,
+                                                              drop_prob=self.drop_prob,
+                                                              momentum=self.batch_norm_alpha,
+                                                              activation=activation))
         self.add_module("avg_pool_2", nn.AvgPool2d((2, 1)))
 
-        self.output = nn.Sequential(
+        self.add_module("squeeze", Expression(expression_fn=squeeze_final_output))
+
+        self.add_module("final_block", nn.Sequential(
 
             CustomPad((0, 0, 4, 3)),
             nn.Conv2d(
                 24, n_filters * len(scales_samples) // 2, (8, 1),
                 bias=False
-            ),  # kernel_initializer='he_normal', padding='same'
-            nn.BatchNorm2d(n_filters * len(scales_samples) // 2, momentum=0.01),
+            ),
+            nn.BatchNorm2d(n_filters * len(scales_samples) // 2,
+                           momentum=self.batch_norm_alpha),
             activation,
             nn.AvgPool2d((2, 1)),
-            nn.Dropout(drop_prob),
+            nn.Dropout(self.drop_prob),
 
             CustomPad((0, 0, 2, 1)),
             nn.Conv2d(
                 12, n_filters * len(scales_samples) // 4, (4, 1),
                 bias=False
-
-            ),  # kernel_initializer='he_normal', padding='same'
-            nn.BatchNorm2d(n_filters * len(scales_samples) // 4, momentum=0.01),
+            ),
+            nn.BatchNorm2d(n_filters * len(scales_samples) // 4,
+                           momentum=self.batch_norm_alpha),
             activation,
             nn.AvgPool2d((2, 1)),
-            nn.Dropout(drop_prob),
-        )
-        self.squeeze = Expression(squeeze_final_output)
+            nn.Dropout(self.drop_prob),
+        ))
 
-        self.dense = nn.Sequential(
-            nn.Linear(4 * 1 * 6, n_classes),
-            nn.Softmax(1)
-        )
-
-        self.add_module("final_block", self.output)
         self.add_module("flatten", nn.Flatten(start_dim=1))
-        self.add_module("classification", self.dense)
+
+        self.add_module("classification", nn.Sequential(
+            nn.Linear(4 * 1 * 6, self.n_classes),
+            nn.Softmax(1)
+        ))
 
         _glorot_weight_zero_bias(self)
