@@ -1,7 +1,7 @@
 """
 Some predefined network architectures for EEG decoding.
 """
-
+from .eegitnet import EEGITNet
 from .deep4 import Deep4Net
 from .eegnet import EEGNetv4, EEGNetv1
 from .hybrid import HybridNet
@@ -15,3 +15,4 @@ from .tidnet import TIDNet
 from .usleep import USleep
 from .util import get_output_shape, to_dense_prediction_model
 from .modules import TimeDistributed
+
