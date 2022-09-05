@@ -143,3 +143,4 @@ Authors
 .. _Mohammad Javad D: https://github.com/MohammadJavadD
 .. _Bruno Aristimunha: https://github.com/bruAristimunha
 .. _Martin Wimpff: https://github.com/martinwimpff
+.. _Ghaith Bouallegue: https://github.com/GhBlg
