@@ -148,13 +148,25 @@ class EEGITNet(nn.Sequential):
          nn.AvgPool2d(kernel_size=(1, 4)),
          nn.Dropout(drop_prob)))
         # =========== TC blocks =====================
-        self.add_module("TC_block1", _TCBlock(in_ch=14, kernel_length=4, dialation=1, padding=3))
+        self.add_module(
+            "TC_block1",
+            _TCBlock(in_ch=14, kernel_length=4, dialation=1, padding=3, drop_prob=drop_prob)
+        )
         # ================================
-        self.add_module("TC_block2", _TCBlock(in_ch=14, kernel_length=4, dialation=2, padding=6))
+        self.add_module(
+            "TC_block2",
+            _TCBlock(in_ch=14, kernel_length=4, dialation=2, padding=6, drop_prob=drop_prob)
+        )
         # ================================
-        self.add_module("TC_block3", _TCBlock(in_ch=14, kernel_length=4, dialation=4, padding=12))
+        self.add_module(
+            "TC_block3",
+            _TCBlock(in_ch=14, kernel_length=4, dialation=4, padding=12, drop_prob=drop_prob)
+        )
         # ================================
-        self.add_module("TC_block4", _TCBlock(in_ch=14, kernel_length=4, dialation=8, padding=24))
+        self.add_module(
+            "TC_block4",
+            _TCBlock(in_ch=14, kernel_length=4, dialation=8, padding=24, drop_prob=drop_prob)
+        )
 
         # ============= Dimensionality reduction ===================
         self.add_module("dim_reduction", nn.Sequential(
