@@ -8,15 +8,10 @@ from .modules import Ensure4d, Expression
 
 
 def _permute(x):
-    """
-    Permutes data:
+    """Permute data.
 
-    from dim:
-    batch, chans, time, 1
-
-    to dim:
-    batch, 1, chans, time
-
+    Input dimensions: (batch, channels, time, 1)
+    Output dimiensions: (batch, 1, channels, time)
     """
     return x.permute([0, 3, 1, 2])
 
@@ -57,32 +52,36 @@ class _InceptionBlock(nn.Module):
 
 
 class _TCBlock(nn.Module):
-    def __init__(self, in_ch, kernel_sz, dialation, padding, drop_prob=0.4):
+    def __init__(self, in_ch, kernel_length, dialation, padding, drop_prob=0.4):
         super().__init__()
         self.pad = padding
-        self.tc1 = nn.Sequential(_DepthwiseConv2d(
-                    in_ch,
-                    kernel_size=(1, kernel_sz),
-                    depth_multiplier=1,
-                    dilation=(1, dialation),
-                    bias=False,
-                    padding="valid",
+        self.tc1 = nn.Sequential(
+            _DepthwiseConv2d(
+                in_ch,
+                kernel_size=(1, kernel_length),
+                depth_multiplier=1,
+                dilation=(1, dialation),
+                bias=False,
+                padding="valid",
                 ),
-                nn.BatchNorm2d(in_ch),
-                nn.ELU(),
-                nn.Dropout(drop_prob))
+            nn.BatchNorm2d(in_ch),
+            nn.ELU(),
+            nn.Dropout(drop_prob),
+        )
 
-        self.tc2 = nn.Sequential(_DepthwiseConv2d(
-                    in_ch,
-                    kernel_size=(1, kernel_sz),
-                    depth_multiplier=1,
-                    dilation=(1, dialation),
-                    bias=False,
-                    padding="valid",
-                ),
-                nn.BatchNorm2d(in_ch),
-                nn.ELU(),
-                nn.Dropout(drop_prob))
+        self.tc2 = nn.Sequential(
+            _DepthwiseConv2d(
+                in_ch,
+                kernel_size=(1, kernel_length),
+                depth_multiplier=1,
+                dilation=(1, dialation),
+                bias=False,
+                padding="valid",
+            ),
+            nn.BatchNorm2d(in_ch),
+            nn.ELU(),
+            nn.Dropout(drop_prob),
+        )
 
     def forward(self, x):
         residual = x
@@ -95,7 +94,7 @@ class _TCBlock(nn.Module):
 
 
 class EEGITNet(nn.Sequential):
-    """ EEG-ITNet: An Explainable Inception Temporal
+    """EEG-ITNet: An Explainable Inception Temporal
      Convolutional Network for motor imagery classification from
      Salami et. al 2022.
 
@@ -127,14 +126,13 @@ class EEGITNet(nn.Sequential):
     by original authors, only reimplemented from the paper based on author implementation.
     """
 
-    def __init__(self, n_classes, in_channels, input_window_samples,
-                 drop_prob=0.4):
+    def __init__(self, n_classes, in_channels, input_window_samples, drop_prob=0.4):
         super().__init__()
 
-        # ======== handling EEG input ========================
-        self.add_module("input_preprocess", nn.Sequential(
-            Ensure4d(),
-            Expression(_permute)))
+        # ======== Handling EEG input ========================
+        self.add_module(
+            "input_preprocess", nn.Sequential(Ensure4d(), Expression(_permute))
+        )
         # ======== Inception branches ========================
         block11 = self._get_inception_branch(
             in_channels=in_channels, out_channels=2, kernel_length=16
@@ -150,15 +148,15 @@ class EEGITNet(nn.Sequential):
          nn.AvgPool2d(kernel_size=(1, 4)),
          nn.Dropout(drop_prob)))
         # =========== TC blocks =====================
-        self.add_module("TC_block1", _TCBlock(in_ch=14, kernel_sz=4, dialation=1, padding=3))
+        self.add_module("TC_block1", _TCBlock(in_ch=14, kernel_length=4, dialation=1, padding=3))
         # ================================
-        self.add_module("TC_block2", _TCBlock(in_ch=14, kernel_sz=4, dialation=2, padding=6))
+        self.add_module("TC_block2", _TCBlock(in_ch=14, kernel_length=4, dialation=2, padding=6))
         # ================================
-        self.add_module("TC_block3", _TCBlock(in_ch=14, kernel_sz=4, dialation=4, padding=12))
+        self.add_module("TC_block3", _TCBlock(in_ch=14, kernel_length=4, dialation=4, padding=12))
         # ================================
-        self.add_module("TC_block4", _TCBlock(in_ch=14, kernel_sz=4, dialation=8, padding=24))
+        self.add_module("TC_block4", _TCBlock(in_ch=14, kernel_length=4, dialation=8, padding=24))
 
-        # ============= dimensionality reduction ===================
+        # ============= Dimensionality reduction ===================
         self.add_module("dim_reduction", nn.Sequential(
                 nn.Conv2d(14, 28, kernel_size=(1, 1)),
                 nn.BatchNorm2d(28),
@@ -166,10 +164,10 @@ class EEGITNet(nn.Sequential):
                 nn.AvgPool2d((1, 4)),
                 nn.Dropout(drop_prob)))
         # ============== Classifier ==================
-        self.add_module("classifier", nn.Sequential(torch.nn.Flatten(),
-                        nn.Linear(int(int(input_window_samples / 4) / 4) * 28, n_classes),
-                        nn.Softmax(dim=1)))
-        # ================================
+        self.add_module("classifier", nn.Sequential(
+            torch.nn.Flatten(),
+            nn.Linear(int(int(input_window_samples / 4) / 4) * 28, n_classes),
+            nn.Softmax(dim=1)))
 
     @staticmethod
     def _get_inception_branch(in_channels, out_channels, kernel_length, depth_multiplier=1):
