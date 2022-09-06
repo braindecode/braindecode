@@ -293,11 +293,12 @@ model = ContrastiveNet(emb, emb_size).to(device)
 
 ######################################################################
 # Training
-# --------
+# ---------
 #
 # We can now train our network on the pretext task. We use similar
-# hyperparameters as in [1]_, but reduce the number of epochs and increase the
-# learning rate to account for the smaller setting of this example.
+# hyperparameters as in [1]_, but reduce the number of epochs and
+# increase the learning rate to account for the smaller setting of
+# this example.
 
 import os
 

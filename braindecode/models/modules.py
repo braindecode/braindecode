@@ -12,7 +12,7 @@ from ..util import np_to_th
 
 class Ensure4d(nn.Module):
     def forward(self, x):
-        while(len(x.shape) < 4):
+        while len(x.shape) < 4:
             x = x.unsqueeze(-1)
         return x
 

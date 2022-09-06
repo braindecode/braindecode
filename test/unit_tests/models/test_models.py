@@ -13,7 +13,8 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    TIDNet, EEGInception)
+    EEGITNet, EEGInception, TIDNet)
+
 from braindecode.util import set_random_seeds
 
 
@@ -111,6 +112,17 @@ def test_tcn(input_sizes):
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
+def test_eegitnet(input_sizes):
+    model = EEGITNet(
+        n_classes=input_sizes['n_classes'],
+        in_channels=input_sizes['n_channels'],
+        input_window_samples=input_sizes['n_in_times'])
+
+    check_forward_pass(model, input_sizes,)
+
+
+@pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
+                         [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
 def test_eeginception_n_params():
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
@@ -331,3 +343,24 @@ def test_blanco_2020_feats():
 
     out = model(X)
     assert out.shape == (n_examples, model.len_last_layer)
+
+
+def test_eegitnet_shape():
+    n_channels = 2
+    sfreq = 50
+    input_size_s = 30
+    n_classes = 3
+    n_examples = 10
+    model = EEGITNet(
+        n_classes=n_classes,
+        in_channels=n_channels,
+        input_window_samples=int(sfreq * input_size_s),
+    )
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(X)
+    assert out.shape == (n_examples, n_classes)

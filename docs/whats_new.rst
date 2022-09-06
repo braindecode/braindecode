@@ -23,7 +23,11 @@ Current (0.7.dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding EEG-ITNet Network :class:`braindecode.models.EEGITNet` (:gh:`400` by `Ghaith Bouallegue`_)
 - Allowing target_names as list for BaseDataset (:gh:`371` by `Mohammad Javad D`_ and `Robin Tibor Schirrmeister`_)
+- Adding tutorial with GridSearchCV for data augmentation on the BCIC IV 2a with module `braindecode.augmentation` (:gh:`389` by `Bruno Aristimunha`_ and `Cedric Rommel`_)
+- Adding tutorial with GridSearchCV to exemplify how to tune hyperparameters, for instance with the learning rate (:gh:`349` by `Lukas Gemein`_ and by `Bruno Aristimunha`_)
+- Adding tutorial with a Unified Validation sheme (:gh:`378` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 
 Bugs
 ~~~~
@@ -31,10 +35,12 @@ Bugs
 API changes
 ~~~~~~~~~~~
 
+- Renaming the method `get_params` to `get_augmentation_params` in augmentation classes. This makes the Transform module compatible with scikit-learn cloning mechanism (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
+
 .. _changes_0_6_0:
 
 Version 0.6 (2021-12-06)
---------------------
+------------------------
 
 Enhancements
 ~~~~~~~~~~~~
@@ -135,3 +141,6 @@ Authors
 .. _Mohammed Fattouh: https://github.com/MFattouh
 .. _Pierre Guetschel: https://github.com/PierreGtch
 .. _Mohammad Javad D: https://github.com/MohammadJavadD
+.. _Bruno Aristimunha: https://github.com/bruAristimunha
+.. _Martin Wimpff: https://github.com/martinwimpff
+.. _Ghaith Bouallegue: https://github.com/GhBlg

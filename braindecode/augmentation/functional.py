@@ -836,7 +836,13 @@ def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
                 torch.ones((1, n_from), device=device),
                 torch.as_tensor([[0]], device=device)])
         ])
-    C_inv = torch.linalg.pinv(C)
+
+    try:
+        C_inv = torch.linalg.inv(C)
+    except torch._C._LinAlgError:
+        # There is a stability issue with pinv since torch v1.8.0
+        # see https://github.com/pytorch/pytorch/issues/75494
+        C_inv = torch.linalg.pinv(C.cpu()).to(device)
 
     interpolation = torch.hstack([
         G_to_from,

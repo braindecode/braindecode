@@ -20,7 +20,60 @@ class Deep4Net(nn.Sequential):
     Parameters
     ----------
     in_chans : int
-        XXX
+     Number of EEG input channels.
+    n_classes: int
+        Number of classes to predict (number of output filters of last layer).
+    input_window_samples: int | None
+        Only used to determine the length of the last convolutional kernel if
+        final_conv_length is "auto".
+    final_conv_length: int | str
+        Length of the final convolution layer.
+        If set to "auto", input_window_samples must not be None.
+    n_filters_time: int
+        Number of temporal filters.
+    n_filters_spat: int
+        Number of spatial filters.
+    filter_time_length: int
+        Length of the temporal filter in layer 1.
+    pool_time_length: int
+        Length of temporal pooling filter.
+    pool_time_stride: int
+        Length of stride between temporal pooling filters.
+    n_filters_2: int
+        Number of temporal filters in layer 2.
+    filter_length_2: int
+        Length of the temporal filter in layer 2.
+    n_filters_3: int
+        Number of temporal filters in layer 3.
+    filter_length_3: int
+        Length of the temporal filter in layer 3.
+    n_filters_4: int
+        Number of temporal filters in layer 4.
+    filter_length_4: int
+        Length of the temporal filter in layer 4.
+    first_conv_nonlin: callable
+        Non-linear activation function to be used after convolution in layer 1.
+    first_pool_mode: str
+        Pooling mode in layer 1. "max" or "mean".
+    first_pool_nonlin: callable
+        Non-linear activation function to be used after pooling in layer 1.
+    later_conv_nonlin: callable
+        Non-linear activation function to be used after convolution in later layers.
+    later_pool_mode: str
+        Pooling mode in later layers. "max" or "mean".
+    later_pool_nonlin: callable
+        Non-linear activation function to be used after pooling in later layers.
+    drop_prob: float
+        Dropout probability.
+    split_first_layer: bool
+        Split first layer into temporal and spatial layers (True) or just use temporal (False).
+        There would be no non-linearity between the split layers.
+    batch_norm: bool
+        Whether to use batch normalisation.
+    batch_norm_alpha: float
+        Momentum for BatchNorm2d.
+    stride_before_pool: bool
+        Stride before pooling.
 
     References
     ----------
@@ -50,14 +103,13 @@ class Deep4Net(nn.Sequential):
         filter_length_3=10,
         n_filters_4=200,
         filter_length_4=10,
-        first_nonlin=elu,
+        first_conv_nonlin=elu,
         first_pool_mode="max",
         first_pool_nonlin=identity,
-        later_nonlin=elu,
+        later_conv_nonlin=elu,
         later_pool_mode="max",
         later_pool_nonlin=identity,
         drop_prob=0.5,
-        double_time_convs=False,
         split_first_layer=True,
         batch_norm=True,
         batch_norm_alpha=0.1,
@@ -81,14 +133,13 @@ class Deep4Net(nn.Sequential):
         self.filter_length_3 = filter_length_3
         self.n_filters_4 = n_filters_4
         self.filter_length_4 = filter_length_4
-        self.first_nonlin = first_nonlin
+        self.first_nonlin = first_conv_nonlin
         self.first_pool_mode = first_pool_mode
         self.first_pool_nonlin = first_pool_nonlin
-        self.later_nonlin = later_nonlin
+        self.later_conv_nonlin = later_conv_nonlin
         self.later_pool_mode = later_pool_mode
         self.later_pool_nonlin = later_pool_nonlin
         self.drop_prob = drop_prob
-        self.double_time_convs = double_time_convs
         self.split_first_layer = split_first_layer
         self.batch_norm = batch_norm
         self.batch_norm_alpha = batch_norm_alpha
@@ -182,7 +233,7 @@ class Deep4Net(nn.Sequential):
                         eps=1e-5,
                     ),
                 )
-            self.add_module("nonlin" + suffix, Expression(self.later_nonlin))
+            self.add_module("nonlin" + suffix, Expression(self.later_conv_nonlin))
 
             self.add_module(
                 "pool" + suffix,

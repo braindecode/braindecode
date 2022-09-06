@@ -447,7 +447,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                 'drop_last_window': False, 'mapping': {'test': 0}, 'preload': False,
                 'drop_bad_windows': True, 'picks': picks, 'reject': reject,
                 'flat': flat, 'on_missing': on_missing,
-                'accepted_bads_ratio': 0.0})
+                'accepted_bads_ratio': 0.0, 'verbose': 'error'})
         ]
 
     windows = create_fixed_length_windows(
@@ -468,7 +468,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                 'drop_last_window': False, 'mapping': None, 'preload': False,
                 'drop_bad_windows': True, 'picks': picks, 'reject': reject,
                 'flat': flat, 'targets_from': 'metadata', 'last_target_only': True,
-                'on_missing': on_missing}),
+                'on_missing': on_missing, 'verbose': 'error'}),
             ('WindowsDataset', {
                 'targets_from': 'metadata',
                 'last_target_only': True,
