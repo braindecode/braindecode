@@ -13,7 +13,8 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    EEGITNet, TIDNet)
+    EEGITNet, EEGInception, TIDNet)
+
 from braindecode.util import set_random_seeds
 
 
@@ -122,6 +123,56 @@ def test_eegitnet(input_sizes):
 
 @pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
                          [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
+def test_eeginception_n_params():
+    """Make sure the number of parameters is the same as in the paper when
+    using the same architecture hyperparameters.
+    """
+    model = EEGInception(
+        n_channels=8,
+        n_classes=2,
+        input_size_ms=1000,  # input_time
+        sfreq=128,
+        drop_prob=0.5,
+        n_filters=8,
+        scales_samples=(500, 250, 125),
+        activation=torch.nn.ELU()
+    )
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 14926  # From paper's TABLE IV EEG-Inception Architecture Details
+
+
+@pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_ms',
+                         [(30, 128, 5, 3000), (10, 100, 4, 2000), (8, 64, 2, 1000)])
+def test_eeginception(n_channels, sfreq, n_classes, input_size_ms):
+    rng = np.random.RandomState(42)
+    n_examples = 10
+    seq_length = 3
+
+    model = EEGInception(
+        n_channels=n_channels, sfreq=sfreq, n_classes=n_classes,
+        input_size_ms=input_size_ms)
+
+    model.eval()
+
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_ms))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred1 = model(X)  # 3D inputs : (batch, channels, time)
+    y_pred2 = model(X.unsqueeze(1))  # 4D inputs : (batch, 1, channels, time)
+    y_pred3 = model(torch.stack([X for idx in range(seq_length)],
+                                axis=1))  # (batch, sequence, channels, time)
+    assert y_pred1.shape == (n_examples, n_classes)
+    assert y_pred2.shape == (n_examples, n_classes)
+    assert y_pred3.shape == (n_examples, n_classes, seq_length)
+    np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
+                               y_pred2.detach().cpu().numpy())
+
+
+@pytest.mark.parametrize(
+    "n_channels,sfreq,n_classes,input_size_s",
+    [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)],
+)
 def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     time_conv_size_s = 0.5
@@ -142,12 +193,15 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
     y_pred2 = model(X.unsqueeze(1))  # 4D inputs
     assert y_pred1.shape == (n_examples, n_classes)
     assert y_pred2.shape == (n_examples, n_classes)
-    np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
-                               y_pred2.detach().cpu().numpy())
+    np.testing.assert_allclose(
+        y_pred1.detach().cpu().numpy(), y_pred2.detach().cpu().numpy()
+    )
 
 
-@pytest.mark.parametrize('in_chans,sfreq,n_classes,input_size_s',
-                         [(20, 128, 5, 30), (10, 100, 4, 20), (1, 64, 2, 30)])
+@pytest.mark.parametrize(
+    "in_chans,sfreq,n_classes,input_size_s",
+    [(20, 128, 5, 30), (10, 100, 4, 20), (1, 64, 2, 30)],
+)
 def test_usleep(in_chans, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     n_examples = 10
