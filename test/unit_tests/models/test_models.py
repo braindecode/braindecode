@@ -121,16 +121,23 @@ def test_eegitnet(input_sizes):
     check_forward_pass(model, input_sizes,)
 
 
-@pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_s',
-                         [(20, 128, 5, 30), (10, 256, 4, 20), (1, 64, 2, 30)])
+def test_eeginception(input_sizes):
+    model = EEGInception(
+        n_classes=input_sizes['n_classes'],
+        in_channels=input_sizes['n_channels'],
+        input_window_samples=input_sizes['n_in_times'])
+
+    check_forward_pass(model, input_sizes,)
+
+
 def test_eeginception_n_params():
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
     """
     model = EEGInception(
-        n_channels=8,
+        in_channels=8,
         n_classes=2,
-        input_size_ms=1000,  # input_time
+        input_window_samples=1000,  # input_time
         sfreq=128,
         drop_prob=0.5,
         n_filters=8,
@@ -142,20 +149,20 @@ def test_eeginception_n_params():
     assert n_params == 14926  # From paper's TABLE IV EEG-Inception Architecture Details
 
 
-@pytest.mark.parametrize('n_channels,sfreq,n_classes,input_size_ms',
+@pytest.mark.parametrize('in_channels,sfreq,n_classes,input_window_samples',
                          [(30, 128, 5, 3000), (10, 100, 4, 2000), (8, 64, 2, 1000)])
-def test_eeginception(n_channels, sfreq, n_classes, input_size_ms):
+def test_eeginception(in_channels, sfreq, n_classes, input_window_samples):
     rng = np.random.RandomState(42)
     n_examples = 10
     seq_length = 3
 
     model = EEGInception(
-        n_channels=n_channels, sfreq=sfreq, n_classes=n_classes,
-        input_size_ms=input_size_ms)
+        in_channels=in_channels, sfreq=sfreq, n_classes=n_classes,
+        input_window_samples=input_window_samples)
 
     model.eval()
 
-    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_ms))
+    X = rng.randn(n_examples, in_channels, input_window_samples)
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs : (batch, channels, time)

@@ -105,7 +105,7 @@ class EEGInception(nn.Sequential):
         self.n_filters = n_filters
         self.scales_samples = scales_samples
         self.activation = activation
-        self.batch_norm_alpha = batch_norm_alpha
+        self.alpha_momentum = batch_norm_alpha
 
         self.add_module("ensuredims", Ensure4d())
 
@@ -114,15 +114,15 @@ class EEGInception(nn.Sequential):
         # ======== Inception branches ========================
         block11 = self._get_inception_branch_1(
             in_channels=in_channels, out_channels=8, kernel_length=self.scales_samples[0],
-            n_filters=8, momentum=0.01, activation=nn.ELU()
+            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
         block12 = self._get_inception_branch_1(
             in_channels=in_channels, out_channels=4, kernel_length=self.scales_samples[1],
-            n_filters=8, momentum=0.01, activation=nn.ELU()
+            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
         block13 = self._get_inception_branch_1(
             in_channels=in_channels, out_channels=2, kernel_length=self.scales_samples[2],
-            n_filters=8, momentum=0.01, activation=nn.ELU()
+            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
 
         self.add_module("inception_block_1", _InceptionBlock((block11, block12, block13)))
@@ -132,15 +132,15 @@ class EEGInception(nn.Sequential):
         # ======== Inception branches ========================
         block21 = self._get_inception_branch_2(
             out_channels=8, kernel_length=self.scales_samples[0],
-            n_filters=8, alpha_momentum=0.01, activation=nn.ELU()
+            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
         block22 = self._get_inception_branch_2(
             out_channels=4, kernel_length=self.scales_samples[1],
-            n_filters=8, alpha_momentum=0.01, activation=nn.ELU()
+            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
         block23 = self._get_inception_branch_2(
             out_channels=2, kernel_length=self.scales_samples[2],
-            n_filters=8, alpha_momentum=0.01, activation=nn.ELU()
+            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
 
         self.add_module("inception_block_1", _InceptionBlock((block21, block22, block23)))
@@ -153,8 +153,8 @@ class EEGInception(nn.Sequential):
                 24, n_filters * len(scales_samples) // 2, (8, 1),
                 bias=False
             ),
-            nn.BatchNorm2d(n_filters * len(3) // 2,
-                           momentum=self.batch_norm_alpha),
+            nn.BatchNorm2d(n_filters * 3 // 2,
+                           momentum=self.alpha_momentum),
             activation,
             nn.AvgPool2d((2, 1)),
             nn.Dropout(self.drop_prob),
@@ -165,7 +165,7 @@ class EEGInception(nn.Sequential):
                 bias=False
             ),
             nn.BatchNorm2d(n_filters * len(scales_samples) // 4,
-                           momentum=self.batch_norm_alpha),
+                           momentum=self.alpha_momentum),
             activation,
             nn.AvgPool2d((2, 1)),
             nn.Dropout(self.drop_prob),
