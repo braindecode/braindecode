@@ -1,6 +1,7 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
-#
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 # License: BSD (3-clause)
 
 from typing import List, Tuple, Any
@@ -142,10 +143,14 @@ class Compose(Transform):
         return X, y
 
 
-def _make_collateable(transform):
+def _make_collateable(transform, device="cpu"):
+    """Wraps a transform to make it collateable.
+        with device control."""
     def _collate_fn(batch):
         collated_batch = default_collate(batch)
         X, y = collated_batch[:2]
+        X = X.to(device)
+        y = y.to(device)
         return (*transform(X, y), *collated_batch[2:])
     return _collate_fn
 
@@ -163,7 +168,7 @@ class AugmentedDataLoader(DataLoader):
         keyword arguments to pass to standard DataLoader class.
     """
 
-    def __init__(self, dataset, transforms=None, **kwargs):
+    def __init__(self, dataset, transforms=None, device="cpu", **kwargs):
         if "collate_fn" in kwargs:
             raise ValueError(
                 "collate_fn cannot be used in this context because it is used "
@@ -172,11 +177,11 @@ class AugmentedDataLoader(DataLoader):
         if transforms is None or (
             isinstance(transforms, list) and len(transforms) == 0
         ):
-            self.collated_tr = _make_collateable(IdentityTransform())
+            self.collated_tr = _make_collateable(IdentityTransform(), device=device)
         elif isinstance(transforms, (Transform, nn.Module)):
-            self.collated_tr = _make_collateable(transforms)
+            self.collated_tr = _make_collateable(transforms, device=device)
         elif isinstance(transforms, list):
-            self.collated_tr = _make_collateable(Compose(transforms))
+            self.collated_tr = _make_collateable(Compose(transforms), device=device)
         else:
             raise TypeError("transforms can be either a Transform object" +
                             " or a list of Transform objects.")
