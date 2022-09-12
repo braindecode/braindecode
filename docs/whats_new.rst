@@ -34,7 +34,7 @@ Bugs
 
 API changes
 ~~~~~~~~~~~
-
+- Adding new parameter into :class:`AugmentedDataloader` to allow the user to choose which device to use during the transformation (:gh:`406` by `Martin Wimpff`_ and `Bruno Aristimunha`_)
 - Renaming the method `get_params` to `get_augmentation_params` in augmentation classes. This makes the Transform module compatible with scikit-learn cloning mechanism (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
 
 .. _changes_0_6_0:
