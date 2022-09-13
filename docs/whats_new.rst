@@ -29,7 +29,7 @@ Enhancements
 - Adding tutorial with GridSearchCV to exemplify how to tune hyperparameters, for instance with the learning rate (:gh:`349` by `Lukas Gemein`_ and by `Bruno Aristimunha`_)
 - Adding tutorial with a Unified Validation sheme (:gh:`378` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding `verbose` parameter to :func:`braindecode.preprocessing.create_windows_from_events`, :func:`braindecode.preprocessing.create_windows_from_target_channels`, and :func:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`391` by `Lukas Gemein`_)
-- Adding new parameter into :class:`AugmentedDataloader` to allow the user to choose which device to use during the transformation (:gh:`406` by `Martin Wimpff`_ and `Bruno Aristimunha`_)
+- Enable augmentation on GPU within :class:`AugmentedDataloader` via a new `device` parameter (:gh:`406` by `Martin Wimpff`_, `Bruno Aristimunha`_ and `Cedric Rommel`_)
 
 Bugs
 ~~~~
