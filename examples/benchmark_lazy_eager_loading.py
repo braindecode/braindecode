@@ -68,7 +68,7 @@ torch.set_num_threads(N_JOBS)  # Sets the available number of threads
 # Each one of these steps will be timed, so we can report the total time taken
 # to prepare the data and train the model.
 
-def load_example_data(preload, window_len_s, n_recordings=[10]):
+def load_example_data(preload, window_len_s, n_recordings=10):
     """Create windowed dataset from subjects of the TUH Abnormal dataset.
 
     Parameters
@@ -90,8 +90,11 @@ def load_example_data(preload, window_len_s, n_recordings=[10]):
         sampling rate. The following assumes that the files have already been
         resampled to a common sampling rate.
     """
+
+    recording_ids = list(range(n_recordings))
+
     ds = TUHAbnormal(
-        TUH_PATH, recording_ids=n_recordings,
+        TUH_PATH, recording_ids=recording_ids,
         target_name='pathological',
         preload=preload)
 
