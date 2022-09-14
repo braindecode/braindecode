@@ -30,6 +30,8 @@ Enhancements
 
 Bugs
 ~~~~
+- Fixing parameter `subject_ids` to `recoding_ids` in TUHAbnormal example (:gh:`402` by `Bruno Aristimunha`_ and `Lukas Gemein`_)
+
 
 API changes
 ~~~~~~~~~~~
