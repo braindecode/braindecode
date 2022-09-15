@@ -184,8 +184,8 @@ class EEGInception(nn.Sequential):
             nn.BatchNorm2d(n_concat_filters // 2,
                            momentum=self.alpha_momentum),
             activation,
-            nn.AvgPool2d((1, self.pooling_sizes[2])),
             nn.Dropout(self.drop_prob),
+            nn.AvgPool2d((1, self.pooling_sizes[2])),
 
             nn.Conv2d(
                 n_concat_filters // 2,
@@ -197,8 +197,8 @@ class EEGInception(nn.Sequential):
             nn.BatchNorm2d(n_concat_filters // 4,
                            momentum=self.alpha_momentum),
             activation,
-            nn.AvgPool2d((1, self.pooling_sizes[3])),
             nn.Dropout(self.drop_prob),
+            nn.AvgPool2d((1, self.pooling_sizes[3])),
         ))
 
         spatial_dim_last_layer = (
