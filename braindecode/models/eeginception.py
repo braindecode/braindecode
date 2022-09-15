@@ -143,7 +143,7 @@ class EEGInception(nn.Sequential):
             alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
 
-        self.add_module("inception_block_1", _InceptionBlock((block21, block22, block23)))
+        self.add_module("inception_block_2", _InceptionBlock((block21, block22, block23)))
 
         self.add_module("avg_pool_2", nn.AvgPool2d((1, self.pooling_sizes[1])))
 
