@@ -137,11 +137,11 @@ def test_eeginception_n_params():
     model = EEGInception(
         in_channels=8,
         n_classes=2,
-        input_window_samples=1000,  # input_time
+        input_window_samples=128,  # input_time
         sfreq=128,
         drop_prob=0.5,
         n_filters=8,
-        scales_samples=(500, 250, 125),
+        scales_samples_s=(0.5, 0.25, 0.125),
         activation=torch.nn.ELU()
     )
 
