@@ -3,8 +3,6 @@
 # License: BSD (3-clause)
 from math import prod
 
-import torch.nn.functional as F
-
 from torch import nn
 from .modules import Expression, Ensure4d
 from .eegnet import _glorot_weight_zero_bias
@@ -111,18 +109,30 @@ class EEGInception(nn.Sequential):
 
         # ======== Inception branches ========================
         block11 = self._get_inception_branch_1(
-            in_channels=in_channels, out_channels=self.n_filters, kernel_length=self.scales_samples[0],
-            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob,
+            in_channels=in_channels,
+            out_channels=self.n_filters,
+            kernel_length=self.scales_samples[0],
+            alpha_momentum=self.alpha_momentum,
+            activation=self.activation,
+            drop_prob=self.drop_prob,
             depth_multiplier=self.depth_multiplier,
         )
         block12 = self._get_inception_branch_1(
-            in_channels=in_channels, out_channels=self.n_filters, kernel_length=self.scales_samples[1],
-            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob,
+            in_channels=in_channels,
+            out_channels=self.n_filters,
+            kernel_length=self.scales_samples[1],
+            alpha_momentum=self.alpha_momentum,
+            activation=self.activation,
+            drop_prob=self.drop_prob,
             depth_multiplier=self.depth_multiplier,
         )
         block13 = self._get_inception_branch_1(
-            in_channels=in_channels, out_channels=self.n_filters, kernel_length=self.scales_samples[2],
-            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob,
+            in_channels=in_channels,
+            out_channels=self.n_filters,
+            kernel_length=self.scales_samples[2],
+            alpha_momentum=self.alpha_momentum,
+            activation=self.activation,
+            drop_prob=self.drop_prob,
             depth_multiplier=self.depth_multiplier,
         )
 
@@ -135,21 +145,31 @@ class EEGInception(nn.Sequential):
         n_concat_dw_filters = n_concat_filters * self.depth_multiplier
         block21 = self._get_inception_branch_2(
             in_channels=n_concat_dw_filters,
-            out_channels=self.n_filters, kernel_length=self.scales_samples[0] // 4,
-            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
+            out_channels=self.n_filters,
+            kernel_length=self.scales_samples[0] // 4,
+            alpha_momentum=self.alpha_momentum,
+            activation=self.activation,
+            drop_prob=self.drop_prob
         )
         block22 = self._get_inception_branch_2(
             in_channels=n_concat_dw_filters,
-            out_channels=self.n_filters, kernel_length=self.scales_samples[1] // 4,
-            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
+            out_channels=self.n_filters,
+            kernel_length=self.scales_samples[1] // 4,
+            alpha_momentum=self.alpha_momentum,
+            activation=self.activation,
+            drop_prob=self.drop_prob
         )
         block23 = self._get_inception_branch_2(
             in_channels=n_concat_dw_filters,
-            out_channels=self.n_filters, kernel_length=self.scales_samples[2] // 4,
-            alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
+            out_channels=self.n_filters,
+            kernel_length=self.scales_samples[2] // 4,
+            alpha_momentum=self.alpha_momentum,
+            activation=self.activation,
+            drop_prob=self.drop_prob
         )
 
-        self.add_module("inception_block_2", _InceptionBlock((block21, block22, block23)))
+        self.add_module(
+            "inception_block_2", _InceptionBlock((block21, block22, block23)))
 
         self.add_module("avg_pool_2", nn.AvgPool2d((1, self.pooling_sizes[1])))
 
@@ -181,7 +201,8 @@ class EEGInception(nn.Sequential):
             nn.Dropout(self.drop_prob),
         ))
 
-        spatial_dim_last_layer = input_window_samples // prod(self.pooling_sizes)
+        spatial_dim_last_layer = (
+            input_window_samples // prod(self.pooling_sizes))
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
         self.add_module("classification", nn.Sequential(
@@ -196,11 +217,16 @@ class EEGInception(nn.Sequential):
         _glorot_weight_zero_bias(self)
 
     @staticmethod
-    def _get_inception_branch_1(in_channels, out_channels, kernel_length, alpha_momentum,
-                                drop_prob, activation, depth_multiplier):
+    def _get_inception_branch_1(in_channels, out_channels, kernel_length,
+                                alpha_momentum, drop_prob, activation,
+                                depth_multiplier):
         return nn.Sequential(
             nn.Conv2d(
-                1, out_channels, kernel_size=(1, kernel_length), padding="same", bias=False
+                1,
+                out_channels,
+                kernel_size=(1, kernel_length),
+                padding="same",
+                bias=False
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
             activation,
@@ -221,11 +247,13 @@ class EEGInception(nn.Sequential):
         )
 
     @staticmethod
-    def _get_inception_branch_2(in_channels, out_channels, kernel_length, alpha_momentum,
-                                drop_prob, activation):
+    def _get_inception_branch_2(in_channels, out_channels, kernel_length,
+                                alpha_momentum, drop_prob, activation):
         return nn.Sequential(
             nn.Conv2d(
-                in_channels, out_channels, kernel_size=(1, kernel_length),
+                in_channels,
+                out_channels,
+                kernel_size=(1, kernel_length),
                 padding="same",
                 bias=False
             ),
