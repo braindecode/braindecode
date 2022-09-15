@@ -10,15 +10,6 @@ from .eegnet import _glorot_weight_zero_bias
 from .eegitnet import _InceptionBlock, _DepthwiseConv2d
 
 
-class CustomPad(nn.Module):
-    def __init__(self, padding):
-        super().__init__()
-        self.padding = padding
-
-    def forward(self, x):
-        return F.pad(x, self.padding)
-
-
 def _transpose_to_b_1_c_0(x):
     return x.permute(0, 3, 1, 2)
 
@@ -150,7 +141,7 @@ class EEGInception(nn.Sequential):
         self.add_module("final_block", nn.Sequential(
             CustomPad((0, 0, 4, 3)),
             nn.Conv2d(
-                24, n_filters * len(scales_samples) // 2, (8, 1),
+                padding="same",
                 bias=False
             ),
             nn.BatchNorm2d(n_filters * 3 // 2,
@@ -159,9 +150,8 @@ class EEGInception(nn.Sequential):
             nn.AvgPool2d((2, 1)),
             nn.Dropout(self.drop_prob),
 
-            CustomPad((0, 0, 2, 1)),
             nn.Conv2d(
-                12, n_filters * len(scales_samples) // 4, (4, 1),
+                padding="same",
                 bias=False
             ),
             nn.BatchNorm2d(n_filters * len(scales_samples) // 4,
@@ -183,9 +173,6 @@ class EEGInception(nn.Sequential):
     def _get_inception_branch_1(in_channels, out_channels, kernel_length, alpha_momentum,
                                 drop_prob, activation, depth_multiplier=2):
         return nn.Sequential(
-
-            CustomPad((0, 0, kernel_length // 2 - 1, kernel_length // 2,)),
-
             nn.Conv2d(
                 1, out_channels, kernel_size=(1, kernel_length), padding="same", bias=False
             ),
@@ -208,9 +195,9 @@ class EEGInception(nn.Sequential):
     def _get_inception_branch_2(out_channels, kernel_length, alpha_momentum,
                                 drop_prob, activation):
         return nn.Sequential(
-            CustomPad((0, 0, kernel_length // 8 - 1, kernel_length // 8,)),
             nn.Conv2d(
-                1, 3 * 2 * 8, kernel_size=(1, kernel_length // 4),
+                in_channels, out_channels, kernel_size=(1, kernel_length),
+                padding="same",
                 bias=False
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
