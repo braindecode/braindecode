@@ -86,6 +86,7 @@ class EEGInception(nn.Sequential):
             activation=nn.ELU(),
             batch_norm_alpha=0.01,
             depth_multiplier=2,
+            pooling_sizes=(4, 2, 2, 2),
     ):
         super().__init__()
 
@@ -101,6 +102,7 @@ class EEGInception(nn.Sequential):
         self.activation = activation
         self.alpha_momentum = batch_norm_alpha
         self.depth_multiplier = depth_multiplier
+        self.pooling_sizes = pooling_sizes
 
         self.add_module("ensuredims", Ensure4d())
 
@@ -125,7 +127,7 @@ class EEGInception(nn.Sequential):
 
         self.add_module("inception_block_1", _InceptionBlock((block11, block12, block13)))
 
-        self.add_module("avg_pool_1", nn.AvgPool2d((4, 1)))
+        self.add_module("avg_pool_1", nn.AvgPool2d((1, self.pooling_sizes[0])))
 
         # ======== Inception branches ========================
         block21 = self._get_inception_branch_2(
@@ -143,7 +145,7 @@ class EEGInception(nn.Sequential):
 
         self.add_module("inception_block_1", _InceptionBlock((block21, block22, block23)))
 
-        self.add_module("avg_pool_2", nn.AvgPool2d((2, 1)))
+        self.add_module("avg_pool_2", nn.AvgPool2d((1, self.pooling_sizes[1])))
 
         self.add_module("final_block", nn.Sequential(
             nn.Conv2d(
@@ -153,7 +155,7 @@ class EEGInception(nn.Sequential):
             nn.BatchNorm2d(n_filters * 3 // 2,
                            momentum=self.alpha_momentum),
             activation,
-            nn.AvgPool2d((2, 1)),
+            nn.AvgPool2d((1, self.pooling_sizes[2])),
             nn.Dropout(self.drop_prob),
 
             nn.Conv2d(
@@ -163,7 +165,7 @@ class EEGInception(nn.Sequential):
             nn.BatchNorm2d(n_filters * len(scales_samples) // 4,
                            momentum=self.alpha_momentum),
             activation,
-            nn.AvgPool2d((2, 1)),
+            nn.AvgPool2d((1, self.pooling_sizes[3])),
             nn.Dropout(self.drop_prob),
         ))
 
