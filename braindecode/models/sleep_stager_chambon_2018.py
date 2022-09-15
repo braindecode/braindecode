@@ -19,16 +19,16 @@ class SleepStagerChambon2018(nn.Module):
     sfreq : float
         EEG sampling frequency.
     n_conv_chs : int
-        Number of convolutional channels. Set to 8 in [1]_.
+        Number of convolutional channels. Set to 8 in [Chambon2018]_.
     time_conv_size_s : float
         Size of filters in temporal convolution layers, in seconds. Set to 0.5
-        in [1]_ (64 samples at sfreq=128).
+        in [Chambon2018]_ (64 samples at sfreq=128).
     max_pool_size_s : float
-        Max pooling size, in seconds. Set to 0.125 in [1]_ (16 samples at
-        sfreq=128).
+        Max pooling size, in seconds. Set to 0.125 in [Chambon2018]_ (16
+        samples at sfreq=128).
     pad_size_s : float
-        Paddind size, in seconds. Set to 0.25 in [1]_ (half the temporal
-        convolution kernel size).
+        Padding size, in seconds. Set to 0.25 in [Chambon2018]_ (half the
+        temporal convolution kernel size).
     input_size_s : float
         Size of the input, in seconds.
     n_classes : int
@@ -38,6 +38,10 @@ class SleepStagerChambon2018(nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
+    return_feats : bool
+        If True, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If False, pass the features through
+        the final linear layer.
 
     References
     ----------
@@ -49,7 +53,8 @@ class SleepStagerChambon2018(nn.Module):
     """
     def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, pad_size_s=0.25, input_size_s=30,
-                 n_classes=5, dropout=0.25, apply_batch_norm=False):
+                 n_classes=5, dropout=0.25, apply_batch_norm=False,
+                 return_feats=False):
         super().__init__()
 
         time_conv_size = np.ceil(time_conv_size_s * sfreq).astype(int)
@@ -78,10 +83,12 @@ class SleepStagerChambon2018(nn.Module):
             nn.MaxPool2d((1, max_pool_size))
         )
         self.len_last_layer = self._len_last_layer(n_channels, input_size)
-        self.fc = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(self.len_last_layer, n_classes)
-        )
+        self.return_feats = return_feats
+        if not return_feats:
+            self.fc = nn.Sequential(
+                nn.Dropout(dropout),
+                nn.Linear(self.len_last_layer, n_classes)
+            )
 
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()
@@ -90,16 +97,6 @@ class SleepStagerChambon2018(nn.Module):
                 torch.Tensor(1, 1, n_channels, input_size))
         self.feature_extractor.train()
         return len(out.flatten())
-
-    def embed(self, x):
-        if x.ndim == 3:
-            x = x.unsqueeze(1)
-
-        if self.n_channels > 1:
-            x = self.spatial_conv(x)
-            x = x.transpose(1, 2)
-
-        return self.feature_extractor(x).flatten(start_dim=1)
 
     def forward(self, x):
         """
@@ -110,4 +107,16 @@ class SleepStagerChambon2018(nn.Module):
         x: torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
         """
-        return self.fc(self.embed(x))
+        if x.ndim == 3:
+            x = x.unsqueeze(1)
+
+        if self.n_channels > 1:
+            x = self.spatial_conv(x)
+            x = x.transpose(1, 2)
+
+        feats = self.feature_extractor(x).flatten(start_dim=1)
+
+        if self.return_feats:
+            return feats
+        else:
+            return self.fc(feats)

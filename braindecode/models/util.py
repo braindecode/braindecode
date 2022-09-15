@@ -1,4 +1,5 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
 

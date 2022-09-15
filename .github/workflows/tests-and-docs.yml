@@ -8,6 +8,10 @@ on:
 jobs:
   Install-Test-Doc-Braindecode:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        skorch_version: ['main', 'stable']
     defaults:
       run:
         shell: bash -l {0}
@@ -24,7 +28,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/mne_data
-        key: ${{ runner.os }}-v2
+        key: ${{ runner.os }}-v3
     - name: Setting Up Conda Braindecode Environment
       uses: conda-incubator/setup-miniconda@v2
       with:
@@ -39,6 +43,10 @@ jobs:
     # Install MOABB as well
     - name: Install MOABB
       run: pip install moabb
+    # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
+    - name: Install Skorch development version from git repo
+      if: ${{ matrix.skorch_version == 'main' }}
+      run: pip install git+https://github.com/skorch-dev/skorch.git
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
@@ -79,7 +87,7 @@ jobs:
         path: ./docs/_build/
 
     - name: Deploy to Github Pages if on Master
-      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' && matrix.skorch_version == 'stable'}}
       uses: peaceiris/actions-gh-pages@v3
       with:
         deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}

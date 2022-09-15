@@ -113,16 +113,18 @@ class BaseDataset(Dataset):
             self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
-        if target_name is not None and type(target_name) not in [str, tuple]:
-            raise ValueError('target_name has to be None, str, tuple')
+        if target_name is not None and not isinstance(target_name, (str, tuple, list)):
+            raise ValueError('target_name has to be None, str, tuple or list')
         if target_name is None:
             return target_name
         else:
             # convert tuple of names or single name to list
             if isinstance(target_name, tuple):
                 target_name = [name for name in target_name]
-            else:
+            elif not isinstance(target_name, list):
+                assert isinstance(target_name, str)
                 target_name = [target_name]
+            assert isinstance(target_name, list)
             # check if target name(s) can be read from description
             for name in target_name:
                 if self.description is None or name not in self.description:
@@ -155,16 +157,25 @@ class WindowsDataset(BaseDataset):
         Holds additional info about the windows.
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
+    targets_from : str
+        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
+        channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-    def __init__(self, windows, description=None, transform=None):
+    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
+                 last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
+        self.last_target_only = last_target_only
+        if targets_from not in ('metadata', 'channels'):
+            raise ValueError('Wrong value for parameter `targets_from`.')
+        self.targets_from = targets_from
 
-        self.y = self.windows.metadata.loc[:, 'target'].to_list()
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
                 'i_stop_in_trial']].to_numpy()
+        if self.targets_from == 'metadata':
+            self.y = self.windows.metadata.loc[:, 'target'].to_list()
 
     def __getitem__(self, index):
         """Get a window and its target.
@@ -186,11 +197,19 @@ class WindowsDataset(BaseDataset):
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
-        y = self.y[index]
+        if self.targets_from == 'metadata':
+            y = self.y[index]
+        else:
+            misc_mask = np.array(self.windows.get_channel_types()) == 'misc'
+            if self.last_target_only:
+                y = X[misc_mask, -1]
+            else:
+                y = X[misc_mask, :]
+            # remove the target channels from raw
+            X = X[~misc_mask, :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
-
         return X, y, crop_inds
 
     def __len__(self):
@@ -287,15 +306,17 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        by : str | list
+        by : str | list | dict
             If ``by`` is a string, splitting is performed based on the
             description DataFrame column with this name.
             If ``by`` is a (list of) list of integers, the position in the first
             list corresponds to the split id and the integers to the
             datapoints of that split.
+            If a dict then each key will be used in the returned
+            splits dict and each value should be a list of int.
         property : str
             Some property which is listed in info DataFrame.
-        split_ids : list
+        split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
 
@@ -320,6 +341,8 @@ class BaseConcatDataset(ConcatDataset):
                 k: list(v)
                 for k, v in self.description.groupby(by).groups.items()
             }
+        elif isinstance(by, dict):
+            split_ids = by
         else:
             # assume list(int)
             if not isinstance(by[0], list):
@@ -328,7 +351,7 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds])
+            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):
@@ -486,7 +509,6 @@ class BaseConcatDataset(ConcatDataset):
                 window_kwargs.json (if this is a windowed dataset)
                 window_preproc_kwargs.json  (if windows were preprocessed)
                 target_name.json (if target_name is not None and dataset is raw)
-            ...
 
         Parameters
         ----------

@@ -1,6 +1,7 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
-#
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 # License: BSD (3-clause)
 
 from typing import List, Tuple, Any
@@ -50,8 +51,8 @@ class Transform(torch.nn.Module):
         self._probability = probability
         self.rng = check_random_state(random_state)
 
-    def get_params(self, X, y):
-        return tuple()
+    def get_augmentation_params(self, *batch):
+        return dict()
 
     def forward(self, X: Tensor, y: Tensor = None) -> Output:
         """General forward pass for an augmentation transform.
@@ -87,7 +88,7 @@ class Transform(torch.nn.Module):
             # Uses the mask to define the output
             out_X[mask, ...], tr_y = self.operation(
                 out_X[mask, ...], out_y[mask],
-                *self.get_params(out_X[mask, ...], out_y[mask])
+                **self.get_augmentation_params(out_X[mask, ...], out_y[mask])
             )
             # Apply the operation defining the Transform to the whole batch
             if type(tr_y) is tuple:
@@ -142,11 +143,20 @@ class Compose(Transform):
         return X, y
 
 
-def _make_collateable(transform):
+def _make_collateable(transform, device=None):
+    """ Wraps a transform to make it collateable.
+        with device control. """
+
     def _collate_fn(batch):
         collated_batch = default_collate(batch)
         X, y = collated_batch[:2]
+
+        if device is not None:
+            X = X.to(device)
+            y = y.to(device)
+
         return (*transform(X, y), *collated_batch[2:])
+
     return _collate_fn
 
 
@@ -159,24 +169,26 @@ class AugmentedDataLoader(DataLoader):
         The dataset containing the signals.
     transforms : list | Transform, optional
         Transform or sequence of Transform to be applied to each batch.
+    device : str | torch.device | None, optional
+        Device on which to transform the data. Defaults to None.
     **kwargs : dict, optional
         keyword arguments to pass to standard DataLoader class.
     """
 
-    def __init__(self, dataset, transforms=None, **kwargs):
+    def __init__(self, dataset, transforms=None, device=None, **kwargs):
         if "collate_fn" in kwargs:
             raise ValueError(
                 "collate_fn cannot be used in this context because it is used "
                 "to pass transform"
             )
         if transforms is None or (
-            isinstance(transforms, list) and len(transforms) == 0
+                isinstance(transforms, list) and len(transforms) == 0
         ):
-            self.collated_tr = _make_collateable(IdentityTransform())
+            self.collated_tr = _make_collateable(IdentityTransform(), device=device)
         elif isinstance(transforms, (Transform, nn.Module)):
-            self.collated_tr = _make_collateable(transforms)
+            self.collated_tr = _make_collateable(transforms, device=device)
         elif isinstance(transforms, list):
-            self.collated_tr = _make_collateable(Compose(transforms))
+            self.collated_tr = _make_collateable(Compose(transforms), device=device)
         else:
             raise TypeError("transforms can be either a Transform object" +
                             " or a list of Transform objects.")

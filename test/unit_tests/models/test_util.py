@@ -1,15 +1,16 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
+#          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
 
 import pytest
 import numpy as np
+from torch import nn
 from sklearn.preprocessing import OneHotEncoder
 
 from braindecode.models.modules import Expression
 from braindecode.models.util import (
     get_output_shape, aggregate_probas, _pad_shift_array)
-from torch import nn
 
 
 def test_get_output_shape_1d_model():

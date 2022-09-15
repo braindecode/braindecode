@@ -2,15 +2,16 @@
 #
 # License: BSD (3-clause)
 
-import pytest
-import numpy as np
-from sklearn.utils import check_random_state
-import torch
 import mne
+import numpy as np
+import pytest
+import torch
+from sklearn.utils import check_random_state
 
-from braindecode.augmentation.base import (
-    Transform, Compose, AugmentedDataLoader
-)
+from braindecode.augmentation.base import AugmentedDataLoader
+from braindecode.augmentation.base import Compose
+from braindecode.augmentation.base import Transform
+from braindecode.augmentation.transforms import SmoothTimeMask
 from braindecode.datautil import create_from_mne_epochs
 
 
@@ -28,8 +29,8 @@ class DummyTransform(Transform):
             self.k = k
         super().__init__(probability=probability, random_state=random_state)
 
-    def get_params(self, X, y):
-        return (self.k,)
+    def get_augmentation_params(self, X, y):
+        return {"k": self.k}
 
 
 @pytest.fixture
@@ -37,7 +38,12 @@ def dummy_transform():
     return DummyTransform()
 
 
-def common_tranform_assertions(input_batch, output_batch, expected_X=None):
+def common_tranform_assertions(
+    input_batch,
+    output_batch,
+    expected_X=None,
+    diff_param=None,
+):
     """ Assert whether shapes and devices are conserved. Also, (optional)
     checks whether the expected features matrix is produced.
 
@@ -53,6 +59,8 @@ def common_tranform_assertions(input_batch, output_batch, expected_X=None):
     expected_X : torch.Tensor, optional
         The expected first element of output_batch, which will be compared to
         it. By default None.
+    diff_param : torch.Tensor | None, optional
+        Parameter which should have grads.
     """
     X, y = input_batch
     tr_X, tr_y = output_batch
@@ -62,6 +70,10 @@ def common_tranform_assertions(input_batch, output_batch, expected_X=None):
     assert X.device == tr_X.device
     if expected_X is not None:
         assert torch.equal(tr_X, expected_X)
+    if diff_param is not None:
+        loss = (tr_X - X).sum()
+        loss.backward()
+        assert diff_param.grad is not None
 
 
 def test_transform_call_with_no_label(random_batch, dummy_transform):
@@ -130,18 +142,22 @@ def concat_windows_dataset():
 
 
 # test AugmentedDataLoader with 0, 1 and 2 composed transforms
-@pytest.mark.parametrize("nb_transforms,no_list", [
-    (0, False), (1, False), (1, True), (2, False)
+@pytest.mark.parametrize("nb_transforms,no_list,dummy", [
+    (0, False, True), (1, False, True), (1, True, True), (2, False, True),
+    (1, False, False)
 ])
 def test_data_loader(dummy_transform, concat_windows_dataset, nb_transforms,
-                     no_list):
-    transforms = [dummy_transform for _ in range(nb_transforms)]
+                     no_list, dummy):
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    transform = dummy_transform if dummy else SmoothTimeMask(0.5)
+    transforms = [transform for _ in range(nb_transforms)]
     if no_list:
         transforms = transforms[0]
     data_loader = AugmentedDataLoader(
         concat_windows_dataset,
         transforms=transforms,
-        batch_size=128)
+        batch_size=128,
+        device=device)
     for idx_batch, _ in enumerate(data_loader):
         if idx_batch >= 3:
             break

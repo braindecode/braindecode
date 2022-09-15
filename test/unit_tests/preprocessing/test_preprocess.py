@@ -7,10 +7,12 @@ import os
 import copy
 from glob import glob
 
+import mne
+import pandas as pd
 import pytest
 import numpy as np
 
-from braindecode.datasets import MOABBDataset, BaseConcatDataset
+from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
     preprocess, zscore, Preprocessor, filterbank, exponential_moving_demean,
     exponential_moving_standardize, MNEPreproc, NumpyPreproc, _replace_inplace,
@@ -277,7 +279,7 @@ def test_filterbank(base_concat_ds):
     preprocessors = [
         Preprocessor('pick_channels', ch_names=sorted(['C4', 'Cz']),
                      ordered=True),
-        Preprocessor(filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
+        Preprocessor(fn=filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
                      drop_original_signals=False, apply_on_array=False)
     ]
     preprocess(base_concat_ds, preprocessors)
@@ -420,3 +422,31 @@ def test_preprocess_overwrite(base_concat_ds, tmp_path, overwrite):
         with pytest.raises(FileExistsError):
             preprocess(base_concat_ds, preprocessors, save_dir,
                        overwrite=False)
+
+
+def test_preprocessors_with_misc_channels():
+    rng = np.random.RandomState(42)
+    signal_sfreq = 50
+    info = mne.create_info(ch_names=['0', '1', 'target_0', 'target_1'],
+                           sfreq=signal_sfreq,
+                           ch_types=['eeg', 'eeg', 'misc', 'misc'])
+    signal = rng.randn(2, 1000)
+    targets = rng.randn(2, 1000)
+    raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
+    desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
+    base_dataset = BaseDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+    preprocessors = [
+        Preprocessor('pick_types', eeg=True, misc=True),
+        Preprocessor(lambda x: x / 1e6),
+    ]
+
+    preprocess(concat_ds, preprocessors)
+
+    # Check whether preprocessing has not affected the targets
+    # This is only valid for preprocessors that use mne functions which do not modify
+    # `misc` channels.
+    np.testing.assert_array_equal(
+        concat_ds.datasets[0].raw.get_data()[-2:, :],
+        targets
+    )

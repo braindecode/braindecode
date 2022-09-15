@@ -3,19 +3,26 @@
 #
 # License: BSD (3-clause)
 
-from numbers import Real
 import warnings
+from numbers import Real
 
 import numpy as np
 import torch
 from mne.channels import make_standard_montage
 
 from .base import Transform
-from .functional import (
-    time_reverse, sign_flip, ft_surrogate, channels_dropout, channels_shuffle,
-    gaussian_noise, channels_permute, smooth_time_mask, bandstop_filter,
-    frequency_shift, sensors_rotation, mixup
-)
+from .functional import bandstop_filter
+from .functional import channels_dropout
+from .functional import channels_permute
+from .functional import channels_shuffle
+from .functional import frequency_shift
+from .functional import ft_surrogate
+from .functional import gaussian_noise
+from .functional import mixup
+from .functional import sensors_rotation
+from .functional import sign_flip
+from .functional import smooth_time_mask
+from .functional import time_reverse
 
 
 class TimeReverse(Transform):
@@ -75,10 +82,10 @@ class FTSurrogate(Transform):
     ----------
     probability: float
         Float setting the probability of applying the operation.
-    magnitude : object, optional
+    phase_noise_magnitude : float | torch.Tensor, optional
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled: ``[0, magnitude * 2 * pi]``. Defaults
-        to 1.
+        pertubation is uniformly sampled:
+        ``[0, phase_noise_magnitude * 2 * pi]``. Defaults to 1.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -96,19 +103,20 @@ class FTSurrogate(Transform):
     def __init__(
         self,
         probability,
-        magnitude=1,
+        phase_noise_magnitude=1,
         random_state=None
     ):
-        assert isinstance(magnitude, (float, int)),\
-            "magnitude should be a float."
-        assert 0 <= magnitude <= 1, "magnitude should be between 0 and 1."
-        self.magnitude = magnitude
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)),\
+            "phase_noise_magnitude should be a float."
+        assert 0 <= phase_noise_magnitude <= 1,\
+            "phase_noise_magnitude should be between 0 and 1."
+        self.phase_noise_magnitude = phase_noise_magnitude
 
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -120,12 +128,18 @@ class FTSurrogate(Transform):
 
         Returns
         -------
-        magnitude : float
-            The magnitude of the transformation.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains:
+
+            * phase_noise_magnitude : float
+                The magnitude of the transformation.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.magnitude, self.rng
+        return {
+            "phase_noise_magnitude": self.phase_noise_magnitude,
+            "random_state": self.rng,
+        }
 
 
 class ChannelsDropout(Transform):
@@ -159,13 +173,13 @@ class ChannelsDropout(Transform):
         p_drop=0.2,
         random_state=None
     ):
-        self.p_drop = p_drop
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        self.p_drop = p_drop
 
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -177,13 +191,19 @@ class ChannelsDropout(Transform):
 
         Returns
         -------
-        p_drop : float
-            Float between 0 and 1 setting the probability of dropping each
-            channel.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains
+
+            * p_drop : float
+                Float between 0 and 1 setting the probability of dropping each
+                channel.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.p_drop, self.rng
+        return {
+            "p_drop": self.p_drop,
+            "random_state": self.rng,
+        }
 
 
 class ChannelsShuffle(Transform):
@@ -197,7 +217,7 @@ class ChannelsShuffle(Transform):
         Float setting the probability of applying the operation.
     p_shuffle: float | None, optional
         Float between 0 and 1 setting the probability of including the channel
-        in the set of permutted channels. Defaults to 0.2.
+        in the set of permuted channels. Defaults to 0.2.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -218,13 +238,13 @@ class ChannelsShuffle(Transform):
         p_shuffle=0.2,
         random_state=None
     ):
-        self.p_shuffle = p_shuffle
         super().__init__(
             probability=probability,
             random_state=random_state
         )
+        self.p_shuffle = p_shuffle
 
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -236,13 +256,19 @@ class ChannelsShuffle(Transform):
 
         Returns
         -------
-        p_shuffle : float
-            Float between 0 and 1 setting the probability of including the
-            channel in the set of permutted channels.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains
+
+            * p_shuffle : float
+                Float between 0 and 1 setting the probability of including the
+                channel in the set of permuted channels.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.p_shuffle, self.rng
+        return {
+            "p_shuffle": self.p_shuffle,
+            "random_state": self.rng,
+        }
 
 
 class GaussianNoise(Transform):
@@ -255,8 +281,7 @@ class GaussianNoise(Transform):
     probability : float
         Float setting the probability of applying the operation.
     std : float, optional
-        Standard deviation to use for the additive noise. Will be ignored if
-        magnitude is not set to None. Defaults to 0.1.
+        Standard deviation to use for the additive noise. Defaults to 0.1.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -282,13 +307,13 @@ class GaussianNoise(Transform):
         std=0.1,
         random_state=None
     ):
-        self.std = std
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+        self.std = std
 
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -300,12 +325,18 @@ class GaussianNoise(Transform):
 
         Returns
         -------
-        std : float
-            Standard deviation to use for the additive noise.
-        rng : numpy.random.Generator
-            The generator to use.
+        params : dict
+            Contains
+
+            * std : float
+                Standard deviation to use for the additive noise.
+            * random_state : numpy.random.Generator
+                The generator to use.
         """
-        return self.std, self.rng
+        return {
+            "std": self.std,
+            "random_state": self.rng,
+        }
 
 
 class ChannelsSymmetry(Transform):
@@ -341,6 +372,10 @@ class ChannelsSymmetry(Transform):
         ordered_ch_names,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
         assert (
             isinstance(ordered_ch_names, list) and
             all(isinstance(ch, str) for ch in ordered_ch_names)
@@ -363,12 +398,7 @@ class ChannelsSymmetry(Transform):
             permutation.append(new_position)
         self.permutation = permutation
 
-        super().__init__(
-            probability=probability,
-            random_state=random_state,
-        )
-
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -380,10 +410,13 @@ class ChannelsSymmetry(Transform):
 
         Returns
         -------
-        permutation : float
-            List of integers defining the new channels order.
+        params : dict
+            Contains
+
+            * permutation : float
+                List of integers defining the new channels order.
         """
-        return (self.permutation,)
+        return {"permutation": self.permutation}
 
 
 class SmoothTimeMask(Transform):
@@ -396,7 +429,7 @@ class SmoothTimeMask(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    mask_len_samples : int, optional
+    mask_len_samples : int | torch.Tensor, optional
         Number of consecutive samples to zero out. Will be ignored if
         magnitude is not set to None. Defaults to 100.
     random_state: int | numpy.random.Generator, optional
@@ -420,18 +453,18 @@ class SmoothTimeMask(Transform):
         mask_len_samples=100,
         random_state=None
     ):
-        assert (
-            isinstance(mask_len_samples, int) and
-            mask_len_samples > 0
-        ), "mask_len_samples has to be a positive integer"
-        self.mask_len_samples = mask_len_samples
-
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
 
-    def get_params(self, X, y):
+        assert (
+            isinstance(mask_len_samples, (int, torch.Tensor)) and
+            mask_len_samples > 0
+        ), "mask_len_samples has to be a positive integer"
+        self.mask_len_samples = mask_len_samples
+
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -443,19 +476,32 @@ class SmoothTimeMask(Transform):
 
         Returns
         -------
-        mask_start_per_sample : torch.tensor
-            Tensor of integers containing the position (in last dimension)
-            where to start masking the signal. Should have the same size as the
-            first dimension of X (i.e. one start position per example in the
-            batch).
-        mask_len_samples : int
-            Number of consecutive samples to zero out.
+        params : dict
+            Contains two elements:
+
+            * mask_start_per_sample : torch.tensor
+                Tensor of integers containing the position (in last dimension)
+                where to start masking the signal. Should have the same size as
+                the first dimension of X (i.e. one start position per example
+                in the batch).
+            * mask_len_samples : int
+                Number of consecutive samples to zero out.
         """
+        if len(batch) == 0:
+            return super().get_augmentation_params(*batch)
+        X = batch[0]
+
         seq_length = torch.as_tensor(X.shape[-1], device=X.device)
+        mask_len_samples = self.mask_len_samples
+        if isinstance(mask_len_samples, torch.Tensor):
+            mask_len_samples = mask_len_samples.to(X.device)
         mask_start = torch.as_tensor(self.rng.uniform(
             low=0, high=1, size=X.shape[0],
-        ), device=X.device) * (seq_length - self.mask_len_samples)
-        return mask_start, self.mask_len_samples
+        ), device=X.device) * (seq_length - mask_len_samples)
+        return {
+            "mask_start_per_sample": mask_start,
+            "mask_len_samples": mask_len_samples,
+        }
 
 
 class BandstopFilter(Transform):
@@ -468,10 +514,9 @@ class BandstopFilter(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    bandwidth : float, optional
+    bandwidth : float
         Bandwidth of the filter, i.e. distance between the low and high cut
-        frequencies. Will be ignored if magnitude is not set to None. Defaults
-        to 1Hz.
+        frequencies.
     sfreq : float, optional
         Sampling frequency of the signals to be filtered. Defaults to 100 Hz.
     max_freq : float | None, optional
@@ -502,6 +547,10 @@ class BandstopFilter(Transform):
         max_freq=None,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
         assert isinstance(bandwidth, Real) and bandwidth >= 0,\
             "bandwidth should be a non-negative float."
         assert isinstance(sfreq, Real) and sfreq > 0,\
@@ -524,12 +573,8 @@ class BandstopFilter(Transform):
         self.sfreq = sfreq
         self.max_freq = max_freq
         self.bandwidth = bandwidth
-        super().__init__(
-            probability=probability,
-            random_state=random_state,
-        )
 
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -541,25 +586,37 @@ class BandstopFilter(Transform):
 
         Returns
         -------
-        sfreq : float
-            Sampling frequency of the signals to be filtered.
-        bandwidth : float
-            Bandwidth of the filter, i.e. distance between the low and high cut
-            frequencies.
-        freqs_to_notch : array-like | None
-            Array of floats of size ``(batch_size,)`` containing the center of
-            the frequency band to filter out for each sample in the batch.
-            Frequencies should be greater than ``bandwidth/2 + transition`` and
-            lower than ``sfreq/2 - bandwidth/2 - transition`` (where
-            ``transition = 1 Hz``).
+        params : dict
+            Contains
+
+            * sfreq : float
+                Sampling frequency of the signals to be filtered.
+            * bandwidth : float
+                Bandwidth of the filter, i.e. distance between the low and high
+                cut frequencies.
+            * freqs_to_notch : array-like | None
+                Array of floats of size ``(batch_size,)`` containing the center
+                of the frequency band to filter out for each sample in the
+                batch. Frequencies should be greater than
+                ``bandwidth/2 + transition`` and lower than
+                ``sfreq/2 - bandwidth/2 - transition`` (where
+                ``transition = 1 Hz``).
         """
+        if len(batch) == 0:
+            return super().get_augmentation_params(*batch)
+        X = batch[0]
+
         # Prevents transitions from going below 0 and above max_freq
         notched_freqs = self.rng.uniform(
             low=1 + 2 * self.bandwidth,
             high=self.max_freq - 1 - 2 * self.bandwidth,
             size=X.shape[0]
         )
-        return self.sfreq, self.bandwidth, notched_freqs
+        return {
+            "sfreq": self.sfreq,
+            "bandwidth": self.bandwidth,
+            "freqs_to_notch": notched_freqs,
+        }
 
 
 class FrequencyShift(Transform):
@@ -571,14 +628,11 @@ class FrequencyShift(Transform):
     ----------
     probability : float
         Float setting the probability of applying the operation.
-    delta_freq_range : tuple of two floats | None, optional
-        Range of possible values for ``max_shift`` settable using the magnitude
-        (see ``magnitude``). If omitted the range [0, 5] Hz will be used.
-    max_shift : float, optional
-        Random frequency shifts will be samples uniformly in the interval
-        ``[0, max_shift]``. Defaults to 2 Hz.
-    sfreq : float, optional
-        Sampling frequency of the signals to be transformed. Default to 100 Hz.
+    sfreq : float
+        Sampling frequency of the signals to be transformed.
+    max_delta_freq : float | torch.Tensor, optional
+        Maximum shift in Hz that can be sampled (in absolute value).
+        Defaults to 2 (shift sampled between -2 and 2 Hz).
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
@@ -589,22 +643,20 @@ class FrequencyShift(Transform):
         self,
         probability,
         sfreq,
-        delta_freq_range=(-2, 2),
+        max_delta_freq=2,
         random_state=None
     ):
-        assert isinstance(sfreq, Real) and sfreq > 0,\
-            "sfreq should be a positive float."
-        self.sfreq = sfreq
-
-        # override max_shift value when a magnitude is passed
-        self.delta_freq_range = delta_freq_range
-
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
+        assert isinstance(sfreq, Real) and sfreq > 0,\
+            "sfreq should be a positive float."
+        self.sfreq = sfreq
 
-    def get_params(self, X, y):
+        self.max_delta_freq = max_delta_freq
+
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -616,20 +668,30 @@ class FrequencyShift(Transform):
 
         Returns
         -------
-        delta_freq : float
-            The amplitude of the frequency shift (in Hz).
-        sfreq : float
-            Sampling frequency of the signals to be transformed.
+        params : dict
+            Contains
+
+            * delta_freq : float
+                The amplitude of the frequency shift (in Hz).
+            * sfreq : float
+                Sampling frequency of the signals to be transformed.
         """
-        min_delta_freq, max_delta_freq = self.delta_freq_range
+        if len(batch) == 0:
+            return super().get_augmentation_params(*batch)
+        X = batch[0]
+
         u = torch.as_tensor(
             self.rng.uniform(size=X.shape[0]),
             device=X.device
         )
-        delta_freq = u * (
-            max_delta_freq - min_delta_freq
-        ) + min_delta_freq
-        return delta_freq, self.sfreq
+        max_delta_freq = self.max_delta_freq
+        if isinstance(max_delta_freq, torch.Tensor):
+            max_delta_freq = max_delta_freq.to(X.device)
+        delta_freq = u * 2 * max_delta_freq - max_delta_freq
+        return {
+            "delta_freq": delta_freq,
+            "sfreq": self.sfreq,
+        }
 
 
 def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
@@ -710,14 +772,20 @@ class SensorsRotation(Transform):
         spherical_splines=True,
         random_state=None
     ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
         if isinstance(sensors_positions_matrix, (np.ndarray, list)):
             sensors_positions_matrix = torch.as_tensor(
                 sensors_positions_matrix
             )
         assert isinstance(sensors_positions_matrix, torch.Tensor),\
             "sensors_positions should be an Tensor"
-        assert isinstance(max_degrees, Real) and max_degrees >= 0,\
-            "max_degrees should be non-negative float."
+        assert (
+            isinstance(max_degrees, (Real, torch.Tensor)) and
+            max_degrees >= 0
+        ), "max_degrees should be non-negative float."
         assert isinstance(axis, str) and axis in ['x', 'y', 'z'],\
             "axis can be either x, y or z."
         assert sensors_positions_matrix.shape[0] == 3,\
@@ -729,12 +797,7 @@ class SensorsRotation(Transform):
         self.spherical_splines = spherical_splines
         self.max_degrees = max_degrees
 
-        super().__init__(
-            probability=probability,
-            random_state=random_state
-        )
-
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -746,34 +809,45 @@ class SensorsRotation(Transform):
 
         Returns
         -------
-        sensors_positions_matrix : numpy.ndarray
-            Matrix giving the positions of each sensor in a 3D cartesian
-            coordinate system. Should have shape (3, n_channels), where
-            n_channels is the number of channels.
-        axis : 'x' | 'y' | 'z'
-            Axis around which to rotate.
-        angles : array-like
-            Array of float of shape ``(batch_size,)`` containing the rotation
-            angles (in degrees) for each element of the input batch, sampled
-            uniformly between ``-max_degrees``and ``max_degrees``.
-        spherical_splines : bool
-            Whether to use spherical splines for the interpolation or not. When
-            `False`, standard scipy.interpolate.Rbf (with quadratic kernel)
-            will be used (as in the original paper).
+        params : dict
+            Contains four elements:
+
+            * sensors_positions_matrix : numpy.ndarray
+                Matrix giving the positions of each sensor in a 3D cartesian
+                coordinate system. Should have shape (3, n_channels), where
+                n_channels is the number of channels.
+            * axis : 'x' | 'y' | 'z'
+                Axis around which to rotate.
+            * angles : array-like
+                Array of float of shape ``(batch_size,)`` containing the
+                rotation angles (in degrees) for each element of the input
+                batch, sampled uniformly between ``-max_degrees``and
+                ``max_degrees``.
+            * spherical_splines : bool
+                Whether to use spherical splines for the interpolation or not.
+                When ``False``, standard scipy.interpolate.Rbf (with quadratic
+                kernel) will be used (as in the original paper).
         """
+        if len(batch) == 0:
+            return super().get_augmentation_params(*batch)
+        X = batch[0]
+
         u = self.rng.uniform(
             low=0,
             high=1,
             size=X.shape[0]
         )
+        max_degrees = self.max_degrees
+        if isinstance(max_degrees, torch.Tensor):
+            max_degrees = max_degrees.to(X.device)
         random_angles = torch.as_tensor(
-            u, device=X.device) * 2 * self.max_degrees - self.max_degrees
-        return (
-            self.sensors_positions_matrix,
-            self.axis,
-            random_angles,
-            self.spherical_splines
-        )
+            u, device=X.device) * 2 * max_degrees - max_degrees
+        return {
+            "sensors_positions_matrix": self.sensors_positions_matrix,
+            "axis": self.axis,
+            "angles": random_angles,
+            "spherical_splines": self.spherical_splines
+        }
 
 
 class SensorsZRotation(SensorsRotation):
@@ -975,14 +1049,14 @@ class Mixup(Transform):
         beta_per_sample=False,
         random_state=None
     ):
-        self.alpha = alpha
-        self.beta_per_sample = beta_per_sample
         super().__init__(
             probability=1.0,  # Mixup has to be applied to whole batches
             random_state=random_state
         )
+        self.alpha = alpha
+        self.beta_per_sample = beta_per_sample
 
-    def get_params(self, X, y):
+    def get_augmentation_params(self, *batch):
         """Return transform parameters.
 
         Parameters
@@ -994,12 +1068,13 @@ class Mixup(Transform):
 
         Returns
         -------
-        lam : torch.Tensor
-            Values sampled uniformly between 0 and 1 setting the linear
-            interpolation between examples.
-        idx_perm: torch.Tensor
-            Shuffled indices of example that are mixed into original examples.
+        params: dict
+            Contains the values sampled uniformly between 0 and 1 setting the
+            linear interpolation between examples (lam) and the shuffled
+            indices of examples that are mixed into original examples
+            (idx_perm).
         """
+        X = batch[0]
         device = X.device
         batch_size, _, _ = X.shape
 
@@ -1016,4 +1091,7 @@ class Mixup(Transform):
 
         idx_perm = torch.as_tensor(self.rng.permutation(batch_size,))
 
-        return lam, idx_perm
+        return {
+            "lam": lam,
+            "idx_perm": idx_perm,
+        }

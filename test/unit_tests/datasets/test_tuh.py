@@ -2,6 +2,8 @@
 #
 # License: BSD-3
 
+from datetime import datetime
+
 from braindecode.datasets.tuh import (
     _parse_description_from_file_path, _create_chronological_description,
     TUHAbnormal, _TUHMock, _TUHAbnormalMock)
@@ -116,6 +118,13 @@ def test_tuh():
     x, y = tuh[0]
     assert x.shape == (21, 1)
     assert y is None
+
+    for ds, (_, desc) in zip(tuh.datasets, tuh.description.iterrows()):
+        assert isinstance(ds.raw.info['meas_date'], datetime)
+        assert ds.raw.info['meas_date'].year == desc['year']
+        assert ds.raw.info['meas_date'].month == desc['month']
+        assert ds.raw.info['meas_date'].day == desc['day']
+
     tuh = _TUHMock(
         path='',
         target_name='gender',
@@ -148,6 +157,12 @@ def test_tuh_abnormal():
     assert y
     x, y = tuh_ab[-1]
     assert y
+
+    for ds, (_, desc) in zip(tuh_ab.datasets, tuh_ab.description.iterrows()):
+        assert isinstance(ds.raw.info['meas_date'], datetime)
+        assert ds.raw.info['meas_date'].year == desc['year']
+        assert ds.raw.info['meas_date'].month == desc['month']
+        assert ds.raw.info['meas_date'].day == desc['day']
 
     tuh_ab = _TUHAbnormalMock(
         path='',
