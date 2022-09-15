@@ -2,7 +2,7 @@
 #          Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
-from math import prod
+from numpy import prod
 
 from torch import nn
 from .modules import Expression, Ensure4d
@@ -51,8 +51,8 @@ class EEGInception(nn.Sequential):
         Dropout rate inside all the network.
     scales_time: list(int)
         Windows for inception block, must be a list with proportional values of
-        the input_size_ms, in ms.
-        According with the authors: temporal scale (ms) of the convolutions
+        the input_size_ms, ms.
+        According to the authors: temporal scale (ms) of the convolutions
         on each Inception module.
         This parameter determines the kernel sizes of the filters.
     n_filters : int
