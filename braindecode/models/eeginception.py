@@ -1,4 +1,5 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
 from math import prod
