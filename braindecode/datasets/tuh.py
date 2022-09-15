@@ -103,7 +103,8 @@ class TUH(BaseConcatDataset):
         self._add_physician_reports = add_physician_reports
         self._n_jobs = n_jobs
         self._file_paths = self._indexer(path) if callable(self._indexer) else self._indexer
-        self._descriptions = self._parser(self._file_paths) if callable(self._parser) else self._parser
+        self._descriptions = self._parser(self._file_paths) \
+            if callable(self._parser) else self._parser
         self._descriptions = pd.DataFrame(self._descriptions).T
         if self._selector is not None and not callable(self._selector):
             self._descriptions = self._descriptions[self._selector]
