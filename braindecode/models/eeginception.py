@@ -227,7 +227,7 @@ class EEGInception(nn.Sequential):
                 out_channels,
                 kernel_size=(1, kernel_length),
                 padding="same",
-                bias=False
+                bias=True
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
             activation,
