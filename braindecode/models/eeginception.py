@@ -130,16 +130,21 @@ class EEGInception(nn.Sequential):
         self.add_module("avg_pool_1", nn.AvgPool2d((1, self.pooling_sizes[0])))
 
         # ======== Inception branches ========================
+        n_concat_filters = len(self.scales_samples) * self.n_filters
+        n_concat_dw_filters = n_concat_filters * self.depth_multiplier
         block21 = self._get_inception_branch_2(
-            out_channels=8, kernel_length=self.scales_samples[0],
+            in_channels=n_concat_dw_filters,
+            out_channels=self.n_filters, kernel_length=self.scales_samples[0] // 4,
             alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
         block22 = self._get_inception_branch_2(
-            out_channels=4, kernel_length=self.scales_samples[1],
+            in_channels=n_concat_dw_filters,
+            out_channels=self.n_filters, kernel_length=self.scales_samples[1] // 4,
             alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
         block23 = self._get_inception_branch_2(
-            out_channels=2, kernel_length=self.scales_samples[2],
+            in_channels=n_concat_dw_filters,
+            out_channels=self.n_filters, kernel_length=self.scales_samples[2] // 4,
             alpha_momentum=self.alpha_momentum, activation=self.activation, drop_prob=self.drop_prob
         )
 
@@ -203,7 +208,7 @@ class EEGInception(nn.Sequential):
         )
 
     @staticmethod
-    def _get_inception_branch_2(out_channels, kernel_length, alpha_momentum,
+    def _get_inception_branch_2(in_channels, out_channels, kernel_length, alpha_momentum,
                                 drop_prob, activation):
         return nn.Sequential(
             nn.Conv2d(
