@@ -91,7 +91,6 @@ def _create_dataset(description, target_name, preload,
         if raw.info['meas_date'] is None else raw.info['meas_date']
     raw.set_meas_date(meas_date.replace(
         *description[['year', 'month', 'day']]))
-    
     # read info relevant for preprocessing from raw without loading it
     d = {
         'age': int(age),
