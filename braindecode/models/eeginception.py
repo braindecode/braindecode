@@ -1,6 +1,7 @@
 # Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
+from math import prod
 
 import torch.nn.functional as F
 
@@ -154,29 +155,41 @@ class EEGInception(nn.Sequential):
 
         self.add_module("final_block", nn.Sequential(
             nn.Conv2d(
+                n_concat_filters,
+                n_concat_filters // 2,
+                (1, 8),
                 padding="same",
                 bias=False
             ),
-            nn.BatchNorm2d(n_filters * 3 // 2,
+            nn.BatchNorm2d(n_concat_filters // 2,
                            momentum=self.alpha_momentum),
             activation,
             nn.AvgPool2d((1, self.pooling_sizes[2])),
             nn.Dropout(self.drop_prob),
 
             nn.Conv2d(
+                n_concat_filters // 2,
+                n_concat_filters // 4,
+                (1, 4),
                 padding="same",
                 bias=False
             ),
-            nn.BatchNorm2d(n_filters * len(scales_samples) // 4,
+            nn.BatchNorm2d(n_concat_filters // 4,
                            momentum=self.alpha_momentum),
             activation,
             nn.AvgPool2d((1, self.pooling_sizes[3])),
             nn.Dropout(self.drop_prob),
         ))
 
+        spatial_dim_last_layer = input_window_samples // prod(self.pooling_sizes)
+        n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
+
         self.add_module("classification", nn.Sequential(
             nn.Flatten(),
-            nn.Linear(int(int(input_window_samples / 4) / 4) * 28, self.n_classes),
+            nn.Linear(
+                spatial_dim_last_layer * n_channels_last_layer,
+                self.n_classes
+            ),
             nn.Softmax(1)
         ))
 
