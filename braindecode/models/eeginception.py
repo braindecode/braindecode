@@ -15,9 +15,9 @@ def _transpose_to_b_1_c_0(x):
 
 
 class EEGInception(nn.Sequential):
-    """EEG Inception model from Santamaría-Vázquez, E. et al 2020.
+    """EEG Inception.
 
-    EEG Inception for ERP-based classification described in [Santamaria2020]]_.
+    EEG Inception for ERP-based classification described in [Santamaria2020]_.
     The code for the paper and this model is also available at [Santamaria2020]_
     and an adaptation for PyTorch [2]_.
 
@@ -29,6 +29,7 @@ class EEGInception(nn.Sequential):
 
     One advantage of the EEG-Inception block is that it allows a network
     to learn simultaneous components of low and high frequency associated with the signal.
+    The winners of BEETL Competition/NeurIps 2021 used parts of the model [beetl]_.
 
     The model is fully described in [Santamaria2020]_.
 
@@ -44,14 +45,14 @@ class EEGInception(nn.Sequential):
     n_classes : int
         Number of classes.
     input_size_ms : int
-        Size of the input, in milliseconds. Set to 1000 in [1]_.
+        Size of the input, in milliseconds. Set to 1000 in [Santamaria2020]_.
     sfreq : float
         EEG sampling frequency.
     drop_prob : float
         Dropout rate inside all the network.
     scales_time: list(int)
         Windows for inception block, must be a list with proportional values of
-        the input_size_ms, ms.
+        the input_size_ms.
         According to the authors: temporal scale (ms) of the convolutions
         on each Inception module.
         This parameter determines the kernel sizes of the filters.
@@ -61,6 +62,10 @@ class EEGInception(nn.Sequential):
         Activation function, default: ELU activation.
     batch_norm_alpha: float
         Momentum for BatchNorm2d.
+    depth_multiplier: int
+        Depth multiplier for the depthwise convolution.
+    pooling_sizes: list(int)
+        Pooling sizes for the inception block.
 
     References
     ----------
@@ -72,6 +77,15 @@ class EEGInception(nn.Sequential):
        Online: http://dx.doi.org/10.1109/TNSRE.2020.3048106
     .. [2]  Grifcc. Implementation of the EEGInception in torch (2022).
        Online: https://github.com/Grifcc/EEG/tree/90e412a407c5242dfc953d5ffb490bdb32faf022
+    .. [beetl]_ Wei, X., Faisal, A.A., Grosse-Wentrup, M., Gramfort, A., Chevallier, S.,
+       Jayaram, V., Jeunet, C., Bakas, S., Ludwig, S., Barmpas, K., Bahri, M., Panagakis,
+       Y., Laskaris, N., Adamos, D.A., Zafeiriou, S., Duong, W.C., Gordon, S.M.,
+       Lawhern, V.J., Śliwowski, M., Rouanne, V. &amp; Tempczyk, P.. (2022).
+       2021 BEETL Competition: Advancing Transfer Learning for Subject Independence &amp;
+       Heterogenous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
+       Demonstrations Track</i>, in <i>Proceedings of Machine Learning Research</i>
+       176:205-219 Available from https://proceedings.mlr.press/v176/wei22a.html.
+
     """
 
     def __init__(
