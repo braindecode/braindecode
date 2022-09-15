@@ -81,7 +81,7 @@ class EEGInception(nn.Sequential):
             input_window_samples=1000,
             sfreq=128,
             drop_prob=0.5,
-            scales_samples=(64, 32, 16),
+            scales_samples_s=(0.5, 0.25, 0.125),
             n_filters=8,
             activation=nn.ELU(),
             batch_norm_alpha=0.01,
@@ -94,7 +94,9 @@ class EEGInception(nn.Sequential):
         self.drop_prob = drop_prob
         self.sfreq = sfreq
         self.n_filters = n_filters
-        self.scales_samples = scales_samples
+        self.scales_samples_s = scales_samples_s
+        self.scales_samples = tuple(
+            int(size_s * self.sfreq) for size_s in self.scales_samples_s)
         self.activation = activation
         self.alpha_momentum = batch_norm_alpha
 
@@ -139,7 +141,6 @@ class EEGInception(nn.Sequential):
         self.add_module("avg_pool_2", nn.AvgPool2d((2, 1)))
 
         self.add_module("final_block", nn.Sequential(
-            CustomPad((0, 0, 4, 3)),
             nn.Conv2d(
                 padding="same",
                 bias=False
