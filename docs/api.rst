@@ -56,6 +56,8 @@ Models
 
     ShallowFBCSPNet
     Deep4Net
+    EEGInception
+    EEGITNet
     EEGNetv1
     EEGNetv4
     HybridNet
@@ -68,6 +70,7 @@ Models
     TIDNet
     get_output_shape
     TimeDistributed
+
 
 Training
 ========
