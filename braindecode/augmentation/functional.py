@@ -74,29 +74,29 @@ def sign_flip(X, y):
     return -X, y
 
 
-def _new_random_fft_phase_odd(n, device, random_state):
+def _new_random_fft_phase_odd(batch_size, n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
-        2j * np.pi * rng.random((n - 1) // 2)
+        2j * np.pi * rng.random((batch_size, (n - 1) // 2))
     ).to(device)
     return torch.cat([
-        torch.as_tensor([0.0], device=device),
+        torch.zeros((batch_size, 1), device=device),
         random_phase,
         -torch.flip(random_phase, [-1])
-    ])
+    ], dim=-1)
 
 
-def _new_random_fft_phase_even(n, device, random_state):
+def _new_random_fft_phase_even(batch_size, n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
-        2j * np.pi * rng.random(n // 2 - 1)
+        2j * np.pi * rng.random((batch_size, n // 2 - 1))
     ).to(device)
     return torch.cat([
-        torch.as_tensor([0.0], device=device),
+        torch.zeros((batch_size, 1), device=device),
         random_phase,
-        torch.as_tensor([0.0], device=device),
+        torch.zeros((batch_size, 1), device=device),
         -torch.flip(random_phase, [-1])
-    ])
+    ], dim=-1)
 
 
 _new_random_fft_phase = {
@@ -166,10 +166,12 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
         device = f.device
     n = f.shape[-1]
     random_phase = _new_random_fft_phase[n % 2](
+        f.shape[0],
         n,
         device=device,
         random_state=random_state
     )
+    random_phase = torch.permute(torch.tile(random_phase, (f.shape[-2], 1, 1)), (1, 0, 2))
     if isinstance(eps, torch.Tensor):
         eps = eps.to(device)
     f_shifted = f * torch.exp(eps * random_phase)
