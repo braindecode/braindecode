@@ -171,7 +171,10 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
         device=device,
         random_state=random_state
     )
-    random_phase = torch.permute(torch.tile(random_phase, (f.shape[-2], 1, 1)), (1, 0, 2))
+    random_phase = torch.permute(
+        torch.tile(random_phase, (f.shape[-2], 1, 1)),
+        (1, 0, 2)
+    )
     if isinstance(eps, torch.Tensor):
         eps = eps.to(device)
     f_shifted = f * torch.exp(eps * random_phase)
