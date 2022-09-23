@@ -34,6 +34,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Bugfix ft_surrogate :func:`braindecode.augmentation.functional.ft_surrogate` (:gh:`409` by `Cedric Rommel`_ and `Martin Wimpff`_)
 
 API changes
 ~~~~~~~~~~~
