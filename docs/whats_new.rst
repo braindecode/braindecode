@@ -34,7 +34,7 @@ Enhancements
 
 Bugs
 ~~~~
-- Bugfix ft_surrogate :func:`braindecode.augmentation.functional.ft_surrogate` (:gh:`409` by `Cedric Rommel`_ and `Martin Wimpff`_)
+- Bug fix :func:`braindecode.augmentation.functional.ft_surrogate` and add option to sample independently per-channel (:gh:`409` by `Martin Wimpff`_ and `Cedric Rommel`_)
 
 API changes
 ~~~~~~~~~~~
