@@ -307,7 +307,7 @@ from skorch.callbacks import Checkpoint, EarlyStopping, EpochScoring
 from braindecode import EEGClassifier
 
 lr = 5e-3
-batch_size = 512
+batch_size = 128  # 512 if data large enough
 n_epochs = 25
 num_workers = 0 if n_jobs <= 1 else n_jobs
 
