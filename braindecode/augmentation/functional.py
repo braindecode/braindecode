@@ -74,27 +74,27 @@ def sign_flip(X, y):
     return -X, y
 
 
-def _new_random_fft_phase_odd(batch_size, n, device, random_state):
+def _new_random_fft_phase_odd(batch_size, c, n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
-        2j * np.pi * rng.random((batch_size, (n - 1) // 2))
+        2j * np.pi * rng.random((batch_size, c, (n - 1) // 2))
     ).to(device)
     return torch.cat([
-        torch.zeros((batch_size, 1), device=device),
+        torch.zeros((batch_size, c, 1), device=device),
         random_phase,
         -torch.flip(random_phase, [-1])
     ], dim=-1)
 
 
-def _new_random_fft_phase_even(batch_size, n, device, random_state):
+def _new_random_fft_phase_even(batch_size, c, n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
-        2j * np.pi * rng.random((batch_size, n // 2 - 1))
+        2j * np.pi * rng.random((batch_size, c, n // 2 - 1))
     ).to(device)
     return torch.cat([
-        torch.zeros((batch_size, 1), device=device),
+        torch.zeros((batch_size, c, 1), device=device),
         random_phase,
-        torch.zeros((batch_size, 1), device=device),
+        torch.zeros((batch_size, c, 1), device=device),
         -torch.flip(random_phase, [-1])
     ], dim=-1)
 
@@ -105,7 +105,13 @@ _new_random_fft_phase = {
 }
 
 
-def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
+def _ft_surrogate(
+    x=None,
+    f=None,
+    eps=1,
+    channel_indep=False,
+    random_state=None
+):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -144,6 +150,10 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
     eps: float, optional
         Float between 0 and 1 setting the range over which the phase
         pertubation is uniformly sampled: [0, `eps` * 2 * `pi`]. Defaults to 1.
+    channel_indep : bool, optional
+        Whether to sample phase perturbations independently for each channel or
+        not. It is advised to set it to False when spatial information is
+        important for the task, like in BCI. Default False.
     random_state: int | numpy.random.Generator, optional
         By default None.
 
@@ -167,14 +177,13 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
     n = f.shape[-1]
     random_phase = _new_random_fft_phase[n % 2](
         f.shape[0],
+        f.shape[-2] if channel_indep else 1,
         n,
         device=device,
         random_state=random_state
     )
-    random_phase = torch.permute(
-        torch.tile(random_phase, (f.shape[-2], 1, 1)),
-        (1, 0, 2)
-    )
+    if not channel_indep:
+        random_phase = torch.tile(random_phase, (1, f.shape[-2], 1))
     if isinstance(eps, torch.Tensor):
         eps = eps.to(device)
     f_shifted = f * torch.exp(eps * random_phase)
@@ -182,7 +191,13 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
     return shifted.real.float()
 
 
-def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
+def ft_surrogate(
+    X,
+    y,
+    phase_noise_magnitude,
+    channel_indep,
+    random_state=None
+):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -198,6 +213,10 @@ def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
         Float between 0 and 1 setting the range over which the phase
         pertubation is uniformly sampled:
         [0, `phase_noise_magnitude` * 2 * `pi`].
+    channel_indep : bool
+        Whether to sample phase perturbations independently for each channel or
+        not. It is advised to set it to False when spatial information is
+        important for the task, like in BCI.
     random_state: int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
 
@@ -218,6 +237,7 @@ def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
     transformed_X = _ft_surrogate(
         x=X,
         eps=phase_noise_magnitude,
+        channel_indep=channel_indep,
         random_state=random_state
     )
     return transformed_X, y
