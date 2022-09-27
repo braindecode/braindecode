@@ -221,7 +221,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
 # Next, we define the different hyperparameters that we want to compare:
 
 PRELOAD = [True, False]  # True -> eager loading; False -> lazy loading
-N_RECORDINGS = [10]  # Recording ids to load from the TUH Abnormal corpus
+N_RECORDINGS = [10]  # Number of recordings to load from the TUH Abnormal corpus
 WINDOW_LEN_S = [2, 4, 15]  # Window length, in seconds
 N_EPOCHS = [2]  # Number of epochs to train the model for
 BATCH_SIZE = [64, 256]  # Training minibatch size
