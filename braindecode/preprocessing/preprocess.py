@@ -330,8 +330,7 @@ def exponential_moving_standardize(
         init_std = np.std(
             data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
-        init_block_standardized = (
-            data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
+        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
@@ -400,9 +399,7 @@ def zscore(data):
     return zscored
 
 
-@deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda ' +
-                  'function instead.\nfor instance:  Preprocessor(' +
-                  'lambda data, factor: np.multiply(data, factor), factor=1e6)')
+@deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda function instead.')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
 
