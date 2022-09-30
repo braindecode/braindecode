@@ -34,7 +34,9 @@ Enhancements
 
 Bugs
 ~~~~
+- Fixing parameter `subject_ids` to `recoding_ids` in TUHAbnormal example (:gh:`402` by `Bruno Aristimunha`_ and `Lukas Gemein`_)
 - Bug fix :func:`braindecode.augmentation.functional.ft_surrogate` and add option to sample independently per-channel (:gh:`409` by `Martin Wimpff`_ and `Cedric Rommel`_)
+
 
 API changes
 ~~~~~~~~~~~

@@ -68,15 +68,17 @@ torch.set_num_threads(N_JOBS)  # Sets the available number of threads
 # Each one of these steps will be timed, so we can report the total time taken
 # to prepare the data and train the model.
 
-def load_example_data(preload, window_len_s, n_subjects=10):
+def load_example_data(preload, window_len_s, n_recordings=10):
     """Create windowed dataset from subjects of the TUH Abnormal dataset.
 
     Parameters
     ----------
     preload: bool
         If True, use eager loading, otherwise use lazy loading.
-    n_subjects: int
-        Number of subjects to load.
+    window_len_s: int
+        Window length in seconds.
+    n_recordings: list of int
+        Number of recordings to load.
 
     Returns
     -------
@@ -88,9 +90,12 @@ def load_example_data(preload, window_len_s, n_subjects=10):
         sampling rate. The following assumes that the files have already been
         resampled to a common sampling rate.
     """
-    subject_ids = list(range(n_subjects))
+
+    recording_ids = list(range(n_recordings))
+
     ds = TUHAbnormal(
-        TUH_PATH, subject_ids=subject_ids, target_name='pathological',
+        TUH_PATH, recording_ids=recording_ids,
+        target_name='pathological',
         preload=preload)
 
     fs = ds.datasets[0].raw.info['sfreq']
@@ -216,7 +221,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
 # Next, we define the different hyperparameters that we want to compare:
 
 PRELOAD = [True, False]  # True -> eager loading; False -> lazy loading
-N_SUBJECTS = [10]  # Number of recordings to load from the TUH Abnormal corpus
+N_RECORDINGS = [10]  # Number of recordings to load from the TUH Abnormal corpus
 WINDOW_LEN_S = [2, 4, 15]  # Window length, in seconds
 N_EPOCHS = [2]  # Number of epochs to train the model for
 BATCH_SIZE = [64, 256]  # Training minibatch size
@@ -239,15 +244,15 @@ TUH_PATH = ('/storage/store/data/tuh_eeg/www.isip.piconepress.com/projects/'
 # we set above to evaluate their execution time:
 
 all_results = list()
-for (i, preload, n_subjects, win_len_s, n_epochs, batch_size, model_kind,
+for (i, preload, n_recordings, win_len_s, n_epochs, batch_size, model_kind,
         num_workers, pin_memory, cuda) in product(
-            range(N_REPETITIONS), PRELOAD, N_SUBJECTS, WINDOW_LEN_S, N_EPOCHS,
+            range(N_REPETITIONS), PRELOAD, N_RECORDINGS, WINDOW_LEN_S, N_EPOCHS,
             BATCH_SIZE, MODEL, NUM_WORKERS, PIN_MEMORY, CUDA):
 
     results = {
         'repetition': i,
         'preload': preload,
-        'n_subjects': n_subjects,
+        'n_recordings': n_recordings,
         'win_len_s': win_len_s,
         'n_epochs': n_epochs,
         'batch_size': batch_size,
@@ -260,7 +265,7 @@ for (i, preload, n_subjects, win_len_s, n_epochs, batch_size, model_kind,
 
     # Load the dataset
     data_loading_start = time.time()
-    dataset = load_example_data(preload, win_len_s, n_subjects=n_subjects)
+    dataset = load_example_data(preload, win_len_s, n_recordings=n_recordings)
     data_loading_end = time.time()
 
     # Create the data loader
