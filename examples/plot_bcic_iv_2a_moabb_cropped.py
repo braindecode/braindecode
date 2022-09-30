@@ -106,9 +106,6 @@ preprocess(dataset, preprocessors)
 # Create model and compute windowing parameters
 # ---------------------------------------------
 #
-
-######################################################################
-
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
 # know the receptive field of the network to know how large the window
@@ -191,9 +188,9 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 ######################################################################
 # Cut the data into windows
 # -------------------------
-######################################################################
-# In contrast to trialwise decoding, we have to supply an explicit window size and
-# window stride to the ``create_windows_from_events`` function.
+# In contrast to trialwise decoding, we have to supply an explicit
+# window size and window stride to the ``create_windows_from_events``
+# function.
 #
 
 from braindecode.preprocessing import create_windows_from_events
@@ -289,12 +286,9 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 
 ######################################################################
 # Plot Results
-# ------------
-#
-######################################################################
-
+# ----------------
 # This is again the same code as in trialwise decoding.
-#
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # .. note::
 #
 #     Note that we drop further in the classification error and

@@ -4,7 +4,7 @@ Searching the best data augmentation on BCIC IV 2a Dataset
 
 This tutorial shows how to search data augmentations using braindecode.
 Indeed, it is known that the best augmentation to use often dependent on the task
-or phenomenon studied. Here we follow the methodology proposed in [1]_ on the
+or phenomenon studied. Here we follow the methodology proposed in [1] on the
 openly available BCI IV 2a Dataset.
 
 
@@ -24,6 +24,17 @@ who demonstrate the importance of the selection the right transformation and
 strength for each different type of task considered.
 Here, we use the augmentation module present in braindecode in the context of
 trialwise decoding with the BCI IV 2a dataset.
+
+References
+-----------
+
+.. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
+       Data augmentation for learning predictive models on EEG:
+       a systematic comparison. https://arxiv.org/abs/2206.14483
+
+.. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
+       Uncovering the structure of clinical EEG signals with self-supervised learning.
+       Journal of Neural Engineering, 18(4), 046020.
 
 .. contents:: This example covers:
    :local:
@@ -109,7 +120,7 @@ eval_set = splitted['session_E']
 
 ######################################################################
 # Defining a list of transforms
-# --------------------
+# ------------------------------
 #
 # In this tutorial, we will use three categories of augmentations.
 # This categorization has been proposed by [1]_ to explain and aggregate
@@ -199,7 +210,7 @@ from braindecode.augmentation import AugmentedDataLoader
 if cuda:
     model.cuda()
 
-######################################################################
+##########################################################################
 # The model is now trained as in the trial-wise example. The
 # ``AugmentedDataLoader`` is used as the train iterator and the list of
 # transforms are passed as arguments.
@@ -233,7 +244,7 @@ clf = EEGClassifier(
 # generator of the training.
 
 train_X = SliceDataset(train_set, idx=0)
-train_y = array([y for y in SliceDataset(train_set, idx=1)])
+train_y = array(list(SliceDataset(train_set, idx=1)))
 
 #######################################################################
 #   Given the trialwise approach, here we use the KFold approach and
@@ -290,15 +301,3 @@ eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)
 score = search.score(eval_X, eval_y)
 print(f'Eval accuracy is {score * 100:.2f}%.')
-
-# References
-# ----------
-#
-# .. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
-#        Data augmentation for learning predictive models on EEG:
-#        a systematic comparison.
-#        https://arxiv.org/abs/2206.14483
-#
-# .. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
-#        Uncovering the structure of clinical EEG signals with self-supervised learning.
-#        Journal of Neural Engineering, 18(4), 046020.

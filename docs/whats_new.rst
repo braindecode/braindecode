@@ -23,19 +23,23 @@ Current (0.7.dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding EEG-Inception Network :class:`braindecode.models.EEGInception` (:gh:`390` by `Bruno Aristimunha`_ and `Cedric Rommel`_)
+- Adding EEG-ITNet Network :class:`braindecode.models.EEGITNet` (:gh:`400` by `Ghaith Bouallegue`_)
 - Allowing target_names as list for BaseDataset (:gh:`371` by `Mohammad Javad D`_ and `Robin Tibor Schirrmeister`_)
 - Adding tutorial with GridSearchCV for data augmentation on the BCIC IV 2a with module `braindecode.augmentation` (:gh:`389` by `Bruno Aristimunha`_ and `Cedric Rommel`_)
 - Adding tutorial with GridSearchCV to exemplify how to tune hyperparameters, for instance with the learning rate (:gh:`349` by `Lukas Gemein`_ and by `Bruno Aristimunha`_)
 - Adding tutorial with a Unified Validation sheme (:gh:`378` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
+- Adding `verbose` parameter to :func:`braindecode.preprocessing.create_windows_from_events`, :func:`braindecode.preprocessing.create_windows_from_target_channels`, and :func:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`391` by `Lukas Gemein`_)
+- Enable augmentation on GPU within :class:`AugmentedDataloader` via a new `device` parameter (:gh:`406` by `Martin Wimpff`_, `Bruno Aristimunha`_ and `Cedric Rommel`_)
 
 Bugs
 ~~~~
 - Fixing parameter `subject_ids` to `recoding_ids` in TUHAbnormal example (:gh:`402` by `Bruno Aristimunha`_ and `Lukas Gemein`_)
+- Bug fix :func:`braindecode.augmentation.functional.ft_surrogate` and add option to sample independently per-channel (:gh:`409` by `Martin Wimpff`_ and `Cedric Rommel`_)
 
 
 API changes
 ~~~~~~~~~~~
-
 - Renaming the method `get_params` to `get_augmentation_params` in augmentation classes. This makes the Transform module compatible with scikit-learn cloning mechanism (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
 
 .. _changes_0_6_0:
@@ -144,3 +148,4 @@ Authors
 .. _Mohammad Javad D: https://github.com/MohammadJavadD
 .. _Bruno Aristimunha: https://github.com/bruAristimunha
 .. _Martin Wimpff: https://github.com/martinwimpff
+.. _Ghaith Bouallegue: https://github.com/GhBlg

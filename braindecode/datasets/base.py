@@ -510,7 +510,6 @@ class BaseConcatDataset(ConcatDataset):
                 window_kwargs.json (if this is a windowed dataset)
                 window_preproc_kwargs.json  (if windows were preprocessed)
                 target_name.json (if target_name is not None and dataset is raw)
-            ...
 
         Parameters
         ----------

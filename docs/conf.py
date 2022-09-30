@@ -52,6 +52,7 @@ extensions = [
     'sphinx.ext.ifconfig',
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
+    'sphinx.ext.napoleon',
     'sphinx_gallery.gen_gallery',
     'sphinx.ext.viewcode',
     'numpydoc',

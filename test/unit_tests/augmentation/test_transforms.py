@@ -103,11 +103,13 @@ def test_sign_flip_transform(time_aranged_batch, probability):
     (True, 1),
     (True, 0.5),
 ])
+@pytest.mark.parametrize("channel_indep", [False, True])
 @pytest.mark.parametrize("diff", [False, True])
 def test_ft_surrogate_transforms(
     random_batch,
     even,
     phase_noise_magnitude,
+    channel_indep,
     diff,
 ):
     X, y = random_batch
@@ -121,6 +123,7 @@ def test_ft_surrogate_transforms(
     transform = FTSurrogate(
         probability=1,
         phase_noise_magnitude=phase_noise_magnitude,
+        channel_indep=channel_indep,
     )
     common_tranform_assertions(
         random_batch,
