@@ -400,7 +400,9 @@ def zscore(data):
     return zscored
 
 
-@deprecated(extra='will be removed in 0.7.0. Use numpy.multiply instead.')
+@deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda ' +
+                  'function instead.\nfor instance:  Preprocessor(' +
+                  'lambda data, factor: np.multiply(data, factor), factor=1e6)')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
 
