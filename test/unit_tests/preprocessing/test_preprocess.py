@@ -183,8 +183,10 @@ def test_zscore_windows(windows_concat_ds):
 
 
 def test_scale_deprecated():
-    msg = 'Function scale is deprecated; will be removed in 0.7.0. Use ' \
-          'numpy.multiply instead.'
+    msg = 'will be removed in 0.8.0. Use numpy.multiply inside a lambda ' \
+          'function instead.\nfor instance:  Preprocessor(' \
+          'lambda data, factor: np.multiply(data, factor), factor=1e6)'
+
     with pytest.warns(FutureWarning, match=msg):
         deprecated_scale(np.random.rand(2, 2), factor=2)
 
