@@ -68,12 +68,13 @@ dataset = SleepPhysionet(
 # a lowpass filter. Since the Sleep Physionet data is already sampled at 100 Hz
 # we don't need to apply resampling.
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
+from braindecode.preprocessing.preprocess import preprocess, Preprocessor
+from numpy import multiply
 
 high_cut_hz = 30
 
 preprocessors = [
-    Preprocessor(scale, factor=1e6, apply_on_array=True),
+    Preprocessor(lambda data, factor: multiply(data, factor), factor=1e6),  # Convert from V to uV
     Preprocessor('filter', l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs)
 ]
 
