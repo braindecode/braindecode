@@ -3,6 +3,7 @@ Some predefined network architectures for EEG decoding.
 """
 from .eegitnet import EEGITNet
 from .deep4 import Deep4Net
+from .deepsleepnet import DeepSleepNet
 from .eegnet import EEGNetv4, EEGNetv1
 from .hybrid import HybridNet
 from .shallow_fbcsp import ShallowFBCSPNet

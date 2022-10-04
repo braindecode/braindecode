@@ -1,0 +1,248 @@
+import torch
+import torch.nn as nn
+
+
+class small_CNN(nn.Module):  # smaller filter sizes to learn temporal information
+    def __init__(
+        self,
+        n_channels,
+        sfreq,
+    ):
+
+        super().__init__()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=1,
+                out_channels=64,
+                kernel_size=(1, 50),
+                stride=(1, 6),
+                padding=(0, 22),
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=64),
+            nn.ReLU(),
+        )
+        self.pool1 = nn.MaxPool2d(kernel_size=(1, 8), stride=(1, 8), padding=(0, 2))
+        self.dropout = nn.Dropout(p=0.5)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=64,
+                out_channels=128,
+                kernel_size=(1, 8),
+                stride=1,
+                padding="same",
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=128),
+            nn.ReLU(),
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=128,
+                out_channels=128,
+                kernel_size=(1, 8),
+                stride=1,
+                padding="same",
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=128),
+            nn.ReLU(),
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=128,
+                out_channels=128,
+                kernel_size=(1, 8),
+                stride=1,
+                padding="same",
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=128),
+            nn.ReLU(),
+        )
+        self.pool2 = nn.MaxPool2d(kernel_size=(1, 4), stride=(1, 4), padding=(0, 1))
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.dropout(self.pool1(x))
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.pool2(x)
+        return x
+
+
+class large_CNN(nn.Module):  # larger filter sizes to learn frequency information
+    def __init__(
+        self,
+        n_channels,
+        sfreq,
+    ):
+
+        super().__init__()
+
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=1,
+                out_channels=64,
+                kernel_size=(1, 400),
+                stride=(1, 50),
+                padding=(0, 175),
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=64),
+            nn.ReLU(),
+        )
+        self.pool1 = nn.MaxPool2d(kernel_size=(1, 4), stride=(1, 4))
+        self.dropout = nn.Dropout(p=0.5)
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=64,
+                out_channels=128,
+                kernel_size=(1, 6),
+                stride=1,
+                padding="same",
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=128),
+            nn.ReLU(),
+        )
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=128,
+                out_channels=128,
+                kernel_size=(1, 6),
+                stride=1,
+                padding="same",
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=128),
+            nn.ReLU(),
+        )
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=128,
+                out_channels=128,
+                kernel_size=(1, 6),
+                stride=1,
+                padding="same",
+                bias=False,
+            ),
+            nn.BatchNorm2d(num_features=128),
+            nn.ReLU(),
+        )
+        self.pool2 = nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 2), padding=(0, 1))
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.dropout(self.pool1(x))
+        x = self.conv2(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.pool2(x)
+        return x
+
+
+class BiLSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers):
+        super(BiLSTM, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(
+            input_size,
+            hidden_size,
+            num_layers,
+            batch_first=True,
+            dropout=0.5,
+            bidirectional=True,
+        )
+
+    def forward(self, x):
+        # set initial hidden and cell states
+        h0 = torch.zeros(
+            self.num_layers * 2, x.size(0), self.hidden_size
+        )  # RuntimeError: Input and hidden tensors are not at the same device
+        c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size)
+
+        # forward propagate LSTM
+        out, _ = self.lstm(x, (h0, c0))
+        return out
+
+
+class DeepSleepNet(nn.Module):
+    """Sleep staging architecture from Supratak et al 2017.
+
+    Convolutional neural network and bidirectional-Long Short-Term
+    for sleep staging described in [Supratak2017]_.
+
+    Parameters
+    ----------
+    n_channels : int
+        Number of EEG channels.
+    sfreq : float
+        EEG sampling frequency.
+    layers_returned : str
+        If equals to "classifier", return the prediction of the final layer,
+        If equals to "features, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If equals to "all",
+        return both the features and the prediction.
+
+    References
+    ----------
+    .. [Supratak2017] Supratak, A., Dong, H., Wu, C., & Guo, Y. (2017).
+       DeepSleepNet: A model for automatic sleep stage scoring based
+       on raw single-channel EEG. IEEE Transactions on Neural Systems
+       and Rehabilitation Engineering, 25(11), 1998-2008.
+    """
+
+    def __init__(
+        self,
+        n_channels,
+        sfreq,
+        n_classes=5,
+    ):
+        super().__init__()
+        self.n_channels = n_channels
+        self.cnn1 = small_CNN(n_channels, sfreq)
+        self.cnn2 = large_CNN(n_channels, sfreq)
+        self.dropout = nn.Dropout(0.5)
+        self.bilstm = BiLSTM(
+            input_size=3072 * self.n_channels, hidden_size=512, num_layers=2
+        )
+        self.fc = nn.Linear(3072 * self.n_channels, 1024)
+        self.final_layer = nn.Linear(1024, n_classes)
+
+    def forward(self, x):
+        """
+        Forward pass.
+        Parameters
+        ----------
+        x: torch.Tensor
+            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+        """
+        x1 = self.cnn1(x)
+        x2 = self.cnn2(x)
+        x = torch.cat((x1, x2), dim=3)
+        x = x.view(-1, self.num_flat_features(x))
+        x = x.unsqueeze(1)
+        x = self.dropout(x)
+        temp = x.clone()
+        temp = self.fc(temp)
+        x = self.bilstm(x)
+        x = torch.add(x, temp)
+        x = self.dropout(x)
+        feats = x.squeeze()
+
+        if self.layers_returned == "classifier":
+            return self.fc(feats)
+        elif self.layers_returned == "features":
+            return feats
+        elif self.layers_returned == "all":
+            return feats, self.fc(feats)
+
+    def num_flat_features(self, x):
+        size = x.size()[1:]  # all dimensions except the batch dimension
+        num_features = 1
+        for s in size:
+            num_features *= s
+        return num_features

@@ -13,7 +13,7 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    EEGITNet, EEGInception, TIDNet)
+    DeepSleepNet, EEGITNet, EEGInception, TIDNet)
 
 from braindecode.util import set_random_seeds
 
