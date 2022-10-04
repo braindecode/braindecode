@@ -4,20 +4,20 @@
 
 import numpy as np
 
-import torch
+from torch import nn
 import torch.nn.functional as F
 
 from ..util import np_to_th
 
 
-class Ensure4d(torch.nn.Module):
+class Ensure4d(nn.Module):
     def forward(self, x):
-        while(len(x.shape) < 4):
+        while len(x.shape) < 4:
             x = x.unsqueeze(-1)
         return x
 
 
-class Expression(torch.nn.Module):
+class Expression(nn.Module):
     """Compute given expression on forward pass.
 
     Parameters
@@ -51,7 +51,7 @@ class Expression(torch.nn.Module):
         )
 
 
-class AvgPool2dWithConv(torch.nn.Module):
+class AvgPool2dWithConv(nn.Module):
     """
     Compute average pooling using a convolution, to have the dilation parameter.
 
@@ -114,7 +114,7 @@ class AvgPool2dWithConv(torch.nn.Module):
         return pooled
 
 
-class IntermediateOutputWrapper(torch.nn.Module):
+class IntermediateOutputWrapper(nn.Module):
     """Wraps network model such that outputs of intermediate layers can be returned.
     forward() returns list of intermediate activations in a network during forward pass.
 
@@ -152,3 +152,40 @@ class IntermediateOutputWrapper(torch.nn.Module):
             if name in self._to_select:
                 o.append(x)
         return o
+
+
+class TimeDistributed(nn.Module):
+    """Apply module on multiple windows.
+
+    Apply the provided module on a sequence of windows and return their
+    concatenation.
+    Useful with sequence-to-prediction models (e.g. sleep stager which must map
+    a sequence of consecutive windows to the label of the middle window in the
+    sequence).
+
+    Parameters
+    ----------
+    module : nn.Module
+        Module to be applied to the input windows. Must accept an input of
+        shape (batch_size, n_channels, n_times).
+    """
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, x):
+        """
+        Parameters
+        ----------
+        x : torch.Tensor
+            Sequence of windows, of shape (batch_size, seq_len, n_channels,
+            n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Shape (batch_size, seq_len, output_size).
+        """
+        b, s, c, t = x.shape
+        out = self.module(x.view(b * s, c, t))
+        return out.view(b, s, -1)

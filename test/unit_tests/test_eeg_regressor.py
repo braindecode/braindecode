@@ -1,9 +1,13 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
 
+import pytest
 import numpy as np
 import torch
+from sklearn.base import clone
+from skorch.callbacks import LRScheduler
 from skorch.utils import to_tensor
 from torch import optim
 from torch.nn.functional import nll_loss
@@ -70,3 +74,75 @@ def test_cropped_predict_and_predict_proba():
     # for cropped decoding regressor returns value for each trial (average over all crops)
     np.testing.assert_array_equal(preds.mean(-1), clf.predict(MockDataset()))
     np.testing.assert_array_equal(preds.mean(-1), clf.predict_proba(MockDataset()))
+
+
+def test_cropped_predict_and_predict_proba_not_aggregate_predictions():
+    preds = np.array(
+        [
+            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
+            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
+            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
+            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
+        ]
+    )
+    clf = EEGRegressor(
+        MockModule(preds),
+        cropped=True,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=32,
+        aggregate_predictions=False
+    )
+    clf.initialize()
+    # for cropped decoding regressor returns value for each trial (average over all crops)
+    np.testing.assert_array_equal(preds, clf.predict(MockDataset()))
+    np.testing.assert_array_equal(preds, clf.predict_proba(MockDataset()))
+
+
+def test_predict_trials():
+    preds = np.array(
+        [
+            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
+            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
+            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
+            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
+        ]
+    )
+    clf = EEGRegressor(
+        MockModule(preds),
+        cropped=False,
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=32
+    )
+    clf.initialize()
+    with pytest.warns(UserWarning, match="This method was designed to predict "
+                                         "trials in cropped mode."):
+        clf.predict_trials(MockDataset(), return_targets=False)
+
+
+def test_eeg_regressor_clonable():
+    preds = np.array(
+        [
+            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
+            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
+            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
+            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
+        ]
+    )
+    clf = EEGRegressor(
+        MockModule(preds),
+        cropped=False,
+        callbacks=[
+            "accuracy",
+            ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=1))],
+        criterion=CroppedLoss,
+        criterion__loss_function=nll_loss,
+        optimizer=optim.Adam,
+        batch_size=32
+    )
+    clone(clf)
+    clf.initialize()
+    clone(clf)

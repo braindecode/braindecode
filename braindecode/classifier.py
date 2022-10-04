@@ -1,7 +1,10 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD (3-clause)
+
+import warnings
 
 import numpy as np
 from sklearn.metrics import get_scorer
@@ -9,8 +12,12 @@ from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
 from skorch.classifier import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
+import torch
 
-from .training.scoring import PostEpochTrainScoring, CroppedTrialEpochScoring
+from .training.scoring import (PostEpochTrainScoring,
+                               CroppedTrialEpochScoring,
+                               CroppedTimeSeriesEpochScoring,
+                               predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
@@ -44,60 +51,70 @@ class EEGClassifier(NeuralNetClassifier):
         Defines whether train dataset will be shuffled. As skorch does not
         shuffle the train dataset by default this one overwrites this option.
 
+    aggregate_predictions: bool (default=True)
+        Whether to average cropped predictions to obtain window predictions. Used only in the
+        cropped mode.
+
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetClassifier, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True, **kwargs):
+                 iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
         self.cropped = cropped
-        callbacks = self._parse_callbacks(callbacks)
-
+        self.aggregate_predictions = aggregate_predictions
+        self._last_window_inds_ = None
         super().__init__(*args,
                          callbacks=callbacks,
                          iterator_train__shuffle=iterator_train__shuffle,
                          **kwargs)
 
-    def _parse_callbacks(self, callbacks):
-        callbacks_list = []
-        if callbacks is not None:
-            for callback in callbacks:
-                if isinstance(callback, tuple):
-                    callbacks_list.append(callback)
-                else:
-                    assert isinstance(callback, str)
-                    scoring = get_scorer(callback)
-                    scoring_name = scoring._score_func.__name__
-                    assert scoring_name.endswith(
-                        ('_score', '_error', '_deviance', '_loss'))
-                    if (scoring_name.endswith('_score') or
-                            callback.startswith('neg_')):
-                        lower_is_better = False
-                    else:
-                        lower_is_better = True
-                    train_name = f'train_{callback}'
-                    valid_name = f'valid_{callback}'
-                    if self.cropped:
-                        # In case of cropped decoding we are using braindecode
-                        # specific scoring created for cropped decoding
-                        train_scoring = CroppedTrialEpochScoring(
-                            callback, lower_is_better, on_train=True, name=train_name
-                        )
-                        valid_scoring = CroppedTrialEpochScoring(
-                            callback, lower_is_better, on_train=False, name=valid_name
-                        )
-                    else:
-                        train_scoring = PostEpochTrainScoring(
-                            callback, lower_is_better, name=train_name
-                        )
-                        valid_scoring = EpochScoring(
-                            callback, lower_is_better, on_train=False, name=valid_name
-                        )
-                    callbacks_list.extend([
-                        (train_name, train_scoring),
-                        (valid_name, valid_scoring)
-                    ])
+    def _yield_callbacks(self):
+        # Here we parse the callbacks supplied as strings,
+        # e.g. 'accuracy', to the callbacks skorch expects
+        for name, cb, named_by_user in super()._yield_callbacks():
+            if name == 'str':
+                train_cb, valid_cb = self._parse_str_callback(cb)
+                yield train_cb
+                if self.train_split is not None:
+                    yield valid_cb
+            else:
+                yield name, cb, named_by_user
 
-        return callbacks_list
+    def _parse_str_callback(self, cb_supplied_name):
+        scoring = get_scorer(cb_supplied_name)
+        scoring_name = scoring._score_func.__name__
+        assert scoring_name.endswith(
+                        ('_score', '_error', '_deviance', '_loss'))
+        if (scoring_name.endswith('_score') or
+                cb_supplied_name.startswith('neg_')):
+            lower_is_better = False
+        else:
+            lower_is_better = True
+        train_name = f'train_{cb_supplied_name}'
+        valid_name = f'valid_{cb_supplied_name}'
+        if self.cropped:
+            # TODO: use CroppedTimeSeriesEpochScoring when time series target
+            # In case of cropped decoding we are using braindecode
+            # specific scoring created for cropped decoding
+            train_scoring = CroppedTrialEpochScoring(
+                cb_supplied_name, lower_is_better, on_train=True, name=train_name
+            )
+            valid_scoring = CroppedTrialEpochScoring(
+                cb_supplied_name, lower_is_better, on_train=False, name=valid_name
+            )
+        else:
+            train_scoring = PostEpochTrainScoring(
+                cb_supplied_name, lower_is_better, name=train_name
+            )
+            valid_scoring = EpochScoring(
+                cb_supplied_name, lower_is_better, on_train=False, name=valid_name
+            )
+        named_by_user = True
+        train_valid_callbacks = [
+            (train_name, train_scoring, named_by_user),
+            (valid_name, valid_scoring, named_by_user)
+        ]
+        return train_valid_callbacks
 
     # pylint: disable=arguments-differ
     def get_loss(self, y_pred, y_true, *args, **kwargs):
@@ -139,25 +156,25 @@ class EEGClassifier(NeuralNetClassifier):
         else:
             return iterator
 
-    def on_batch_end(self, net, X, y, training=False, **kwargs):
+    def on_batch_end(self, net, *batch, training=False, **kwargs):
         # If training is false, assume that our loader has indices for this
         # batch
         if not training:
-            cbs = self._default_callbacks + self.callbacks
             epoch_cbs = []
-            for name, cb in cbs:
-                if (cb.__class__.__name__ == 'CroppedTrialEpochScoring') and (
+            for name, cb in self.callbacks_:
+                if isinstance(cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)) and (
                         hasattr(cb, 'window_inds_')) and (not cb.on_train):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
             if len(epoch_cbs) > 0:
-                assert hasattr(self, '_last_window_inds')
+                assert self._last_window_inds_ is not None
                 for cb in epoch_cbs:
-                    cb.window_inds_.append(self._last_window_inds)
-                del self._last_window_inds
+                    cb.window_inds_.append(self._last_window_inds_)
+                self._last_window_inds_ = None
 
     def predict_with_window_inds_and_ys(self, dataset):
+        self.module.eval()
         preds = []
         i_window_in_trials = []
         i_window_stops = []
@@ -165,7 +182,8 @@ class EEGClassifier(NeuralNetClassifier):
         for X, y, i in self.get_iterator(dataset, drop_index=False):
             i_window_in_trials.append(i[0].cpu().numpy())
             i_window_stops.append(i[2].cpu().numpy())
-            preds.append(to_numpy(self.forward(X)))
+            with torch.no_grad():
+                preds.append(to_numpy(self.module.forward(X.to(self.device))))
             window_ys.append(y.cpu().numpy())
         preds = np.concatenate(preds)
         i_window_in_trials = np.concatenate(i_window_in_trials)
@@ -238,7 +256,7 @@ class EEGClassifier(NeuralNetClassifier):
         # Predictions may be already averaged in CroppedTrialEpochScoring (y_pred.shape==2).
         # However, when predictions are computed outside of CroppedTrialEpochScoring
         # we have to average predictions, hence the check if len(y_pred.shape) == 3
-        if self.cropped and len(y_pred.shape) == 3:
+        if self.cropped and self.aggregate_predictions and len(y_pred.shape) == 3:
             return y_pred.mean(axis=-1)
         else:
             return y_pred
@@ -268,3 +286,42 @@ class EEGClassifier(NeuralNetClassifier):
 
         """
         return self.predict_proba(X).argmax(1)
+
+    def predict_trials(self, X, return_targets=True):
+        """Create trialwise predictions and optionally also return trialwise
+        labels from cropped dataset.
+
+        Parameters
+        ----------
+        X: braindecode.datasets.BaseConcatDataset
+            A braindecode dataset to be predicted.
+        return_targets: bool
+            If True, additionally returns the trial targets.
+
+        Returns
+        -------
+        trial_predictions: np.ndarray
+            3-dimensional array (n_trials x n_classes x n_predictions), where
+            the number of predictions depend on the chosen window size and the
+            receptive field of the network.
+        trial_labels: np.ndarray
+            2-dimensional array (n_trials x n_targets) where the number of
+            targets depends on the decoding paradigm and can be either a single
+            value, multiple values, or a sequence.
+        """
+        if not self.cropped:
+            warnings.warn(
+                "This method was designed to predict trials in cropped mode. "
+                "Calling it when cropped is False will give the same result as "
+                "'.predict'.", UserWarning)
+            preds = self.predict(X)
+            if return_targets:
+                return preds, X.get_metadata()['target'].to_numpy()
+            return preds
+        return predict_trials(
+            module=self.module,
+            dataset=X,
+            return_targets=return_targets,
+            batch_size=self.batch_size,
+            num_workers=self.get_iterator(X, training=False).loader.num_workers,
+        )

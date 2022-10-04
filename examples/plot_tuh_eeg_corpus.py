@@ -1,5 +1,6 @@
-"""Process a big data EEG resource (TUH EEG Corpus)
-===================================================
+"""
+Process a big data EEG resource (TUH EEG Corpus)
+================================================
 
 In this example, we showcase usage of the Temple University Hospital EEG Corpus
 (https://www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg)
@@ -10,18 +11,18 @@ including simple preprocessing steps as well as cutting of compute windows.
 #
 # License: BSD (3-clause)
 
-import os
 import tempfile
 
 import numpy as np
 import matplotlib.pyplot as plt
-plt.style.use('seaborn')
 import mne
 
 from braindecode.datasets import TUH
-from braindecode.preprocessing import preprocess, Preprocessor, create_fixed_length_windows
-from braindecode.datautil.serialization import load_concat_dataset
+from braindecode.preprocessing import (
+    preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
 
+
+plt.style.use('seaborn')
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
 
@@ -50,12 +51,15 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 # `nme.io.Raw` which is fully compatible with other braindecode functionalities.
 
 TUH_PATH = 'please insert actual path to data here'
+N_JOBS = 2  # specify the number of jobs for loading and windowing
 tuh = TUH(
     path=TUH_PATH,
     recording_ids=None,
     target_name=None,
     preload=False,
     add_physician_reports=False,
+    n_jobs=1 if TUH.__name__ == '_TUHMock' else N_JOBS,  # Mock dataset can't
+    # be loaded in parallel
 )
 
 
@@ -83,13 +87,14 @@ ax.set_ylabel('Count')
 # recordings, that have at least five minutes duration. Data is not loaded here.
 
 def select_by_duration(ds, tmin=0, tmax=None):
-    # determine length of the recordings and select based on tmin and tmax
-    duration = ds.description.n_samples / ds.description.sfreq
-    duration = duration[duration >= tmin]
     if tmax is None:
         tmax = np.inf
-    duration = duration[duration <= tmax]
-    split_ids = list(duration.index)
+    # determine length of the recordings and select based on tmin and tmax
+    split_ids = []
+    for d_i, d in enumerate(ds.datasets):
+        duration = d.raw.n_times / d.raw.info['sfreq']
+        if tmin <= duration <= tmax:
+            split_ids.append(d_i)
     splits = ds.split(split_ids)
     split = splits['0']
     return split
@@ -134,8 +139,9 @@ ch_mapping = {'ar': ar_ch_mapping, 'le': le_ch_mapping}
 def select_by_channels(ds, ch_mapping):
     split_ids = []
     for i, d in enumerate(ds.datasets):
+        ref = 'ar' if d.raw.ch_names[0].endswith('-REF') else 'le'
         # these are the channels we are looking for
-        seta = set(ch_mapping[d.description.reference].keys())
+        seta = set(ch_mapping[ref].keys())
         # these are the channels of the recoding
         setb = set(d.raw.ch_names)
         # if recording contains all channels we are looking for, include it
@@ -156,8 +162,8 @@ tuh = select_by_channels(tuh, ch_mapping)
 # #. re-reference all recordings to 'ar' (requires load)
 # #. rename channels to short channel names
 # #. pick channels of interest
-# #. scale signals to microvolts (requires load)
-# #. clip outlier values to +/- 800 microvolts (requires load)
+# #. scale signals to micro volts (requires load)
+# #. clip outlier values to +/- 800 micro volts (requires load)
 # #. resample recordings to a common frequency (requires load)
 
 def custom_rename_channels(raw, mapping):
@@ -190,63 +196,48 @@ preprocessors = [
     Preprocessor(custom_rename_channels, mapping=ch_mapping,
                  apply_on_array=False),
     Preprocessor('pick_channels', ch_names=short_ch_names, ordered=True),
-    Preprocessor(lambda x: x * 1e6),
-    Preprocessor(fn=np.clip, a_min=-800, a_max=800, apply_on_array=True),
+    Preprocessor(multiply, factor=1e6, apply_on_array=True),
+    Preprocessor(np.clip, a_min=-800, a_max=800, apply_on_array=True),
     Preprocessor('resample', sfreq=sfreq),
 ]
 
 
 ###############################################################################
-# The preprocessing loop works as follows. For every recording, we apply the
-# preprocessors as defined above. Then, we update the description of the rec,
-# since we have altered the duration, the reference, and the sampling
-# frequency. Afterwards, we store each recording to a unique subdirectory that
-# is named corresponding to the rec id. To save memory we delete the raw
-# dataset after storing. This gives us the option to try different windowing
-# parameters after reloading the data.
+# Next, we apply the preprocessors on the selected recordings in parallel.
+# We additionally use the serialization functionality of
+# :func:`braindecode.preprocessing.preprocess` to limit memory usage during
+# preprocessing (as each file must be loaded into memory for some of the
+# preprocessing steps to work). This also makes it possible to use the lazy
+# loading capabilities of :class:`braindecode.datasets.BaseConcatDataset`, as
+# the preprocessed data is automatically reloaded with ``preload=False``.
+#
+# .. note::
+#    Here we use ``n_jobs=2`` as the machines the documentation is build on
+#    only have two cores. This number should be modified based on the machine
+#    that is available for preprocessing.
 
-OUT_PATH = tempfile.mkdtemp()  # plaese insert actual output directory here
-tuh_splits = tuh.split([[i] for i in range(len(tuh.datasets))])
-for rec_i, tuh_subset in tuh_splits.items():
-    preprocess(tuh_subset, preprocessors)
-
-    # update description of the recording(s)
-    tuh_subset.set_description({
-        'sfreq': len(tuh_subset.datasets) * [sfreq],
-        'reference': len(tuh_subset.datasets) * ['ar'],
-        'n_samples': [len(d) for d in tuh_subset.datasets],
-    }, overwrite=True)
-
-    # create one directory for every recording
-    rec_path = os.path.join(OUT_PATH, str(rec_i))
-    if not os.path.exists(rec_path):
-        os.makedirs(rec_path)
-    tuh_subset.save(rec_path)
-    # save memory by deleting raw recording
-    del tuh_subset.datasets[0].raw
-
+OUT_PATH = tempfile.mkdtemp()  # please insert actual output directory here
+tuh_preproc = preprocess(
+    concat_ds=tuh,
+    preprocessors=preprocessors,
+    n_jobs=N_JOBS,
+    save_dir=OUT_PATH
+)
 
 ###############################################################################
-# We reload the preprocessed data again in a lazy fashion (`preload=False`).
-
-tuh_loaded = load_concat_dataset(OUT_PATH, preload=False)
-
-
-###############################################################################
-# We generate compute windows. The resulting dataset is now ready to be used
-# for model training.
+# We can finally generate compute windows. The resulting dataset is now ready
+# to be used for model training.
 
 window_size_samples = 1000
 window_stride_samples = 1000
 # generate compute windows here and store them to disk
 tuh_windows = create_fixed_length_windows(
-    tuh_loaded,
-    start_offset_samples=0,
-    stop_offset_samples=None,
+    tuh_preproc,
     window_size_samples=window_size_samples,
     window_stride_samples=window_stride_samples,
-    drop_last_window=False
+    drop_last_window=False,
+    n_jobs=N_JOBS,
 )
-# store the number of windows required for loading later on
-tuh_windows.set_description({
-    "n_windows": [len(d) for d in tuh_windows.datasets]})
+
+for x, y, ind in tuh_windows:
+    break

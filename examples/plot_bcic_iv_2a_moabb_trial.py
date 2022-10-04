@@ -33,7 +33,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 #    Tutorial <./plot_custom_dataset_example.html>`__.
 #
 
-from braindecode.datasets.moabb import MOABBDataset
+from braindecode.datasets import MOABBDataset
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
@@ -60,8 +60,8 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
 
-from braindecode.preprocessing.preprocess import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+from braindecode.preprocessing import (
+    exponential_moving_standardize, preprocess, Preprocessor, scale)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -71,7 +71,7 @@ init_block_size = 1000
 
 preprocessors = [
     Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
-    Preprocessor(lambda x: x * 1e6),  # Convert from V to uV
+    Preprocessor(scale, factor=1e6, apply_on_array=True),  # Convert from V to uV
     Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
     Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
                  factor_new=factor_new, init_block_size=init_block_size)
@@ -95,7 +95,7 @@ preprocess(dataset, preprocessors)
 # before the trial.
 #
 
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -156,8 +156,13 @@ cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses t
 device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
-seed = 20200220  # random seed to make results reproducible
-# Set random seed to be able to reproduce results
+# Set random seed to be able to roughly reproduce results
+# Note that with cudnn benchmark set to True, GPU indeterminism
+# may still make results substantially different between runs.
+# To obtain more consistent results at the cost of increased computation time,
+# you can set `cudnn_benchmark=False` in `set_random_seeds`
+# or remove `torch.backends.cudnn.benchmark = True`
+seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4

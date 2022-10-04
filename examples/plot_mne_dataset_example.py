@@ -33,7 +33,7 @@ parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto')
          for path in physionet_paths]
 
 ###############################################################################
-# Convert mne.RawArrays to a compatible data format:
+# Convert Raw objects to a compatible data format:
 descriptions = [{"event_code": code, "subject": subject_id}
                 for code in event_codes]
 windows_dataset = create_from_mne_raw(

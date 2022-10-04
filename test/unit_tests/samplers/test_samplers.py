@@ -12,11 +12,13 @@ import pytest
 import numpy as np
 import pandas as pd
 
-from braindecode.samplers import RecordingSampler, SequenceSampler
+from braindecode.samplers import (
+    RecordingSampler, SequenceSampler, BalancedSequenceSampler)
 from braindecode.samplers.ssl import RelativePositioningSampler
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.preprocessing.windowers import (
+    create_fixed_length_windows, create_windows_from_events)
 
 
 @pytest.fixture(scope='module')
@@ -30,6 +32,21 @@ def windows_ds():
         concat_ds=concat_ds, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=500, window_stride_samples=500,
         drop_last_window=False, preload=False)
+
+    return windows_ds
+
+
+@pytest.fixture(scope='module')
+def target_windows_ds():
+    raws, description = fetch_data_with_moabb(
+        dataset_name='BNCI2014001', subject_ids=4)
+    ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
+    concat_ds = BaseConcatDataset(ds)
+
+    windows_ds = create_windows_from_events(
+        concat_ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
+        window_size_samples=None, window_stride_samples=None,
+        drop_last_window=False)
 
     return windows_ds
 
@@ -124,10 +141,63 @@ def test_sequence_sampler(windows_ds, n_windows, n_windows_stride):
 
     seq_lens = [(len(ds) - n_windows) // n_windows_stride + 1
                 for ds in windows_ds.datasets]
+    file_ids = np.concatenate([[i] * l for i, l in enumerate(seq_lens)])
     n_seqs = sum(seq_lens)
     assert len(seqs) == n_seqs
-    assert len(seqs[0]) == n_windows
+    assert all([len(s) == n_windows for s in seqs])
 
     for i in range(seq_lens[0] - 1):
         np.testing.assert_array_equal(
             seqs[i][n_windows_stride:], seqs[i + 1][:-n_windows_stride])
+
+    assert (sampler.file_ids == file_ids).all()
+
+
+@pytest.mark.parametrize('n_sequences,n_windows', [[10, 2], [2, 40], [99, 1]])
+def test_balanced_sequence_sampler(target_windows_ds, n_sequences, n_windows):
+    md = target_windows_ds.get_metadata()
+    sampler = BalancedSequenceSampler(
+        md, n_windows, n_sequences=n_sequences, random_state=87)
+
+    seqs = [seq for seq in sampler]
+
+    assert len(seqs) == n_sequences
+    assert all([len(s) == n_windows for s in seqs])
+
+    # Make sure the sequences are valid
+    for seq in seqs:
+        assert all(np.diff(seq) == 1)  # windows must be consecutive
+        seq_md = md.iloc[seq[0]:seq[-1] + 1]
+        for c in ['subject', 'session', 'run']:
+            assert len(seq_md[c].unique()) == 1
+
+    # Make sure the target is always in the sequence
+    for _ in range(100):
+        start_ind, rec_ind, class_ind = sampler._sample_seq_start_ind()
+        seq_targets = md.iloc[start_ind:start_ind + n_windows + 1]['target']
+        assert class_ind in seq_targets.values
+        rec_info = sampler.info.iloc[rec_ind].name
+        rec_info_md = md.iloc[start_ind][['subject', 'session', 'run']]
+        assert rec_info == tuple(rec_info_md.tolist())
+
+
+def test_balanced_sequence_sampler_single_category(target_windows_ds):
+    """Test the case where there's only one category in the metadata, e.g.
+    'subject'.
+    """
+    n_windows = 3
+    n_sequences = 10
+
+    md = target_windows_ds.get_metadata().drop(columns=['session', 'run'])
+    sampler = BalancedSequenceSampler(
+        md, n_windows, n_sequences=n_sequences, random_state=87)
+
+    seqs = [seq for seq in sampler]
+    assert len(seqs) == n_sequences
+    assert all([len(s) == n_windows for s in seqs])
+
+
+def test_balanced_sequence_sampler_no_targets(windows_ds):
+    md = windows_ds.get_metadata().drop(columns='target')
+    with pytest.raises(ValueError):
+        BalancedSequenceSampler(md, 10, n_sequences=5, random_state=87)

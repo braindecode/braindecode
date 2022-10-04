@@ -20,15 +20,14 @@ transform on the input signals.
 ######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
-
-######################################################################
+#
 # Loading
 # ~~~~~~~
-#
 
-from braindecode import EEGClassifier
 from skorch.helper import predefined_split
 from skorch.callbacks import LRScheduler
+
+from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
@@ -40,7 +39,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #
 
 from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+    exponential_moving_standardize, preprocess, Preprocessor, scale)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -50,7 +49,7 @@ init_block_size = 1000
 
 preprocessors = [
     Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
-    Preprocessor(lambda x: x * 1e6),  # Convert from V to uV
+    Preprocessor(scale, factor=1e6, apply_on_array=True),  # Convert from V to uV
     Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
     Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
                  factor_new=factor_new, init_block_size=init_block_size)
@@ -94,13 +93,10 @@ valid_set = splitted['session_E']
 # Defining a Transform
 # --------------------
 #
-
-######################################################################
 # Data can be manipulated by transforms, which are callable objects. A
 # transform is usually handled by a custom data loader, but can also be called
 # directly on input data, as demonstrated below for illutrative purposes.
 #
-
 # First, we need to define a Transform. Here we chose the FrequencyShift, which
 # randomly translates all frequencies within a given range.
 
@@ -109,14 +105,14 @@ from braindecode.augmentation import FrequencyShift
 transform = FrequencyShift(
     probability=1.,  # defines the probability of actually modifying the input
     sfreq=sfreq,
-    delta_freq_range=(10., 10.)  # -> fixed frequency shift for visualization
+    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
 ######################################################################
 # Manipulating one session and visualizing the transformed data
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
+#
 # Next, let us augment one session to show the resulting frequency shift. The
 # data of an mne Epoch is used here to make usage of mne functions.
 
@@ -124,7 +120,9 @@ import torch
 
 epochs = train_set.datasets[0].windows  # original epochs
 X = epochs.get_data()
-X_tr = transform(X).numpy()
+# This allows to apply the transform with a fixed shift (10 Hz) for
+# visualization instead of sampling the shift randomly between -2 and 2 Hz
+X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
 
 ######################################################################
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
@@ -145,7 +143,7 @@ def plot_psd(data, axis, label, color):
 
 _, ax = plt.subplots()
 plot_psd(X, ax, 'original', 'k')
-plot_psd(X_tr, ax, 'shifted', 'r')
+plot_psd(X_tr.numpy(), ax, 'shifted', 'r')
 
 ax.set(title='Multitaper PSD (gradiometers)', xlabel='Frequency (Hz)',
        ylabel='Power Spectral Density (dB)')
@@ -163,8 +161,6 @@ plt.show()
 # Create model
 # ~~~~~~~~~~~~
 #
-
-######################################################################
 # The model to be trained is defined as usual.
 
 from braindecode.util import set_random_seeds
@@ -175,7 +171,12 @@ device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 
-# Set random seed to be able to reproduce results
+# Set random seed to be able to roughly reproduce results
+# Note that with cudnn benchmark set to True, GPU indeterminism
+# may still make results substantially different between runs.
+# To obtain more consistent results at the cost of increased computation time,
+# you can set `cudnn_benchmark=False` in `set_random_seeds`
+# or remove `torch.backends.cudnn.benchmark = True`
 seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
@@ -196,8 +197,6 @@ model = ShallowFBCSPNet(
 # Create an EEGClassifier with the desired augmentation
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
-######################################################################
 # In order to train with data augmentation, a custom data loader can be
 # for the training. Multiple transforms can be passed to it and will be applied
 # sequentially to the batched data within the ``AugmentedDataLoader`` object.
@@ -207,7 +206,7 @@ from braindecode.augmentation import AugmentedDataLoader, SignFlip
 freq_shift = FrequencyShift(
     probability=.5,
     sfreq=sfreq,
-    delta_freq_range=(-2., 2.)  # the frequency shifts are sampled now between -2 and 2 Hz
+    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
 sign_flip = SignFlip(probability=.1)

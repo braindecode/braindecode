@@ -170,12 +170,14 @@ def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
         device=device,
         random_state=random_state
     )
+    if isinstance(eps, torch.Tensor):
+        eps = eps.to(device)
     f_shifted = f * torch.exp(eps * random_phase)
     shifted = ifft(f_shifted, dim=-1)
     return shifted.real.float()
 
 
-def ft_surrogate(X, y, magnitude, random_state=None):
+def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -187,9 +189,10 @@ def ft_surrogate(X, y, magnitude, random_state=None):
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    magnitude: float
+    phase_noise_magnitude: float
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled: [0, `magnitude` * 2 * `pi`].
+        pertubation is uniformly sampled:
+        [0, `phase_noise_magnitude` * 2 * `pi`].
     random_state: int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
 
@@ -207,11 +210,9 @@ def ft_surrogate(X, y, magnitude, random_state=None):
        Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
        preprint arXiv:1806.08675.
     """
-    if magnitude == 0:
-        return X, y
     transformed_X = _ft_surrogate(
         x=X,
-        eps=magnitude,
+        eps=phase_noise_magnitude,
         random_state=random_state
     )
     return transformed_X, y
@@ -227,7 +228,7 @@ def _pick_channels_randomly(X, p_pick, random_state):
         device=X.device,
     )
     # equivalent to a 0s and 1s mask
-    return torch.sigmoid(1000*(unif_samples - p_pick)).to(X.device)
+    return torch.sigmoid(1000*(unif_samples - p_pick))
 
 
 def channels_dropout(X, y, p_drop, random_state=None):
@@ -260,8 +261,6 @@ def channels_dropout(X, y, p_drop, random_state=None):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-    if p_drop == 0:
-        return X, y
     mask = _pick_channels_randomly(X, p_drop, random_state=random_state)
     return X * mask.unsqueeze(-1), y
 
@@ -364,11 +363,13 @@ def gaussian_noise(X, y, std, random_state=None):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
     rng = check_random_state(random_state)
+    if isinstance(std, torch.Tensor):
+        std = std.to(X.device)
     noise = torch.from_numpy(
         rng.normal(
             loc=np.zeros(X.shape),
             scale=1
-        )
+        ),
     ).float().to(X.device) * std
     transformed_X = X + noise
     return transformed_X, y
@@ -438,17 +439,14 @@ def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
-    if mask_len_samples == 0:
-        return X, y
     batch_size, n_channels, seq_len = X.shape
     t = torch.arange(seq_len, device=X.device).float()
     t = t.repeat(batch_size, n_channels, 1)
     mask_start_per_sample = mask_start_per_sample.view(-1, 1, 1)
-    s = 1000 * 10**-np.log10(seq_len)
-    mask = 2 - (
-        torch.sigmoid(s * (t - mask_start_per_sample)) +
-        torch.sigmoid(s * -(t - mask_start_per_sample - mask_len_samples))
-    ).float().to(X.device)
+    s = 1000 / seq_len
+    mask = (torch.sigmoid(s * -(t - mask_start_per_sample)) +
+            torch.sigmoid(s * (t - mask_start_per_sample - mask_len_samples))
+            ).float().to(X.device)
     return X * mask, y
 
 
@@ -508,7 +506,7 @@ def bandstop_filter(X, y, sfreq, bandwidth, freqs_to_notch):
     return transformed_X, y
 
 
-def _hilbert_transform(x):
+def _analytic_transform(x):
     if torch.is_complex(x):
         raise ValueError("x must be real.")
 
@@ -542,7 +540,7 @@ def _frequency_shift(X, fs, f_shift):
     N_padded = 2 ** _nextpow2(N_orig)
     t = torch.arange(N_padded, device=X.device) / fs
     padded = pad(X, (0, N_padded - N_orig))
-    analytical = _hilbert_transform(padded)
+    analytical = _analytic_transform(padded)
     if isinstance(f_shift, (float, int, np.ndarray, list)):
         f_shift = torch.as_tensor(f_shift).float()
     reshaped_f_shift = f_shift.repeat(
@@ -584,10 +582,10 @@ def frequency_shift(X, y, delta_freq, sfreq):
 
 def _torch_normalize_vectors(rr):
     """Normalize surface vertices."""
-    new_rr = rr.clone()
-    size = torch.linalg.norm(rr, axis=1)
-    mask = (size > 0)
-    new_rr[mask] = rr[mask] / size[mask].unsqueeze(-1)
+    norm = torch.linalg.norm(rr, axis=1, keepdim=True)
+    mask = (norm > 0)
+    norm[~mask] = 1  # in case norm is zero, divide by 1
+    new_rr = rr / norm
     return new_rr
 
 
@@ -838,7 +836,13 @@ def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
                 torch.ones((1, n_from), device=device),
                 torch.as_tensor([[0]], device=device)])
         ])
-    C_inv = torch.linalg.pinv(C)
+
+    try:
+        C_inv = torch.linalg.inv(C)
+    except torch._C._LinAlgError:
+        # There is a stability issue with pinv since torch v1.8.0
+        # see https://github.com/pytorch/pytorch/issues/75494
+        C_inv = torch.linalg.pinv(C.cpu()).to(device)
 
     interpolation = torch.hstack([
         G_to_from,

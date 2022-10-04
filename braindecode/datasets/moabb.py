@@ -5,25 +5,27 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
+#          Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)
 
 import pandas as pd
 import mne
 
-from moabb.datasets import Schirrmeister2017, BNCI2014001
-
 from .base import BaseDataset, BaseConcatDataset
 from braindecode.util import _update_moabb_docstring
 
 
-def _find_dataset_in_moabb(dataset_name):
+def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
     # soft dependency on moabb
     from moabb.datasets.utils import dataset_list
     for dataset in dataset_list:
         if dataset_name == dataset.__name__:
             # return an instance of the found dataset class
-            return dataset()
+            if dataset_kwargs is None:
+                return dataset()
+            else:
+                return dataset(**dataset_kwargs)
     raise ValueError("'dataset_name' not found in moabb datasets")
 
 
@@ -64,7 +66,7 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
     return annots
 
 
-def fetch_data_with_moabb(dataset_name, subject_ids):
+def fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs=None):
     # ToDo: update path to where moabb downloads / looks for the data
     """Fetch data using moabb.
 
@@ -74,13 +76,16 @@ def fetch_data_with_moabb(dataset_name, subject_ids):
         the name of a dataset included in moabb
     subject_ids: list(int) | int
         (list of) int of subject(s) to be fetched
+    dataset_kwargs: dict, optional
+        optional dictionary containing keyword arguments
+        to pass to the moabb dataset when instantiating it.
 
     Returns
     -------
     raws: mne.Raw
     info: pandas.DataFrame
     """
-    dataset = _find_dataset_in_moabb(dataset_name)
+    dataset = _find_dataset_in_moabb(dataset_name, dataset_kwargs)
     subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids
     return _fetch_and_unpack_moabb_data(dataset, subject_id)
 
@@ -90,28 +95,55 @@ class MOABBDataset(BaseConcatDataset):
 
     Parameters
     ----------
-    dataset_name: name of dataset included in moabb to be fetched
-    subject_ids: list(int) | int
-        (list of) int of subject(s) to be fetched
+    dataset_name: str
+        name of dataset included in moabb to be fetched
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be fetched. If None, data of all
+        subjects is fetched.
+    dataset_kwargs: dict, optional
+        optional dictionary containing keyword arguments
+        to pass to the moabb dataset when instantiating it.
     """
-    def __init__(self, dataset_name, subject_ids):
-        raws, description = fetch_data_with_moabb(dataset_name, subject_ids)
+    def __init__(self, dataset_name, subject_ids, dataset_kwargs=None):
+        raws, description = fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs)
         all_base_ds = [BaseDataset(raw, row)
                        for raw, (_, row) in zip(raws, description.iterrows())]
         super().__init__(all_base_ds)
 
 
 class BNCI2014001(MOABBDataset):
-    doc = """See moabb.datasets.bnci.BNCI2014001"""
-    __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+    doc = """See moabb.datasets.bnci.BNCI2014001
 
-    def __init__(self, *args, **kwargs):
-        super().__init__("BNCI2014001", *args, **kwargs)
+    Parameters
+    ----------
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be fetched. If None, data of all
+        subjects is fetched.
+    """
+    try:
+        from moabb.datasets import BNCI2014001
+        __doc__ = _update_moabb_docstring(BNCI2014001, doc)
+    except ModuleNotFoundError:
+        pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
+
+    def __init__(self, subject_ids):
+        super().__init__("BNCI2014001", subject_ids=subject_ids)
 
 
 class HGD(MOABBDataset):
-    doc = """See moabb.datasets.schirrmeister2017.Schirrmeister2017"""
-    __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
+    doc = """See moabb.datasets.schirrmeister2017.Schirrmeister2017
 
-    def __init__(self, *args, **kwargs):
-        super().__init__("Schirrmeister2017", *args, **kwargs)
+    Parameters
+    ----------
+    subject_ids: list(int) | int | None
+        (list of) int of subject(s) to be fetched. If None, data of all
+        subjects is fetched.
+    """
+    try:
+        from moabb.datasets import Schirrmeister2017
+        __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
+    except ModuleNotFoundError:
+        pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
+
+    def __init__(self, subject_ids):
+        super().__init__("Schirrmeister2017", subject_ids=subject_ids)

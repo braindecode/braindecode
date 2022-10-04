@@ -12,13 +12,13 @@ Dataset classes.
 
 import os
 import json
+import shutil
 from typing import Iterable
 import warnings
 from glob import glob
 
 import numpy as np
 import pandas as pd
-
 from torch.utils.data import Dataset, ConcatDataset
 
 
@@ -102,26 +102,35 @@ class BaseDataset(Dataset):
         """
         description = _create_description(description)
         for key, value in description.items():
-            # if they key is already in the existing description, drop it
-            if key in self._description:
+            # if the key is already in the existing description, drop it
+            if self._description is not None and key in self._description:
                 assert overwrite, (f"'{key}' already in description. Please "
                                    f"rename or set overwrite to True.")
                 self._description.pop(key)
-        self._description = pd.concat([self.description, description])
+        if self._description is None:
+            self._description = description
+        else:
+            self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
+        if target_name is not None and not isinstance(target_name, (str, tuple, list)):
+            raise ValueError('target_name has to be None, str, tuple or list')
         if target_name is None:
             return target_name
         else:
             # convert tuple of names or single name to list
             if isinstance(target_name, tuple):
                 target_name = [name for name in target_name]
-            else:
+            elif not isinstance(target_name, list):
+                assert isinstance(target_name, str)
                 target_name = [target_name]
+            assert isinstance(target_name, list)
             # check if target name(s) can be read from description
             for name in target_name:
-                if name not in self.description:
-                    raise ValueError(f"'{name}' not in description.")
+                if self.description is None or name not in self.description:
+                    warnings.warn(f"'{name}' not in description. '__getitem__'"
+                                  f"will fail unless an appropriate target is"
+                                  f" added to description.", UserWarning)
         # return a list of str if there are multiple targets and a str otherwise
         return target_name if len(target_name) > 1 else target_name[0]
 
@@ -148,16 +157,25 @@ class WindowsDataset(BaseDataset):
         Holds additional info about the windows.
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
+    targets_from : str
+        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
+        channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-    def __init__(self, windows, description=None, transform=None):
+    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
+                 last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
+        self.last_target_only = last_target_only
+        if targets_from not in ('metadata', 'channels'):
+            raise ValueError('Wrong value for parameter `targets_from`.')
+        self.targets_from = targets_from
 
-        self.y = self.windows.metadata.loc[:, 'target'].to_list()
         self.crop_inds = self.windows.metadata.loc[
             :, ['i_window_in_trial', 'i_start_in_trial',
                 'i_stop_in_trial']].to_numpy()
+        if self.targets_from == 'metadata':
+            self.y = self.windows.metadata.loc[:, 'target'].to_list()
 
     def __getitem__(self, index):
         """Get a window and its target.
@@ -179,11 +197,19 @@ class WindowsDataset(BaseDataset):
         X = self.windows.get_data(item=index)[0].astype('float32')
         if self.transform is not None:
             X = self.transform(X)
-        y = self.y[index]
+        if self.targets_from == 'metadata':
+            y = self.y[index]
+        else:
+            misc_mask = np.array(self.windows.get_channel_types()) == 'misc'
+            if self.last_target_only:
+                y = X[misc_mask, -1]
+            else:
+                y = X[misc_mask, :]
+            # remove the target channels from raw
+            X = X[~misc_mask, :]
         # necessary to cast as list to get list of three tensors from batch,
         # otherwise get single 2d-tensor...
         crop_inds = self.crop_inds[index].tolist()
-
         return X, y, crop_inds
 
     def __len__(self):
@@ -280,15 +306,17 @@ class BaseConcatDataset(ConcatDataset):
 
         Parameters
         ----------
-        by : str | list
-            If ``by`` is a string, splitting is performed based on the description
-            DataFrame column with this name.
+        by : str | list | dict
+            If ``by`` is a string, splitting is performed based on the
+            description DataFrame column with this name.
             If ``by`` is a (list of) list of integers, the position in the first
             list corresponds to the split id and the integers to the
             datapoints of that split.
+            If a dict then each key will be used in the returned
+            splits dict and each value should be a list of int.
         property : str
             Some property which is listed in info DataFrame.
-        split_ids : list
+        split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
 
@@ -306,13 +334,15 @@ class BaseConcatDataset(ConcatDataset):
         if property is not None or split_ids is not None:
             warnings.warn("Keyword arguments `property` and `split_ids` "
                           "are deprecated and will be removed in the future. "
-                          "Use `by` instead.")
+                          "Use `by` instead.", DeprecationWarning)
             by = property if property is not None else split_ids
         if isinstance(by, str):
             split_ids = {
                 k: list(v)
                 for k, v in self.description.groupby(by).groups.items()
             }
+        elif isinstance(by, dict):
+            split_ids = by
         else:
             # assume list(int)
             if not isinstance(by[0], list):
@@ -321,7 +351,7 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds])
+            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):
@@ -366,55 +396,79 @@ class BaseConcatDataset(ConcatDataset):
             raise TypeError('target_transform must be a callable.')
         self._target_transform = fn
 
-    def save(self, path, overwrite=False):
-        """Save dataset to files.
+    def _outdated_save(self, path, overwrite=False):
+        """This is a copy of the old saving function, that had inconsistent
+        functionality for BaseDataset and WindowsDataset. It only exists to
+        assure backwards compatibility by still being able to run the old tests.
+
+        Save dataset to files.
 
         Parameters
         ----------
         path : str
             Directory to which .fif / -epo.fif and .json files are stored.
         overwrite : bool
-            Whether to delete old files (.json, .fif, -epo.fif) in specified directory
-            prior to saving.
+            Whether to delete old files (.json, .fif, -epo.fif) in specified
+            directory prior to saving.
         """
-        assert len(self.datasets) > 0, "Expect at least one dataset"
-        assert (hasattr(self.datasets[0], 'raw') + hasattr(
-            self.datasets[0], 'windows') == 1), (
-            "dataset should have either raw or windows attribute")
-        file_names_ = ["{}-raw.fif", "{}-epo.fif"]
+        warnings.warn('This function only exists for backwards compatibility '
+                      'purposes. DO NOT USE!', UserWarning)
+        if len(self.datasets) == 0:
+            raise ValueError("Expect at least one dataset")
+        if not (hasattr(self.datasets[0], 'raw') or hasattr(
+                self.datasets[0], 'windows')):
+            raise ValueError("dataset should have either raw or windows "
+                             "attribute")
+        file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, 'description.json')
         target_file_name = os.path.join(path, 'target_name.json')
         if not overwrite:
-            if (os.path.exists(description_file_name) or
-                    os.path.exists(target_file_name)):
-                raise FileExistsError(
-                    f'{description_file_name} or {target_file_name} exist in {path}.')
+            from braindecode.datautil.serialization import \
+                _check_save_dir_empty  # Import here to avoid circular import
+            _check_save_dir_empty(path)
         else:
-            for file_name in file_names_:
-                file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
+            for file_name_template in file_name_templates:
+                file_names = glob(os.path.join(
+                    path, f"*{file_name_template.lstrip('{}')}"))
                 _ = [os.remove(f) for f in file_names]
             if os.path.isfile(target_file_name):
                 os.remove(target_file_name)
             if os.path.isfile(description_file_name):
                 os.remove(description_file_name)
+            for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
+                               'window_preproc_kwargs']:
+                kwarg_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
+                if os.path.exists(kwarg_path):
+                    os.remove(kwarg_path)
 
-        concat_of_raws = hasattr(self.datasets[0], 'raw')
-        file_name = file_names_[0] if concat_of_raws else file_names_[1]
-        if concat_of_raws:
+        is_raw = hasattr(self.datasets[0], 'raw')
+        if is_raw:
+            file_name_template = file_name_templates[0]
             # for checks that all have same target name and for
             # saving later
             target_name = self.datasets[0].target_name
+        else:
+            file_name_template = file_name_templates[1]
+
         for i_ds, ds in enumerate(self.datasets):
-            full_file_path = os.path.join(path, file_name.format(i_ds))
-            if concat_of_raws:
+            full_file_path = os.path.join(path, file_name_template.format(i_ds))
+            if is_raw:
                 ds.raw.save(full_file_path, overwrite=overwrite)
-                assert ds.target_name == target_name, "All datasets should have same target name"
+                assert ds.target_name == target_name, (
+                    "All datasets should have same target name")
             else:
                 ds.windows.save(full_file_path, overwrite=overwrite)
 
-        if concat_of_raws:
+        if is_raw:
             json.dump({'target_name': target_name}, open(target_file_name, 'w'))
         self.description.to_json(description_file_name)
+        for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
+                           'window_preproc_kwargs']:
+            if hasattr(self, kwarg_name):
+                kwargs_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
+                kwargs = getattr(self, kwarg_name)
+                if kwargs is not None:
+                    json.dump(kwargs, open(kwargs_path, 'w'))
 
     @property
     def description(self):
@@ -438,3 +492,123 @@ class BaseConcatDataset(ConcatDataset):
         for key, value in description.items():
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
+
+    def save(self, path, overwrite=False, offset=0):
+        """Save datasets to files by creating one subdirectory for each dataset:
+        path/
+            0/
+                0-raw.fif | 0-epo.fif
+                description.json
+                raw_preproc_kwargs.json (if raws were preprocessed)
+                window_kwargs.json (if this is a windowed dataset)
+                window_preproc_kwargs.json  (if windows were preprocessed)
+                target_name.json (if target_name is not None and dataset is raw)
+            1/
+                1-raw.fif | 1-epo.fif
+                description.json
+                raw_preproc_kwargs.json (if raws were preprocessed)
+                window_kwargs.json (if this is a windowed dataset)
+                window_preproc_kwargs.json  (if windows were preprocessed)
+                target_name.json (if target_name is not None and dataset is raw)
+
+        Parameters
+        ----------
+        path : str
+            Directory in which subdirectories are created to store
+             -raw.fif | -epo.fif and .json files to.
+        overwrite : bool
+            Whether to delete old subdirectories that will be saved to in this
+            call.
+        offset : int
+            If provided, the integer is added to the id of the dataset in the
+            concat. This is useful in the setting of very large datasets, where
+            one dataset has to be processed and saved at a time to account for
+            its original position.
+        """
+        if len(self.datasets) == 0:
+            raise ValueError("Expect at least one dataset")
+        if not (hasattr(self.datasets[0], 'raw') or hasattr(
+                self.datasets[0], 'windows')):
+            raise ValueError("dataset should have either raw or windows "
+                             "attribute")
+        path_contents = os.listdir(path)
+        n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
+        for i_ds, ds in enumerate(self.datasets):
+            # remove subdirectory from list of untouched files / subdirectories
+            if str(i_ds + offset) in path_contents:
+                path_contents.remove(str(i_ds + offset))
+            # save_dir/i_ds/
+            sub_dir = os.path.join(path, str(i_ds + offset))
+            if os.path.exists(sub_dir):
+                if overwrite:
+                    shutil.rmtree(sub_dir)
+                else:
+                    raise FileExistsError(
+                        f'Subdirectory {sub_dir} already exists. Please select'
+                        f' a different directory, set overwrite=True, or '
+                        f'resolve manually.')
+            # save_dir/{i_ds+offset}/
+            os.makedirs(sub_dir)
+            # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
+            self._save_signals(sub_dir, ds, i_ds, offset)
+            # save_dir/{i_ds+offset}/description.json
+            self._save_description(sub_dir, ds.description)
+            # save_dir/{i_ds+offset}/raw_preproc_kwargs.json
+            # save_dir/{i_ds+offset}/window_kwargs.json
+            # save_dir/{i_ds+offset}/window_preproc_kwargs.json
+            self._save_kwargs(sub_dir, ds)
+            # save_dir/{i_ds+offset}/target_name.json
+            self._save_target_name(sub_dir, ds)
+        if overwrite:
+            # the following will be True for all datasets preprocessed and
+            # stored in parallel with braindecode.preprocessing.preprocess
+            if i_ds+1+offset < n_sub_dirs:
+                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
+                              f"does not match the number of existing "
+                              f"subdirectories ({n_sub_dirs}). You may now "
+                              f"encounter a mix of differently preprocessed "
+                              f"datasets!", UserWarning)
+        # if path contains files or directories that were not touched, raise
+        # warning
+        if path_contents:
+            warnings.warn(f'Chosen directory {path} contains other '
+                          f'subdirectories or files {path_contents}.')
+
+    @staticmethod
+    def _save_signals(sub_dir, ds, i_ds, offset):
+        raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'epo'
+        fif_file_name = f'{i_ds + offset}-{raw_or_epo}.fif'
+        fif_file_path = os.path.join(sub_dir, fif_file_name)
+        raw_or_epo = 'raw' if raw_or_epo == 'raw' else 'windows'
+
+        # The following appears to be necessary to avoid a CI failure when
+        # preprocessing WindowsDatasets with serialization enabled. The failure
+        # comes from `mne.epochs._check_consistency` which ensures the Epochs's
+        # object `times` attribute is not writeable.
+        getattr(ds, raw_or_epo).times.flags['WRITEABLE'] = False
+
+        getattr(ds, raw_or_epo).save(fif_file_path)
+
+    @staticmethod
+    def _save_description(sub_dir, description):
+        description_file_path = os.path.join(sub_dir, 'description.json')
+        description.to_json(description_file_path)
+
+    @staticmethod
+    def _save_kwargs(sub_dir, ds):
+        for kwargs_name in ['raw_preproc_kwargs', 'window_kwargs',
+                            'window_preproc_kwargs']:
+            if hasattr(ds, kwargs_name):
+                kwargs_file_name = '.'.join([kwargs_name, 'json'])
+                kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
+                kwargs = getattr(ds, kwargs_name)
+                if kwargs is not None:
+                    with open(kwargs_file_path, 'w') as f:
+                        json.dump(kwargs, f)
+
+    @staticmethod
+    def _save_target_name(sub_dir, ds):
+        if hasattr(ds, 'target_name'):
+            target_file_path = os.path.join(sub_dir, 'target_name.json')
+            with open(target_file_path, 'w') as f:
+                json.dump({'target_name': ds.target_name}, f)

@@ -17,12 +17,13 @@ from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
     create_windows_from_events, create_fixed_length_windows)
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
+from braindecode.preprocessing.windowers import create_windows_from_target_channels
 from braindecode.util import create_mne_dummy_raw
 
 
 def _get_raw(tmpdir_factory, description=None):
     _, fnames = create_mne_dummy_raw(
-        2, 20000, 100, description=description,
+        n_channels=2, n_times=20000, sfreq=100, description=description,
         savedir=tmpdir_factory.mktemp('data'), save_format='fif',
         random_state=87)
     raw = mne.io.read_raw_fif(fnames['fif'], preload=False, verbose=None)
@@ -437,6 +438,17 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.ch_names == picks
     assert epochs.reject == reject
     assert epochs.flat == flat
+    for ds in windows.datasets:
+        assert ds.window_kwargs == [
+            ('create_windows_from_events', {
+                'infer_mapping': True, 'infer_window_size_stride': False,
+                'trial_start_offset_samples': 0, 'trial_stop_offset_samples': 0,
+                'window_size_samples': 100, 'window_stride_samples': 100,
+                'drop_last_window': False, 'mapping': {'test': 0}, 'preload': False,
+                'drop_bad_windows': True, 'picks': picks, 'reject': reject,
+                'flat': flat, 'on_missing': on_missing,
+                'accepted_bads_ratio': 0.0, 'verbose': 'error'})
+        ]
 
     windows = create_fixed_length_windows(
         concat_ds=lazy_loadable_dataset, start_offset_samples=0,
@@ -448,6 +460,20 @@ def test_epochs_kwargs(lazy_loadable_dataset):
     assert epochs.ch_names == picks
     assert epochs.reject == reject
     assert epochs.flat == flat
+    for ds in windows.datasets:
+        assert ds.window_kwargs == [
+            ('create_fixed_length_windows', {
+                'start_offset_samples': 0, 'stop_offset_samples': None,
+                'window_size_samples': 100, 'window_stride_samples': 100,
+                'drop_last_window': False, 'mapping': None, 'preload': False,
+                'drop_bad_windows': True, 'picks': picks, 'reject': reject,
+                'flat': flat, 'targets_from': 'metadata', 'last_target_only': True,
+                'on_missing': on_missing, 'verbose': 'error'}),
+            ('WindowsDataset', {
+                'targets_from': 'metadata',
+                'last_target_only': True,
+            })
+        ]
 
 
 def test_window_sizes_from_events(concat_ds_targets):
@@ -517,3 +543,109 @@ def test_window_sizes_from_events(concat_ds_targets):
     x, y, ind = windows[0]
     assert x.shape[-1] == ind[-1] - ind[-2]
     assert x.shape[-1] == expected_n_samples
+
+
+def test_window_sizes_too_large(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    # Window size larger than all trials
+    window_size = len(concat_ds.datasets[0]) + 1
+    with pytest.raises(
+            ValueError, match=f'Window size {window_size} exceeds trial durat'):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            drop_last_window=False,
+        )
+
+    with pytest.raises(
+            ValueError, match=f'Window size {window_size} exceeds trial durat'):
+        create_fixed_length_windows(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            drop_last_window=False,
+        )
+
+    # Window size larger than one single trial
+    annots = concat_ds.datasets[0].raw.annotations
+    annot_0 = annots[0]
+    # Window equal original trials size
+    window_size = int(
+        annot_0["duration"] * concat_ds.datasets[0].raw.info['sfreq'])
+
+    # Make first trial 1 second shorter
+    annot_0["duration"] -= 1
+
+    # Replace first trial by a new shorter one
+    annots.delete(0)
+    del annot_0["orig_time"]
+    annots.append(**annot_0)
+    concat_ds.datasets[0].raw.set_annotations(annots)
+    with pytest.warns(
+            UserWarning,
+            match=".* are being dropped as the window size .*"
+    ):
+        create_windows_from_events(
+            concat_ds=concat_ds,
+            window_size_samples=window_size,
+            window_stride_samples=window_size,
+            trial_start_offset_samples=0,
+            trial_stop_offset_samples=0,
+            drop_last_window=False,
+            accepted_bads_ratio=0.5,
+            on_missing='ignore'
+        )
+
+
+@pytest.fixture(scope="module")
+def dataset_target_time_series():
+    rng = np.random.RandomState(42)
+    signal_sfreq = 50
+    info = mne.create_info(ch_names=['0', '1', 'target_0', 'target_1'],
+                           sfreq=signal_sfreq,
+                           ch_types=['eeg', 'eeg', 'misc', 'misc'])
+    signal = rng.randn(2, 1000)
+    targets = np.full((2, 1000), np.nan)
+    targets_sfreq = 10
+    targets_stride = int(signal_sfreq / targets_sfreq)
+    targets[:, ::targets_stride] = rng.randn(2, int(targets.shape[1] / targets_stride))
+
+    raw = mne.io.RawArray(np.concatenate([signal, targets]), info=info)
+    desc = pd.Series({'pathological': True, 'gender': 'M', 'age': 48})
+    base_dataset = BaseDataset(raw, desc, target_name=None)
+    concat_ds = BaseConcatDataset([base_dataset])
+    windows_dataset = create_windows_from_target_channels(
+        concat_ds,
+        window_size_samples=100,
+    )
+    return concat_ds, windows_dataset, targets, signal
+
+
+def test_windower_from_target_channels(dataset_target_time_series):
+    _, windows_dataset, targets, signal = dataset_target_time_series
+    assert len(windows_dataset) == 180
+    for i in range(180):
+        epoch, y, window_inds = windows_dataset[i]
+        target_idx = i * 5 + 100
+        np.testing.assert_array_almost_equal(targets[:, target_idx], y)
+        np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
+        np.testing.assert_array_almost_equal(np.array([i, i*5, target_idx]), window_inds)
+
+
+def test_windower_from_target_channels_all_targets(dataset_target_time_series):
+    concat_ds, _, targets, signal = dataset_target_time_series
+    windows_dataset = create_windows_from_target_channels(
+        concat_ds,
+        window_size_samples=100,
+        last_target_only=False
+    )
+    assert len(windows_dataset) == 180
+    for i in range(180):
+        epoch, y, window_inds = windows_dataset[i]
+        target_idx = i * 5 + 100
+        np.testing.assert_array_almost_equal(targets[:, target_idx-99: target_idx + 1], y)
+        np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
+        np.testing.assert_array_almost_equal(np.array([i, i*5, target_idx]), window_inds)

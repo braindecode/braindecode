@@ -11,10 +11,10 @@ In this example, we show how to load and save braindecode datasets.
 
 import tempfile
 
-from braindecode.datasets.moabb import MOABBDataset
-from braindecode.preprocessing.preprocess import preprocess, MNEPreproc
-from braindecode.datautil.serialization import load_concat_dataset
-from braindecode.preprocessing.windowers import create_windows_from_events
+from braindecode.datasets import MOABBDataset
+from braindecode.preprocessing import preprocess, Preprocessor
+from braindecode.datautil import load_concat_dataset
+from braindecode.preprocessing import create_windows_from_events
 
 
 ###############################################################################
@@ -29,7 +29,7 @@ dataset = MOABBDataset(
 # this step and not apply any preprocessing.
 preprocess(
     concat_ds=dataset,
-    preprocessors=[MNEPreproc(fn='resample', sfreq=10)]
+    preprocessors=[Preprocessor(fn='resample', sfreq=10)]
 )
 
 ###############################################################################
