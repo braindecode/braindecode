@@ -41,7 +41,7 @@ class SleepStagerChambon2018(nn.Module):
     layers_returned : str
         If equals to "classifier", return the prediction of the final layer,
         If equals to "features, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If equals to "all", 
+        (before the final linear layer). If equals to "all",
         return both the features and the prediction.
 
     References
