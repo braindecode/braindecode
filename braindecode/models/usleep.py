@@ -167,11 +167,13 @@ class USleep(nn.Module):
                  input_size_s=30,
                  time_conv_size_s=9 / 128,
                  ensure_odd_conv_size=False,
-                 apply_softmax=False
+                 apply_softmax=False,
+                 return_feats=False
                  ):
         super().__init__()
 
         self.in_chans = in_chans
+        self.return_feats = return_feats
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
         time_conv_size = np.round(time_conv_size_s * sfreq).astype(int)
         if time_conv_size % 2 == 0:
@@ -288,4 +290,7 @@ class USleep(nn.Module):
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]
 
-        return y_pred
+        if self.return_feats:
+            return x
+        else:
+            return y_pred
