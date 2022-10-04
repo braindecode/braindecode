@@ -220,7 +220,7 @@ feat_extractor = SleepStagerEldele2021(
     sfreq,
     n_classes=n_classes,
     input_size_s=input_size_samples / sfreq,
-    return_feats=True)
+    layers_returned="features")
 
 model = nn.Sequential(
     TimeDistributed(feat_extractor),  # apply model on each 30-s window

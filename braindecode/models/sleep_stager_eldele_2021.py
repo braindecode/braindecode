@@ -54,10 +54,11 @@ class SleepStagerEldele2021(nn.Module):
         Number of classes.
     after_reduced_cnn_size : int
         Number of output channels produced by the convolution in the AFR module.
-    return_feats : bool
-        If True, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If False, pass the features through
-        the final linear layer.
+    layers_returned : str
+        If equals to "classifier", return the prediction of the final layer,
+        If equals to "features, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If equals to "all", 
+        return both the features and the prediction.
 
     References
     ----------
@@ -71,7 +72,8 @@ class SleepStagerEldele2021(nn.Module):
     """
 
     def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1,
-                 input_size_s=30, n_classes=5, after_reduced_cnn_size=30, return_feats=False):
+                 input_size_s=30, n_classes=5, after_reduced_cnn_size=30,
+                 layers_returned="classifier"):
         super(SleepStagerEldele2021, self).__init__()
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)
@@ -97,8 +99,8 @@ class SleepStagerEldele2021(nn.Module):
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = self._len_last_layer(input_size)
-        self.return_feats = return_feats
-        if not return_feats:
+        self.layers_returned = layers_returned
+        if layers_returned != "features":
             self.fc = nn.Linear(d_model * after_reduced_cnn_size, n_classes)
 
     def _len_last_layer(self, input_size):
@@ -121,11 +123,12 @@ class SleepStagerEldele2021(nn.Module):
         encoded_features = self.feature_extractor(x)
         encoded_features = encoded_features.contiguous().view(encoded_features.shape[0], -1)
 
-        if self.return_feats:
+        if self.layers_returned == "classifier":
+            return self.fc(encoded_features)
+        elif self.layers_returned == "features":
             return encoded_features
-        else:
-            final_output = self.fc(encoded_features)
-            return final_output
+        elif self.layers_returned == "all":
+            return encoded_features, self.fc(encoded_features)
 
 
 class _SELayer(nn.Module):

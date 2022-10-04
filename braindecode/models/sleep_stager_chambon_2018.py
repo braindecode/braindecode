@@ -38,10 +38,11 @@ class SleepStagerChambon2018(nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
-    return_feats : bool
-        If True, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If False, pass the features through
-        the final linear layer.
+    layers_returned : str
+        If equals to "classifier", return the prediction of the final layer,
+        If equals to "features, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If equals to "all", 
+        return both the features and the prediction.
 
     References
     ----------
@@ -54,7 +55,7 @@ class SleepStagerChambon2018(nn.Module):
     def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, pad_size_s=0.25, input_size_s=30,
                  n_classes=5, dropout=0.25, apply_batch_norm=False,
-                 return_feats=False):
+                 layers_returned="classifier"):
         super().__init__()
 
         time_conv_size = np.ceil(time_conv_size_s * sfreq).astype(int)
@@ -83,8 +84,8 @@ class SleepStagerChambon2018(nn.Module):
             nn.MaxPool2d((1, max_pool_size))
         )
         self.len_last_layer = self._len_last_layer(n_channels, input_size)
-        self.return_feats = return_feats
-        if not return_feats:
+        self.layers_returned = layers_returned
+        if layers_returned != "features":
             self.fc = nn.Sequential(
                 nn.Dropout(dropout),
                 nn.Linear(self.len_last_layer, n_classes)
@@ -116,7 +117,9 @@ class SleepStagerChambon2018(nn.Module):
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
 
-        if self.return_feats:
-            return feats
-        else:
+        if self.layers_returned == "classifier":
             return self.fc(feats)
+        elif self.layers_returned == "features":
+            return feats
+        elif self.layers_returned == "all":
+            return feats, self.fc(feats)

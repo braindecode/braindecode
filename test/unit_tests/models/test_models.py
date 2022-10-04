@@ -227,7 +227,7 @@ def test_sleep_stager_return_feats():
 
     model = SleepStagerChambon2018(
         n_channels, sfreq, n_conv_chs=8, input_size_s=input_size_s,
-        n_classes=n_classes, return_feats=True)
+        n_classes=n_classes, layers_returned="features")
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -255,7 +255,7 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_examples = 10
 
     model = SleepStagerEldele2021(sfreq=sfreq, n_classes=n_classes, input_size_s=input_size_s,
-                                  d_model=d_model, return_feats=False)
+                                  d_model=d_model, layers_returned="classifier")
     model.eval()
 
     X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
@@ -273,7 +273,7 @@ def test_eldele_2021_feats():
     n_examples = 10
 
     model = SleepStagerEldele2021(sfreq, input_size_s=input_size_s, n_classes=n_classes,
-                                  return_feats=True)
+                                  layers_returned="features")
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -292,7 +292,7 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
 
     model = SleepStagerBlanco2020(n_channels=n_channels, sfreq=sfreq, n_groups=n_groups,
                                   input_size_s=input_size_s, n_classes=n_classes,
-                                  return_feats=False)
+                                  layers_returned="classifier")
     model.eval()
 
     X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
@@ -314,7 +314,7 @@ def test_blanco_2020_feats():
     n_examples = 10
 
     model = SleepStagerBlanco2020(n_channels, sfreq, input_size_s=input_size_s,
-                                  n_classes=n_classes, return_feats=True)
+                                  n_classes=n_classes, layers_returned="features")
     model.eval()
 
     rng = np.random.RandomState(42)

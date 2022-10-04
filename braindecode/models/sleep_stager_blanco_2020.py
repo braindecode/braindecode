@@ -36,10 +36,11 @@ class SleepStagerBlanco2020(nn.Module):
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
         layers.
-    return_feats : bool
-        If True, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If False, pass the features through
-        the final linear layer.
+    layers_returned : str
+        If equals to "classifier", return the prediction of the final layer,
+        If equals to "features, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If equals to "all", 
+        return both the features and the prediction.
 
     References
     ----------
@@ -50,7 +51,7 @@ class SleepStagerBlanco2020(nn.Module):
 
     def __init__(self, n_channels, sfreq, n_conv_chans=20, input_size_s=30,
                  n_classes=5, n_groups=2, max_pool_size=2, dropout=0.5, apply_batch_norm=False,
-                 return_feats=False):
+                 layers_returned="classifier"):
         super().__init__()
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)
@@ -91,8 +92,8 @@ class SleepStagerBlanco2020(nn.Module):
         )
 
         self.len_last_layer = self._len_last_layer(n_channels, input_size)
-        self.return_feats = return_feats
-        if not return_feats:
+        self.layers_returned = layers_returned
+        if layers_returned != "features":
             self.fc = nn.Sequential(
                 nn.Dropout(dropout),
                 nn.Linear(self.len_last_layer, n_classes),
@@ -118,7 +119,9 @@ class SleepStagerBlanco2020(nn.Module):
             x = x.unsqueeze(2)
 
         feats = self.feature_extractor(x).flatten(start_dim=1)
-        if self.return_feats:
-            return feats
-        else:
+        if self.layers_returned == "classifier":
             return self.fc(feats)
+        elif self.layers_returned == "features":
+            return feats
+        elif self.layers_returned == "all":
+            return feats, self.fc(feats)
