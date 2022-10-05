@@ -169,7 +169,7 @@ class DeepSleepNet(nn.Module):
     """Sleep staging architecture from Supratak et al 2017.
 
     Convolutional neural network and bidirectional-Long Short-Term
-    for sleep staging described in [Supratak2017]_.
+    for single channels sleep staging described in [Supratak2017]_.
 
     Parameters
     ----------
@@ -177,11 +177,10 @@ class DeepSleepNet(nn.Module):
         Number of EEG channels.
     sfreq : float
         EEG sampling frequency.
-    layers_returned : str
-        If equals to "classifier", return the prediction of the final layer,
-        If equals to "features, return the features, i.e. the output of the feature extractor
-        (before the final linear layer). If equals to "all",
-        return both the features and the prediction.
+    return_feats : bool
+        If True, return the features, i.e. the output of the feature extractor
+        (before the final linear layer). If False, pass the features through
+        the final linear layer.
 
     References
     ----------
