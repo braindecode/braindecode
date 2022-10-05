@@ -5,8 +5,6 @@ import torch.nn as nn
 class small_CNN(nn.Module):  # smaller filter sizes to learn temporal information
     def __init__(
         self,
-        n_channels,
-        sfreq,
     ):
 
         super().__init__()
@@ -75,8 +73,6 @@ class small_CNN(nn.Module):  # smaller filter sizes to learn temporal informatio
 class large_CNN(nn.Module):  # larger filter sizes to learn frequency information
     def __init__(
         self,
-        n_channels,
-        sfreq,
     ):
 
         super().__init__()
@@ -197,8 +193,6 @@ class DeepSleepNet(nn.Module):
 
     def __init__(
         self,
-        n_channels,
-        sfreq,
         n_classes=5,
     ):
         super().__init__()
