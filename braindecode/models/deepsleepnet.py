@@ -193,6 +193,7 @@ class DeepSleepNet(nn.Module):
     def __init__(
         self,
         n_classes=5,
+        return_feats=False
     ):
         super().__init__()
         self.n_channels = 1
@@ -203,19 +204,21 @@ class DeepSleepNet(nn.Module):
             input_size=3072, hidden_size=512, num_layers=2
         )
         self.fc = nn.Linear(3072, 1024)
+
         self.len_last_layer = 1024
         self.return_feats = return_feats
         if not return_feats:
             self.final_layer = nn.Linear(1024, n_classes)
 
     def forward(self, x):
-        """
-        Forward pass.
+        """Forward pass.
+
         Parameters
         ----------
         x: torch.Tensor
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
         """
+
         x1 = self.cnn1(x)
         x2 = self.cnn2(x)
         x = torch.cat((x1, x2), dim=3)
