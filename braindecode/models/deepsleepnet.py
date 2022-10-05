@@ -190,19 +190,13 @@ class DeepSleepNet(nn.Module):
        and Rehabilitation Engineering, 25(11), 1998-2008.
     """
 
-    def __init__(
-        self,
-        n_classes=5,
-        return_feats=False
-    ):
+    def __init__(self, n_classes=5, return_feats=False):
         super().__init__()
         self.n_channels = 1
         self.cnn1 = small_CNN()
         self.cnn2 = large_CNN()
         self.dropout = nn.Dropout(0.5)
-        self.bilstm = BiLSTM(
-            input_size=3072, hidden_size=512, num_layers=2
-        )
+        self.bilstm = BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
         self.fc = nn.Linear(3072, 1024)
 
         self.len_last_layer = 1024
