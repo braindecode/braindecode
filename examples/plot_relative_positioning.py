@@ -72,9 +72,11 @@ from braindecode.preprocessing.preprocess import preprocess, Preprocessor
 from numpy import multiply
 
 high_cut_hz = 30
+# Factor to convert from V to uV
+factor = 1e6
 
 preprocessors = [
-    Preprocessor(lambda data, factor: multiply(data, factor), factor=1e6),  # Convert from V to uV
+    Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
     Preprocessor('filter', l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs)
 ]
 
