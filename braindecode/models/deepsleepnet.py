@@ -202,14 +202,14 @@ class DeepSleepNet(nn.Module):
         n_classes=5,
     ):
         super().__init__()
-        self.n_channels = n_channels
-        self.cnn1 = small_CNN(n_channels, sfreq)
-        self.cnn2 = large_CNN(n_channels, sfreq)
+        self.n_channels = 1
+        self.cnn1 = small_CNN()
+        self.cnn2 = large_CNN()
         self.dropout = nn.Dropout(0.5)
         self.bilstm = BiLSTM(
-            input_size=3072 * self.n_channels, hidden_size=512, num_layers=2
+            input_size=3072, hidden_size=512, num_layers=2
         )
-        self.fc = nn.Linear(3072 * self.n_channels, 1024)
+        self.fc = nn.Linear(3072, 1024)
         self.final_layer = nn.Linear(1024, n_classes)
 
     def forward(self, x):
