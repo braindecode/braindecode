@@ -42,6 +42,7 @@ API changes
 ~~~~~~~~~~~
 - Renaming the method `get_params` to `get_augmentation_params` in augmentation classes. This makes the Transform module compatible with scikit-learn cloning mechanism (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
 - Delaying the deprecation of the preprocessing scale function :func:`braindecode.preprocessing.scale` and updates tutorials where the function were used. (:gh:`413` by `Bruno Aristimunha`_)
+- Removing deprecated functions and classes :func:`braindecode.preprocessing.zscore`, :class:`braindecode.datautil.MNEPreproc` and :class:`braindecode.datautil.NumpyPreproc`  (:gh:`415` by `Bruno Aristimunha`_)
 
 .. _changes_0_6_0:
 

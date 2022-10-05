@@ -14,8 +14,8 @@ import numpy as np
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
-    preprocess, zscore, Preprocessor, filterbank, exponential_moving_demean,
-    exponential_moving_standardize, MNEPreproc, NumpyPreproc, _replace_inplace,
+    preprocess, Preprocessor, filterbank, exponential_moving_demean,
+    exponential_moving_standardize, _replace_inplace,
     _set_preproc_kwargs)
 from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
@@ -60,23 +60,6 @@ def test_no_raw_or_epochs():
     ds = EmptyDataset()
     with pytest.raises(AssertionError):
         preprocess(ds, ["dummy", "dummy"])
-
-
-def test_deprecated_preprocs(base_concat_ds):
-    msg1 = 'Class MNEPreproc is deprecated; will be removed in 0.7.0. Use ' \
-           'Preprocessor with `apply_on_array=False` instead.'
-    msg2 = 'NumpyPreproc is deprecated; will be removed in 0.7.0. Use ' \
-           'Preprocessor with `apply_on_array=True` instead.'
-    with pytest.warns(FutureWarning, match=msg1):
-        mne_preproc = MNEPreproc('pick_types', eeg=True, meg=False, stim=False)
-    factor = 1e6
-    with pytest.warns(FutureWarning, match=msg2):
-        np_preproc = NumpyPreproc(deprecated_scale, factor=factor)
-
-    raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
-    preprocess(base_concat_ds, [mne_preproc, np_preproc])
-    np.testing.assert_allclose(base_concat_ds[0][0], raw_timepoint * factor,
-                               rtol=1e-4, atol=1e-4)
 
 
 def test_method_not_available(base_concat_ds):
@@ -127,59 +110,6 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
                                rtol=1e-4, atol=1e-4)
-
-
-def test_zscore_deprecated():
-    msg = 'Function zscore is deprecated; will be removed in 0.7.0. Use ' \
-          'sklearn.preprocessing.scale instead.'
-    with pytest.warns(FutureWarning, match=msg):
-        zscore(np.random.rand(2, 2))
-
-
-def test_zscore_continuous(base_concat_ds):
-    preprocessors = [
-        Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(zscore, channel_wise=True)
-    ]
-    preprocess(base_concat_ds, preprocessors)
-    for ds in base_concat_ds.datasets:
-        raw_data = ds.raw.get_data()
-        shape = raw_data.shape
-        # zero mean
-        expected = np.zeros(shape[:-1])
-        np.testing.assert_allclose(
-            raw_data.mean(axis=-1), expected, rtol=1e-4, atol=1e-4)
-        # unit variance
-        expected = np.ones(shape[:-1])
-        np.testing.assert_allclose(
-            raw_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
-    assert all([ds.raw_preproc_kwargs == [
-        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
-        ('zscore', {}),
-    ] for ds in base_concat_ds.datasets])
-
-
-def test_zscore_windows(windows_concat_ds):
-    preprocessors = [
-        Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(zscore)
-    ]
-    preprocess(windows_concat_ds, preprocessors)
-    for ds in windows_concat_ds.datasets:
-        windowed_data = ds.windows.get_data()
-        shape = windowed_data.shape
-        # zero mean
-        expected = np.zeros(shape[:-1])
-        np.testing.assert_allclose(
-            windowed_data.mean(axis=-1), expected, rtol=1e-4, atol=1e-4)
-        # unit variance
-        expected = np.ones(shape[:-1])
-        np.testing.assert_allclose(
-            windowed_data.std(axis=-1), expected, rtol=1e-4, atol=1e-4)
-    assert all([ds.window_preproc_kwargs == [
-        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
-        ('zscore', {}),
-    ] for ds in windows_concat_ds.datasets])
 
 
 def test_scale_deprecated():
