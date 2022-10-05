@@ -204,7 +204,10 @@ class DeepSleepNet(nn.Module):
             input_size=3072, hidden_size=512, num_layers=2
         )
         self.fc = nn.Linear(3072, 1024)
-        self.final_layer = nn.Linear(1024, n_classes)
+        self.len_last_layer = 1024
+        self.return_feats = return_feats
+        if not return_feats:
+            self.final_layer = nn.Linear(1024, n_classes)
 
     def forward(self, x):
         """
@@ -227,12 +230,10 @@ class DeepSleepNet(nn.Module):
         x = self.dropout(x)
         feats = x.squeeze()
 
-        if self.layers_returned == "classifier":
-            return self.fc(feats)
-        elif self.layers_returned == "features":
+        if self.return_feats:
             return feats
-        elif self.layers_returned == "all":
-            return feats, self.fc(feats)
+        else:
+            return self.fc(feats)
 
     def num_flat_features(self, x):
         size = x.size()[1:]  # all dimensions except the batch dimension
