@@ -332,7 +332,6 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
-
 @deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda function instead.')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
