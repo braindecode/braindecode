@@ -344,3 +344,40 @@ def test_eegitnet_shape():
 
     out = model(X)
     assert out.shape == (n_examples, n_classes)
+
+
+@pytest.mark.parametrize('n_classes', [5, 4, 2])
+def test_deepsleepnet(n_classes):
+    n_channels = 1
+    sfreq = 100
+    input_size_s = 30
+    n_examples = 10
+
+    model = DeepSleepNet(n_classes=n_classes, return_feats=False)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred = model(X.unsqueeze(2))  # 4D inputs
+    assert y_pred.shape == (n_examples, n_classes)
+    np.testing.assert_allclose(y_pred.detach().cpu().numpy())
+
+
+def test_deepsleepnet_feats():
+    n_channels = 1
+    sfreq = 100
+    input_size_s = 30
+    n_classes = 3
+    n_examples = 10
+
+    model = DeepSleepNet(n_classes=n_classes, return_feats=True)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(X.unsqueeze(2))
+    assert out.shape == (n_examples, model.len_last_layer)
