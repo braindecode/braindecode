@@ -206,6 +206,28 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
                                y_pred2.detach().cpu().numpy())
 
 
+def test_usleep_feats(in_chans, sfreq, n_classes, input_size_s):
+    rng = np.random.RandomState(42)
+    n_examples = 10
+    seq_length = 3
+    in_chans = 1
+    sfreq = 100
+    n_classes = 3
+    input_size_s = 30
+
+    model = USleep(
+        in_chans=in_chans, sfreq=sfreq, n_classes=n_classes,
+        input_size_s=input_size_s, seq_length=seq_length,
+        ensure_odd_conv_size=True, return_feat=True)
+    model.eval()
+
+    X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(X)
+    assert out.shape == (10, model.len_last_layer)
+
+
 def test_usleep_n_params():
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
