@@ -68,10 +68,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
 
 
 class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency information
-    def __init__(
-        self,
-    ):
-
+    def __init__(self):
         super().__init__()
 
         self.conv1 = nn.Sequential(
