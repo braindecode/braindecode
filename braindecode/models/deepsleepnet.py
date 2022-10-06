@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 
-class small_CNN(nn.Module):  # smaller filter sizes to learn temporal information
+class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal information
     def __init__(
         self,
     ):
