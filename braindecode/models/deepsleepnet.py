@@ -135,7 +135,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
 
 class _BiLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers):
-        super(BiLSTM, self).__init__()
+        super(_BiLSTM, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.lstm = nn.LSTM(
@@ -187,10 +187,10 @@ class DeepSleepNet(nn.Module):
     def __init__(self, n_classes=5, return_feats=False):
         super().__init__()
         self.n_channels = 1
-        self.cnn1 = small_CNN()
-        self.cnn2 = large_CNN()
+        self.cnn1 = _SmallCNN()
+        self.cnn2 = _LargeCNN()
         self.dropout = nn.Dropout(0.5)
-        self.bilstm = BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
+        self.bilstm = _BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
         self.fc = nn.Linear(3072, 1024)
 
         self.len_last_layer = 1024
