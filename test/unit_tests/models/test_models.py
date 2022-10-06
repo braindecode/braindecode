@@ -225,7 +225,7 @@ def test_usleep_feats(in_chans, sfreq, n_classes, input_size_s):
     X = torch.from_numpy(X.astype(np.float32))
 
     out = model(torch.stack([X for idx in range(seq_length)],
-                                axis=1))
+                axis=1))
     assert out.shape == (10, model.len_last_layer)
 
 
