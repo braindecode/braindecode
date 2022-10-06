@@ -288,13 +288,10 @@ class USleep(nn.Module):
         for up, res in zip(self.decoder, residuals):
             x = up(x, res)
 
-        # classifier
-        y_pred = self.clf(x)        # (B, n_classes, seq_length)
-
-        if y_pred.shape[-1] == 1:  # seq_length of 1
-            y_pred = y_pred[:, :, 0]
-
         if self.return_feats:
             return x.flatten(start_dim=1)
         else:
+            y_pred = self.clf(x)        # (B, n_classes, seq_length)
+            if y_pred.shape[-1] == 1:  # seq_length of 1
+                y_pred = y_pred[:, :, 0]
             return y_pred
