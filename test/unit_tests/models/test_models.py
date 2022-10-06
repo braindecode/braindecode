@@ -206,7 +206,7 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
                                y_pred2.detach().cpu().numpy())
 
 
-def test_usleep_feats(in_chans, sfreq, n_classes, input_size_s):
+def test_usleep_feats():
     rng = np.random.RandomState(42)
     n_examples = 10
     seq_length = 3
