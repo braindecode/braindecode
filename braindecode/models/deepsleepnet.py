@@ -223,7 +223,7 @@ class DeepSleepNet(nn.Module):
         if self.return_feats:
             return feats
         else:
-            return self.fc(feats)
+            return self.final_layer(feats)
 
     def num_flat_features(self, x):
         size = x.size()[1:]  # all dimensions except the batch dimension
