@@ -141,6 +141,8 @@ class USleep(nn.Module):
     time_conv_size_s : float
         Size of the temporal convolution kernel, in seconds. Set to 9 / 128 in
         [1]_.
+    seq_length : int
+        Number of sequence of the input.
     ensure_odd_conv_size : bool
         If True and the size of the convolutional kernel is an even number, one
         will be added to it to ensure it is odd, so that the decoder blocks can
@@ -166,6 +168,7 @@ class USleep(nn.Module):
                  n_classes=5,
                  input_size_s=30,
                  time_conv_size_s=9 / 128,
+                 seq_length=1,
                  ensure_odd_conv_size=False,
                  apply_softmax=False
                  ):
