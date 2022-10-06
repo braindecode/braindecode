@@ -232,35 +232,7 @@ class USleep(nn.Module):
         # The temporal dimension remains unchanged
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
-        self.len_last_layer = channels[1]
-        self.clf = nn.Sequential(
-            nn.Conv1d(
-                in_channels=channels[1],
-                out_channels=channels[1],
-                kernel_size=1,
-                stride=1,
-                padding=0,
-            ),                         # output is (B, C, 1, S * T)
-            nn.Tanh(),
-            nn.AvgPool1d(input_size),  # output is (B, C, S)
-            nn.Conv1d(
-                in_channels=channels[1],
-                out_channels=n_classes,
-                kernel_size=1,
-                stride=1,
-                padding=0,
-            ),                         # output is (B, n_classes, S)
-            nn.ELU(),
-            nn.Conv1d(
-                in_channels=n_classes,
-                out_channels=n_classes,
-                kernel_size=1,
-                stride=1,
-                padding=0,
-            ),
-            nn.Softmax(dim=1) if apply_softmax else nn.Identity(),
-            # output is (B, n_classes, S)
-        )
+        self.len_last_layer = channels[1] * seq_length * input_size
 
     def forward(self, x):
         """If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
