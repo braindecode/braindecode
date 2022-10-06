@@ -133,7 +133,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
         return x
 
 
-class BiLSTM(nn.Module):
+class _BiLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers):
         super(BiLSTM, self).__init__()
         self.hidden_size = hidden_size
