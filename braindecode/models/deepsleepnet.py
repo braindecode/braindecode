@@ -70,7 +70,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
         return x
 
 
-class large_CNN(nn.Module):  # larger filter sizes to learn frequency information
+class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency information
     def __init__(
         self,
     ):
