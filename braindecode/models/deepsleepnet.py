@@ -212,8 +212,9 @@ class DeepSleepNet(nn.Module):
 
         x1 = self.cnn1(x)
         x2 = self.cnn2(x)
-        x = torch.cat((x1, x2), dim=3)
-        x = x.view(-1, self.num_flat_features(x))
+        x1 = x1.flatten(start_dim=1)
+        x2 = x2.flatten(start_dim=1)
+        x = torch.cat((x1, x2), dim=1)
         x = x.unsqueeze(1)
         x = self.dropout(x)
         temp = x.clone()
