@@ -207,6 +207,9 @@ class DeepSleepNet(nn.Module):
             Batch of EEG windows of shape (batch_size, n_channels, n_times).
         """
 
+        if x.ndim == 3:
+            x = x.unsqueeze(1)
+
         x1 = self.cnn1(x)
         x2 = self.cnn2(x)
         x = torch.cat((x1, x2), dim=3)
