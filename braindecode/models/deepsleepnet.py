@@ -197,6 +197,7 @@ class DeepSleepNet(nn.Module):
         self.fc = nn.Sequential(nn.Linear(3072, 1024, bias=False),
                                 nn.BatchNorm1d(num_features=1024))
 
+        self.features_extractor = nn.Identity()
         self.len_last_layer = 1024
         self.return_feats = return_feats
         if not return_feats:
@@ -229,7 +230,8 @@ class DeepSleepNet(nn.Module):
         x = x.squeeze()
         x = torch.add(x, temp)
         x = self.dropout(x)
-        feats = x.squeeze()
+
+        feats = self.features_extractor(x)
 
         if self.return_feats:
             return feats
