@@ -194,7 +194,8 @@ class DeepSleepNet(nn.Module):
         self.cnn2 = _LargeCNN()
         self.dropout = nn.Dropout(0.5)
         self.bilstm = _BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
-        self.fc = nn.Linear(3072, 1024)
+        self.fc = nn.Sequential(nn.Linear(3072, 1024, bias=False),
+                                nn.BatchNorm1d(num_features=1024))
 
         self.len_last_layer = 1024
         self.return_feats = return_feats
