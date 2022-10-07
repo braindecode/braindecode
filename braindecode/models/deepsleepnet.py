@@ -1,3 +1,6 @@
+# Authors: Théo Gnassounou <theo.gnassounou@inria.fr>
+#
+# License: BSD (3-clause)
 import torch
 import torch.nn as nn
 
