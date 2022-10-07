@@ -42,6 +42,7 @@ API changes
 ~~~~~~~~~~~
 - Renaming the method `get_params` to `get_augmentation_params` in augmentation classes. This makes the Transform module compatible with scikit-learn cloning mechanism (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
 - Removing deprecated functions and classes :func:`braindecode.preprocessing.zscore`, :class:`braindecode.datautil.MNEPreproc` and :class:`braindecode.datautil.NumpyPreproc`  (:gh:`415` by `Bruno Aristimunha`_)
+- Setting `iterator_train__drop_last=True` by default for :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`411` by `Robin Tibor Schirrmeister`_)
 
 .. _changes_0_6_0:
 
