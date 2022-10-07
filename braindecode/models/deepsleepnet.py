@@ -211,9 +211,11 @@ class DeepSleepNet(nn.Module):
             x = x.unsqueeze(1)
 
         x1 = self.cnn1(x)
-        x2 = self.cnn2(x)
         x1 = x1.flatten(start_dim=1)
+
+        x2 = self.cnn2(x)
         x2 = x2.flatten(start_dim=1)
+
         x = torch.cat((x1, x2), dim=1)
         x = x.unsqueeze(1)
         x = self.dropout(x)
@@ -228,10 +230,3 @@ class DeepSleepNet(nn.Module):
             return feats
         else:
             return self.final_layer(feats)
-
-    def num_flat_features(self, x):
-        size = x.size()[1:]  # all dimensions except the batch dimension
-        num_features = 1
-        for s in size:
-            num_features *= s
-        return num_features
