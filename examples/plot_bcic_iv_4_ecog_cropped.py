@@ -287,7 +287,7 @@ from braindecode.training import CroppedTimeSeriesEpochScoring
 # These values we found good for shallow network for EEG MI decoding:
 lr = 0.0625 * 0.01
 weight_decay = 0
-batch_size = 64
+batch_size = 27  # only 27 examples in train set, otherwise set to 64
 n_epochs = 8
 
 regressor = EEGRegressor(
