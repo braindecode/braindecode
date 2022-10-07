@@ -221,11 +221,12 @@ class DeepSleepNet(nn.Module):
         x2 = x2.flatten(start_dim=1)
 
         x = torch.cat((x1, x2), dim=1)
-        x = x.unsqueeze(1)
         x = self.dropout(x)
         temp = x.clone()
         temp = self.fc(temp)
+        x = x.unsqueeze(1)
         x = self.bilstm(x)
+        x = x.squeeze()
         x = torch.add(x, temp)
         x = self.dropout(x)
         feats = x.squeeze()
