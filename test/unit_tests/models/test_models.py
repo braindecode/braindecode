@@ -384,3 +384,34 @@ def test_deepsleepnet_feats():
 
     out = model(X.unsqueeze(1))
     assert out.shape == (n_examples, model.len_last_layer)
+
+
+def test_deepsleepnet_feats_with_hook():
+    n_channels = 1
+    sfreq = 100
+    input_size_s = 30
+    n_classes = 3
+    n_examples = 10
+
+    model = DeepSleepNet(n_classes=n_classes, return_feats=False)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    def get_intermediate_layers(intermediate_layers, layer_name):
+        def hook(model, input, output):
+            intermediate_layers[layer_name] = output.flatten(start_dim=1).detach()
+
+        return hook
+
+    intermediate_layers = {}
+    layer_name = "features_extractor"
+    model.features_extractor.register_forward_hook(
+        get_intermediate_layers(intermediate_layers, layer_name)
+    )
+
+    y_pred = model(X.unsqueeze(1))
+    assert intermediate_layers["features_extractor"].shape == (n_examples, model.len_last_layer)
+    assert y_pred.shape == (n_examples, n_classes)
