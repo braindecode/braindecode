@@ -5,6 +5,7 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -291,8 +292,7 @@ def exponential_moving_standardize(
         init_std = np.std(
             data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
-        init_block_standardized = (
-            data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
+        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
@@ -332,7 +332,7 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
-@deprecated(extra='will be removed in 0.7.0. Use numpy.multiply instead.')
+@deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda function instead.')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
 

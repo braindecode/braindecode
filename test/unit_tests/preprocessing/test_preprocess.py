@@ -113,8 +113,8 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
 
 
 def test_scale_deprecated():
-    msg = 'Function scale is deprecated; will be removed in 0.7.0. Use ' \
-          'numpy.multiply instead.'
+    msg = 'Function scale is deprecated; will be removed in 0.8.0. ' \
+          'Use numpy.multiply inside a lambda function instead.'
     with pytest.warns(FutureWarning, match=msg):
         deprecated_scale(np.random.rand(2, 2), factor=2)
 
