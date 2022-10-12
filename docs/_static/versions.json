@@ -1,12 +1,16 @@
 [
     {
-        "name": "0.7 (experimental)",
+        "name": "0.8 (experimental)",
         "version": "dev",
-        "url": "https://braindecode.org/master/"
+        "url": "https://braindecode.org/dev/"
+    },
+    {
+        "name": "0.7",
+        "version": "stable",
+        "url": "https://braindecode.org/stable/"
     },
     {
         "name": "0.6",
-        "version": "stable",
         "url": "https://braindecode.org/0.6/"
     }
 ]
