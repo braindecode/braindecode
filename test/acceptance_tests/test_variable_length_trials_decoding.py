@@ -74,7 +74,7 @@ def test_variable_length_trials_cropped_decoding():
         criterion=CroppedLoss,
         criterion__loss_function=torch.nn.functional.nll_loss,
         optimizer=torch.optim.Adam,
-        batch_size=32,
+        batch_size=16,
         callbacks=['accuracy'],
         train_split=train_split,
     )

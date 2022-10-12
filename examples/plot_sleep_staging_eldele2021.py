@@ -65,12 +65,15 @@ dataset = SleepPhysionet(
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
 # a lowpass filter.
 
-from braindecode.preprocessing import preprocess, Preprocessor, scale
+from braindecode.preprocessing import preprocess, Preprocessor
+from numpy import multiply
 
 high_cut_hz = 30
+# Factor to convert from V to uV
+factor = 1e6
 
 preprocessors = [
-    Preprocessor(scale, factor=1e6, apply_on_array=True),
+    Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
     Preprocessor('filter', l_freq=None, h_freq=high_cut_hz)
 ]
 
