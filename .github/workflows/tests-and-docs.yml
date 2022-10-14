@@ -92,7 +92,7 @@ jobs:
       with:
         deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
         external_repository: braindecode/braindecode.github.io
-        destination_dir: master
+        destination_dir: dev
         publish_branch: master
         publish_dir: ./docs/_build/html
         cname: braindecode.org
