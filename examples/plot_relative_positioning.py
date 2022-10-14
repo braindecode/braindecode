@@ -68,12 +68,15 @@ dataset = SleepPhysionet(
 # a lowpass filter. Since the Sleep Physionet data is already sampled at 100 Hz
 # we don't need to apply resampling.
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor, scale
+from braindecode.preprocessing.preprocess import preprocess, Preprocessor
+from numpy import multiply
 
 high_cut_hz = 30
+# Factor to convert from V to uV
+factor = 1e6
 
 preprocessors = [
-    Preprocessor(scale, factor=1e6, apply_on_array=True),
+    Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
     Preprocessor('filter', l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs)
 ]
 
@@ -307,7 +310,7 @@ from skorch.callbacks import Checkpoint, EarlyStopping, EpochScoring
 from braindecode import EEGClassifier
 
 lr = 5e-3
-batch_size = 512
+batch_size = 128  # 512 if data large enough
 n_epochs = 25
 num_workers = 0 if n_jobs <= 1 else n_jobs
 

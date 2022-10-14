@@ -58,13 +58,16 @@ class EEGRegressor(NeuralNetRegressor):
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
     def __init__(self, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True, aggregate_predictions=True, **kwargs):
+                 iterator_train__shuffle=True,
+                 iterator_train__drop_last=True,
+                 aggregate_predictions=True, **kwargs):
         self.cropped = cropped
         self.aggregate_predictions = aggregate_predictions
         self._last_window_inds_ = None
         super().__init__(*args,
                          callbacks=callbacks,
                          iterator_train__shuffle=iterator_train__shuffle,
+                         iterator_train__drop_last=iterator_train__drop_last,
                          **kwargs)
 
     def _yield_callbacks(self):
