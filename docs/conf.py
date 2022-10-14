@@ -263,7 +263,7 @@ html_theme_options = {
     'show_toc_level': 1,
     'navbar_end': ['theme-switcher', 'version-switcher'],
     'switcher': {
-      'json_url': 'https://github.com/braindecode/braindecode/raw/master/docs/_static/versions.json',
+      'json_url': 'https://braindecode.org/stable/_static/versions.json',
       'version_match': switcher_version_match,
     },
     'footer_items': ['copyright'],
