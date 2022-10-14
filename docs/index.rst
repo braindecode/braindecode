@@ -29,8 +29,10 @@ data with deep learning models. It includes dataset fetchers, data preprocessing
 visualization tools, as well as implementations of several deep learning
 architectures and data augmentations for analysis of EEG, ECoG and MEG.
 
-   For neuroscientists who want to work with deep learning and
-   deep learning researchers who want to work with neurophysiological data.
+.. rst-class:: h4 text-center font-weight-light my-4
+
+For neuroscientists who want to work with deep learning and
+deep learning researchers who want to work with neurophysiological data.
 
 .. frontpage gallery is added by a conditional in _templates/layout.html
 
@@ -39,6 +41,7 @@ architectures and data augmentations for analysis of EEG, ECoG and MEG.
 
    Install <install.rst>
    Get Started <starting>
+   Cite <cite>
    Tutorial and Examples <auto_examples/index>
    API Reference <api>
    Get help <help>
