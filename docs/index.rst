@@ -41,6 +41,7 @@ deep learning researchers who want to work with neurophysiological data.
 
    Install <install.rst>
    Get Started <starting>
+   Cite <cite>
    Tutorial and Examples <auto_examples/index>
    API Reference <api>
    Get help <help>
