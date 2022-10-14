@@ -17,8 +17,22 @@ What's new
    - "API changes" for backward-incompatible changes
 
 .. _current:
+Current 0.8 (dev0)
+--------------------
 
-Current (0.7.dev0)
+Enhancements
+~~~~~~~~~~~~
+
+Bugs
+~~~~
+
+API changes
+~~~~~~~~~~~
+
+
+.. _changes_0_7_0:
+
+Current 0.7 (10-2022)
 --------------------
 
 Enhancements
