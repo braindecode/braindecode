@@ -254,7 +254,7 @@ html_theme_options = {  'icon_links_label': 'Quick Links',  # for screen reader
                       'show_toc_level': 1,
                       'navbar_end': 'version-switcher',
                       'switcher': {
-                          'json_url': 'https://github.com/braindecode/braindecode/raw/master/docs/_static/versions.json',
+                          'json_url': 'https://braindecode.org/master/_static/versions.json',
                           'version_match': switcher_version_match,
                         },
                         'footer_items': ['copyright'],
