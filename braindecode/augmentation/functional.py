@@ -74,29 +74,29 @@ def sign_flip(X, y):
     return -X, y
 
 
-def _new_random_fft_phase_odd(n, device, random_state):
+def _new_random_fft_phase_odd(batch_size, c, n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
-        2j * np.pi * rng.random((n - 1) // 2)
+        2j * np.pi * rng.random((batch_size, c, (n - 1) // 2))
     ).to(device)
     return torch.cat([
-        torch.as_tensor([0.0], device=device),
+        torch.zeros((batch_size, c, 1), device=device),
         random_phase,
         -torch.flip(random_phase, [-1])
-    ])
+    ], dim=-1)
 
 
-def _new_random_fft_phase_even(n, device, random_state):
+def _new_random_fft_phase_even(batch_size, c, n, device, random_state):
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
-        2j * np.pi * rng.random(n // 2 - 1)
+        2j * np.pi * rng.random((batch_size, c, n // 2 - 1))
     ).to(device)
     return torch.cat([
-        torch.as_tensor([0.0], device=device),
+        torch.zeros((batch_size, c, 1), device=device),
         random_phase,
-        torch.as_tensor([0.0], device=device),
+        torch.zeros((batch_size, c, 1), device=device),
         -torch.flip(random_phase, [-1])
-    ])
+    ], dim=-1)
 
 
 _new_random_fft_phase = {
@@ -105,79 +105,13 @@ _new_random_fft_phase = {
 }
 
 
-def _ft_surrogate(x=None, f=None, eps=1, random_state=None):
-    """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
-
-    Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
-    and modified.
-
-    MIT License
-
-    Copyright (c) 2018 Clifford Lab
-
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the "Software"),
-    to deal in the Software without restriction, including without limitation
-    the rights to use, copy, modify, merge, publish, distribute, sublicense,
-    and/or sell copies of the Software, and to permit persons to whom the
-    Software is furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in
-    all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-    DEALINGS IN THE SOFTWARE.
-
-    Parameters
-    ----------
-    x: torch.tensor, optional
-        Single EEG channel signal in time space. Should not be passed if f is
-        given. Defaults to None.
-    f: torch.tensor, optional
-        Fourier spectrum of a single EEG channel signal. Should not be passed
-        if x is given. Defaults to None.
-    eps: float, optional
-        Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled: [0, `eps` * 2 * `pi`]. Defaults to 1.
-    random_state: int | numpy.random.Generator, optional
-        By default None.
-
-    References
-    ----------
-    .. [1] Schwabedal, J. T., Snyder, J. C., Cakmak, A., Nemati, S., &
-       Clifford, G. D. (2018). Addressing Class Imbalance in Classification
-       Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
-       preprint arXiv:1806.08675.
-    """
-    assert isinstance(
-        eps,
-        (Real, torch.FloatTensor, torch.cuda.FloatTensor)
-    ) and 0 <= eps <= 1, f"eps must be a float beween 0 and 1. Got {eps}."
-    if f is None:
-        assert x is not None, 'Neither x nor f provided.'
-        f = fft(x.double(), dim=-1)
-        device = x.device
-    else:
-        device = f.device
-    n = f.shape[-1]
-    random_phase = _new_random_fft_phase[n % 2](
-        n,
-        device=device,
-        random_state=random_state
-    )
-    if isinstance(eps, torch.Tensor):
-        eps = eps.to(device)
-    f_shifted = f * torch.exp(eps * random_phase)
-    shifted = ifft(f_shifted, dim=-1)
-    return shifted.real.float()
-
-
-def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
+def ft_surrogate(
+    X,
+    y,
+    phase_noise_magnitude,
+    channel_indep,
+    random_state=None
+):
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -193,6 +127,10 @@ def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
         Float between 0 and 1 setting the range over which the phase
         pertubation is uniformly sampled:
         [0, `phase_noise_magnitude` * 2 * `pi`].
+    channel_indep : bool
+        Whether to sample phase perturbations independently for each channel or
+        not. It is advised to set it to False when spatial information is
+        important for the task, like in BCI.
     random_state: int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
 
@@ -210,11 +148,31 @@ def ft_surrogate(X, y, phase_noise_magnitude, random_state=None):
        Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
        preprint arXiv:1806.08675.
     """
-    transformed_X = _ft_surrogate(
-        x=X,
-        eps=phase_noise_magnitude,
+    assert isinstance(
+        phase_noise_magnitude,
+        (Real, torch.FloatTensor, torch.cuda.FloatTensor)
+    ) and 0 <= phase_noise_magnitude <= 1, (
+        f"eps must be a float beween 0 and 1. Got {phase_noise_magnitude}.")
+
+    f = fft(X.double(), dim=-1)
+    device = X.device
+
+    n = f.shape[-1]
+    random_phase = _new_random_fft_phase[n % 2](
+        f.shape[0],
+        f.shape[-2] if channel_indep else 1,
+        n,
+        device=device,
         random_state=random_state
     )
+    if not channel_indep:
+        random_phase = torch.tile(random_phase, (1, f.shape[-2], 1))
+    if isinstance(phase_noise_magnitude, torch.Tensor):
+        phase_noise_magnitude = phase_noise_magnitude.to(device)
+    f_shifted = f * torch.exp(phase_noise_magnitude * random_phase)
+    shifted = ifft(f_shifted, dim=-1)
+    transformed_X = shifted.real.float()
+
     return transformed_X, y
 
 
