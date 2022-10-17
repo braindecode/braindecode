@@ -124,7 +124,7 @@ def _load_signals(fif_file, preload, is_raw):
 
 
 def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
-                        n_jobs=1):
+                        n_jobs=1, run_deprecation_check=True):
     """Load a stored BaseConcatDataset of BaseDatasets or WindowsDatasets from
     files.
 
@@ -146,14 +146,15 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     -------
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
     """
-    # if we encounter a dataset that was saved in 'the old way', call the
-    # corresponding 'old' loading function
-    if _is_outdated_saved(path):
-        warnings.warn("The way your dataset was saved is deprecated by now. "
-                      "Please save it again using dataset.save().", UserWarning)
-        return _outdated_load_concat_dataset(
-            path=path, preload=preload, ids_to_load=ids_to_load,
-            target_name=target_name)
+    if run_deprecation_check:
+        # if we encounter a dataset that was saved in 'the old way', call the
+        # corresponding 'old' loading function
+        if _is_outdated_saved(path):
+            warnings.warn("The way your dataset was saved is deprecated by now. "
+                          "Please save it again using dataset.save().", UserWarning)
+            return _outdated_load_concat_dataset(
+                path=path, preload=preload, ids_to_load=ids_to_load,
+                target_name=target_name)
 
     # else we have a dataset saved in the new way with subdirectories in path
     # for every dataset with description.json and -epo.fif or -raw.fif,
@@ -174,9 +175,12 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
             'Parallelized reading with `preload=False` is not supported for '
             'windowed data. Will use `n_jobs=1`.', UserWarning)
         n_jobs = 1
-    datasets = Parallel(n_jobs)(
-        delayed(_load_parallel)(path, i, preload, is_raw)
-        for i in ids_to_load)
+    if n_jobs == 1:
+        datasets = [_load_parallel(path, i, preload, is_raw) for i in ids_to_load]
+    else:
+        datasets = Parallel(n_jobs)(
+            delayed(_load_parallel)(path, i, preload, is_raw)
+            for i in ids_to_load)
     return BaseConcatDataset(datasets)
 
 
@@ -190,7 +194,8 @@ def _load_parallel(path, i, preload, is_raw):
     fif_file_path = os.path.join(sub_dir, fif_file_name)
     signals = _load_signals(fif_file_path, preload, is_raw)
     description_file_path = os.path.join(sub_dir, 'description.json')
-    description = pd.read_json(description_file_path, typ='series')
+    with open(description_file_path, 'r') as json_file:
+        description = pd.Series(json.load(json_file))
     target_file_path = os.path.join(sub_dir, 'target_name.json')
     target_name = None
     if os.path.exists(target_file_path):
@@ -226,9 +231,6 @@ def _is_outdated_saved(path):
     """Data was saved in the old way if there are 'description.json', '-raw.fif'
     or '-epo.fif' in path (no subdirectories) OR if there are more 'fif' files
     than 'description.json' files."""
-    description_files = glob(os.path.join(path, '**/description.json'))
-    fif_files = glob(os.path.join(path, '**/*-raw.fif')) + glob(os.path.join(path, '**/*-epo.fif'))
-    multiple = len(description_files) != len(fif_files)
     kwargs_in_path = any(
         [os.path.exists(os.path.join(path, kwarg_name))
          for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
@@ -236,8 +238,27 @@ def _is_outdated_saved(path):
     return (os.path.exists(os.path.join(path, 'description.json')) or
             os.path.exists(os.path.join(path, '0-raw.fif')) or
             os.path.exists(os.path.join(path, '0-epo.fif')) or
-            multiple or
+            _multiple(path) or
             kwargs_in_path)
+
+
+def _multiple(path):
+    multiple = False
+    i = 0
+    while True:
+        this_path = os.path.join(path, str(i))
+        # stop if old save detected or all subdirs checked
+        if multiple or not os.path.exists(this_path):
+            break
+
+        this_files = os.listdir(this_path)
+        # if there is more than one fif file in this subdir, it was saved in the
+        # old way
+        if f'{i+1}-raw.fif' in this_files or f'{i+1}-epo.fif' in this_files:
+            multiple = True
+
+        i += 1
+    return multiple
 
 
 def _check_save_dir_empty(save_dir):
