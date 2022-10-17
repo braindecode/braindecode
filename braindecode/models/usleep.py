@@ -233,6 +233,7 @@ class USleep(nn.Module):
         # The temporal dimension remains unchanged
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
+        self.seq_length = seq_length
         self.len_last_layer = channels[1] * seq_length * input_size
         self.return_feats = return_feats
         if not return_feats:
@@ -269,6 +270,16 @@ class USleep(nn.Module):
         """If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).
         """
+        if (x.ndim == 4) and (x.shape[-3] != self.seq_length):
+            raise ValueError(f"Input sequence size ({x.shape[-3]}) does not match the "
+                             f"length of the sequences specified in the constructor "
+                             f"({self.seq_length}).")
+
+        if (x.ndim == 3) and self.seq_length != 1:
+            raise ValueError(f"Input sequence size is 1 but it does not match the "
+                             f"length of the sequences specified in the constructor "
+                             f"({self.seq_length}).")
+
         # reshape input
         if x.ndim == 4:  # input x has shape (B, S, C, T)
             x = x.permute(0, 2, 1, 3)  # (B, C, S, T)
@@ -289,6 +300,7 @@ class USleep(nn.Module):
             x = up(x, res)
 
         if self.return_feats:
+            assert x[0].numel() == self.len_last_layer
             return x.flatten(start_dim=1)
         else:
             y_pred = self.clf(x)        # (B, n_classes, seq_length)

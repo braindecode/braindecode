@@ -189,7 +189,8 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
 
     model = USleep(
         in_chans=in_chans, sfreq=sfreq, n_classes=n_classes,
-        input_size_s=input_size_s, ensure_odd_conv_size=True)
+        input_size_s=input_size_s, ensure_odd_conv_size=True,
+        seq_length=seq_length)
     model.eval()
 
     X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
