@@ -6,7 +6,6 @@ import torch
 from torch import nn
 
 from .modules import Expression, Ensure4d
-from .functions import transpose_time_to_spat
 
 
 class EEGInceptionMI(nn.Module):
@@ -74,7 +73,7 @@ class EEGInceptionMI(nn.Module):
         self.in_channels = in_channels
         self.n_classes = n_classes
         self.input_window_s = input_window_s
-        self.input_window_samples = input_window_s * sfreq
+        self.input_window_samples = int(input_window_s * sfreq)
         self.sfreq = sfreq
         self.n_convs = n_convs
         self.n_filters = n_filters
@@ -82,7 +81,7 @@ class EEGInceptionMI(nn.Module):
         self.activation = activation
 
         self.ensuredims = Ensure4d()
-        self.dimshuffle = Expression(transpose_time_to_spat)
+        self.dimshuffle = Expression(_transpose_to_b_c_1_t)
 
         # ======== Inception branches ========================
 
@@ -139,6 +138,7 @@ class EEGInceptionMI(nn.Module):
         # stride 1
         # self.ave_pooling = nn.AvgPool1d()
 
+        self.flat = nn.Flatten()
         self.fc = nn.Linear(
             in_features=self.input_window_samples * intermediate_in_channels,
             out_features=self.n_classes,
@@ -149,6 +149,9 @@ class EEGInceptionMI(nn.Module):
         self,
         X: torch.Tensor,
     ) -> torch.Tensor:
+        X = self.ensuredims(X)
+        X = self.dimshuffle(X)
+
         res1 = self.residual_block_1(X)
 
         out = self.initial_inception_module(X)
@@ -165,7 +168,8 @@ class EEGInceptionMI(nn.Module):
         out = res2 + out
 
         # out = self.ave_pooling(out)
-        return self.fc(out.flatten())
+        out = self.flat(out)
+        return self.fc(out)
 
 
 class _InceptionModuleMI(nn.Module):
@@ -185,24 +189,26 @@ class _InceptionModuleMI(nn.Module):
         self.kernel_unit_s = kernel_unit_s
         self.sfreq = sfreq
 
-        self.bottleneck = nn.Conv1d(
+        self.bottleneck = nn.Conv2d(
             in_channels=self.in_channels,
             out_channels=self.n_filters,
             kernel_size=1,
             bias=True,
         )
 
-        kernel_unit = self.kernel_unit_s * self.sfreq
+        kernel_unit = int(self.kernel_unit_s * self.sfreq)
 
         # XXX I wonder whether stride is correct here. This is how MaxPooling
         # is usually used, but table3 in the paper indicate an unchanged
         # output shape... Are they using stride=1?
-        self.pooling = nn.MaxPool1d(
-            kernel_size=kernel_unit,
-            stride=kernel_unit,
+        self.pooling = nn.MaxPool2d(
+            kernel_size=(1, kernel_unit),
+            # stride=kernel_unit,
+            stride=1,
+            padding=(0, int(kernel_unit // 2)),
         )
 
-        self.pooling_conv = nn.Conv1d(
+        self.pooling_conv = nn.Conv2d(
             in_channels=self.in_channels,
             out_channels=self.n_filters,
             kernel_size=1,
@@ -210,16 +216,16 @@ class _InceptionModuleMI(nn.Module):
         )
 
         self.conv_list = nn.ModuleList([
-            nn.Conv1d(
+            nn.Conv2d(
                 in_channels=self.n_filters,
                 out_channels=self.n_filters,
-                kernel_size=(n_units * 2 + 1) * kernel_unit,
+                kernel_size=(1, (n_units * 2 + 1) * kernel_unit),
                 padding="same",
                 bias=True,
             ) for n_units in range(self.n_convs)
         ])
 
-        self.bn = nn.BatchNorm1d()
+        self.bn = nn.BatchNorm2d(self.n_filters * (self.n_convs + 1))
 
         self.activation = activation
 
@@ -232,6 +238,7 @@ class _InceptionModuleMI(nn.Module):
         X1 = [conv(X1) for conv in self.conv_list]
 
         X2 = self.pooling(X)
+        X2 = X2[..., :-1]  # XXX Ugly, but allows to preserve spatial dim...
         X2 = self.pooling_conv(X2)
 
         out = torch.cat(X1 + [X2], 1)
@@ -252,8 +259,8 @@ class _ResidualBlockMI(nn.Module):
         self.n_filters = n_filters
         self.activation = activation
 
-        self.bn = nn.BatchNorm1d()
-        self.conv = nn.Conv1d(
+        self.bn = nn.BatchNorm2d(self.n_filters)
+        self.conv = nn.Conv2d(
             in_channels=self.in_channels,
             out_channels=self.n_filters,
             kernel_size=1,
@@ -267,3 +274,7 @@ class _ResidualBlockMI(nn.Module):
         out = self.conv(X)
         out = self.bn(out)
         return self.activation(out)
+
+
+def _transpose_to_b_c_1_t(x):
+    return x.permute(0, 1, 3, 2)

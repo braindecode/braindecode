@@ -13,7 +13,7 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    EEGITNet, EEGInceptionERP, TIDNet)
+    EEGITNet, EEGInceptionERP, EEGInceptionMI, TIDNet)
 
 from braindecode.util import set_random_seeds
 
@@ -121,7 +121,7 @@ def test_eegitnet(input_sizes):
     check_forward_pass(model, input_sizes,)
 
 
-def test_eeginception(input_sizes):
+def test_eeginception_erp(input_sizes):
     model = EEGInceptionERP(
         n_classes=input_sizes['n_classes'],
         in_channels=input_sizes['n_channels'],
@@ -130,7 +130,7 @@ def test_eeginception(input_sizes):
     check_forward_pass(model, input_sizes,)
 
 
-def test_eeginception_n_params():
+def test_eeginception_erp_n_params():
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
     """
@@ -147,6 +147,18 @@ def test_eeginception_n_params():
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 14926  # From paper's TABLE IV EEG-Inception Architecture Details
+
+
+def test_eeginception_mi(input_sizes):
+    sfreq = 100
+    model = EEGInceptionMI(
+        n_classes=input_sizes['n_classes'],
+        in_channels=input_sizes['n_channels'],
+        input_window_s=input_sizes['n_in_times'] / sfreq,
+        sfreq=100,
+    )
+
+    check_forward_pass(model, input_sizes,)
 
 
 @pytest.mark.parametrize(
