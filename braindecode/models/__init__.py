@@ -7,7 +7,7 @@ from .eegnet import EEGNetv4, EEGNetv1
 from .hybrid import HybridNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .eegresnet import EEGResNet
-from .eeginception import EEGInception
+from .eeginception_erp import EEGInceptionERP
 from .tcn import TCN
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
 from .sleep_stager_blanco_2020 import SleepStagerBlanco2020

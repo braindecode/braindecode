@@ -13,7 +13,7 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    EEGITNet, EEGInception, TIDNet)
+    EEGITNet, EEGInceptionERP, TIDNet)
 
 from braindecode.util import set_random_seeds
 
@@ -122,7 +122,7 @@ def test_eegitnet(input_sizes):
 
 
 def test_eeginception(input_sizes):
-    model = EEGInception(
+    model = EEGInceptionERP(
         n_classes=input_sizes['n_classes'],
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
@@ -134,7 +134,7 @@ def test_eeginception_n_params():
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
     """
-    model = EEGInception(
+    model = EEGInceptionERP(
         in_channels=8,
         n_classes=2,
         input_window_samples=128,  # input_time

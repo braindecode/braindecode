@@ -14,10 +14,9 @@ def _transpose_to_b_1_c_0(x):
     return x.permute(0, 3, 1, 2)
 
 
-class EEGInception(nn.Sequential):
-    """EEG Inception.
+class EEGInceptionERP(nn.Sequential):
+    """EEG Inception for ERP-based classification
 
-    EEG Inception for ERP-based classification described in [Santamaria2020]_.
     The code for the paper and this model is also available at [Santamaria2020]_
     and an adaptation for PyTorch [2]_.
 
