@@ -30,28 +30,25 @@ class EEGInceptionMI(nn.Module):
         Number of EEG channels.
     n_classes : int
         Number of classes.
-    input_size_ms : int
-        Size of the input, in milliseconds. Set to 1000 in [Santamaria2020]_.
-    sfreq : float
-        EEG sampling frequency.
-    drop_prob : float
-        Dropout rate inside all the network.
-    scales_time: list(int)
-        Windows for inception block, must be a list with proportional values of
-        the input_size_ms.
-        According to the authors: temporal scale (ms) of the convolutions
-        on each Inception module.
-        This parameter determines the kernel sizes of the filters.
-    n_filters : int
-        Initial number of convolutional filters. Set to 8 in [Santamaria2020]_.
+    input_window_s : float, optional
+        Size of the input, in seconds. Set to 4.5 s as in [1]_ for dataset
+        BCI IV 2a.
+    sfreq : float, optional
+        EEG sampling frequency in Hz. Defaults to 250 Hz as in [1]_ for dataset
+        BCI IV 2a.
+    n_convs : int, optional
+        Number of convolution per inception wide branching. Defaults to 5 as
+        in [1]_ for dataset BCI IV 2a.
+    n_filters : int, optional
+        Number of convolutional filters for all layers of this type. Set to 48
+        as in [1]_ for dataset BCI IV 2a.
+    kernel_unit_s : float, optional
+        Size in seconds of the basic 1D convolutional kernel used in inception
+        modules. Each convolutional layer in such modules have kernels of
+        increasing size, odd multiples of this value (e.g. 0.1, 0.3, 0.5, 0.7,
+        0.9 here for `n_convs`=5). Defaults to 0.1 s.
     activation: nn.Module
-        Activation function, default: ELU activation.
-    batch_norm_alpha: float
-        Momentum for BatchNorm2d.
-    depth_multiplier: int
-        Depth multiplier for the depthwise convolution.
-    pooling_sizes: list(int)
-        Pooling sizes for the inception block.
+        Activation function. Defaults to ReLU activation.
 
     References
     ----------
@@ -65,8 +62,8 @@ class EEGInceptionMI(nn.Module):
             self,
             in_channels,
             n_classes,
-            input_window_samples=750,
-            sfreq=128,
+            input_window_s=4.5,
+            sfreq=250,
             n_convs=5,
             n_filters=48,
             kernel_unit_s=0.1,
@@ -76,7 +73,8 @@ class EEGInceptionMI(nn.Module):
 
         self.in_channels = in_channels
         self.n_classes = n_classes
-        self.input_window_samples = input_window_samples
+        self.input_window_s = input_window_s
+        self.input_window_samples = input_window_s * sfreq
         self.sfreq = sfreq
         self.n_convs = n_convs
         self.n_filters = n_filters
@@ -215,10 +213,10 @@ class _InceptionModuleMI(nn.Module):
             nn.Conv1d(
                 in_channels=self.n_filters,
                 out_channels=self.n_filters,
-                kernel_size=n_units * kernel_unit,
+                kernel_size=(n_units * 2 + 1) * kernel_unit,
                 padding="same",
                 bias=True,
-            ) for n_units in range(1, self.n_convs + 1)
+            ) for n_units in range(self.n_convs)
         ])
 
         self.bn = nn.BatchNorm1d()
