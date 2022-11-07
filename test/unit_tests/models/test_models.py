@@ -150,15 +150,44 @@ def test_eeginception_erp_n_params():
 
 
 def test_eeginception_mi(input_sizes):
-    sfreq = 100
+    sfreq = 250
     model = EEGInceptionMI(
         n_classes=input_sizes['n_classes'],
         in_channels=input_sizes['n_channels'],
         input_window_s=input_sizes['n_in_times'] / sfreq,
-        sfreq=100,
+        sfreq=sfreq,
     )
 
     check_forward_pass(model, input_sizes,)
+
+
+@pytest.mark.parametrize(
+    "n_filter,reported",
+    [(6, 51386), (12, 204002), (16, 361986), (24, 812930), (64, 5767170)]
+)
+def test_eeginception_mi_binary_n_params(n_filter, reported):
+    """Make sure the number of parameters is the same as in the paper when
+    using the same architecture hyperparameters.
+
+    Note
+    ----
+    For some reason, we match the correct number of parameters for all
+    configurations in the binary classification case, but none for the 4-class
+    case... Should be investigated by contacting the authors.
+    """
+    model = EEGInceptionMI(
+        in_channels=3,
+        n_classes=2,
+        input_window_s=3.,  # input_time
+        sfreq=250,
+        n_convs=3,
+        n_filters=n_filter,
+        kernel_unit_s=0.1,
+    )
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # From first column of TABLE 2 in EEG-Inception paper
+    assert n_params == reported
 
 
 @pytest.mark.parametrize(

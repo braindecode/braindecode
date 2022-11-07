@@ -133,14 +133,21 @@ class EEGInceptionMI(nn.Module):
         # XXX The paper mentions a final average pooling but does not indicate
         # the kernel size... The only info available is figure1 showing a
         # final AveragePooling layer and the table3 indicating the spatial and
-        # channel dimensions are unchanged by this layer...
-        # My best guess is they use the same size as the MaxPooling, with
-        # stride 1
-        # self.ave_pooling = nn.AvgPool1d()
+        # channel dimensions are unchanged by this layer... This could indicate
+        # a stride=1 as for MaxPooling layers. Howevere, when we look at the
+        # number of parameters of the linear layer following the average
+        # pooling, we see a small number of parameters, potentially indicating
+        # that the whole time dimension is averaged on this stage for each
+        # channel. We follow this last hypothesis here to comply with the
+        # number of parameters reported in the paper.
+        self.ave_pooling = nn.AvgPool2d(
+            kernel_size=(1, self.input_window_samples),
+        )
 
         self.flat = nn.Flatten()
         self.fc = nn.Linear(
-            in_features=self.input_window_samples * intermediate_in_channels,
+            # in_features=self.input_window_samples * intermediate_in_channels,
+            in_features=intermediate_in_channels,
             out_features=self.n_classes,
             bias=True,
         )
@@ -151,6 +158,7 @@ class EEGInceptionMI(nn.Module):
     ) -> torch.Tensor:
         X = self.ensuredims(X)
         X = self.dimshuffle(X)
+        import ipdb; ipdb.set_trace()
 
         res1 = self.residual_block_1(X)
 
@@ -167,7 +175,7 @@ class EEGInceptionMI(nn.Module):
 
         out = res2 + out
 
-        # out = self.ave_pooling(out)
+        out = self.ave_pooling(out)
         out = self.flat(out)
         return self.fc(out)
 
@@ -198,12 +206,12 @@ class _InceptionModuleMI(nn.Module):
 
         kernel_unit = int(self.kernel_unit_s * self.sfreq)
 
-        # XXX I wonder whether stride is correct here. This is how MaxPooling
-        # is usually used, but table3 in the paper indicate an unchanged
-        # output shape... Are they using stride=1?
+        # XXX Maxpooling is usually used to reduce spatial resolution, with a
+        # stride equal to the kernel size... But it seems the authors use
+        # stride=1 in their paper according to the output shapes from Table3,
+        # although this is not clearly specified in the paper text.
         self.pooling = nn.MaxPool2d(
             kernel_size=(1, kernel_unit),
-            # stride=kernel_unit,
             stride=1,
             padding=(0, int(kernel_unit // 2)),
         )
@@ -238,7 +246,6 @@ class _InceptionModuleMI(nn.Module):
         X1 = [conv(X1) for conv in self.conv_list]
 
         X2 = self.pooling(X)
-        X2 = X2[..., :-1]  # XXX Ugly, but allows to preserve spatial dim...
         X2 = self.pooling_conv(X2)
 
         out = torch.cat(X1 + [X2], 1)
