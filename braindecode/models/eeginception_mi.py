@@ -152,6 +152,8 @@ class EEGInceptionMI(nn.Module):
             bias=True,
         )
 
+        self.softmax = nn.LogSoftmax(dim=1)
+
     def forward(
         self,
         X: torch.Tensor,
@@ -176,7 +178,8 @@ class EEGInceptionMI(nn.Module):
 
         out = self.ave_pooling(out)
         out = self.flat(out)
-        return self.fc(out)
+        out = self.fc(out)
+        return self.softmax(out)
 
 
 class _InceptionModuleMI(nn.Module):
