@@ -158,7 +158,6 @@ class EEGInceptionMI(nn.Module):
     ) -> torch.Tensor:
         X = self.ensuredims(X)
         X = self.dimshuffle(X)
-        import ipdb; ipdb.set_trace()
 
         res1 = self.residual_block_1(X)
 
