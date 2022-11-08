@@ -13,7 +13,7 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    EEGITNet, EEGInceptionERP, EEGInceptionMI, TIDNet)
+    EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet)
 
 from braindecode.util import set_random_seeds
 
@@ -121,8 +121,9 @@ def test_eegitnet(input_sizes):
     check_forward_pass(model, input_sizes,)
 
 
-def test_eeginception_erp(input_sizes):
-    model = EEGInceptionERP(
+@pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
+def test_eeginception_erp(input_sizes, model_cls):
+    model = model_cls(
         n_classes=input_sizes['n_classes'],
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
@@ -130,11 +131,12 @@ def test_eeginception_erp(input_sizes):
     check_forward_pass(model, input_sizes,)
 
 
-def test_eeginception_erp_n_params():
+@pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
+def test_eeginception_erp_n_params(model_cls):
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
     """
-    model = EEGInceptionERP(
+    model = model_cls(
         in_channels=8,
         n_classes=2,
         input_window_samples=128,  # input_time
