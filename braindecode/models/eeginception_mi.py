@@ -52,9 +52,9 @@ class EEGInceptionMI(nn.Module):
     References
     ----------
     .. [1] Zhang, C., Kim, Y. K., & Eskandarian, A. (2021).
-    EEG-inception: an accurate and robust end-to-end neural network for
-    EEG-based motor imagery classification.
-    Journal of Neural Engineering, 18(4), 046014.
+           EEG-inception: an accurate and robust end-to-end neural network
+           for EEG-based motor imagery classification.
+           Journal of Neural Engineering, 18(4), 046014.
     """
 
     def __init__(
