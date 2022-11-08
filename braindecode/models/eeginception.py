@@ -20,7 +20,7 @@ class EEGInception(nn.Sequential):
     """ EEG Inception for ERP-based classification
 
     --> DEPERECATED <--
-    THIS CLASS IS DEPRECATED AND WILL BE REMOVED IN THE NEXT RELEASE OF
+    THIS CLASS IS DEPRECATED AND WILL BE REMOVED IN THE RELEASE 0.9 OF
     BRAINDECODE. PLEASE USE braindecode.models.EEGInceptionERP INSTEAD IN THE
     FUTURE.
 
@@ -50,33 +50,28 @@ class EEGInception(nn.Sequential):
         Number of EEG channels.
     n_classes : int
         Number of classes.
-    input_window_samples : int, optional
-        Size of the input, in number of sampels. Set to 128 (1s) as in
-        [Santamaria2020]_.
-    sfreq : float, optional
-        EEG sampling frequency. Defaults to 128 as in [Santamaria2020]_.
-    drop_prob : float, optional
-        Dropout rate inside all the network. Defaults to 0.5 as in
-        [Santamaria2020]_.
-    scales_samples_s: list(float), optional
-        Windows for inception block. Temporal scale (s) of the convolutions on
-        each Inception module. This parameter determines the kernel sizes of
-        the filters. Defaults to 0.5, 0.25, 0.125 seconds, as in
-        [Santamaria2020]_.
-    n_filters : int, optional
-        Initial number of convolutional filters. Defaults to 8 as in
-        [Santamaria2020]_.
-    activation: nn.Module, optional
-        Activation function. Defaults to ELU activation as in
-        [Santamaria2020]_.
-    batch_norm_alpha: float, optional
-        Momentum for BatchNorm2d. Defaults to 0.01.
-    depth_multiplier: int, optional
-        Depth multiplier for the depthwise convolution. Defaults to 2 as in
-        [Santamaria2020]_.
-    pooling_sizes: list(int), optional
-        Pooling sizes for the inception blocks. Defaults to 4, 2, 2 and 2, as
-        in [Santamaria2020]_.
+    input_size_ms : int
+        Size of the input, in milliseconds. Set to 1000 in [Santamaria2020]_.
+    sfreq : float
+        EEG sampling frequency.
+    drop_prob : float
+        Dropout rate inside all the network.
+    scales_time: list(int)
+        Windows for inception block, must be a list with proportional values of
+        the input_size_ms.
+        According to the authors: temporal scale (ms) of the convolutions
+        on each Inception module.
+        This parameter determines the kernel sizes of the filters.
+    n_filters : int
+        Initial number of convolutional filters. Set to 8 in [Santamaria2020]_.
+    activation: nn.Module
+        Activation function, default: ELU activation.
+    batch_norm_alpha: float
+        Momentum for BatchNorm2d.
+    depth_multiplier: int
+        Depth multiplier for the depthwise convolution.
+    pooling_sizes: list(int)
+        Pooling sizes for the inception block.
 
     References
     ----------
@@ -117,7 +112,7 @@ class EEGInception(nn.Sequential):
 
         warn(
             "The class EEGInception is deprecated and will be removed in the "
-            "next release of braindecode. Please use "
+            "release 0.9 of braindecode. Please use "
             "braindecode.models.EEGInceptionERP instead in the future.",
             DeprecationWarning
         )
