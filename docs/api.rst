@@ -57,6 +57,8 @@ Models
     ShallowFBCSPNet
     Deep4Net
     EEGInception
+    EEGInceptionERP
+    EEGInceptionMI
     EEGITNet
     EEGNetv1
     EEGNetv4

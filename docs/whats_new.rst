@@ -29,6 +29,22 @@ Bugs
 API changes
 ~~~~~~~~~~~
 
+.. _changes_0_8_0:
+
+Current 0.8 ()
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery  (:gh:`428` by `Cedric Rommel`_)
+
+Bugs
+~~~~
+
+
+API changes
+~~~~~~~~~~~
+- Renaming the :class:`braindecode.models.EEGInception` network as :class:`braindecode.models.EEGInceptionERP` (:gh:`428` by `Cedric Rommel`_)
 
 .. _changes_0_7_0:
 
