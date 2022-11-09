@@ -107,7 +107,7 @@ class EEGInceptionMI(nn.Module):
             ) for _ in range(2)
         ])
 
-        self.residual_block_1 = _ResidualBlockMI(
+        self.residual_block_1 = _ResidualModuleMI(
             in_channels=self.in_channels,
             n_filters=intermediate_in_channels,
             activation=self.activation,
@@ -124,7 +124,7 @@ class EEGInceptionMI(nn.Module):
             ) for _ in range(3)
         ])
 
-        self.residual_block_2 = _ResidualBlockMI(
+        self.residual_block_2 = _ResidualModuleMI(
             in_channels=intermediate_in_channels,
             n_filters=intermediate_in_channels,
             activation=self.activation,
@@ -256,7 +256,7 @@ class _InceptionModuleMI(nn.Module):
         return self.activation(out)
 
 
-class _ResidualBlockMI(nn.Module):
+class _ResidualModuleMI(nn.Module):
     def __init__(
         self,
         in_channels,
