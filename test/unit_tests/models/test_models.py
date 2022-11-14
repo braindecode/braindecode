@@ -13,7 +13,7 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet)
+    EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet)
 
 from braindecode.util import set_random_seeds
 
@@ -42,7 +42,8 @@ def check_forward_pass(model, input_sizes, only_check_until_dim=None):
     assert y_pred_new.shape[:only_check_until_dim] == (
         input_sizes['n_samples'], input_sizes['n_classes'])
     np.testing.assert_allclose(y_pred.detach().cpu().numpy(),
-                               y_pred_new.detach().cpu().numpy())
+                               y_pred_new.detach().cpu().numpy(),
+                               atol=1e-4, rtol=0)
 
 
 def test_shallow_fbcsp_net(input_sizes):
@@ -190,6 +191,19 @@ def test_eeginception_mi_binary_n_params(n_filter, reported):
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # From first column of TABLE 2 in EEG-Inception paper
     assert n_params == reported
+
+
+def test_atcnet(input_sizes):
+    sfreq = 250
+    input_sizes["n_in_times"] = 1125
+    model = ATCNet(
+        n_channels=input_sizes['n_channels'],
+        n_classes=input_sizes['n_classes'],
+        input_size_s=input_sizes['n_in_times'] / sfreq,
+        sfreq=sfreq,
+    )
+
+    check_forward_pass(model, input_sizes,)
 
 
 @pytest.mark.parametrize(
