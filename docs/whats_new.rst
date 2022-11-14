@@ -36,7 +36,8 @@ Current 0.8 ()
 
 Enhancements
 ~~~~~~~~~~~~
-- Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery  (:gh:`428` by `Cedric Rommel`_)
+- Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
+- Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
 
 Bugs
 ~~~~
