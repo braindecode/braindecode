@@ -614,8 +614,10 @@ class MaxNormLinear(nn.Module):
     References
     ----------
     .. [1] https://keras.io/api/layers/core_layers/dense/#dense-class
-    .. [2] https://www.tensorflow.org/api_docs/python/tf/keras/constraints/MaxNorm
-    .. [3] https://discuss.pytorch.org/t/how-to-correctly-implement-in-place-max-norm-constraint/96769
+    .. [2] https://www.tensorflow.org/api_docs/python/tf/keras/constraints/
+           MaxNorm
+    .. [3] https://discuss.pytorch.org/t/how-to-correctly-implement-in-place-
+           max-norm-constraint/96769
     """
     def __init__(
         self,
