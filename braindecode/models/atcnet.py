@@ -159,23 +159,27 @@ class ATCNet(nn.Module):
             conv_block_pool_size_1 * conv_block_pool_size_2))
         self.Tw = self.Tc - self.n_windows + 1
 
-        self.attention_block = _AttentionBlock(
-            in_shape=self.F2,
-            embedding_dim=self.att_embedding_dim,
-            num_heads=att_num_heads,
-            dropout=att_dropout,
-        )
+        self.attention_blocks = nn.ModuleList([
+            _AttentionBlock(
+                in_shape=self.F2,
+                embedding_dim=self.att_embedding_dim,
+                num_heads=att_num_heads,
+                dropout=att_dropout,
+            ) for _ in range(self.n_windows)
+        ])
 
-        self.temporal_conv_net = nn.Sequential(
-            *[_TCNResidualBlock(
-                in_channels=self.F2,
-                kernel_size=tcn_kernel_size,
-                n_filters=tcn_n_filters,
-                dropout=tcn_dropout,
-                activation=tcn_activation,
-                dilation=2**i
-            ) for i in range(tcn_depth)]
-        )
+        self.temporal_conv_nets = nn.ModuleList([
+            nn.Sequential(
+                *[_TCNResidualBlock(
+                    in_channels=self.F2,
+                    kernel_size=tcn_kernel_size,
+                    n_filters=tcn_n_filters,
+                    dropout=tcn_dropout,
+                    activation=tcn_activation,
+                    dilation=2**i
+                ) for i in range(tcn_depth)]
+            ) for _ in range(self.n_windows)
+        ])
 
         if self.concat:
             self.max_norm_linear = MaxNormLinear(
@@ -190,7 +194,7 @@ class ATCNet(nn.Module):
                 max_norm_val=self.max_norm_const
             )
 
-        self.sfmx = nn.Softmax()
+        self.sfmx = nn.LogSoftmax(dim=1)
 
     def forward(self, X):
         # Dimension: (batch_size, C, T)
@@ -209,16 +213,16 @@ class ATCNet(nn.Module):
         # TODO: This could be optimized by creating a super-batch, doing a
         # single forward and splitting
         sw_concat = []  # to store sliding window outputs
-        for i in range(self.n_windows):
-            conv_feat_w = conv_feat[..., i:i + self.Tw]
+        for w in range(self.n_windows):
+            conv_feat_w = conv_feat[..., w:w + self.Tw]
             # Dimension: (batch_size, F2, Tw)
 
             # ----- Attention block -----
-            att_feat = self.attention_block(conv_feat_w)
+            att_feat = self.attention_blocks[w](conv_feat_w)
             # Dimension: (batch_size, F2, Tw)
 
             # ----- Temporal convolutional network (TCN) -----
-            tcn_feat = self.temporal_conv_net(att_feat)[..., -1]
+            tcn_feat = self.temporal_conv_nets[w](att_feat)[..., -1]
             # Dimension: (batch_size, F2)
 
             # Outputs of sliding window can be either averaged after being
@@ -280,7 +284,7 @@ class _ConvBlock(nn.Module):
             bias=False,
         )
 
-        self.bn1 = nn.BatchNorm2d(num_features=n_filters)
+        self.bn1 = nn.BatchNorm2d(num_features=n_filters, eps=1e-4)
 
         n_depth_kernels = n_filters * depth_mult
         self.conv2 = nn.Conv2d(
@@ -292,7 +296,7 @@ class _ConvBlock(nn.Module):
             bias=False,
         )
 
-        self.bn2 = nn.BatchNorm2d(num_features=n_depth_kernels)
+        self.bn2 = nn.BatchNorm2d(num_features=n_depth_kernels, eps=1e-4)
 
         self.activation2 = nn.ELU()
 
@@ -308,7 +312,7 @@ class _ConvBlock(nn.Module):
             bias=False,
         )
 
-        self.bn3 = nn.BatchNorm2d(num_features=n_depth_kernels)
+        self.bn3 = nn.BatchNorm2d(num_features=n_depth_kernels, eps=1e-4)
 
         self.activation3 = nn.ELU()
 
@@ -375,10 +379,20 @@ class _AttentionBlock(nn.Module):
         # Projection into embedding space of dimension 8
         # (because it seems pytorch MHA is contrained to have square weight
         # matrices)
-        self.embedding_map = nn.Linear(
+        self.key_map = nn.Linear(
             in_features=in_shape,
             out_features=embedding_dim,
-            bias=False,
+            bias=True,
+        )
+        self.query_map = nn.Linear(
+            in_features=in_shape,
+            out_features=embedding_dim,
+            bias=True,
+        )
+        self.value_map = nn.Linear(
+            in_features=in_shape,
+            out_features=embedding_dim,
+            bias=True,
         )
 
         self.mha = nn.MultiheadAttention(
@@ -392,7 +406,7 @@ class _AttentionBlock(nn.Module):
         self.output_map = nn.Linear(
             in_features=embedding_dim,
             out_features=in_shape,
-            bias=False,
+            bias=True,
         )
 
         # XXX: This line in the official code is weird, as there is already
@@ -412,11 +426,13 @@ class _AttentionBlock(nn.Module):
         # ----- Embedding -----
         # (this is done manually here as it seems pytorch multihead attention
         # is contrained to have square weight matrices)
-        out = self.embedding_map(out)
+        key = self.key_map(out)
+        query = self.query_map(out)
+        value = self.value_map(out)
 
         # ----- Attention -----
         # Dimension: (batch_size, Tw, Dh)
-        out, _ = self.mha(out, out, out)
+        out, _ = self.mha(key, query, value)
         # Dimension: (batch_size, Tw, Dh)
 
         # ----- Getting back to input space -----
