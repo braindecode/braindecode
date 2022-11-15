@@ -506,7 +506,7 @@ class _TCNResidualBlock(nn.Module):
         self.drop2 = nn.Dropout(dropout)
 
         # Reshape the input for the residual connection when necessary
-        if(in_channels != n_filters):
+        if in_channels != n_filters:
             self.reshaping_conv = nn.Conv1d(
                 n_filters,
                 kernel_size=1,
