@@ -78,7 +78,8 @@ class ATCNet(nn.Module):
         When ``True``, concatenates each slidding window embedding before
         feeding it to a fully-connected layer, as done in [1]_. When ``False``,
         maps each slidding window to `n_classes` logits and average them.
-        Defaults to ``True``.
+        Defaults to ``False`` contrary to what is reported in [1]_, but
+        matching what the official code does [2]_.
     max_norm_const : float
         Maximum L2-norm constraint imposed on weights of the last
         fully-connected layer. Defaults to 0.25.
@@ -113,7 +114,7 @@ class ATCNet(nn.Module):
         tcn_n_filters=32,
         tcn_dropout=0.3,
         tcn_activation=nn.ELU(),
-        concat=True,
+        concat=False,
         max_norm_const=0.25,
     ):
         super().__init__()
@@ -182,17 +183,21 @@ class ATCNet(nn.Module):
         ])
 
         if self.concat:
-            self.max_norm_linear = MaxNormLinear(
-                in_features=self.F2 * self.n_windows,
-                out_features=self.n_classes,
-                max_norm_val=self.max_norm_const
-            )
+            self.max_norm_linears = nn.ModuleList([
+                MaxNormLinear(
+                    in_features=self.F2 * self.n_windows,
+                    out_features=self.n_classes,
+                    max_norm_val=self.max_norm_const
+                )
+            ])
         else:
-            self.max_norm_linear = MaxNormLinear(
-                in_features=self.F2,
-                out_features=self.n_classes,
-                max_norm_val=self.max_norm_const
-            )
+            self.max_norm_linears = nn.ModuleList([
+                MaxNormLinear(
+                    in_features=self.F2,
+                    out_features=self.n_classes,
+                    max_norm_val=self.max_norm_const
+                ) for _ in range(self.n_windows)
+            ])
 
         self.sfmx = nn.LogSoftmax(dim=1)
 
@@ -210,8 +215,6 @@ class ATCNet(nn.Module):
         # Dimension: (batch_size, F2, Tc)
 
         # ----- Sliding window -----
-        # TODO: This could be optimized by creating a super-batch, doing a
-        # single forward and splitting
         sw_concat = []  # to store sliding window outputs
         for w in range(self.n_windows):
             conv_feat_w = conv_feat[..., w:w + self.Tw]
@@ -229,14 +232,14 @@ class ATCNet(nn.Module):
             # mapped by dense layer or concatenated then mapped by a dense
             # layer
             if not self.concat:
-                tcn_feat = self.max_norm_linear(tcn_feat)
+                tcn_feat = self.max_norm_linears[w](tcn_feat)
 
             sw_concat.append(tcn_feat)
 
         # ----- Aggregation and prediction -----
         if self.concat:
             sw_concat = torch.cat(sw_concat, dim=1)
-            sw_concat = self.max_norm_linear(sw_concat)
+            sw_concat = self.max_norm_linears[0](sw_concat)
         else:
             if len(sw_concat) > 1:  # more than one window
                 sw_concat = torch.stack(sw_concat, dim=0)
