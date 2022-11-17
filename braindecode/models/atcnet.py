@@ -50,8 +50,8 @@ class ATCNet(nn.Module):
         table 1 of the paper [1]_. Defaults to 0.3 as in [1]_.
     n_windows : int
         Number of sliding windows, denoted n in [1]_. Defaults to 5 as in [1]_.
-    att_embedding_dim : int
-        Embedding dimension used in self-attention layers, denoted dh in
+    att_head_dim : int
+        Embedding dimension used in each self-attention head, denoted dh in
         table 1 of the paper [1]_. Defaults to 8 as in [1]_.
     att_num_heads : int
         Number of attention heads, denoted H in table 1 of the paper [1]_.
@@ -105,7 +105,7 @@ class ATCNet(nn.Module):
         conv_block_depth_mult=2,
         conv_block_dropout=0.3,
         n_windows=5,
-        att_embedding_dim=8,
+        att_head_dim=8,
         att_num_heads=2,
         att_dropout=0.5,
         tcn_depth=2,
@@ -129,7 +129,7 @@ class ATCNet(nn.Module):
         self.conv_block_depth_mult = conv_block_depth_mult
         self.conv_block_dropout = conv_block_dropout
         self.n_windows = n_windows
-        self.att_embedding_dim = att_embedding_dim
+        self.att_head_dim = att_head_dim
         self.att_num_heads = att_num_heads
         self.att_dropout = att_dropout
         self.tcn_depth = tcn_depth
@@ -162,7 +162,7 @@ class ATCNet(nn.Module):
         self.attention_blocks = nn.ModuleList([
             _AttentionBlock(
                 in_shape=self.F2,
-                embedding_dim=self.att_embedding_dim,
+                head_dim=self.att_head_dim,
                 num_heads=att_num_heads,
                 dropout=att_dropout,
             ) for _ in range(self.n_windows)
@@ -364,11 +364,14 @@ class _AttentionBlock(nn.Module):
     def __init__(
         self,
         in_shape=32,
-        embedding_dim=8,
+        head_dim=8,
         num_heads=2,
         dropout=0.5,
     ):
         super().__init__()
+        self.in_shape = in_shape
+        self.head_dim = head_dim
+        self.num_heads = num_heads
 
         # Puts time dimension at -2 and feature dim at -1
         self.dimshuffle = Expression(lambda x: x.permute(0, 2, 1))
@@ -379,6 +382,7 @@ class _AttentionBlock(nn.Module):
         # Projection into embedding space of dimension 8
         # (because it seems pytorch MHA is contrained to have square weight
         # matrices)
+        embedding_dim = num_heads * head_dim
         self.key_map = nn.Linear(
             in_features=in_shape,
             out_features=embedding_dim,
@@ -412,8 +416,8 @@ class _AttentionBlock(nn.Module):
         # XXX: This line in the official code is weird, as there is already
         # dropout in the MultiheadAttention layer. They also don't mention
         # any additional dropout between the attention block and TCN in the
-        # paper, so we are removing this for now.
-        # self.drop = nn.Dropout(0.3)
+        # paper. We are adding it here however to follo so we are removing this for now.
+        self.drop = nn.Dropout(0.3)
 
     def forward(self, X):
         # Dimension: (batch_size, F2, Tw)
@@ -444,7 +448,7 @@ class _AttentionBlock(nn.Module):
         # in the official code. Here we follow the code.
 
         # ----- Skip connection -----
-        out = X + out
+        out = X + self.drop(out)
 
         # Move back to shape (batch_size, F2, Tw) from the beginning
         return self.dimshuffle(out)
