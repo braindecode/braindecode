@@ -1,6 +1,8 @@
 # Authors: Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
+import numpy as np
+
 import torch
 from torch import nn
 
@@ -382,44 +384,22 @@ class _AttentionBlock(nn.Module):
         # Layer normalization
         self.ln = nn.LayerNorm(normalized_shape=in_shape, eps=1e-6)
 
-        # Projection into embedding space of dimension 8
-        # (because it seems pytorch MHA is contrained to have square weight
-        # matrices)
-        embedding_dim = num_heads * head_dim
-        self.key_map = nn.Linear(
-            in_features=in_shape,
-            out_features=embedding_dim,
-            bias=True,
-        )
-        self.query_map = nn.Linear(
-            in_features=in_shape,
-            out_features=embedding_dim,
-            bias=True,
-        )
-        self.value_map = nn.Linear(
-            in_features=in_shape,
-            out_features=embedding_dim,
-            bias=True,
-        )
-
-        self.mha = nn.MultiheadAttention(
-            embed_dim=embedding_dim,
+        # Multi-head self-attention layer
+        # (We had to reimplement it since the original code is in tensorflow,
+        # where it is possible to have an embedding dimension different than
+        # the input and output dimensions, which is not possible in pytorch.)
+        self.mha = MHA(
+            input_dim=in_shape,
+            head_dim=head_dim,
+            output_dim=in_shape,
             num_heads=num_heads,
-            dropout=dropout,
-            batch_first=True,
-        )
-
-        # Linear mapping from embedding space to original feature space
-        self.output_map = nn.Linear(
-            in_features=embedding_dim,
-            out_features=in_shape,
-            bias=True,
         )
 
         # XXX: This line in the official code is weird, as there is already
         # dropout in the MultiheadAttention layer. They also don't mention
         # any additional dropout between the attention block and TCN in the
-        # paper. We are adding it here however to follo so we are removing this for now.
+        # paper. We are adding it here however to follo so we are removing this
+        # for now.
         self.drop = nn.Dropout(0.3)
 
     def forward(self, X):
@@ -430,20 +410,8 @@ class _AttentionBlock(nn.Module):
         # ----- Layer norm -----
         out = self.ln(X)
 
-        # ----- Embedding -----
-        # (this is done manually here as it seems pytorch multihead attention
-        # is contrained to have square weight matrices)
-        key = self.key_map(out)
-        query = self.query_map(out)
-        value = self.value_map(out)
-
-        # ----- Attention -----
-        # Dimension: (batch_size, Tw, Dh)
-        out, _ = self.mha(key, query, value)
-        # Dimension: (batch_size, Tw, Dh)
-
-        # ----- Getting back to input space -----
-        out = self.output_map(out)
+        # ----- Self-Attention -----
+        out = self.mha(out, out, out)
         # Dimension: (batch_size, Tw, F2)
 
         # XXX In the paper fig. 1, it is drawn that layer normalization is
@@ -541,6 +509,110 @@ class _TCNResidualBlock(nn.Module):
         out = X + out
 
         return self.activation(out)
+
+
+class MHA(nn.Module):
+    def __init__(
+        self,
+        input_dim: int,
+        head_dim: int,
+        output_dim: int,
+        num_heads: int,
+    ):
+        """Multi-head Attention
+
+        The difference between this module and torch.nn.MultiheadAttention is
+        that this module supports embedding dimensions different then input
+        and output ones. It also does not support sequences of different
+        length.
+
+        Parameters
+        ----------
+        input_dim : int
+            Dimension of query, key and value inputs.
+        head_dim : int
+            Dimension of embed query, key and value in each head,
+            before computing attention.
+        output_dim : int
+            Output dimension.
+        num_heads : int
+            Number of heads in the multi-head architecture.
+        """
+
+        super(MHA, self).__init__()
+
+        self.input_dim = input_dim
+        self.head_dim = head_dim
+        # typical choice for the split dimension of the heads
+        self.embed_dim = head_dim * num_heads
+
+        # embeddings for multi-head projections
+        self.fc_q = nn.Linear(input_dim, self.embed_dim)
+        self.fc_k = nn.Linear(input_dim, self.embed_dim)
+        self.fc_v = nn.Linear(input_dim, self.embed_dim)
+
+        # output mapping
+        self.fc_o = nn.Linear(self.embed_dim, output_dim)
+
+    def forward(
+        self,
+        Q: torch.Tensor,
+        K: torch.Tensor,
+        V: torch.Tensor
+    ) -> torch.Tensor:
+        """ Compute MHA(Q, K, V)
+
+        Parameters
+        ----------
+        Q: torch.Tensor of size (batch_size, seq_len, input_dim)
+            Input query (Q) sequence.
+        K: torch.Tensor of size (batch_size, seq_len, input_dim)
+            Input key (K) sequence.
+        V: torch.Tensor of size (batch_size, seq_len, input_dim)
+            Input value (V) sequence.
+
+        Returns
+        -------
+        O: torch.Tensor of size (batch_size, seq_len, output_dim)
+            Output MHA(Q, K, V)
+        """
+        assert Q.shape[-1] == K.shape[-1] == V.shape[-1] == self.input_dim
+
+        batch_size, _, _ = Q.shape
+
+        # embedding for multi-head projections (masked or not)
+        Q = self.fc_q(Q)  # (B, S, D)
+        K, V = self.fc_k(K), self.fc_v(V)  # (B, S, D)
+
+        # Split into num_head vectors (num_heads * batch_size, n/m, head_dim)
+        Q_ = torch.cat(Q.split(self.head_dim, -1), 0)  # (B', S, D')
+        K_ = torch.cat(K.split(self.head_dim, -1), 0)  # (B', S, D')
+        V_ = torch.cat(V.split(self.head_dim, -1), 0)  # (B', S, D')
+
+        # Attention weights of size (num_heads * batch_size, n, m):
+        # measures how similar each pair of Q and K is.
+        W = torch.softmax(
+            Q_.bmm(
+                K_.transpose(-2, -1)  # (B', D', S)
+            )
+            / np.sqrt(self.head_dim),
+            -1
+        )  # (B', N, M)
+
+        # Multihead output (batch_size, seq_len, dim):
+        # weighted sum of V where a value gets more weight if its corresponding
+        # key has larger dot product with the query.
+        H = torch.cat(
+            (
+                W  # (B', S, S)
+                .bmm(V_)  # (B', S, D')
+            ).split(batch_size, 0),  # [(B, S, D')] * num_heads
+            -1
+        )  # (B, S, D)
+
+        out = self.fc_o(H)
+
+        return out
 
 
 class CausalConv1d(nn.Module):

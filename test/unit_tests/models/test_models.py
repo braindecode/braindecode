@@ -232,15 +232,7 @@ def test_atcnet_n_params():
     # params, while the number of trainable parameters is 113,732.
     official_code_nparams = 113_732
 
-    # In our implementation, we need to create the linear embedding mapping
-    # ourselves, in addition to the "square" mappings created by
-    # torch.nn.MultiHeadAttention module. So we need to remove for exceeding
-    # parameters from torch.nn.MultiHeadAttention in our count:
-    embed_dim = att_head_dim * att_num_heads
-    attention_correction = n_windows * (embed_dim * embed_dim + embed_dim) * 4
-    corrected_nparams = n_params - attention_correction
-
-    assert corrected_nparams == official_code_nparams
+    assert n_params == official_code_nparams
 
 
 @pytest.mark.parametrize(
