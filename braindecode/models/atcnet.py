@@ -393,6 +393,7 @@ class _AttentionBlock(nn.Module):
             head_dim=head_dim,
             output_dim=in_shape,
             num_heads=num_heads,
+            dropout=dropout,
         )
 
         # XXX: This line in the official code is weird, as there is already
@@ -518,6 +519,7 @@ class MHA(nn.Module):
         head_dim: int,
         output_dim: int,
         num_heads: int,
+        dropout: float = 0.,
     ):
         """Multi-head Attention
 
@@ -537,6 +539,8 @@ class MHA(nn.Module):
             Output dimension.
         num_heads : int
             Number of heads in the multi-head architecture.
+        dropout : float, optional
+            Dropout probability on output weights. Default: 0.0 (no dropout).
         """
 
         super(MHA, self).__init__()
@@ -553,6 +557,9 @@ class MHA(nn.Module):
 
         # output mapping
         self.fc_o = nn.Linear(self.embed_dim, output_dim)
+
+        # dropout
+        self.dropout = nn.Dropout(dropout)
 
     def forward(
         self,
@@ -612,7 +619,7 @@ class MHA(nn.Module):
 
         out = self.fc_o(H)
 
-        return out
+        return self.dropout(out)
 
 
 class CausalConv1d(nn.Module):
