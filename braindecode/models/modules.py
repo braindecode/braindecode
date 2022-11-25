@@ -192,7 +192,7 @@ class TimeDistributed(nn.Module):
         return out.view(b, s, -1)
 
 
-class CausalConv1d(nn.Module):
+class CausalConv1d(nn.Conv1d):
     """Causal 1-dimensional convolution
 
     Code modified from [1]_ and [2]_.
@@ -225,19 +225,13 @@ class CausalConv1d(nn.Module):
         dilation=1,
         **kwargs,
     ):
-        super().__init__()
         assert "padding" not in kwargs, (
             "The padding parameter is controlled internally by "
             f"{type(self).__name__} class. You should not try to override this"
             " parameter."
         )
 
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.dilation = dilation
-
-        self.conv = nn.Conv1d(
+        super().__init__(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size,
@@ -247,7 +241,7 @@ class CausalConv1d(nn.Module):
         )
 
     def forward(self, X):
-        out = self.conv(X)
+        out = super().forward(X)
         return out[..., :-self.conv.padding[0]]
 
 
