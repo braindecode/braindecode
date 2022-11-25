@@ -463,7 +463,7 @@ class _TCNResidualBlock(nn.Module):
             kernel_size=kernel_size,
             dilation=dilation,
         )
-        nn.init.kaiming_uniform_(self.conv1.conv.weight)
+        nn.init.kaiming_uniform_(self.conv1.weight)
 
         self.bn1 = nn.BatchNorm1d(n_filters)
 
@@ -475,7 +475,7 @@ class _TCNResidualBlock(nn.Module):
             kernel_size=kernel_size,
             dilation=dilation,
         )
-        nn.init.kaiming_uniform_(self.conv2.conv.weight)
+        nn.init.kaiming_uniform_(self.conv2.weight)
 
         self.bn2 = nn.BatchNorm1d(n_filters)
 

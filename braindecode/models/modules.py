@@ -242,7 +242,7 @@ class CausalConv1d(nn.Conv1d):
 
     def forward(self, X):
         out = super().forward(X)
-        return out[..., :-self.conv.padding[0]]
+        return out[..., :-self.padding[0]]
 
 
 class MaxNormLinear(nn.Linear):
