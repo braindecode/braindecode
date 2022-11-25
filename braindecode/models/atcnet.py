@@ -388,7 +388,7 @@ class _AttentionBlock(nn.Module):
         # (We had to reimplement it since the original code is in tensorflow,
         # where it is possible to have an embedding dimension different than
         # the input and output dimensions, which is not possible in pytorch.)
-        self.mha = MHA(
+        self.mha = _MHA(
             input_dim=in_shape,
             head_dim=head_dim,
             output_dim=in_shape,
@@ -512,7 +512,7 @@ class _TCNResidualBlock(nn.Module):
         return self.activation(out)
 
 
-class MHA(nn.Module):
+class _MHA(nn.Module):
     def __init__(
         self,
         input_dim: int,
@@ -543,7 +543,7 @@ class MHA(nn.Module):
             Dropout probability on output weights. Default: 0.0 (no dropout).
         """
 
-        super(MHA, self).__init__()
+        super(_MHA, self).__init__()
 
         self.input_dim = input_dim
         self.head_dim = head_dim
@@ -727,6 +727,8 @@ class MaxNormLinear(nn.Module):
         return self.linear(X)
 
     def _max_norm(self, w):
+        """This method modifies the layer weights w in place.
+        """
         with torch.no_grad():
             norm = w.norm(2, dim=0, keepdim=True).clamp(
                 min=self._max_norm_val / 2
