@@ -682,7 +682,7 @@ class CausalConv1d(nn.Module):
 
 
 class MaxNormLinear(nn.Module):
-    """Linear layer with MaxNorm constraing on weights.
+    """Linear layer with MaxNorm constraining on weights.
 
     Equivalent of Keras tf.keras.Dense(..., kernel_constraint=max_norm())
     [1, 2]_. Implemented as advised in [3]_.
