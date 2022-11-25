@@ -59,6 +59,7 @@ Models
     EEGInception
     EEGInceptionERP
     EEGInceptionMI
+    ATCNet
     EEGITNet
     EEGNetv1
     EEGNetv4
