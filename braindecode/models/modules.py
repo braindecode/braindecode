@@ -245,7 +245,7 @@ class CausalConv1d(nn.Conv1d):
         return out[..., :-self.conv.padding[0]]
 
 
-class MaxNormLinear(nn.Module):
+class MaxNormLinear(nn.Linear):
     """Linear layer with MaxNorm constraining on weights.
 
     Equivalent of Keras tf.keras.Dense(..., kernel_constraint=max_norm())
@@ -276,26 +276,25 @@ class MaxNormLinear(nn.Module):
         bias=True,
         max_norm_val=2,
         eps=1e-5,
+        **kwargs
     ):
-        super().__init__()
-        self._max_norm_val = max_norm_val
-        self._eps = eps
-        self.linear = nn.Linear(
+        super().__init__(
             in_features=in_features,
             out_features=out_features,
             bias=bias,
+            **kwargs
         )
+        self._max_norm_val = max_norm_val
+        self._eps = eps
 
     def forward(self, X):
-        self._max_norm(self.linear.weight)
-        return self.linear(X)
+        self._max_norm()
+        return super().forward(X)
 
-    def _max_norm(self, w):
-        """This method modifies the layer weights w in place.
-        """
+    def _max_norm(self):
         with torch.no_grad():
-            norm = w.norm(2, dim=0, keepdim=True).clamp(
+            norm = self.weight.norm(2, dim=0, keepdim=True).clamp(
                 min=self._max_norm_val / 2
             )
             desired = torch.clamp(norm, max=self._max_norm_val)
-            w *= (desired / (self._eps + norm))
+            self.weight *= (desired / (self._eps + norm))
