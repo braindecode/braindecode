@@ -104,8 +104,14 @@ def _create_chronological_description(file_paths):
     descriptions = []
     for file_path in file_paths:
         description = _parse_description_from_file_path(file_path)
+        raw = mne.io.read_raw_edf(file_path)
+        description["year"] = raw.info['meas_date'].year
+        description["month"] = raw.info['meas_date'].month
+        description["day"] = raw.info['meas_date'].day
         descriptions.append(pd.Series(description))
     descriptions = pd.concat(descriptions, axis=1)
+    
+    
     # order descriptions chronologically
     descriptions.sort_values(
         ["year", "month", "day", "subject", "session", "segment"],
@@ -123,17 +129,17 @@ def _parse_description_from_file_path(file_path):
     #                          subject/recording session/file
     # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
     #                          s001_2006_04_12/00002729_s001.edf
-    version = tokens[-7]
-    year, month, day = tokens[-2].split('_')[1:]
-    subject_id = tokens[-3]
+    version = tokens[-6]
+    # year, month, day = tokens[-2].split('_')[1:]
+    subject_id = tokens[-1].split('_')[-2].split('s')[-1]
     session = tokens[-2].split('_')[0]
     segment = tokens[-1].split('_')[-1].split('.')[-2]
     return {
         'path': file_path,
         'version': version,
-        'year': int(year),
-        'month': int(month),
-        'day': int(day),
+        # 'year': int(year),
+        # 'month': int(month),
+        # 'day': int(day),
         'subject': int(subject_id),
         'session': int(session[1:]),
         'segment': int(segment[1:]),
