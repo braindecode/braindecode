@@ -131,13 +131,28 @@ def _parse_description_from_file_path(file_path):
     subject_id = tokens[-1].split('_')[-2].split('s')[-1]
     session = tokens[-2].split('_')[0]
     segment = tokens[-1].split('_')[-1].split('.')[-2]
-    return {
-        'path': file_path,
-        'version': version,
-        'subject': int(subject_id),
-        'session': int(session[1:]),
-        'segment': int(segment[1:]),
-    }
+
+    if version != 'v3.0.0':
+        year, month, day = tokens[-2].split('_')[1:]
+        return {
+            'path': file_path,
+            'version': version,
+            'year': int(year),
+            'month': int(month),
+            'day': int(day),
+            'subject': int(subject_id),
+            'session': int(session[1:]),
+            'segment': int(segment[1:]),
+        }
+
+    else:
+        return {
+            'path': file_path,
+            'version': version,
+            'subject': int(subject_id),
+            'session': int(session[1:]),
+            'segment': int(segment[1:]),
+        }
 
 
 def _read_physician_report(file_path):
