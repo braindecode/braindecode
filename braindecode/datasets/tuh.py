@@ -109,7 +109,6 @@ def _create_chronological_description(file_paths):
             description["year"] = raw.info['meas_date'].year
             description["month"] = raw.info['meas_date'].month
             description["day"] = raw.info['meas_date'].day
-        
         descriptions.append(pd.Series(description))
     descriptions = pd.concat(descriptions, axis=1)
     # order descriptions chronologically
