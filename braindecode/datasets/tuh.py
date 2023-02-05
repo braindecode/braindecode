@@ -105,9 +105,12 @@ def _create_chronological_description(file_paths):
     for file_path in file_paths:
         description = _parse_description_from_file_path(file_path)
         raw = mne.io.read_raw_edf(file_path)
-        description["year"] = raw.info['meas_date'].year
-        description["month"] = raw.info['meas_date'].month
-        description["day"] = raw.info['meas_date'].day
+
+        if description['version'] == 'v3.0.0':
+            description["year"] = raw.info['meas_date'].year
+            description["month"] = raw.info['meas_date'].month
+            description["day"] = raw.info['meas_date'].day
+        
         descriptions.append(pd.Series(description))
     descriptions = pd.concat(descriptions, axis=1)
     # order descriptions chronologically
@@ -134,6 +137,8 @@ def _parse_description_from_file_path(file_path):
 
     if version != 'v3.0.0':
         year, month, day = tokens[-2].split('_')[1:]
+        subject_id = tokens[-3]
+        version = tokens[-7]
         return {
             'path': file_path,
             'version': version,
