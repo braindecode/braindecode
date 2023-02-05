@@ -128,16 +128,12 @@ def _parse_description_from_file_path(file_path):
     # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
     #                          s001_2006_04_12/00002729_s001.edf
     version = tokens[-6]
-    # year, month, day = tokens[-2].split('_')[1:]
     subject_id = tokens[-1].split('_')[-2].split('s')[-1]
     session = tokens[-2].split('_')[0]
     segment = tokens[-1].split('_')[-1].split('.')[-2]
     return {
         'path': file_path,
         'version': version,
-        # 'year': int(year),
-        # 'month': int(month),
-        # 'day': int(day),
         'subject': int(subject_id),
         'session': int(session[1:]),
         'segment': int(segment[1:]),
