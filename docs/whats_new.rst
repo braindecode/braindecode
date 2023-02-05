@@ -38,6 +38,7 @@ Enhancements
 ~~~~~~~~~~~~
 - Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
 - Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
+- Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_ and `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
@@ -46,7 +47,6 @@ Bugs
 API changes
 ~~~~~~~~~~~
 - Renaming the :class:`braindecode.models.EEGInception` network as :class:`braindecode.models.EEGInceptionERP` (:gh:`428` by `Cedric Rommel`_)
-
 .. _changes_0_7_0:
 
 Current 0.7 (10-2022)
