@@ -44,8 +44,6 @@ def test_parse_from_tuh_abnormal_file_path():
     assert additional_description['version'] == 'v2.0.0'
 
 
-
-
 def test_sort_chronologically():
     file_paths = [
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/"
@@ -98,7 +96,6 @@ def test_sort_chronologically():
     ]
     for p1, p2 in zip(expected, description.T.path):
         assert p1 == p2
-
 
 
 def test_tuh():
