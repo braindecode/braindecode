@@ -10,7 +10,7 @@ from braindecode.datasets.tuh import (
 
 
 def test_parse_from_tuh_file_path():
-    file_path = ("v2.0.0/edf/01_tcp_ar/000/00000021/"
+    file_path = ("v1.2.0/edf/01_tcp_ar/000/00000021/"
                  "s004_2013_08_15/00000021_s004_t000.edf")
     description = _parse_description_from_file_path(file_path)
     assert len(description) == 8
@@ -21,7 +21,7 @@ def test_parse_from_tuh_file_path():
     assert description['subject'] == 21
     assert description['session'] == 4
     assert description['segment'] == 0
-    assert description['version'] == 'v2.0.0'
+    assert description['version'] == 'v1.2.0'
 
 
 def test_parse_from_tuh_abnormal_file_path():
@@ -44,10 +44,12 @@ def test_parse_from_tuh_abnormal_file_path():
     assert additional_description['version'] == 'v2.0.0'
 
 
+
+
 def test_sort_chronologically():
     file_paths = [
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/"
-        "00010831_s002_t001.edf",
+        "00010831_s001_t001.edf",
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000068/s009_2011_09_12/"
         "00000068_s009_t000.edf",
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000016/s004_2012_02_08/"
@@ -56,8 +58,8 @@ def test_sort_chronologically():
         "00010839_s001_t000.edf",
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000068/s008_2010_09_28/"
         "00000068_s008_t001.edf",
-        "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/"
-        "00010831_s002_t000.edf",
+        "v2.0.0/edf/train/normal/01_tcp_ar/108/00010831/s001_2013_10_03/"
+        "00010831_s001_t000.edf",
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000016/s005_2013_07_12/"
         "00000016_s005_t001.edf",
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010810/s001_2013_10_03/"
@@ -87,15 +89,16 @@ def test_sort_chronologically():
         "00010816_s001_t001.edf",
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010831/s001_2013_10_03/"
         "00010831_s001_t000.edf",
+        "v2.0.0/edf/train/normal/01_tcp_ar/108/00010831/s001_2013_10_03/"
+        "00010831_s001_t000.edf",
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/"
-        "00010831_s002_t000.edf",
-        "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/"
-        "00010831_s002_t001.edf",
+        "00010831_s001_t001.edf",
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010839/s001_2013_11_22/"
         "00010839_s001_t000.edf",
     ]
     for p1, p2 in zip(expected, description.T.path):
         assert p1 == p2
+
 
 
 def test_tuh():
