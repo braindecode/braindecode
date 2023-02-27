@@ -110,7 +110,7 @@ def _create_chronological_description(file_paths):
     descriptions = []
     for file_path in file_paths:
         description = _parse_description_from_file_path(file_path)
-        if "year" not in description: # abnormal new version case
+        if "year" not in description:  # abnormal new version case
             raw = mne.io.read_raw_edf(file_path, preload=False)
             description["year"] = raw.info['meas_date'].year
             description["month"] = raw.info['meas_date'].month
