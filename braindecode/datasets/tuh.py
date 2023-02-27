@@ -12,6 +12,7 @@ import os
 import glob
 from unittest import mock
 from datetime import datetime, timezone
+from typing import Iterable
 
 import pandas as pd
 import numpy as np
@@ -53,6 +54,10 @@ class TUH(BaseConcatDataset):
         descriptions = _create_chronological_description(file_paths)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
+            if not isinstance(recording_ids, Iterable):
+                # Assume it is an integer specifying number
+                # of recordings to load
+                recording_ids = range(recording_ids)
             descriptions = descriptions[recording_ids]
         # this is the second loop (slow)
         # create datasets gathering more info about the files touching them
@@ -67,6 +72,7 @@ class TUH(BaseConcatDataset):
                 self._create_dataset)(
                 descriptions[i], target_name, preload, add_physician_reports
             ) for i in descriptions.columns)
+
         super().__init__(base_datasets)
 
     @staticmethod
@@ -104,8 +110,8 @@ def _create_chronological_description(file_paths):
     descriptions = []
     for file_path in file_paths:
         description = _parse_description_from_file_path(file_path)
-        if description['version'] == 'v3.0.0':
-            raw = mne.io.read_raw_edf(file_path)
+        if "year" not in description: # abnormal new version case
+            raw = mne.io.read_raw_edf(file_path, preload=False)
             description["year"] = raw.info['meas_date'].year
             description["month"] = raw.info['meas_date'].month
             description["day"] = raw.info['meas_date'].day
@@ -124,37 +130,69 @@ def _parse_description_from_file_path(file_path):
     # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
     file_path = os.path.normpath(file_path)
     tokens = file_path.split(os.sep)
-    # expect file paths as tuh_eeg/version/file_type/reference/data_split/
-    #                          subject/recording session/file
-    # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
-    #                          s001_2006_04_12/00002729_s001.edf
-    if 'train' or 'eval' in tokens:
-        version = tokens[-6]
-    else:
-        version = tokens[-7]
-    subject_id = tokens[-1].split('_')[-2].split('s')[-1]
-    session = tokens[-2].split('_')[0]
-    segment = tokens[-1].split('_')[-1].split('.')[-2]
+    # Extract version number and tuh_eeg_abnormal/tuh_eeg from file path
+    if ('train' in tokens) or ('eval' in tokens):  # tuh_eeg_abnormal
+        abnormal = True
+        # Tokens[-2] is channel configuration (always 01_tcp_ar in abnormal)
+        # on new versions, or
+        #               session (e.g. s004_2013_08_15) on old versions
+        if tokens[-2].split('_')[0][0] == 's':  # s denoting session number
+            version = tokens[-9]  # Before dec 2022 updata
+        else:
+            version = tokens[-6]  # After the dec 2022 update
 
-    if version != 'v3.0.0':
-        year, month, day = tokens[-3].split('_')[1:]
-        subject_id = tokens[-1].split('_')[-2].split('s')[-1]
+    else:  # tuh_eeg
+        abnormal = False
         version = tokens[-7]
+    v_number = int(version[1])
+
+    if (abnormal and v_number >= 3) or ((not abnormal) and v_number >= 2):
+        # New file path structure for versions after december 2022,
+        # expect file paths as
+        # tuh_eeg/v2.0.0/edf/000/aaaaaaaa/
+        #     s001_2015_12_30/01_tcp_ar/aaaaaaaa_s001_t000.edf
+        # or for abnormal:
+        # tuh_eeg_abnormal/v3.0.0/edf/train/normal/
+        #     01_tcp_ar/aaaaaaav_s004_t000.edf
+        subject_id = tokens[-1].split('_')[0]
+        session = tokens[-1].split('_')[1]
+        segment = tokens[-1].split('_')[2].split('.')[0]
+
+        description = {
+            'path': file_path,
+            'version': version,
+            'subject': subject_id,
+            'session': int(session[1:]),
+            'segment': int(segment[1:]),
+        }
+        if not abnormal:
+            year, month, day = tokens[-3].split('_')[1:]
+            description['year'] = int(year)
+            description['month'] = int(month)
+            description['day'] = int(day)
+        return description
+    else:  # Old file path structure
+        # expect file paths as tuh_eeg/version/file_type/reference/data_split/
+        #                          subject/recording session/file
+        # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
+        #                          s001_2006_04_12/00002729_s001.edf
+        # or for abnormal
+        # version/file type/data_split/pathology status/
+        #     reference/subset/subject/recording session/file
+        # v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/
+        #     s004_2013_08_15/00000021_s004_t000.edf
+        subject_id = tokens[-1].split('_')[0]
+        session = tokens[-2].split('_')[0]  # string on format 's000'
+        # According to the example path in the comment 8 lines above,
+        # segment is not included in the file name
+        segment = tokens[-1].split('_')[-1].split('.')[0]  # TODO: test with tuh_eeg
+        year, month, day = tokens[-2].split('_')[1:]
         return {
             'path': file_path,
             'version': version,
             'year': int(year),
             'month': int(month),
             'day': int(day),
-            'subject': int(subject_id),
-            'session': int(session[1:]),
-            'segment': int(segment[1:]),
-        }
-
-    else:
-        return {
-            'path': file_path,
-            'version': version,
             'subject': int(subject_id),
             'session': int(session[1:]),
             'segment': int(segment[1:]),
