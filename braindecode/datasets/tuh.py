@@ -51,7 +51,7 @@ class TUH(BaseConcatDataset):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
-        descriptions = _create_chronological_description(file_paths)
+        descriptions = _create_description(file_paths)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
             if not isinstance(recording_ids, Iterable):
@@ -72,7 +72,12 @@ class TUH(BaseConcatDataset):
                 self._create_dataset)(
                 descriptions[i], target_name, preload, add_physician_reports
             ) for i in descriptions.columns)
-
+        # get the updated full descriptions including year, month, and day
+        descriptions = pd.concat([d.description for d in base_datasets], axis=1)
+        # sort the descriptions chronologicaly
+        descriptions = _sort_chronologically(descriptions)
+        # sort the datasets accordingly
+        base_datasets = [base_datasets[i] for i in descriptions.columns]
         super().__init__(base_datasets)
 
     @staticmethod
@@ -84,17 +89,28 @@ class TUH(BaseConcatDataset):
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
         raw = mne.io.read_raw_edf(file_path, preload=preload)
 
-        # Use recording date from path as EDF header is sometimes wrong
         meas_date = datetime(1, 1, 1, tzinfo=timezone.utc) \
             if raw.info['meas_date'] is None else raw.info['meas_date']
-        raw.set_meas_date(meas_date.replace(
-            *description[['year', 'month', 'day']]))
+        # if this is old version of the data and the year could be parsed from
+        # file paths, use this instead as before
+        if 'year' in description:
+            meas_date = meas_date.replace(
+                *description[['year', 'month', 'day']])
+        raw.set_meas_date(meas_date)
 
-        # read info relevant for preprocessing from raw without loading it
         d = {
             'age': int(age),
             'gender': gender,
         }
+        # if year exists in description = old version
+        # if not, get it from meas_date in raw.info and add to description
+        # if meas_date is None, create fake one
+        if 'year' not in description:
+            d['year'] = raw.info['meas_date'].year
+            d['month'] = raw.info['meas_date'].month
+            d['day'] = raw.info['meas_date'].day
+
+        # read info relevant for preprocessing from raw without loading it
         if add_physician_reports:
             physician_report = _read_physician_report(file_path)
             d['report'] = physician_report
@@ -105,24 +121,16 @@ class TUH(BaseConcatDataset):
         return base_dataset
 
 
-def _create_chronological_description(file_paths):
-    # this is the first loop (fast)
-    descriptions = []
-    for file_path in file_paths:
-        description = _parse_description_from_file_path(file_path)
-        if "year" not in description:  # abnormal new version case
-            raw = mne.io.read_raw_edf(file_path, preload=False)
-            description["year"] = raw.info['meas_date'].year
-            description["month"] = raw.info['meas_date'].month
-            description["day"] = raw.info['meas_date'].day
-        descriptions.append(pd.Series(description))
-    descriptions = pd.concat(descriptions, axis=1)
-    # order descriptions chronologically
+def _create_description(file_paths):
+    descriptions = [_parse_description_from_file_path(f) for f in file_paths]
+    descriptions = pd.DataFrame(descriptions)
+    return descriptions.T
+
+
+def _sort_chronologically(descriptions):
     descriptions.sort_values(
         ["year", "month", "day", "subject", "session", "segment"],
         axis=1, inplace=True)
-    # https://stackoverflow.com/questions/42284617/reset-column-index-pandas
-    descriptions = descriptions.T.reset_index(drop=True).T
     return descriptions
 
 
@@ -215,6 +223,9 @@ def _read_physician_report(file_path):
         except UnicodeDecodeError:
             with open(txt_file, 'r', encoding='latin-1') as f:
                 report = f.read()
+    if not report:
+        raise RuntimeError(f'Could not read physician report ({txt_file}). '
+                           f'Disable option or choose appropriate directory.')
     return report
 
 

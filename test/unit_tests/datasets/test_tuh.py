@@ -5,8 +5,8 @@
 from datetime import datetime
 
 from braindecode.datasets.tuh import (
-    _parse_description_from_file_path, _create_chronological_description,
-    TUHAbnormal, _TUHMock, _TUHAbnormalMock)
+    _parse_description_from_file_path, _create_description,
+    _sort_chronologically, TUHAbnormal, _TUHMock, _TUHAbnormalMock)
 
 
 def test_parse_from_tuh_file_path():
@@ -69,7 +69,8 @@ def test_sort_chronologically():
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010816/s001_2013_10_03/"
         "00010816_s001_t001.edf",
     ]
-    description = _create_chronological_description(file_paths)
+    description = _create_description(file_paths)
+    description = _sort_chronologically(description)
     expected = [
         "v2.0.0/edf/train/abnormal/01_tcp_ar/000/00000068/s008_2010_09_28/"
         "00000068_s008_t001.edf",
