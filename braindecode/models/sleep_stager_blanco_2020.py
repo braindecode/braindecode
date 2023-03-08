@@ -33,7 +33,8 @@ class SleepStagerBlanco2020(nn.Module):
         controls the connections between inputs and outputs. n_channels and n_conv_channels must be
         divisible by n_groups.
     max_pool_size_s : float
-        Max pooling kernel size. Set to 2 in [Blanco2020]_. Controls the kernel of the max pooling operation.
+        Max pooling kernel size. Set to 2 in [Blanco2020]_. Controls the kernel of the
+        max pooling operation.
     input_size_s : float
         Size of the input, in seconds.
     n_classes : int
@@ -71,31 +72,38 @@ class SleepStagerBlanco2020(nn.Module):
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(n_channels, self.n_conv_channels, (1, 7), groups=n_groups, padding=0),
+            nn.Conv2d(n_channels, self.n_conv_channels, (1, 7),
+                      groups=n_groups, padding=0),
             batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 7), groups=self.n_conv_channels, padding=0),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 7),
+                      groups=self.n_conv_channels, padding=0),
             batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5), groups=self.n_conv_channels, padding=0),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5),
+                      groups=self.n_conv_channels, padding=0),
             batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5), groups=self.n_conv_channels, padding=0),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5),
+                      groups=self.n_conv_channels, padding=0),
             batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5), groups=self.n_conv_channels, padding=0),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5),
+                      groups=self.n_conv_channels, padding=0),
             batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 3), groups=self.n_conv_channels, padding=0),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 3),
+                      groups=self.n_conv_channels, padding=0),
             batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 3), groups=self.n_conv_channels, padding=0),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 3),
+                      groups=self.n_conv_channels, padding=0),
             batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size))
