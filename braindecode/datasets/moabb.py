@@ -26,7 +26,7 @@ def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
                 return dataset()
             else:
                 return dataset(**dataset_kwargs)
-    raise ValueError("'dataset_name' not found in moabb datasets")
+    raise ValueError(f"{dataset_name} not found in moabb datasets")
 
 
 def _fetch_and_unpack_moabb_data(dataset, subject_ids):

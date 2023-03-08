@@ -58,6 +58,9 @@ Models
     Deep4Net
     DeepSleepNet
     EEGInception
+    EEGInceptionERP
+    EEGInceptionMI
+    ATCNet
     EEGITNet
     EEGNetv1
     EEGNetv4
@@ -131,7 +134,6 @@ Preprocessing
     create_windows_from_target_channels
     exponential_moving_demean
     exponential_moving_standardize
-    zscore
     scale
     filterbank
     preprocess

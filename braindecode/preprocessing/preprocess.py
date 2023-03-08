@@ -5,6 +5,7 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -82,45 +83,6 @@ class Preprocessor(object):
                 raise AttributeError(
                     f'MNE object does not have a {self.fn} method.')
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
-
-
-@deprecated(extra='will be removed in 0.7.0. Use Preprocessor with '
-                  '`apply_on_array=False` instead.')
-class MNEPreproc(Preprocessor):
-    """Preprocessor for an MNE-raw/epoch.
-
-    Parameters
-    ----------
-    fn: str or callable
-        if str, the raw/epoch object must have a member function with that name.
-        if callable, directly apply the callable to the mne raw/epoch.
-    kwargs:
-        Keyword arguments will be forwarded to the mne function
-    """
-
-    def __init__(self, fn, **kwargs):
-        super().__init__(fn, apply_on_array=False, **kwargs)
-
-
-@deprecated(extra='will be removed in 0.7.0. Use Preprocessor with '
-                  '`apply_on_array=True` instead.')
-class NumpyPreproc(Preprocessor):
-    """Preprocessor that directly operates on the underlying numpy array of an mne raw/epoch.
-
-    Parameters
-    ----------
-    fn: callable
-        Function that preprocesses the numpy array
-    channel_wise: bool
-        Whether to apply the function channel-wise.
-    kwargs:
-        Keyword arguments will be forwarded to the function
-    """
-
-    def __init__(self, fn, channel_wise=False, **kwargs):
-        assert callable(fn), 'fn must be callable.'
-        super().__init__(fn, apply_on_array=True, channel_wise=channel_wise,
-                         **kwargs)
 
 
 def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
@@ -330,8 +292,7 @@ def exponential_moving_standardize(
         init_std = np.std(
             data[0:init_block_size], axis=i_time_axis, keepdims=True
         )
-        init_block_standardized = (
-            data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
+        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
@@ -371,36 +332,7 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
-@deprecated(extra='will be removed in 0.7.0. Use sklearn.preprocessing.scale '
-                  'instead.')
-def zscore(data):
-    """Zscore normalize continuous or windowed data in-place.
-
-    Parameters
-    ----------
-    data: np.ndarray (n_channels, n_times) or (n_windows, n_channels, n_times)
-        continuous or windowed signal
-
-    Returns
-    -------
-    zscored: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        normalized continuous or windowed data
-
-    ..note:
-        If this function is supposed to preprocess continuous data, it should be
-        given to raw.apply_function().
-    """
-    zscored = data - np.mean(data, keepdims=True, axis=-1)
-    zscored = zscored / np.std(zscored, keepdims=True, axis=-1)
-    # TODO: the overriding of protected '_data' should be implemented in the
-    # TODO: dataset when transforms are applied to windows
-    if hasattr(data, '_data'):
-        data._data = zscored
-    return zscored
-
-
-@deprecated(extra='will be removed in 0.7.0. Use numpy.multiply instead.')
+@deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda function instead.')
 def scale(data, factor):
     """Scale continuous or windowed data in-place
 

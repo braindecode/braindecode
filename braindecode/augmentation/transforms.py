@@ -86,6 +86,10 @@ class FTSurrogate(Transform):
         Float between 0 and 1 setting the range over which the phase
         pertubation is uniformly sampled:
         ``[0, phase_noise_magnitude * 2 * pi]``. Defaults to 1.
+    channel_indep : bool, optional
+        Whether to sample phase perturbations independently for each channel or
+        not. It is advised to set it to False when spatial information is
+        important for the task, like in BCI. Default False.
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
@@ -104,6 +108,7 @@ class FTSurrogate(Transform):
         self,
         probability,
         phase_noise_magnitude=1,
+        channel_indep=False,
         random_state=None
     ):
         super().__init__(
@@ -114,7 +119,10 @@ class FTSurrogate(Transform):
             "phase_noise_magnitude should be a float."
         assert 0 <= phase_noise_magnitude <= 1,\
             "phase_noise_magnitude should be between 0 and 1."
+        assert isinstance(channel_indep, bool), (
+            "channel_indep is expected to be a boolean")
         self.phase_noise_magnitude = phase_noise_magnitude
+        self.channel_indep = channel_indep
 
     def get_augmentation_params(self, *batch):
         """Return transform parameters.
@@ -138,6 +146,7 @@ class FTSurrogate(Transform):
         """
         return {
             "phase_noise_magnitude": self.phase_noise_magnitude,
+            "channel_indep": self.channel_indep,
             "random_state": self.rng,
         }
 

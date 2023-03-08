@@ -17,9 +17,40 @@ What's new
    - "API changes" for backward-incompatible changes
 
 .. _current:
-
-Current (0.7.dev0)
+Current 0.8 (dev0)
 --------------------
+
+Enhancements
+~~~~~~~~~~~~
+
+Bugs
+~~~~
+
+API changes
+~~~~~~~~~~~
+
+.. _changes_0_8_0:
+
+Current 0.8 ()
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
+- Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
+
+Bugs
+~~~~
+
+
+API changes
+~~~~~~~~~~~
+- Renaming the :class:`braindecode.models.EEGInception` network as :class:`braindecode.models.EEGInceptionERP` (:gh:`428` by `Cedric Rommel`_)
+
+.. _changes_0_7_0:
+
+Current 0.7 (10-2022)
+----------------------
 
 Enhancements
 ~~~~~~~~~~~~
@@ -34,10 +65,16 @@ Enhancements
 
 Bugs
 ~~~~
+- Fixing parameter `subject_ids` to `recoding_ids` in TUHAbnormal example (:gh:`402` by `Bruno Aristimunha`_ and `Lukas Gemein`_)
+- Bug fix :func:`braindecode.augmentation.functional.ft_surrogate` and add option to sample independently per-channel (:gh:`409` by `Martin Wimpff`_ and `Cedric Rommel`_)
+
 
 API changes
 ~~~~~~~~~~~
 - Renaming the method `get_params` to `get_augmentation_params` in augmentation classes. This makes the Transform module compatible with scikit-learn cloning mechanism (:gh:`388` by `Bruno Aristimunha`_ and `Alex Gramfort`_)
+- Delaying the deprecation of the preprocessing scale function :func:`braindecode.preprocessing.scale` and updates tutorials where the function were used. (:gh:`413` by `Bruno Aristimunha`_)
+- Removing deprecated functions and classes :func:`braindecode.preprocessing.zscore`, :class:`braindecode.datautil.MNEPreproc` and :class:`braindecode.datautil.NumpyPreproc`  (:gh:`415` by `Bruno Aristimunha`_)
+- Setting `iterator_train__drop_last=True` by default for :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`411` by `Robin Tibor Schirrmeister`_)
 
 .. _changes_0_6_0:
 
