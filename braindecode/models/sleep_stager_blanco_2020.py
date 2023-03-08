@@ -1,10 +1,15 @@
 # Authors: Divyesh Narayanan <divyesh.narayanan@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
 import numpy as np
 import torch
 from torch import nn
+
+from .util import check_deprecation_warning
+
+pair_new_names_blanco = {"n_conv_chans": "n_conv_channels"}
 
 
 class SleepStagerBlanco2020(nn.Module):
@@ -21,12 +26,14 @@ class SleepStagerBlanco2020(nn.Module):
         Number of EEG channels.
     sfreq : float
         EEG sampling frequency.
-    n_conv_chans : int
+    n_conv_channels : int
         Number of convolutional channels. Set to 20 in [Blanco2020]_.
     n_groups : int
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.
-        controls the connections between inputs and outputs. n_channels and n_conv_chans must be
+        controls the connections between inputs and outputs. n_channels and n_conv_channels must be
         divisible by n_groups.
+    max_pool_size_s : float
+        Max pooling kernel size. Set to 2 in [Blanco2020]_. Controls the kernel of the max pooling operation.
     input_size_s : float
         Size of the input, in seconds.
     n_classes : int
@@ -48,44 +55,48 @@ class SleepStagerBlanco2020(nn.Module):
         Soft Comput 24, 4067–4079 (2020). https://doi.org/10.1007/s00500-019-04174-1
     """
 
-    def __init__(self, n_channels, sfreq, n_conv_chans=20, input_size_s=30,
+    def __init__(self, n_channels, sfreq, n_conv_channels=20, input_size_s=30,
                  n_classes=5, n_groups=2, max_pool_size=2, dropout=0.5, apply_batch_norm=False,
-                 return_feats=False):
+                 return_feats=False, **kwargs):
         super().__init__()
 
-        input_size = np.ceil(input_size_s * sfreq).astype(int)
-
         self.n_channels = n_channels
+        self.n_conv_channels = n_conv_channels
+
+        if kwargs:
+            kwargs = check_deprecation_warning(self, pair_new_names_blanco, **kwargs)
+
+        input_size = np.ceil(input_size_s * sfreq).astype(int)
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(n_channels, n_conv_chans, (1, 7), groups=n_groups, padding=0),
-            batch_norm(n_conv_chans),
+            nn.Conv2d(n_channels, self.n_conv_channels, (1, 7), groups=n_groups, padding=0),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 7), groups=n_conv_chans, padding=0),
-            batch_norm(n_conv_chans),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 7), groups=self.n_conv_channels, padding=0),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
-            batch_norm(n_conv_chans),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5), groups=self.n_conv_channels, padding=0),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
-            batch_norm(n_conv_chans),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5), groups=self.n_conv_channels, padding=0),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
-            batch_norm(n_conv_chans),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 5), groups=self.n_conv_channels, padding=0),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0),
-            batch_norm(n_conv_chans),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 3), groups=self.n_conv_channels, padding=0),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0),
-            batch_norm(n_conv_chans),
+            nn.Conv2d(self.n_conv_channels, self.n_conv_channels, (1, 3), groups=self.n_conv_channels, padding=0),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size))
         )

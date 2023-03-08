@@ -1,10 +1,14 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
-#
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 # License: BSD (3-clause)
 
 import torch
 from torch import nn
 import numpy as np
+
+from .util import check_deprecation_warning
+
+pair_new_names_chambon = {"n_conv_chs": "n_conv_channels"}
 
 
 class SleepStagerChambon2018(nn.Module):
@@ -18,7 +22,7 @@ class SleepStagerChambon2018(nn.Module):
         Number of EEG channels.
     sfreq : float
         EEG sampling frequency.
-    n_conv_chs : int
+    n_conv_channels : int
         Number of convolutional channels. Set to 8 in [Chambon2018]_.
     time_conv_size_s : float
         Size of filters in temporal convolution layers, in seconds. Set to 0.5
@@ -51,18 +55,22 @@ class SleepStagerChambon2018(nn.Module):
            IEEE Transactions on Neural Systems and Rehabilitation Engineering,
            26(4), 758-769.
     """
-    def __init__(self, n_channels, sfreq, n_conv_chs=8, time_conv_size_s=0.5,
+    def __init__(self, n_channels, sfreq, n_conv_channels=8, time_conv_size_s=0.5,
                  max_pool_size_s=0.125, pad_size_s=0.25, input_size_s=30,
                  n_classes=5, dropout=0.25, apply_batch_norm=False,
-                 return_feats=False):
+                 return_feats=False, **kwargs):
         super().__init__()
+
+        self.n_conv_channels = n_conv_channels
+        self.n_channels = n_channels
+
+        if kwargs:
+            kwargs = check_deprecation_warning(self, pair_new_names_chambon, **kwargs)
 
         time_conv_size = np.ceil(time_conv_size_s * sfreq).astype(int)
         max_pool_size = np.ceil(max_pool_size_s * sfreq).astype(int)
         input_size = np.ceil(input_size_s * sfreq).astype(int)
         pad_size = np.ceil(pad_size_s * sfreq).astype(int)
-
-        self.n_channels = n_channels
 
         if n_channels > 1:
             self.spatial_conv = nn.Conv2d(1, n_channels, (n_channels, 1))
@@ -71,14 +79,14 @@ class SleepStagerChambon2018(nn.Module):
 
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(
-                1, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
-            batch_norm(n_conv_chs),
+                1, self.n_conv_channels, (1, time_conv_size), padding=(0, pad_size)),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
-                n_conv_chs, n_conv_chs, (1, time_conv_size),
+                self.n_conv_channels, self.n_conv_channels, (1, time_conv_size),
                 padding=(0, pad_size)),
-            batch_norm(n_conv_chs),
+            batch_norm(self.n_conv_channels),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size))
         )
