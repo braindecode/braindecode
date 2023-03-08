@@ -151,7 +151,7 @@ class USleep(nn.Module):
     ensure_odd_conv_size : bool
         If True and the size of the convolutional kernel is an even number, one
         will be added to it to ensure it is odd, so that the decoder blocks can
-        work. This can ne useful when using different sampling rates from 128
+        work. This can useful when using different sampling rates from 128
         or 100 Hz.
     apply_softmax : bool
         If True, apply softmax on output (e.g. when using nn.NLLLoss). Use
