@@ -1,11 +1,53 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #          Hubert Banville <hubert.jbanville@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
+from warnings import warn
 
 import torch
 import numpy as np
 from scipy.special import log_softmax
+
+
+def check_deprecation_warning(self: object, old_new_name_pairs: dict, **kwargs: dict) -> dict:
+    """
+    Check if the user is using a deprecated parameter name and warn him/her
+    about it.
+
+    Parameters
+    ----------
+    self: object
+        The object that contains the deprecated parameters.
+    kwargs: dict
+        A dictionary containing the parameters of the object.
+    old_new_name_pairs: dict
+        A dictionary containing the old parameter name as key and the new
+        parameter name as value.
+
+    Notes
+    -----
+    This function should be called in the __init__ method of the class that
+    contains the deprecated parameters.
+
+    """
+    if not all([k in old_new_name_pairs for k in kwargs]) and \
+       not all([k in old_new_name_pairs.values() for k in kwargs]):
+        raise ValueError(
+            "At least one parameter is not a valid parameter.",
+            AttributeError,
+        )
+    for old_name, new_name in old_new_name_pairs.items():
+        if old_name in kwargs:
+            warn(
+                f"Parameter {old_name} is deprecated and will be removed in a future "
+                f"release. Please use {new_name} instead.",
+                DeprecationWarning,
+            )
+            setattr(self, new_name, kwargs[old_name])
+            kwargs.pop(old_name)
+
+    return kwargs
 
 
 def to_dense_prediction_model(model, axis=(2, 3)):
