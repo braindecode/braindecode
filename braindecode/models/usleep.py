@@ -1,11 +1,13 @@
 # Authors: Theo Gnassounou <theo.gnassounou@inria.fr>
 #          Omar Chehab <l-emir-omar.chehab@inria.fr>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
 import numpy as np
 import torch
 from torch import nn
+from .util import check_deprecation_warning
 
 
 def _crop_tensors_to_match(x1, x2, axis=-1):
@@ -25,6 +27,7 @@ def _crop_tensors_to_match(x1, x2, axis=-1):
 
 class _EncoderBlock(nn.Module):
     """Encoding block for a timeseries x of shape (B, C, T)."""
+
     def __init__(self,
                  in_channels=2,
                  out_channels=2,
@@ -60,6 +63,7 @@ class _EncoderBlock(nn.Module):
 
 class _DecoderBlock(nn.Module):
     """Decoding block for a timeseries x of shape (B, C, T)."""
+
     def __init__(self,
                  in_channels=2,
                  out_channels=2,
@@ -102,6 +106,9 @@ class _DecoderBlock(nn.Module):
         return x
 
 
+pair_new_names_usleep = {"in_chans": "in_channels"}
+
+
 class USleep(nn.Module):
     """Sleep staging architecture from Perslev et al 2021.
 
@@ -120,7 +127,7 @@ class USleep(nn.Module):
 
     Parameters
     ----------
-    in_chans : int
+    in_channels : int
         Number of EEG or EOG channels. Set to 2 in [1]_ (1 EEG, 1 EOG).
     sfreq : float
         EEG sampling frequency. Set to 128 in [1]_.
@@ -156,8 +163,9 @@ class USleep(nn.Module):
            U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
            https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
+
     def __init__(self,
-                 in_chans=2,
+                 in_channels=2,
                  sfreq=128,
                  depth=12,
                  n_time_filters=5,
@@ -167,11 +175,14 @@ class USleep(nn.Module):
                  input_size_s=30,
                  time_conv_size_s=9 / 128,
                  ensure_odd_conv_size=False,
-                 apply_softmax=False
+                 apply_softmax=False,
+                 **kwargs
                  ):
         super().__init__()
+        self.in_channels = in_channels
+        if kwargs:
+            kwargs = check_deprecation_warning(self, pair_new_names_usleep, **kwargs)
 
-        self.in_chans = in_chans
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
         time_conv_size = np.round(time_conv_size_s * sfreq).astype(int)
         if time_conv_size % 2 == 0:
@@ -185,7 +196,7 @@ class USleep(nn.Module):
         # Convert between units: seconds to time-points (at sfreq)
         input_size = np.ceil(input_size_s * sfreq).astype(int)
 
-        channels = [in_chans]
+        channels = [self.in_channels]
         n_filters = n_time_filters
         for _ in range(depth + 1):
             channels.append(int(n_filters * np.sqrt(complexity_factor)))
@@ -205,13 +216,13 @@ class USleep(nn.Module):
 
         # Instantiate bottom (channels increase, temporal dim stays the same)
         self.bottom = nn.Sequential(
-                    nn.Conv1d(in_channels=channels[-2],
-                              out_channels=channels[-1],
-                              kernel_size=time_conv_size,
-                              padding=(time_conv_size - 1) // 2),  # preserves dimension
-                    nn.ELU(),
-                    nn.BatchNorm1d(num_features=channels[-1]),
-                )
+            nn.Conv1d(in_channels=channels[-2],
+                      out_channels=channels[-1],
+                      kernel_size=time_conv_size,
+                      padding=(time_conv_size - 1) // 2),  # preserves dimension
+            nn.ELU(),
+            nn.BatchNorm1d(num_features=channels[-1]),
+        )
 
         # Instantiate decoder
         decoder = list()
@@ -236,7 +247,7 @@ class USleep(nn.Module):
                 kernel_size=1,
                 stride=1,
                 padding=0,
-            ),                         # output is (B, C, 1, S * T)
+            ),  # output is (B, C, 1, S * T)
             nn.Tanh(),
             nn.AvgPool1d(input_size),  # output is (B, C, S)
             nn.Conv1d(
@@ -245,7 +256,7 @@ class USleep(nn.Module):
                 kernel_size=1,
                 stride=1,
                 padding=0,
-            ),                         # output is (B, n_classes, S)
+            ),  # output is (B, n_classes, S)
             nn.ELU(),
             nn.Conv1d(
                 in_channels=n_classes,
@@ -282,7 +293,7 @@ class USleep(nn.Module):
             x = up(x, res)
 
         # classifier
-        y_pred = self.clf(x)        # (B, n_classes, seq_length)
+        y_pred = self.clf(x)  # (B, n_classes, seq_length)
 
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]
