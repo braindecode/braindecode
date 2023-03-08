@@ -38,7 +38,7 @@ Enhancements
 ~~~~~~~~~~~~
 - Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
 - Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
-- Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_ and `Bruno Aristimunha`_)
+- Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_, `Bruno Aristimunha`_, `Robin Tibor Schirrmeister`_, `Lukas Gemein`_, `Denis A. Engemann`_ and `Oskar Størmer`_)
 
 Bugs
 ~~~~
@@ -183,3 +183,5 @@ Authors
 .. _Bruno Aristimunha: https://github.com/bruAristimunha
 .. _Martin Wimpff: https://github.com/martinwimpff
 .. _Ghaith Bouallegue: https://github.com/GhBlg
+.. _Denis A. Engemann: https://github.com/dengemann
+.. _Oskar Størmer: https://github.com/ostormer
