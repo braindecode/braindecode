@@ -11,6 +11,17 @@ from sklearn.preprocessing import OneHotEncoder
 from braindecode.models.modules import Expression
 from braindecode.models.util import (
     get_output_shape, aggregate_probas, _pad_shift_array)
+from braindecode.models import USleep
+
+
+def test_check_deprecation_warning():
+    in_chans = 2
+
+    with pytest.warns(
+            DeprecationWarning, match="Parameter in_chans is deprecated and will be "
+                                      "removed in a future release. "
+                                      "Please use in_channels instead."):
+        _ = USleep(in_chans=in_chans)
 
 
 def test_get_output_shape_1d_model():
