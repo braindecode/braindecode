@@ -38,6 +38,7 @@ Enhancements
 ~~~~~~~~~~~~
 - Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
 - Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
+- Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Théo Gnassounou`_)
 
 Bugs
 ~~~~
