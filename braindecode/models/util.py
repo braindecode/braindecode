@@ -31,12 +31,15 @@ def check_deprecation_warning(self: object, old_new_name_pairs: dict, **kwargs: 
     contains the deprecated parameters.
 
     """
-    if not all([k in old_new_name_pairs for k in kwargs]) and \
-       not all([k in old_new_name_pairs.values() for k in kwargs]):
+    missing_keys = set(kwargs.keys()) - set(old_new_name_pairs.keys())
+    missing_values = set(kwargs.keys()) - set(old_new_name_pairs.values())
+
+    if missing_keys and missing_values:
         raise ValueError(
-            "At least one parameter is not a valid parameter.",
+            f"Invalid parameter(s) found: {', '.join(list(missing_keys.union(missing_values)))}. ",
             AttributeError,
         )
+
     for old_name, new_name in old_new_name_pairs.items():
         if old_name in kwargs:
             warn(
