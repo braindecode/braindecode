@@ -9,7 +9,6 @@ from torch import nn
 
 from .util import check_deprecation_warning
 
-pair_new_names_blanco = {"n_conv_chans": "n_conv_channels"}
 
 
 class SleepStagerBlanco2020(nn.Module):
@@ -65,6 +64,7 @@ class SleepStagerBlanco2020(nn.Module):
         self.n_conv_channels = n_conv_channels
 
         if kwargs:
+            pair_new_names_blanco = {"n_conv_chans": "n_conv_channels"}
             kwargs = check_deprecation_warning(self, pair_new_names_blanco, **kwargs)
 
         input_size = np.ceil(input_size_s * sfreq).astype(int)

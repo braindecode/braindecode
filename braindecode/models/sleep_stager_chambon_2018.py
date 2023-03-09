@@ -8,7 +8,6 @@ import numpy as np
 
 from .util import check_deprecation_warning
 
-pair_new_names_chambon = {"n_conv_chs": "n_conv_channels"}
 
 
 class SleepStagerChambon2018(nn.Module):
@@ -65,6 +64,7 @@ class SleepStagerChambon2018(nn.Module):
         self.n_channels = n_channels
 
         if kwargs:
+            pair_new_names_chambon = {"n_conv_chs": "n_conv_channels"}
             kwargs = check_deprecation_warning(self, pair_new_names_chambon, **kwargs)
 
         time_conv_size = np.ceil(time_conv_size_s * sfreq).astype(int)

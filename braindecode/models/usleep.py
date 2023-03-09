@@ -106,7 +106,6 @@ class _DecoderBlock(nn.Module):
         return x
 
 
-pair_new_names_usleep = {"in_chans": "in_channels"}
 
 
 class USleep(nn.Module):
@@ -181,6 +180,7 @@ class USleep(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         if kwargs:
+            pair_new_names_usleep = {"in_chans": "in_channels"}
             kwargs = check_deprecation_warning(self, pair_new_names_usleep, **kwargs)
 
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
