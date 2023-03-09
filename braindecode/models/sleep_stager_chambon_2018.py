@@ -9,7 +9,6 @@ import numpy as np
 from .util import check_deprecation_warning
 
 
-
 class SleepStagerChambon2018(nn.Module):
     """Sleep staging architecture from Chambon et al 2018.
 

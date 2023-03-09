@@ -106,8 +106,6 @@ class _DecoderBlock(nn.Module):
         return x
 
 
-
-
 class USleep(nn.Module):
     """Sleep staging architecture from Perslev et al 2021.
 

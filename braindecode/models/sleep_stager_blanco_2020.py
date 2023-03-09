@@ -10,7 +10,6 @@ from torch import nn
 from .util import check_deprecation_warning
 
 
-
 class SleepStagerBlanco2020(nn.Module):
     """Sleep staging architecture from Blanco et al 2020.
 
