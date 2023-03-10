@@ -10,8 +10,10 @@ TUH Abnormal EEG Corpus.
 import re
 import os
 import glob
+import warnings
 from unittest import mock
 from datetime import datetime, timezone
+from typing import Iterable
 
 import pandas as pd
 import numpy as np
@@ -50,9 +52,18 @@ class TUH(BaseConcatDataset):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
-        descriptions = _create_chronological_description(file_paths)
+        descriptions = _create_description(file_paths)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
+            warnings.warn(
+                "Using recording_ids currently leads to recordings "
+                "being selected before chronological sorting, which may "
+                "lead to unexpected results. Consider loading all data"
+                "and selecting specific recordings after loading", UserWarning)
+            if not isinstance(recording_ids, Iterable):
+                # Assume it is an integer specifying number
+                # of recordings to load
+                recording_ids = range(recording_ids)
             descriptions = descriptions[recording_ids]
         # this is the second loop (slow)
         # create datasets gathering more info about the files touching them
@@ -67,6 +78,12 @@ class TUH(BaseConcatDataset):
                 self._create_dataset)(
                 descriptions[i], target_name, preload, add_physician_reports
             ) for i in descriptions.columns)
+        # get the updated full descriptions including year, month, and day
+        descriptions = pd.concat([d.description for d in base_datasets], axis=1)
+        # sort the descriptions chronologicaly
+        descriptions = _sort_chronologically(descriptions)
+        # sort the datasets accordingly
+        base_datasets = [base_datasets[i] for i in descriptions.columns]
         super().__init__(base_datasets)
 
     @staticmethod
@@ -78,17 +95,28 @@ class TUH(BaseConcatDataset):
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
         raw = mne.io.read_raw_edf(file_path, preload=preload)
 
-        # Use recording date from path as EDF header is sometimes wrong
         meas_date = datetime(1, 1, 1, tzinfo=timezone.utc) \
             if raw.info['meas_date'] is None else raw.info['meas_date']
-        raw.set_meas_date(meas_date.replace(
-            *description[['year', 'month', 'day']]))
+        # if this is old version of the data and the year could be parsed from
+        # file paths, use this instead as before
+        if 'year' in description:
+            meas_date = meas_date.replace(
+                *description[['year', 'month', 'day']])
+        raw.set_meas_date(meas_date)
 
-        # read info relevant for preprocessing from raw without loading it
         d = {
             'age': int(age),
             'gender': gender,
         }
+        # if year exists in description = old version
+        # if not, get it from meas_date in raw.info and add to description
+        # if meas_date is None, create fake one
+        if 'year' not in description:
+            d['year'] = raw.info['meas_date'].year
+            d['month'] = raw.info['meas_date'].month
+            d['day'] = raw.info['meas_date'].day
+
+        # read info relevant for preprocessing from raw without loading it
         if add_physician_reports:
             physician_report = _read_physician_report(file_path)
             d['report'] = physician_report
@@ -99,19 +127,16 @@ class TUH(BaseConcatDataset):
         return base_dataset
 
 
-def _create_chronological_description(file_paths):
-    # this is the first loop (fast)
-    descriptions = []
-    for file_path in file_paths:
-        description = _parse_description_from_file_path(file_path)
-        descriptions.append(pd.Series(description))
-    descriptions = pd.concat(descriptions, axis=1)
-    # order descriptions chronologically
+def _create_description(file_paths):
+    descriptions = [_parse_description_from_file_path(f) for f in file_paths]
+    descriptions = pd.DataFrame(descriptions)
+    return descriptions.T
+
+
+def _sort_chronologically(descriptions):
     descriptions.sort_values(
         ["year", "month", "day", "subject", "session", "segment"],
         axis=1, inplace=True)
-    # https://stackoverflow.com/questions/42284617/reset-column-index-pandas
-    descriptions = descriptions.T.reset_index(drop=True).T
     return descriptions
 
 
@@ -119,25 +144,73 @@ def _parse_description_from_file_path(file_path):
     # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
     file_path = os.path.normpath(file_path)
     tokens = file_path.split(os.sep)
-    # expect file paths as tuh_eeg/version/file_type/reference/data_split/
-    #                          subject/recording session/file
-    # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
-    #                          s001_2006_04_12/00002729_s001.edf
-    version = tokens[-7]
-    year, month, day = tokens[-2].split('_')[1:]
-    subject_id = tokens[-3]
-    session = tokens[-2].split('_')[0]
-    segment = tokens[-1].split('_')[-1].split('.')[-2]
-    return {
-        'path': file_path,
-        'version': version,
-        'year': int(year),
-        'month': int(month),
-        'day': int(day),
-        'subject': int(subject_id),
-        'session': int(session[1:]),
-        'segment': int(segment[1:]),
-    }
+    # Extract version number and tuh_eeg_abnormal/tuh_eeg from file path
+    if ('train' in tokens) or ('eval' in tokens):  # tuh_eeg_abnormal
+        abnormal = True
+        # Tokens[-2] is channel configuration (always 01_tcp_ar in abnormal)
+        # on new versions, or
+        #               session (e.g. s004_2013_08_15) on old versions
+        if tokens[-2].split('_')[0][0] == 's':  # s denoting session number
+            version = tokens[-9]  # Before dec 2022 updata
+        else:
+            version = tokens[-6]  # After the dec 2022 update
+
+    else:  # tuh_eeg
+        abnormal = False
+        version = tokens[-7]
+    v_number = int(version[1])
+
+    if (abnormal and v_number >= 3) or ((not abnormal) and v_number >= 2):
+        # New file path structure for versions after december 2022,
+        # expect file paths as
+        # tuh_eeg/v2.0.0/edf/000/aaaaaaaa/
+        #     s001_2015_12_30/01_tcp_ar/aaaaaaaa_s001_t000.edf
+        # or for abnormal:
+        # tuh_eeg_abnormal/v3.0.0/edf/train/normal/
+        #     01_tcp_ar/aaaaaaav_s004_t000.edf
+        subject_id = tokens[-1].split('_')[0]
+        session = tokens[-1].split('_')[1]
+        segment = tokens[-1].split('_')[2].split('.')[0]
+
+        description = {
+            'path': file_path,
+            'version': version,
+            'subject': subject_id,
+            'session': int(session[1:]),
+            'segment': int(segment[1:]),
+        }
+        if not abnormal:
+            year, month, day = tokens[-3].split('_')[1:]
+            description['year'] = int(year)
+            description['month'] = int(month)
+            description['day'] = int(day)
+        return description
+    else:  # Old file path structure
+        # expect file paths as tuh_eeg/version/file_type/reference/data_split/
+        #                          subject/recording session/file
+        # e.g.                 tuh_eeg/v1.1.0/edf/01_tcp_ar/027/00002729/
+        #                          s001_2006_04_12/00002729_s001.edf
+        # or for abnormal
+        # version/file type/data_split/pathology status/
+        #     reference/subset/subject/recording session/file
+        # v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/
+        #     s004_2013_08_15/00000021_s004_t000.edf
+        subject_id = tokens[-1].split('_')[0]
+        session = tokens[-2].split('_')[0]  # string on format 's000'
+        # According to the example path in the comment 8 lines above,
+        # segment is not included in the file name
+        segment = tokens[-1].split('_')[-1].split('.')[0]  # TODO: test with tuh_eeg
+        year, month, day = tokens[-2].split('_')[1:]
+        return {
+            'path': file_path,
+            'version': version,
+            'year': int(year),
+            'month': int(month),
+            'day': int(day),
+            'subject': int(subject_id),
+            'session': int(session[1:]),
+            'segment': int(segment[1:]),
+        }
 
 
 def _read_physician_report(file_path):
@@ -156,6 +229,9 @@ def _read_physician_report(file_path):
         except UnicodeDecodeError:
             with open(txt_file, 'r', encoding='latin-1') as f:
                 report = f.read()
+    if not report:
+        raise RuntimeError(f'Could not read physician report ({txt_file}). '
+                           f'Disable option or choose appropriate directory.')
     return report
 
 
@@ -267,10 +343,10 @@ _TUH_EEG_PATHS = {
 }
 _TUH_EEG_ABNORMAL_PATHS = {
     # these are actual file paths and edf headers from TUH Abnormal EEG Corpus (v2.0.0)
-    'tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf': b'0       00007871 F 01-JAN-1988 00007871 Age:23                                          ',  # noqa E501
-    'tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf': b'0       00009777 M 01-JAN-1986 00009777 Age:26                                          ',  # noqa E501
-    'tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf': b'0       00008393 M 01-JAN-1960 00008393 Age:52                                          ',  # noqa E501
     'tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf': b'0       00001200 M 01-JAN-1963 00001200 Age:47                                          ',  # noqa E501
+    'tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf': b'0       00007871 F 01-JAN-1988 00007871 Age:23                                          ',  # noqa E501
+    'tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf': b'0       00008393 M 01-JAN-1960 00008393 Age:52                                          ',  # noqa E501
+    'tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf': b'0       00009777 M 01-JAN-1986 00009777 Age:26                                          ',  # noqa E501
     'tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf': b'0       00005932 M 01-JAN-1963 00005932 Age:50                                          ',  # noqa E501
 }
 
