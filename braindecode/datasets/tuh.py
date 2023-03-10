@@ -10,6 +10,7 @@ TUH Abnormal EEG Corpus.
 import re
 import os
 import glob
+import warnings
 from unittest import mock
 from datetime import datetime, timezone
 from typing import Iterable
@@ -54,6 +55,11 @@ class TUH(BaseConcatDataset):
         descriptions = _create_description(file_paths)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
+            warnings.warn(
+                "Using recording_ids currently leads to recordings "
+                "being selected before chronological sorting, which may "
+                "lead to unexpected results. Consider loading all data"
+                "and selecting specific recordings after loading", UserWarning)
             if not isinstance(recording_ids, Iterable):
                 # Assume it is an integer specifying number
                 # of recordings to load
