@@ -55,11 +55,6 @@ class TUH(BaseConcatDataset):
         descriptions = _create_description(file_paths)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
-            warnings.warn(
-                "Using recording_ids currently leads to recordings "
-                "being selected before chronological sorting, which may "
-                "lead to unexpected results. Consider loading all data"
-                "and selecting specific recordings after loading", UserWarning)
             if not isinstance(recording_ids, Iterable):
                 # Assume it is an integer specifying number
                 # of recordings to load
@@ -90,6 +85,7 @@ class TUH(BaseConcatDataset):
     def _create_dataset(description, target_name, preload,
                         add_physician_reports):
         file_path = description.loc['path']
+        date_path = file_path.replace('.edf', '_date.txt')
 
         # parse age and gender information from EDF header
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
@@ -122,6 +118,15 @@ class TUH(BaseConcatDataset):
             d['report'] = physician_report
         additional_description = pd.Series(d)
         description = pd.concat([description, additional_description])
+
+        # if the txt file storing the recording date does not exist, create it
+        if not os.path.exists(date_path):
+            try:
+                description[['year', 'month', 'day']].to_json(date_path)
+            except OSError:
+                warnings.warn(f'Cannot save date file to {date_path}. '
+                              f'This might slow down creation of the dataset.')
+
         base_dataset = BaseDataset(raw, description,
                                    target_name=target_name)
         return base_dataset
@@ -143,6 +148,7 @@ def _sort_chronologically(descriptions):
 def _parse_description_from_file_path(file_path):
     # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
     file_path = os.path.normpath(file_path)
+    date_path = file_path.replace('.edf', '_date.txt')
     tokens = file_path.split(os.sep)
     # Extract version number and tuh_eeg_abnormal/tuh_eeg from file path
     if ('train' in tokens) or ('eval' in tokens):  # tuh_eeg_abnormal
@@ -160,6 +166,11 @@ def _parse_description_from_file_path(file_path):
         version = tokens[-7]
     v_number = int(version[1])
 
+    # if date file exists, read it
+    if os.path.exists(date_path):
+        description = pd.read_json(date_path, typ='series').to_dict()
+    else:
+        description = {}
     if (abnormal and v_number >= 3) or ((not abnormal) and v_number >= 2):
         # New file path structure for versions after december 2022,
         # expect file paths as
@@ -172,14 +183,14 @@ def _parse_description_from_file_path(file_path):
         session = tokens[-1].split('_')[1]
         segment = tokens[-1].split('_')[2].split('.')[0]
 
-        description = {
+        description.update({
             'path': file_path,
             'version': version,
             'subject': subject_id,
             'session': int(session[1:]),
             'segment': int(segment[1:]),
-        }
-        if not abnormal:
+        })
+        if not abnormal and 'year' not in description:
             year, month, day = tokens[-3].split('_')[1:]
             description['year'] = int(year)
             description['month'] = int(month)
@@ -200,17 +211,21 @@ def _parse_description_from_file_path(file_path):
         # According to the example path in the comment 8 lines above,
         # segment is not included in the file name
         segment = tokens[-1].split('_')[-1].split('.')[0]  # TODO: test with tuh_eeg
-        year, month, day = tokens[-2].split('_')[1:]
-        return {
+        if 'year' not in description:
+            year, month, day = tokens[-2].split('_')[1:]
+            description.update({
+                'year': int(year),
+                'month': int(month),
+                'day': int(day),
+            })
+        description.update({
             'path': file_path,
             'version': version,
-            'year': int(year),
-            'month': int(month),
-            'day': int(day),
             'subject': int(subject_id),
             'session': int(session[1:]),
             'segment': int(segment[1:]),
-        }
+        })
+        return description
 
 
 def _read_physician_report(file_path):
@@ -282,10 +297,13 @@ class TUHAbnormal(TUH):
     """
     def __init__(self, path, recording_ids=None, target_name='pathological',
                  preload=False, add_physician_reports=False, n_jobs=1):
-        super().__init__(path=path, recording_ids=recording_ids,
-                         preload=preload, target_name=target_name,
-                         add_physician_reports=add_physician_reports,
-                         n_jobs=n_jobs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=".*not in description. '__getitem__'")
+            super().__init__(path=path, recording_ids=recording_ids,
+                             preload=preload, target_name=target_name,
+                             add_physician_reports=add_physician_reports,
+                             n_jobs=n_jobs)
         additional_descriptions = []
         for file_path in self.description.path:
             additional_description = (
