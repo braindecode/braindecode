@@ -53,6 +53,8 @@ class TUH(BaseConcatDataset):
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
         descriptions = _create_description(file_paths)
+        # sort the descriptions chronologicaly
+        descriptions = _sort_chronologically(descriptions)
         # limit to specified recording ids before doing slow stuff
         if recording_ids is not None:
             if not isinstance(recording_ids, Iterable):
@@ -73,12 +75,6 @@ class TUH(BaseConcatDataset):
                 self._create_dataset)(
                 descriptions[i], target_name, preload, add_physician_reports
             ) for i in descriptions.columns)
-        # get the updated full descriptions including year, month, and day
-        descriptions = pd.concat([d.description for d in base_datasets], axis=1)
-        # sort the descriptions chronologicaly
-        descriptions = _sort_chronologically(descriptions)
-        # sort the datasets accordingly
-        base_datasets = [base_datasets[i] for i in descriptions.columns]
         super().__init__(base_datasets)
 
     @staticmethod
@@ -145,10 +141,31 @@ def _sort_chronologically(descriptions):
     return descriptions
 
 
+def _read_date(file_path):
+    date_path = file_path.replace('.edf', '_date.txt')
+    # if date file exists, read it
+    if os.path.exists(date_path):
+        description = pd.read_json(date_path, typ='series').to_dict()
+    # otherwise read edf file, extract date and store to file
+    else:
+        raw = mne.io.read_raw_edf(file_path, preload=False, verbose='error')
+        description = {
+            'year': raw.info['meas_date'].year,
+            'month': raw.info['meas_date'].month,
+            'day': raw.info['meas_date'].day,
+        }
+        # if the txt file storing the recording date does not exist, create it
+        try:
+            pd.Series(description).to_json(date_path)
+        except OSError:
+            warnings.warn(f'Cannot save date file to {date_path}. '
+                          f'This might slow down creation of the dataset.')
+    return description
+
+
 def _parse_description_from_file_path(file_path):
     # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
     file_path = os.path.normpath(file_path)
-    date_path = file_path.replace('.edf', '_date.txt')
     tokens = file_path.split(os.sep)
     # Extract version number and tuh_eeg_abnormal/tuh_eeg from file path
     if ('train' in tokens) or ('eval' in tokens):  # tuh_eeg_abnormal
@@ -166,11 +183,6 @@ def _parse_description_from_file_path(file_path):
         version = tokens[-7]
     v_number = int(version[1])
 
-    # if date file exists, read it
-    if os.path.exists(date_path):
-        description = pd.read_json(date_path, typ='series').to_dict()
-    else:
-        description = {}
     if (abnormal and v_number >= 3) or ((not abnormal) and v_number >= 2):
         # New file path structure for versions after december 2022,
         # expect file paths as
@@ -182,7 +194,7 @@ def _parse_description_from_file_path(file_path):
         subject_id = tokens[-1].split('_')[0]
         session = tokens[-1].split('_')[1]
         segment = tokens[-1].split('_')[2].split('.')[0]
-
+        description = _read_date(file_path)
         description.update({
             'path': file_path,
             'version': version,
@@ -190,7 +202,7 @@ def _parse_description_from_file_path(file_path):
             'session': int(session[1:]),
             'segment': int(segment[1:]),
         })
-        if not abnormal and 'year' not in description:
+        if not abnormal:
             year, month, day = tokens[-3].split('_')[1:]
             description['year'] = int(year)
             description['month'] = int(month)
@@ -211,21 +223,17 @@ def _parse_description_from_file_path(file_path):
         # According to the example path in the comment 8 lines above,
         # segment is not included in the file name
         segment = tokens[-1].split('_')[-1].split('.')[0]  # TODO: test with tuh_eeg
-        if 'year' not in description:
-            year, month, day = tokens[-2].split('_')[1:]
-            description.update({
-                'year': int(year),
-                'month': int(month),
-                'day': int(day),
-            })
-        description.update({
+        year, month, day = tokens[-2].split('_')[1:]
+        return {
             'path': file_path,
             'version': version,
+            'year': int(year),
+            'month': int(month),
+            'day': int(day),
             'subject': int(subject_id),
             'session': int(session[1:]),
             'segment': int(segment[1:]),
-        })
-        return description
+        }
 
 
 def _read_physician_report(file_path):
@@ -361,10 +369,10 @@ _TUH_EEG_PATHS = {
 }
 _TUH_EEG_ABNORMAL_PATHS = {
     # these are actual file paths and edf headers from TUH Abnormal EEG Corpus (v2.0.0)
-    'tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf': b'0       00001200 M 01-JAN-1963 00001200 Age:47                                          ',  # noqa E501
     'tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf': b'0       00007871 F 01-JAN-1988 00007871 Age:23                                          ',  # noqa E501
-    'tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf': b'0       00008393 M 01-JAN-1960 00008393 Age:52                                          ',  # noqa E501
     'tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf': b'0       00009777 M 01-JAN-1986 00009777 Age:26                                          ',  # noqa E501
+    'tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf': b'0       00008393 M 01-JAN-1960 00008393 Age:52                                          ',  # noqa E501
+    'tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf': b'0       00001200 M 01-JAN-1963 00001200 Age:47                                          ',  # noqa E501
     'tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf': b'0       00005932 M 01-JAN-1963 00005932 Age:50                                          ',  # noqa E501
 }
 
@@ -377,10 +385,13 @@ class _TUHMock(TUH):
                 new=_get_header)
     def __init__(self, mock_glob, path, recording_ids=None, target_name=None,
                  preload=False, add_physician_reports=False, n_jobs=1):
-        super().__init__(path=path, recording_ids=recording_ids,
-                         target_name=target_name, preload=preload,
-                         add_physician_reports=add_physician_reports,
-                         n_jobs=n_jobs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="Cannot save date file")
+            super().__init__(path=path, recording_ids=recording_ids,
+                             target_name=target_name, preload=preload,
+                             add_physician_reports=add_physician_reports,
+                             n_jobs=n_jobs)
 
 
 class _TUHAbnormalMock(TUHAbnormal):
@@ -394,7 +405,10 @@ class _TUHAbnormalMock(TUHAbnormal):
     def __init__(self, mock_glob, mock_report, path, recording_ids=None,
                  target_name='pathological', preload=False,
                  add_physician_reports=False, n_jobs=1):
-        super().__init__(path=path, recording_ids=recording_ids,
-                         target_name=target_name, preload=preload,
-                         add_physician_reports=add_physician_reports,
-                         n_jobs=n_jobs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message="Cannot save date file")
+            super().__init__(path=path, recording_ids=recording_ids,
+                             target_name=target_name, preload=preload,
+                             add_physician_reports=add_physician_reports,
+                             n_jobs=n_jobs)
