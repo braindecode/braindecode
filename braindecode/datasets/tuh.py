@@ -81,7 +81,6 @@ class TUH(BaseConcatDataset):
     def _create_dataset(description, target_name, preload,
                         add_physician_reports):
         file_path = description.loc['path']
-        date_path = file_path.replace('.edf', '_date.txt')
 
         # parse age and gender information from EDF header
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
@@ -114,15 +113,6 @@ class TUH(BaseConcatDataset):
             d['report'] = physician_report
         additional_description = pd.Series(d)
         description = pd.concat([description, additional_description])
-
-        # if the txt file storing the recording date does not exist, create it
-        if not os.path.exists(date_path):
-            try:
-                description[['year', 'month', 'day']].to_json(date_path)
-            except OSError:
-                warnings.warn(f'Cannot save date file to {date_path}. '
-                              f'This might slow down creation of the dataset.')
-
         base_dataset = BaseDataset(raw, description,
                                    target_name=target_name)
         return base_dataset
