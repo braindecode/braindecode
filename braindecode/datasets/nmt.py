@@ -7,6 +7,7 @@ Dataset classes for the NMT EEG Corpus
 # License: BSD (3-clause)
 
 import os
+import glob
 import warnings
 import pandas as pd
 from .tuh import TUH, _read_date
@@ -16,7 +17,6 @@ def _create_description(file_paths):
     descriptions = [_parse_description_from_file_path(f) for f in file_paths]
     descriptions = pd.DataFrame(descriptions)
     return descriptions.T
-
 def _parse_description_from_file_path(file_path):
     # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
     file_path = os.path.normpath(file_path)
@@ -67,6 +67,9 @@ class NMT(TUH):
     """
     def __init__(self, path, recording_ids=None, target_name='pathological',
                  preload=False, add_physician_reports=False, n_jobs=1):
+        # create an index of all files and gather easily accessible info
+        # without actually touching the files
+        file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
         descriptions = _create_description(file_paths)
         with warnings.catch_warnings():
             warnings.filterwarnings(
