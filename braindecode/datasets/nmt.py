@@ -6,22 +6,10 @@ Dataset classes for the NMT EEG Corpus
 #
 # License: BSD (3-clause)
 
-import re
 import os
-import glob
 import warnings
-from unittest import mock
-from datetime import datetime, timezone
-from typing import Iterable
-
 import pandas as pd
-import numpy as np
-import mne
-from joblib import Parallel, delayed
-
-from .base import BaseDataset, BaseConcatDataset
 from .tuh import TUH, _read_date
-
 
 
 def _create_description(file_paths):
@@ -41,7 +29,6 @@ def _parse_description_from_file_path(file_path):
         abnormal = False
 
     subject_id = tokens[-1].split('.')[0]
-    
     description = _read_date(file_path)
     description.update({
         'path': file_path,
@@ -110,4 +97,3 @@ class NMT(TUH):
             'train': 'train' in tokens,
             'pathological': 'abnormal' in tokens,
         }
-
