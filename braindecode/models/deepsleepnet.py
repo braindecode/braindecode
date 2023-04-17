@@ -154,8 +154,8 @@ class _BiLSTM(nn.Module):
         # set initial hidden and cell states
         h0 = torch.zeros(
             self.num_layers * 2, x.size(0), self.hidden_size
-        )  # RuntimeError: Input and hidden tensors are not at the same device
-        c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size)
+        ).to(x.device)
+        c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
 
         # forward propagate LSTM
         out, _ = self.lstm(x, (h0, c0))
