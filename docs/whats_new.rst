@@ -43,7 +43,7 @@ Enhancements
 
 Bugs
 ~~~~
-- Removing deprecation warning due to transposition in :func:`braindecode.augmentation.functional._frequency_shift` (:gh:`446` by `Matthieu Terris`_)
+- Removing deprecation warning due to torch transposition in :func:`braindecode.augmentation.functional._frequency_shift` (:gh:`446` by `Matthieu Terris`_)
 
 
 API changes
@@ -187,4 +187,4 @@ Authors
 .. _Ghaith Bouallegue: https://github.com/GhBlg
 .. _Denis A. Engemann: https://github.com/dengemann
 .. _Oskar Størmer: https://github.com/ostormer
-.. _Matthieu Terris:https://github.com/matthieutrs
+.. _Matthieu Terris: https://github.com/matthieutrs
