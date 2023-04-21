@@ -501,8 +501,9 @@ def _frequency_shift(X, fs, f_shift):
     analytical = _analytic_transform(padded)
     if isinstance(f_shift, (float, int, np.ndarray, list)):
         f_shift = torch.as_tensor(f_shift).float()
-    reshaped_f_shift = f_shift.repeat(
-        N_padded, n_channels, 1).T
+    f_shift_stack = f_shift.repeat(N_padded, n_channels, 1)
+    reshaped_f_shift = f_shift_stack.permute(
+        *torch.arange(f_shift_stack.ndim - 1, -1, -1))
     shifted = analytical * torch.exp(2j * np.pi * reshaped_f_shift * t)
     return shifted[..., :N_orig].real.float()
 
