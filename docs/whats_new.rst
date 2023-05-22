@@ -25,6 +25,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
 
 API changes
 ~~~~~~~~~~~
