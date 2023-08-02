@@ -11,7 +11,7 @@ from einops.layers.torch import Rearrange, Reduce
 from torch import nn, Tensor
 
 
-class Conformer(nn.Sequential):
+class EEGConformer(nn.Sequential):
     """EEG Conformer.
 
     Convolutional Transformer for EEG decoding.
@@ -29,8 +29,6 @@ class Conformer(nn.Sequential):
         - PatchEmbedding
         - TransformerEncoder
         - ClassificationHead
-
-    Paper: [IEEE Xplore]()
 
     Notes
     -----
