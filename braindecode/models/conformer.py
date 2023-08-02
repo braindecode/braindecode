@@ -23,7 +23,7 @@ class EEGConformer(nn.Sequential):
     other models. The input shape should be four-dimensional matrix
     representing the EEG signals.
 
-         (batch_size, 1, n_channels, n_timesteps)`.
+         (batch_size, n_channels, n_timesteps)`.
 
     The EEG Conformer architecture is composed of three modules:
         - PatchEmbedding
