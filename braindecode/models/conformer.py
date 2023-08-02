@@ -149,7 +149,7 @@ class PatchEmbedding(nn.Module):
             nn.Conv2d(
                 kernel, kernel, (1, 1), stride=(1, 1)
             ),  # transpose, conv could enhance fiting ability slightly
-            Rearrange("b e (h) (w) -> b (h w) e"),
+            Rearrange("b d_model 1 seq -> b seq d_model"),
         )
 
     def forward(self, x: Tensor) -> Tensor:
