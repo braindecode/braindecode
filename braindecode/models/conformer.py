@@ -86,18 +86,18 @@ class EEGConformer(nn.Sequential):
     """
 
     def __init__(
-        self,
-        kernel=40,
-        kernel_temp_conv=25,
-        eeg_channel=22,
-        kernel_avg_pool=75,
-        stride_avg_pool=15,
-        conv_drop=0.5,
-        att_depth=6,
-        att_heads=10,
-        att_drop=0.5,
-        fc_dim=2440,
-        n_classes=4,
+            self,
+            kernel=40,
+            kernel_temp_conv=25,
+            eeg_channel=22,
+            kernel_avg_pool=75,
+            stride_avg_pool=15,
+            conv_drop=0.5,
+            att_depth=6,
+            att_heads=10,
+            att_drop=0.5,
+            fc_dim=2440,
+            n_classes=4,
     ):
         super().__init__(
             PatchEmbedding(
@@ -120,14 +120,15 @@ class PatchEmbedding(nn.Module):
     instead of postion embedding.
 
     """
+
     def __init__(
-        self,
-        kernel,
-        kernel_temp_conv,
-        eeg_channel,
-        kernel_avg_pool,
-        stride_avg_pool,
-        conv_drop,
+            self,
+            kernel,
+            kernel_temp_conv,
+            eeg_channel,
+            kernel_avg_pool,
+            stride_avg_pool,
+            conv_drop,
     ):
         super().__init__()
 
@@ -152,6 +153,7 @@ class PatchEmbedding(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
+        x = x.unsqueeze(dim=1)  # add one extra dimension
         x = self.shallownet(x)
         x = self.projection(x)
         return x
