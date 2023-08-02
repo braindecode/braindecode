@@ -12,47 +12,78 @@ from torch import nn, Tensor
 
 
 class Conformer(nn.Sequential):
-    """
+    """EEG Conformer.
 
-    # EEG Conformer (Conformer or CF)
-    Convolutional Transformer for EEG decoding
+    Convolutional Transformer for EEG decoding.
 
-    - Original code: https://github.com/eeyhsong/EEG-Conformer
-    - Paper: https://ieeexplore.ieee.org/document/9991178
+    The paper and original code with more details about the methodological
+    choices are availible at the [EEG Conformer]_ and [EEG Conformer Code]_.
 
-    
-    ## Note 
-    - Recommend to use augment the data before use Conformer, e.g. S&R in the end of the code.
-    - Please refer to the original paper and code for more details.
+    This neural network architecture recieves a different input shape than
+    other models. The input shape should be four-dimensional matrix
+    representing the EEG signals.
+
+         (batch_size, 1, n_channels, n_timesteps)`.
+
+    The EEG Conformer architecture is composed of three modules:
+        - PatchEmbedding
+        - TransformerEncoder
+        - ClassificationHead
+
+    Paper: [IEEE Xplore]()
+
+    Notes
+    -----
+    The authors recommend using augment data before using Conformer, e.g. S&R,
+    at the end of the code.
+    Please refer to the original paper and code for more details.
+
+    .. versionadded:: 0.7.1
+
+    We aggregate the parameters based on the parts of the models.
+
+    Parameters PatchEmbedding
+    -------------------------
+    - n_kernel: int
+        Number of kernels for the temporal convolution layer (first layer).
+    - n_kernel_temp_conv: int
+        Kernel size of the temporal convolution layer.
+    - eeg_channel: int
+        Number of EEG channels (kernel size of the spatial convolution layer).
+    - n_kernel_avg_pool: int
+        Kernel size of the average pooling layer.
+    - stride_avg_pool: int
+        Stride of the average pooling layer.
+    - drop_prob: float
+        Dropout rate of the convolutional layer.
+
+    Parameters TransformerEncoder
+    -----------------------------
+    - att_depth: int
+        Number of self-attention layers.
+    - att_heads: int
+        Number of attention heads.
+    - att_drop: float
+        Dropout rate of the self-attention layer.
+
+    Parameters ClassificationHead
+    -----------------------------
+    - fc_dim: int
+        The dimension of the fully connected layer.
+    - n_classes: int
+        Number of classes.
 
 
-    ## Input 
-    EEG signals of shape (batch_size, 1, n_channels, n_times) - four dimensions
+    References
+    ----------
+    .. [EEG Conformer] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+       conformer: Convolutional transformer for EEG decoding and visualization.
+       IEEE Transactions on Neural Systems and Rehabilitation Engineering,
+       31, pp.710-719. https://ieeexplore.ieee.org/document/9991178
+    .. [EEG Conformer Code] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+       conformer: Convolutional transformer for EEG decoding and visualization.
+       https://github.com/eeyhsong/EEG-Conformer.
 
-    
-    ## Output
-    (embeds, out)
-    - embeds: embedding after CNN and Transformer module
-    - out: classification result -> CrossEntropyLoss
-
-    
-    ## Parameters
-    ### Convolution
-    - kernel: kernel number of the temporal convolution layer (first layer)
-    - kernel_temp_conv: kernel size of the temporal convolution layer
-    - eeg_channel: number of EEG channels (kernal size of the spatial convolution layer)
-    - kernel_avg_pool: kernel size of the average pooling layer
-    - stride_avg_pool: stride of the average pooling layer
-    - conv_drop: dropout of the convolutional layer
-
-    ### Transformer
-    - att_depth: number of self-attention layers
-    - att_heads: number of attention heads
-    - att_drop: dropout of the self-attention layer
-
-    ### Classification
-    - fc_dim: dimension of the fully connected layer
-    - n_classes: number of classes
 
     """
 
@@ -84,9 +115,13 @@ class Conformer(nn.Sequential):
         )
 
 
-# Convolution module
-# use conv to capture local features, instead of postion embedding.
 class PatchEmbedding(nn.Module):
+    """Patch Embedding.
+
+    The authors used a convolution moduleto capture local features,
+    instead of postion embedding.
+
+    """
     def __init__(
         self,
         kernel,
@@ -96,7 +131,6 @@ class PatchEmbedding(nn.Module):
         stride_avg_pool,
         conv_drop,
     ):
-        # self.patch_size = patch_size
         super().__init__()
 
         self.shallownet = nn.Sequential(
@@ -243,4 +277,3 @@ class ClassificationHead(nn.Sequential):
         x = x.contiguous().view(x.size(0), -1)
         out = self.fc(x)
         return x, out
-
