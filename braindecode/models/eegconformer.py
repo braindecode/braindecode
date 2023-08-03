@@ -34,7 +34,7 @@ class EEGConformer(nn.Sequential):
     at the end of the code.
     Please refer to the original paper and code for more details.
 
-    .. versionadded:: 0.7.1
+    .. versionadded:: 0.8
 
     We aggregate the parameters based on the parts of the models.
 
