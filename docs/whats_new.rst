@@ -41,7 +41,7 @@ Enhancements
 - Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
 - Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_, `Bruno Aristimunha`_, `Robin Tibor Schirrmeister`_, `Lukas Gemein`_, `Denis A. Engemann`_ and `Oskar Størmer`_)
 - Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Théo Gnassounou`_)
-- Adding :class:`braindecode.models.Conformer` network (:gh:`454` by `Yonghao Song`_)
+- Adding :class:`braindecode.models.EEGConformer` network (:gh:`454` by `Yonghao Song`_)
 
 Bugs
 ~~~~
