@@ -2,8 +2,6 @@
 #
 # License: BSD (3-clause)
 
-import math
-
 import torch
 import torch.nn.functional as F
 from einops import rearrange
@@ -46,8 +44,8 @@ class EEGConformer(nn.Sequential):
         Number of kernels for the temporal convolution layer (first layer).
     - n_kernel_temp_conv: int
         Kernel size of the temporal convolution layer.
-    - eeg_channel: int
-        Number of EEG channels (kernel size of the spatial convolution layer).
+    - n_kernel_spatial_conv: int
+        kernel size of the spatial convolution layer.
     - n_kernel_avg_pool: int
         Kernel size of the average pooling layer.
     - stride_avg_pool: int
@@ -61,7 +59,7 @@ class EEGConformer(nn.Sequential):
         Number of self-attention layers.
     - att_heads: int
         Number of attention heads.
-    - att_drop: float
+    - att_drop_prob: float
         Dropout rate of the self-attention layer.
 
     Parameters ClassificationHead
@@ -87,29 +85,29 @@ class EEGConformer(nn.Sequential):
 
     def __init__(
             self,
-            kernel=40,
-            kernel_temp_conv=25,
-            eeg_channel=22,
-            kernel_avg_pool=75,
+            n_kernel=40,
+            n_kernel_temp_conv=25,
+            n_kernel_spatial_conv=22,
+            n_kernel_avg_pool=75,
             stride_avg_pool=15,
-            conv_drop=0.5,
+            drop_prob=0.5,
             att_depth=6,
             att_heads=10,
-            att_drop=0.5,
+            att_drop_prob=0.5,
             fc_dim=2440,
             n_classes=4,
     ):
         super().__init__(
             PatchEmbedding(
-                kernel,
-                kernel_temp_conv,
-                eeg_channel,
-                kernel_avg_pool,
+                n_kernel,
+                n_kernel_temp_conv,
+                n_kernel_spatial_conv,
+                n_kernel_avg_pool,
                 stride_avg_pool,
-                conv_drop,
+                drop_prob,
             ),
-            TransformerEncoder(att_depth, kernel, att_heads, att_drop),
-            ClassificationHead(kernel, fc_dim, n_classes),
+            TransformerEncoder(att_depth, n_kernel, att_heads, att_drop_prob),
+            ClassificationHead(n_kernel, fc_dim, n_classes),
         )
 
 
@@ -123,31 +121,31 @@ class PatchEmbedding(nn.Module):
 
     def __init__(
             self,
-            kernel,
-            kernel_temp_conv,
-            eeg_channel,
-            kernel_avg_pool,
+            n_kernel,
+            n_kernel_temp_conv,
+            n_kernel_spatial_conv,
+            n_kernel_avg_pool,
             stride_avg_pool,
-            conv_drop,
+            drop_prob,
     ):
         super().__init__()
 
         self.shallownet = nn.Sequential(
-            nn.Conv2d(1, kernel, (1, kernel_temp_conv), (1, 1)),
-            nn.Conv2d(kernel, kernel, (eeg_channel, 1), (1, 1)),
-            nn.BatchNorm2d(kernel),
+            nn.Conv2d(1, n_kernel, (1, n_kernel_temp_conv), (1, 1)),
+            nn.Conv2d(n_kernel, n_kernel, (n_kernel_spatial_conv, 1), (1, 1)),
+            nn.BatchNorm2d(n_kernel),
             nn.ELU(),
             nn.AvgPool2d(
-                (1, kernel_avg_pool), (1, stride_avg_pool)
+                (1, n_kernel_avg_pool), (1, stride_avg_pool)
             ),
             # pooling acts as slicing to obtain 'patch' along the
             # time dimension as in ViT
-            nn.Dropout(conv_drop),
+            nn.Dropout(drop_prob),
         )
 
         self.projection = nn.Sequential(
             nn.Conv2d(
-                kernel, kernel, (1, 1), stride=(1, 1)
+                n_kernel, n_kernel, (1, 1), stride=(1, 1)
             ),  # transpose, conv could enhance fiting ability slightly
             Rearrange("b e (h) (w) -> b (h w) e"),
         )
@@ -216,11 +214,6 @@ class FeedForwardBlock(nn.Sequential):
         )
 
 
-class GELU(nn.Module):
-    def forward(self, input: Tensor) -> Tensor:
-        return input * 0.5 * (1.0 + torch.erf(input / math.sqrt(2.0)))
-
-
 class TransformerEncoderBlock(nn.Sequential):
     def __init__(self, emb_size, att_heads, att_drop, forward_expansion=4):
         super().__init__(
@@ -253,7 +246,7 @@ class TransformerEncoder(nn.Sequential):
         )
 
 
-class ClassificationHead(nn.Sequential):
+class ClassificationHead(nn.Module):
     def __init__(self, emb_size, fc_dim, n_classes):
         super().__init__()
 
