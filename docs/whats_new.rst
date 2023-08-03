@@ -41,7 +41,7 @@ Enhancements
 
 Bugs
 ~~~~
-
+- Fixing E231 missing whitespace after ',' untraceable error in old flake8 (:gh:`455` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
