@@ -21,7 +21,7 @@ class EEGConformer(nn.Sequential):
     other models. The input shape should be four-dimensional matrix
     representing the EEG signals.
 
-         (batch_size, 1, n_channels, n_timesteps)`.
+         (batch_size, n_channels, n_timesteps)`.
 
     The EEG Conformer architecture is composed of three modules:
         - PatchEmbedding
@@ -147,7 +147,7 @@ class PatchEmbedding(nn.Module):
             nn.Conv2d(
                 n_kernel, n_kernel, (1, 1), stride=(1, 1)
             ),  # transpose, conv could enhance fiting ability slightly
-            Rearrange("b e (h) (w) -> b (h w) e"),
+            Rearrange("b d_model 1 seq -> b seq d_model"),
         )
 
     def forward(self, x: Tensor) -> Tensor:
