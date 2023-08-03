@@ -44,7 +44,7 @@ Enhancements
 
 Bugs
 ~~~~
-- Fixing E231 missing whitespace after ',' untraceable error in old flake8 (:gh:`455` by `Bruno Aristimunha`_)
+- Fixing E231 missing whitespace after ',' untraceable error in old flake8 (:gh:`460` by `Bruno Aristimunha`_)
 - Removing deprecation warning due to torch transposition in :func:`braindecode.augmentation.functional._frequency_shift` (:gh:`446` by `Matthieu Terris`_)
 
 
