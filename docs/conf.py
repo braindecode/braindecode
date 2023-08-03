@@ -267,7 +267,9 @@ html_theme_options = {
       'version_match': switcher_version_match,
     },
     'footer_items': ['copyright'],
-    'pygment_light_style': 'default',}
+    'pygment_light_style': 'default',
+    'analytics': dict(google_analytics_id='G-7Q43R82K6D'),
+}
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.

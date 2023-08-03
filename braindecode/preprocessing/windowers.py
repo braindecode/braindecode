@@ -106,8 +106,8 @@ def create_windows_from_events(
 
     Returns
     -------
-    windows_ds: WindowsDataset
-        Dataset containing the extracted windows.
+    windows_datasets: BaseConcatDataset
+        Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     _check_windowing_arguments(
         trial_start_offset_samples, trial_stop_offset_samples,
@@ -184,8 +184,8 @@ def create_fixed_length_windows(
 
     Returns
     -------
-    windows_ds: WindowsDataset
-        Dataset containing the extracted windows.
+    windows_datasets: BaseConcatDataset
+        Concatenated datasets of WindowsDataset containing the extracted windows.
     """
     stop_offset_samples, drop_last_window = _check_and_set_fixed_length_window_arguments(
         start_offset_samples, stop_offset_samples, window_size_samples, window_stride_samples,
