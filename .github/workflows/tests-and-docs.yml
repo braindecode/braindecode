@@ -35,10 +35,9 @@ jobs:
         environment-file: environment.yml
         python-version: 3.7
         auto-update-conda: true
-        miniforge-variant: Mambaforge
         use-mamba: true
         channels: conda-forge
-        activate-environment: ${{ env.CONDA_ENV }}
+        activate-environment: braindecode
       # Show Conda and Python Versions
     - run: conda --version
     - run: conda info --envs
