@@ -7,7 +7,7 @@ import mne
 import numpy as np
 import torch
 from mne.io import concatenate_raws
-from skorch.helper import predefined_split, SliceDataset
+from skorch.helper import predefined_split
 from torch import optim
 
 from braindecode import EEGClassifier
@@ -101,7 +101,6 @@ def test_cropped_decoding():
                                 window_stride_samples=n_preds_per_input)
 
     train_split = predefined_split(valid_set)
-    y_train = list(SliceDataset(train_set, 1))
 
     clf = EEGClassifier(
         model,

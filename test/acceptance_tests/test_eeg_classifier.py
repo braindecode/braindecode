@@ -7,7 +7,7 @@
 import mne
 import numpy as np
 from mne.io import concatenate_raws
-from skorch.helper import predefined_split, SliceDataset
+from skorch.helper import predefined_split
 from torch import optim
 from torch.nn.functional import nll_loss
 
