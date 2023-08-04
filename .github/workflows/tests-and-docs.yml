@@ -30,7 +30,7 @@ jobs:
         path: ~/mne_data
         key: ${{ runner.os }}-v3
     - name: Setting Up Conda Braindecode Environment
-      uses: conda-incubator/setup-miniconda@v2
+      uses: conda-incubator/setup-miniconda@v2.2.0
       with:
         environment-file: environment.yml
         python-version: 3.7
