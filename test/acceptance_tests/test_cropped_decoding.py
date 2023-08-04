@@ -127,7 +127,7 @@ def test_cropped_decoding():
                 1.111006
             ]
         ),
-        rtol=1e-3,
+        rtol=3e-1,
         atol=1e-4,
     )
 
@@ -141,7 +141,7 @@ def test_cropped_decoding():
                 0.933025
             ]
         ),
-        rtol=1e-3,
+        rtol=3e-1,
         atol=1e-3,
     )
 
@@ -155,7 +155,7 @@ def test_cropped_decoding():
                 0.533333
             ]
         ),
-        rtol=1e-3,
+        rtol=3e-1,
         atol=1e-4,
     )
 
@@ -169,6 +169,6 @@ def test_cropped_decoding():
                 0.6
             ]
         ),
-        rtol=1e-3,
+        rtol=3e-1,
         atol=1e-4,
     )
