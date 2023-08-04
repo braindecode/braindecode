@@ -108,8 +108,10 @@ def test_trialwise_decoding():
         batch_size=30,
         callbacks=["accuracy"],
         device=device,
+        max_epochs=6,
+        classes=np.array([0, 1])
     )
-    clf.fit(train_set, y=None, epochs=6)
+    clf.fit(train_set, y=None)
 
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],

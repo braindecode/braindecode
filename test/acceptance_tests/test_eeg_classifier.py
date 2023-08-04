@@ -7,7 +7,7 @@
 import mne
 import numpy as np
 from mne.io import concatenate_raws
-from skorch.helper import predefined_split
+from skorch.helper import predefined_split, SliceDataset
 from torch import optim
 from torch.nn.functional import nll_loss
 
@@ -182,13 +182,15 @@ def test_eeg_classifier():
         optimizer=optim.Adam,
         train_split=predefined_split(valid_set),
         batch_size=32,
+        max_epochs=4,
         callbacks=[
             ("train_trial_accuracy", cropped_cb_train),
             ("valid_trial_accuracy", cropped_cb_valid),
         ],
+        classes=np.array([0, 1])
     )
 
-    clf.fit(train_set, y=None, epochs=4)
+    clf.fit(train_set, y=None)
 
     # Reproduce this exact output by using pprint(history_without_dur) and adjusting
     # indentation of all lines after first
