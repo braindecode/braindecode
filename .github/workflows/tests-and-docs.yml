@@ -46,7 +46,6 @@ jobs:
     # Install MOABB as well
     - name: Install MOABB
       run: pip install moabb
-    # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
