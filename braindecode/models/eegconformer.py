@@ -157,7 +157,7 @@ class PatchEmbedding(nn.Module):
         return x
 
 
-class MultiHeadAttention(nn.Module):
+class _MultiHeadAttention(nn.Module):
     def __init__(self, emb_size, num_heads, dropout):
         super().__init__()
         self.emb_size = emb_size
@@ -220,7 +220,7 @@ class TransformerEncoderBlock(nn.Sequential):
             ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
-                    MultiHeadAttention(emb_size, att_heads, att_drop),
+                    _MultiHeadAttention(emb_size, att_heads, att_drop),
                     nn.Dropout(att_drop),
                 )
             ),
