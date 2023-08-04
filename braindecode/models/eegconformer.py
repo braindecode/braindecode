@@ -18,7 +18,7 @@ class EEGConformer(nn.Sequential):
     choices are availible at the [EEG Conformer]_ and [EEG Conformer Code]_.
 
     This neural network architecture recieves a different input shape than
-    other models. The input shape should be four-dimensional matrix
+    other models. The input shape should be three-dimensional matrix
     representing the EEG signals.
 
          (batch_size, n_channels, n_timesteps)`.
