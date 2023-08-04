@@ -88,8 +88,7 @@ def test_variable_length_trials_cropped_decoding():
         clf.history[:, 'train_loss'],
         np.array([0.690665602684021,
                   0.13818606734275818,
-                  0.007728443946689367]
-        ),
+                  0.007728443946689367]),
         rtol=1e-1,
         atol=1e-1,
     )
@@ -98,8 +97,7 @@ def test_variable_length_trials_cropped_decoding():
         clf.history[:, 'valid_loss'],
         np.array([1.2266751527786255,
                   1.238959550857544,
-                  1.4418834447860718]
-        ),
+                  1.4418834447860718]),
         rtol=1e-1,
         atol=1e-1,
     )
