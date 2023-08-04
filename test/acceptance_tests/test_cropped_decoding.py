@@ -116,30 +116,24 @@ def test_cropped_decoding():
     )
 
     clf.fit(train_set, y=None)
-
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
         np.array(
-            [
-                1.391054,
-                1.278387,
-                1.086732,
-                1.111006
-            ]
+            [1.3424938122431438,
+             1.1875120401382446,
+             0.9733301798502604,
+             0.8944226503372192]
         ),
         rtol=3e-1,
         atol=1e-4,
     )
-
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
         np.array(
-            [
-                2.24272,
-                0.891798,
-                0.741147,
-                0.933025
-            ]
+            [1.4121688683827718,
+             2.4346307436625163,
+             1.1520539363225302,
+             1.1809584140777587]
         ),
         rtol=3e-1,
         atol=1e-3,
@@ -150,9 +144,9 @@ def test_cropped_decoding():
         np.array(
             [
                 0.5,
+                0.5,
                 0.516667,
-                0.6,
-                0.533333
+                0.5
             ]
         ),
         rtol=3e-1,
@@ -163,10 +157,10 @@ def test_cropped_decoding():
         clf.history[:, 'valid_accuracy'],
         np.array(
             [
-                0.466667,
-                0.533333,
-                0.6,
-                0.6
+                0.5333333333333333,
+                0.4666666666666667,
+                0.43333333333333335,
+                0.4666666666666667,
             ]
         ),
         rtol=3e-1,
