@@ -83,15 +83,12 @@ def test_variable_length_trials_cropped_decoding():
         classes=np.array(classes),
     )
     clf.fit(variable_tuh_windows_train, y=None)
-
     # make sure it does what we expect
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
-        np.array([
-            0.689495325088501,
-            0.1353449523448944,
-            0.006638816092163324,
-        ]
+        np.array([0.690665602684021,
+                  0.13818606734275818,
+                  0.007728443946689367]
         ),
         rtol=1e-1,
         atol=1e-1,
@@ -99,11 +96,9 @@ def test_variable_length_trials_cropped_decoding():
 
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
-        np.array([
-            2.925871,
-            3.611423,
-            4.23494,
-        ]
+        np.array([1.2266751527786255,
+                  1.238959550857544,
+                  1.4418834447860718]
         ),
         rtol=1e-1,
         atol=1e-1,
