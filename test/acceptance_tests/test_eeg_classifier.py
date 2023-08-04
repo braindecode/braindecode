@@ -191,8 +191,7 @@ def test_eeg_classifier():
     )
 
     clf.fit(train_set, y=None)
-    import pdb
-    pdb.set_trace()
+
     # Reproduce this exact output by using pprint(history_without_dur) and adjusting
     # indentation of all lines after first
     expectedh = [{'batches': [
