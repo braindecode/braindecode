@@ -36,6 +36,7 @@ jobs:
         python-version: 3.7
         auto-update-conda: true
         use-mamba: true
+        miniforge-variant: Mambaforge
         channels: conda-forge
         activate-environment: braindecode
       # Show Conda and Python Versions
