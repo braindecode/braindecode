@@ -49,7 +49,7 @@ jobs:
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
     - name: Install Skorch development version from git repo
       if: ${{ matrix.skorch_version == 'main' }}
-      run: pip install git+https://github.com/skorch-dev/skorch.
+      run: pip install git+https://github.com/skorch-dev/skorch
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
