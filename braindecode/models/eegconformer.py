@@ -9,13 +9,13 @@ from einops.layers.torch import Rearrange, Reduce
 from torch import nn, Tensor
 
 
-class EEGConformer(nn.Sequential):
+class EEGConformer(nn.Module):
     """EEG Conformer.
 
     Convolutional Transformer for EEG decoding.
 
     The paper and original code with more details about the methodological
-    choices are availible at the [EEG Conformer]_ and [EEG Conformer Code]_.
+    choices are available at the [Song2022]_ and [ConformerCode]_.
 
     This neural network architecture recieves a traditional braindecode input.
     The input shape should be three-dimensional matrix representing the EEG
@@ -39,34 +39,28 @@ class EEGConformer(nn.Sequential):
     We aggregate the parameters based on the parts of the models, or
     when the parameters were used first, e.g. n_filters_conv.
 
-    Parameters PatchEmbedding
-    -------------------------
+    Parameters
+    ----------
     - n_filters_conv: int
         Length of kernels for the temporal convolution layer (first layer).
     - n_filters_time: int
         Number of temporal filters.
     - filter_time_length: int
         Length of the temporal filter.
-    - n_filters_spat: int
-        Number of spatial filters.
+    - n_channels: int
+        Number of channels to be used as number of spatial filters.
     - pool_time_length: int
         Length of temporal poling filter.
     - pool_time_stride: int
         Length of stride between temporal pooling filters.
     - drop_prob: float
         Dropout rate of the convolutional layer.
-
-    Parameters TransformerEncoder
-    -----------------------------
     - att_depth: int
         Number of self-attention layers.
     - att_heads: int
         Number of attention heads.
     - att_drop_prob: float
         Dropout rate of the self-attention layer.
-
-    Parameters ClassificationHead
-    -----------------------------
     - final_fc_length: int
         The dimension of the fully connected layer.
     - n_classes: int
@@ -74,11 +68,11 @@ class EEGConformer(nn.Sequential):
 
     References
     ----------
-    .. [EEG Conformer] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+    .. [Song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
        conformer: Convolutional transformer for EEG decoding and visualization.
        IEEE Transactions on Neural Systems and Rehabilitation Engineering,
        31, pp.710-719. https://ieeexplore.ieee.org/document/9991178
-    .. [EEG Conformer Code] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+    .. [ConformerCode] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
        conformer: Convolutional transformer for EEG decoding and visualization.
        https://github.com/eeyhsong/EEG-Conformer.
     """
@@ -86,10 +80,10 @@ class EEGConformer(nn.Sequential):
     def __init__(
             self,
             n_classes,
+            n_channels,
             n_filters_conv=40,
             n_filters_time=25,
             filter_time_length=25,
-            n_filters_spat=22,
             n_kernel_avg_pool=75,
             pool_time_stride=15,
             drop_prob=0.5,
@@ -97,23 +91,31 @@ class EEGConformer(nn.Sequential):
             att_heads=10,
             att_drop_prob=0.5,
             final_fc_length=2440,
-
     ):
-        super().__init__(
-            PatchEmbedding(
-                n_filters_conv=n_filters_conv,
+        super().__init__()
+        self.patch_embedding = PatchEmbedding(
                 n_filters_time=n_filters_time,
                 filter_time_length=filter_time_length,
-                n_filters_spat=n_filters_spat,
+                n_channels=n_channels,
                 pool_time_length=n_kernel_avg_pool,
                 stride_avg_pool=pool_time_stride,
-                drop_prob=drop_prob,
-            ),
-            _TransformerEncoder(att_depth, n_filters_conv, att_heads,
-                                att_drop_prob),
-            ClassificationHead(n_filters_conv, final_fc_length,
-                               n_classes),
-        )
+                drop_prob=drop_prob)
+
+        self.transformer = _TransformerEncoder(
+            att_depth=att_depth,
+            emb_size=n_filters_conv,
+            att_heads=att_heads,
+            att_drop=att_drop_prob)
+
+        self.classification_head = ClassificationHead(
+            emb_size=n_filters_conv, final_fc_length=final_fc_length,
+            n_classes=n_classes)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.patch_embedding(x)
+        x = self.transformer(x)
+        x = self.classification_head(x)
+        return x
 
 
 class PatchEmbedding(nn.Module):
@@ -125,10 +127,9 @@ class PatchEmbedding(nn.Module):
 
     def __init__(
             self,
-            n_filters_conv,
             n_filters_time,
             filter_time_length,
-            n_filters_spat,
+            n_channels,
             pool_time_length,
             stride_avg_pool,
             drop_prob,
@@ -139,9 +140,9 @@ class PatchEmbedding(nn.Module):
             nn.Conv2d(1, n_filters_time,
                       (1, filter_time_length), (1, 1)),
             nn.Conv2d(n_filters_time, n_filters_time,
-                      (n_filters_spat, 1), (1, 1)),
+                      (n_channels, 1), (1, 1)),
 
-            nn.BatchNorm2d(num_features=n_filters_conv),
+            nn.BatchNorm2d(num_features=n_filters_time),
             nn.ELU(),
             nn.AvgPool2d(
                 kernel_size=(1, pool_time_length),
@@ -263,7 +264,7 @@ class _TransformerEncoder(nn.Sequential):
 class ClassificationHead(nn.Module):
     def __init__(self, emb_size, final_fc_length, n_classes,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
-                 hidden_channels=32):
+                 hidden_channels=32, return_features=False):
         """"Classification head for the transformer encoder.
 
         Parameters
@@ -301,8 +302,12 @@ class ClassificationHead(nn.Module):
             nn.Dropout(drop_prob_2),
             nn.Linear(hidden_channels, n_classes),
         )
+        self.return_features = return_features
 
     def forward(self, x):
         x = x.contiguous().view(x.size(0), -1)
         out = self.fc(x)
-        return x, out
+        if self.return_features:
+            return out, x
+        else:
+            return out
