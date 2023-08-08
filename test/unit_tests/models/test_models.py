@@ -13,7 +13,8 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet)
+    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet,
+    ATCNet, EEGConformer)
 
 
 from braindecode.util import set_random_seeds
@@ -129,6 +130,14 @@ def test_eeginception_erp(input_sizes, model_cls):
         n_classes=input_sizes['n_classes'],
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
+    check_forward_pass(model, input_sizes,)
+
+
+def test_eegconformer(input_sizes):
+    model = EEGConformer(
+        n_classes=input_sizes['n_classes'],
+        n_channels=input_sizes['n_channels']
+    )
 
     check_forward_pass(model, input_sizes,)
 
@@ -502,3 +511,56 @@ def test_deepsleepnet_feats_with_hook():
     y_pred = model(X.unsqueeze(1))
     assert intermediate_layers["features_extractor"].shape == (n_examples, model.len_last_layer)
     assert y_pred.shape == (n_examples, n_classes)
+
+
+@pytest.fixture
+def sample_input():
+    batch_size = 16
+    n_channels = 12
+    n_timesteps = 1000
+    return torch.rand(batch_size, n_channels, n_timesteps)
+
+@pytest.fixture
+def model():
+    return EEGConformer(n_classes=2)
+
+
+def test_model_creation(model):
+    assert model is not None
+
+
+def test_forward_pass(sample_input, model):
+    output = model(sample_input)
+    assert isinstance(output, tuple) and len(output) == 2
+
+
+def test_patch_embedding(sample_input, model):
+    patch_embedding = model[0]
+    output = patch_embedding(sample_input)
+    assert output.shape[0] == sample_input.shape[0]
+
+
+def test_transformer_encoder(sample_input, model):
+    transformer_encoder = model[1]
+    output = transformer_encoder(sample_input)
+    assert output.shape == sample_input.shape
+
+
+def test_classification_head(sample_input, model):
+    classification_head = model[2]
+    _, output = classification_head(sample_input)
+    assert output.shape[0] == sample_input.shape[0]
+
+
+def test_model_trainable_parameters(model):
+    trainable_params = sum(p.numel()
+                           for p in model.parameters() if p.requires_grad)
+    assert trainable_params == 766823
+
+
+def test_model_evaluation(sample_input, model):
+    model.eval()
+    with torch.no_grad():
+        import pdb; pdb.set_trace()
+        output = model(sample_input)
+        assert isinstance(output, tuple) and len(output) == 2
