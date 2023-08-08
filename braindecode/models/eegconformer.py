@@ -112,6 +112,7 @@ class EEGConformer(nn.Module):
             n_classes=n_classes)
 
     def forward(self, x: Tensor) -> Tensor:
+        x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
         x = self.transformer(x)
         x = self.classification_head(x)
@@ -161,7 +162,6 @@ class PatchEmbedding(nn.Module):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        x = x.unsqueeze(dim=1)  # add one extra dimension
         x = self.shallownet(x)
         x = self.projection(x)
         return x
