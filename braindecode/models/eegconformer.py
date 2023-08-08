@@ -64,7 +64,7 @@ class EEGConformer(nn.Sequential):
 
     Parameters ClassificationHead
     -----------------------------
-    - fc_dim: int
+    - final_fc_length: int
         The dimension of the fully connected layer.
     - n_classes: int
         Number of classes.
@@ -249,7 +249,30 @@ class _TransformerEncoder(nn.Sequential):
 
 
 class ClassificationHead(nn.Module):
-    def __init__(self, emb_size, final_fc_length, n_classes):
+    def __init__(self, emb_size, final_fc_length, n_classes,
+                 drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
+                 hidden_channels=32):
+        """"Classification head for the transformer encoder.
+
+        Parameters
+        ----------
+        emb_size : int
+            Embedding size of the transformer encoder.
+        final_fc_length : int
+            Length of the final fully connected layer.
+        n_classes : int
+            Number of classes for classification.
+        drop_prob_1 : float
+            Dropout probability for the first dropout layer.
+        drop_prob_2 : float
+            Dropout probability for the second dropout layer.
+        out_channels : int
+            Number of output channels for the first linear layer.
+        hidden_channels : int
+            Number of output channels for the second linear layer.
+
+        """
+
         super().__init__()
 
         # global average pooling
@@ -259,13 +282,13 @@ class ClassificationHead(nn.Module):
             nn.Linear(emb_size, n_classes),
         )
         self.fc = nn.Sequential(
-            nn.Linear(final_fc_length, 256),
+            nn.Linear(final_fc_length, out_channels),
             nn.ELU(),
-            nn.Dropout(0.5),
-            nn.Linear(256, 32),
+            nn.Dropout(drop_prob_1),
+            nn.Linear(out_channels, hidden_channels),
             nn.ELU(),
-            nn.Dropout(0.3),
-            nn.Linear(32, n_classes),
+            nn.Dropout(drop_prob_2),
+            nn.Linear(hidden_channels, n_classes),
         )
 
     def forward(self, x):
