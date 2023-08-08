@@ -17,6 +17,7 @@ dependencies:
 - skorch
 - joblib
 - memory_profiler
+- einops
 - pip:
   - mne
   - https://github.com/braindecode/braindecode/zipball/master
