@@ -58,17 +58,15 @@ def test_variable_length_trials_cropped_decoding():
         break
     train_split = predefined_split(variable_tuh_windows_valid)
 
-    classes = tuh.description.pathological.unique()
-    n_classes = len(classes)
-
     # initialize a model
     model = ShallowFBCSPNet(
         in_chans=x.shape[0],
-        n_classes=n_classes,
+        n_classes=len(tuh.description.pathological.unique()),
     )
     to_dense_prediction_model(model)
     if cuda:
         model.cuda()
+
     # create and train a classifier
     clf = EEGClassifier(
         model,
@@ -79,25 +77,30 @@ def test_variable_length_trials_cropped_decoding():
         batch_size=16,
         callbacks=['accuracy'],
         train_split=train_split,
-        max_epochs=3,
-        classes=np.array(classes),
     )
-    clf.fit(variable_tuh_windows_train, y=None)
+    clf.fit(variable_tuh_windows_train, y=None, epochs=3)
+
     # make sure it does what we expect
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
-        np.array([0.690665602684021,
-                  0.13818606734275818,
-                  0.007728443946689367]),
+        np.array([
+            0.689495325088501,
+            0.1353449523448944,
+            0.006638816092163324,
+        ]
+        ),
         rtol=1e-1,
         atol=1e-1,
     )
-
+    # testings for valid_loss
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
-        np.array([1.2266751527786255,
-                  1.238959550857544,
-                  1.4418834447860718]),
+        np.array([
+            2.925871,
+            3.611423,
+            4.23494,
+        ]
+        ),
         rtol=1e-1,
         atol=1e-1,
     )

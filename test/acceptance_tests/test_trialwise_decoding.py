@@ -108,32 +108,33 @@ def test_trialwise_decoding():
         batch_size=30,
         callbacks=["accuracy"],
         device=device,
-        max_epochs=6,
-        classes=np.array([0, 1])
     )
-    clf.fit(train_set, y=None)
+    clf.fit(train_set, y=None, epochs=6)
 
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
         np.array([
-            1.3138172924518585,
-            1.2152001559734344,
-            0.8548009097576141,
-            0.8235849142074585,
-            0.44747667014598846,
-            0.6633417457342148,
+            1.501254916191101,
+            0.8498813807964325,
+            0.6930762231349945,
+            0.7033905684947968,
+            0.7674900889396667,
+            0.47585436701774597
         ]),
-        rtol=1e-2,
-        atol=1e-3,
+        rtol=1e-4,
+        atol=1e-5,
     )
+
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
-        np.array([0.87139803,
-                  1.38462102,
-                  1.0499022,
-                  0.90562123,
-                  0.86119336,
-                  0.83521259]),
+        np.array([
+            0.9057853817939758,
+            1.0028964281082153,
+            0.85847407579422,
+            0.88216233253479,
+            0.8980739712715149,
+            0.8764537572860718
+        ]),
         rtol=1e-4,
         atol=1e-5,
     )
@@ -141,25 +142,27 @@ def test_trialwise_decoding():
     np.testing.assert_allclose(
         clf.history[:, 'train_accuracy'],
         np.array([
-            0.750000,
-            0.583333,
-            0.716666,
-            0.766666,
-            0.833333,
-            0.850000,
+            0.7666666666666667,
+            0.7333333333333333,
+            0.8166666666666667,
+            0.8333333333333334,
+            0.9333333333333333,
+            0.9333333333333333
         ]),
         rtol=1e-4,
         atol=1e-5,
     )
-
+    # testings for valid_accuracy
     np.testing.assert_allclose(
         clf.history[:, 'valid_accuracy'],
-        np.array([0.6,
-                  0.53333333,
-                  0.63333333,
-                  0.56666667,
-                  0.6,
-                  0.56666667]),
+        np.array([
+            0.5666666666666667,
+            0.5666666666666667,
+            0.6,
+            0.6,
+            0.6,
+            0.6,
+        ]),
         rtol=1e-4,
         atol=1e-5,
     )

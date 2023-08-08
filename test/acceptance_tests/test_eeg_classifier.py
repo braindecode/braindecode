@@ -13,11 +13,11 @@ from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
+from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
-from braindecode.training.losses import CroppedLoss
 from braindecode.training.scoring import CroppedTrialEpochScoring
-from braindecode.util import np_to_th, set_random_seeds
+from braindecode.util import set_random_seeds, np_to_th
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -182,86 +182,79 @@ def test_eeg_classifier():
         optimizer=optim.Adam,
         train_split=predefined_split(valid_set),
         batch_size=32,
-        max_epochs=4,
         callbacks=[
             ("train_trial_accuracy", cropped_cb_train),
             ("valid_trial_accuracy", cropped_cb_valid),
         ],
-        classes=np.array([0, 1])
     )
 
-    clf.fit(train_set, y=None)
-
+    clf.fit(train_set, y=None, epochs=4)
+    # Testing eeg classifier
     # Reproduce this exact output by using pprint(history_without_dur) and adjusting
     # indentation of all lines after first
-    expectedh = [{'batches': [
-        {'train_loss': 1.4418388605117798, 'train_batch_size': 32},
-        {'train_loss': 2.375610828399658, 'train_batch_size': 32},
-        {'train_loss': 1.495529055595398, 'train_batch_size': 32},
-        {'valid_loss': 1.1827200651168823, 'valid_batch_size': 24}],
-        'epoch': 1, 'train_batch_count': 3, 'valid_batch_count': 1,
-        'train_loss': 1.770992914835612, 'train_loss_best': True,
-        'valid_loss': 1.1827200651168823, 'valid_loss_best': True,
-        'train_trial_accuracy': 0.5,
-        'train_trial_accuracy_best': True,
-        'valid_trial_accuracy': 0.5,
-        'valid_trial_accuracy_best': True}, {
-        'batches': [
-            {'train_loss': 0.8856839537620544,
-             'train_batch_size': 32},
-            {'train_loss': 0.9709678888320923,
-             'train_batch_size': 32},
-            {'train_loss': 2.5091731548309326,
-             'train_batch_size': 32},
-            {'valid_loss': 1.4116331338882446,
-             'valid_batch_size': 24}],
-        'epoch': 2, 'train_batch_count': 3,
-        'valid_batch_count': 1,
-        'train_loss': 1.4552749991416931, 'train_loss_best': True,
-        'valid_loss': 1.4116331338882446,
-        'valid_loss_best': False,
-        'train_trial_accuracy': 0.5,
-        'train_trial_accuracy_best': False,
-        'valid_trial_accuracy': 0.5,
-        'valid_trial_accuracy_best': False}, {
-        'batches': [
-            {'train_loss': 1.0060369968414307,
-             'train_batch_size': 32},
-            {'train_loss': 1.7620049715042114,
-             'train_batch_size': 32},
-            {'train_loss': 1.0808615684509277,
-             'train_batch_size': 32},
-            {'valid_loss': 0.6456473469734192,
-             'valid_batch_size': 24}],
-        'epoch': 3, 'train_batch_count': 3,
-        'valid_batch_count': 1,
-        'train_loss': 1.2829678455988567, 'train_loss_best': True,
-        'valid_loss': 0.6456473469734192, 'valid_loss_best': True,
-        'train_trial_accuracy': 0.625,
-        'train_trial_accuracy_best': True,
-        'valid_trial_accuracy': 0.6666666666666666,
-        'valid_trial_accuracy_best': True},
-        {'batches': [{'train_loss': 0.8527900576591492,
-                      'train_batch_size': 32},
-                     {'train_loss': 0.9346396923065186,
-                      'train_batch_size': 32},
-                     {'train_loss': 1.3504722118377686,
-                      'train_batch_size': 32},
-                     {'valid_loss': 0.8101783394813538,
-                      'valid_batch_size': 24}],
-         'epoch': 4,
-         'train_batch_count': 3,
-         'valid_batch_count': 1,
-         'train_loss': 1.0459673206011455,
-         'train_loss_best': True,
-         'valid_loss': 0.8101783394813538,
-         'valid_loss_best': False,
-         'train_trial_accuracy': 0.5625,
-         'train_trial_accuracy_best': False,
-         'valid_trial_accuracy': 0.5,
-         'valid_trial_accuracy_best': False}]
+    expectedh = [{'batches': [{'train_batch_size': 32, 'train_loss': 1.4175944328308105},
+                              {'train_batch_size': 32, 'train_loss': 2.4414331912994385},
+                              {'train_batch_size': 32, 'train_loss': 1.476792812347412},
+                              {'valid_batch_size': 24, 'valid_loss': 1.2322615385055542}],
+                  'epoch': 1,
+                  'train_batch_count': 3,
+                  'train_loss': 1.7786068121592205,
+                  'train_loss_best': True,
+                  'train_trial_accuracy': 0.5,
+                  'train_trial_accuracy_best': True,
+                  'valid_batch_count': 1,
+                  'valid_loss': 1.2322615385055542,
+                  'valid_loss_best': True,
+                  'valid_trial_accuracy': 0.5,
+                  'valid_trial_accuracy_best': True},
+                 {'batches': [{'train_batch_size': 32, 'train_loss': 0.9673743844032288},
+                              {'train_batch_size': 32, 'train_loss': 1.218681812286377},
+                              {'train_batch_size': 32, 'train_loss': 1.5651403665542603},
+                              {'valid_batch_size': 24, 'valid_loss': 1.123423457145691}],
+                  'epoch': 2,
+                  'train_batch_count': 3,
+                  'train_loss': 1.250398854414622,
+                  'train_loss_best': True,
+                  'train_trial_accuracy': 0.5,
+                  'train_trial_accuracy_best': False,
+                  'valid_batch_count': 1,
+                  'valid_loss': 1.123423457145691,
+                  'valid_loss_best': True,
+                  'valid_trial_accuracy': 0.5,
+                  'valid_trial_accuracy_best': False},
+                 {'batches': [{'train_batch_size': 32, 'train_loss': 1.1562678813934326},
+                              {'train_batch_size': 32, 'train_loss': 1.5787755250930786},
+                              {'train_batch_size': 32, 'train_loss': 1.306514859199524},
+                              {'valid_batch_size': 24, 'valid_loss': 1.037418007850647}],
+                  'epoch': 3,
+                  'train_batch_count': 3,
+                  'train_loss': 1.3471860885620117,
+                  'train_loss_best': False,
+                  'train_trial_accuracy': 0.5208333333333334,
+                  'train_trial_accuracy_best': True,
+                  'valid_batch_count': 1,
+                  'valid_loss': 1.037418007850647,
+                  'valid_loss_best': True,
+                  'valid_trial_accuracy': 0.5,
+                  'valid_trial_accuracy_best': False},
+                 {'batches': [{'train_batch_size': 32, 'train_loss': 1.8480840921401978},
+                              {'train_batch_size': 32, 'train_loss': 1.0466501712799072},
+                              {'train_batch_size': 32, 'train_loss': 0.9813234210014343},
+                              {'valid_batch_size': 24, 'valid_loss': 0.9420649409294128}],
+                  'epoch': 4,
+                  'train_batch_count': 3,
+                  'train_loss': 1.2920192281405132,
+                  'train_loss_best': False,
+                  'train_trial_accuracy': 0.75,
+                  'train_trial_accuracy_best': True,
+                  'valid_batch_count': 1,
+                  'valid_loss': 0.9420649409294128,
+                  'valid_loss_best': True,
+                  'valid_trial_accuracy': 0.4166666666666667,
+                  'valid_trial_accuracy_best': False}]
 
-    history_without_dur = [{k: v for k, v in h.items() if k != "dur"} for h in
-                           clf.history]
+    history_without_dur = [
+        {k: v for k, v in h.items() if k != "dur"} for h in clf.history
+    ]
     assert_deep_allclose(expectedh, history_without_dur, atol=1e-3, rtol=1e-3)
     return clf

@@ -110,32 +110,36 @@ def test_cropped_decoding():
         optimizer=optim.Adam,
         train_split=train_split,
         batch_size=32,
-        max_epochs=4,
         callbacks=['accuracy'],
-        classes=np.array([0, 1]),
     )
 
-    clf.fit(train_set, y=None)
+    clf.fit(train_set, y=None, epochs=4)
+    # Testing cropped decoding
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
         np.array(
-            [1.3424938122431438,
-             1.1875120401382446,
-             0.9733301798502604,
-             0.8944226503372192]
+            [
+                1.391054,
+                1.278387,
+                1.086732,
+                1.111006
+            ]
         ),
-        rtol=3e-1,
+        rtol=1e-3,
         atol=1e-4,
     )
+
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
         np.array(
-            [1.4121688683827718,
-             2.4346307436625163,
-             1.1520539363225302,
-             1.1809584140777587]
+            [
+                2.24272,
+                0.891798,
+                0.741147,
+                0.933025
+            ]
         ),
-        rtol=3e-1,
+        rtol=1e-3,
         atol=1e-3,
     )
 
@@ -144,12 +148,12 @@ def test_cropped_decoding():
         np.array(
             [
                 0.5,
-                0.5,
                 0.516667,
-                0.5
+                0.6,
+                0.533333
             ]
         ),
-        rtol=3e-1,
+        rtol=1e-3,
         atol=1e-4,
     )
 
@@ -157,12 +161,12 @@ def test_cropped_decoding():
         clf.history[:, 'valid_accuracy'],
         np.array(
             [
-                0.5333333333333333,
-                0.4666666666666667,
-                0.43333333333333335,
-                0.4666666666666667,
+                0.466667,
+                0.533333,
+                0.6,
+                0.6
             ]
         ),
-        rtol=3e-1,
+        rtol=1e-3,
         atol=1e-4,
     )
