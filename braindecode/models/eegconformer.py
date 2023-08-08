@@ -85,6 +85,7 @@ class EEGConformer(nn.Sequential):
 
     def __init__(
             self,
+            n_classes,
             n_kernel=40,
             n_kernel_temp_conv=25,
             n_kernel_spatial_conv=22,
@@ -94,8 +95,8 @@ class EEGConformer(nn.Sequential):
             att_depth=6,
             att_heads=10,
             att_drop_prob=0.5,
-            fc_dim=2440,
-            n_classes=4,
+            final_fc_length=2440,
+
     ):
         super().__init__(
             PatchEmbedding(
@@ -106,8 +107,8 @@ class EEGConformer(nn.Sequential):
                 stride_avg_pool,
                 drop_prob,
             ),
-            TransformerEncoder(att_depth, n_kernel, att_heads, att_drop_prob),
-            ClassificationHead(n_kernel, fc_dim, n_classes),
+            _TransformerEncoder(att_depth, n_kernel, att_heads, att_drop_prob),
+            ClassificationHead(n_kernel, final_fc_length, n_classes),
         )
 
 
@@ -192,7 +193,7 @@ class _MultiHeadAttention(nn.Module):
         return out
 
 
-class ResidualAdd(nn.Module):
+class _ResidualAdd(nn.Module):
     def __init__(self, fn):
         super().__init__()
         self.fn = fn
@@ -204,7 +205,7 @@ class ResidualAdd(nn.Module):
         return x
 
 
-class FeedForwardBlock(nn.Sequential):
+class _FeedForwardBlock(nn.Sequential):
     def __init__(self, emb_size, expansion, drop_p):
         super().__init__(
             nn.Linear(emb_size, expansion * emb_size),
@@ -214,21 +215,22 @@ class FeedForwardBlock(nn.Sequential):
         )
 
 
-class TransformerEncoderBlock(nn.Sequential):
+class _TransformerEncoderBlock(nn.Sequential):
     def __init__(self, emb_size, att_heads, att_drop, forward_expansion=4):
         super().__init__(
-            ResidualAdd(
+            _ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
                     _MultiHeadAttention(emb_size, att_heads, att_drop),
                     nn.Dropout(att_drop),
                 )
             ),
-            ResidualAdd(
+            _ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
-                    FeedForwardBlock(
-                        emb_size, expansion=forward_expansion, drop_p=att_drop
+                    _FeedForwardBlock(
+                        emb_size, expansion=forward_expansion,
+                        drop_p=att_drop
                     ),
                     nn.Dropout(att_drop),
                 )
@@ -236,18 +238,18 @@ class TransformerEncoderBlock(nn.Sequential):
         )
 
 
-class TransformerEncoder(nn.Sequential):
+class _TransformerEncoder(nn.Sequential):
     def __init__(self, att_depth, emb_size, att_heads, att_drop):
         super().__init__(
             *[
-                TransformerEncoderBlock(emb_size, att_heads, att_drop)
+                _TransformerEncoderBlock(emb_size, att_heads, att_drop)
                 for _ in range(att_depth)
             ]
         )
 
 
 class ClassificationHead(nn.Module):
-    def __init__(self, emb_size, fc_dim, n_classes):
+    def __init__(self, emb_size, final_fc_length, n_classes):
         super().__init__()
 
         # global average pooling
@@ -257,7 +259,7 @@ class ClassificationHead(nn.Module):
             nn.Linear(emb_size, n_classes),
         )
         self.fc = nn.Sequential(
-            nn.Linear(fc_dim, 256),
+            nn.Linear(final_fc_length, 256),
             nn.ELU(),
             nn.Dropout(0.5),
             nn.Linear(256, 32),
