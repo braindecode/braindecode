@@ -520,9 +520,10 @@ def sample_input():
     n_timesteps = 1000
     return torch.rand(batch_size, n_channels, n_timesteps)
 
+
 @pytest.fixture
 def model():
-    return EEGConformer(n_classes=2)
+    return EEGConformer(n_classes=2, n_channels=12)
 
 
 def test_model_creation(model):
@@ -561,6 +562,5 @@ def test_model_trainable_parameters(model):
 def test_model_evaluation(sample_input, model):
     model.eval()
     with torch.no_grad():
-        import pdb; pdb.set_trace()
         output = model(sample_input)
         assert isinstance(output, tuple) and len(output) == 2
