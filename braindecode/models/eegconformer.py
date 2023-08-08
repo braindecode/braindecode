@@ -36,20 +36,23 @@ class EEGConformer(nn.Sequential):
 
     .. versionadded:: 0.8
 
-    We aggregate the parameters based on the parts of the models.
+    We aggregate the parameters based on the parts of the models, or
+    when the parameters were used first, e.g. n_filters_conv.
 
     Parameters PatchEmbedding
     -------------------------
-    - n_kernel: int
-        Number of kernels for the temporal convolution layer (first layer).
-    - n_kernel_temp_conv: int
-        Kernel size of the temporal convolution layer.
-    - n_kernel_spatial_conv: int
-        kernel size of the spatial convolution layer.
-    - n_kernel_avg_pool: int
-        Kernel size of the average pooling layer.
-    - stride_avg_pool: int
-        Stride of the average pooling layer.
+    - n_filters_conv: int
+        Length of kernels for the temporal convolution layer (first layer).
+    - n_filters_time: int
+        Number of temporal filters.
+    - filter_time_length: int
+        Length of the temporal filter.
+    - n_filters_spat: int
+        Number of spatial filters.
+    - pool_time_length: int
+        Length of temporal poling filter.
+    - pool_time_stride: int
+        Length of stride between temporal pooling filters.
     - drop_prob: float
         Dropout rate of the convolutional layer.
 
@@ -67,8 +70,7 @@ class EEGConformer(nn.Sequential):
     - final_fc_length: int
         The dimension of the fully connected layer.
     - n_classes: int
-        Number of classes.
-
+        Number of classes to predict (number of output filters of last layer).
 
     References
     ----------
@@ -79,18 +81,17 @@ class EEGConformer(nn.Sequential):
     .. [EEG Conformer Code] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
        conformer: Convolutional transformer for EEG decoding and visualization.
        https://github.com/eeyhsong/EEG-Conformer.
-
-
     """
 
     def __init__(
             self,
             n_classes,
-            n_kernel=40,
-            n_kernel_temp_conv=25,
-            n_kernel_spatial_conv=22,
+            n_filters_conv=40,
+            n_filters_time=25,
+            filter_time_length=25,
+            n_filters_spat=22,
             n_kernel_avg_pool=75,
-            stride_avg_pool=15,
+            pool_time_stride=15,
             drop_prob=0.5,
             att_depth=6,
             att_heads=10,
@@ -100,15 +101,18 @@ class EEGConformer(nn.Sequential):
     ):
         super().__init__(
             PatchEmbedding(
-                n_kernel,
-                n_kernel_temp_conv,
-                n_kernel_spatial_conv,
-                n_kernel_avg_pool,
-                stride_avg_pool,
-                drop_prob,
+                n_filters_conv=n_filters_conv,
+                n_filters_time=n_filters_time,
+                filter_time_length=filter_time_length,
+                n_filters_spat=n_filters_spat,
+                pool_time_length=n_kernel_avg_pool,
+                stride_avg_pool=pool_time_stride,
+                drop_prob=drop_prob,
             ),
-            _TransformerEncoder(att_depth, n_kernel, att_heads, att_drop_prob),
-            ClassificationHead(n_kernel, final_fc_length, n_classes),
+            _TransformerEncoder(att_depth, n_filters_conv, att_heads,
+                                att_drop_prob),
+            ClassificationHead(n_filters_conv, final_fc_length,
+                               n_classes),
         )
 
 
@@ -117,36 +121,40 @@ class PatchEmbedding(nn.Module):
 
     The authors used a convolution moduleto capture local features,
     instead of postion embedding.
-
     """
 
     def __init__(
             self,
-            n_kernel,
-            n_kernel_temp_conv,
-            n_kernel_spatial_conv,
-            n_kernel_avg_pool,
+            n_filters_conv,
+            n_filters_time,
+            filter_time_length,
+            n_filters_spat,
+            pool_time_length,
             stride_avg_pool,
             drop_prob,
     ):
         super().__init__()
 
         self.shallownet = nn.Sequential(
-            nn.Conv2d(1, n_kernel, (1, n_kernel_temp_conv), (1, 1)),
-            nn.Conv2d(n_kernel, n_kernel, (n_kernel_spatial_conv, 1), (1, 1)),
-            nn.BatchNorm2d(n_kernel),
+            nn.Conv2d(1, n_filters_time,
+                      (1, filter_time_length), (1, 1)),
+            nn.Conv2d(n_filters_time, n_filters_time,
+                      (n_filters_spat, 1), (1, 1)),
+
+            nn.BatchNorm2d(num_features=n_filters_conv),
             nn.ELU(),
             nn.AvgPool2d(
-                (1, n_kernel_avg_pool), (1, stride_avg_pool)
+                kernel_size=(1, pool_time_length),
+                stride=(1, stride_avg_pool)
             ),
             # pooling acts as slicing to obtain 'patch' along the
             # time dimension as in ViT
-            nn.Dropout(drop_prob),
+            nn.Dropout(p=drop_prob),
         )
 
         self.projection = nn.Sequential(
             nn.Conv2d(
-                n_kernel, n_kernel, (1, 1), stride=(1, 1)
+                n_filters_time, n_filters_time, (1, 1), stride=(1, 1)
             ),  # transpose, conv could enhance fiting ability slightly
             Rearrange("b d_model 1 seq -> b seq d_model"),
         )
@@ -239,6 +247,10 @@ class _TransformerEncoderBlock(nn.Sequential):
 
 
 class _TransformerEncoder(nn.Sequential):
+    """Transformer encoder module for the transformer encoder.
+
+    Similar to the layers used in ViT.
+    """
     def __init__(self, att_depth, emb_size, att_heads, att_drop):
         super().__init__(
             *[
@@ -270,7 +282,6 @@ class ClassificationHead(nn.Module):
             Number of output channels for the first linear layer.
         hidden_channels : int
             Number of output channels for the second linear layer.
-
         """
 
         super().__init__()
