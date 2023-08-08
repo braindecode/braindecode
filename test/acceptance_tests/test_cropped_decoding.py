@@ -114,7 +114,6 @@ def test_cropped_decoding():
     )
 
     clf.fit(train_set, y=None, epochs=4)
-
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
         np.array(

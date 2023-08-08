@@ -30,13 +30,16 @@ jobs:
         path: ~/mne_data
         key: ${{ runner.os }}-v3
     - name: Setting Up Conda Braindecode Environment
-      uses: conda-incubator/setup-miniconda@v2
+      uses: conda-incubator/setup-miniconda@v2.2.0
       with:
         environment-file: environment.yml
         python-version: 3.7
+        auto-update-conda: true
+        use-mamba: true
+        miniforge-variant: Mambaforge
+        channels: conda-forge
         activate-environment: braindecode
-        auto-activate-base: false
-    # Show Conda and Python Versions
+      # Show Conda and Python Versions
     - run: conda --version
     - run: conda info --envs
     - run: which python
@@ -44,9 +47,8 @@ jobs:
     - name: Install MOABB
       run: pip install moabb
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
-    - name: Install Skorch development version from git repo
-      if: ${{ matrix.skorch_version == 'main' }}
-      run: pip install git+https://github.com/skorch-dev/skorch.git
+    - name: Install Skorch version from pip
+      run: pip install skorch==0.13.0
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version

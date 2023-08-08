@@ -152,7 +152,6 @@ def test_trialwise_decoding():
         rtol=1e-4,
         atol=1e-5,
     )
-
     np.testing.assert_allclose(
         clf.history[:, 'valid_accuracy'],
         np.array([
