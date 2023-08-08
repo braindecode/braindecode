@@ -33,7 +33,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v2.2.0
       with:
         environment-file: environment.yml
-        python-version: 3.8
+        python-version: 3.7
         auto-update-conda: true
         use-mamba: true
         miniforge-variant: Mambaforge
@@ -48,7 +48,7 @@ jobs:
       run: pip install moabb
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
     - name: Install Skorch version from pip
-      run: pip install skorch
+      run: pip install skorch==0.13.0
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
