@@ -92,7 +92,6 @@ def test_variable_length_trials_cropped_decoding():
         rtol=1e-1,
         atol=1e-1,
     )
-
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
         np.array([
