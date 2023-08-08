@@ -189,7 +189,6 @@ def test_eeg_classifier():
     )
 
     clf.fit(train_set, y=None, epochs=4)
-    # Testing eeg classifier
     # Reproduce this exact output by using pprint(history_without_dur) and adjusting
     # indentation of all lines after first
     expectedh = [{'batches': [{'train_batch_size': 32, 'train_loss': 1.4175944328308105},

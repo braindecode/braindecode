@@ -7,16 +7,20 @@
 
 import numpy as np
 import pytest
+import sklearn.datasets
 import torch
+from sklearn.metrics import f1_score, accuracy_score
 from skorch import History
+from skorch.callbacks import Callback
 from skorch.utils import to_numpy, to_tensor
 from torch import optim
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet, get_output_shape
+from braindecode.util import set_random_seeds
 from braindecode.training.scoring import (
-    CroppedTrialEpochScoring, trial_preds_from_window_preds,
+    CroppedTrialEpochScoring, PostEpochTrainScoring, trial_preds_from_window_preds,
     predict_trials, CroppedTimeSeriesEpochScoring)
 from braindecode.datasets.moabb import MOABBDataset
 from braindecode.models.util import to_dense_prediction_model
@@ -226,6 +230,93 @@ def test_cropped_time_series_trial_epoch_scoring():
             mock_skorch_net.history[0]["accuracy"], accuracy
         )
 
+
+def test_post_epoch_train_scoring():
+    cuda = False
+    set_random_seeds(seed=20170629, cuda=cuda)
+
+    n_classes = 2
+
+    class EEGDataSet(Dataset):
+        def __init__(self, X, y):
+            self.X = X
+            if self.X.ndim == 3:
+                self.X = self.X[:, :, :, None]
+            self.y = y
+
+        def __len__(self):
+            return len(self.X)
+
+        def __getitem__(self, idx):
+            return self.X[idx], self.y[idx]
+
+    X, y = sklearn.datasets.make_classification(
+        40, (3 * 100), n_informative=3 * 50, n_classes=2
+    )
+    X = X.reshape(40, 3, 100).astype(np.float32)
+
+    in_chans = X.shape[1]
+
+    train_set = EEGDataSet(X, y)
+
+    class TestCallback(Callback):
+        def on_epoch_end(self, net, *args, **kwargs):
+            preds = net.predict(train_set.X)
+            y_true = train_set.y
+            np.testing.assert_allclose(
+                clf.history[-1]["train_f1"],
+                f1_score(y_true, preds),
+                rtol=1e-4,
+                atol=1e-4,
+            )
+            np.testing.assert_allclose(
+                clf.history[-1]["train_acc"],
+                accuracy_score(y_true, preds),
+                rtol=1e-4,
+                atol=1e-4,
+            )
+
+    set_random_seeds(20200114, cuda)
+
+    # final_conv_length = auto ensures
+    # we only get a single output in the time dimension
+    model = ShallowFBCSPNet(
+        in_chans=in_chans,
+        n_classes=n_classes,
+        input_window_samples=train_set.X.shape[2],
+        pool_time_stride=1,
+        pool_time_length=2,
+        final_conv_length="auto",
+    )
+    if cuda:
+        model.cuda()
+
+    clf = EEGClassifier(
+        model,
+        criterion=torch.nn.NLLLoss,
+        optimizer=optim.AdamW,
+        train_split=None,
+        optimizer__lr=0.0625 * 0.01,
+        optimizer__weight_decay=0,
+        batch_size=64,
+        callbacks=[
+            (
+                "train_accuracy",
+                PostEpochTrainScoring(
+                    "accuracy", lower_is_better=False, name="train_acc"
+                ),
+            ),
+            (
+                "train_f1_score",
+                PostEpochTrainScoring(
+                    "f1", lower_is_better=False, name="train_f1"
+                ),
+            ),
+            ("test_callback", TestCallback()),
+        ],
+    )
+
+    clf.fit(train_set, y=None, epochs=4)
 
 
 def _check_preds_windows_trials(preds, window_inds, expected_trial_preds):
