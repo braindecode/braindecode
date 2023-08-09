@@ -21,7 +21,7 @@ class EEGConformer(nn.Module):
     The input shape should be three-dimensional matrix representing the EEG
     signals.
 
-         (batch_size, n_channels, n_timesteps)`.
+         `(batch_size, n_channels, n_timesteps)`.
 
     The EEG Conformer architecture is composed of three modules:
         - PatchEmbedding
@@ -37,18 +37,18 @@ class EEGConformer(nn.Module):
     .. versionadded:: 0.8
 
     We aggregate the parameters based on the parts of the models, or
-    when the parameters were used first, e.g. n_filters_conv.
+    when the parameters were used first, e.g. n_filters_time.
 
     Parameters
     ----------
-    - n_filters_conv: int
-        Length of kernels for the temporal convolution layer (first layer).
-    - n_filters_time: int
-        Number of temporal filters.
-    - filter_time_length: int
-        Length of the temporal filter.
+    - n_classes: int
+        Number of classes to predict (number of output filters of last layer).
     - n_channels: int
         Number of channels to be used as number of spatial filters.
+    - n_filters_time: int
+        Number of temporal filters, defines also embedding size.
+    - filter_time_length: int
+        Length of the temporal filter.
     - pool_time_length: int
         Length of temporal poling filter.
     - pool_time_stride: int
@@ -63,8 +63,6 @@ class EEGConformer(nn.Module):
         Dropout rate of the self-attention layer.
     - final_fc_length: int
         The dimension of the fully connected layer.
-    - n_classes: int
-        Number of classes to predict (number of output filters of last layer).
 
     References
     ----------
@@ -81,10 +79,9 @@ class EEGConformer(nn.Module):
             self,
             n_classes,
             n_channels,
-            n_filters_conv=40,
-            n_filters_time=25,
+            n_filters_time=40,
             filter_time_length=25,
-            n_kernel_avg_pool=75,
+            pool_time_length=75,
             pool_time_stride=15,
             drop_prob=0.5,
             att_depth=6,
@@ -97,18 +94,18 @@ class EEGConformer(nn.Module):
                 n_filters_time=n_filters_time,
                 filter_time_length=filter_time_length,
                 n_channels=n_channels,
-                pool_time_length=n_kernel_avg_pool,
+                pool_time_length=pool_time_length,
                 stride_avg_pool=pool_time_stride,
                 drop_prob=drop_prob)
 
         self.transformer = _TransformerEncoder(
             att_depth=att_depth,
-            emb_size=n_filters_conv,
+            emb_size=n_filters_time,
             att_heads=att_heads,
             att_drop=att_drop_prob)
 
         self.classification_head = ClassificationHead(
-            emb_size=n_filters_conv, final_fc_length=final_fc_length,
+            emb_size=n_filters_time, final_fc_length=final_fc_length,
             n_classes=n_classes)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -121,7 +118,7 @@ class EEGConformer(nn.Module):
 class PatchEmbedding(nn.Module):
     """Patch Embedding.
 
-    The authors used a convolution moduleto capture local features,
+    The authors used a convolution module to capture local features,
     instead of postion embedding.
     """
 
@@ -283,6 +280,8 @@ class ClassificationHead(nn.Module):
             Number of output channels for the first linear layer.
         hidden_channels : int
             Number of output channels for the second linear layer.
+        return_features : bool
+            Whether to return input features.
         """
 
         super().__init__()
