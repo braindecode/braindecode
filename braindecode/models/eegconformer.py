@@ -124,6 +124,26 @@ class _PatchEmbedding(nn.Module):
 
     The authors used a convolution module to capture local features,
     instead of postion embedding.
+
+    Parameters
+    ----------
+    n_filters_time: int
+        Number of temporal filters, defines also embedding size.
+    filter_time_length: int
+        Length of the temporal filter.
+    n_channels: int
+        Number of channels to be used as number of spatial filters.
+    pool_time_length: int
+        Length of temporal poling filter.
+    stride_avg_pool: int
+        Length of stride between temporal pooling filters.
+    drop_prob: float
+        Dropout rate of the convolutional layer.
+
+    Returns
+    -------
+    x: torch.Tensor
+        The output tensor of the patch embedding layer.
     """
 
     def __init__(
