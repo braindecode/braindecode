@@ -41,29 +41,31 @@ class EEGConformer(nn.Module):
 
     Parameters
     ----------
-    - n_classes: int
+    n_classes: int
         Number of classes to predict (number of output filters of last layer).
-    - n_channels: int
+    n_channels: int
         Number of channels to be used as number of spatial filters.
-    - n_filters_time: int
+    n_filters_time: int
         Number of temporal filters, defines also embedding size.
-    - filter_time_length: int
+    filter_time_length: int
         Length of the temporal filter.
-    - pool_time_length: int
+    pool_time_length: int
         Length of temporal poling filter.
-    - pool_time_stride: int
+    pool_time_stride: int
         Length of stride between temporal pooling filters.
-    - drop_prob: float
+    drop_prob: float
         Dropout rate of the convolutional layer.
-    - att_depth: int
+    att_depth: int
         Number of self-attention layers.
-    - att_heads: int
+    att_heads: int
         Number of attention heads.
-    - att_drop_prob: float
+    att_drop_prob: float
         Dropout rate of the self-attention layer.
-    - final_fc_length: int
+    final_fc_length: int
         The dimension of the fully connected layer.
-
+    return_features: bool
+        If True, the forward method returns the features before the
+        last classification layer. Defaults to False.
     References
     ----------
     .. [Song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
@@ -88,9 +90,10 @@ class EEGConformer(nn.Module):
             att_heads=10,
             att_drop_prob=0.5,
             final_fc_length=2440,
+            return_features=False
     ):
         super().__init__()
-        self.patch_embedding = PatchEmbedding(
+        self.patch_embedding = _PatchEmbedding(
                 n_filters_time=n_filters_time,
                 filter_time_length=filter_time_length,
                 n_channels=n_channels,
@@ -104,9 +107,9 @@ class EEGConformer(nn.Module):
             att_heads=att_heads,
             att_drop=att_drop_prob)
 
-        self.classification_head = ClassificationHead(
+        self.classification_head = _ClassificationHead(
             emb_size=n_filters_time, final_fc_length=final_fc_length,
-            n_classes=n_classes)
+            n_classes=n_classes, return_features=return_features)
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
@@ -116,7 +119,7 @@ class EEGConformer(nn.Module):
         return x
 
 
-class PatchEmbedding(nn.Module):
+class _PatchEmbedding(nn.Module):
     """Patch Embedding.
 
     The authors used a convolution module to capture local features,
@@ -248,6 +251,18 @@ class _TransformerEncoder(nn.Sequential):
     """Transformer encoder module for the transformer encoder.
 
     Similar to the layers used in ViT.
+
+    Parameters
+    ----------
+    att_depth : int
+        Number of transformer encoder blocks.
+    emb_size : int
+        Embedding size of the transformer encoder.
+    att_heads : int
+        Number of attention heads.
+    att_drop : float
+        Dropout probability for the attention layers.
+
     """
     def __init__(self, att_depth, emb_size, att_heads, att_drop):
         super().__init__(
@@ -258,7 +273,7 @@ class _TransformerEncoder(nn.Sequential):
         )
 
 
-class ClassificationHead(nn.Module):
+class _ClassificationHead(nn.Module):
     def __init__(self, emb_size, final_fc_length, n_classes,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
                  hidden_channels=32, return_features=False):
