@@ -99,8 +99,10 @@ class EEGConformer(nn.Module):
     ):
         super().__init__()
         if not (n_channels <= 64):
-            warnings.warn("This model has only been tested on no more than 64 channels." 
-            "no guarantee to work with more channels.", UserWarning)
+            warnings.warn("This model has only been tested on no more " +
+                          "than 64 channels. no guarantee to work with " +
+                          "more channels.", UserWarning)
+
         self.patch_embedding = _PatchEmbedding(
                 n_filters_time=n_filters_time,
                 filter_time_length=filter_time_length,
