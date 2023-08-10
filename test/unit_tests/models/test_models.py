@@ -13,8 +13,8 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI,
-    TIDNet, ATCNet, EEGConformer)
+    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet,
+    EEGConformer)
 
 from braindecode.util import set_random_seeds
 
@@ -129,6 +129,7 @@ def test_eeginception_erp(input_sizes, model_cls):
         n_classes=input_sizes['n_classes'],
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
+
     check_forward_pass(model, input_sizes,)
 
 
