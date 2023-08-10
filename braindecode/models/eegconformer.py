@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange, Reduce
 from torch import nn, Tensor
+import warnings
 
 
 class EEGConformer(nn.Module):
@@ -33,6 +34,10 @@ class EEGConformer(nn.Module):
     The authors recommend using augment data before using Conformer, e.g. S&R,
     at the end of the code.
     Please refer to the original paper and code for more details.
+
+    The model was initially tuned on 4 seconds of 250 Hz data.
+    Please adjust the scale of the temporal convolutional layer,
+    and the pooling layer for better performance.
 
     .. versionadded:: 0.8
 
@@ -93,6 +98,9 @@ class EEGConformer(nn.Module):
             return_features=False
     ):
         super().__init__()
+        if not (n_channels <= 64):
+            warnings.warn("This model has only been tested on no more than 64 channels." 
+            "no guarantee to work with more channels.", UserWarning)
         self.patch_embedding = _PatchEmbedding(
                 n_filters_time=n_filters_time,
                 filter_time_length=filter_time_length,
