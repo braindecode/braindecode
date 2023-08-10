@@ -12,11 +12,9 @@ import pytest
 
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
-    SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021,
-    USleep,
+    SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
     DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI,
-    TIDNet,
-    ATCNet, EEGConformer)
+    TIDNet, ATCNet, EEGConformer)
 
 from braindecode.util import set_random_seeds
 
@@ -90,7 +88,7 @@ def test_eegresnet_pool_length_auto(input_sizes):
 def test_hybridnet(input_sizes):
     model = HybridNet(
         input_sizes['n_channels'], input_sizes['n_classes'],
-        input_sizes['n_in_times'], )
+        input_sizes['n_in_times'],)
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
@@ -105,7 +103,7 @@ def test_eegnet_v1(input_sizes):
     model = EEGNetv1(
         input_sizes['n_channels'], input_sizes['n_classes'],
         input_window_samples=input_sizes['n_in_times'])
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(model, input_sizes,)
 
 
 def test_tcn(input_sizes):
@@ -122,7 +120,7 @@ def test_eegitnet(input_sizes):
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
 
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(model, input_sizes,)
 
 
 @pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
@@ -131,7 +129,7 @@ def test_eeginception_erp(input_sizes, model_cls):
         n_classes=input_sizes['n_classes'],
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(model, input_sizes,)
 
 
 @pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
@@ -163,7 +161,7 @@ def test_eeginception_mi(input_sizes):
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(model, input_sizes,)
 
 
 @pytest.mark.parametrize(
@@ -205,7 +203,7 @@ def test_atcnet(input_sizes):
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(model, input_sizes,)
 
 
 def test_atcnet_n_params():
@@ -329,7 +327,7 @@ def test_sleep_stager_return_feats():
 def test_tidnet(input_sizes):
     model = TIDNet(
         input_sizes['n_channels'], input_sizes['n_classes'],
-        input_sizes['n_in_times'], )
+        input_sizes['n_in_times'],)
     check_forward_pass(model, input_sizes)
 
 
@@ -342,13 +340,11 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_channels = 1
     n_examples = 10
 
-    model = SleepStagerEldele2021(sfreq=sfreq, n_classes=n_classes,
-                                  input_size_s=input_size_s,
+    model = SleepStagerEldele2021(sfreq=sfreq, n_classes=n_classes, input_size_s=input_size_s,
                                   d_model=d_model, return_feats=False)
     model.eval()
 
-    X = rng.randn(n_examples, n_channels,
-                  np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -362,8 +358,7 @@ def test_eldele_2021_feats():
     n_classes = 3
     n_examples = 10
 
-    model = SleepStagerEldele2021(sfreq, input_size_s=input_size_s,
-                                  n_classes=n_classes,
+    model = SleepStagerEldele2021(sfreq, input_size_s=input_size_s, n_classes=n_classes,
                                   return_feats=True)
     model.eval()
 
@@ -376,21 +371,17 @@ def test_eldele_2021_feats():
 
 
 @pytest.mark.parametrize('n_channels,sfreq,n_groups,n_classes,input_size_s',
-                         [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20),
-                          (1, 64, 1, 2, 30)])
+                         [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)])
 def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     n_examples = 10
 
-    model = SleepStagerBlanco2020(n_channels=n_channels, sfreq=sfreq,
-                                  n_groups=n_groups,
-                                  input_size_s=input_size_s,
-                                  n_classes=n_classes,
+    model = SleepStagerBlanco2020(n_channels=n_channels, sfreq=sfreq, n_groups=n_groups,
+                                  input_size_s=input_size_s, n_classes=n_classes,
                                   return_feats=False)
     model.eval()
 
-    X = rng.randn(n_examples, n_channels,
-                  np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -452,8 +443,7 @@ def test_deepsleepnet(n_classes):
     model.eval()
 
     rng = np.random.RandomState(42)
-    X = rng.randn(n_examples, n_channels,
-                  np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -498,8 +488,7 @@ def test_deepsleepnet_feats_with_hook():
 
     def get_intermediate_layers(intermediate_layers, layer_name):
         def hook(model, input, output):
-            intermediate_layers[layer_name] = output.flatten(
-                start_dim=1).detach()
+            intermediate_layers[layer_name] = output.flatten(start_dim=1).detach()
 
         return hook
 
@@ -510,8 +499,7 @@ def test_deepsleepnet_feats_with_hook():
     )
 
     y_pred = model(X.unsqueeze(1))
-    feature = intermediate_layers["features_extractor"]
-    assert feature.shape == (n_examples, model.len_last_layer)
+    assert intermediate_layers["features_extractor"].shape == (n_examples, model.len_last_layer)
     assert y_pred.shape == (n_examples, n_classes)
 
 
