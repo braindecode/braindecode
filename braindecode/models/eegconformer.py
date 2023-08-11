@@ -31,8 +31,8 @@ class EEGConformer(nn.Module):
 
     Notes
     -----
-    The authors recommend using augment data before using Conformer, e.g. S&R,
-    at the end of the code.
+    The authors recommend using data augmentation before using Conformer, 
+    e.g. sementation and recombination,
     Please refer to the original paper and code for more details.
 
     The model was initially tuned on 4 seconds of 250 Hz data.
@@ -55,7 +55,7 @@ class EEGConformer(nn.Module):
     filter_time_length: int
         Length of the temporal filter.
     pool_time_length: int
-        Length of temporal poling filter.
+        Length of temporal pooling filter.
     pool_time_stride: int
         Length of stride between temporal pooling filters.
     drop_prob: float
@@ -133,7 +133,7 @@ class _PatchEmbedding(nn.Module):
     """Patch Embedding.
 
     The authors used a convolution module to capture local features,
-    instead of postion embedding.
+    instead of position embedding.
 
     Parameters
     ----------
@@ -330,13 +330,6 @@ class _ClassificationHead(nn.Module):
         """
 
         super().__init__()
-
-        # global average pooling
-        self.clshead = nn.Sequential(
-            Reduce("b n e -> b e", reduction="mean"),
-            nn.LayerNorm(emb_size),
-            nn.Linear(emb_size, n_classes),
-        )
         self.fc = nn.Sequential(
             nn.Linear(final_fc_length, out_channels),
             nn.ELU(),
