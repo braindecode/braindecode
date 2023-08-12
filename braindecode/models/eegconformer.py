@@ -5,7 +5,6 @@
 import torch
 import torch.nn.functional as F
 from einops import rearrange
-from einops.layers.torch import Rearrange, Reduce
 from torch import nn, Tensor
 import warnings
 
@@ -188,7 +187,7 @@ class _PatchEmbedding(nn.Module):
             nn.Conv2d(
                 n_filters_time, n_filters_time, (1, 1), stride=(1, 1)
             ),  # transpose, conv could enhance fiting ability slightly
-            Rearrange("b d_model 1 seq -> b seq d_model"),
+            rearrange("b d_model 1 seq -> b seq d_model"),
         )
 
     def forward(self, x: Tensor) -> Tensor:
