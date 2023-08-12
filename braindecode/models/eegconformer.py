@@ -31,7 +31,7 @@ class EEGConformer(nn.Module):
 
     Notes
     -----
-    The authors recommend using data augmentation before using Conformer, 
+    The authors recommend using data augmentation before using Conformer,
     e.g.sementation and recombination,
     Please refer to the original paper and code for more details.
 
