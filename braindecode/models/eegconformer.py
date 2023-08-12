@@ -31,7 +31,7 @@ class EEGConformer(nn.Module):
     Notes
     -----
     The authors recommend using data augmentation before using Conformer, 
-    e.g. sementation and recombination,
+    e.g.sementation and recombination,
     Please refer to the original paper and code for more details.
 
     The model was initially tuned on 4 seconds of 250 Hz data.
