@@ -540,6 +540,23 @@ def test_patch_embedding(sample_input, model):
 
 
 def test_model_trainable_parameters(model):
-    trainable_params = sum(p.numel()
-                           for p in model.parameters() if p.requires_grad)
-    assert trainable_params == 773668
+
+    patch_parameters = model.patch_embedding.parameters()
+    transformer_parameters = model.transformer.parameters()
+    classification_parameters = model.classification_head.parameters()
+
+    trainable_patch_params = sum(p.numel()
+                                 for p in patch_parameters
+                                 if p.requires_grad)
+
+    trainable_transformer_params = sum(p.numel()
+                                       for p in transformer_parameters
+                                       if p.requires_grad)
+
+    trainable_classification_params = sum(p.numel()
+                                          for p in classification_parameters
+                                          if p.requires_grad)
+
+    assert trainable_patch_params == 22000
+    assert trainable_transformer_params == 118320
+    assert trainable_classification_params == 633186
