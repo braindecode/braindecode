@@ -303,6 +303,35 @@ class _TransformerEncoder(nn.Sequential):
         )
 
 
+'''
+# The defination of class _TransformerEncoder, _TransformerEncoderBlock and _MultiHeadAttention, 
+# _FeedForwardBlock, _ResidualAdd can be replaced by the following codes:
+class _TransformerEncoder(nn.Sequential):
+    """Transformer encoder module for the transformer encoder.
+
+    Similar to the layers used in ViT.
+
+    Parameters
+    ----------
+    att_depth : int
+        Number of transformer encoder blocks.
+    emb_size : int
+        Embedding size of the transformer encoder.
+    att_heads : int
+        Number of attention heads.
+    att_drop : float
+        Dropout probability for the attention layers.
+
+    """
+    def __init__(self, att_depth, emb_size, att_heads, att_drop, forward_expansion=4):
+        super().__init__()
+        self.enc_lay = nn.TransformerEncoderLayer(d_model=emb_size, nhead=att_heads, dim_feedforward=emb_size*forward_expansion, dropout=att_drop)
+        self.enc = nn.TransformerEncoder(self.enc_lay, num_layers=att_depth)
+    def forward(self, x):
+        return self.enc(x)
+'''
+
+
 class _ClassificationHead(nn.Module):
     def __init__(self, emb_size, final_fc_length, n_classes,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
