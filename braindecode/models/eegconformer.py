@@ -324,8 +324,8 @@ class _TransformerEncoder(nn.Sequential):
     """
     def __init__(self, att_depth, emb_size, att_heads, att_drop, forward_expansion=4):
         super().__init__()
-        self.enc_lay = nn.TransformerEncoderLayer(d_model=emb_size, nhead=att_heads, dim_feedforward=emb_size*forward_expansion, dropout=att_drop)
-        self.enc = nn.TransformerEncoder(self.enc_lay, num_layers=att_depth)
+        enc_lay = nn.TransformerEncoderLayer(d_model=emb_size, nhead=att_heads, dim_feedforward=emb_size*forward_expansion, dropout=att_drop, batch_first=True, norm_first=True, activation="gelu")
+        self.enc = nn.TransformerEncoder(enc_lay, num_layers=att_depth)
     def forward(self, x):
         return self.enc(x)
 '''
