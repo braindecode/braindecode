@@ -302,7 +302,6 @@ class _TransformerEncoder(nn.Sequential):
             ]
         )
 
-
 '''
 # The defination of class _TransformerEncoder (original version), _TransformerEncoderBlock and _MultiHeadAttention, 
 # _FeedForwardBlock, _ResidualAdd can be replaced by the following codes:
