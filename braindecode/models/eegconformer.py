@@ -304,10 +304,10 @@ class _TransformerEncoder(nn.Sequential):
 
 
 '''
-# The defination of class _TransformerEncoder, _TransformerEncoderBlock and _MultiHeadAttention, 
+# The defination of class _TransformerEncoder (original version), _TransformerEncoderBlock and _MultiHeadAttention, 
 # _FeedForwardBlock, _ResidualAdd can be replaced by the following codes:
 class _TransformerEncoder(nn.Sequential):
-    """Transformer encoder module for the transformer encoder.
+    """Transformer encoder module.
 
     Similar to the layers used in ViT.
 
