@@ -5,13 +5,11 @@
 from numpy import prod
 
 from torch import nn
-from .modules import Expression, Ensure4d
+from einops.layers.torch import Rearrange
+
+from .modules import Ensure4d
 from .eegnet import _glorot_weight_zero_bias
 from .eegitnet import _InceptionBlock, _DepthwiseConv2d
-
-
-def _transpose_to_b_1_c_0(x):
-    return x.permute(0, 3, 1, 2)
 
 
 class EEGInceptionERP(nn.Sequential):
@@ -124,7 +122,7 @@ class EEGInceptionERP(nn.Sequential):
 
         self.add_module("ensuredims", Ensure4d())
 
-        self.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
+        self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 T C"))
 
         # ======== Inception branches ========================
         block11 = self._get_inception_branch_1(
