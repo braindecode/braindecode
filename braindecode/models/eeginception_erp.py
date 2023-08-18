@@ -122,7 +122,7 @@ class EEGInceptionERP(nn.Sequential):
 
         self.add_module("ensuredims", Ensure4d())
 
-        self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 T C"))
+        self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 C T"))
 
         # ======== Inception branches ========================
         block11 = self._get_inception_branch_1(
