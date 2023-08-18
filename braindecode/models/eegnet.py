@@ -180,10 +180,18 @@ class EEGNetv4(nn.Sequential):
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         self.add_module("permute_back",
-                        Rearrange("batch 1 ch t -> batch 1 t ch"))
+                        Rearrange("batch x y z -> batch x z y"))
         self.add_module("squeeze", Expression(squeeze_final_output))
 
         _glorot_weight_zero_bias(self)
+
+
+def _transpose_to_b_1_c_0(x):
+    return x.permute(0, 3, 1, 2)
+
+
+def _transpose_1_0(x):
+    return x.permute(0, 1, 3, 2)
 
 
 class EEGNetv1(nn.Sequential):
@@ -322,7 +330,7 @@ class EEGNetv1(nn.Sequential):
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         self.add_module(
-            "permute_2",  Rearrange("batch 1 ch t -> batch 1 t ch")
+            "permute_2",   Rearrange("batch x y z -> batch x z y")
         )
         self.add_module("squeeze", Expression(squeeze_final_output))
         _glorot_weight_zero_bias(self)
