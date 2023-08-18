@@ -6,3 +6,4 @@ h5py
 skorch<0.14
 joblib
 mne
+einops<=0.6.1
