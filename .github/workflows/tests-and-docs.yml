@@ -38,8 +38,6 @@ jobs:
     - name: Install dependencies
       if: steps.cached-dataset-docs.outputs.cache-hit != 'true'
       run: poetry install --no-interaction --no-root --with moabb
-    - name:  Install Braindecode from Current Checkout
-      run: poetry install --no-interaction --with moabb
     # Show Braindecode Version
     - run: python -c "import braindecode; print(braindecode.__version__)"
 
