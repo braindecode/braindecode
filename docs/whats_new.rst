@@ -26,7 +26,7 @@ Enhancements
 Bugs
 ~~~~
 - Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
-- Fix skorch version issue (:gh:`462` by `Marco Zamboni`_)
+- Fix skorch version issue (:gh:`465` by `Marco Zamboni`_)
 
 API changes
 ~~~~~~~~~~~
