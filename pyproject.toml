@@ -16,6 +16,7 @@ h5py = "^3.9.0"
 skorch = "<0.13"
 joblib = "^1.3.2"
 mne = "^1.5.0"
+einops = "^0.6.1"
 
 
 [tool.poetry.group.moabb.dependencies]

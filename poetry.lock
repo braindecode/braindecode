@@ -258,6 +258,18 @@ files = [
 ]
 
 [[package]]
+name = "einops"
+version = "0.6.1"
+description = "A new flavour of deep learning operations"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "einops-0.6.1-py3-none-any.whl", hash = "sha256:99149e46cc808956b174932fe563d920db4d6e5dadb8c6ecdaa7483b7ef7cfc3"},
+    {file = "einops-0.6.1.tar.gz", hash = "sha256:f95f8d00f4ded90dbc4b19b6f98b177332614b0357dde66997f3ae5d474dc8c8"},
+]
+
+[[package]]
 name = "fonttools"
 version = "4.42.0"
 description = "Tools to manipulate font files"
@@ -1275,4 +1287,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8,<3.11"
-content-hash = "29cf3325aec25308812bca8ac4680ca89d86624633cee197ae38553449f7f508"
+content-hash = "141bcc55fca2881fc4456d0d1bf8db82e50e64a01e56939fe7c4c021d3089541"
