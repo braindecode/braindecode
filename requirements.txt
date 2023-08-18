@@ -3,7 +3,7 @@ pandas
 scipy
 matplotlib
 h5py
-skorch<0.14
+skorch<0.13
 joblib
 mne
 einops<=0.6.1
