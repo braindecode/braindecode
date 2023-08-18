@@ -1,8 +1,8 @@
-numpy
+numpy==1.24
 pandas
-scipy
+scipy==1.10.0
 matplotlib
 h5py
-skorch<0.14
+skorch<0.13
 joblib
 mne
