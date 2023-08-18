@@ -284,5 +284,3 @@ class _ResidualModuleMI(nn.Module):
         out = self.conv(X)
         out = self.bn(out)
         return self.activation(out)
-
-
