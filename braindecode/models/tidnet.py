@@ -134,7 +134,7 @@ class _TIDNetFeatures(nn.Module):
 
         self.temporal = nn.Sequential(
             Ensure4d(),
-            Rearrange("batch C T 1 -> batch 1 T C"),
+            Rearrange("batch C T 1 -> batch 1 C T"),
             _TemporalFilter(1, t_filters, depth=temp_layers, temp_len=self.temp_len),
             nn.MaxPool2d((1, pooling)),
             nn.Dropout2d(drop_prob),

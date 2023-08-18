@@ -82,7 +82,6 @@ class EEGNetv4(nn.Sequential):
         # now to b 1 0 c
         self.add_module("dimshuffle",
                         Rearrange("batch ch t 1 -> batch 1 ch t"))
-
         self.add_module(
             "conv_temporal",
             nn.Conv2d(
@@ -181,7 +180,7 @@ class EEGNetv4(nn.Sequential):
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         self.add_module("permute_back",
-                        Rearrange("batch 1 ch t -> batch ch t 1"))
+                        Rearrange("batch 1 ch t -> batch 1 t ch"))
         self.add_module("squeeze", Expression(squeeze_final_output))
 
         _glorot_weight_zero_bias(self)
@@ -323,7 +322,7 @@ class EEGNetv1(nn.Sequential):
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         self.add_module(
-            "permute_2",  Rearrange("batch 1 ch t -> batch ch t 1")
+            "permute_2",  Rearrange("batch 1 ch t -> batch 1 t ch")
         )
         self.add_module("squeeze", Expression(squeeze_final_output))
         _glorot_weight_zero_bias(self)
