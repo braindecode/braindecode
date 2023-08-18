@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 import faulthandler
 
 import sphinx_gallery  # noqa
+from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
+
 from numpydoc import numpydoc, docscrape  # noqa
 
 # -- General configuration ------------------------------------------------
@@ -58,6 +60,7 @@ extensions = [
     'sphinx.ext.viewcode',
     'numpydoc',
     'gh_substitutions',
+    'pydata_sphinx_theme'
 ]
 
 
@@ -196,7 +199,7 @@ version = '.'.join(release.split('.')[:2])
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+# language = None
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -232,6 +235,15 @@ sphinx_gallery_conf = {
     'backreferences_dir': 'generated',
     'show_memory': True,
     'reference_url': dict(braindecode=None),
+    'subsection_order': ExplicitOrder(
+        [
+            '../examples/datasets_io',
+            '../examples/model_building',
+            '../examples/advanced_training',
+            '../examples/applied_examples'
+        ]
+    ),
+    "within_subsection_order": FileNameSortKey
 }
 
 # -- Options for HTML output ----------------------------------------------
@@ -241,9 +253,9 @@ sphinx_gallery_conf = {
 #
 # html_theme = 'alabaster'
 
-import sphinx_rtd_theme
+# import sphinx_rtd_theme
 html_theme = "pydata_sphinx_theme"
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
+# html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 switcher_version_match = 'dev' if release.endswith('dev0') else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
