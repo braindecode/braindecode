@@ -14,7 +14,7 @@ dependencies:
 - pytorch
 - pytest
 - pip
-- skorch
+- skorch<0.14
 - joblib
 - memory_profiler
 - pip:
