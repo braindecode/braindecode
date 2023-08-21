@@ -33,7 +33,8 @@ setup(
     # Choose your license
     license='BSD 3-Clause',
 
-    install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch'],
+    install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch',
+                      'einops'],
     # tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers
