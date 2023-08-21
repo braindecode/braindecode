@@ -78,8 +78,7 @@ class EEGNetv4(nn.Sequential):
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
-        # b c 0 1
-        # now to b 1 0 c
+
         self.add_module("dimshuffle",
                         Rearrange("batch ch t 1 -> batch 1 ch t"))
         self.add_module(
