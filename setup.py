@@ -35,6 +35,9 @@ setup(
 
     install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch',
                       'einops'],
+    extras_require={
+        'moabb': ["moabb"]
+    },
     # tests_require = [...]
 
     # See https://PyPI.python.org/PyPI?%3Aaction=list_classifiers

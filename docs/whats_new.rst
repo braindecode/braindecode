@@ -25,6 +25,8 @@ Enhancements
 - Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
 
 
+- Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
+
 Bugs
 ~~~~
 - Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
