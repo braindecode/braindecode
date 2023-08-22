@@ -90,5 +90,3 @@ def test_dense_spatial_filter_forward_collapse_false():
     x = torch.rand(5, 3, 10)  # 3-dimensional input
     output = dense_spatial_filter(x)
     assert output.shape[:2] == torch.Size([5, 33])
-
-
