@@ -185,14 +185,6 @@ class EEGNetv4(nn.Sequential):
         _glorot_weight_zero_bias(self)
 
 
-def _transpose_to_b_1_c_0(x):
-    return x.permute(0, 3, 1, 2)
-
-
-def _transpose_1_0(x):
-    return x.permute(0, 1, 3, 2)
-
-
 class EEGNetv1(nn.Sequential):
     """EEGNet model from Lawhern et al. 2016.
 
