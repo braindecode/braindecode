@@ -23,9 +23,8 @@ Current 0.8 (dev0)
 Enhancements
 ~~~~~~~~~~~~
 - Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
-
-
 - Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
+- Replacing the replacing Pytorch layers to Rearrange from einops #468  (:gh:`468` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~

@@ -5,6 +5,7 @@
 import torch
 from torch import nn
 from torch.nn.functional import elu
+from einops.layers.torch import Rearrange
 
 from .modules import Expression, Ensure4d
 from .functions import squeeze_final_output
@@ -77,10 +78,9 @@ class EEGNetv4(nn.Sequential):
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
-        # b c 0 1
-        # now to b 1 0 c
-        self.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
 
+        self.add_module("dimshuffle",
+                        Rearrange("batch ch t 1 -> batch 1 ch t"))
         self.add_module(
             "conv_temporal",
             nn.Conv2d(
@@ -178,18 +178,11 @@ class EEGNetv4(nn.Sequential):
         self.add_module("softmax", nn.LogSoftmax(dim=1))
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
-        self.add_module("permute_back", Expression(_transpose_1_0))
+        self.add_module("permute_back",
+                        Rearrange("batch x y z -> batch x z y"))
         self.add_module("squeeze", Expression(squeeze_final_output))
 
         _glorot_weight_zero_bias(self)
-
-
-def _transpose_to_b_1_c_0(x):
-    return x.permute(0, 3, 1, 2)
-
-
-def _transpose_1_0(x):
-    return x.permute(0, 1, 3, 2)
 
 
 class EEGNetv1(nn.Sequential):
@@ -328,7 +321,7 @@ class EEGNetv1(nn.Sequential):
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
         self.add_module(
-            "permute_2", Expression(lambda x: x.permute(0, 1, 3, 2))
+            "permute_2", Rearrange("batch x y z -> batch x z y")
         )
         self.add_module("squeeze", Expression(squeeze_final_output))
         _glorot_weight_zero_bias(self)

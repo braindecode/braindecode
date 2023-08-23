@@ -4,8 +4,9 @@ import torch
 from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
+from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d, Expression
+from .modules import Ensure4d
 
 
 class _BatchNormZG(nn.BatchNorm2d):
@@ -131,22 +132,9 @@ class _TIDNetFeatures(nn.Module):
         self.input_windows_samples = input_window_samples
         self.temp_len = ceil(temp_span * input_window_samples)
 
-        def _permute(x):
-            """
-            Permutes data:
-
-            from dim:
-            batch, chans, time, 1
-
-            to dim:
-            batch, 1, chans, time
-
-            """
-            return x.permute([0, 3, 1, 2])
-
         self.temporal = nn.Sequential(
             Ensure4d(),
-            Expression(_permute),
+            Rearrange("batch C T 1 -> batch 1 C T"),
             _TemporalFilter(1, t_filters, depth=temp_layers, temp_len=self.temp_len),
             nn.MaxPool2d((1, pooling)),
             nn.Dropout2d(drop_prob),
