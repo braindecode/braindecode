@@ -66,7 +66,7 @@ class EEGConformer(nn.Module):
         Number of attention heads.
     att_drop_prob: float
         Dropout rate of the self-attention layer.
-    final_fc_length: int
+    final_fc_length: int | str
         The dimension of the fully connected layer.
     return_features: bool
         If True, the forward method returns the features before the
@@ -94,8 +94,8 @@ class EEGConformer(nn.Module):
             att_depth=6,
             att_heads=10,
             att_drop_prob=0.5,
-            final_fc_length=2440,
-            return_features=False
+            final_fc_length="auto",
+            return_features=False,
     ):
         super().__init__()
         if not (n_channels <= 64):
@@ -118,7 +118,7 @@ class EEGConformer(nn.Module):
             att_drop=att_drop_prob)
 
         self.classification_head = _ClassificationHead(
-            emb_size=n_filters_time, final_fc_length=final_fc_length,
+            final_fc_length=final_fc_length,
             n_classes=n_classes, return_features=return_features)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -172,7 +172,6 @@ class _PatchEmbedding(nn.Module):
                       (1, filter_time_length), (1, 1)),
             nn.Conv2d(n_filters_time, n_filters_time,
                       (n_channels, 1), (1, 1)),
-
             nn.BatchNorm2d(num_features=n_filters_time),
             nn.ELU(),
             nn.AvgPool2d(
@@ -332,15 +331,13 @@ class _TransformerEncoder(nn.Sequential):
 
 
 class _ClassificationHead(nn.Module):
-    def __init__(self, emb_size, final_fc_length, n_classes,
+    def __init__(self, final_fc_length, n_classes,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
                  hidden_channels=32, return_features=False):
         """"Classification head for the transformer encoder.
 
         Parameters
         ----------
-        emb_size : int
-            Embedding size of the transformer encoder.
         final_fc_length : int
             Length of the final fully connected layer.
         n_classes : int
@@ -368,6 +365,7 @@ class _ClassificationHead(nn.Module):
             nn.Linear(hidden_channels, n_classes),
         )
         self.return_features = return_features
+        self.classification = nn.LogSoftmax(dim=1)
 
     def forward(self, x):
         x = x.contiguous().view(x.size(0), -1)
@@ -375,4 +373,4 @@ class _ClassificationHead(nn.Module):
         if self.return_features:
             return out, x
         else:
-            return out
+            return self.classification(out)
