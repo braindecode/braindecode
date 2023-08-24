@@ -9,8 +9,9 @@ import torch
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
+from einops.layers.torch import Rearrange
 
-from .functions import transpose_time_to_spat, squeeze_final_output
+from .functions import squeeze_final_output
 from .modules import Expression, AvgPool2dWithConv, Ensure4d
 
 
@@ -57,7 +58,8 @@ class EEGResNet(nn.Sequential):
 
         self.add_module("ensuredims", Ensure4d())
         if self.split_first_layer:
-            self.add_module('dimshuffle', Expression(transpose_time_to_spat))
+            self.add_module('dimshuffle',
+                            Rearrange("batch C T 1 -> batch 1 T C"))
             self.add_module('conv_time', nn.Conv2d(1, self.n_first_filters,
                                                    (self.first_filter_length, 1),
                                                    stride=1,

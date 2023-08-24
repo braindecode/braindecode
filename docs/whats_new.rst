@@ -22,10 +22,14 @@ Current 0.8 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
+- Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
+- Replacing the replacing Pytorch layers to Rearrange from einops #468  (:gh:`468` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
 - Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
+- Fix skorch version issue (:gh:`465` by `Marco Zamboni`_)
 
 API changes
 ~~~~~~~~~~~
@@ -193,3 +197,4 @@ Authors
 .. _Oskar Størmer: https://github.com/ostormer
 .. _Matthieu Terris: https://github.com/matthieutrs
 .. _Yonghao Song: https://github.com/eeyhsong
+.. _Marco Zamboni: https://github.com/ZamboniMarco99

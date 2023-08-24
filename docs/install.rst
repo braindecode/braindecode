@@ -15,12 +15,6 @@ Installing the PyTorch library depends on the architecture and operational syste
 Given this complexity, we recommend that you go directly to the ``pytorch``
 page and follow the instructions in http://pytorch.org/. You don't need to install torchvision.
 
-To install moabb, run in your terminal:
-
-.. code-block:: console
-
-   $ pip install moabb
-
 Installing the braindecode with pip
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 After preparing the environment for braindecode, you can install via :code:`pip`:
@@ -36,6 +30,20 @@ alternatively, you can install the latest version of braindecode via pip:
 
   pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master
 
+If you want to use MOABB datasets utilities you can add it as an extra when installing braindecode:
+
+.. code-block:: console
+
+   $ pip install braindecode[moabb]
+
+or
+
+.. code-block:: console
+
+  pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master#egg=braindecode[moabb]
+
+
+If you are using other installation methods
 
 Installing Braindecode with conda
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -52,4 +60,9 @@ This might help depending on how you are managing other libraries.
 This will create a new ``conda`` environment called ``braindecode`` (you can adjust
 this by passing a different name via ``--name``).
 
+If you want to use MOABB dataset utilities in this case you need to install the ``moabb`` package separately:
+
+.. code-block:: console
+
+   $ pip install moabb
 
