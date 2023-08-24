@@ -94,7 +94,7 @@ class EEGConformer(nn.Module):
             att_depth=6,
             att_heads=10,
             att_drop_prob=0.5,
-            final_fc_length="auto",
+            final_fc_length=2440,
             return_features=False,
     ):
         super().__init__()
