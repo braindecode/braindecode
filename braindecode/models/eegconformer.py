@@ -1,7 +1,6 @@
 # Authors: Yonghao Song <eeyhsong@gmail.com>
 #
 # License: BSD (3-clause)
-
 import torch
 import torch.nn.functional as F
 from einops import rearrange
@@ -96,20 +95,27 @@ class EEGConformer(nn.Module):
             att_drop_prob=0.5,
             final_fc_length=2440,
             return_features=False,
+            input_window_samples=None,
     ):
         super().__init__()
+        self.n_channels = n_channels
+        self.input_window_samples = input_window_samples
         if not (n_channels <= 64):
             warnings.warn("This model has only been tested on no more " +
                           "than 64 channels. no guarantee to work with " +
                           "more channels.", UserWarning)
 
         self.patch_embedding = _PatchEmbedding(
-                n_filters_time=n_filters_time,
-                filter_time_length=filter_time_length,
-                n_channels=n_channels,
-                pool_time_length=pool_time_length,
-                stride_avg_pool=pool_time_stride,
-                drop_prob=drop_prob)
+            n_filters_time=n_filters_time,
+            filter_time_length=filter_time_length,
+            n_channels=n_channels,
+            pool_time_length=pool_time_length,
+            stride_avg_pool=pool_time_stride,
+            drop_prob=drop_prob)
+
+        if final_fc_length == "auto":
+            assert input_window_samples is not None
+            final_fc_length = self.get_fc_size()
 
         self.transformer = _TransformerEncoder(
             att_depth=att_depth,
@@ -127,6 +133,16 @@ class EEGConformer(nn.Module):
         x = self.transformer(x)
         x = self.classification_head(x)
         return x
+
+    def get_fc_size(self):
+
+        out = self.patch_embedding(torch.ones((1, 1,
+                                               self.n_channels,
+                                               self.input_window_samples)))
+        size_embedding_1 = out.cpu().data.numpy().shape[1]
+        size_embedding_2 = out.cpu().data.numpy().shape[2]
+
+        return size_embedding_1*size_embedding_2
 
 
 class _PatchEmbedding(nn.Module):
@@ -293,6 +309,7 @@ class _TransformerEncoder(nn.Sequential):
         Dropout probability for the attention layers.
 
     """
+
     def __init__(self, att_depth, emb_size, att_heads, att_drop):
         super().__init__(
             *[
