@@ -6,8 +6,8 @@ Cropped Decoding on BCIC IV 2a Dataset
 """
 
 ######################################################################
-# Building on the `Trialwise decoding<https://braindecode.org/stable/auto_examples/applied_examples/plot_bcic_iv_2a_moabb_trial.html>`_,
-# we now do more data-efficient cropped decoding!
+# Building on the `Trialwise decoding, we now do more data-efficient
+# cropped decoding!
 #
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
