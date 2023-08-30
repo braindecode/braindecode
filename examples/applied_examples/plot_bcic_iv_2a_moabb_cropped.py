@@ -6,20 +6,17 @@ Cropped Decoding on BCIC IV 2a Dataset
 """
 
 ######################################################################
-# Building on the `Trialwise decoding
-# tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__, we now do more
-# data-efficient cropped decoding!
+# Building on the `Trialwise decoding<https://braindecode.org/stable/auto_examples/applied_examples/plot_bcic_iv_2a_moabb_trial.html>`_,
+# we now do more data-efficient cropped decoding!
 #
-
-######################################################################
-
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
 # explain this visually by comparing trialwise to cropped decoding.
 #
-# .. image:: ../_static/trialwise_explanation.png
-# .. image:: ../_static/cropped_explanation.png
-#
+# .. image:: https://braindecode.org/stable/_static/trialwise_explanation.png
+#    :alt: Trialwise decoding
+# .. image:: https://braindecode.org/stable/_static/cropped_explanation.png
+#    :alt: Cropped decoding
 # On the left, you see trialwise decoding:
 #
 # 1. A complete trial is pushed through the network.
@@ -50,9 +47,6 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     -  Crop size and window size together define how many predictions the
 #        network makes per window: ``#window − #crop + 1 = #predictions``
 #
-
-######################################################################
-
 # .. note::
 #
 #     For cropped decoding, the above training setup is mathematically
@@ -60,7 +54,8 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     network and training directly on the individual crops. At the same time,
 #     the above training setup is much faster as it avoids redundant
 #     computations by using dilated convolutions, see our paper
-#     `Deep learning with convolutional neural networks for EEG decoding and visualization <https://arxiv.org/abs/1703.05051>`_. # noqa: E501
+#     `Deep learning with convolutional neural networks for EEG decoding
+#     and visualization <https://arxiv.org/abs/1703.05051>`_.
 #     However, the two setups are only mathematically identical in case (1)
 #     your network does not use any padding or only left padding and
 #     (2) your loss function leads
@@ -108,15 +103,11 @@ preprocess(dataset, preprocessors)
 ######################################################################
 # Create model and compute windowing parameters
 # ---------------------------------------------
-#
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
 # know the receptive field of the network to know how large the window
 # stride should be.
 #
-
-######################################################################
-
 # We first choose the compute/input window size that will be fed to the
 # network during training This has to be larger than the networks
 # receptive field size and can otherwise be chosen for computational
@@ -241,8 +232,6 @@ valid_set = splitted['session_E']
 # criterion, as well as ``criterion__loss_function`` as the loss function
 # applied to the meaned predictions.
 #
-######################################################################
-
 # .. note::
 #
 #     In this tutorial, we use some default parameters that we
