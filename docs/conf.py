@@ -270,8 +270,8 @@ html_theme_options = {
     'use_edit_page_button': False,
     'navigation_with_keys': False,
     "collapse_navigation": False,
-    "header_links_before_dropdown": 4,
-    "navigation_depth": 4,
+    "header_links_before_dropdown": 6,
+    "navigation_depth": 6,
     'show_toc_level': 1,
     'navbar_end': ['theme-switcher', 'version-switcher'],
     'switcher': {
