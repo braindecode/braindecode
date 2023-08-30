@@ -13,8 +13,8 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet)
-
+    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet,
+    EEGConformer)
 
 from braindecode.util import set_random_seeds
 
@@ -502,3 +502,61 @@ def test_deepsleepnet_feats_with_hook():
     y_pred = model(X.unsqueeze(1))
     assert intermediate_layers["features_extractor"].shape == (n_examples, model.len_last_layer)
     assert y_pred.shape == (n_examples, n_classes)
+
+
+@pytest.fixture
+def sample_input():
+    batch_size = 16
+    n_channels = 12
+    n_timesteps = 1000
+    return torch.rand(batch_size, n_channels, n_timesteps)
+
+
+@pytest.fixture
+def model():
+    return EEGConformer(n_classes=2, n_channels=12)
+
+
+def test_model_creation(model):
+    assert model is not None
+
+
+def test_conformer_forward_pass(sample_input, model):
+    output = model(sample_input)
+    assert isinstance(output, torch.Tensor)
+
+    model_with_feature = EEGConformer(n_classes=2, n_channels=12,
+                                      return_features=True)
+    output = model_with_feature(sample_input)
+
+    assert isinstance(output, tuple) and len(output) == 2
+
+
+def test_patch_embedding(sample_input, model):
+    patch_embedding = model.patch_embedding
+    x = torch.unsqueeze(sample_input, dim=1)
+    output = patch_embedding(x)
+    assert output.shape[0] == sample_input.shape[0]
+
+
+def test_model_trainable_parameters(model):
+
+    patch_parameters = model.patch_embedding.parameters()
+    transformer_parameters = model.transformer.parameters()
+    classification_parameters = model.classification_head.parameters()
+
+    trainable_patch_params = sum(p.numel()
+                                 for p in patch_parameters
+                                 if p.requires_grad)
+
+    trainable_transformer_params = sum(p.numel()
+                                       for p in transformer_parameters
+                                       if p.requires_grad)
+
+    trainable_classification_params = sum(p.numel()
+                                          for p in classification_parameters
+                                          if p.requires_grad)
+
+    assert trainable_patch_params == 22000
+    assert trainable_transformer_params == 118320
+    assert trainable_classification_params == 633186
