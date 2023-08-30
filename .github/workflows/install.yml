@@ -5,7 +5,7 @@ jobs:
         uses: actions/checkout@v3
       - name: Create/Restore MNE Data Cache
         id: cache-mne_data
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ~/mne_data
           key: ${{ runner.os }}-v3
@@ -13,7 +13,6 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2.2.0
         with:
           environment-file: environment.yml
-          python-version: 3.7
           auto-update-conda: true
           use-mamba: true
           miniforge-variant: Mambaforge
