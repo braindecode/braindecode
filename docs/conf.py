@@ -57,6 +57,7 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx_gallery.gen_gallery',
     "sphinx.ext.linkcode",
+    "sphinx_design",
     'numpydoc',
     'gh_substitutions',
 ]
