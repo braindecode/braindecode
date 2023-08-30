@@ -47,8 +47,9 @@ jobs:
     - name: Install MOABB
       run: pip install moabb
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
-    - name: Install Skorch version from pip
-      run: pip install skorch
+    - name: Install Skorch development version from git repo
+      if: ${{ matrix.skorch_version == 'main' }}
+      run: pip install git+https://github.com/skorch-dev/skorch.git
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
