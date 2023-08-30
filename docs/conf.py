@@ -33,8 +33,6 @@ from numpydoc import numpydoc, docscrape  # noqa
 # -- General configuration ------------------------------------------------
 
 # If your documentation needs a minimal Sphinx version, state it here.
-#
-# If your documentation needs a minimal Sphinx version, state it here.
 needs_sphinx = '2.0'
 
 curdir = os.path.dirname(__file__)
@@ -60,7 +58,6 @@ extensions = [
     'sphinx.ext.viewcode',
     'numpydoc',
     'gh_substitutions',
-    'pydata_sphinx_theme'
 ]
 
 
@@ -173,14 +170,20 @@ master_doc = 'index'
 
 # General information about the project.
 
+
 # -- Project information -----------------------------------------------------
-project = 'Braindecode'
+
+project = "Braindecode"
 td = datetime.now(tz=timezone.utc)
 
 # We need to triage which date type we use so that incremental builds work
 # (Sphinx looks at variable changes and rewrites all files if some change)
 copyright = (
-    f'2018–{td.year}, Braindecode Developers.')  # noqa: E501
+    f'2012–{td.year}, Braindecode Developers. Last updated <time datetime="{td.isoformat()}" class="localized">{td.strftime("%Y-%m-%d %H:%M %Z")}</time>\n'  # noqa: E501
+    '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>'
+)  # noqa: E501
+if os.getenv("BRAINDECODE_FULL_DATE", "false").lower() != "true":
+    copyright = f"2018–{td.year}, MNE Developers. Last updated locally."
 
 author = 'Braindecode developers'
 
@@ -251,11 +254,9 @@ sphinx_gallery_conf = {
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-# html_theme = 'alabaster'
-
-# import sphinx_rtd_theme
+import sphinx_rtd_theme  # noqa
 html_theme = "pydata_sphinx_theme"
-# html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
+html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 switcher_version_match = 'dev' if release.endswith('dev0') else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -278,7 +279,11 @@ html_theme_options = {
       'json_url': 'https://braindecode.org/stable/_static/versions.json',
       'version_match': switcher_version_match,
     },
-    'footer_items': ['copyright'],
+    "logo": {
+        "image_light": "https://braindecode.org/stable/_static/braindecode_small.svg",
+        "image_dark": "https://braindecode.org/stable/_static/braindecode_small.svg",
+    },
+    'footer_start': ['copyright'],
     'pygment_light_style': 'default',
     'analytics': dict(google_analytics_id='G-7Q43R82K6D'),
 }
@@ -332,6 +337,7 @@ html_context = {
              url='https://www.inria.fr/',
              size=xl),
     ],
+    "navbar_align": "content"
 }
 
 
