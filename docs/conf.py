@@ -178,7 +178,7 @@ copyright = (
     '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>'
 )  # noqa: E501
 if os.getenv("BRAINDECODE_FULL_DATE", "false").lower() != "true":
-    copyright = f"2018–{td.year}, Braindecode Developers. Last updated locally"
+    copyright = f"2018–{td.year}, Braindecode Developers."
 
 author = 'Braindecode developers'
 
@@ -284,7 +284,7 @@ html_theme_options = {
         "alt_text": "Braindecode Logo",
     },
     'footer_start': ['copyright'],
-    'pygment_light_style': 'default',
+    #'pygment_light_style': 'default',
     'analytics': dict(google_analytics_id='G-7Q43R82K6D'),
 }
 
