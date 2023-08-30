@@ -14,7 +14,7 @@ Below are the installation commands for the most common use cases.
 
    pip install bash
 
-Braindecode can also be installed with sets of optional dependencies to enable the dataset modular from MOABB.
+Braindecode can also be installed with sets of optional dependencies to enable the dataset modular from Moabb.
 
 For example, to install all the optional dependencies.
 

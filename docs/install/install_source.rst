@@ -3,7 +3,7 @@
 Installing from sources
 ~~~~~~~~~~~~~~~~~~~~
 
-If you want to test features under development or contribute to the library, or if you want to test the new tools that have been tested in moabb and not released yet, this is the right tutorial for you!
+If you want to test features under development or contribute to the library, or if you want to test the new tools that have been tested in braindecode and not released yet, this is the right tutorial for you!
 
 .. note::
 
@@ -25,22 +25,22 @@ You should now be in the root directory of the Braindecode repository.
 Installing Braindecode from the source
 --------------------------------------------------------------------------------------------------------------------------------
 
-If you want to only install Moabb from source once and not do any development
+If you want to only install Braindecode from source once and not do any development
 work, then the recommended way to build and install is to use ``pip``::
 
 For the latest development version, directly from GitHub:
 
 .. code-block:: bash
 
-  pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master#egg=braindecode[moabb]
+  pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master#egg=braindecode
 
-If you have a local clone of the MOABB git repository:
+If you have a local clone of the Braindecode git repository:
 
 .. code-block:: bash
 
    pip install .
 
-You can also install MOABB in editable mode (i.e. changes to the source code).
+You can also install Braindecode in editable mode (i.e. changes to the source code).
 
 Testing if your installation is working
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
