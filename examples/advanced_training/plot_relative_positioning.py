@@ -342,7 +342,8 @@ clf = EEGClassifier(
     optimizer__lr=lr,
     batch_size=batch_size,
     callbacks=callbacks,
-    device=device
+    device=device,
+    classes=[0, 1, 2, 3, 4],
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.

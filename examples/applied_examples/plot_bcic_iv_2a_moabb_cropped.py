@@ -225,9 +225,11 @@ windows_dataset = create_windows_from_events(
 #
 # This code is the same as in trialwise decoding.
 #
+from skorch.helper import SliceDataset
 
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
+train_label = SliceDataset(train_set, idx=1)
 valid_set = splitted['session_E']
 
 
@@ -248,7 +250,7 @@ valid_set = splitted['session_E']
 #     encourage you to perform your own hyperparameter optimization using
 #     cross validation on your training data.
 #
-
+import numpy as np
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
@@ -281,10 +283,11 @@ clf = EEGClassifier(
         "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
+    classes=np.unique(train_label)
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+clf.fit(train_set, y=train_label, epochs=n_epochs)
 
 
 ######################################################################
