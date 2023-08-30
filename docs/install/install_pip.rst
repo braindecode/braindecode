@@ -12,7 +12,7 @@ Below are the installation commands for the most common use cases.
 
 .. code-block:: console
 
-   pip install bash
+   pip install braindecode
 
 Braindecode can also be installed with sets of optional dependencies to enable the dataset modular from Moabb.
 
