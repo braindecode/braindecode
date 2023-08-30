@@ -1,0 +1,17 @@
+jobs:
+  Test-Braindecode:
+    steps:
+      - name: Run Unit Tests
+        run: pytest --cov=braindecode test/unit/ --cov-report term --cov-report xml:coverage.xml
+        # Additional steps for other types of tests (e.g., integration tests, performance tests)
+      - name: Upload Coverage to Codecov
+        uses: codecov/codecov-action@v1
+        with:
+          fail_ci_if_error: true
+          file: ./coverage.xml
+          path_to_write_report: ./codecov_report.txt
+      - name: Upload Codecov Coverage report for checking
+        uses: actions/upload-artifact@v2
+        with:
+          name: codecov-report
+          path: ./codecov_report.txt
