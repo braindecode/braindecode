@@ -177,7 +177,7 @@ copyright = (
     '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>'
 )  # noqa: E501
 if os.getenv("BRAINDECODE_FULL_DATE", "false").lower() != "true":
-    copyright = f"2018–{td.year}, MNE Developers. Last updated locally."
+    copyright = f"2018–{td.year}, Braindecode Developers. Last updated locally"
 
 author = 'Braindecode developers'
 
@@ -258,14 +258,18 @@ switcher_version_match = 'dev' if release.endswith('dev0') else version
 
 html_theme_options = {
     'icon_links': [
-        dict(name='GitHub',
-             url='https://github.com/braindecode/braindecode',
-             icon='fa-brands fa-square-github'),
+        {
+            "name": "GitHub",
+            "url": "https://github.com/braindecode/braindecode",
+            "icon": "fa-brands fa-github",
+        },
     ],
+    "github_url": "https://github.com/braindecode/braindecode",
     'icon_links_label': 'External Links',  # for screen reader
     'use_edit_page_button': False,
     'navigation_with_keys': False,
     "collapse_navigation": False,
+    "header_links_before_dropdown": 4,
     "navigation_depth": 4,
     'show_toc_level': 1,
     'navbar_end': ['theme-switcher', 'version-switcher'],
@@ -274,8 +278,9 @@ html_theme_options = {
       'version_match': switcher_version_match,
     },
     "logo": {
-        "image_light": "https://braindecode.org/stable/_static/braindecode_small.svg",
-        "image_dark": "https://braindecode.org/stable/_static/braindecode_small.svg",
+        "image_light": "_static/braindecode_symbol.png",
+        "image_dark": "_static/braindecode_symbol.png",
+        "alt_text": "Braindecode Logo",
     },
     'footer_start': ['copyright'],
     'pygment_light_style': 'default',
@@ -284,7 +289,7 @@ html_theme_options = {
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-html_logo = "_static/braindecode_small.svg"
+html_logo = "_static/braindecode_symbol.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -331,7 +336,12 @@ html_context = {
              url='https://www.inria.fr/',
              size=xl),
     ],
-    "navbar_align": "content"
+    "navbar_align": "content",
+    "github_user": "braindecode",
+    "github_repo": "braindecode",
+    "github_version": "main",
+    "doc_path": "docs",
+
 }
 
 
@@ -355,7 +365,7 @@ latex_elements = {
     # 'figure_align': 'htbp',
 }
 
-latex_logo = "_static/braindecode.png"
+latex_logo = "_static/braindecode_symbol.png"
 latex_toplevel_sectioning = 'part'
 
 # Grouping the document tree into LaTeX files. List of tuples
