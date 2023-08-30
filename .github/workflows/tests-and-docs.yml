@@ -33,7 +33,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v2.2.0
       with:
         environment-file: environment.yml
-        python-version: 3.7
+        python-version: 3.8
         auto-update-conda: true
         use-mamba: true
         miniforge-variant: Mambaforge
