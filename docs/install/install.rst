@@ -26,7 +26,7 @@ There are different ways to install Braindecode, depending on your needs and:
             For Beginners
 
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        .. image:: ../../source/_static/moabb_install.png
+        .. image:: ../../source/_static/braindecode_install.png
            :alt: Braindecode Installer with pip
 
         +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -46,7 +46,7 @@ There are different ways to install Braindecode, depending on your needs and:
 
         .. rst-class:: font-weight-bold mb-0
 
-           Building from src and the dev env
+           Building from source code
 
         .. rst-class:: card-subtitle text-muted mt-0
 
@@ -66,35 +66,7 @@ There are different ways to install Braindecode, depending on your needs and:
             :shadow:
             :class: font-weight-bold
 
-            From src and dev env
-
-    .. grid-item-card::
-        :text-align: center
-
-        .. rst-class:: font-weight-bold mb-0
-
-           Using our docker environment
-
-        .. rst-class:: card-subtitle text-muted mt-0
-
-            For Advanced Users
-
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        .. image:: https://www.docker.com/wp-content/uploads/2022/03/Moby-logo.png
-           :alt: Terminal Docker
-
-        **Already familiar with Docker?**
-        Follow our setup instructions for using your docker image!
-        +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-        .. button-ref:: using_docker
-            :ref-type: ref
-            :color: primary
-            :shadow:
-            :class: font-weight-bold
-
-            Using the docker image
-
+            From Source Code
 
 .. toctree::
     :hidden:

@@ -41,7 +41,7 @@ Braindecode Homepage
 .. toctree::
    :hidden:
 
-   Install <install.rst>
+   Install <install/install>
    Cite <cite>
    Tutorial and Examples <auto_examples/index>
    API Reference <api>
