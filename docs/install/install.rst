@@ -73,4 +73,3 @@ There are different ways to install Braindecode, depending on your needs and:
 
     install_pip
     install_source
-    using_docker
