@@ -49,13 +49,12 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
-    'sphinx.ext.linkcode',
     'sphinx.ext.ifconfig',
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
     'sphinx_gallery.gen_gallery',
-    'sphinx.ext.viewcode',
+    "sphinx.ext.linkcode",
     'numpydoc',
     'gh_substitutions',
 ]
@@ -67,7 +66,7 @@ def linkcode_resolve(domain, info):
     Parameters
     ----------
     domain : str
-        Only useful when 'py'.
+        Only useful when "py".
     info : dict
         With keys "module" and "fullname".
 
@@ -79,29 +78,27 @@ def linkcode_resolve(domain, info):
     Notes
     -----
     This has been adapted to deal with our "verbose" decorator.
-
     Adapted from SciPy (doc/source/conf.py).
     """
-    import mne
-    if domain != 'py':
+    repo = "https://github.com/braindecode/braindecode/"
+    if domain != "py":
+        return None
+    if not info["module"]:
         return None
 
-    modname = info['module']
-    fullname = info['fullname']
+    modname = info["module"]
+    fullname = info["fullname"]
 
     submod = sys.modules.get(modname)
     if submod is None:
         return None
 
     obj = submod
-    for part in fullname.split('.'):
+    for part in fullname.split("."):
         try:
             obj = getattr(obj, part)
         except Exception:
             return None
-    # deal with our decorators properly
-    while hasattr(obj, '__wrapped__'):
-        obj = obj.__wrapped__
 
     try:
         fn = inspect.getsourcefile(obj)
@@ -114,8 +111,8 @@ def linkcode_resolve(domain, info):
             fn = None
     if not fn:
         return None
-    fn = op.relpath(fn, start=op.dirname(mne.__file__))
-    fn = '/'.join(op.normpath(fn).split(os.sep))  # in case on Windows
+    fn = op.relpath(fn, start=op.dirname(braindecode.__file__))
+    fn = "/".join(op.normpath(fn).split(os.sep))  # in case on Windows
 
     try:
         source, lineno = inspect.getsourcelines(obj)
@@ -127,14 +124,9 @@ def linkcode_resolve(domain, info):
     else:
         linespec = ""
 
-    if 'dev' in braindecode.__version__:
-        kind = 'master'
-    else:
-        kind = 'maint/%s' % ('.'.join(mne.__version__.split('.')[:2]))
-    return "http://github.com/braindecode/braindecode/blob/%s/braindecode/%s%s" % (  # noqa
-       kind, fn, linespec)
+    return f"{repo}/blob/master/braindecode/{fn}{linespec}"
 
-
+# -- Options for sphinx gallery --------------------------------------------
 faulthandler.enable()
 os.environ['_BRAINDECODE_BROWSER_NO_BLOCK'] = 'true'
 os.environ['BRAINDECODE_BROWSER_OVERVIEW_MODE'] = 'hidden'
