@@ -1,7 +1,5 @@
 name: tests-and-docs
 
-on:name: tests-and-docs
-
 on:
   pull_request:
   push:
