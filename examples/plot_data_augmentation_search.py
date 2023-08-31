@@ -187,7 +187,7 @@ seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4
-
+classes = list(range(n_classes))
 # Extract number of chans and time steps from dataset
 n_channels = train_set[0][0].shape[0]
 input_window_samples = train_set[0][0].shape[1]
@@ -239,6 +239,7 @@ clf = EEGClassifier(
         ('lr_scheduler', LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
+    classes=classes
 )
 
 #####################################################################
