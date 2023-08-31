@@ -33,7 +33,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v2.2.0
       with:
         environment-file: environment.yml
-        python-version: 3.7
+        python-version: 3.8
         auto-update-conda: true
         use-mamba: true
         miniforge-variant: Mambaforge
@@ -45,7 +45,7 @@ jobs:
     - run: which python
     # Install MOABB as well
     - name: Install MOABB
-      run: pip install git+git+https://github.com/PierreGtch/moabb.git@runs_sessions_names#egg=moabb
+      run: pip install git+https://github.com/PierreGtch/moabb.git@runs_sessions_names#egg=moabb
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
     - name: Install Skorch version from pip
       run: pip install skorch==0.13.0
