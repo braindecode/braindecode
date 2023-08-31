@@ -260,5 +260,5 @@ def test_eeg_classifier():
     history_without_dur = [
         {k: v for k, v in h.items() if k != "dur"} for h in clf.history
     ]
-    assert_deep_allclose(expectedh, history_without_dur, atol=2.5E-1, rtol=2E-1) # Fixing this latter
+    assert_deep_allclose(expectedh, history_without_dur, atol=1e-3, rtol=1e-3)
     return clf
