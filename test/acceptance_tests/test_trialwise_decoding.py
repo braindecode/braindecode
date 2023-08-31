@@ -3,16 +3,17 @@
 #
 # License: BSD-3
 
-import mne
+# import mne
 import numpy as np
-import torch
-from mne.io import concatenate_raws
-from skorch.helper import predefined_split
-from torch.utils.data import Dataset, Subset
+# import torch
+# from mne.io import concatenate_raws
+# from skorch.helper import predefined_split
+from torch.utils.data import Dataset  # , Subset
 
-from braindecode.classifier import EEGClassifier
-from braindecode.models import ShallowFBCSPNet
-from braindecode.util import set_random_seeds
+
+# from braindecode.classifier import EEGClassifier
+# from braindecode.models import ShallowFBCSPNet
+# from braindecode.util import set_random_seeds
 
 
 class EpochsDataset(Dataset):

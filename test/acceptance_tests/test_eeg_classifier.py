@@ -4,20 +4,21 @@
 #
 # License: BSD-3
 
-import mne
+# import mne
 import numpy as np
-from mne.io import concatenate_raws
-from skorch.helper import predefined_split
-from torch import optim
-from torch.nn.functional import nll_loss
-
-from braindecode.classifier import EEGClassifier
-from braindecode.datasets.xy import create_from_X_y
-from braindecode.training.losses import CroppedLoss
-from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
-from braindecode.training.scoring import CroppedTrialEpochScoring
-from braindecode.util import set_random_seeds, np_to_th
+# from mne.io import concatenate_raws
+# from skorch.helper import predefined_split
+# from torch import optim
+# from torch.nn.functional import nll_loss
+#
+# from braindecode.classifier import EEGClassifier
+# from braindecode.datasets.xy import create_from_X_y
+# from braindecode.training.losses import CroppedLoss
+# from braindecode.models import ShallowFBCSPNet
+# from braindecode.models.util import to_dense_prediction_model
+# from braindecode.training.scoring import CroppedTrialEpochScoring
+# from braindecode.util import set_random_seeds, np_to_th
+#
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -119,7 +120,8 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
 #     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 #
 #     # Set if you want to use GPU
-#     # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
+#     # You can also use torch.cuda.is_available() to determine if
+#     cuda is available on your machine.
 #     cuda = False
 #     set_random_seeds(seed=20170629, cuda=cuda)
 #
@@ -127,7 +129,8 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
 #     input_window_samples = 450
 #     n_classes = 2
 #     in_chans = X.shape[1]
-#     # final_conv_length determines the size of the receptive field of the ConvNet
+#     # final_conv_length determines the size of the receptive
+#     field of the ConvNet
 #     model = ShallowFBCSPNet(
 #         in_chans=in_chans,
 #         n_classes=n_classes,
