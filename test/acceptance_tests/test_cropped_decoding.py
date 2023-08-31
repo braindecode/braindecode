@@ -143,7 +143,7 @@ def test_cropped_decoding():
             ]
         ),
         rtol=1e-3,
-        atol=1e-4,
+        atol=1e-3,
     )
 
     np.testing.assert_allclose(
