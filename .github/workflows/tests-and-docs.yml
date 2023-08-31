@@ -44,6 +44,9 @@ jobs:
     - run: conda --version
     - run: conda info --envs
     - run: which python
+    # Update pip
+    - name: Update pip
+      run: pip install --upgrade pip
     # Install MOABB as well
     - name: Install MOABB
       run: pip install git+https://github.com/NeuroTechX/moabb.git@develop#egg=moabb
