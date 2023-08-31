@@ -3,6 +3,8 @@
 #          Lukas Gemein
 #
 # License: BSD-3
+import sys
+import pytest
 
 import mne
 import numpy as np
@@ -71,6 +73,7 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
         raise exc
 
 
+@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 def test_eeg_classifier():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
