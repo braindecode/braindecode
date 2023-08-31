@@ -47,7 +47,7 @@ jobs:
     - run: which python
     # Install MOABB as well
     - name: Install MOABB
-      run: pip install moabb
+      run: pip install git+https://github.com/NeuroTechX/moabb.git@develop#egg=moabb
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
     - name: Install Skorch version from pip
       run: pip install skorch==0.13.0
