@@ -186,6 +186,7 @@ def test_eeg_classifier():
             ("train_trial_accuracy", cropped_cb_train),
             ("valid_trial_accuracy", cropped_cb_valid),
         ],
+        classes=[0, 1],
     )
 
     clf.fit(train_set, y=None, epochs=4)
