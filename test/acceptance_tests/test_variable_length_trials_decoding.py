@@ -2,7 +2,8 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
-
+import sys
+import pytest
 import torch
 import numpy as np
 
@@ -19,6 +20,7 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.training import CroppedLoss
 
 
+@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 def test_variable_length_trials_cropped_decoding():
     cuda = False
     set_random_seeds(seed=20210726, cuda=cuda)
@@ -91,8 +93,8 @@ def test_variable_length_trials_cropped_decoding():
             0.006638816092163324,
         ]
         ),
-        atol=2.5E-1,
-        rtol=2E-1  # Fixing this latter
+        rtol=1e-1,
+        atol=1e-1,
     )
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
@@ -102,6 +104,6 @@ def test_variable_length_trials_cropped_decoding():
             4.23494,
         ]
         ),
-        atol=2.5E-1,
-        rtol=2E-1  # Fixing this latter
+        rtol=1e-1,
+        atol=1e-1,
     )
