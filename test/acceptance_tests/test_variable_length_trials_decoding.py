@@ -57,11 +57,12 @@ def test_variable_length_trials_cropped_decoding():
     for x, y, ind in variable_tuh_windows_train:
         break
     train_split = predefined_split(variable_tuh_windows_valid)
-
+    n_classes = len(tuh.description.pathological.unique())
+    classes = list(range(n_classes))
     # initialize a model
     model = ShallowFBCSPNet(
         in_chans=x.shape[0],
-        n_classes=len(tuh.description.pathological.unique()),
+        n_classes=n_classes,
     )
     to_dense_prediction_model(model)
     if cuda:
@@ -77,6 +78,7 @@ def test_variable_length_trials_cropped_decoding():
         batch_size=16,
         callbacks=['accuracy'],
         train_split=train_split,
+        classes=classes,
     )
     clf.fit(variable_tuh_windows_train, y=None, epochs=3)
 

@@ -108,6 +108,7 @@ def test_trialwise_decoding():
         batch_size=30,
         callbacks=["accuracy"],
         device=device,
+        classes=[0, 1],
     )
     clf.fit(train_set, y=None, epochs=6)
 

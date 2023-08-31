@@ -111,6 +111,7 @@ def test_cropped_decoding():
         train_split=train_split,
         batch_size=32,
         callbacks=['accuracy'],
+        classes=[0, 1],
     )
 
     clf.fit(train_set, y=None, epochs=4)
