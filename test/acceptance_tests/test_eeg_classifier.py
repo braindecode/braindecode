@@ -22,7 +22,6 @@ from braindecode.training.scoring import CroppedTrialEpochScoring
 from braindecode.util import set_random_seeds, np_to_th
 
 
-
 def assert_deep_allclose(expected, actual, *args, **kwargs):
     """
     Assert that two complex structures have almost equal contents.
