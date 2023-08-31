@@ -65,8 +65,7 @@ def test_cropped_decoding():
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
 
     # Set if you want to use GPU
-    # You can also use torch.cuda.is_available() to determine if
-    # cuda is available on your machine.
+    # You can also use torch.cuda.is_available() to determine if cuda is available on your machine.
     cuda = False
     set_random_seeds(seed=20170629, cuda=cuda)
 
@@ -74,8 +73,7 @@ def test_cropped_decoding():
     input_window_samples = 450
     n_classes = 2
     in_chans = X.shape[1]
-    # final_conv_length determines the size of the receptive field of the
-    # ConvNet
+    # final_conv_length determines the size of the receptive field of the ConvNet
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
