@@ -356,6 +356,7 @@ clf = EEGClassifier(
         ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
+    classes=classes,
 )
 clf.fit(train_subset, y=None, epochs=n_epochs)
 
@@ -473,6 +474,7 @@ clf = EEGClassifier(
         ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
+    classes=classes,
 )
 
 train_val_split = KFold(n_splits=5, shuffle=False)
