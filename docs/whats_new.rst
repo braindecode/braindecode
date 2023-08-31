@@ -22,9 +22,8 @@ Current 0.8 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
-- Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
+
 - Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
-- Replacing the replacing Pytorch layers to Rearrange from einops #468  (:gh:`468` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
@@ -45,7 +44,6 @@ Enhancements
 - Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
 - Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_, `Bruno Aristimunha`_, `Robin Tibor Schirrmeister`_, `Lukas Gemein`_, `Denis A. Engemann`_ and `Oskar Størmer`_)
 - Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Théo Gnassounou`_)
-- Adding :class:`braindecode.models.EEGConformer` network (:gh:`454` by `Yonghao Song`_ and `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
@@ -196,5 +194,4 @@ Authors
 .. _Denis A. Engemann: https://github.com/dengemann
 .. _Oskar Størmer: https://github.com/ostormer
 .. _Matthieu Terris: https://github.com/matthieutrs
-.. _Yonghao Song: https://github.com/eeyhsong
 .. _Marco Zamboni: https://github.com/ZamboniMarco99

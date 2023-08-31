@@ -5,9 +5,9 @@ import numpy as np
 
 import torch
 from torch import nn
-from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d, MaxNormLinear, CausalConv1d
+from .modules import Expression, Ensure4d, MaxNormLinear, CausalConv1d
+from .functions import transpose_time_to_spat
 
 
 class ATCNet(nn.Module):
@@ -143,10 +143,8 @@ class ATCNet(nn.Module):
         self.concat = concat
         self.max_norm_const = max_norm_const
 
-        # Check later if we want to keep the Ensure4d. Not sure if we can
-        # remove it or replace it with eipsum.
         self.ensuredims = Ensure4d()
-        self.dimshuffle = Rearrange("batch C T 1 -> batch 1 T C")
+        self.dimshuffle = Expression(transpose_time_to_spat)
 
         self.conv_block = _ConvBlock(
             n_channels=n_channels,  # input shape: (batch_size, 1, T, C)
@@ -381,7 +379,7 @@ class _AttentionBlock(nn.Module):
         self.num_heads = num_heads
 
         # Puts time dimension at -2 and feature dim at -1
-        self.dimshuffle = Rearrange("batch C T -> batch T C")
+        self.dimshuffle = Expression(lambda x: x.permute(0, 2, 1))
 
         # Layer normalization
         self.ln = nn.LayerNorm(normalized_shape=in_shape, eps=1e-6)

@@ -3,9 +3,17 @@
 # License: BSD-3
 import torch
 from torch import nn
-from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d
+from .modules import Ensure4d, Expression
+
+
+def _permute(x):
+    """Permute data.
+
+    Input dimensions: (batch, channels, time, 1)
+    Output dimiensions: (batch, 1, channels, time)
+    """
+    return x.permute([0, 3, 1, 2])
 
 
 class _DepthwiseConv2d(torch.nn.Conv2d):
@@ -123,9 +131,7 @@ class EEGITNet(nn.Sequential):
 
         # ======== Handling EEG input ========================
         self.add_module(
-            "input_preprocess", nn.Sequential(Ensure4d(),
-                                              Rearrange(
-                                                  "ba ch t 1 -> ba 1 ch t"))
+            "input_preprocess", nn.Sequential(Ensure4d(), Expression(_permute))
         )
         # ======== Inception branches ========================
         block11 = self._get_inception_branch(

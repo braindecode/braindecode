@@ -4,9 +4,8 @@
 
 import torch
 from torch import nn
-from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d
+from .modules import Expression, Ensure4d
 
 
 class EEGInceptionMI(nn.Module):
@@ -82,7 +81,7 @@ class EEGInceptionMI(nn.Module):
         self.activation = activation
 
         self.ensuredims = Ensure4d()
-        self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")
+        self.dimshuffle = Expression(_transpose_to_b_c_1_t)
 
         # ======== Inception branches ========================
 
@@ -284,3 +283,7 @@ class _ResidualModuleMI(nn.Module):
         out = self.conv(X)
         out = self.bn(out)
         return self.activation(out)
+
+
+def _transpose_to_b_c_1_t(x):
+    return x.permute(0, 1, 3, 2)

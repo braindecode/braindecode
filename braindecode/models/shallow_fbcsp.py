@@ -5,12 +5,11 @@
 import numpy as np
 from torch import nn
 from torch.nn import init
-from einops.layers.torch import Rearrange
 
 from ..util import np_to_th
 from .modules import Expression, Ensure4d
 from .functions import (
-    safe_log, square, squeeze_final_output
+    safe_log, square, transpose_time_to_spat, squeeze_final_output
 )
 
 
@@ -110,8 +109,7 @@ class ShallowFBCSPNet(nn.Sequential):
         self.add_module("ensuredims", Ensure4d())
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         if self.split_first_layer:
-            self.add_module("dimshuffle",
-                            Rearrange("batch C T 1 -> batch 1 T C"))
+            self.add_module("dimshuffle", Expression(transpose_time_to_spat))
             self.add_module(
                 "conv_time",
                 nn.Conv2d(
