@@ -29,15 +29,28 @@ jobs:
       with:
         path: ~/mne_data
         key: ${{ runner.os }}-v3
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
+   - name: Setting Up Conda Braindecode Environment
+      uses: conda-incubator/setup-miniconda@v2.2.0
       with:
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        # Show Conda and Python Versions
-    - name: Install dependencies
-      if: steps.cached-dataset-docs.outputs.cache-hit != 'true'
-      run: poetry install --no-interaction --no-root --with moabb
+        environment-file: environment.yml
+        python-version: 3.8
+        auto-update-conda: true
+        use-mamba: true
+        miniforge-variant: Mambaforge
+        channels: conda-forge
+        activate-environment: braindecode
+      # Show Conda and Python Versions
+    - run: conda --version
+    - run: conda info --envs
+    - run: which python
+    # Install MOABB as well
+    - name: Install MOABB
+      run: pip install moabb
+    # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
+    - name: Install Skorch version from pip
+      run: pip install skorch==0.13.0
+    - name: Install Braindecode from Current Checkout
+      run: pip install -e .[moabb]
     # Show Braindecode Version
     - run: python -c "import braindecode; print(braindecode.__version__)"
 
