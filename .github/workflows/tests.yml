@@ -1,13 +1,14 @@
+name: Tests
+
 on:
-  pull_request:
   push:
     branches: master
 
 jobs:
   Test-Braindecode:
+    runs-on: ${{ matrix.os }}
     strategy:
       name: test ${{ matrix.os }}, py-${{ matrix.python-version }}
-      runs-on: ${{ matrix.os }}
       fail-fast: true
       matrix:
         os: [ ubuntu-latest, macOS-latest, windows-latest ]
