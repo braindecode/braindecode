@@ -11,7 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        skorch_version: ['main', 'stable']
+        os: [ ubuntu-latest, macOS-latest, windows-latest ]
+        python-version: [3.7, 3.8, 3.9, '3.10']
     defaults:
       run:
         shell: bash -l {0}
@@ -33,7 +34,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v2.2.0
       with:
         environment-file: environment.yml
-        python-version: 3.8
+        python-version: ${{ matrix.python-version }}
         auto-update-conda: true
         use-mamba: true
         miniforge-variant: Mambaforge
@@ -43,12 +44,15 @@ jobs:
     - run: conda --version
     - run: conda info --envs
     - run: which python
+    # Update pip
+    - name: Update pip
+      run: pip install --upgrade pip
     # Install MOABB as well
     - name: Install MOABB
       run: pip install git+https://github.com/PierreGtch/moabb.git@runs_sessions_names#egg=moabb
     # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
     - name: Install Skorch version from pip
-      run: pip install skorch==0.13.0
+      run: pip install skorch
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version

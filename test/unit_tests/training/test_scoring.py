@@ -236,6 +236,7 @@ def test_post_epoch_train_scoring():
     set_random_seeds(seed=20170629, cuda=cuda)
 
     n_classes = 2
+    classes = list(range(n_classes))
 
     class EEGDataSet(Dataset):
         def __init__(self, X, y):
@@ -314,6 +315,7 @@ def test_post_epoch_train_scoring():
             ),
             ("test_callback", TestCallback()),
         ],
+        classes=classes,
     )
 
     clf.fit(train_set, y=None, epochs=4)

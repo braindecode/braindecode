@@ -154,6 +154,7 @@ seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4
+classes = list(range(n_classes))
 # Extract number of chans from dataset
 n_chans = dataset[0][0].shape[0]
 
@@ -281,6 +282,7 @@ clf = EEGClassifier(
         "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
+    classes=classes,
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.

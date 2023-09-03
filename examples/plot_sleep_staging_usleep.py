@@ -187,6 +187,7 @@ if cuda:
 set_random_seeds(seed=31, cuda=cuda)
 
 n_classes = 5
+classes = list(range(n_classes))
 # Extract number of channels and time steps from dataset
 in_chans, input_size_samples = train_set[0][0].shape
 
@@ -268,6 +269,7 @@ clf = EEGClassifier(
     batch_size=batch_size,
     callbacks=callbacks,
     device=device,
+    classes=classes,
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
