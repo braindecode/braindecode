@@ -81,7 +81,7 @@ preprocessors = [
 ]
 
 # Transform the data
-preprocess(dataset, preprocessors, n_jobs=-1, save_dir="~/mne_data")
+preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
