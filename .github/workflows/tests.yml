@@ -6,16 +6,16 @@ on:
 
 jobs:
   test:
-    name: dev ${{ matrix.os }}, py-${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: true
       matrix:
         os: [ubuntu-latest, windows-latest, macOS-latest]
-        python-version: [ "3.7" , "3.8", "3.9", '3.10']
+        python-version: ["3.7", "3.8", "3.9", "3.10"]
     defaults:
       run:
-        shell: bash
+        shell: bash -l {0}
+    name: dev ${{ matrix.os }}, py-${{ matrix.python-version }}
     steps:
     ## Install Braindecode
     - name: Checking Out Repository
