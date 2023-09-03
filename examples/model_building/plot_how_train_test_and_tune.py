@@ -146,6 +146,7 @@ seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4
+classes = list(range(n_classes))
 # Extract number of chans and time steps from dataset
 n_channels = windows_dataset[0][0].shape[0]
 input_window_samples = windows_dataset[0][0].shape[1]
@@ -183,11 +184,9 @@ if cuda:
 #    Remember that you are not allowed to use the test_set during any
 #    stage of training or tuning.
 #
-from skorch.helper import SliceDataset
 
 splitted = windows_dataset.split("session")
 train_set = splitted["session_T"]
-train_label = SliceDataset(splitted["session_T"], 1)
 test_set = splitted["session_E"]
 
 ######################################################################
@@ -232,12 +231,11 @@ clf = EEGClassifier(
         ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
-    max_epochs=n_epochs,
-    classes=np.unique(train_label)
+    classes=classes,
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-clf.fit(train_set, y=None)
+clf.fit(train_set, y=None, epochs=n_epochs)
 
 # score the Model after training
 y_test = test_set.get_metadata().target
@@ -335,7 +333,6 @@ train_indices, val_indices = train_test_split(
     X_train.indices_, test_size=0.2, shuffle=False
 )
 train_subset = Subset(train_set, train_indices)
-train_label_subset = SliceDataset(Subset(train_set, train_indices), idx=1)
 val_subset = Subset(train_set, val_indices)
 
 ######################################################################
@@ -359,9 +356,9 @@ clf = EEGClassifier(
         ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
-    max_epochs=n_epochs,
+    classes=classes,
 )
-clf.fit(train_subset, y=train_label_subset)
+clf.fit(train_subset, y=None, epochs=n_epochs)
 
 # score the Model after training (optional)
 y_test = test_set.get_metadata().target
@@ -477,6 +474,7 @@ clf = EEGClassifier(
         ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
+    classes=classes,
 )
 
 train_val_split = KFold(n_splits=5, shuffle=False)

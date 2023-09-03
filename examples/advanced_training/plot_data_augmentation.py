@@ -87,10 +87,9 @@ windows_dataset = create_windows_from_events(
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-from skorch.helper import SliceDataset
+
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
-train_label = SliceDataset(splitted['session_T'], idx=1)
 valid_set = splitted['session_E']
 
 ######################################################################
@@ -185,6 +184,7 @@ seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
 n_classes = 4
+classes = list(range(n_classes))
 
 # Extract number of chans and time steps from dataset
 n_channels = train_set[0][0].shape[0]
@@ -250,12 +250,11 @@ clf = EEGClassifier(
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
-    max_epochs=n_epochs,
-    classes=np.unique(train_label)
+    classes=classes,
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
-clf.fit(train_set, y=None)
+clf.fit(train_set, y=None, epochs=n_epochs)
 
 ######################################################################
 # Manually composing Transforms

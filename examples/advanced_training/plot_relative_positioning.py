@@ -253,6 +253,7 @@ set_random_seeds(seed=random_state, cuda=device == 'cuda')
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = windows_dataset[0][0].shape
 emb_size = 100
+classes = list(range(5))
 
 emb = SleepStagerChambon2018(
     n_channels,
@@ -343,7 +344,7 @@ clf = EEGClassifier(
     batch_size=batch_size,
     callbacks=callbacks,
     device=device,
-    classes=[0, 1, 2, 3, 4],
+    classes=classes,
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.

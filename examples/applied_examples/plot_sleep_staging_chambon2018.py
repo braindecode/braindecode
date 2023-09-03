@@ -126,12 +126,10 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 #
 # We split the dataset into training and validation set taking
 # every other subject as train or valid.
-from skorch.helper import SliceDataset
 
 split_ids = dict(train=subject_ids[::2], valid=subject_ids[1::2])
 splits = windows_dataset.split(split_ids)
 train_set, valid_set = splits["train"], splits["valid"]
-train_label = SliceDataset(splits["train"], idx=1)
 
 ######################################################################
 # Create sequence samplers
@@ -292,12 +290,11 @@ clf = EEGClassifier(
     batch_size=batch_size,
     callbacks=callbacks,
     device=device,
-    max_epochs=n_epochs,
-    classes=np.unique(train_label)
+    classes=np.unique(y_train),
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
-clf.fit(train_set, y=None)
+clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
