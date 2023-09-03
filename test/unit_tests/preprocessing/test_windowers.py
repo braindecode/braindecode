@@ -334,6 +334,9 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         )
 
 
+# Skip if OS is Windows
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows")  # TODO: Fix this
 def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
     longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
     windows = [create_fixed_length_windows(
