@@ -807,23 +807,20 @@ class ZarrDataset(BaseDataset):
             else:
                 start_ids = np.arange(
                     start=start_offset,
-                    stop=max_recording_length_sample
-                         - stop_offset
-                         - window_size_samples
-                         + 1,
+                    stop=max_recording_length_sample - (stop_offset +
+                                                        window_size_samples -
+                                                        1),
                     step=window_stride,
                 )
             for window_i, s_i in enumerate(start_ids):
-                info_list.append(
-                    {
-                        "subject_id": sub_i,
-                        # index for the zarr arr, != sub name
-                        "window_idx": window_i,
-                        "window_start_idx": s_i,
-                        "window_stop_idx": s_i + window_size_samples,
-                        "target": targets[sub_i],
-                    }
-                )
+                info_list.append({
+                    "subject_id": sub_i,
+                    # index for the zarr arr, != sub name
+                    "window_idx": window_i,
+                    "window_start_idx": s_i,
+                    "window_stop_idx": s_i + window_size_samples,
+                    "target": targets[sub_i],
+                })
         return {i: info for i, info in enumerate(info_list)}
 
     def get_window_map(
@@ -898,23 +895,19 @@ class ZarrDataset(BaseDataset):
                 else:
                     start_ids = np.arange(
                         start=start_offset,
-                        stop=max_recording_length_sample
-                             - stop_offset
-                             - window_size_samples
-                             + 1,
+                        stop=max_recording_length_sample - (
+                                    stop_offset + window_size_samples - 1),
                         step=window_stride,
                     )
                 for window_i, s_i in enumerate(start_ids):
-                    info_list.append(
-                        {
-                            "subject_id": sub_i,
-                            # index for the zarr arr, != sub name
-                            "window_idx": window_i,
-                            "window_start_idx": s_i,
-                            "window_stop_idx": s_i + window_size_samples,
-                            "target": targets[sub_i],
-                        }
-                    )
+                    info_list.append({
+                        "subject_id": sub_i,
+                        # index for the zarr arr, != sub name
+                        "window_idx": window_i,
+                        "window_start_idx": s_i,
+                        "window_stop_idx": s_i + window_size_samples,
+                        "target": targets[sub_i],
+                    })
             self.windows_map = np.array(info_list)
 
     def split(
