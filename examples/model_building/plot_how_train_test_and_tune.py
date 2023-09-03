@@ -216,7 +216,7 @@ from braindecode import EEGClassifier
 lr = 0.0625 * 0.01
 weight_decay = 0
 batch_size = 64
-n_epochs = 4
+n_epochs = 2
 
 clf = EEGClassifier(
     model,
@@ -232,10 +232,11 @@ clf = EEGClassifier(
     ],
     device=device,
     classes=classes,
+    max_epochs=n_epochs,
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+clf.fit(train_set, y=None)
 
 # score the Model after training
 y_test = test_set.get_metadata().target
@@ -357,8 +358,9 @@ clf = EEGClassifier(
     ],
     device=device,
     classes=classes,
+    max_epochs=n_epochs,
 )
-clf.fit(train_subset, y=None, epochs=n_epochs)
+clf.fit(train_subset, y=None)
 
 # score the Model after training (optional)
 y_test = test_set.get_metadata().target
@@ -475,12 +477,12 @@ clf = EEGClassifier(
     ],
     device=device,
     classes=classes,
+    max_epochs=n_epochs,
 )
 
 train_val_split = KFold(n_splits=5, shuffle=False)
-fit_params = {"epochs": n_epochs}
 cv_results = cross_val_score(
-    clf, X_train, y_train, scoring="accuracy", cv=train_val_split, fit_params=fit_params
+    clf, X_train, y_train, scoring="accuracy", cv=train_val_split, n_jobs=-1
 )
 print(
     f"Validation accuracy: {np.mean(cv_results * 100):.2f}"
@@ -648,9 +650,10 @@ search = GridSearchCV(
     refit=True,
     verbose=1,
     error_score="raise",
+    n_jobs=-1,
 )
 
-search.fit(X_train, y_train, **fit_params)
+search.fit(X_train, y_train)
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results["rank_test_score"] == 1].squeeze()

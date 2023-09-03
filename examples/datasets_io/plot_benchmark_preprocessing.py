@@ -114,7 +114,7 @@ def prepare_data(n_recs, save, preload, n_jobs):
 #   data size and preprocessing operations), we recommend adapting this example
 #   to your use case and running it on your machine.
 
-n_repets = 3  # Number of repetitions
+n_repets = 2  # Number of repetitions
 all_n_recs = 2  # Number of recordings to load and preprocess
 all_n_jobs = [1, 2]  # Number of parallel processes
 

@@ -262,7 +262,7 @@ from braindecode import EEGRegressor
 lr = 0.0625 * 0.01
 weight_decay = 0
 batch_size = 64
-n_epochs = 8
+n_epochs = 2
 
 
 # Function to compute Pearson correlation coefficient

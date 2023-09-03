@@ -86,7 +86,7 @@ preprocessors = [
                  factor_new=factor_new, init_block_size=init_block_size)
 ]
 
-preprocess(dataset, preprocessors)
+preprocess(dataset, preprocessors, n_jobs=-1)
 
 ######################################################################
 # Extracting windows
@@ -222,7 +222,7 @@ lr = 0.0625 * 0.01
 weight_decay = 0
 
 batch_size = 64
-n_epochs = 4
+n_epochs = 2
 
 clf = EEGClassifier(
     model,

@@ -81,7 +81,7 @@ preprocessors = [
 ]
 
 # Transform the data
-preprocess(dataset, preprocessors)
+preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
@@ -197,7 +197,7 @@ from skorch.callbacks import LRScheduler
 
 from braindecode import EEGClassifier
 batch_size = 16
-n_epochs = 4
+n_epochs = 2
 
 clf = EEGClassifier(
     model,
