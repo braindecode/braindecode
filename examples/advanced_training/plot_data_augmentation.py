@@ -58,7 +58,7 @@ preprocessors = [
                  factor_new=factor_new, init_block_size=init_block_size)
 ]
 
-preprocess(dataset, preprocessors)
+preprocess(dataset, preprocessors, n_jobs=-1, save_dir="~/mne_data")
 
 ######################################################################
 # Extracting windows
