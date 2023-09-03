@@ -63,14 +63,11 @@ jobs:
     - name: Run Tests # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
       run: pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
     - name: Upload Coverage to Codecov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v3
+      if: success()
       with:
         fail_ci_if_error: true
         file: ./coverage.xml
         path_to_write_report: ./codecov_report.txt
-    - name: Upload Codecov Coverage report for checking
-      uses: actions/upload-artifact@v2
-      with:
-        name: codecov-report
-        path: ./codecov_report.txt
+        env_vars: OS,PYTHON
 
