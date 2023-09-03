@@ -234,6 +234,7 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         assert os.path.exists(os.path.join(subdir, f"{windows_i}-epo.fif"))
     assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}"))
 
+
 # Skip if OS is Windows
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows")  # TODO: Fix this
