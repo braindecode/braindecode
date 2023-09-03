@@ -7,19 +7,27 @@ Dataset classes.
 #          Simon Brandt <simonbrandt@protonmail.com>
 #          David Sabbagh <dav.sabbagh@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
+#          Joseph Paillard <joseph.paillard@gmail.com>
 #
 # License: BSD (3-clause)
 
-import os
 import json
+import os
 import shutil
-from typing import Iterable
 import warnings
+from copy import copy
 from glob import glob
+from time import perf_counter
+from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset, ConcatDataset
+import torch
+import zarr
+from sklearn.model_selection import train_test_split
+from torch.utils.data import ConcatDataset
+from torch.utils.data import Dataset
+from tqdm import tqdm
 
 
 def _create_description(description):
@@ -52,6 +60,7 @@ class BaseDataset(Dataset):
     transform : callable | None
         On-the-fly transform applied to the example before it is returned.
     """
+
     def __init__(self, raw, description=None, target_name=None,
                  transform=None):
         self.raw = raw
@@ -113,7 +122,8 @@ class BaseDataset(Dataset):
             self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
-        if target_name is not None and not isinstance(target_name, (str, tuple, list)):
+        if target_name is not None and not isinstance(target_name,
+                                                      (str, tuple, list)):
             raise ValueError('target_name has to be None, str, tuple or list')
         if target_name is None:
             return target_name
@@ -158,10 +168,14 @@ class WindowsDataset(BaseDataset):
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
     targets_from : str
-        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
-        channels (time series targets). It can be `metadata` (default) or `channels`.
+        Defines whether targets will be extracted from mne.Epochs metadata or
+        mne.Epochs `misc`
+        channels (time series targets). It can be `metadata` (default) or
+        `channels`.
     """
-    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
+
+    def __init__(self, windows, description=None, transform=None,
+                 targets_from='metadata',
                  last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
@@ -172,8 +186,8 @@ class WindowsDataset(BaseDataset):
         self.targets_from = targets_from
 
         self.crop_inds = self.windows.metadata.loc[
-            :, ['i_window_in_trial', 'i_start_in_trial',
-                'i_stop_in_trial']].to_numpy()
+                         :, ['i_window_in_trial', 'i_start_in_trial',
+                             'i_stop_in_trial']].to_numpy()
         if self.targets_from == 'metadata':
             self.y = self.windows.metadata.loc[:, 'target'].to_list()
 
@@ -262,6 +276,7 @@ class BaseConcatDataset(ConcatDataset):
     target_transform : callable | None
         Optional function to call on targets before returning them.
     """
+
     def __init__(self, list_of_ds, target_transform=None):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
@@ -351,7 +366,8 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
+            [self.datasets[ds_ind] for ds_ind in ds_inds],
+            target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):
@@ -562,12 +578,13 @@ class BaseConcatDataset(ConcatDataset):
         if overwrite:
             # the following will be True for all datasets preprocessed and
             # stored in parallel with braindecode.preprocessing.preprocess
-            if i_ds+1+offset < n_sub_dirs:
-                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
-                              f"does not match the number of existing "
-                              f"subdirectories ({n_sub_dirs}). You may now "
-                              f"encounter a mix of differently preprocessed "
-                              f"datasets!", UserWarning)
+            if i_ds + 1 + offset < n_sub_dirs:
+                warnings.warn(
+                    f"The number of saved datasets ({i_ds + 1 + offset}) "
+                    f"does not match the number of existing "
+                    f"subdirectories ({n_sub_dirs}). You may now "
+                    f"encounter a mix of differently preprocessed "
+                    f"datasets!", UserWarning)
         # if path contains files or directories that were not touched, raise
         # warning
         if path_contents:
@@ -612,3 +629,317 @@ class BaseConcatDataset(ConcatDataset):
             target_file_path = os.path.join(sub_dir, 'target_name.json')
             with open(target_file_path, 'w') as f:
                 json.dump({'target_name': ds.target_name}, f)
+
+
+class ZarrDataset(BaseDataset):
+    def __init__(
+            self,
+            cache_path,
+            raw_recordings,
+            max_recording_length_sample: int,
+            windows=None,
+            targets=None,
+            mode="w",
+    ):
+        """
+        Initialize a ZarrDataset object.
+
+        Parameters
+        ----------
+        cache_path : str
+            The path to the Zarr cache file.
+        raw_recordings : list
+            A list of raw recordings.
+        max_recording_length_sample : int
+            The maximum recording length in samples. Used to crop longer
+            recordings
+        windows : list, optional
+            A list of window information.
+        targets : list, optional
+            A list of target values. Used if for window creation.
+        mode : str, optional
+            The mode of operation ("w" for write "r" for read, default is "w").
+        """
+        self.cache_path = cache_path
+        self.raw_recordings = raw_recordings
+        self.mode = mode
+        self.max_recording_length_sample = max_recording_length_sample
+        self.windows = windows
+        self.targets = targets
+
+        data_shape = self.raw_recordings[0]._data.shape
+
+        # Load to cache
+        if self.mode == "w":
+            self.data_zarr = self.save_to_cache(
+                cache_path=self.cache_path,
+                raw_recordings=self.raw_recordings,
+                max_recording_length_sample=self.max_recording_length_sample,
+                arr_shape=(len(self.raw_recordings),
+                           data_shape[0],
+                           max_recording_length_sample),
+                chunks=(1, None, None),
+                dtype="float32",
+            )
+        else:
+            print("Data loaded from cache")
+            self.data_zarr = self.load_from_cache(
+                cache_path=self.cache_path,
+                arr_shape=(len(self.raw_recordings),
+                           data_shape[0],
+                           max_recording_length_sample)
+            )
+
+        self.windows_map = None
+        if self.windows is not None:
+            self.get_window_map(windows=windows)
+
+    def __len__(self):
+        if self.windows_map is None:
+            raise AttributeError("Window map not created")
+
+        return len(self.windows_map)
+
+    def __getitem__(self, idx):
+        window_info = self.windows_map[idx]
+        subject_id = window_info["subject_id"]
+        window_start_idx = window_info["window_start_idx"]
+        window_stop_idx = window_info["window_stop_idx"]
+        target = window_info["target"]
+
+        return (
+            torch.Tensor(
+                self.data_zarr[subject_id, :, window_start_idx:window_stop_idx]
+            ),
+            target,
+        )
+
+    @staticmethod
+    def save_to_cache(cache_path, raw_recordings, arr_shape,
+                      max_recording_length_sample, **kwargs):
+        """
+        Save raw recordings to a Zarr cache file.
+
+        Parameters
+        ----------
+        cache_path : str
+            The path to the Zarr cache file.
+        raw_recordings : list
+            A list of raw recordings to be cached.
+        arr_shape : tuple
+            The shape of the Zarr array.
+        max_recording_length_sample : int
+            The maximum recording length in samples. Used to crop recordings.
+        kwargs : dict
+            Additional keyword arguments for Zarr array creation.
+
+        Returns
+        -------
+        data_zarr : zarr.Array
+            The Zarr array containing the cached data.
+        """
+        data_zarr = zarr.open(
+            cache_path,
+            mode='w',
+            shape=arr_shape,
+            **kwargs
+        )
+
+        t_0 = perf_counter()
+        for i, raw in enumerate(tqdm(raw_recordings, desc="Epochs to cache")):
+            data_zarr[i, ...] = raw._data[
+                                :, :max_recording_length_sample
+                                ]
+        print(f"\nCaching duration: {perf_counter() - t_0:.2f}s")
+        print(f"Cache size: {os.path.getsize(cache_path) / 1e6:.3f} MB")
+        return data_zarr
+
+    @staticmethod
+    def load_from_cache(cache_path,
+                        arr_shape,
+                        **kwargs):
+        data_zarr = zarr.open(
+            cache_path,
+            mode='r',
+            shape=arr_shape,
+            **kwargs
+        )
+        return data_zarr
+
+    @staticmethod
+    def make_windows_map(
+            targets,
+            start_offset,
+            stop_offset,
+            window_size_samples,
+            max_recording_length_sample,
+            window_stride=None,
+    ) -> dict:
+        """
+        Args:
+            targets:
+            start_offset:
+            stop_offset:
+            window_size_samples:
+            max_recording_length_sample:
+            window_stride:
+
+        Returns:
+            Dictionary with keys being the windows ids and values the
+            information
+            describing, subject_idx, start_idx, stop_idx, target.
+
+        Notes:
+            Other information could be added to the output dict.
+
+        """
+        if window_stride is None:
+            window_stride = window_size_samples
+        info_list = list()
+        for sub_i in range(len(targets)):
+            # Single window case, also useful in order to return the entire
+            # epoch
+            if (
+                    window_size_samples
+                    > max_recording_length_sample - window_size_samples
+            ):
+                start_ids = [start_offset]
+            else:
+                start_ids = np.arange(
+                    start=start_offset,
+                    stop=max_recording_length_sample
+                         - stop_offset
+                         - window_size_samples
+                         + 1,
+                    step=window_stride,
+                )
+            for window_i, s_i in enumerate(start_ids):
+                info_list.append(
+                    {
+                        "subject_id": sub_i,
+                        # index for the zarr arr, != sub name
+                        "window_idx": window_i,
+                        "window_start_idx": s_i,
+                        "window_stop_idx": s_i + window_size_samples,
+                        "target": targets[sub_i],
+                    }
+                )
+        return {i: info for i, info in enumerate(info_list)}
+
+    def get_window_map(
+            self,
+            windows=None,
+            targets=None,
+            start_offset=None,
+            stop_offset=None,
+            window_size_samples=None,
+            max_recording_length_sample=None,
+            window_stride=None,
+    ):
+        """
+        Create a mapping of windows with their associated information.
+
+        Parameters
+        ----------
+        targets : list
+            A list of target values.
+        start_offset : int
+            The start offset for window creation.
+        stop_offset : int
+            The stop offset for window creation.
+        window_size_samples : int
+            The size of each window in samples.
+        max_recording_length_sample : int
+            The maximum recording length in samples.
+        window_stride : int, optional
+            The stride between windows (default is None, which implies no
+            stride).
+
+        Returns
+        -------
+        windows_map : dict
+            A dictionary with keys representing window IDs and values containing
+            information about the window, including subject ID, window index,
+            window start index, window stop index, and target value.
+
+        Notes
+        -----
+        Other information could be added to the output dictionary.
+        """
+        if windows is not None:
+            info_list = list()
+            for el in windows:
+                if isinstance(el, dict):
+                    sub_i, start_i, stop_i, t = el.values()
+                else:
+                    sub_i, start_i, stop_i, t = el
+                info_list.append(
+                    {
+                        "subject_id": sub_i,
+                        # index for the zarr arr, != sub name
+                        "window_start_idx": start_i,
+                        "window_stop_idx": stop_i,
+                        "target": t,
+                    }
+                )
+            self.windows_map = np.array(info_list)
+        else:
+            if window_stride is None:
+                window_stride = window_size_samples
+            info_list = list()
+            for sub_i in range(len(targets)):
+                # Single window case, also useful in order to return the entire
+                # epoch
+                if (
+                        window_size_samples
+                        > max_recording_length_sample - window_size_samples
+                ):
+                    start_ids = [start_offset]
+                else:
+                    start_ids = np.arange(
+                        start=start_offset,
+                        stop=max_recording_length_sample
+                             - stop_offset
+                             - window_size_samples
+                             + 1,
+                        step=window_stride,
+                    )
+                for window_i, s_i in enumerate(start_ids):
+                    info_list.append(
+                        {
+                            "subject_id": sub_i,
+                            # index for the zarr arr, != sub name
+                            "window_idx": window_i,
+                            "window_start_idx": s_i,
+                            "window_stop_idx": s_i + window_size_samples,
+                            "target": targets[sub_i],
+                        }
+                    )
+            self.windows_map = np.array(info_list)
+
+    def split(
+            self,
+            train_indices=None,
+            test_indices=None,
+    ):
+        if train_indices is None:
+            train_indices, test_indices = train_test_split(
+                np.arange((len(self)))
+            )
+        train_set = ZarrDataset(
+            cache_path=self.cache_path,
+            raw_recordings=self.raw_recordings,
+            max_recording_length_sample=self.max_recording_length_sample,
+            windows=copy(self.windows_map[train_indices]),
+            targets=None,
+            mode="r",
+        )
+        test_set = ZarrDataset(
+            cache_path=self.cache_path,
+            raw_recordings=self.raw_recordings,
+            max_recording_length_sample=self.max_recording_length_sample,
+            windows=copy(self.windows_map[test_indices]),
+            targets=None,
+            mode="r",
+        )
+        return train_set, test_set
