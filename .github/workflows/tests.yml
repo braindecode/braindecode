@@ -5,7 +5,7 @@ on:
     branches: master
 
 jobs:
-  test-braindecode:
+  test:
     runs-on: ${{ matrix.os }}
     strategy:
       name: test ${{ matrix.os }}, py-${{ matrix.python-version }}
