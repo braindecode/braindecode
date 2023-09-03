@@ -3,7 +3,7 @@ name: tests
 on:
   push:
     branches:
-      - "main"
+      - "master"
   pull_request:
     branches:
       - '*' # all branches, including forks
