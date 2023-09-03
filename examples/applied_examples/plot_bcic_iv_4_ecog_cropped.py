@@ -95,9 +95,10 @@ init_block_size = 1000
 # We select only first 30 seconds from the training dataset to limit time and memory
 # to run this example. We split training dataset into train and validation (only 6 seconds).
 # To obtain full results whole datasets should be used.
-valid_set = preprocess(copy.deepcopy(train_set), [Preprocessor('crop', tmin=24, tmax=30)])
-preprocess(train_set, [Preprocessor('crop', tmin=0, tmax=24)])
-preprocess(test_set, [Preprocessor('crop', tmin=0, tmax=24)])
+valid_set = preprocess(copy.deepcopy(train_set),
+                       [Preprocessor('crop', tmin=24, tmax=30)], n_jobs=-1)
+preprocess(train_set, [Preprocessor('crop', tmin=0, tmax=24)], n_jobs=-1)
+preprocess(test_set, [Preprocessor('crop', tmin=0, tmax=24)], n_jobs=-1)
 
 
 ######################################################################

@@ -97,7 +97,7 @@ preprocessors = [
 ]
 
 # Transform the data
-preprocess(dataset, preprocessors)
+preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
@@ -254,7 +254,7 @@ weight_decay = 0
 # weight_decay = 0.5 * 0.001
 
 batch_size = 64
-n_epochs = 4
+n_epochs = 2
 
 clf = EEGClassifier(
     model,

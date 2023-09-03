@@ -26,7 +26,7 @@ There are different ways to install Braindecode, depending on your needs and:
             For Beginners
 
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        .. image:: ../../source/_static/braindecode_install.png
+        .. image:: https://braindecode.org/dev/_static/braindecode_install.png
            :alt: Braindecode Installer with pip
 
         +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

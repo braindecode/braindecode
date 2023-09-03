@@ -25,6 +25,9 @@ Enhancements
 - Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
 - Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
 - Replacing the replacing Pytorch layers to Rearrange from einops #468  (:gh:`468` by `Bruno Aristimunha`_)
+- Solving issues with slow conda and splitting the doc and test .yml to speed the CI. (:gh:`479` by `Bruno Aristimunha`_)
+- Refactoring the documentation and creating a sub-structure for the examples (:gh:`470` by `Denis A. Engemann`_ and `Bruno Aristimunha`_)
+- Improving the GitHub Actions CI and solving the skorch compatibility in the examples (:gh:`472` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
