@@ -1,21 +1,37 @@
 name: tests
 
 on:
+  push:
+    branches:
+      - "main"
   pull_request:
-
+    branches:
+      - '*' # all branches, including forks
 
 jobs:
+  check_skip:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.result_step.outputs.ci-skip }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - id: result_step
+        uses: mstachniuk/ci-skip@master
+        with:
+          commit-filter: '[skip ci];[ci skip];[skip github]'
+          commit-filter-separator: ';'
+
   test:
+    needs: check_skip
+    if: ${{ needs.check_skip.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        os: [ "ubuntu-latest", "macos-latest", "windows-latest" ]
         python-version: ["3.7", "3.8", "3.9", "3.10"]
-    defaults:
-      run:
-        shell: bash -l {0}
-    name: dev ${{ matrix.os }}, py-${{ matrix.python-version }}
     steps:
     ## Install Braindecode
     - name: Checking Out Repository
@@ -29,29 +45,15 @@ jobs:
       with:
         path: ~/mne_data
         key: ${{ runner.os }}-v3
-    - name: Setting Up Conda Braindecode Environment
-      uses: conda-incubator/setup-miniconda@v2.2.0
+    - uses: actions/setup-python@v4
       with:
-        environment-file: environment.yml
         python-version: ${{ matrix.python-version }}
-        auto-update-conda: true
-        use-mamba: true
-        miniforge-variant: Mambaforge
-        channels: conda-forge
-        activate-environment: braindecode
-      # Show Conda and Python Versions
-    - run: conda --version
-    - run: conda info --envs
-    - run: which python
     # Update pip
     - name: Update pip
       run: pip install --upgrade pip
-    # Install MOABB as well
-    - name: Install MOABB
-      run: pip install moabb
-    # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
-    - name: Install Skorch version from pip
-      run: pip install skorch
+    # Install MOABB, skorch, torch as well
+    - name: Install MOABB skorch torch
+      run: pip install moabb skorch torch
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
