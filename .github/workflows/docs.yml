@@ -1,8 +1,11 @@
 name: docs
 on:
-  pull_request:
   push:
-    branches: master
+    branches:
+      - "main"
+  pull_request:
+    branches:
+      - '*' # all branches, including forks
 
 jobs:
   build_docs:
@@ -20,31 +23,17 @@ jobs:
         with:
           path: ~/mne_data
           key: ${{ runner.os }}-v3
-      - name: Setting Up Conda Braindecode Environment
-        uses: conda-incubator/setup-miniconda@v2.2.0
+      - uses: actions/setup-python@v4
         with:
-          environment-file: environment.yml
-          python-version: 3.8
-          auto-update-conda: true
-          use-mamba: true
-          miniforge-variant: Mambaforge
-          channels: conda-forge
-          activate-environment: braindecode
-        # Show Conda and Python Versions
-      - run: conda --version
-      - run: conda info --envs
+          python-version: ${{ matrix.python-version }}
       - run: which python
       # Update pip
       - name: Update pip
         run: pip install --upgrade pip
-      # Install MOABB as well
-      - name: Install MOABB
-        run: pip install moabb
+      # Install MOABB, Skorch and torch as well
+      - name: Install MOABB, Skorch, Torch
+        run: pip install moabb skorch torch
       # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
-      - name: Install Skorch version from pip
-        run: pip install skorch
-      - name: Install Torch
-        run: conda install pytorch pytorch-cuda -c pytorch
       - name: Install Braindecode from Current Checkout
         run: pip install -e .
       # Show Braindecode Version
