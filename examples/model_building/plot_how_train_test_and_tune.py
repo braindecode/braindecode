@@ -658,7 +658,7 @@ search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
 print(
-    f"Best hyperparameters were {best_run['params']} which gave a validation "
+    f"Best hyperparameters were {best_run['params'].to_string()} which gave a validation "
     f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
     f"accuracy of {best_run['mean_train_score'] * 100:.2f}%)."
 )
