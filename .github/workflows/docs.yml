@@ -43,7 +43,7 @@ jobs:
       # Use skorch github master if requested, otherwise has been installed via conda in environment.yaml
       - name: Install Skorch version from pip
         run: pip install skorch
-      - name: Install Torchvision
+      - name: Install Torch
         run: conda install pytorch pytorch-cuda -c pytorch
       - name: Install Braindecode from Current Checkout
         run: pip install -e .
