@@ -4,7 +4,7 @@ on:
   push:
     branches: master
 
-  Generate-Docs:
+  generate-docs:
     runs-on: ubuntu-latest
     steps:
       ## Install Braindecode
