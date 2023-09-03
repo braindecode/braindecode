@@ -6,18 +6,17 @@ on:
 
 jobs:
   test:
+    name: dev ${{ matrix.os }}, py-${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
-      name: test ${{ matrix.os }}, py-${{ matrix.python-version }}
       fail-fast: true
       matrix:
-        os: [ ubuntu-latest, macOS-latest, windows-latest ]
-        python-version: [3.7, 3.8, 3.9, '3.10']
+        os: [ ubuntu-latest, windows-latest, macOS-latest ]
+        python-version: [ "3.7" , "3.8", "3.9", '3.10']
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash
     steps:
-
     ## Install Braindecode
     - name: Checking Out Repository
       uses: actions/checkout@v2
