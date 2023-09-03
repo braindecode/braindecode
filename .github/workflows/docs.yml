@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       # Show Python Version
-      - run: python –version
+      - run: python –-version
       # Update pip
       - name: Update pip
         run: pip install --upgrade pip
