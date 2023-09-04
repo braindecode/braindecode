@@ -36,11 +36,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
 
     def __init__(
             self,
-            n_channels: int = None,
-            channel_names: List[str] = None,
-            input_window_samples: int = None,
-            input_window_seconds: float = None,
-            sfreq: float = None,
+            n_channels: Optional[int] = None,
+            channel_names: Optional[List[str]] = None,
+            input_window_samples: Optional[int] = None,
+            input_window_seconds: Optional[float] = None,
+            sfreq: Optional[float] = None,
     ):
         if (
                 n_channels is not None and
