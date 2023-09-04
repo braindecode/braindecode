@@ -2,7 +2,8 @@
 Convolutional neural network regression model on fake data
 ==========================================================
 
-This example shows how to train a CNN regression model on fake dataset.
+This example shows how to create a CNN regressor from a CNN classifier by removing `softmax` 
+function from the classifier's output layer. 
 
 """
 
@@ -64,19 +65,47 @@ dataset = fake_regression_dataset(n_fake_recs=n_fake_rec, n_fake_chs=n_fake_chan
 ###################################################################################################
 # Defining a CNN model
 # ----------------------
-# Choosing and defining a CNN model, ShallowFBCSPNet or Deep4Net, introduced in [1]_. 
-# and choosing the processor 
-# (GPU/CPU) where the model training and evaluation will take place 
-# (by default is GPU if it exists).
+# Choosing and defining a CNN classifier, `ShallowFBCSPNet` or `Deep4Net`, introduced in [1]_.
+# To convert a classifier to a regressor, `softmax` function is removed from its output layer.
 import torch
 from braindecode.util import set_random_seeds
 from braindecode.models import Deep4Net
 from braindecode.models import ShallowFBCSPNet
 
 # Choosing a CNN model
-model_name = "deep"  # 'shallow' or 'deep'
+model_name = "shallow"  # 'shallow' or 'deep'
 
+# Defining a CNN model
+if model_name in ["shallow", "Shallow", "ShallowConvNet"]:
+    model_clf = ShallowFBCSPNet(in_chans=n_fake_chans, n_classes=n_fake_targets,
+                                input_window_samples=fake_sfreq * fake_duration,
+                                n_filters_time=40, n_filters_spat=40,
+                                final_conv_length=35,)
+elif model_name in ["deep", "Deep", "DeepConvNet"]:
+    model_clf = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
+                         input_window_samples=fake_sfreq * fake_duration,
+                         n_filters_time=25, n_filters_spat=25,
+                         stride_before_pool=True,
+                         n_filters_2=n_fake_chans * 2,
+                         n_filters_3=n_fake_chans * 4,
+                         n_filters_4=n_fake_chans * 8,
+                         final_conv_length=1,)
+else:
+    raise ValueError(f'{model_name} unknown')
+
+# Conversion of the CNN classifier into regressor 
+# by removing `softmax` function from the last layer. 
+model_reg = torch.nn.Sequential()
+for name, module_ in model_clf.named_children():
+    if "softmax" in name:
+        continue
+    model_reg.add_module(name, module_)
+model = model_reg
+
+###################################################################################################
 # Choosing between GPU and CPU processors
+# ---------------------------------------
+# By default, model training and evaluation take place at GPU if it exists, otherwise on CPU.
 cuda = torch.cuda.is_available()
 device = 'cuda' if cuda else 'cpu'
 if cuda:
@@ -85,46 +114,17 @@ if cuda:
 # Setting a random seed
 seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
-
-# Defining a CNN model
-if model_name in ["shallow", "Shallow", "ShallowConvNet"]:
-    model = ShallowFBCSPNet(in_chans=n_fake_chans, n_classes=n_fake_targets,
-                            input_window_samples=fake_sfreq * fake_duration,
-                            n_filters_time=40, n_filters_spat=40,
-                            final_conv_length=35,)
-elif model_name in ["deep", "Deep", "DeepConvNet"]:
-    model = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
-                     input_window_samples=fake_sfreq * fake_duration,
-                     n_filters_time=25, n_filters_spat=25,
-                     stride_before_pool=True,
-                     n_filters_2=n_fake_chans * 2,
-                     n_filters_3=n_fake_chans * 4,
-                     n_filters_4=n_fake_chans * 8,
-                     final_conv_length=1,)
-else:
-    raise ValueError(f'{model_name} unknown')
-
-
-# Conversion of the CNN classifier into regressor 
-# by removing `softmax` function from the last layer. 
-new_model = torch.nn.Sequential()
-for name, module_ in model.named_children():
-    if "softmax" in name:
-        continue
-    new_model.add_module(name, module_)
-model = new_model
-
 if cuda:
     model.cuda()
-
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
-to_dense_prediction_model(model)
 ###################################################################################################
 # Data windowing
 # ----------------
 # Windowing data with a sliding window and splitting into train and valid subsets. 
-n_preds_per_input = get_output_shape(model, n_fake_chans, fake_sfreq * fake_duration)[2]
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.preprocessing import create_fixed_length_windows
+
+to_dense_prediction_model(model)
+n_preds_per_input = get_output_shape(model, n_fake_chans, fake_sfreq * fake_duration)[2]
 windows_dataset = create_fixed_length_windows(dataset,
                                               start_offset_samples=0, stop_offset_samples=0,
                                               window_size_samples=fake_sfreq * fake_duration,
@@ -137,7 +137,9 @@ valid_set = splits["eval"]
 ###################################################################################################
 # Model training
 # -----------------
-# 
+# Model is trained by minimizing MSE loss between ground truth and estimated value averaged over 
+# a period of time using AdamW optimizer [2]_, [3]_. Learning rate is managed by CosineAnnealingLR
+# learning rate scheduler.
 from braindecode import EEGRegressor
 from braindecode.training.losses import CroppedLoss
 from skorch.callbacks import LRScheduler
@@ -167,3 +169,8 @@ regressor.fit(train_set, y=None, epochs=n_epochs)
 #        Deep learning with convolutional neural networks for EEG decoding and visualization. 
 #        Human brain mapping, 38(11), 5391-5420.
 #
+# .. [2] Kingma, Diederik P., and Jimmy Ba. 
+#        "Adam: A method for stochastic optimization." arXiv preprint arXiv:1412.6980 (2014).
+#
+# .. [3] Reddi, Sashank J., Satyen Kale, and Sanjiv Kumar. 
+#        "On the convergence of adam and beyond." arXiv preprint arXiv:1904.09237 (2019).
