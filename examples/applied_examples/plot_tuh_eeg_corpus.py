@@ -118,7 +118,7 @@ tuh = select_by_duration(tuh, tmin, tmax)
 ###############################################################################
 # Next, we will discard all recordings that have an incomplete channel
 # configuration on the channels that we are interested. The dataset is subdivided into
-# recordings with 'le' and 'ar' (?) reference which we will have to consider.
+# recordings with 'le' and 'ar' reference which we will have to consider.
 
 short_ch_names = sorted([
     'A1', 'A2',
@@ -217,8 +217,9 @@ preprocessors = [
 # Next, we apply the preprocessors on the selected recordings in parallel.
 # We additionally use the serialization functionality of
 # :func:`braindecode.preprocessing.preprocess` to limit memory usage during
-# preprocessing (as each file must be loaded into memory for some of the
-# preprocessing steps to work). This also makes it possible to use the lazy
+# preprocessing, as each file must be loaded into memory for some of the
+# preprocessing steps to work.
+# This also makes it possible to use the lazy
 # loading capabilities of :class:`braindecode.datasets.BaseConcatDataset`, as
 # the preprocessed data is automatically reloaded with ``preload=False``.
 #
