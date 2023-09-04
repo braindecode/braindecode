@@ -662,7 +662,12 @@ search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
 
-best_parameters = best_run["params"].to_string()
+best_parameters = best_run["params"]
+
+if type(best_parameters) is dict:
+    best_parameters = str(best_parameters.items())
+else:
+    best_parameters = best_parameters.to_string()
 
 print(
     f"Best hyperparameters were {best_parameters} which gave a validation "
