@@ -52,7 +52,7 @@ jobs:
       run: pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
     - name: Upload Coverage to Codecov
       uses: codecov/codecov-action@v3
-      if: success()
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.7'}}
       with:
         fail_ci_if_error: true
         file: ./coverage.xml
