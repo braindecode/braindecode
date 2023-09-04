@@ -6,29 +6,27 @@ This tutorial shows you how to train and test deep learning models with
 Braindecode in a classical EEG setting: you have trials of data with
 labels (e.g., Right Hand, Left Hand, etc.).
 
-References
-----------
-.. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
-        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
-        Deep learning with convolutional neural networks for EEG decoding and visualization.
-        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+.. contents:: This example covers:
+   :local:
+   :depth: 2
+
 """
 
 ######################################################################
-# Loading and preprocessing the dataset
+# Loading and preparing the data
 # -------------------------------------
 #
 
 
 ######################################################################
-# Loading
-# ~~~~~~~
+# Loading a MOABB dataset
+# ~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
 ######################################################################
 # First, we load the data. In this tutorial, we load the BCI Competition
-# IV 2a data by using braindecode to load datasets through
+# IV 2a data by using braindecode to load through
 # `MOABB <https://github.com/NeuroTechX/moabb>`__.
 #
 # .. note::
@@ -90,8 +88,8 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
-# Cut Compute Windows
-# ~~~~~~~~~~~~~~~~~~~
+# Cutting Compute Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
@@ -123,8 +121,8 @@ windows_dataset = create_windows_from_events(
 
 
 ######################################################################
-# Split dataset into train and valid
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Splitting the dataset into training and validation sets
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
@@ -140,7 +138,7 @@ valid_set = splitted['session_E']
 
 
 ######################################################################
-# Create model
+# Creating a model
 # ------------
 #
 
@@ -190,8 +188,8 @@ if cuda:
 
 
 ######################################################################
-# Training
-# --------
+# Model Training
+# --------------
 #
 
 
@@ -245,7 +243,7 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
-# Plot Results
+# Plotting Results
 # ------------
 #
 
@@ -294,13 +292,13 @@ plt.tight_layout()
 
 
 ######################################################################
-# Plot Confusion Matrix
-# ---------------------
+# Plotting a  Confusion Matrix
+# ----------------------------
 #
 
 
 #######################################################################
-# Generate a confusion matrix as in [1]_.
+# Here we generate a confusion matrix as in [1]_.
 #
 
 
@@ -323,3 +321,10 @@ labels = list(dict(sorted(list(label_dict), key=lambda kv: kv[1])).keys())
 
 # plot the basic conf. matrix
 plot_confusion_matrix(confusion_mat, class_names=labels)
+
+# References
+# ----------
+# .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
+#        Deep learning with convolutional neural networks for EEG decoding and visualization.
+#        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
