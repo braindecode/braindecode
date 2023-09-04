@@ -59,6 +59,7 @@ extensions = [
     "sphinx.ext.linkcode",
     "sphinx_design",
     'numpydoc',
+    'pydata_sphinx_theme',
     'gh_substitutions',
 ]
 
