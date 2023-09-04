@@ -3,6 +3,10 @@
 Cropped Decoding on BCIC IV 2a Dataset
 ======================================
 
+.. contents:: This example covers:
+   :local:
+   :depth: 2
+
 """
 
 ######################################################################
@@ -352,6 +356,9 @@ labels = list(dict(sorted(list(label_dict), key=lambda kv: kv[1])).keys())
 # plot the basic conf. matrix
 plot_confusion_matrix(confusion_mat, class_names=labels)
 
+##########################################################################
+#
+#
 # References
 # ----------
 # .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
