@@ -13,6 +13,9 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
 
     Parameters
     ----------
+    n_outputs: int
+        Number of outputs of the model. This is the number of classes
+        in the case of classification.
     n_channels: int
         Number of EEG channels.
     ch_names: list of str
@@ -37,6 +40,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
 
     def __init__(
             self,
+            n_outputs: Optional[int] = None,
             n_channels: Optional[int] = None,
             ch_names: Optional[List[str]] = None,
             n_times: Optional[int] = None,
@@ -59,6 +63,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
                 f'{n_times=} different from '
                 f'{input_window_seconds=} * {sfreq=}'
             )
+        self._n_outputs = n_outputs
         self._n_channels = n_channels
         self._ch_names = ch_names
         self._n_times = n_times
@@ -66,6 +71,12 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         self._sfreq = sfreq
         super().__init__()
 
+    @property
+    def n_outputs(self):
+        if self._n_outputs is None:
+            raise AttributeError('n_outputs not specified.')
+        return self._n_outputs
+    
     @property
     def n_channels(self):
         if self._n_channels is None and self._ch_names is not None:
