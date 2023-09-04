@@ -11,9 +11,13 @@ defining a model, and other details which are not exclusive to this page (compar
 `Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
-In general we distinguish between "usual" training and evaluation and hyperparameter search.
+In general, we distinguish between "usual" training and evaluation and hyperparameter search.
 The tutorial is therefore split into two parts, one for the three different training schemes
 and one for the two different hyperparameter tuning methods.
+
+.. contents:: This example covers:
+   :local:
+   :depth: 2
 
 """
 
