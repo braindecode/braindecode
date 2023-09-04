@@ -2,7 +2,7 @@
 #
 # License: BSD-3
 
-from typing import List
+from typing import List, Optional
 
 from docstring_inheritance import NumpyDocstringInheritanceMeta
 
@@ -31,7 +31,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
 
     Raises
     ------
-    AttributeError: If some input signal-related parameters are not specified and can not be inferred.
+    AttributeError: If some input signal-related parameters are not specified
+    and can not be inferred.
     """
 
     def __init__(
@@ -88,8 +89,10 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         ):
             return int(self._input_window_seconds * self._sfreq)
         elif self._input_window_samples is None:
-            raise AttributeError('input_window_samples could not be inferred. '
-                                 'Either specify input_window_samples or input_window_seconds and sfreq.')
+            raise AttributeError(
+                'input_window_samples could not be inferred. '
+                'Either specify input_window_samples or input_window_seconds and sfreq.'
+            )
         return self._input_window_samples
 
     @property
@@ -101,8 +104,10 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         ):
             return self._input_window_samples / self._sfreq
         elif self._input_window_seconds is None:
-            raise AttributeError('input_window_seconds could not be inferred. '
-                                 'Either specify input_window_seconds or input_window_samples and sfreq.')
+            raise AttributeError(
+                'input_window_seconds could not be inferred. '
+                'Either specify input_window_seconds or input_window_samples and sfreq.'
+            )
         return self._input_window_seconds
 
     @property
@@ -114,6 +119,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         ):
             return self._input_window_samples / self._input_window_seconds
         elif self._sfreq is None:
-            raise AttributeError('sfreq could not be inferred. '
-                                 'Either specify sfreq or input_window_seconds and input_window_samples.')
+            raise AttributeError(
+                'sfreq could not be inferred. '
+                'Either specify sfreq or input_window_seconds and input_window_samples.'
+            )
         return self._sfreq
