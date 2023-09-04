@@ -15,7 +15,7 @@ parameters for one decoding task or specific dataset.
     batch size, etc. On the other hand, parameters are learned during
     training, such as the neural network weights. The choice of these
     can have a significant impact on the performance of the model.
-    Therefore, it is important to tune these to maximalize the discriminative
+    Therefore, it is important to tune these to maximize the discriminative
     power of the model, in the case of decoding task (classification,
     regression, etc.), such as sleep staging, BCI, pathology detection, etc.
     We recommend the Deep Learning Tuning Playbook by Google to learn more
