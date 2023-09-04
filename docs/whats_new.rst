@@ -29,6 +29,7 @@ Enhancements
 - Refactoring the documentation and creating a sub-structure for the examples (:gh:`470` by `Denis A. Engemann`_ and `Bruno Aristimunha`_)
 - Improving the GitHub Actions CI and solving the skorch compatibility in the examples (:gh:`472` by `Bruno Aristimunha`_)
 - Improve the documentation for the Temple University Hospital (TUH) EEG Corpus with discrete targets (:gh:`485` by `Pierre Guetschel`_ and `Bruno Aristimunha`_)
+- Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
