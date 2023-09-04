@@ -1,7 +1,13 @@
+# Authors: Pierre Guetschel
+#
+# License: BSD-3
+
 from typing import List
 
+from docstring_inheritance import NumpyDocstringInheritanceMeta
 
-class EEGModuleMixin:
+
+class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
     """
     Mixin class for EEG models.
 
@@ -57,6 +63,7 @@ class EEGModuleMixin:
         self._input_window_samples = input_window_samples
         self._input_window_seconds = input_window_seconds
         self._sfreq = sfreq
+        super().__init__()
 
     @property
     def n_channels(self):

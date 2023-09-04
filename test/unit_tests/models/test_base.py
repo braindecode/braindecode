@@ -4,8 +4,24 @@
 
 
 import pytest
+from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+
+
+class DummyModule(EEGModuleMixin, nn.Sequential):
+    ''' Dummy module for testing EEGModuleMixin
+
+    Parameters
+    ----------
+    a: int
+        Dummy parameter.
+    '''
+    pass
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_module('dummy', nn.Linear(1, 1))
 
 
 class TestEEGModuleMixin:
@@ -28,7 +44,7 @@ class TestEEGModuleMixin:
             input_window_seconds,
             sfreq,
     ):
-        module = EEGModuleMixin(
+        module = DummyModule(
             n_channels=n_channels,
             channel_names=channel_names,
             input_window_samples=input_window_samples,
@@ -60,7 +76,7 @@ class TestEEGModuleMixin:
             input_window_seconds,
             sfreq,
     ):
-        module = EEGModuleMixin(
+        module = DummyModule(
             n_channels=n_channels,
             channel_names=channel_names,
             input_window_samples=input_window_samples,
@@ -89,10 +105,16 @@ class TestEEGModuleMixin:
             sfreq,
     ):
         with pytest.raises(ValueError):
-            _ = EEGModuleMixin(
+            _ = DummyModule(
                 n_channels=n_channels,
                 channel_names=channel_names,
                 input_window_samples=input_window_samples,
                 input_window_seconds=input_window_seconds,
                 sfreq=sfreq,
+            )
+
+    def test_inexistent_param(self):
+        with pytest.raises(TypeError):
+            _ = DummyModule(
+                inexistant_param=1,
             )
