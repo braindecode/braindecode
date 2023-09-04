@@ -29,6 +29,7 @@ Enhancements
 - Refactoring the documentation and creating a sub-structure for the examples (:gh:`470` by `Denis A. Engemann`_ and `Bruno Aristimunha`_)
 - Improving the GitHub Actions CI and solving the skorch compatibility in the examples (:gh:`472` by `Bruno Aristimunha`_)
 - Changing the documentation order (:gh:`489` by `Bruno Aristimunha`_)
+- Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
 - Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
 
 Bugs
