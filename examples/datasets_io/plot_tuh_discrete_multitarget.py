@@ -2,7 +2,9 @@
 Multiple discrete targets with the TUH EEG Corpus
 =================================================
 
-Welcome to this tutorial where we demonstrate how to work with multiple discrete targets for each recording in the TUH EEG Corpus. We'll guide you through the process step by step.
+Welcome to this tutorial where we demonstrate how to work with multiple discrete
+ targets for each recording in the TUH EEG Corpus. We'll guide you through the
+ process step by step.
 
 """
 
@@ -16,7 +18,9 @@ from torch.utils.data import DataLoader
 from braindecode.datasets import TUH
 from braindecode.preprocessing import create_fixed_length_windows
 
-## Setting Logging Level
+# Setting Logging Level
+# ----------------------
+#
 # We'll set the logging level to 'ERROR' to avoid excessive messages when
 # extracting windows:
 
@@ -47,8 +51,6 @@ tuh = TUH(
     add_physician_reports=False,
 )
 print(tuh.description)
-
-
 
 ###############################################################################
 # Exploring Data
