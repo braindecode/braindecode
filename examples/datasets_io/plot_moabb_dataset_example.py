@@ -12,11 +12,7 @@ with Braindecode.
 #
 # License: BSD (3-clause)
 
-import matplotlib.pyplot as plt
-
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import \
-    create_windows_from_events, create_fixed_length_windows
 from braindecode.preprocessing import preprocess, Preprocessor
 
 ###############################################################################
