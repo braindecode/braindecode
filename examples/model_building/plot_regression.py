@@ -3,7 +3,7 @@ Convolutional neural network regression model on fake data
 ==========================================================
 
 This example shows how to create a CNN regressor from a CNN classifier by removing `softmax` 
-function from the classifier's output layer. 
+function from the classifier's output layer and how to train it on a fake regression dataset. 
 
 """
 
@@ -105,7 +105,7 @@ model = model_reg
 ###################################################################################################
 # Choosing between GPU and CPU processors
 # ---------------------------------------
-# By default, model training and evaluation take place at GPU if it exists, otherwise on CPU.
+# By default, model's training and evaluation take place at GPU if it exists, otherwise on CPU.
 cuda = torch.cuda.is_available()
 device = 'cuda' if cuda else 'cpu'
 if cuda:
