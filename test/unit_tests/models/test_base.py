@@ -25,7 +25,7 @@ class DummyModule(EEGModuleMixin, nn.Sequential):
 
 
 @pytest.mark.parametrize(
-    'n_outputs, n_channels, ch_names, n_times, input_window_seconds, sfreq',
+    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
     [
         (None, 1, ['ch1'], 200, 2., 100.),
         (1, None, None, 200, 2., 100.),
@@ -38,7 +38,7 @@ class DummyModule(EEGModuleMixin, nn.Sequential):
 )
 def test_missing_params(
         n_outputs,
-        n_channels,
+        n_chans,
         ch_names,
         n_times,
         input_window_seconds,
@@ -46,7 +46,7 @@ def test_missing_params(
 ):
     module = DummyModule(
         n_outputs=n_outputs,
-        n_channels=n_channels,
+        n_chans=n_chans,
         ch_names=ch_names,
         n_times=n_times,
         input_window_seconds=input_window_seconds,
@@ -54,7 +54,7 @@ def test_missing_params(
     )
     with pytest.raises(AttributeError):
         assert module.n_outputs == 1
-        assert module.n_channels == 1
+        assert module.n_chans == 1
         assert module.ch_names == ['ch1']
         assert module.n_times == 200
         assert module.input_window_seconds == 2.
@@ -62,7 +62,7 @@ def test_missing_params(
 
 
 @pytest.mark.parametrize(
-    'n_outputs, n_channels, ch_names, n_times, input_window_seconds, sfreq',
+    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
     [
         (1, 1, ['ch1'], 200, 2., 100.),
         (1, None, ['ch1'], 200, 2., 100.),
@@ -73,7 +73,7 @@ def test_missing_params(
 )
 def test_all_params(
         n_outputs,
-        n_channels,
+        n_chans,
         ch_names,
         n_times,
         input_window_seconds,
@@ -81,14 +81,14 @@ def test_all_params(
 ):
     module = DummyModule(
         n_outputs=n_outputs,
-        n_channels=n_channels,
+        n_chans=n_chans,
         ch_names=ch_names,
         n_times=n_times,
         input_window_seconds=input_window_seconds,
         sfreq=sfreq,
     )
     assert module.n_outputs == 1
-    assert module.n_channels == 1
+    assert module.n_chans == 1
     assert module.ch_names == ['ch1']
     assert module.n_times == 200
     assert module.input_window_seconds == 2.
@@ -96,7 +96,7 @@ def test_all_params(
 
 
 @pytest.mark.parametrize(
-    'n_outputs, n_channels, ch_names, n_times, input_window_seconds, sfreq',
+    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
     [
         (1, 2, ['ch1'], 200, 2., 100.),
         (1, 1, ['ch1'], 200, 3., 100.),
@@ -104,7 +104,7 @@ def test_all_params(
 )
 def test_incorrect_params(
         n_outputs,
-        n_channels,
+        n_chans,
         ch_names,
         n_times,
         input_window_seconds,
@@ -113,7 +113,7 @@ def test_incorrect_params(
     with pytest.raises(ValueError):
         _ = DummyModule(
             n_outputs=n_outputs,
-            n_channels=n_channels,
+            n_chans=n_chans,
             ch_names=ch_names,
             n_times=n_times,
             input_window_seconds=input_window_seconds,

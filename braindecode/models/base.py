@@ -16,7 +16,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
     n_outputs: int
         Number of outputs of the model. This is the number of classes
         in the case of classification.
-    n_channels: int
+    n_chans: int
         Number of EEG channels.
     ch_names: list of str
         Names of the EEG channels.
@@ -41,18 +41,18 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
     def __init__(
             self,
             n_outputs: Optional[int] = None,
-            n_channels: Optional[int] = None,
+            n_chans: Optional[int] = None,
             ch_names: Optional[List[str]] = None,
             n_times: Optional[int] = None,
             input_window_seconds: Optional[float] = None,
             sfreq: Optional[float] = None,
     ):
         if (
-                n_channels is not None and
+                n_chans is not None and
                 ch_names is not None and
-                len(ch_names) != n_channels
+                len(ch_names) != n_chans
         ):
-            raise ValueError(f'{n_channels=} different from {ch_names=} length')
+            raise ValueError(f'{n_chans=} different from {ch_names=} length')
         if (
                 n_times is not None and
                 input_window_seconds is not None and
@@ -64,7 +64,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
                 f'{input_window_seconds=} * {sfreq=}'
             )
         self._n_outputs = n_outputs
-        self._n_channels = n_channels
+        self._n_chans = n_chans
         self._ch_names = ch_names
         self._n_times = n_times
         self._input_window_seconds = input_window_seconds
@@ -76,16 +76,16 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         if self._n_outputs is None:
             raise AttributeError('n_outputs not specified.')
         return self._n_outputs
-    
+
     @property
-    def n_channels(self):
-        if self._n_channels is None and self._ch_names is not None:
+    def n_chans(self):
+        if self._n_chans is None and self._ch_names is not None:
             return len(self._ch_names)
-        elif self._n_channels is None:
+        elif self._n_chans is None:
             raise AttributeError(
-                'n_channels could not be inferred. Either specify n_channels or ch_names.'
+                'n_chans could not be inferred. Either specify n_chans or ch_names.'
             )
-        return self._n_channels
+        return self._n_chans
 
     @property
     def ch_names(self):
