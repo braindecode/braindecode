@@ -47,8 +47,7 @@ tuh.description
 # the target as [age of the subject, gender of the subject]. Let's look at the last example
 # as it has more interesting age/gender labels (compare to the last row of the dataframe above).
 x, y = tuh[-1]
-print('x:', x)
-print('y:', y)
+print(f'{x=}\n{y=}')
 
 
 ###############################################################################
@@ -75,9 +74,7 @@ tuh_windows.set_description({
 # Iterating through the dataset gives x as ndarray(n_channels x 1000), y as
 # [age, gender], and ind. Let's look at the last example again.
 x, y, ind = tuh_windows[-1]
-print('x:', x)
-print('y:', y)
-print('ind:', ind)
+print(f'{x=}\n{y=}\n{ind=}')
 
 
 ###############################################################################
@@ -96,6 +93,4 @@ dl = DataLoader(
 # again.
 for batch_X, batch_y, batch_ind in dl:
     pass
-print('batch_X:', batch_X)
-print('batch_y:', batch_y)
-print('batch_ind:', batch_ind)
+print(f'{batch_X=}\n{batch_y=}\n{batch_ind=}')
