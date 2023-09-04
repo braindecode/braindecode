@@ -17,7 +17,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         Number of EEG channels.
     ch_names: list of str
         Names of the EEG channels.
-    input_window_samples: int
+    n_times: int
         Number of time samples of the input window.
     input_window_seconds: float
         Length of the input window in seconds.
@@ -39,7 +39,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
             self,
             n_channels: Optional[int] = None,
             ch_names: Optional[List[str]] = None,
-            input_window_samples: Optional[int] = None,
+            n_times: Optional[int] = None,
             input_window_seconds: Optional[float] = None,
             sfreq: Optional[float] = None,
     ):
@@ -50,18 +50,18 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         ):
             raise ValueError(f'{n_channels=} different from {ch_names=} length')
         if (
-                input_window_samples is not None and
+                n_times is not None and
                 input_window_seconds is not None and
                 sfreq is not None and
-                input_window_samples != int(input_window_seconds * sfreq)
+                n_times != int(input_window_seconds * sfreq)
         ):
             raise ValueError(
-                f'{input_window_samples=} different from '
+                f'{n_times=} different from '
                 f'{input_window_seconds=} * {sfreq=}'
             )
         self._n_channels = n_channels
         self._ch_names = ch_names
-        self._input_window_samples = input_window_samples
+        self._n_times = n_times
         self._input_window_seconds = input_window_seconds
         self._sfreq = sfreq
         super().__init__()
@@ -83,32 +83,32 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         return self._ch_names
 
     @property
-    def input_window_samples(self):
+    def n_times(self):
         if (
-                self._input_window_samples is None and
+                self._n_times is None and
                 self._input_window_seconds is not None and
                 self._sfreq is not None
         ):
             return int(self._input_window_seconds * self._sfreq)
-        elif self._input_window_samples is None:
+        elif self._n_times is None:
             raise AttributeError(
-                'input_window_samples could not be inferred. '
-                'Either specify input_window_samples or input_window_seconds and sfreq.'
+                'n_times could not be inferred. '
+                'Either specify n_times or input_window_seconds and sfreq.'
             )
-        return self._input_window_samples
+        return self._n_times
 
     @property
     def input_window_seconds(self):
         if (
                 self._input_window_seconds is None and
-                self._input_window_samples is not None and
+                self._n_times is not None and
                 self._sfreq is not None
         ):
-            return self._input_window_samples / self._sfreq
+            return self._n_times / self._sfreq
         elif self._input_window_seconds is None:
             raise AttributeError(
                 'input_window_seconds could not be inferred. '
-                'Either specify input_window_seconds or input_window_samples and sfreq.'
+                'Either specify input_window_seconds or n_times and sfreq.'
             )
         return self._input_window_seconds
 
@@ -117,12 +117,12 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         if (
                 self._sfreq is None and
                 self._input_window_seconds is not None and
-                self._input_window_samples is not None
+                self._n_times is not None
         ):
-            return self._input_window_samples / self._input_window_seconds
+            return self._n_times / self._input_window_seconds
         elif self._sfreq is None:
             raise AttributeError(
                 'sfreq could not be inferred. '
-                'Either specify sfreq or input_window_seconds and input_window_samples.'
+                'Either specify sfreq or input_window_seconds and n_times.'
             )
         return self._sfreq

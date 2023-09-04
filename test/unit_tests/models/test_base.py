@@ -26,7 +26,7 @@ class DummyModule(EEGModuleMixin, nn.Sequential):
 
 class TestEEGModuleMixin:
     @pytest.mark.parametrize(
-        'n_channels, ch_names, input_window_samples, input_window_seconds, sfreq',
+        'n_channels, ch_names, n_times, input_window_seconds, sfreq',
         [
             (None, None, 200, 2., 100.),
             (1, None, 200, 2., 100.),
@@ -40,26 +40,26 @@ class TestEEGModuleMixin:
             self,
             n_channels,
             ch_names,
-            input_window_samples,
+            n_times,
             input_window_seconds,
             sfreq,
     ):
         module = DummyModule(
             n_channels=n_channels,
             ch_names=ch_names,
-            input_window_samples=input_window_samples,
+            n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
         with pytest.raises(AttributeError):
             assert module.n_channels == 1
             assert module.ch_names == ['ch1']
-            assert module.input_window_samples == 200
+            assert module.n_times == 200
             assert module.input_window_seconds == 2.
             assert module.sfreq == 100.
 
     @pytest.mark.parametrize(
-        'n_channels, ch_names, input_window_samples, input_window_seconds, sfreq',
+        'n_channels, ch_names, n_times, input_window_seconds, sfreq',
         [
             (1, ['ch1'], 200, 2., 100.),
             (None, ['ch1'], 200, 2., 100.),
@@ -72,25 +72,25 @@ class TestEEGModuleMixin:
             self,
             n_channels,
             ch_names,
-            input_window_samples,
+            n_times,
             input_window_seconds,
             sfreq,
     ):
         module = DummyModule(
             n_channels=n_channels,
             ch_names=ch_names,
-            input_window_samples=input_window_samples,
+            n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
         assert module.n_channels == 1
         assert module.ch_names == ['ch1']
-        assert module.input_window_samples == 200
+        assert module.n_times == 200
         assert module.input_window_seconds == 2.
         assert module.sfreq == 100.
 
     @pytest.mark.parametrize(
-        'n_channels, ch_names, input_window_samples, input_window_seconds, sfreq',
+        'n_channels, ch_names, n_times, input_window_seconds, sfreq',
         [
             (2, ['ch1'], 200, 2., 100.),
             (1, ['ch1'], 200, 3., 100.),
@@ -100,7 +100,7 @@ class TestEEGModuleMixin:
             self,
             n_channels,
             ch_names,
-            input_window_samples,
+            n_times,
             input_window_seconds,
             sfreq,
     ):
@@ -108,7 +108,7 @@ class TestEEGModuleMixin:
             _ = DummyModule(
                 n_channels=n_channels,
                 ch_names=ch_names,
-                input_window_samples=input_window_samples,
+                n_times=n_times,
                 input_window_seconds=input_window_seconds,
                 sfreq=sfreq,
             )
