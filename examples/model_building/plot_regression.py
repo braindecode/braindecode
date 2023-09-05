@@ -25,32 +25,45 @@ from braindecode.util import create_mne_dummy_raw
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
+###################################################################################################
 # Function for generating fake regression data
-def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq, fake_duration, n_fake_targets,
+def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq,
+                            fake_duration, n_fake_targets,
                             fake_data_split=[0.6, 0.2, 0.2]):
-    """ Generates fake regression dataset.
+    """Generate a fake regression dataset.
 
-        Arguments:
-            n_fake_recs     (int)  : number of the fake recordings
-            n_fake_chs      (int)  : number of the fake EEG channels
-            fake_sfreq      (float): fake sampling frequency in Hz
-            fake_duration   (float): fake recording duration in s
-            n_fake_targets  (int)  : number of targets
-            fake_data_split (list) : list of train/valid/test subset fractions
+    Parameters
+    ----------
+    n_fake_recs : int
+        Number of fake recordings.
+    n_fake_chs : int
+        Number of fake EEG channels.
+    fake_sfreq : float
+        Fake sampling frequency in Hz.
+    fake_duration : float
+        Fake recording duration in seconds.
+    n_fake_targets : int
+        Number of targets.
+    fake_data_split : list
+        List of train/valid/test subset fractions.
 
-        Returns:
-            dataset: BaseConcatDataset object
+    Returns
+    -------
+    dataset : BaseConcatDataset object
+        The generated dataset object.
     """
+
     datasets = []
     for i in range(n_fake_recs):
         if i < int(fake_data_split[0] * n_fake_recs):
             target_subset = "train"
-        elif i < int((1-fake_data_split[2]) * n_fake_recs):
+        elif i < int((1 - fake_data_split[2]) * n_fake_recs):
             target_subset = "valid"
         else:
             target_subset = "test"
         raw, _ = create_mne_dummy_raw(n_channels=n_fake_chs,
-                                      n_times=fake_duration * fake_sfreq, sfreq=fake_sfreq)
+                                      n_times=fake_duration * fake_sfreq,
+                                      sfreq=fake_sfreq)
 
         target = np.random.randint(0, 10, n_fake_targets)
         for j in range(n_fake_targets):
@@ -59,27 +72,34 @@ def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq, fake_duration, 
 
         if n_fake_targets == 1:
             target = target[0]
-        fake_description = pd.Series(data=[target, target_subset], index=["target", "session"])
-        datasets.append(BaseDataset(raw, fake_description, target_name="target"))
+        fake_description = pd.Series(data=[target, target_subset],
+                                     index=["target", "session"])
+        datasets.append(
+            BaseDataset(raw, fake_description, target_name="target"))
 
     return BaseConcatDataset(datasets)
 
-# -------------------------------------------------------------------------------------------------
+
+####################################################################################################
 # Generating fake regression dataset
-
-
+# -----------------------------------
+#
+#
 n_fake_rec = 20
 n_fake_chans = 21
 fake_sfreq = 100
 fake_duration = 30
 n_fake_targets = 1
-dataset = fake_regression_dataset(n_fake_recs=n_fake_rec, n_fake_chs=n_fake_chans,
-                                  fake_sfreq=fake_sfreq, fake_duration=fake_duration,
+dataset = fake_regression_dataset(n_fake_recs=n_fake_rec,
+                                  n_fake_chs=n_fake_chans,
+                                  fake_sfreq=fake_sfreq,
+                                  fake_duration=fake_duration,
                                   n_fake_targets=n_fake_targets)
 
 ###################################################################################################
 # Defining a CNN regression model
 # -------------------------------
+#
 # Choosing and defining a CNN classifier, `ShallowFBCSPNet` or `Deep4Net`, introduced in [1]_.
 # To convert a classifier to a regressor, `softmax` function is removed from its output layer.
 from braindecode.util import set_random_seeds
@@ -92,10 +112,11 @@ model_name = "shallow"  # 'shallow' or 'deep'
 
 # Defining a CNN model
 if model_name in ["shallow", "Shallow", "ShallowConvNet"]:
-    model_clf = ShallowFBCSPNet(in_chans=n_fake_chans, n_classes=n_fake_targets,
+    model_clf = ShallowFBCSPNet(in_chans=n_fake_chans,
+                                n_classes=n_fake_targets,
                                 input_window_samples=fake_sfreq * fake_duration,
                                 n_filters_time=40, n_filters_spat=40,
-                                final_conv_length=35,)
+                                final_conv_length=35, )
 elif model_name in ["deep", "Deep", "DeepConvNet"]:
     model_clf = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
                          input_window_samples=fake_sfreq * fake_duration,
@@ -104,10 +125,14 @@ elif model_name in ["deep", "Deep", "DeepConvNet"]:
                          n_filters_2=n_fake_chans * 2,
                          n_filters_3=n_fake_chans * 4,
                          n_filters_4=n_fake_chans * 8,
-                         final_conv_length=1,)
+                         final_conv_length=1, )
 else:
     raise ValueError(f'{model_name} unknown')
 
+###################################################################################################
+# Converting a braindecode classifier model to a regressor model
+# ---------------------------------------------------------------
+#
 # Conversion of the CNN classifier into regressor by removing `softmax` function from the last
 # layer
 model_reg = torch.nn.Sequential()
@@ -131,6 +156,7 @@ seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 if cuda:
     model.cuda()
+
 ###################################################################################################
 # Data windowing
 # ----------------
@@ -140,12 +166,15 @@ from braindecode.preprocessing import create_fixed_length_windows
 
 window_size_samples = fake_sfreq * fake_duration // 3
 to_dense_prediction_model(model)
-n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[2]
+n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[
+    2]
 windows_dataset = create_fixed_length_windows(dataset,
-                                              start_offset_samples=0, stop_offset_samples=0,
+                                              start_offset_samples=0,
+                                              stop_offset_samples=0,
                                               window_size_samples=window_size_samples,
                                               window_stride_samples=n_preds_per_input,
-                                              drop_last_window=False, drop_bad_windows=True,
+                                              drop_last_window=False,
+                                              drop_bad_windows=True,
                                               preload=True)
 
 # Splitting windowed data into train, valid and test subsets.
@@ -164,6 +193,7 @@ from braindecode import EEGRegressor
 from braindecode.training.losses import CroppedLoss
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
+
 batch_size = 4
 n_epochs = 3
 optimizer_lr = 0.001
@@ -172,18 +202,24 @@ regressor = EEGRegressor(model, cropped=True,
                          criterion=CroppedLoss,
                          criterion__loss_function=torch.nn.functional.mse_loss,
                          optimizer=torch.optim.AdamW,
-                         optimizer__lr=optimizer_lr, optimizer__weight_decay=optimizer_weight_decay,
+                         optimizer__lr=optimizer_lr,
+                         optimizer__weight_decay=optimizer_weight_decay,
                          train_split=predefined_split(valid_set),
                          iterator_train__shuffle=True,
                          batch_size=batch_size,
                          callbacks=["neg_root_mean_squared_error",
                                     ("lr_scheduler",
-                                     LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),],
-                         device=device,)
+                                     LRScheduler('CosineAnnealingLR',
+                                                 T_max=n_epochs - 1))],
+                         device=device, )
 regressor.fit(train_set, y=None, epochs=n_epochs)
 
+###################################################################################################
+# Model evaluation
+# -----------------
 # Plotting training and validation losses and negative root mean square error
 import matplotlib.pyplot as plt
+
 plt.style.use("seaborn")
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 5))
