@@ -6,7 +6,7 @@
 # License: BSD-3
 
 import copy
-
+import platform
 import mne
 import numpy as np
 import pandas as pd
@@ -61,6 +61,9 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
     assert all([not ds.windows.preload for ds in windows.datasets])
 
 
+# Skip if OS is Windows
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows")  # TODO: Fix this
 def test_windows_from_events_n_jobs(lazy_loadable_dataset):
     longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
     windows = [create_windows_from_events(
@@ -73,8 +76,7 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
     for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
         # assert ds1.windows == ds2.windows  # Runs locally, fails in CI
         assert np.allclose(ds1.windows.get_data(), ds2.windows.get_data())
-        assert pd.Series(ds1.windows.info).to_json() == \
-               pd.Series(ds2.windows.info).to_json()
+        assert pd.Series(ds1.windows.info).to_json() == pd.Series(ds2.windows.info).to_json()
         assert ds1.description.equals(ds2.description)
         assert np.array_equal(ds1.y, ds2.y)
         assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
@@ -332,6 +334,9 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
         )
 
 
+# Skip if OS is Windows
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows")  # TODO: Fix this
 def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
     longer_dataset = BaseConcatDataset([lazy_loadable_dataset.datasets[0]] * 8)
     windows = [create_fixed_length_windows(
@@ -344,8 +349,7 @@ def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
     for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
         # assert ds1.windows == ds2.windows  # Runs locally, fails in CI
         assert np.allclose(ds1.windows.get_data(), ds2.windows.get_data())
-        assert pd.Series(ds1.windows.info).to_json() == \
-               pd.Series(ds2.windows.info).to_json()
+        assert pd.Series(ds1.windows.info).to_json() == pd.Series(ds2.windows.info).to_json()
         assert ds1.description.equals(ds2.description)
         assert np.array_equal(ds1.y, ds2.y)
         assert np.array_equal(ds1.crop_inds, ds2.crop_inds)

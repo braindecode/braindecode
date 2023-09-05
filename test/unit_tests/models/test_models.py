@@ -13,7 +13,8 @@ import pytest
 from braindecode.models import (
     Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
     SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet)
+    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet,
+    EEGConformer)
 
 from braindecode.util import set_random_seeds
 
@@ -430,3 +431,132 @@ def test_eegitnet_shape():
 
     out = model(X)
     assert out.shape == (n_examples, n_classes)
+
+
+@pytest.mark.parametrize('n_classes', [5, 4, 2])
+def test_deepsleepnet(n_classes):
+    n_channels = 1
+    sfreq = 100
+    input_size_s = 30
+    n_examples = 10
+
+    model = DeepSleepNet(n_classes=n_classes, return_feats=False)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred1 = model(X)  # 3D inputs
+    y_pred2 = model(X.unsqueeze(1))  # 4D inputs
+    assert y_pred1.shape == (n_examples, n_classes)
+    assert y_pred2.shape == (n_examples, n_classes)
+    np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
+                               y_pred2.detach().cpu().numpy())
+
+
+def test_deepsleepnet_feats():
+    n_channels = 1
+    sfreq = 100
+    input_size_s = 30
+    n_classes = 3
+    n_examples = 10
+
+    model = DeepSleepNet(n_classes=n_classes, return_feats=True)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(X.unsqueeze(1))
+    assert out.shape == (n_examples, model.len_last_layer)
+
+
+def test_deepsleepnet_feats_with_hook():
+    n_channels = 1
+    sfreq = 100
+    input_size_s = 30
+    n_classes = 3
+    n_examples = 10
+
+    model = DeepSleepNet(n_classes=n_classes, return_feats=False)
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    def get_intermediate_layers(intermediate_layers, layer_name):
+        def hook(model, input, output):
+            intermediate_layers[layer_name] = output.flatten(start_dim=1).detach()
+
+        return hook
+
+    intermediate_layers = {}
+    layer_name = "features_extractor"
+    model.features_extractor.register_forward_hook(
+        get_intermediate_layers(intermediate_layers, layer_name)
+    )
+
+    y_pred = model(X.unsqueeze(1))
+    assert intermediate_layers["features_extractor"].shape == (n_examples, model.len_last_layer)
+    assert y_pred.shape == (n_examples, n_classes)
+
+
+@pytest.fixture
+def sample_input():
+    batch_size = 16
+    n_channels = 12
+    n_timesteps = 1000
+    return torch.rand(batch_size, n_channels, n_timesteps)
+
+
+@pytest.fixture
+def model():
+    return EEGConformer(n_classes=2, n_channels=12)
+
+
+def test_model_creation(model):
+    assert model is not None
+
+
+def test_conformer_forward_pass(sample_input, model):
+    output = model(sample_input)
+    assert isinstance(output, torch.Tensor)
+
+    model_with_feature = EEGConformer(n_classes=2, n_channels=12,
+                                      return_features=True)
+    output = model_with_feature(sample_input)
+
+    assert isinstance(output, tuple) and len(output) == 2
+
+
+def test_patch_embedding(sample_input, model):
+    patch_embedding = model.patch_embedding
+    x = torch.unsqueeze(sample_input, dim=1)
+    output = patch_embedding(x)
+    assert output.shape[0] == sample_input.shape[0]
+
+
+def test_model_trainable_parameters(model):
+
+    patch_parameters = model.patch_embedding.parameters()
+    transformer_parameters = model.transformer.parameters()
+    classification_parameters = model.classification_head.parameters()
+
+    trainable_patch_params = sum(p.numel()
+                                 for p in patch_parameters
+                                 if p.requires_grad)
+
+    trainable_transformer_params = sum(p.numel()
+                                       for p in transformer_parameters
+                                       if p.requires_grad)
+
+    trainable_classification_params = sum(p.numel()
+                                          for p in classification_parameters
+                                          if p.requires_grad)
+
+    assert trainable_patch_params == 22000
+    assert trainable_transformer_params == 118320
+    assert trainable_classification_params == 633186

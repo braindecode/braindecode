@@ -19,6 +19,8 @@
 
 import os
 import sys
+import inspect
+import os.path as op
 
 import matplotlib
 matplotlib.use('agg')
@@ -26,12 +28,12 @@ from datetime import datetime, timezone
 import faulthandler
 
 import sphinx_gallery  # noqa
+from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
+
 from numpydoc import numpydoc, docscrape  # noqa
 
 # -- General configuration ------------------------------------------------
 
-# If your documentation needs a minimal Sphinx version, state it here.
-#
 # If your documentation needs a minimal Sphinx version, state it here.
 needs_sphinx = '2.0'
 
@@ -49,13 +51,13 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.coverage',
     'sphinx.ext.mathjax',
-    'sphinx.ext.linkcode',
     'sphinx.ext.ifconfig',
     'sphinx.ext.intersphinx',
     'sphinx.ext.githubpages',
     'sphinx.ext.napoleon',
     'sphinx_gallery.gen_gallery',
-    'sphinx.ext.viewcode',
+    "sphinx.ext.linkcode",
+    "sphinx_design",
     'numpydoc',
     'gh_substitutions',
 ]
@@ -67,7 +69,7 @@ def linkcode_resolve(domain, info):
     Parameters
     ----------
     domain : str
-        Only useful when 'py'.
+        Only useful when "py".
     info : dict
         With keys "module" and "fullname".
 
@@ -79,29 +81,27 @@ def linkcode_resolve(domain, info):
     Notes
     -----
     This has been adapted to deal with our "verbose" decorator.
-
     Adapted from SciPy (doc/source/conf.py).
     """
-    import mne
-    if domain != 'py':
+    repo = "https://github.com/braindecode/braindecode/"
+    if domain != "py":
+        return None
+    if not info["module"]:
         return None
 
-    modname = info['module']
-    fullname = info['fullname']
+    modname = info["module"]
+    fullname = info["fullname"]
 
     submod = sys.modules.get(modname)
     if submod is None:
         return None
 
     obj = submod
-    for part in fullname.split('.'):
+    for part in fullname.split("."):
         try:
             obj = getattr(obj, part)
         except Exception:
             return None
-    # deal with our decorators properly
-    while hasattr(obj, '__wrapped__'):
-        obj = obj.__wrapped__
 
     try:
         fn = inspect.getsourcefile(obj)
@@ -114,8 +114,8 @@ def linkcode_resolve(domain, info):
             fn = None
     if not fn:
         return None
-    fn = op.relpath(fn, start=op.dirname(mne.__file__))
-    fn = '/'.join(op.normpath(fn).split(os.sep))  # in case on Windows
+    fn = op.relpath(fn, start=op.dirname(braindecode.__file__))
+    fn = "/".join(op.normpath(fn).split(os.sep))  # in case on Windows
 
     try:
         source, lineno = inspect.getsourcelines(obj)
@@ -127,14 +127,9 @@ def linkcode_resolve(domain, info):
     else:
         linespec = ""
 
-    if 'dev' in braindecode.__version__:
-        kind = 'master'
-    else:
-        kind = 'maint/%s' % ('.'.join(mne.__version__.split('.')[:2]))
-    return "http://github.com/braindecode/braindecode/blob/%s/braindecode/%s%s" % (  # noqa
-       kind, fn, linespec)
+    return f"{repo}/blob/master/braindecode/{fn}{linespec}"
 
-
+# -- Options for sphinx gallery --------------------------------------------
 faulthandler.enable()
 os.environ['_BRAINDECODE_BROWSER_NO_BLOCK'] = 'true'
 os.environ['BRAINDECODE_BROWSER_OVERVIEW_MODE'] = 'hidden'
@@ -170,14 +165,20 @@ master_doc = 'index'
 
 # General information about the project.
 
+
 # -- Project information -----------------------------------------------------
-project = 'Braindecode'
+
+project = "Braindecode"
 td = datetime.now(tz=timezone.utc)
 
 # We need to triage which date type we use so that incremental builds work
 # (Sphinx looks at variable changes and rewrites all files if some change)
 copyright = (
-    f'2018–{td.year}, Braindecode Developers.')  # noqa: E501
+    f'2012–{td.year}, Braindecode Developers. Last updated <time datetime="{td.isoformat()}" class="localized">{td.strftime("%Y-%m-%d %H:%M %Z")}</time>\n'  # noqa: E501
+    '<script type="text/javascript">$(function () { $("time.localized").each(function () { var el = $(this); el.text(new Date(el.attr("datetime")).toLocaleString([], {dateStyle: "medium", timeStyle: "long"})); }); } )</script>'
+)  # noqa: E501
+if os.getenv("BRAINDECODE_FULL_DATE", "false").lower() != "true":
+    copyright = f"2018–{td.year}, Braindecode Developers."
 
 author = 'Braindecode developers'
 
@@ -196,7 +197,7 @@ version = '.'.join(release.split('.')[:2])
 #
 # This is also used if you do content translation via gettext catalogs.
 # Usually you set "language" from the command line for these cases.
-language = None
+# language = None
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -232,6 +233,15 @@ sphinx_gallery_conf = {
     'backreferences_dir': 'generated',
     'show_memory': True,
     'reference_url': dict(braindecode=None),
+    'subsection_order': ExplicitOrder(
+        [
+            '../examples/model_building',
+            '../examples/datasets_io',
+            '../examples/advanced_training',
+            '../examples/applied_examples'
+        ]
+    ),
+    "within_subsection_order": FileNameSortKey
 }
 
 # -- Options for HTML output ----------------------------------------------
@@ -239,9 +249,7 @@ sphinx_gallery_conf = {
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-# html_theme = 'alabaster'
-
-import sphinx_rtd_theme
+import sphinx_rtd_theme  # noqa
 html_theme = "pydata_sphinx_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 switcher_version_match = 'dev' if release.endswith('dev0') else version
@@ -251,29 +259,38 @@ switcher_version_match = 'dev' if release.endswith('dev0') else version
 
 html_theme_options = {
     'icon_links': [
-        dict(name='GitHub',
-             url='https://github.com/braindecode/braindecode',
-             icon='fa-brands fa-square-github'),
+        {
+            "name": "GitHub",
+            "url": "https://github.com/braindecode/braindecode",
+            "icon": "fa-brands fa-github",
+        },
     ],
+    "github_url": "https://github.com/braindecode/braindecode",
     'icon_links_label': 'External Links',  # for screen reader
     'use_edit_page_button': False,
     'navigation_with_keys': False,
     "collapse_navigation": False,
-    "navigation_depth": 4,
+    "header_links_before_dropdown": 6,
+    "navigation_depth": 6,
     'show_toc_level': 1,
     'navbar_end': ['theme-switcher', 'version-switcher'],
     'switcher': {
       'json_url': 'https://braindecode.org/stable/_static/versions.json',
       'version_match': switcher_version_match,
     },
-    'footer_items': ['copyright'],
-    'pygment_light_style': 'default',
+    "logo": {
+        "image_light": "_static/braindecode_symbol.png",
+        "image_dark": "_static/braindecode_symbol.png",
+        "alt_text": "Braindecode Logo",
+    },
+    'footer_start': ['copyright'],
+    #'pygment_light_style': 'default',
     'analytics': dict(google_analytics_id='G-7Q43R82K6D'),
 }
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-html_logo = "_static/braindecode_small.svg"
+html_logo = "_static/braindecode_symbol.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -320,6 +337,12 @@ html_context = {
              url='https://www.inria.fr/',
              size=xl),
     ],
+    "navbar_align": "content",
+    "github_user": "braindecode",
+    "github_repo": "braindecode",
+    "github_version": "main",
+    "doc_path": "docs",
+
 }
 
 
@@ -343,7 +366,7 @@ latex_elements = {
     # 'figure_align': 'htbp',
 }
 
-latex_logo = "_static/braindecode.png"
+latex_logo = "_static/braindecode_symbol.png"
 latex_toplevel_sectioning = 'part'
 
 # Grouping the document tree into LaTeX files. List of tuples

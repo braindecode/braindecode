@@ -56,6 +56,8 @@ Models
 
     ShallowFBCSPNet
     Deep4Net
+    DeepSleepNet
+    EEGConformer
     EEGInception
     EEGInceptionERP
     EEGInceptionMI

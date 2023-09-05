@@ -2,6 +2,8 @@
 #          Robin Tibor Schirrmeister
 #
 # License: BSD-3
+import sys
+import pytest
 
 import mne
 import numpy as np
@@ -18,6 +20,7 @@ from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.util import set_random_seeds
 
 
+@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 def test_cropped_decoding():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
@@ -111,10 +114,10 @@ def test_cropped_decoding():
         train_split=train_split,
         batch_size=32,
         callbacks=['accuracy'],
+        classes=[0, 1],
     )
 
     clf.fit(train_set, y=None, epochs=4)
-
     np.testing.assert_allclose(
         clf.history[:, 'train_loss'],
         np.array(

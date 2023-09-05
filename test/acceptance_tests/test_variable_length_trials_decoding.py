@@ -2,7 +2,8 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
-
+import sys
+import pytest
 import torch
 import numpy as np
 
@@ -19,6 +20,7 @@ from braindecode.models.util import to_dense_prediction_model
 from braindecode.training import CroppedLoss
 
 
+@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 def test_variable_length_trials_cropped_decoding():
     cuda = False
     set_random_seeds(seed=20210726, cuda=cuda)
@@ -57,11 +59,12 @@ def test_variable_length_trials_cropped_decoding():
     for x, y, ind in variable_tuh_windows_train:
         break
     train_split = predefined_split(variable_tuh_windows_valid)
-
+    n_classes = len(tuh.description.pathological.unique())
+    classes = list(range(n_classes))
     # initialize a model
     model = ShallowFBCSPNet(
         in_chans=x.shape[0],
-        n_classes=len(tuh.description.pathological.unique()),
+        n_classes=n_classes,
     )
     to_dense_prediction_model(model)
     if cuda:
@@ -77,6 +80,7 @@ def test_variable_length_trials_cropped_decoding():
         batch_size=16,
         callbacks=['accuracy'],
         train_split=train_split,
+        classes=classes,
     )
     clf.fit(variable_tuh_windows_train, y=None, epochs=3)
 
@@ -92,7 +96,6 @@ def test_variable_length_trials_cropped_decoding():
         rtol=1e-1,
         atol=1e-1,
     )
-
     np.testing.assert_allclose(
         clf.history[:, 'valid_loss'],
         np.array([

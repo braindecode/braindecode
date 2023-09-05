@@ -2,6 +2,8 @@
 #          Robin Tibor Schirrmeister
 #
 # License: BSD-3
+import sys
+import pytest
 
 import mne
 import numpy as np
@@ -9,6 +11,7 @@ import torch
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch.utils.data import Dataset, Subset
+
 
 from braindecode.classifier import EEGClassifier
 from braindecode.models import ShallowFBCSPNet
@@ -30,6 +33,7 @@ class EpochsDataset(Dataset):
         return len(self.windows.events)
 
 
+@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 def test_trialwise_decoding():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
@@ -108,6 +112,7 @@ def test_trialwise_decoding():
         batch_size=30,
         callbacks=["accuracy"],
         device=device,
+        classes=[0, 1],
     )
     clf.fit(train_set, y=None, epochs=6)
 
@@ -152,7 +157,6 @@ def test_trialwise_decoding():
         rtol=1e-4,
         atol=1e-5,
     )
-
     np.testing.assert_allclose(
         clf.history[:, 'valid_accuracy'],
         np.array([

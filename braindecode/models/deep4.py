@@ -6,9 +6,10 @@ import numpy as np
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
+from einops.layers.torch import Rearrange
 
 from .modules import Expression, AvgPool2dWithConv, Ensure4d
-from .functions import identity, transpose_time_to_spat, squeeze_final_output
+from .functions import identity, squeeze_final_output
 from ..util import np_to_th
 
 
@@ -156,7 +157,8 @@ class Deep4Net(nn.Sequential):
         first_pool_class = pool_class_dict[self.first_pool_mode]
         later_pool_class = pool_class_dict[self.later_pool_mode]
         if self.split_first_layer:
-            self.add_module("dimshuffle", Expression(transpose_time_to_spat))
+            self.add_module("dimshuffle",
+                            Rearrange("batch C T 1 -> batch 1 T C"))
             self.add_module(
                 "conv_time",
                 nn.Conv2d(

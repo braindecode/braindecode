@@ -9,8 +9,9 @@ import torch
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
+from einops.layers.torch import Rearrange
 
-from .functions import transpose_time_to_spat, squeeze_final_output
+from .functions import squeeze_final_output
 from .modules import Expression, AvgPool2dWithConv, Ensure4d
 
 
@@ -57,7 +58,8 @@ class EEGResNet(nn.Sequential):
 
         self.add_module("ensuredims", Ensure4d())
         if self.split_first_layer:
-            self.add_module('dimshuffle', Expression(transpose_time_to_spat))
+            self.add_module('dimshuffle',
+                            Rearrange("batch C T 1 -> batch 1 T C"))
             self.add_module('conv_time', nn.Conv2d(1, self.n_first_filters,
                                                    (self.first_filter_length, 1),
                                                    stride=1,
@@ -229,9 +231,7 @@ class _ResidualBlock(nn.Module):
         stack_2 = self.bn2(self.conv_2(stack_1))  # next nonlin after sum
         if self.n_pad_chans != 0:
             zeros_for_padding = torch.autograd.Variable(
-                torch.zeros(x.size()[0], self.n_pad_chans // 2, x.size()[2], x.size()[3]))
-            if x.is_cuda:
-                zeros_for_padding = zeros_for_padding.cuda()
+                x.new_zeros((x.size()[0], self.n_pad_chans // 2, x.size()[2], x.size()[3])))
             x = torch.cat((zeros_for_padding, x, zeros_for_padding), dim=1)
         out = self.nonlinearity(x + stack_2)
         return out

@@ -22,9 +22,22 @@ Current 0.8 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
+- Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
+- Replacing the replacing Pytorch layers to Rearrange from einops #468  (:gh:`468` by `Bruno Aristimunha`_)
+- Solving issues with slow conda and splitting the doc and test .yml to speed the CI. (:gh:`479` by `Bruno Aristimunha`_)
+- Refactoring the documentation and creating a sub-structure for the examples (:gh:`470` by `Denis A. Engemann`_ and `Bruno Aristimunha`_)
+- Improving the GitHub Actions CI and solving the skorch compatibility in the examples (:gh:`472` by `Bruno Aristimunha`_)
+- Changing the documentation order (:gh:`489` by `Bruno Aristimunha`_)
+- Improve the documentation for the Temple University Hospital (TUH) EEG Corpus with discrete targets (:gh:`485` by `Pierre Guetschel`_ and `Bruno Aristimunha`_)
+- Improving documentation for MOABB dataset, Trialwise Decoding & Cropped Decoding (:gh:`490` by `Daniel Wilson`_)
+- Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
+- Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
+- Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
+- Fix skorch version issue (:gh:`465` by `Marco Zamboni`_)
 
 API changes
 ~~~~~~~~~~~
@@ -38,15 +51,20 @@ Enhancements
 ~~~~~~~~~~~~
 - Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
 - Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
+- Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_, `Bruno Aristimunha`_, `Robin Tibor Schirrmeister`_, `Lukas Gemein`_, `Denis A. Engemann`_ and `Oskar Størmer`_)
+- Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Theo Gnassounou`_)
+- Adding :class:`braindecode.models.EEGConformer` network (:gh:`454` by `Yonghao Song`_ and `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
+- Fixing conda env in the CI (:gh:`461` by `Bruno Aristimunha`_)
+- Fixing E231 missing whitespace after ',' untraceable error in old flake8 (:gh:`460` by `Bruno Aristimunha`_)
+- Removing deprecation warning due to torch transposition in :func:`braindecode.augmentation.functional._frequency_shift` (:gh:`446` by `Matthieu Terris`_)
 
 
 API changes
 ~~~~~~~~~~~
 - Renaming the :class:`braindecode.models.EEGInception` network as :class:`braindecode.models.EEGInceptionERP` (:gh:`428` by `Cedric Rommel`_)
-
 .. _changes_0_7_0:
 
 Current 0.7 (10-2022)
@@ -183,3 +201,8 @@ Authors
 .. _Bruno Aristimunha: https://github.com/bruAristimunha
 .. _Martin Wimpff: https://github.com/martinwimpff
 .. _Ghaith Bouallegue: https://github.com/GhBlg
+.. _Denis A. Engemann: https://github.com/dengemann
+.. _Oskar Størmer: https://github.com/ostormer
+.. _Matthieu Terris: https://github.com/matthieutrs
+.. _Yonghao Song: https://github.com/eeyhsong
+.. _Marco Zamboni: https://github.com/ZamboniMarco99
