@@ -79,30 +79,41 @@ def plt_histogram(df_of_ages_genders, alpha=0.5, fs=24, ylim=1.5, show_title=Tru
     if show_title:
         plt.suptitle("Age information", y=0.95, fontsize=fs + 5)
 
+    # First plot: Male individuals
     plt.subplot(121)
-    plt.hist(male_df["age"], bins=np.linspace(0, 100, 101), alpha=alpha, color="green", orientation="horizontal")
+    plt.hist(male_df["age"], bins=np.linspace(0, 100, 101),
+             alpha=alpha, color="green", orientation="horizontal")
     plt.axhline(np.mean(male_df["age"]), color="black",
-                label=f"mean age {np.mean(male_df['age']):.1f} ($\pm$ {np.std(male_df['age']):.1f})")
-    plt.barh(np.mean(male_df["age"]), height=2 * np.std(male_df["age"]), width=ylim, color="black", alpha=0.25)
+                label=f"mean age {np.mean(male_df['age']):.1f} "
+                      f"($\pm$ {np.std(male_df['age']):.1f})")
+    plt.barh(np.mean(male_df["age"]), height=2 * np.std(male_df["age"]),
+             width=ylim, color="black", alpha=0.25)
+
+    # Legend
     plt.xlim(0, ylim)
     plt.legend(fontsize=fs, loc="upper left")
-    plt.title(f"male ({100 * len(male_df) / len(df):.1f}%)", fontsize=fs, loc="left", y=1, x=0.05)
-    #plt.get_xaxis().set_visible(False)
+    plt.title(f"male ({100 * len(male_df) / len(df):.1f}%)",
+              fontsize=fs, loc="left", y=1, x=0.05)
     plt.yticks(color='w')
     plt.gca().invert_xaxis()
     plt.yticks(np.linspace(0, 100, 11), fontsize=fs - 5)
     plt.tick_params(labelsize=fs - 5)
 
+    # First plot: Female individuals
     plt.subplot(122)
-    plt.hist(female_df["age"], bins=np.linspace(0, 100, 101), alpha=alpha, color="orange", orientation="horizontal")
+    plt.hist(female_df["age"], bins=np.linspace(0, 100, 101),
+             alpha=alpha, color="orange", orientation="horizontal")
     plt.axhline(np.mean(female_df["age"]), color="black", linestyle="--",
-                label=f"mean age {np.mean(female_df['age']):.1f} ($\pm$ {np.std(female_df['age']):.1f})")
-    plt.barh(np.mean(female_df["age"]), height=2 * np.std(female_df["age"]), width=ylim, color="black", alpha=0.25)
+                label=f"mean age {np.mean(female_df['age']):.1f} ("
+                      f"$\pm$ {np.std(female_df['age']):.1f})")
+    plt.barh(np.mean(female_df["age"]), height=2 * np.std(female_df["age"]),
+             width=ylim, color="black", alpha=0.25)
+
+    # Label
     plt.legend(fontsize=fs, loc="upper right")
     plt.xlim(0, ylim)
-    plt.title(f"female ({100 * len(female_df) / len(df):.1f}%)", fontsize=fs, loc="right", y=1, x=0.95)
-    #plt.yticks([])
-
+    plt.title(f"female ({100 * len(female_df) / len(df):.1f}%)",
+              fontsize=fs, loc="right", y=1, x=0.95)
     plt.ylim(0, 100)
     plt.subplots_adjust(wspace=0, hspace=0)
     plt.ylabel("age [years]", fontsize=fs)
@@ -247,7 +258,7 @@ preprocessors = [
 ]
 
 ###############################################################################
-# Next, we apply the preprocessors on the selected recordings in parallel.
+# Next, we can apply the defined preprocessors on the selected recordings in parallel.
 # We additionally use the serialization functionality of
 # :func:`braindecode.preprocessing.preprocess` to limit memory usage during
 # preprocessing, as each file must be loaded into memory for some of the
@@ -270,12 +281,14 @@ tuh_preproc = preprocess(
 )
 
 ###############################################################################
+# Cut Compute Windows
+# ~~~~~~~~~~~~~
 # We can finally generate compute windows. The resulting dataset is now ready
 # to be used for model training.
 
 window_size_samples = 1000
 window_stride_samples = 1000
-# generate compute windows here and store them to disk
+# Generate compute windows here and store them to disk
 tuh_windows = create_fixed_length_windows(
     tuh_preproc,
     window_size_samples=window_size_samples,
@@ -284,5 +297,3 @@ tuh_windows = create_fixed_length_windows(
     n_jobs=N_JOBS,
 )
 
-for x, y, ind in tuh_windows:
-    break
