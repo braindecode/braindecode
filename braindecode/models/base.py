@@ -53,7 +53,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
     Raises
     ------
     AttributeError: If some input signal-related parameters are not specified
-    and can not be inferred.
+                    and can not be inferred.
     """
 
     def __init__(
