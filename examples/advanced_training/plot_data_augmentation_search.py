@@ -334,7 +334,7 @@ plt.tight_layout()
 # References
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-
+#
 # .. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
 #        Data augmentation for learning predictive models on EEG:
 #        a systematic comparison. https://arxiv.org/abs/2206.14483
