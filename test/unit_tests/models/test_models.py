@@ -88,7 +88,7 @@ def test_eegresnet_pool_length_auto(input_sizes):
 def test_hybridnet(input_sizes):
     model = HybridNet(
         input_sizes['n_channels'], input_sizes['n_classes'],
-        input_sizes['n_in_times'],)
+        input_sizes['n_in_times'], )
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
@@ -103,7 +103,7 @@ def test_eegnet_v1(input_sizes):
     model = EEGNetv1(
         input_sizes['n_channels'], input_sizes['n_classes'],
         input_window_samples=input_sizes['n_in_times'])
-    check_forward_pass(model, input_sizes,)
+    check_forward_pass(model, input_sizes, )
 
 
 def test_tcn(input_sizes):
@@ -120,7 +120,7 @@ def test_eegitnet(input_sizes):
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
 
-    check_forward_pass(model, input_sizes,)
+    check_forward_pass(model, input_sizes, )
 
 
 @pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
@@ -130,7 +130,7 @@ def test_eeginception_erp(input_sizes, model_cls):
         in_channels=input_sizes['n_channels'],
         input_window_samples=input_sizes['n_in_times'])
 
-    check_forward_pass(model, input_sizes,)
+    check_forward_pass(model, input_sizes, )
 
 
 @pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
@@ -162,7 +162,7 @@ def test_eeginception_mi(input_sizes):
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes,)
+    check_forward_pass(model, input_sizes, )
 
 
 @pytest.mark.parametrize(
@@ -198,13 +198,13 @@ def test_atcnet(input_sizes):
     sfreq = 250
     input_sizes["n_in_times"] = 1125
     model = ATCNet(
-        n_channels=input_sizes['n_channels'],
-        n_classes=input_sizes['n_classes'],
-        input_size_s=input_sizes['n_in_times'] / sfreq,
+        n_chans=input_sizes['n_channels'],
+        n_outputs=input_sizes['n_classes'],
+        input_window_seconds=input_sizes['n_in_times'] / sfreq,
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes,)
+    check_forward_pass(model, input_sizes, )
 
 
 def test_atcnet_n_params():
@@ -216,9 +216,9 @@ def test_atcnet_n_params():
     att_num_heads = 2
 
     model = ATCNet(
-        n_channels=22,
-        n_classes=4,
-        input_size_s=4.5,
+        n_chans=22,
+        n_outputs=4,
+        input_window_seconds=4.5,
         sfreq=250,
         n_windows=n_windows,
         att_head_dim=att_head_dim,
@@ -328,7 +328,7 @@ def test_sleep_stager_return_feats():
 def test_tidnet(input_sizes):
     model = TIDNet(
         input_sizes['n_channels'], input_sizes['n_classes'],
-        input_sizes['n_in_times'],)
+        input_sizes['n_in_times'], )
     check_forward_pass(model, input_sizes)
 
 
@@ -540,7 +540,6 @@ def test_patch_embedding(sample_input, model):
 
 
 def test_model_trainable_parameters(model):
-
     patch_parameters = model.patch_embedding.parameters()
     transformer_parameters = model.transformer.parameters()
     classification_parameters = model.classification_head.parameters()
