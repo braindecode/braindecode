@@ -664,18 +664,6 @@ best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
 
 best_parameters = best_run["params"]
 
-if type(best_parameters) is dict:
-    best_parameters = str(best_parameters.items())
-else:
-    best_parameters = best_parameters.to_string()
-
-print(best_parameters)
-
-print(
-    f"Best hyperparameters were which gave a validation "
-    f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
-    f"accuracy of {best_run['mean_train_score'] * 100:.2f}%)."
-)
 
 ######################################################################
 # Option 2: k-Fold Cross Validation
