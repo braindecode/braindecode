@@ -13,15 +13,15 @@ def deprecated_args(obj, *args):
     for old_name, new_name, old_val, new_val in args:
         if old_val is None:
             out_args.append(new_val)
-            continue
-        warnings.warn(
-            f'{obj.__class__.__name__}: {old_name!r} is depreciated. Use {new_name!r} instead.'
-        )
-        if new_val is not None:
-            raise ValueError(
-                f'{obj.__class__.__name__}: Both {old_name!r} and {new_name!r} were specified.'
+        else:
+            warnings.warn(
+                f'{obj.__class__.__name__}: {old_name!r} is depreciated. Use {new_name!r} instead.'
             )
-        out_args.append(old_val)
+            if new_val is not None:
+                raise ValueError(
+                    f'{obj.__class__.__name__}: Both {old_name!r} and {new_name!r} were specified.'
+                )
+            out_args.append(old_val)
     return out_args
 
 
