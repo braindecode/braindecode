@@ -673,7 +673,7 @@ print(best_parameters)
 
 print(
     f"Best hyperparameters were which gave a validation "
-    f"accuracy of "
+    f"accuracy of ", end=""
 )
 print(best_run['mean_test_score'] * 100)
 
