@@ -10,18 +10,19 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class DummyModule(EEGModuleMixin, nn.Sequential):
-    ''' Dummy module for testing EEGModuleMixin
-
-    Parameters
-    ----------
-    a: int
-        Dummy parameter.
-    '''
-    pass
+    ''' Dummy module for testing EEGModuleMixin '''
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.add_module('dummy', nn.Linear(1, 1))
+
+
+class DummyModuleNTime(EEGModuleMixin, nn.Sequential):
+    ''' Dummy module using one of the properties of EEGModuleMixin
+     in its __init__ '''
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_module('dummy', nn.Linear(self.n_times, 1))
 
 
 @pytest.mark.parametrize(
@@ -126,3 +127,30 @@ def test_inexistent_param():
         _ = DummyModule(
             inexistant_param=1,
         )
+
+
+@pytest.mark.parametrize(
+    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
+    [
+        (1, 1, ['ch1'], 200, 2., 100.),
+        (1, 1, ['ch1'], 200, 2., None),
+        (1, 1, ['ch1'], 200, None, 100.),
+        (1, 1, ['ch1'], None, 2., 100.),
+    ]
+)
+def test_init_submodule(
+        n_outputs,
+        n_chans,
+        ch_names,
+        n_times,
+        input_window_seconds,
+        sfreq,
+):
+    _ = DummyModuleNTime(
+        n_outputs=n_outputs,
+        n_chans=n_chans,
+        ch_names=ch_names,
+        n_times=n_times,
+        input_window_seconds=input_window_seconds,
+        sfreq=sfreq,
+    )
