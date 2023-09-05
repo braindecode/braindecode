@@ -10,7 +10,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 """
 
 ######################################################################
-# Building on the `Trialwise decoding, we now do more data-efficient
+# Building on the `Trialwise decoding`, we now do more data-efficient
 # cropped decoding!
 #
 # In Braindecode, there are two supported configurations created for
@@ -29,7 +29,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #    compute the loss.
 #
 # On the right, you see cropped decoding:
-#
+# 
 # 1. Instead of a complete trial, crops are pushed through the network.
 # 2. For computational efficiency, multiple neighbouring crops are pushed
 #    through the network simultaneously (these neighbouring crops are
@@ -39,6 +39,12 @@ Cropped Decoding on BCIC IV 2a Dataset
 # 4. The individual crop predictions are averaged before computing the
 #    loss function
 #
+# ``Why not calling it WindowWise decoding, as predictions are produced per window?``
+#
+# ``A bit confusing. A window is cropped into crops, these neighbouring crops are 
+# called compute windows, so a window is cropped into compute windows? 
+# Neighbouring crops constitute a compute window?``
+# 
 # .. note::
 #
 #     -  The network architecture implicitly defines the crop size (it is the
@@ -48,6 +54,9 @@ Cropped Decoding on BCIC IV 2a Dataset
 #        ``input_window_samples`` in Braindecode. It mostly affects runtime
 #        (larger window sizes should be faster). As a rule of thumb, you can
 #        set it to two times the crop size.
+#        ``How do you know crop size/receptive field size? It could be useful
+#        to have a function that returns the receptive field size, in addition
+#        to the function get_output_shape given the forumula below.``
 #     -  Crop size and window size together define how many predictions the
 #        network makes per window: ``#window − #crop + 1 = #predictions``
 #
@@ -57,7 +66,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     identical to sampling crops in your dataset, pushing them through the
 #     network and training directly on the individual crops. At the same time,
 #     the above training setup is much faster as it avoids redundant
-#     computations by using dilated convolutions, see [1]_
+#     computations by using dilated convolutions, see [1]_.
 #     However, the two setups are only mathematically identical in case (1)
 #     your network does not use any padding or only left padding and
 #     (2) your loss function leads
@@ -65,8 +74,13 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     for our shallow and deep ConvNet models and the second is true for the
 #     log-softmax outputs and negative log likelihood loss that is typically
 #     used for classification in PyTorch.
+# ``'...the above training setup is mathematically identical to sampling crops in your dataset...'``
+# ``I think that an important difference is that in the case of sampling crops from dataset, their
+# position would be randomly selected, therefore the crops would be less correlated in contrast
+# to the neighbourhood crops selected from a window.``
 #
 
+######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
@@ -111,7 +125,7 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # stride should be.
 #
 # We first choose the compute/input window size that will be fed to the
-# network during training This has to be larger than the networks
+# network during training. This has to be larger than the networks
 # receptive field size and can otherwise be chosen for computational
 # efficiency (see explanations in the beginning of this tutorial). Here we
 # choose 1000 samples, which are 4 seconds for the 250 Hz sampling rate.
@@ -127,7 +141,9 @@ input_window_samples = 1000
 # than ``input_window_samples`` (see ``final_conv_length=30`` in the model
 # definition).
 #
-
+# ``This is confusing. At the beginning it is suggested to chose input_window_samples
+# in according to crop/receptive field size, but here receptive field size is reduced
+# to be smaller than input_window_samples.``
 import torch
 from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
@@ -178,9 +194,10 @@ to_dense_prediction_model(model)
 # To know the models’ receptive field, we calculate the shape of model
 # output for a dummy input.
 #
+# ``This is confusing as the models's receptive field is never calculated
+# and the create_windows_from_events does not use it explicitely.``
 
 n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
-
 
 ######################################################################
 # Cut the data into windows
