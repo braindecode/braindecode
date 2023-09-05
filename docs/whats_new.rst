@@ -33,7 +33,7 @@ Enhancements
 - Improving documentation for MOABB dataset, Trialwise Decoding & Cropped Decoding (:gh:`490` by `Daniel Wilson`_)
 - Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
 - Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
-- Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Pierre Guetschel`_)
+- Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Sylvain Chevallier`_)
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 - Improving documentation for the Convolutional neural network regression model on fake data (:gh:`491` by `Sara Sedlar`_)
 
