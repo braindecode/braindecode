@@ -22,6 +22,7 @@ from joblib import Parallel, delayed
 from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
+from braindecode.util import _update_moabb_docstring
 
 
 #
@@ -93,32 +94,23 @@ class Preprocessor(object):
 # those classes can be instantiated just like we did with Preprocess, and then passed
 # to the preprocess function to be applyed.
 
-"""
-# Use something like this to 
-
-def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
-    # soft dependency on moabb
-    from moabb.datasets.utils import dataset_list
-    for dataset in dataset_list:
-        if dataset_name == dataset.__name__:
-            # return an instance of the found dataset class
-            if dataset_kwargs is None:
-                return dataset()
-            else:
-                return dataset(**dataset_kwargs)
-    raise ValueError(f"{dataset_name} not found in moabb datasets")
-"""
-
 
 # Maby create this as a subclass of Preprocess? Since I will have to repeat the same structure for all
 class Resample(Preprocessor):
-    """
+    doc = """
     Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+    
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
     """
     # Something like this maby?
     try:
         from mne.filter import FilterMixin
-        __doc__ = FilterMixin.resample.__doc__
+        base_class = FilterMixin.resample
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
     except ModuleNotFoundError:
         pass
     def __init__(self, **kwargs):
@@ -135,6 +127,22 @@ class Resample(Preprocessor):
 
 # Maby create this as a subclass of Preprocess? Since I will have to repeat the same structure for all
 class DropChannels(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.filter import FilterMixin
+        base_class = FilterMixin.resample
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
+    except ModuleNotFoundError:
+        pass
+
     def __init__(self, **kwargs):
         # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
         # Removing this string parameter, because it's going to execute directly the said preprocess
@@ -152,7 +160,23 @@ class DropChannels(Preprocessor):
 
 
 class SetEEGReference(Preprocessor):
-    def __init__(self, sfreq, **kwargs):
+    doc = """
+    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.filter import FilterMixin
+        base_class = FilterMixin.resample
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
         # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
         # Removing this string parameter, because it's going to execute directly the said preprocess
         # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
@@ -162,14 +186,29 @@ class SetEEGReference(Preprocessor):
         # just pass the name in here maby?
         fn = 'set_eeg_reference'
         self.fn = fn
-        self.sfreq = sfreq
         self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
 
 class Filter(Preprocessor):
-    def __init__(self, sfreq, **kwargs):
+    doc = """
+    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.filter import FilterMixin
+        base_class = FilterMixin.resample
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
         # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
         # Removing this string parameter, because it's going to execute directly the said preprocess
         # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
@@ -179,14 +218,29 @@ class Filter(Preprocessor):
         # just pass the name in here maby?
         fn = 'filter'
         self.fn = fn
-        self.sfreq = sfreq
         self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
 
 class Pick(Preprocessor):
-    def __init__(self, sfreq, **kwargs):
+    doc = """
+    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.filter import FilterMixin
+        base_class = FilterMixin.resample
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
         # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
         # Removing this string parameter, because it's going to execute directly the said preprocess
         # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
@@ -196,13 +250,13 @@ class Pick(Preprocessor):
         # just pass the name in here maby?
         fn = 'pick'
         self.fn = fn
-        self.sfreq = sfreq
         self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
 
 ######################
+
 
 def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
                n_jobs=None):
