@@ -2,7 +2,7 @@
 Split Dataset Example
 =====================
 
-In this example, we aim to show multiple ways of how you can split your datasets fr
+In this example, we aim to show multiple ways of how you can split your datasets for
 training, testing, and evaluating your models.
 
 .. contents:: This example covers:
