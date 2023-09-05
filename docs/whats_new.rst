@@ -35,6 +35,8 @@ Enhancements
 - Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
 - Add :class:`braindecode.models.base.EEGModuleMixin` base class for all braindecode models (:gh:`488` by `Pierre Guetschel`_)
 - Normalize all models common parameters and leaving the old ones as depreciated (:gh:`488` by `Pierre Guetschel`_)
+- Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Sylvain Chevallier`_)
+- Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 
 Bugs
 ~~~~
@@ -208,3 +210,4 @@ Authors
 .. _Matthieu Terris: https://github.com/matthieutrs
 .. _Yonghao Song: https://github.com/eeyhsong
 .. _Marco Zamboni: https://github.com/ZamboniMarco99
+.. _Sylvain Chevallier: github.com/sylvchev

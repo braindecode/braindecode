@@ -669,8 +669,10 @@ if type(best_parameters) is dict:
 else:
     best_parameters = best_parameters.to_string()
 
+print(best_parameters)
+
 print(
-    f"Best hyperparameters were {best_parameters} which gave a validation "
+    f"Best hyperparameters were which gave a validation "
     f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
     f"accuracy of {best_run['mean_train_score'] * 100:.2f}%)."
 )
