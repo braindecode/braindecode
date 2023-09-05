@@ -1,0 +1,96 @@
+default_language_version:
+  python: python3
+
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit.com hooks
+  autofix_prs: true
+  autoupdate_branch: "master"
+  autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
+  autoupdate_schedule: quarterly
+  skip: []
+  submodules: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-executables-have-shebangs
+      - id: check-toml
+      - id: check-docstring-first
+      - id: check-added-large-files
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-case-conflict
+      - id: mixed-line-ending
+      - id: end-of-file-fixer
+      - id: check-case-conflict
+      - id: forbid-new-submodules
+      - id: pretty-format-json
+        args: ["--autofix", "--no-sort-keys", "--indent=4"]
+
+
+
+  -   repo: https://github.com/asottile/blacken-docs
+      rev: 1.15.0
+      hooks:
+      -   id: blacken-docs
+          additional_dependencies: [black==23.3.0]
+          exclude: ^.github/
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+
+  -   repo: https://github.com/PyCQA/flake8
+      rev: 6.1.0
+      hooks:
+      -   id: flake8
+          additional_dependencies: [
+              'flake8-blind-except',
+              'flake8-docstrings',
+              'flake8-bugbear',
+              'flake8-comprehensions',
+              'flake8-docstrings',
+              'flake8-implicit-str-concat',
+              'pydocstyle>=5.0.0',
+          ]
+          exclude: ^docs/ | ^setup\.py$ |
+
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.0.281
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix, --ignore, E501]
+
+#  - repo: https://github.com/pycqa/pydocstyle
+#    rev: 6.3.0
+#    hooks:
+#    -   id: pydocstyle
+#        args:
+#          - --ignore=D100,D203,D405
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.2.5
+    hooks:
+      - id: codespell
+        args:
+          - --ignore-words-list=additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar
+          - --skip="./.*,*.csv,*.json,*.ambr"
+          - --quiet-level=2
+        exclude_types: [csv, json]
+        exclude: ^tests/|generated/
+
+  - repo: https://github.com/adrienverge/yamllint.git
+    rev: v1.32.0
+    hooks:
+      - id: yamllint
+        exclude: >
+          (?x)^(
+            .pre-commit-config.yaml*|
+            .github/workflows/.*|
+
+          )$
