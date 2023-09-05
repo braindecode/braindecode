@@ -85,7 +85,7 @@ def plt_histogram(df_of_ages_genders, alpha=0.5, fs=24, ylim=1.5, show_title=Tru
              alpha=alpha, color="green", orientation="horizontal")
     plt.axhline(np.mean(male_df["age"]), color="black",
                 label=f"mean age {np.mean(male_df['age']):.1f} "
-                      f"($\pm$ {np.std(male_df['age']):.1f})")
+                      f"(±{np.std(male_df['age']):.1f})")
     plt.barh(np.mean(male_df["age"]), height=2 * np.std(male_df["age"]),
              width=ylim, color="black", alpha=0.25)
 
@@ -105,7 +105,7 @@ def plt_histogram(df_of_ages_genders, alpha=0.5, fs=24, ylim=1.5, show_title=Tru
              alpha=alpha, color="orange", orientation="horizontal")
     plt.axhline(np.mean(female_df["age"]), color="black", linestyle="--",
                 label=f"mean age {np.mean(female_df['age']):.1f} ("
-                      f"$\pm$ {np.std(female_df['age']):.1f})")
+                      f"±{np.std(female_df['age']):.1f})")
     plt.barh(np.mean(female_df["age"]), height=2 * np.std(female_df["age"]),
              width=ylim, color="black", alpha=0.25)
 
@@ -296,4 +296,3 @@ tuh_windows = create_fixed_length_windows(
     drop_last_window=False,
     n_jobs=N_JOBS,
 )
-
