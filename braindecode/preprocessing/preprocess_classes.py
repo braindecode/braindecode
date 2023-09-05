@@ -112,7 +112,9 @@ def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
 
 # Maby create this as a subclass of Preprocess? Since I will have to repeat the same structure for all
 class Resample(Preprocessor):
-
+    """
+    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+    """
     # Something like this maby?
     try:
         from mne.filter import FilterMixin
@@ -143,9 +145,9 @@ class DropChannels(Preprocessor):
         # just pass the name in here maby?
         fn = 'drop_channels'
         self.fn = fn
-        s#elf.ch_names = ch_names
         self.kwargs = kwargs
 
+        # Init parent
         super().__init__(fn, **kwargs)
 
 
