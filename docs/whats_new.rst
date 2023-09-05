@@ -34,6 +34,7 @@ Enhancements
 - Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
 - Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
 - Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Pierre Guetschel`_)
+- Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 
 Bugs
 ~~~~
@@ -207,4 +208,3 @@ Authors
 .. _Matthieu Terris: https://github.com/matthieutrs
 .. _Yonghao Song: https://github.com/eeyhsong
 .. _Marco Zamboni: https://github.com/ZamboniMarco99
-.. _Sylvain Chevallier: https://github.com/sylvchev
