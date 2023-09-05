@@ -61,10 +61,12 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             kernel_length=64,
             third_kernel_size=(8, 4),
             drop_prob=0.25,
+            ch_names=None,
+            input_window_seconds=None,
+            sfreq=None,
             in_chans=None,
             n_classes=None,
             input_window_samples=None,
-            **kwargs,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -73,7 +75,12 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             ("input_window_samples", "n_times", input_window_samples, n_times),
         )
         super().__init__(
-            n_chans=n_chans, n_outputs=n_outputs, n_times=n_times, **kwargs
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            ch_names=ch_names,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
         )
         if final_conv_length == "auto":
             assert self.n_times is not None
@@ -229,10 +236,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             second_kernel_size=(2, 32),
             third_kernel_size=(8, 4),
             drop_prob=0.25,
+            ch_names=None,
+            input_window_seconds=None,
+            sfreq=None,
             in_chans=None,
             n_classes=None,
             input_window_samples=None,
-            **kwargs,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -241,7 +250,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             ("input_window_samples", "n_times", input_window_samples, n_times),
         )
         super().__init__(
-            n_chans=n_chans, n_outputs=n_outputs, n_times=n_times, **kwargs
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            ch_names=ch_names,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
         )
         if final_conv_length == "auto":
             assert self.n_times is not None

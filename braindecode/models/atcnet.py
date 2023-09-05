@@ -116,10 +116,11 @@ class ATCNet(EEGModuleMixin, nn.Module):
             tcn_activation=nn.ELU(),
             concat=False,
             max_norm_const=0.25,
+            ch_names=None,
+            n_times=None,
             n_channels=None,
             n_classes=None,
             input_size_s=None,
-            **kwargs,
     ):
         n_chans, n_outputs, input_window_seconds = deprecated_args(
             self,
@@ -127,8 +128,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
             ('n_classes', 'n_outputs', n_classes, n_outputs),
             ('input_size_s', 'input_window_seconds', input_size_s, input_window_seconds),
         )
-        super().__init__(n_chans=n_chans, n_outputs=n_outputs,
-                         input_window_seconds=input_window_seconds, sfreq=sfreq, **kwargs)
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            ch_names=ch_names,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
         self.conv_block_n_filters = conv_block_n_filters
         self.conv_block_kernel_length_1 = conv_block_kernel_length_1
         self.conv_block_kernel_length_2 = conv_block_kernel_length_2
