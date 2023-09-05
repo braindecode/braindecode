@@ -92,10 +92,8 @@ class Preprocessor(object):
 # Compare with mne resample method
 # Idea: Implement classes for each preprocessing step (like Pick_types, Resample, ...)
 # those classes can be instantiated just like we did with Preprocess, and then passed
-# to the preprocess function to be applyed.
+# to the preprocess function to be applyed. What about the list idea?
 
-
-# Maby create this as a subclass of Preprocess? Since I will have to repeat the same structure for all
 class Resample(Preprocessor):
     doc = """
     Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
@@ -105,7 +103,6 @@ class Resample(Preprocessor):
     kwargs:
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
-    # Something like this maby?
     try:
         from mne.filter import FilterMixin
         base_class = FilterMixin.resample
@@ -113,11 +110,11 @@ class Resample(Preprocessor):
 
     except ModuleNotFoundError:
         pass
+
     def __init__(self, **kwargs):
         # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
         # Removing this string parameter, because it's going to execute directly the said preprocess
 
-        # just pass the name in here maby? Define inside and use with the parent class methods?
         fn = 'resample'
         self.fn = fn
         self.kwargs = kwargs
@@ -128,7 +125,7 @@ class Resample(Preprocessor):
 # Maby create this as a subclass of Preprocess? Since I will have to repeat the same structure for all
 class DropChannels(Preprocessor):
     doc = """
-    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+    Subclass of Preprocessor to drop specific channels using mne.Epochs/mne.io.Raw's method.
 
     Parameters
     ----------
@@ -144,13 +141,6 @@ class DropChannels(Preprocessor):
         pass
 
     def __init__(self, **kwargs):
-        # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
-        # Removing this string parameter, because it's going to execute directly the said preprocess
-        # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
-        #    warn('Preprocessing choices with lambda functions cannot be saved.')
-        # if callable(fn) and apply_on_array:
-
-        # just pass the name in here maby?
         fn = 'drop_channels'
         self.fn = fn
         self.kwargs = kwargs
@@ -161,7 +151,7 @@ class DropChannels(Preprocessor):
 
 class SetEEGReference(Preprocessor):
     doc = """
-    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+    Subclass of Preprocessor to specify the reference for EEG signals using mne.Epochs/mne.io.Raw's method.
 
     Parameters
     ----------
@@ -177,13 +167,6 @@ class SetEEGReference(Preprocessor):
         pass
 
     def __init__(self, **kwargs):
-        # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
-        # Removing this string parameter, because it's going to execute directly the said preprocess
-        # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
-        #    warn('Preprocessing choices with lambda functions cannot be saved.')
-        # if callable(fn) and apply_on_array:
-
-        # just pass the name in here maby?
         fn = 'set_eeg_reference'
         self.fn = fn
         self.kwargs = kwargs
@@ -193,7 +176,7 @@ class SetEEGReference(Preprocessor):
 
 class Filter(Preprocessor):
     doc = """
-    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+    Subclass of Preprocessor to perform filtering using mne.Epochs/mne.io.Raw's method.
 
     Parameters
     ----------
@@ -209,13 +192,6 @@ class Filter(Preprocessor):
         pass
 
     def __init__(self, **kwargs):
-        # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
-        # Removing this string parameter, because it's going to execute directly the said preprocess
-        # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
-        #    warn('Preprocessing choices with lambda functions cannot be saved.')
-        # if callable(fn) and apply_on_array:
-
-        # just pass the name in here maby?
         fn = 'filter'
         self.fn = fn
         self.kwargs = kwargs
@@ -225,7 +201,7 @@ class Filter(Preprocessor):
 
 class PickTypes(Preprocessor):
     doc = """
-    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+    Subclass of Preprocessor to pick type of signals using mne.Epochs/mne.io.Raw's method.
 
     Parameters
     ----------
@@ -241,22 +217,16 @@ class PickTypes(Preprocessor):
         pass
 
     def __init__(self, **kwargs):
-        # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
-        # Removing this string parameter, because it's going to execute directly the said preprocess
-        # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
-        #    warn('Preprocessing choices with lambda functions cannot be saved.')
-        # if callable(fn) and apply_on_array:
-
-        # just pass the name in here maby?
         fn = 'pick_types'
         self.fn = fn
         self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
+
 class PickChannels(Preprocessor):
     doc = """
-    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+    Subclass of Preprocessor to pick channels using mne.Epochs/mne.io.Raw's method.
 
     Parameters
     ----------
@@ -272,14 +242,31 @@ class PickChannels(Preprocessor):
         pass
 
     def __init__(self, **kwargs):
-        # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
-        # Removing this string parameter, because it's going to execute directly the said preprocess
-        # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
-        #    warn('Preprocessing choices with lambda functions cannot be saved.')
-        # if callable(fn) and apply_on_array:
-
-        # just pass the name in here maby?
         fn = 'pick_channels'
+        self.fn = fn
+        self.kwargs = kwargs
+
+        super().__init__(fn, **kwargs)
+
+class Pick(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to pick a subset of channels using mne.Epochs/mne.io.Raw's method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.pick
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        fn = 'pick'
         self.fn = fn
         self.kwargs = kwargs
 
@@ -411,6 +398,7 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
         concat_ds.save(save_dir, overwrite=overwrite, offset=ds_index)
     else:
         return ds
+
 
 # Used to get method name that is passed as a string
 def _get_preproc_kwargs(preprocessors):
