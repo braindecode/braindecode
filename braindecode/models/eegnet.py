@@ -7,7 +7,7 @@ from torch import nn
 from torch.nn.functional import elu
 from einops.layers.torch import Rearrange
 
-from .base import EEGModuleMixin, depreciated_args
+from .base import EEGModuleMixin, deprecated_args
 from .modules import Expression, Ensure4d
 from .functions import squeeze_final_output
 
@@ -66,7 +66,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             input_window_samples=None,
             **kwargs,
     ):
-        n_chans, n_outputs, n_times = depreciated_args(
+        n_chans, n_outputs, n_times = deprecated_args(
             self,
             ("in_chans", "n_chans", in_chans, n_chans),
             ("n_classes", "n_outputs", n_classes, n_outputs),
@@ -234,7 +234,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             input_window_samples=None,
             **kwargs,
     ):
-        n_chans, n_outputs, n_times = depreciated_args(
+        n_chans, n_outputs, n_times = deprecated_args(
             self,
             ("in_chans", "n_chans", in_chans, n_chans),
             ("n_classes", "n_outputs", n_classes, n_outputs),
