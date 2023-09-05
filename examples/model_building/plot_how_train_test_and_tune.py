@@ -52,7 +52,7 @@ and one for the two different hyperparameter tuning methods.
 # .. warning::
 #    You might recognize that the accuracy gets better throughout
 #    the experiments of this tutorial. The reason behind that is that
-#    we always use the same model with the same paramters in every
+#    we always use the same model with the same parameters in every
 #    segment to keep the tutorial short and readable. If you do your
 #    own experiments you always have to reinitialize the model before
 #    training.
@@ -81,11 +81,9 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 import numpy as np
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize,
-    preprocess,
-    Preprocessor,
-)
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 4.0  # low cut frequency for filtering
 high_cut_hz = 38.0  # high cut frequency for filtering
@@ -139,8 +137,9 @@ windows_dataset = create_windows_from_events(
 #
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = "cuda" if cuda else "cpu"
@@ -328,9 +327,9 @@ fig.tight_layout()
 # ``Subset`` from torch and ``predefined_split`` from skorch.
 #
 
-from torch.utils.data import Subset
 from sklearn.model_selection import train_test_split
-from skorch.helper import predefined_split, SliceDataset
+from skorch.helper import SliceDataset, predefined_split
+from torch.utils.data import Subset
 
 X_train = SliceDataset(train_set, idx=0)
 y_train = np.array([y for y in SliceDataset(train_set, idx=1)])
@@ -611,12 +610,12 @@ plot_k_fold(
 ######################################################################
 # One way to do hyperparameter tuning is to run each configuration
 # manually (via Option 2 or 3 from above) and compare the validation
-# performance afterwards. In the early stages of your developement
+# performance afterwards. In the early stages of your development
 # process this might be sufficient to get a rough understanding of
 # how your hyperparameter should look like for your model to converge.
 # However, this manual tuning process quickly becomes messy as the
 # number of hyperparameters you want to (jointly) tune increases.
-# Therefore you sould automate this process. We will present two
+# Therefore, you should automate this process. We will present two
 # different options, analogous to Option 2 and 3 from above.
 #
 

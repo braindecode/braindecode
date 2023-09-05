@@ -68,4 +68,3 @@ jobs:
           publish_branch: master
           publish_dir: ./docs/_build/html
           cname: braindecode.org
-

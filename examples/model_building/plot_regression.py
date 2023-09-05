@@ -21,8 +21,9 @@ function from the classifier's output layer and how to train it on a fake regres
 
 import numpy as np
 import pandas as pd
+
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 from braindecode.util import create_mne_dummy_raw
-from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
 ###################################################################################################
@@ -96,6 +97,9 @@ dataset = fake_regression_dataset(n_fake_recs=n_fake_rec,
                                   fake_duration=fake_duration,
                                   n_fake_targets=n_fake_targets)
 
+import torch
+
+from braindecode.models import Deep4Net, ShallowFBCSPNet
 ###################################################################################################
 # Defining a CNN regression model
 # -------------------------------
@@ -103,9 +107,6 @@ dataset = fake_regression_dataset(n_fake_recs=n_fake_rec,
 # Choosing and defining a CNN classifier, `ShallowFBCSPNet` or `Deep4Net`, introduced in [1]_.
 # To convert a classifier to a regressor, `softmax` function is removed from its output layer.
 from braindecode.util import set_random_seeds
-from braindecode.models import Deep4Net
-from braindecode.models import ShallowFBCSPNet
-import torch
 
 # Choosing a CNN model
 model_name = "shallow"  # 'shallow' or 'deep'
@@ -161,7 +162,7 @@ if cuda:
 # Data windowing
 # ----------------
 # Windowing data with a sliding window into the epochs of the size `window_size_samples`.
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.models.util import get_output_shape, to_dense_prediction_model
 from braindecode.preprocessing import create_fixed_length_windows
 
 window_size_samples = fake_sfreq * fake_duration // 3
@@ -183,6 +184,9 @@ train_set = splits["train"]
 valid_set = splits["valid"]
 test_set = splits["test"]
 
+from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
+
 ###################################################################################################
 # Model training
 # -----------------
@@ -191,8 +195,6 @@ test_set = splits["test"]
 # learning rate scheduler.
 from braindecode import EEGRegressor
 from braindecode.training.losses import CroppedLoss
-from skorch.callbacks import LRScheduler
-from skorch.helper import predefined_split
 
 batch_size = 4
 n_epochs = 3

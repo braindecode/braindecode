@@ -8,17 +8,17 @@ Test for samplers.
 
 import bisect
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 
-from braindecode.samplers import (
-    RecordingSampler, SequenceSampler, BalancedSequenceSampler)
-from braindecode.samplers.ssl import RelativePositioningSampler
-from braindecode.datasets import BaseDataset, BaseConcatDataset
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.preprocessing.windowers import (
-    create_fixed_length_windows, create_windows_from_events)
+from braindecode.preprocessing.windowers import (create_fixed_length_windows,
+                                                 create_windows_from_events)
+from braindecode.samplers import (BalancedSequenceSampler, RecordingSampler,
+                                  SequenceSampler)
+from braindecode.samplers.ssl import RelativePositioningSampler
 
 
 @pytest.fixture(scope='module')
@@ -141,7 +141,7 @@ def test_sequence_sampler(windows_ds, n_windows, n_windows_stride):
 
     seq_lens = [(len(ds) - n_windows) // n_windows_stride + 1
                 for ds in windows_ds.datasets]
-    file_ids = np.concatenate([[i] * l for i, l in enumerate(seq_lens)])
+    file_ids = np.concatenate([[i] * leng for i, leng in enumerate(seq_lens)])
     n_seqs = sum(seq_lens)
     assert len(seqs) == n_seqs
     assert all([len(s) == n_windows for s in seqs])

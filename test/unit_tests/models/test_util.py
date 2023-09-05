@@ -3,14 +3,14 @@
 #
 # License: BSD (3-clause)
 
-import pytest
 import numpy as np
-from torch import nn
+import pytest
 from sklearn.preprocessing import OneHotEncoder
+from torch import nn
 
 from braindecode.models.modules import Expression
-from braindecode.models.util import (
-    get_output_shape, aggregate_probas, _pad_shift_array)
+from braindecode.models.util import (_pad_shift_array, aggregate_probas,
+                                     get_output_shape)
 
 
 def test_get_output_shape_1d_model():

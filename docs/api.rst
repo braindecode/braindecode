@@ -239,4 +239,3 @@ Visualization
 
     compute_amplitude_gradients
     plot_confusion_matrix
-

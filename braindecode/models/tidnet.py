@@ -1,10 +1,10 @@
 from math import ceil
 
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
-from einops.layers.torch import Rearrange
 
 from .modules import Ensure4d
 

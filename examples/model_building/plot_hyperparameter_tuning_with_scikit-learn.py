@@ -84,9 +84,10 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
 
-from braindecode.preprocessing.preprocess import (
-    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
+
+from braindecode.preprocessing.preprocess import (
+    Preprocessor, exponential_moving_standardize, preprocess)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -175,9 +176,11 @@ eval_set = splitted['session_E']
 # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
 #
 from functools import partial
+
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 # check if GPU is available, if True chooses to use it
 cuda = torch.cuda.is_available()
@@ -223,6 +226,7 @@ if cuda:
 
 from skorch.callbacks import LRScheduler
 from skorch.dataset import ValidSplit
+
 from braindecode import EEGClassifier
 
 batch_size = 16
@@ -256,10 +260,10 @@ clf = EEGClassifier(
 #    of a single trial into both train and valid set.
 #
 
+import pandas as pd
+from numpy import array
 from sklearn.model_selection import GridSearchCV, KFold
 from skorch.helper import SliceDataset
-from numpy import array
-import pandas as pd
 
 train_X = SliceDataset(train_set, idx=0)
 train_y = array([y for y in SliceDataset(train_set, idx=1)])
@@ -297,7 +301,6 @@ search_results = pd.DataFrame(search.cv_results_)
 #
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 
 # Create a pivot table for the heatmap
 pivot_table = search_results.pivot(index='param_optimizer__lr',

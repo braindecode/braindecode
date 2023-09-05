@@ -5,12 +5,12 @@
 
 import os
 
+import mne
 import numpy as np
 import pandas as pd
-import mne
 from mne.datasets.sleep_physionet.age import fetch_data
 
-from .base import BaseDataset, BaseConcatDataset
+from .base import BaseConcatDataset, BaseDataset
 
 
 class SleepPhysionet(BaseConcatDataset):

@@ -30,6 +30,7 @@ sequences of EEG windows using the openly accessible Sleep Physionet dataset
 #
 
 from numbers import Integral
+
 from braindecode.datasets import SleepPhysionet
 
 subject_ids = [0, 1]
@@ -45,7 +46,7 @@ dataset = SleepPhysionet(
 # a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
 # Physionet data is already sampled at a lower 100 Hz.
 
-from braindecode.preprocessing import preprocess, Preprocessor, scale
+from braindecode.preprocessing import Preprocessor, preprocess, scale
 
 high_cut_hz = 30
 
@@ -65,7 +66,6 @@ preprocess(dataset, preprocessors)
 # We extract 30-s windows to be used in the classification task.
 
 from braindecode.preprocessing import create_windows_from_events
-
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
     'Sleep stage W': 0,
@@ -130,6 +130,7 @@ train_set, valid_set = splits["train"], splits["valid"]
 #
 
 import numpy as np
+
 from braindecode.samplers import SequenceSampler
 
 n_windows = 3  # Sequences of 3 consecutive windows
@@ -182,8 +183,9 @@ class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y
 
 import torch
 from torch import nn
-from braindecode.util import set_random_seeds
+
 from braindecode.models import SleepStagerChambon2018, TimeDistributed
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -241,8 +243,9 @@ if cuda:
 #    with more recordings.
 #
 
-from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -308,8 +311,10 @@ plt.show()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report, confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
+
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
 
@@ -327,6 +332,7 @@ print(classification_report(y_true, y_pred))
 # different sleep stages with this amount of training.
 
 import matplotlib.pyplot as plt
+
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true, color='b', label='Expert annotations')
 ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)

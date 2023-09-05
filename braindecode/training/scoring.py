@@ -6,15 +6,15 @@
 #
 # License: BSD-3
 
-from contextlib import contextmanager
 import warnings
+from contextlib import contextmanager
 
 import numpy as np
 import torch
 from mne.utils.check import check_version
 from skorch.callbacks.scoring import EpochScoring
-from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
+from skorch.utils import to_numpy
 from torch.utils.data import DataLoader
 
 
@@ -26,7 +26,7 @@ def trial_preds_from_window_preds(
 
     Parameters
     ----------
-    preds: list of ndarrays (atleast 2darrays)
+    preds: list of ndarrays (at least 2d-arrays)
         List of window predictions, in each window prediction
          time is in axis=1
     i_window_in_trials: list

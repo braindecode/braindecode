@@ -16,12 +16,12 @@
 
 import warnings
 
-import numpy as np
 import mne
+import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
-from ..datasets.base import WindowsDataset, BaseConcatDataset
+from ..datasets.base import BaseConcatDataset, WindowsDataset
 
 
 # XXX it's called concat_ds...

@@ -4,11 +4,11 @@
 #          Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 # License: BSD (3-clause)
 
-from typing import List, Tuple, Any
 from numbers import Real
+from typing import Any, List, Tuple
 
-from sklearn.utils import check_random_state
 import torch
+from sklearn.utils import check_random_state
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate
@@ -32,7 +32,7 @@ class Transform(torch.nn.Module):
         Float between 0 and 1 defining the uniform probability of applying the
         operation. Set to 1.0 by default (e.g always apply the operation).
     random_state: int, optional
-        Seed to be used to instatiate numpy random number generator instance.
+        Seed to be used to instantiate numpy random number generator instantiate.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """

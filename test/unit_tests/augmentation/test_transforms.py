@@ -7,40 +7,33 @@ from test.unit_tests.augmentation.test_base import common_tranform_assertions
 import numpy as np
 import pytest
 import torch
-from scipy.fft import fft
-from scipy.fft import fftfreq
-from scipy.fft import fftshift
-from scipy.signal import find_peaks
-from scipy.signal import welch
+from scipy.fft import fft, fftfreq, fftshift
+from scipy.signal import find_peaks, welch
 from sklearn.utils import check_random_state
 from skorch.helper import predefined_split
 from torch import nn
 
 from braindecode.augmentation import IdentityTransform
-from braindecode.augmentation.functional import _frequency_shift
-from braindecode.augmentation.functional import _torch_normalize_vectors
-from braindecode.augmentation.functional import sensors_rotation
-from braindecode.augmentation.transforms import BandstopFilter
-from braindecode.augmentation.transforms import ChannelsDropout
-from braindecode.augmentation.transforms import ChannelsShuffle
-from braindecode.augmentation.transforms import ChannelsSymmetry
-from braindecode.augmentation.transforms import FrequencyShift
-from braindecode.augmentation.transforms import FTSurrogate
-from braindecode.augmentation.transforms import GaussianNoise
-from braindecode.augmentation.transforms import Mixup
-from braindecode.augmentation.transforms import SensorsXRotation
-from braindecode.augmentation.transforms import SensorsYRotation
-from braindecode.augmentation.transforms import SensorsZRotation
-from braindecode.augmentation.transforms import SignFlip
-from braindecode.augmentation.transforms import SmoothTimeMask
-from braindecode.augmentation.transforms import TimeReverse
-from braindecode.augmentation.transforms import _get_standard_10_20_positions
+from braindecode.augmentation.functional import (_frequency_shift,
+                                                 _torch_normalize_vectors,
+                                                 sensors_rotation)
+from braindecode.augmentation.transforms import (BandstopFilter,
+                                                 ChannelsDropout,
+                                                 ChannelsShuffle,
+                                                 ChannelsSymmetry,
+                                                 FrequencyShift, FTSurrogate,
+                                                 GaussianNoise, Mixup,
+                                                 SensorsXRotation,
+                                                 SensorsYRotation,
+                                                 SensorsZRotation, SignFlip,
+                                                 SmoothTimeMask, TimeReverse,
+                                                 _get_standard_10_20_positions)
 
 
 @pytest.fixture
 def time_aranged_batch(batch_size=5):
     """Generates a batch of size 1, where the feature matrix has 64 repeated
-    rows of integers aranged between 0 and 49.
+    rows of integers arranged between 0 and 49.
     """
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     X = torch.stack(
@@ -52,7 +45,7 @@ def time_aranged_batch(batch_size=5):
 @pytest.fixture
 def ch_aranged_batch(time_aranged_batch):
     """Generates a batch of size 1, where the feature matrix has 50 repeated
-    columns of integers aranged between 0 and 63.
+    columns of integers arranged between 0 and 63.
     """
     X, y = time_aranged_batch
     return X.transpose(1, 2), y

@@ -7,8 +7,8 @@ from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
 
-from .modules import Ensure4d, Expression
 from .functions import squeeze_final_output
+from .modules import Ensure4d, Expression
 
 
 class TCN(nn.Module):

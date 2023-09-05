@@ -2,12 +2,11 @@
 #
 # License: BSD (3-clause)
 import numpy as np
-
 import torch
-from torch import nn
 from einops.layers.torch import Rearrange
+from torch import nn
 
-from .modules import Ensure4d, MaxNormLinear, CausalConv1d
+from .modules import CausalConv1d, Ensure4d, MaxNormLinear
 
 
 class ATCNet(nn.Module):
@@ -22,7 +21,7 @@ class ATCNet(nn.Module):
     n_classes : int
         Number of target classes.
     input_size_s : float, optional
-        Time length of inputs, in secods. Defaults to 4.5 s, as in BCI-IV 2a
+        Time length of inputs, in seconds. Defaults to 4.5 s, as in BCI-IV 2a
         dataset.
     sfreq : int, optional
         Sampling frequency of the inputs, in Hz. Default to 250 Hz, as in

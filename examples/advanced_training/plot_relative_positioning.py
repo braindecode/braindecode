@@ -12,7 +12,7 @@ accessible Sleep Physionet dataset [2]_ [3]_.
     unlabelled data to train neural networks. First, neural networks are
     trained on a "pretext task" which uses unlabelled data only. The pretext
     task is designed based on a prior understanding of the data under study
-    (e.g., EEG has an underlying autocorrelation struture) and such that the
+    (e.g., EEG has an underlying autocorrelation structure) and such that the
     processing required to perform well on this pretext task is related to the
     processing required to perform well on another task of interest.
     Once trained, these neural networks can be reused as feature extractors or
@@ -68,8 +68,9 @@ dataset = SleepPhysionet(
 # a lowpass filter. Since the Sleep Physionet data is already sampled at 100 Hz
 # we don't need to apply resampling.
 
-from braindecode.preprocessing.preprocess import preprocess, Preprocessor
 from numpy import multiply
+
+from braindecode.preprocessing.preprocess import Preprocessor, preprocess
 
 high_cut_hz = 30
 # Factor to convert from V to uV
@@ -138,6 +139,7 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 
 import numpy as np
 from sklearn.model_selection import train_test_split
+
 from braindecode.datasets import BaseConcatDataset
 
 subjects = np.unique(windows_dataset.description['subject'])
@@ -236,8 +238,9 @@ test_sampler = RelativePositioningSampler(
 
 import torch
 from torch import nn
-from braindecode.util import set_random_seeds
+
 from braindecode.models import SleepStagerChambon2018
+from braindecode.util import set_random_seeds
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 if device == 'cuda':
@@ -306,8 +309,9 @@ model = ContrastiveNet(emb, emb_size).to(device)
 
 import os
 
-from skorch.helper import predefined_split
 from skorch.callbacks import Checkpoint, EarlyStopping, EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 5e-3
@@ -405,8 +409,7 @@ plt.tight_layout()
 # We also display the confusion matrix and classification report for the
 # pretext task:
 
-from sklearn.metrics import confusion_matrix
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 
 # Switch to the test sampler
 clf.iterator_valid__sampler = test_sampler
@@ -425,11 +428,11 @@ print(classification_report(y_true, y_pred))
 # extractor. We perform sleep stage classification from the learned feature
 # representation using a linear logistic regression classifier.
 
-from torch.utils.data import DataLoader
-from sklearn.metrics import balanced_accuracy_score
 from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import balanced_accuracy_score
 from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader
 
 # Extract features with the trained embedder
 data = dict()
@@ -471,8 +474,8 @@ print(classification_report(data['test'][1], test_y_pred))
 # 5-class classification problem). Finally, we perform a quick 2D visualization
 # of the feature space using a PCA:
 
-from sklearn.decomposition import PCA
 from matplotlib import cm
+from sklearn.decomposition import PCA
 
 X = np.concatenate([v[0] for k, v in data.items()])
 y = np.concatenate([v[1] for k, v in data.items()])

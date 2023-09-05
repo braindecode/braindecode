@@ -4,8 +4,8 @@
 
 import pickle
 
-from braindecode.datasets.sleep_physionet import SleepPhysionet
 from braindecode.datasets.base import BaseConcatDataset
+from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 
 def test_sleep_physionet():

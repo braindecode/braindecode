@@ -50,19 +50,18 @@ the dataset and the specific operations applied to the recordings.
 # License: BSD (3-clause)
 
 
-import time
 import tempfile
+import time
 from itertools import product
 
-import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import scale
+import pandas as pd
 from memory_profiler import memory_usage
+from sklearn.preprocessing import scale
 
 from braindecode.datasets import SleepPhysionet
-from braindecode.preprocessing import (
-    preprocess, Preprocessor, create_fixed_length_windows)
-
+from braindecode.preprocessing import (Preprocessor,
+                                       create_fixed_length_windows, preprocess)
 
 ###############################################################################
 # We create a function that goes through the usual three steps of data

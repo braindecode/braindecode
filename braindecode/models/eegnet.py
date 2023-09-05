@@ -3,12 +3,12 @@
 # License: BSD (3-clause)
 
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn.functional import elu
-from einops.layers.torch import Rearrange
 
-from .modules import Expression, Ensure4d
 from .functions import squeeze_final_output
+from .modules import Ensure4d, Expression
 
 
 class Conv2dWithConstraint(nn.Conv2d):
@@ -252,7 +252,7 @@ class EEGNetv1(nn.Sequential):
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
         n_filters_2 = 4
-        # keras padds unequal padding more in front, so padding
+        # keras pads unequal padding more in front, so padding
         # too large should be ok.
         # Not padding in time so that cropped training makes sense
         # https://stackoverflow.com/questions/43994604/padding-with-even-kernel-size-in-a-convolutional-layer-in-keras-theano
@@ -328,7 +328,7 @@ class EEGNetv1(nn.Sequential):
 
 
 def _glorot_weight_zero_bias(model):
-    """Initalize parameters of all modules by initializing weights with
+    """Initialize parameters of all modules by initializing weights with
     glorot
      uniform/xavier initialization, and setting biases to zero. Weights from
      batch norm layers are set to 1.
@@ -339,7 +339,7 @@ def _glorot_weight_zero_bias(model):
     """
     for module in model.modules():
         if hasattr(module, "weight"):
-            if not ("BatchNorm" in module.__class__.__name__):
+            if "BatchNorm" not in module.__class__.__name__:
                 nn.init.xavier_uniform_(module.weight, gain=1)
             else:
                 nn.init.constant_(module.weight, 1)

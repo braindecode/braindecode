@@ -7,8 +7,8 @@ from torch import nn
 from torch.nn import ConstantPad2d
 
 from .deep4 import Deep4Net
-from .util import to_dense_prediction_model
 from .shallow_fbcsp import ShallowFBCSPNet
+from .util import to_dense_prediction_model
 
 
 class HybridNet(nn.Module):

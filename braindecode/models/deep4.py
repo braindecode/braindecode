@@ -3,14 +3,14 @@
 # License: BSD (3-clause)
 
 import numpy as np
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
-from einops.layers.torch import Rearrange
 
-from .modules import Expression, AvgPool2dWithConv, Ensure4d
-from .functions import identity, squeeze_final_output
 from ..util import np_to_th
+from .functions import identity, squeeze_final_output
+from .modules import AvgPool2dWithConv, Ensure4d, Expression
 
 
 class Deep4Net(nn.Sequential):

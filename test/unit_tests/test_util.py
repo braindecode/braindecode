@@ -4,9 +4,9 @@
 
 import os
 
+import h5py
 import mne
 import numpy as np
-import h5py
 import pytest
 import torch
 

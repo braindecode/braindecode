@@ -3,12 +3,13 @@
 #
 # License: BSD (3-clause)
 
+import logging
+
+import mne
 import numpy as np
 import pandas as pd
-import logging
-import mne
 
-from .base import BaseDataset, BaseConcatDataset
+from .base import BaseConcatDataset, BaseDataset
 
 log = logging.getLogger(__name__)
 
@@ -45,8 +46,7 @@ def create_from_X_y(
         and braindecode
     """
     # Prevent circular import
-    from ..preprocessing.windowers import (
-        create_fixed_length_windows, )
+    from ..preprocessing.windowers import create_fixed_length_windows
     n_samples_per_x = []
     base_datasets = []
     if ch_names is None:

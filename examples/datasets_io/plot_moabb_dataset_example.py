@@ -13,7 +13,7 @@ with Braindecode.
 # License: BSD (3-clause)
 
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import preprocess, Preprocessor
+from braindecode.preprocessing import Preprocessor, preprocess
 
 ###############################################################################
 # First, we create a dataset based on BCIC IV 2a fetched with MOABB,

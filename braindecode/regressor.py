@@ -7,16 +7,15 @@
 import warnings
 
 import numpy as np
+import torch
 from sklearn.metrics import get_scorer
-from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
+from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
 from skorch.classifier import NeuralNet
 from skorch.regressor import NeuralNetRegressor
-from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
-import torch
+from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
-from .training.scoring import (PostEpochTrainScoring,
-                               CroppedTrialEpochScoring,
-                               CroppedTimeSeriesEpochScoring,
+from .training.scoring import (CroppedTimeSeriesEpochScoring,
+                               CroppedTrialEpochScoring, PostEpochTrainScoring,
                                predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 

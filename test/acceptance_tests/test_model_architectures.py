@@ -3,8 +3,8 @@
 #
 # License: BSD-3
 
-import torch
 import numpy as np
+import torch
 
 from braindecode.models.tcn import TCN
 from braindecode.util import set_random_seeds

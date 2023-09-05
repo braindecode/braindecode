@@ -24,8 +24,8 @@ transform on the input signals.
 # Loading
 # ~~~~~~~
 
-from skorch.helper import predefined_split
 from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
 from braindecode.datasets import MOABBDataset
@@ -38,9 +38,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # ~~~~~~~~~~~~~
 #
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
+
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -131,8 +133,8 @@ X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
 # see on the psd plot.
 
-import mne
 import matplotlib.pyplot as plt
+import mne
 import numpy as np
 
 
@@ -166,8 +168,8 @@ plt.show()
 #
 # The model to be trained is defined as usual.
 
-from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'

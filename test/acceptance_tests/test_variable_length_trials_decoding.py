@@ -3,21 +3,21 @@
 #
 # License: BSD-3
 import sys
+
+import numpy as np
 import pytest
 import torch
-import numpy as np
-
 from skorch.helper import predefined_split
 
-from braindecode.datasets.tuh import _TUHAbnormalMock
-from braindecode.preprocessing import (
-    preprocess, Preprocessor, create_fixed_length_windows)
-from braindecode.datasets import BaseConcatDataset
-from braindecode.util import set_random_seeds
 from braindecode import EEGClassifier
+from braindecode.datasets import BaseConcatDataset
+from braindecode.datasets.tuh import _TUHAbnormalMock
 from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
+from braindecode.preprocessing import (Preprocessor,
+                                       create_fixed_length_windows, preprocess)
 from braindecode.training import CroppedLoss
+from braindecode.util import set_random_seeds
 
 
 @pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")

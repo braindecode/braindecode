@@ -3,10 +3,10 @@
 #
 # License: BSD-3
 import sys
-import pytest
 
 import mne
 import numpy as np
+import pytest
 import torch
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
@@ -14,9 +14,9 @@ from torch import optim
 
 from braindecode import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
-from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.models.util import get_output_shape, to_dense_prediction_model
+from braindecode.training.losses import CroppedLoss
 from braindecode.util import set_random_seeds
 
 

@@ -19,16 +19,17 @@ including simple preprocessing steps as well as cutting of compute windows.
 
 import tempfile
 
-import numpy as np
 import matplotlib.pyplot as plt
 import mne
+import numpy as np
 
 from braindecode.datasets import TUH
-from braindecode.preprocessing import (
-    preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
+from braindecode.preprocessing import (Preprocessor,
+                                       create_fixed_length_windows, preprocess)
+from braindecode.preprocessing import scale as multiply
 
 plt.style.use('seaborn')
-mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
+mne.set_log_level('ERROR')  # avoid messages every time a window is extracted
 
 ###############################################################################
 # Creating the dataset using TUHMock

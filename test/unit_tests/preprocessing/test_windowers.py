@@ -7,17 +7,19 @@
 
 import copy
 import platform
+
 import mne
 import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset
+from braindecode.datasets.base import BaseConcatDataset, BaseDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.preprocessing import (
-    create_windows_from_events, create_fixed_length_windows)
+from braindecode.preprocessing import (create_fixed_length_windows,
+                                       create_windows_from_events)
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
-from braindecode.preprocessing.windowers import create_windows_from_target_channels
+from braindecode.preprocessing.windowers import \
+    create_windows_from_target_channels
 from braindecode.util import create_mne_dummy_raw
 
 

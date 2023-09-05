@@ -10,16 +10,16 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
-import os
 import json
+import os
 import shutil
-from typing import Iterable
 import warnings
 from glob import glob
+from typing import Iterable
 
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import ConcatDataset, Dataset
 
 
 def _create_description(description):

@@ -6,12 +6,12 @@
 from numbers import Real
 
 import numpy as np
+import torch
+from mne.filter import notch_filter
 from scipy.interpolate import Rbf
 from sklearn.utils import check_random_state
-import torch
 from torch.fft import fft, ifft
-from torch.nn.functional import pad, one_hot
-from mne.filter import notch_filter
+from torch.nn.functional import one_hot, pad
 
 
 def identity(X, y):
@@ -125,7 +125,7 @@ def ft_surrogate(
         EEG labels for the example or batch.
     phase_noise_magnitude: float
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled:
+        perturbation is uniformly sampled:
         [0, `phase_noise_magnitude` * 2 * `pi`].
     channel_indep : bool
         Whether to sample phase perturbations independently for each channel or
@@ -152,7 +152,7 @@ def ft_surrogate(
         phase_noise_magnitude,
         (Real, torch.FloatTensor, torch.cuda.FloatTensor)
     ) and 0 <= phase_noise_magnitude <= 1, (
-        f"eps must be a float beween 0 and 1. Got {phase_noise_magnitude}.")
+        f"eps must be a float between 0 and 1. Got {phase_noise_magnitude}.")
 
     f = fft(X.double(), dim=-1)
     device = X.device
@@ -719,9 +719,9 @@ def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
     Parameters
     ----------
     pos_from : np.ndarray of float, shape(n_good_sensors, 3)
-        The positions to interpoloate from.
+        The positions to interpolate from.
     pos_to : np.ndarray of float, shape(n_bad_sensors, 3)
-        The positions to interpoloate.
+        The positions to interpolate.
     alpha : float
         Regularization parameter. Defaults to 1e-5.
 

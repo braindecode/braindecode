@@ -3,15 +3,13 @@
 # License: BSD (3-clause)
 
 import numpy as np
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
-from einops.layers.torch import Rearrange
 
 from ..util import np_to_th
-from .modules import Expression, Ensure4d
-from .functions import (
-    safe_log, square, squeeze_final_output
-)
+from .functions import safe_log, square, squeeze_final_output
+from .modules import Ensure4d, Expression
 
 
 class ShallowFBCSPNet(nn.Sequential):

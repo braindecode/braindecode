@@ -44,7 +44,7 @@ the context of trialwise decoding with the BCI IV 2a dataset.
 # First, we load the data. In this tutorial, we use the functionality of braindecode
 # to load BCI IV competition dataset 1. The dataset is available on the BNCI website.
 # There is 9 subjects recorded with 22 electrodes while doing a motor imagery task,
-# with 144 trials per class. We will load this dataset through the MOABB librairy.
+# with 144 trials per class. We will load this dataset through the MOABB library.
 
 from skorch.callbacks import LRScheduler
 
@@ -61,9 +61,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # We apply a bandpass filter, from 4 to 38 Hz to focus motor imagery-related
 # brain activity
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
+
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -98,9 +100,10 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # to define how trials should be used.
 
 
-from braindecode.preprocessing import create_windows_from_events
-from skorch.helper import SliceDataset
 from numpy import array
+from skorch.helper import SliceDataset
+
+from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
@@ -150,7 +153,9 @@ eval_set = splitted['session_E']
 # For the method ChannelsDropout, we analyse the parameter p_drop ∈ [0, 1].
 
 from numpy import linspace
-from braindecode.augmentation import FTSurrogate, SmoothTimeMask, ChannelsDropout
+
+from braindecode.augmentation import (ChannelsDropout, FTSurrogate,
+                                      SmoothTimeMask)
 
 seed = 20200220
 
@@ -177,8 +182,8 @@ transforms_spatial = [ChannelsDropout(probability=0.5, p_drop=prob,
 # The model to be trained is defined as usual.
 import torch
 
-from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -265,7 +270,7 @@ train_y = array(list(SliceDataset(train_set, idx=1)))
 #   Given the trialwise approach, here we use the KFold approach and
 #   GridSearchCV.
 
-from sklearn.model_selection import KFold, GridSearchCV
+from sklearn.model_selection import GridSearchCV, KFold
 
 cv = KFold(n_splits=2, shuffle=True, random_state=seed)
 fit_params = {'epochs': n_epochs}
@@ -297,8 +302,8 @@ search.fit(train_X, train_y, **fit_params)
 # Next, just perform an analysis of the best fit, and the parameters,
 # remembering the order that was adjusted.
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 search_results = pd.DataFrame(search.cv_results_)
 

@@ -18,7 +18,7 @@ Lazy loading avoids this potential memory issue by loading examples from disk
 when they are required. This means large datasets can be used for training,
 however this introduces some file-reading overhead every time an example must
 be extracted. Some preprocessing steps that require continuous data also have to
-be implemented differently to accomodate the nature of windowed data. Overall
+be implemented differently to accommodate the nature of windowed data. Overall
 though, we can reduce the impact of lazy loading by using the `num_workers`
 parameter of pytorch's `Dataloader` class, which dispatches the data loading to
 multiple processes.
@@ -32,24 +32,22 @@ have been instantiated with parameter `preload=False`.
 #
 # License: BSD (3-clause)
 
-from itertools import product
 import time
-
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from itertools import product
 
 import mne
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader
 
 from braindecode.datasets import TUHAbnormal
+from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
-from braindecode.models import ShallowFBCSPNet, Deep4Net
 
-
-mne.set_log_level('WARNING')  # avoid messages everytime a window is extracted
+mne.set_log_level('WARNING')  # avoid messages every time a window is extracted
 
 ###############################################################################
 # We start by setting two pytorch internal parameters that can affect the

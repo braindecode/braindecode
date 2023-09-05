@@ -3,10 +3,9 @@
 # License: BSD (3-clause)
 
 import numpy as np
-
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 from ..util import np_to_th
 

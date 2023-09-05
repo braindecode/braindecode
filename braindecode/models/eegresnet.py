@@ -4,15 +4,14 @@
 # License: BSD-3
 
 import numpy as np
-
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
-from einops.layers.torch import Rearrange
 
 from .functions import squeeze_final_output
-from .modules import Expression, AvgPool2dWithConv, Ensure4d
+from .modules import AvgPool2dWithConv, Ensure4d, Expression
 
 
 class EEGResNet(nn.Sequential):

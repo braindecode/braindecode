@@ -9,19 +9,20 @@
 #
 # License: BSD (3-clause)
 
-from warnings import warn
-from functools import partial
 from collections.abc import Iterable
+from functools import partial
+from warnings import warn
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from mne import create_info
 from sklearn.utils import deprecated
-from joblib import Parallel, delayed
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
-from braindecode.datautil.serialization import (
-    load_concat_dataset, _check_save_dir_empty)
+from braindecode.datasets.base import (BaseConcatDataset, BaseDataset,
+                                       WindowsDataset)
+from braindecode.datautil.serialization import (_check_save_dir_empty,
+                                                load_concat_dataset)
 
 
 class Preprocessor(object):
@@ -399,7 +400,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         filtered = raw.copy()
         filtered.filter(l_freq=l_freq, h_freq=h_freq, **mne_filter_kwargs)
         # mne automatically changes the highpass/lowpass info values
-        # when applying filters and channels cant be added if they have
+        # when applying filters and channels can not be added if they have
         # different such parameters. Not needed when making picks as
         # high pass is not modified by filter if pick is specified
 

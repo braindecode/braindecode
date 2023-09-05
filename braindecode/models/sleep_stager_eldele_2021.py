@@ -2,16 +2,15 @@
 #
 # License: BSD (3-clause)
 
-import math
 import copy
-from copy import deepcopy
+import math
 import warnings
+from copy import deepcopy
 
 import numpy as np
-
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class SleepStagerEldele2021(nn.Module):

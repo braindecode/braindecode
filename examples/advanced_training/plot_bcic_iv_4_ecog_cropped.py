@@ -82,8 +82,9 @@ test_set = dataset['test']
 #
 
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 1.  # low cut frequency for filtering
 high_cut_hz = 200.  # high cut frequency for filtering, for ECoG higher than for EEG
@@ -157,8 +158,9 @@ input_window_samples = 1000
 #
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -194,7 +196,7 @@ model = new_model
 if cuda:
     model.cuda()
 
-from braindecode.models import to_dense_prediction_model, get_output_shape
+from braindecode.models import get_output_shape, to_dense_prediction_model
 
 to_dense_prediction_model(model)
 
@@ -281,9 +283,8 @@ test_set.target_transform = lambda x: x[0: 1]
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
-from braindecode.training import TimeSeriesLoss
 from braindecode import EEGRegressor
-from braindecode.training import CroppedTimeSeriesEpochScoring
+from braindecode.training import CroppedTimeSeriesEpochScoring, TimeSeriesLoss
 
 # These values we found good for shallow network for EEG MI decoding:
 lr = 0.0625 * 0.01
@@ -356,17 +357,17 @@ preds_test, y_test = pad_and_select_predictions(preds_test, y_test)
 
 
 ######################################################################
-# We plot target and predicted finger flexion on training, validation, adn test sets.
+# We plot target and predicted finger flexion on training, validation, and test sets.
 #
 # .. note::
-#    The model is trained and validated on limited dataset (to decrease the time neded to run
+#    The model is trained and validated on limited dataset (to decrease the time needed to run
 #    this example) which does not contain diverse dataset in terms of fingers flexions and may
 #    cause overfitting. To obtain better results use whole dataset as well as improve the decoding
 #    pipeline which may be not optimal for ECoG.
 #
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
+from matplotlib.lines import Line2D
 
 plt.style.use('seaborn')
 fig, axes = plt.subplots(3, 1, figsize=(8, 9))

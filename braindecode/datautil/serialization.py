@@ -6,8 +6,8 @@ Convenience functions for storing and loading of windows datasets.
 #
 # License: BSD (3-clause)
 
-import os
 import json
+import os
 import warnings
 from glob import glob
 
@@ -15,7 +15,7 @@ import mne
 import pandas as pd
 from joblib import Parallel, delayed
 
-from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):

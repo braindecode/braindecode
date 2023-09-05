@@ -3,8 +3,8 @@
 # License: BSD (3-clause)
 
 import numpy as np
-from skorch.utils import to_numpy, to_tensor
 import torch
+from skorch.utils import to_numpy, to_tensor
 
 
 def compute_amplitude_gradients(model, dataset, batch_size):

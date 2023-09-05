@@ -5,15 +5,15 @@
 import os
 import platform
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
 
 from braindecode.datasets import BaseConcatDataset, MOABBDataset
-from braindecode.preprocessing import (
-    create_windows_from_events, Preprocessor, preprocess)
-from braindecode.datautil.serialization import (
-    load_concat_dataset, _check_save_dir_empty)
+from braindecode.datautil.serialization import (_check_save_dir_empty,
+                                                load_concat_dataset)
+from braindecode.preprocessing import (Preprocessor,
+                                       create_windows_from_events, preprocess)
 
 
 @pytest.fixture()

@@ -3,8 +3,8 @@
 #
 # License: BSD-3
 
-import pytest
 import numpy as np
+import pytest
 import torch
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler

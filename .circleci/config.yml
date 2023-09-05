@@ -1,4 +1,6 @@
-# Tagging a commit with [circle front] will build the front page and perform test-doc.
+---
+# Tagging a commit with [circle front] will build the front page and
+# perform test-doc.
 # Tagging a commit with [circle full] will build everything.
 version: 2.1
 parameters:
@@ -6,37 +8,37 @@ parameters:
     type: string
     default: "none"
 jobs:
-    fetch_docs_from_github:
-      docker:
-        - image: circleci/python:3.7
-      environment:
-        GITHUB_ARTIFACT_URL: << pipeline.parameters.github-artifact-url >>
-      steps:
-        - run:
-            name: Download some docs
-            command: |
-              echo "Show Github artifact url"
-              echo $GITHUB_ARTIFACT_URL
-              wget -O HTML-docs.zip $GITHUB_ARTIFACT_URL
-              ls -ahl .
-              unzip HTML-docs.zip -d downloaded_docs
-              ls -ahl .
-        # Save the outputs
-        - store_artifacts:
-           path: downloaded_docs/html/
-           destination: dev
-        - persist_to_workspace:
-           root: downloaded_docs
-           paths:
-             - html
-    dummy_job:
-      docker:
-       - image: circleci/python:3.7
-      steps:
-        - run:
-           name: Dummy echo
-           command: |
-             echo "Do nothing..."
+fetch_docs_from_github:
+  docker:
+    - image: circleci/python:3.7
+  environment:
+    GITHUB_ARTIFACT_URL: << pipeline.parameters.github-artifact-url >>
+  steps:
+    - run:
+        name: Download some docs
+        command: |
+          echo "Show Github artifact url"
+          echo $GITHUB_ARTIFACT_URL
+          wget -O HTML-docs.zip $GITHUB_ARTIFACT_URL
+          ls -ahl .
+          unzip HTML-docs.zip -d downloaded_docs
+          ls -ahl .
+    # Save the outputs
+    - store_artifacts:
+        path: downloaded_docs/html/
+        destination: dev
+    - persist_to_workspace:
+        root: downloaded_docs
+        paths:
+          - html
+dummy_job:
+  docker:
+    - image: circleci/python:3.7
+  steps:
+    - run:
+      name: Dummy echo
+      command: |
+        echo "Do nothing..."
 
 
 workflows:
@@ -45,12 +47,12 @@ workflows:
   default:
     when:
       not:
-        equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
+        equal: ["none", << pipeline.parameters.github-artifact-url >>]
     jobs:
       - fetch_docs_from_github
 
   dummy_workflow:
     when:
-      equal: [ "none", << pipeline.parameters.github-artifact-url >> ]
+      equal: ["none", << pipeline.parameters.github-artifact-url >>]
     jobs:
       - dummy_job

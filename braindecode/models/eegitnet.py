@@ -2,8 +2,8 @@
 #
 # License: BSD-3
 import torch
-from torch import nn
 from einops.layers.torch import Rearrange
+from torch import nn
 
 from .modules import Ensure4d
 

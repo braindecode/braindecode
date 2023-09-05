@@ -29,6 +29,7 @@ to learn on sequences of EEG windows using the openly accessible Sleep Physionet
 #
 
 from numbers import Integral
+
 from braindecode.datasets import SleepPhysionet
 
 subject_ids = [0, 1]
@@ -44,8 +45,9 @@ dataset = SleepPhysionet(
 # Next, we preprocess the raw data. We convert the data to microvolts and apply
 # a lowpass filter.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from numpy import multiply
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 high_cut_hz = 30
 # Factor to convert from V to uV
@@ -184,8 +186,9 @@ class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y
 
 import torch
 from torch import nn
-from braindecode.util import set_random_seeds
+
 from braindecode.models import SleepStagerEldele2021, TimeDistributed
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -229,8 +232,9 @@ if cuda:
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
-from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -296,7 +300,8 @@ plt.show()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report, confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
 
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
@@ -316,6 +321,7 @@ print(classification_report(y_true, y_pred))
 # different sleep stages with this amount of training.
 
 import matplotlib.pyplot as plt
+
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true, color='b', label='Expert annotations')
 ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)

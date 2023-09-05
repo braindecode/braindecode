@@ -8,10 +8,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
+from braindecode.datasets import BaseConcatDataset, BaseDataset, WindowsDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
-from braindecode.preprocessing.windowers import (
-    create_windows_from_events, create_fixed_length_windows)
+from braindecode.preprocessing.windowers import (create_fixed_length_windows,
+                                                 create_windows_from_events)
 
 
 # TODO: split file up into files with proper matching names
@@ -282,7 +282,7 @@ def test_set_description_base_dataset(concat_ds_targets):
     assert 'test' in base_ds.description
     assert base_ds.description['test'] == 4
 
-    # overwrite singe entry in single base using a Series
+    # overwrite single entry in single base using a Series
     base_ds.set_description(pd.Series({'test': 0}), overwrite=True)
     assert base_ds.description['test'] == 0
 

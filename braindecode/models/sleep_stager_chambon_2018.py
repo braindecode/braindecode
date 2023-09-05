@@ -2,9 +2,9 @@
 #
 # License: BSD (3-clause)
 
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
 
 
 class SleepStagerChambon2018(nn.Module):

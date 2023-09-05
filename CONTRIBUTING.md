@@ -19,11 +19,11 @@ Here it would work with one of those commands (change <yourusername> to your Git
 ```
 git clone git@github.com:<yourusername>/braindecode.git
 ```
-or 
+or
 ```
 git clone https://github.com/<yourusername>/braindecode.git
 ```
-See also https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh for how to setup ssh keys. 
+See also https://docs.github.com/en/github/authenticating-to-github/connecting-to-github-with-ssh for how to setup ssh keys.
 In the following, I will assume you are using the first version via ssh.
 
 
@@ -34,7 +34,7 @@ When inside the cloned braindecode folder, we add the upstream remote like this:
 
 ```
 git remote add upstream git@github.com:braindecode/braindecode.git
-``` 
+```
 (change the url for https if you used that in the step before)
 
 Your `.git/config` file inside your local clone of the repository should look similar to this now:
@@ -107,7 +107,7 @@ flake8
 There should be an empty output as there should be no style mistakes.
 
 
-## Make a contribution 
+## Make a contribution
 
 ### Find an open issue
 First, you can look  at the open issues under https://github.com/braindecode/braindecode/issues and find one that interests you.
@@ -119,7 +119,7 @@ Make sure to comment that you try to work on that issue so that other people kno
 Don't forget to activate your conda environment that you installed braindecode in!
 ```
 conda activate braindecode
-``` 
+```
 
 ### Create a local branch for your contribution
 To ensure you are up to date with the upstream master, in your local repository,
@@ -128,7 +128,7 @@ run:
 git checkout master
 git pull upstream master
 ```
- 
+
 Pick a local branch-name and within your local repository, run:
 ```
 git checkout -b <branch-name>
@@ -139,16 +139,16 @@ Now you can start writing the code to address the issue.
 Make sure to properly document and test your code.
 
 #### Write Tests
-We have unit tests that test a unit like a function or a class method under 
+We have unit tests that test a unit like a function or a class method under
 `test/unit_tests`. The directories below `test/unit_tests` should mirror the directory structure in braindecode.
 To add your test, either insert your test to an existing test file or create a new corresponding test file.
 For example, if you modify code in `datautil/preprocess.py`, add the corresponding test to `test/unit_tests/datautil/test_preprocess.py`.
-Note the `test_` at the beginning of the test-filename. 
+Note the `test_` at the beginning of the test-filename.
 The structure in `test/unit_tests` does not perfectly mirror the module structure at the moment, we may change that in the future.
 Please try to make sure that your tests run reasonably fast (<5 sec).
 
 For more complex functionality like an entire training pipeline, we have tests under `test/acceptance_tests`.
-You may add another file there if needed. Theses tests may also run a bit longer.
+You may add another file there if needed. These tests may also run a bit longer.
 Make sure your test passes by running:
 `pytest test/<yourtestfilepath>`
 Also before pushing, make sure to run all tests with:
@@ -163,7 +163,7 @@ First, make sure that you import the function in the `__init__.py` file in case 
 For example, the function `create_from_X_y` in the file `datautil/xy.py` is imported in `datautil.__init__.py` as follows:
 ```
 from .xy import create_from_X_y
-``` 
+```
 
 Also add your function to `docs/api.rst` under the appropriate submodule.
 For example the `create_from_X_y` function is added here:
@@ -189,7 +189,7 @@ Finally, concisely describe your changes in `docs/whats_new.rst`, for example li
 - Adding support for on-the-fly transforms (:gh:`198` by `Hubert Banville`_)
 ```
 This allows everybody to understand how your code improved Braindecode from the last version! :)
-The ```:gh:`198` ``` part refers to the corresponding Pull Request which we will get to further below. 
+The ```:gh:`198` ``` part refers to the corresponding Pull Request which we will get to further below.
 You may leave it out for now.
 Don't forget to add yourself to the list of authors at the end of the file, for example like this:
 ```
@@ -205,7 +205,7 @@ Also ensure to add your name at the top of any code file you edited, for example
 
 ##### Add an example file
 If you add functionality that could be nicely explained with a code example, add a file to the `examples` folder with a `plot_` at the beginning of the file name.
-For example check `examples/plot_bcic_iv_2a_moabb_trial.py`. 
+For example check `examples/plot_bcic_iv_2a_moabb_trial.py`.
 These files will be executed when building of the documentation.
 
 ##### Build and check the documentation

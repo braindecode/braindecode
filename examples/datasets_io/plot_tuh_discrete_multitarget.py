@@ -24,7 +24,7 @@ from braindecode.preprocessing import create_fixed_length_windows
 # We'll set the logging level to 'ERROR' to avoid excessive messages when
 # extracting windows:
 
-mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
+mne.set_log_level('ERROR')  # avoid messages every time a window is extracted
 
 
 ###############################################################################
@@ -32,7 +32,6 @@ mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 # section. We are required to mock some dataset functionality, since the data
 # is not available at creation time of this example.
 from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
-
 
 ###############################################################################
 # Creating Temple University Hospital (TUH) EEG Corpus Dataset

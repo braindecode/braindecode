@@ -2,13 +2,14 @@
 #
 # License: BSD-3
 import platform
-import pytest
-
 from datetime import datetime
 
-from braindecode.datasets.tuh import (
-    _parse_description_from_file_path, _create_description,
-    _sort_chronologically, TUHAbnormal, _TUHMock, _TUHAbnormalMock)
+import pytest
+
+from braindecode.datasets.tuh import (TUHAbnormal, _create_description,
+                                      _parse_description_from_file_path,
+                                      _sort_chronologically, _TUHAbnormalMock,
+                                      _TUHMock)
 
 
 # Skip if OS is Windows

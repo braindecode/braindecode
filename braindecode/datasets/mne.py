@@ -3,11 +3,11 @@
 #
 # License: BSD (3-clause)
 
+import mne
 import numpy as np
 import pandas as pd
-import mne
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from .base import BaseConcatDataset, BaseDataset, WindowsDataset
 
 
 def create_from_mne_raw(
@@ -53,7 +53,7 @@ def create_from_mne_raw(
     Returns
     -------
     windows_datasets: BaseConcatDataset
-        X and y transformed to a dataset format that is compativle with skorch
+        X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """
     # Prevent circular import
@@ -103,7 +103,7 @@ def create_from_mne_epochs(list_of_epochs, window_size_samples,
     Returns
     -------
     windows_datasets: BaseConcatDataset
-        X and y transformed to a dataset format that is compativle with skorch
+        X and y transformed to a dataset format that is compatible with skorch
         and braindecode
     """
     # Prevent circular import

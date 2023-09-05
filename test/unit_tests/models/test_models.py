@@ -7,15 +7,15 @@
 
 
 import numpy as np
-import torch
 import pytest
+import torch
 
-from braindecode.models import (
-    Deep4Net, EEGNetv4, EEGNetv1, HybridNet, ShallowFBCSPNet, EEGResNet, TCN,
-    SleepStagerChambon2018, SleepStagerBlanco2020, SleepStagerEldele2021, USleep,
-    DeepSleepNet, EEGITNet, EEGInception, EEGInceptionERP, EEGInceptionMI, TIDNet, ATCNet,
-    EEGConformer)
-
+from braindecode.models import (TCN, ATCNet, Deep4Net, DeepSleepNet,
+                                EEGConformer, EEGInception, EEGInceptionERP,
+                                EEGInceptionMI, EEGITNet, EEGNetv1, EEGNetv4,
+                                EEGResNet, HybridNet, ShallowFBCSPNet,
+                                SleepStagerBlanco2020, SleepStagerChambon2018,
+                                SleepStagerEldele2021, TIDNet, USleep)
 from braindecode.util import set_random_seeds
 
 

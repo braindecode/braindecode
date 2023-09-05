@@ -17,20 +17,20 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
-import os
-import sys
 import inspect
+import os
 import os.path as op
+import sys
 
 import matplotlib
+
 matplotlib.use('agg')
-from datetime import datetime, timezone
 import faulthandler
+from datetime import datetime, timezone
 
 import sphinx_gallery  # noqa
-from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
-
-from numpydoc import numpydoc, docscrape  # noqa
+from numpydoc import docscrape, numpydoc  # noqa
+from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
 
 # -- General configuration ------------------------------------------------
 
@@ -188,6 +188,7 @@ author = 'Braindecode developers'
 #
 # The short X.Y version.
 import braindecode
+
 release = braindecode.__version__
 # The full version, including alpha/beta/rc tags.
 version = '.'.join(release.split('.')[:2])
@@ -250,6 +251,7 @@ sphinx_gallery_conf = {
 # a list of builtin themes.
 #
 import sphinx_rtd_theme  # noqa
+
 html_theme = "pydata_sphinx_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 switcher_version_match = 'dev' if release.endswith('dev0') else version

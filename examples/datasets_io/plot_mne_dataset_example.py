@@ -12,8 +12,7 @@ MNE Dataset Example
 
 import mne
 
-from braindecode.datasets import (
-    create_from_mne_raw, create_from_mne_epochs)
+from braindecode.datasets import create_from_mne_epochs, create_from_mne_raw
 
 ###############################################################################
 # First, fetch some data using mne:

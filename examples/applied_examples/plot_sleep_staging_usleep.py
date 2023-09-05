@@ -13,7 +13,7 @@ Braindecode. We adapt the U-Sleep approach of [1]_ to learn on sequences of EEG
 windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
 
 .. warning::
-    The example is written to have a very short excecution time.
+    The example is written to have a very short execution time.
     This number of epochs is here too small and very few recordings are used.
     To obtain competitive results you need to use more data and more epochs.
 
@@ -58,8 +58,9 @@ dataset = SleepPhysionet(
 # done in [1]_ so that we keep the example as light as possible. No filtering
 # is described in [1]_.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from sklearn.preprocessing import robust_scale
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 preprocessors = [Preprocessor(robust_scale, channel_wise=True)]
 
@@ -74,7 +75,6 @@ preprocess(dataset, preprocessors)
 # We extract 30-s windows to be used in the classification task.
 
 from braindecode.preprocessing import create_windows_from_events
-
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
     'Sleep stage W': 0,
@@ -156,8 +156,9 @@ class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y
 # neural network.
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import USleep
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -208,8 +209,9 @@ if cuda:
 #    optimization if reusing this code on a different dataset or with more
 #    recordings.
 
-from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -284,10 +286,11 @@ ax2.legend(['Train', 'Valid'])
 fig.tight_layout()
 plt.show()
 
+from sklearn.metrics import classification_report, confusion_matrix
+
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
 from braindecode.visualization import plot_confusion_matrix
-from sklearn.metrics import confusion_matrix, classification_report
 
 y_true = np.array([valid_set[i][1] for i in valid_sampler])
 y_pred = clf.predict(valid_set)
@@ -306,6 +309,7 @@ print(classification_report(y_true.flatten(), y_pred.flatten()))
 # different sleep stages with this amount of training.
 
 import matplotlib.pyplot as plt
+
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true.flatten(), color='b', label='Expert annotations')
 ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)
