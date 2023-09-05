@@ -7,23 +7,6 @@ Braindecode. We adapt the time distributed approach of [1]_ to learn on
 sequences of EEG windows using the openly accessible Sleep Physionet dataset
 [2]_ [3]_.
 
-References
-----------
-.. [1] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
-      (2018)A Deep Learning Architecture for Temporal Sleep Stage
-      Classification Using Multivariate and Multimodal Time Series.
-      IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
-      (758-769)
-
-.. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
-       a sleep-dependent neuronal feedback loop: the slow-wave
-       microcontinuity of the EEG. IEEE-BME 47(9):1185-1194 (2000).
-
-.. [3] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
-       Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. (2000)
-       PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
-       Research Resource for Complex Physiologic Signals.
-       Circulation 101(23):e215-e220
 """
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #
@@ -326,13 +309,29 @@ plt.show()
 #
 
 from sklearn.metrics import confusion_matrix, classification_report
-
+from braindecode.visualization import plot_confusion_matrix
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
 
-print(confusion_matrix(y_true, y_pred))
+confusion_mat = confusion_matrix(y_true, y_pred)
+
+plot_confusion_matrix(confusion_mat=confusion_mat,
+                      class_names=['Wake', 'N1', 'N2', 'N3', 'REM'])
+
 print(classification_report(y_true, y_pred))
 
+######################################################################
+# Finally, we can also visualize the hypnogram of the recording we used for
+# validation, with the predicted sleep stages overlaid on top of the true
+# sleep stages. We can see that the model cannot correctly identify the
+# different sleep stages with this amount of training.
+
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(15, 5))
+ax.plot(y_true, color='b', label='Expert annotations')
+ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)
+ax.set_xlabel('Time (epochs)')
+ax.set_ylabel('Sleep stage')
 
 ######################################################################
 # Our model was able to learn despite the low amount of data that was available
@@ -345,3 +344,23 @@ print(classification_report(y_true, y_pred))
 #    training set, and hyperparameters should be selected accordingly.
 #    Increasing the sequence length was also shown in [1]_ to help improve
 #    performance, especially when few EEG channels are available.
+
+###########################################################################
+# References
+# ----------
+#
+# .. [1] Chambon, S., Galtier, M., Arnal, P., Wainrib, G. and Gramfort, A.
+#       (2018)A Deep Learning Architecture for Temporal Sleep Stage
+#       Classification Using Multivariate and Multimodal Time Series.
+#       IEEE Trans. on Neural Systems and Rehabilitation Engineering 26:
+#       (758-769)
+#
+# .. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
+#        a sleep-dependent neuronal feedback loop: the slow-wave
+#        microcontinuity of the EEG. IEEE-BME 47(9):1185-1194 (2000).
+#
+# .. [3] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
+#        Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. (2000)
+#        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
+#        Research Resource for Complex Physiologic Signals.
+#        Circulation 101(23):e215-e220

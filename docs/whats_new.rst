@@ -28,6 +28,11 @@ Enhancements
 - Solving issues with slow conda and splitting the doc and test .yml to speed the CI. (:gh:`479` by `Bruno Aristimunha`_)
 - Refactoring the documentation and creating a sub-structure for the examples (:gh:`470` by `Denis A. Engemann`_ and `Bruno Aristimunha`_)
 - Improving the GitHub Actions CI and solving the skorch compatibility in the examples (:gh:`472` by `Bruno Aristimunha`_)
+- Changing the documentation order (:gh:`489` by `Bruno Aristimunha`_)
+- Improve the documentation for the Temple University Hospital (TUH) EEG Corpus with discrete targets (:gh:`485` by `Pierre Guetschel`_ and `Bruno Aristimunha`_)
+- Improving documentation for MOABB dataset, Trialwise Decoding & Cropped Decoding (:gh:`490` by `Daniel Wilson`_)
+- Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
+- Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 
 Bugs
@@ -98,7 +103,7 @@ Version 0.6 (2021-12-06)
 Enhancements
 ~~~~~~~~~~~~
 - Adding :class:`braindecode.samplers.SequenceSampler` along with support for returning sequences of windows in :class:`braindecode.datasets.BaseConcatDataset` and an updated sleep staging example to show how to train on sequences of windows (:gh:`263` by `Hubert Banville`_)
-- Adding Thinker Invariance Network :class:`braindecode.models.TIDNet` (:gh:`170` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+- Adding Thinker Invariance Network :class:`braindecode.models.TIDNet` (:gh:`170` by `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Adding a confusion matrix plot generator :func:`braindecode.visualization.plot_confusion_matrix` (:gh:`274` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Adding data :ref:`augmentation_api` module (:gh:`254` by `Cedric Rommel`_, `Alex Gramfort`_ and `Thomas Moreau`_)
 - Adding Mixup augmentation :class:`braindecode.augmentation.Mixup` (:gh:`254` by `Simon Brandt`_)
@@ -181,7 +186,7 @@ Authors
 .. _Lukas Gemein: https://github.com/gemeinl
 .. _Maciej Śliwowski: https://github.com/sliwy
 .. _Ann-Kathrin Kiessner: https://github.com/Ann-KathrinKiessner
-.. _Dan Wilson: https://github.com/dcwil
+.. _Daniel Wilson: https://github.com/dcwil
 .. _Henrik Bonsmann: https://github.com/HenrikBons
 .. _Vytautas Jankauskas: https://github.com/vytjan
 .. _Theo Gnassounou: https://github.com/Tgnassou
