@@ -5,7 +5,7 @@
 from typing import List, Optional
 import warnings
 
-from docstring_inheritance import NumpyDocstringInheritanceMeta
+from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 
 
 def deprecated_args(obj, *args):
@@ -25,7 +25,7 @@ def deprecated_args(obj, *args):
     return out_args
 
 
-class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
+class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     """
     Mixin class for EEG models.
 
@@ -49,11 +49,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         Length of the input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recordings.
-
-    .. note::
-
-       If some input signal-related parameters are not specified,
-       there will be an attempt to infer them from the other parameters.
 
     Raises
     ------
