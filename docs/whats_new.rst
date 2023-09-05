@@ -34,7 +34,7 @@ Enhancements
 - Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
 - Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
 - Add :class:`braindecode.models.base.EEGModuleMixin` base class for all braindecode models (:gh:`488` by `Pierre Guetschel`_)
-- Normalize all models common parameters and leaving the old ones as depreciated (:gh:`488` by `Pierre Guetschel`_)
+- Normalize all models common parameters and leaving the old ones as deprecated (:gh:`488` by `Pierre Guetschel`_)
 - Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Sylvain Chevallier`_)
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 
