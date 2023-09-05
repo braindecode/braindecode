@@ -29,20 +29,25 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
     """
     Mixin class for EEG models.
 
+    .. note::
+
+       If some input signal-related parameters are not specified,
+       there will be an attempt to infer them from the other parameters.
+
     Parameters
     ----------
-    n_outputs: int
+    n_outputs : int
         Number of outputs of the model. This is the number of classes
         in the case of classification.
-    n_chans: int
+    n_chans : int
         Number of EEG channels.
-    ch_names: list of str
+    ch_names : list of str
         Names of the EEG channels.
-    n_times: int
+    n_times : int
         Number of time samples of the input window.
-    input_window_seconds: float
+    input_window_seconds : float
         Length of the input window in seconds.
-    sfreq: float
+    sfreq : float
         Sampling frequency of the EEG recordings.
 
     .. note::
