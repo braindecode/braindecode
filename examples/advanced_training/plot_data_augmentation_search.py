@@ -40,7 +40,7 @@ the context of trialwise decoding with the BCI IV 2a dataset.
 #
 # Loading
 # ~~~~~~~
-# 
+#
 # First, we load the data. In this tutorial, we use the functionality of braindecode
 # to load BCI IV competition dataset 1. The dataset is available on the BNCI website.
 # There is 9 subjects recorded with 22 electrodes while doing a motor imagery task,
@@ -59,7 +59,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # ~~~~~~~~~~~~~
 #
 # We apply a bandpass filter, from 4 to 38 Hz to focus motor imagery-related
-# brain activity. 
+# brain activity
 
 from braindecode.preprocessing import (
     exponential_moving_standardize, preprocess, Preprocessor)
@@ -134,7 +134,7 @@ eval_set = splitted['session_E']
 # This categorization has been proposed by [1]_ to explain and aggregate
 # the several possibilities of augmentations in EEG, being them:
 # a) Frequency domain augmentations,
-# b) Time domain augmentations, 
+# b) Time domain augmentations,
 # c) Spatial domain augmentations.
 #
 # From this same paper, we selected the best augmentations in each type: ``FTSurrogate``,
@@ -320,8 +320,12 @@ print(f'Eval accuracy is {score * 100:.2f}%.')
 # Plot results
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+import matplotlib.pyplot as plt
+
 fig, ax = plt.subplots()
-search_results.plot.bar(x="param_iterator_train__transforms", y="mean_train_score", yerr="std_train_score", rot=45, color=["C0", "C0", "C1", "C1", "C2", "C2"], legend=None, ax=ax)
+search_results.plot.bar(
+    x="param_iterator_train__transforms", y="mean_train_score", yerr="std_train_score",
+    rot=45, color=["C0", "C0", "C1", "C1", "C2", "C2"], legend=None, ax=ax)
 ax.set_xlabel("Data augmentation strategy")
 ax.set_ylim(0.2, 0.32)
 plt.tight_layout()
