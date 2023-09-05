@@ -136,8 +136,8 @@ class DropChannels(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.filter import FilterMixin
-        base_class = FilterMixin.resample
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.drop_channels
         _doc__ = _update_moabb_docstring(base_class, doc)
 
     except ModuleNotFoundError:
@@ -169,8 +169,8 @@ class SetEEGReference(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.filter import FilterMixin
-        base_class = FilterMixin.resample
+        from mne.channels import channels
+        base_class = channels.ReferenceMixin.set_eeg_reference
         _doc__ = _update_moabb_docstring(base_class, doc)
 
     except ModuleNotFoundError:
@@ -202,7 +202,7 @@ class Filter(Preprocessor):
     """
     try:
         from mne.filter import FilterMixin
-        base_class = FilterMixin.resample
+        base_class = FilterMixin.filter
         _doc__ = _update_moabb_docstring(base_class, doc)
 
     except ModuleNotFoundError:
@@ -223,7 +223,7 @@ class Filter(Preprocessor):
         super().__init__(fn, **kwargs)
 
 
-class Pick(Preprocessor):
+class PickTypes(Preprocessor):
     doc = """
     Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
 
@@ -233,8 +233,8 @@ class Pick(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.filter import FilterMixin
-        base_class = FilterMixin.resample
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.pick_types
         _doc__ = _update_moabb_docstring(base_class, doc)
 
     except ModuleNotFoundError:
@@ -248,7 +248,38 @@ class Pick(Preprocessor):
         # if callable(fn) and apply_on_array:
 
         # just pass the name in here maby?
-        fn = 'pick'
+        fn = 'pick_types'
+        self.fn = fn
+        self.kwargs = kwargs
+
+        super().__init__(fn, **kwargs)
+
+class PickChannels(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.pick_channels
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        # Ignore "fn" parameter -> the only preprocessing that is going to be used here is mne.Epochs's resample
+        # Removing this string parameter, because it's going to execute directly the said preprocess
+        # if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
+        #    warn('Preprocessing choices with lambda functions cannot be saved.')
+        # if callable(fn) and apply_on_array:
+
+        # just pass the name in here maby?
+        fn = 'pick_channels'
         self.fn = fn
         self.kwargs = kwargs
 
