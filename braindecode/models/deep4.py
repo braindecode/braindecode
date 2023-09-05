@@ -130,6 +130,8 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.final_conv_length = final_conv_length
