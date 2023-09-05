@@ -673,9 +673,9 @@ print(best_parameters)
 
 print(
     f"Best hyperparameters were which gave a validation "
-    f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
-    f"accuracy of {best_run['mean_train_score'] * 100:.2f}%)."
+    f"accuracy of "
 )
+print(best_run['mean_test_score'] * 100)
 
 ######################################################################
 # Option 2: k-Fold Cross Validation
