@@ -136,6 +136,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_channels, n_classes, input_size_s
         self.conv_block_n_filters = conv_block_n_filters
         self.conv_block_kernel_length_1 = conv_block_kernel_length_1
         self.conv_block_kernel_length_2 = conv_block_kernel_length_2
@@ -161,7 +163,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.dimshuffle = Rearrange("batch C T 1 -> batch 1 T C")
 
         self.conv_block = _ConvBlock(
-            n_channels=n_chans,  # input shape: (batch_size, 1, T, C)
+            n_channels=self.n_chans,  # input shape: (batch_size, 1, T, C)
             n_filters=conv_block_n_filters,
             kernel_length_1=conv_block_kernel_length_1,
             kernel_length_2=conv_block_kernel_length_2,
@@ -172,7 +174,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         )
 
         self.F2 = int(conv_block_depth_mult * conv_block_n_filters)
-        self.Tc = int(input_window_seconds * sfreq / (
+        self.Tc = int(self.input_window_seconds * self.sfreq / (
                 conv_block_pool_size_1 * conv_block_pool_size_2))
         self.Tw = self.Tc - self.n_windows + 1
 
