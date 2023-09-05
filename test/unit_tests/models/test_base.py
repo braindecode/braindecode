@@ -53,7 +53,7 @@ def test_missing_params(
         input_window_seconds=input_window_seconds,
         sfreq=sfreq,
     )
-    with pytest.raises(AttributeError):
+    with pytest.raises(ValueError):
         assert module.n_outputs == 1
         assert module.n_chans == 1
         assert module.ch_names == ['ch1']

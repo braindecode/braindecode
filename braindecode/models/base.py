@@ -92,7 +92,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
     @property
     def n_outputs(self):
         if self._n_outputs is None:
-            raise AttributeError('n_outputs not specified.')
+            raise ValueError('n_outputs not specified.')
         return self._n_outputs
 
     @property
@@ -100,7 +100,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         if self._n_chans is None and self._ch_names is not None:
             return len(self._ch_names)
         elif self._n_chans is None:
-            raise AttributeError(
+            raise ValueError(
                 'n_chans could not be inferred. Either specify n_chans or ch_names.'
             )
         return self._n_chans
@@ -108,7 +108,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
     @property
     def ch_names(self):
         if self._ch_names is None:
-            raise AttributeError('ch_names not specified.')
+            raise ValueError('ch_names not specified.')
         return self._ch_names
 
     @property
@@ -120,7 +120,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         ):
             return int(self._input_window_seconds * self._sfreq)
         elif self._n_times is None:
-            raise AttributeError(
+            raise ValueError(
                 'n_times could not be inferred. '
                 'Either specify n_times or input_window_seconds and sfreq.'
             )
@@ -135,7 +135,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         ):
             return self._n_times / self._sfreq
         elif self._input_window_seconds is None:
-            raise AttributeError(
+            raise ValueError(
                 'input_window_seconds could not be inferred. '
                 'Either specify input_window_seconds or n_times and sfreq.'
             )
@@ -150,7 +150,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceMeta):
         ):
             return self._n_times / self._input_window_seconds
         elif self._sfreq is None:
-            raise AttributeError(
+            raise ValueError(
                 'sfreq could not be inferred. '
                 'Either specify sfreq or input_window_seconds and n_times.'
             )
