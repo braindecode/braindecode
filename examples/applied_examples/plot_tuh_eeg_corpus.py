@@ -27,10 +27,8 @@ from braindecode.datasets import TUH
 from braindecode.preprocessing import (
     preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
 
-
 plt.style.use('seaborn')
 mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
-
 
 ###############################################################################
 # Creating the dataset using TUHMock
@@ -42,9 +40,10 @@ mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
 
 from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 
-
 ###############################################################################
 # Firstly, we start by creating a TUH mock dataset using braindecode's _TUHMock class.
+# The complete code can be found at :func:`braindecode.datasets.TUH`, but we will give
+# a small description of how it works.
 # This class is able to read the recordings from TUH_PATH and generate a description
 # by parsing information from file paths, such as patient id and recording data.
 # THis description can later be accessed by the object's .description method.
@@ -55,33 +54,67 @@ from braindecode.datasets.tuh import _TUHMock as TUH  # noqa F811
 # directly to the description.
 
 TUH_PATH = 'please insert actual path to data here'
-N_JOBS = 2  # specify the number of jobs for loading and windowing
+# specify the number of jobs for loading and windowing
+N_JOBS = 2
 tuh = TUH(
     path=TUH_PATH,
     recording_ids=None,
     target_name=None,
     preload=False,
     add_physician_reports=False,
-    n_jobs=1 if TUH.__name__ == '_TUHMock' else N_JOBS,  # Mock dataset can't
-    # be loaded in parallel
+    n_jobs=1 if TUH.__name__ == '_TUHMock' else N_JOBS
 )
+
 
 ###############################################################################
 # We can visualize our data's statistics using the class' "description" method
 
-fig, ax = plt.subplots() #1, 1, figsize=(15, 5)
-genders = tuh.description.gender.unique()
-x = [tuh.description.age[tuh.description.gender == g] for g in genders]
-ax.hist(
-    x=x,
-    stacked=True,
-    bins=np.arange(100, dtype=int),
-    alpha=.5,
-)
-ax.legend(genders, fontsize=10)
-ax.set_xlabel('Age [years]', fontsize=10)
-ax.set_ylabel('Count', fontsize=10)
-plt.show()
+def plt_histogram(df_of_ages_genders, alpha=0.5, fs=24, ylim=1.5, show_title=True):
+    # Dafarame containing info about gender and age of subjects
+    df = df_of_ages_genders
+    male_df = df[df["gender"] == 'M']
+    female_df = df[df["gender"] == 'F']
+
+    plt.figure(figsize=(15, 18))
+    if show_title:
+        plt.suptitle("Age information", y=0.95, fontsize=fs + 5)
+
+    plt.subplot(121)
+    plt.hist(male_df["age"], bins=np.linspace(0, 100, 101), alpha=alpha, color="green", orientation="horizontal")
+    plt.axhline(np.mean(male_df["age"]), color="black",
+                label=f"mean age {np.mean(male_df['age']):.1f} ($\pm$ {np.std(male_df['age']):.1f})")
+    plt.barh(np.mean(male_df["age"]), height=2 * np.std(male_df["age"]), width=ylim, color="black", alpha=0.25)
+    plt.xlim(0, ylim)
+    plt.legend(fontsize=fs, loc="upper left")
+    plt.title(f"male ({100 * len(male_df) / len(df):.1f}%)", fontsize=fs, loc="left", y=1, x=0.05)
+    #plt.get_xaxis().set_visible(False)
+    plt.yticks(color='w')
+    plt.gca().invert_xaxis()
+    plt.yticks(np.linspace(0, 100, 11), fontsize=fs - 5)
+    plt.tick_params(labelsize=fs - 5)
+
+    plt.subplot(122)
+    plt.hist(female_df["age"], bins=np.linspace(0, 100, 101), alpha=alpha, color="orange", orientation="horizontal")
+    plt.axhline(np.mean(female_df["age"]), color="black", linestyle="--",
+                label=f"mean age {np.mean(female_df['age']):.1f} ($\pm$ {np.std(female_df['age']):.1f})")
+    plt.barh(np.mean(female_df["age"]), height=2 * np.std(female_df["age"]), width=ylim, color="black", alpha=0.25)
+    plt.legend(fontsize=fs, loc="upper right")
+    plt.xlim(0, ylim)
+    plt.title(f"female ({100 * len(female_df) / len(df):.1f}%)", fontsize=fs, loc="right", y=1, x=0.95)
+    #plt.yticks([])
+
+    plt.ylim(0, 100)
+    plt.subplots_adjust(wspace=0, hspace=0)
+    plt.ylabel("age [years]", fontsize=fs)
+    plt.xlabel("count", fontsize=fs, x=1, labelpad=20)
+    plt.yticks(np.linspace(0, 100, 11), fontsize=fs - 5)
+    plt.tick_params(labelsize=fs - 5)
+
+    plt.show()
+
+
+df = tuh.description
+plt_histogram(df)
 
 
 ###############################################################################
@@ -114,11 +147,11 @@ tmin = 5 * 60
 tmax = None
 tuh = select_by_duration(tuh, tmin, tmax)
 
-
 ###############################################################################
 # Next, we will discard all recordings that have an incomplete channel
-# configuration on the channels that we are interested. The dataset is subdivided into
-# recordings with 'le' and 'ar' reference which we will have to consider.
+# configuration on the channels that we are interested. The subdivisions of the
+# recordings into 'le' and 'ar' labels represents the channels for
+# the re-referencing of the signals.
 
 short_ch_names = sorted([
     'A1', 'A2',
@@ -145,6 +178,7 @@ le_ch_mapping = {ch_name: short_ch_name for ch_name, short_ch_name in zip(
     le_ch_names, short_ch_names)}
 ch_mapping = {'ar': ar_ch_mapping, 'le': le_ch_mapping}
 
+
 def select_by_channels(ds, ch_mapping):
     split_ids = []
     for i, d in enumerate(ds.datasets):
@@ -167,15 +201,15 @@ tuh = select_by_channels(tuh, ch_mapping)
 # ~~~~~~~~~~~~~
 #
 # Next, we use braindecode's preprocess to combine and execute several preprocessing
-# steps that are executed through 'mne`:
+# steps that are executed through 'mne':
 #
-# #. Crop the recordings to a region of interest
-# #. Re-reference all recordings to 'ar' (requires load)
-# #. Rename channels to short channel names
-# #. Pick channels of interest
-# #. Scale signals to micro volts (requires load)
-# #. Clip outlier values to +/- 800 micro volts (requires load)
-# #. Resample recordings to a common frequency (requires load)
+# - Crop the recordings to a region of interest
+# - Re-reference all recordings to 'ar' (requires load)
+# - Rename channels to short channel names
+# - Pick channels of interest
+# - Scale signals to micro volts (requires load)
+# - Clip outlier values to +/- 800 micro volts (requires load)
+# - Resample recordings to a common frequency (requires load)
 
 def custom_rename_channels(raw, mapping):
     # rename channels which are dependent on referencing:
@@ -211,7 +245,6 @@ preprocessors = [
     Preprocessor(np.clip, a_min=-800, a_max=800, apply_on_array=True),
     Preprocessor('resample', sfreq=sfreq),
 ]
-
 
 ###############################################################################
 # Next, we apply the preprocessors on the selected recordings in parallel.
