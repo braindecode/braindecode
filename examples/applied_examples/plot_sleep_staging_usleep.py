@@ -17,21 +17,6 @@ windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
     This number of epochs is here too small and very few recordings are used.
     To obtain competitive results you need to use more data and more epochs.
 
-References
-----------
-.. [1] Perslev M, Darkner S, Kempfner L, Nikolic M, Jennum PJ, Igel C.
-       U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
-       https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
-
-.. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
-       a sleep-dependent neuronal feedback loop: the slow-wave
-       microcontinuity of the EEG. IEEE-BME 47(9):1185-1194 (2000).
-
-.. [3] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
-       Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. (2000)
-       PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
-       Research Resource for Complex Physiologic Signals.
-       Circulation 101(23):e215-e220
 """
 # Authors: Theo Gnassounou <theo.gnassounou@inria.fr>
 #          Omar Chehab <l-emir-omar.chehab@inria.fr>
@@ -301,14 +286,31 @@ plt.show()
 
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
-
+from braindecode.visualization import plot_confusion_matrix
 from sklearn.metrics import confusion_matrix, classification_report
 
 y_true = np.array([valid_set[i][1] for i in valid_sampler])
 y_pred = clf.predict(valid_set)
 
-print(confusion_matrix(y_true.flatten(), y_pred.flatten()))
+confusion_mat = confusion_matrix(y_true.flatten(), y_pred.flatten())
+
+plot_confusion_matrix(confusion_mat=confusion_mat,
+                      class_names=['Wake', 'N1', 'N2', 'N3', 'REM'])
+
 print(classification_report(y_true.flatten(), y_pred.flatten()))
+
+######################################################################
+# Finally, we can also visualize the hypnogram of the recording we used for
+# validation, with the predicted sleep stages overlaid on top of the true
+# sleep stages. We can see that the model cannot correctly identify the
+# different sleep stages with this amount of training.
+
+import matplotlib.pyplot as plt
+fig, ax = plt.subplots(figsize=(15, 5))
+ax.plot(y_true.flatten(), color='b', label='Expert annotations')
+ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)
+ax.set_xlabel('Time (epochs)')
+ax.set_ylabel('Sleep stage')
 
 ######################################################################
 # Our model was able to learn, as shown by the decreasing training and
@@ -316,3 +318,21 @@ print(classification_report(y_true.flatten(), y_pred.flatten()))
 # (only two recordings in this example). To further improve performance, more
 # recordings should be included in the training set, the model should be
 # trained for more epochs and hyperparameters should be optimized.
+
+###########################################################################
+# References
+# ----------
+#
+# .. [1] Perslev M, Darkner S, Kempfner L, Nikolic M, Jennum PJ, Igel C.
+#        U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
+#        https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
+#
+# .. [2] B Kemp, AH Zwinderman, B Tuk, HAC Kamphuisen, JJL Oberyé. Analysis of
+#        a sleep-dependent neuronal feedback loop: the slow-wave
+#        microcontinuity of the EEG. IEEE-BME 47(9):1185-1194 (2000).
+#
+# .. [3] Goldberger AL, Amaral LAN, Glass L, Hausdorff JM, Ivanov PCh,
+#        Mark RG, Mietus JE, Moody GB, Peng C-K, Stanley HE. (2000)
+#        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
+#        Research Resource for Complex Physiologic Signals.
+#        Circulation 101(23):e215-e220
