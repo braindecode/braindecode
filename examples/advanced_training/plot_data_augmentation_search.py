@@ -133,6 +133,7 @@ eval_set = splitted['session_E']
 # In this tutorial, we will use three categories of augmentations.
 # This categorization has been proposed by [1]_ to explain and aggregate
 # the several possibilities of augmentations in EEG, being them:
+#
 # a) Frequency domain augmentations,
 # b) Time domain augmentations,
 # c) Spatial domain augmentations.
