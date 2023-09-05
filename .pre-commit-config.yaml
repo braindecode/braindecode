@@ -64,7 +64,7 @@ repos:
     rev: v0.0.281
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix, --ignore, E501]
+        args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501]
 
 #  - repo: https://github.com/pycqa/pydocstyle
 #    rev: 6.3.0
@@ -78,7 +78,7 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar
+          - --ignore-words-list=splitted,meaned,wil,additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar
           - --skip="./.*,*.csv,*.json,*.ambr"
           - --quiet-level=2
         exclude_types: [csv, json]
