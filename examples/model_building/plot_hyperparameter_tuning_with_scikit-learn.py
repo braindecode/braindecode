@@ -2,9 +2,34 @@
 Hyperparameter tuning with scikit-learn
 =======================================
 
-This tutorial shows you how to tune hyperparameters with scikit-learn
-(GridSearchCV) in the setting of trialwise decoding on dataset
-BCIC IV 2a.
+The braindecode provides some compatibility with scikit-learn. This allows us
+to use scikit-learn functionality to find the best hyperparameters for our
+model. This is especially useful to tune hyperparameters or
+parameters for one decoding task or specific dataset.
+
+.. topic:: Why do you need to tune the neural networks model?
+
+    Deep learning models are often sensitive to the choice of hyperparameters
+    and parameters. Hyperparameters are the parameters set before
+    training the model, such as the learning rate, the number of epochs, the
+    batch size, etc. On the other hand, parameters are learned during
+    training, such as the neural network weights. The choice of these
+    can have a significant impact on the performance of the model.
+    Therefore, it is important to tune these to maximize the discriminative
+    power of the model, in the case of decoding tasks (classification,
+    regression, etc.), such as sleep staging, BCI, pathology detection, etc.
+    We recommend the Deep Learning Tuning Playbook by Google to learn more
+    about hyperparameters and parameters tuning [1]_.
+
+
+In this tutorial, we will use the standard decoding approach to show the impact
+of the learning rate and dropout probability on the model's performance.
+
+
+
+.. contents:: This example covers:
+   :local:
+   :depth: 2
 
 """
 
@@ -37,7 +62,6 @@ from braindecode.datasets.moabb import MOABBDataset
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
-
 
 ######################################################################
 # Preprocessing
@@ -73,16 +97,18 @@ init_block_size = 1000
 factor = 1e6
 
 preprocessors = [
-    Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
+    Preprocessor('pick_types', eeg=True, meg=False, stim=False),
+    # Keep EEG sensors
     Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-    Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
+    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),
+    # Bandpass filter
+    Preprocessor(exponential_moving_standardize,
+                 # Exponential moving standardization
                  factor_new=factor_new, init_block_size=init_block_size)
 ]
 
 # Transform the data
 preprocess(dataset, preprocessors, n_jobs=-1)
-
 
 ######################################################################
 # Cut Compute Windows
@@ -116,7 +142,6 @@ windows_dataset = create_windows_from_events(
     preload=True,
 )
 
-
 ######################################################################
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -132,7 +157,6 @@ windows_dataset = create_windows_from_events(
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
 eval_set = splitted['session_E']
-
 
 ######################################################################
 # Create model
@@ -150,12 +174,13 @@ eval_set = splitted['session_E']
 # to use your own model, it just has to be a normal PyTorch
 # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
 #
-
+from functools import partial
 import torch
 from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
 
-cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
+# check if GPU is available, if True chooses to use it
+cuda = torch.cuda.is_available()
 device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
@@ -168,17 +193,20 @@ n_classes = 4
 n_chans = train_set[0][0].shape[0]
 input_window_samples = train_set[0][0].shape[1]
 
-model = ShallowFBCSPNet(
-    n_chans,
-    n_classes,
-    input_window_samples=input_window_samples,
-    final_conv_length='auto',
-)
+# To analyze the impact of the different parameters inside the torch model, we
+# need to create partial initialisations. This is because the
+# GridSearchCV of scikit-learn will try to initialize the model with the
+# parameters we want to tune. If we do not do this, the GridSearchCV will
+# try to initialize the model with the parameters we want to tune but
+# without the parameters we do not want to tune. This will result in an
+# error.
+model = partial(ShallowFBCSPNet, n_chans, n_classes,
+                input_window_samples=input_window_samples,
+                final_conv_length='auto', )
 
 # Send model to GPU
 if cuda:
     model.cuda()
-
 
 ######################################################################
 # Training
@@ -194,8 +222,9 @@ if cuda:
 #
 
 from skorch.callbacks import LRScheduler
-
+from skorch.dataset import ValidSplit
 from braindecode import EEGClassifier
+
 batch_size = 16
 n_epochs = 2
 
@@ -203,9 +232,9 @@ clf = EEGClassifier(
     model,
     criterion=torch.nn.NLLLoss,
     optimizer=torch.optim.AdamW,
-    optimizer__lr=[],
+    optimizer__lr=[],  # This will be handled by GridSearchCV
     batch_size=batch_size,
-    train_split=None,  # train /test split is handled by GridSearchCV
+    train_split=ValidSplit(0.2, random_state=seed),
     callbacks=[
         "accuracy",
         ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
@@ -236,10 +265,15 @@ train_X = SliceDataset(train_set, idx=0)
 train_y = array([y for y in SliceDataset(train_set, idx=1)])
 cv = KFold(n_splits=2, shuffle=True, random_state=42)
 
+learning_rates = [0.00625, 0.0000625]
+drop_probs = [0.2, 0.5, 0.8]
+
 fit_params = {'epochs': n_epochs}
 param_grid = {
-    'optimizer__lr': [0.00625, 0.000625, 0.0000625],
+    'optimizer__lr': learning_rates,
+    'module__drop_prob': drop_probs
 }
+
 search = GridSearchCV(
     estimator=clf,
     param_grid=param_grid,
@@ -248,19 +282,56 @@ search = GridSearchCV(
     scoring='accuracy',
     refit=True,
     verbose=1,
-    error_score='raise'
+    error_score='raise',
+    n_jobs=-1,
 )
 
 search.fit(train_X, train_y, **fit_params)
 
+# Extract the results into a DataFrame
 search_results = pd.DataFrame(search.cv_results_)
 
+######################################################################
+# Plotting the results
+# --------------------
+#
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+
+# Create a pivot table for the heatmap
+pivot_table = search_results.pivot(index='param_optimizer__lr',
+                                   columns='param_module__drop_prob',
+                                   values='mean_test_score')
+# Create the heatmap
+fig, ax = plt.subplots()
+sns.heatmap(pivot_table, annot=True, fmt=".3f",
+            cmap="YlGnBu", cbar=True)
+plt.title('Grid Search Mean Test Scores')
+plt.xlabel('Learning Rate')
+plt.ylabel('Dropout Probability')
+plt.tight_layout()
+plt.show()
+
+###########################################################################
+# Get the best hyperparameters
+# ----------------------------
+#
 best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
-print(f"Best hyperparameters were {best_run['params']} which gave a validation "
-      f"accuracy of {best_run['mean_test_score']*100:.2f}% (training "
-      f"accuracy of {best_run['mean_train_score']*100:.2f}%).")
+print(
+    f"Best hyperparameters were {best_run['params']} which gave a validation "
+    f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
+    f"accuracy of {best_run['mean_train_score'] * 100:.2f}%).")
 
 eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)
 score = search.score(eval_X, eval_y)
-print(f"Eval accuracy is {score*100:.2f}%.")
+print(f"Eval accuracy is {score * 100:.2f}%.")
+
+###########################################################################
+# References
+# ----------
+#
+# .. [1] Varun Godbole, George E. Dahl, Justin Gilmer, Christopher J. Shallue,
+#       Zachary Nado (2022). Deep Learning Tuning Playbook.
+#       Github https://github.com/google-research/tuning_playbook

@@ -1,30 +1,33 @@
 """
-Trialwise Decoding on BCIC IV 2a Dataset
+Basic Brain Decoding on EEG Data
 ========================================
 
 This tutorial shows you how to train and test deep learning models with
 Braindecode in a classical EEG setting: you have trials of data with
 labels (e.g., Right Hand, Left Hand, etc.).
 
+.. contents:: This example covers:
+   :local:
+   :depth: 2
+
 """
 
 ######################################################################
-# Loading and preprocessing the dataset
+# Loading and preparing the data
 # -------------------------------------
 #
 
 
 ######################################################################
-# Loading
-# ~~~~~~~
+# Loading a MOABB dataset
+# ~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
 ######################################################################
-# First, we load the data. In this tutorial, we use the functionality of
-# braindecode to load datasets through
-# `MOABB <https://github.com/NeuroTechX/moabb>`__ to load the BCI
-# Competition IV 2a data.
+# First, we load the data. In this tutorial, we load the BCI Competition
+# IV 2a data by using braindecode to load through
+# `MOABB <https://github.com/NeuroTechX/moabb>`__.
 #
 # .. note::
 #    To load your own datasets either via mne or from
@@ -54,8 +57,8 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # numpy array.
 #
 # .. note::
-#    These prepocessings are now directly applied to the loaded
-#    data, and not on-the-fly applied as transformations in
+#    Generally, braindecode prepocessing is directly applied to the loaded
+#    data, and not applied on-the-fly as transformations, such as in
 #    PyTorch-libraries like
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
@@ -85,17 +88,17 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
-# Cut Compute Windows
-# ~~~~~~~~~~~~~~~~~~~
+# Cutting Compute Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
 ######################################################################
-# Now we cut out compute windows, the inputs for the deep networks during
-# training. In the case of trialwise decoding, we just have to decide if
-# we want to cut out some part before and/or after the trial. For this
-# dataset, in our work, it often was beneficial to also cut out 500 ms
-# before the trial.
+# Now we cut compute windows from the signals, these will be the inputs
+# for the deep networks during training. In the case of trialwise
+# decoding, we just have to decide if we want to include some part
+# before and/or after the trial. For our work with this dataset,
+# it was often beneficial to also include the 500 ms before the trial.
 #
 
 from braindecode.preprocessing import create_windows_from_events
@@ -118,8 +121,8 @@ windows_dataset = create_windows_from_events(
 
 
 ######################################################################
-# Split dataset into train and valid
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Splitting the dataset into training and validation sets
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
@@ -135,7 +138,7 @@ valid_set = splitted['session_E']
 
 
 ######################################################################
-# Create model
+# Creating a model
 # ------------
 #
 
@@ -143,9 +146,7 @@ valid_set = splitted['session_E']
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
-# time-domain EEG. Here, we use the shallow ConvNet model from `Deep
-# learning with convolutional neural networks for EEG decoding and
-# visualization <https://arxiv.org/abs/1703.05051>`__. These models are
+# time-domain EEG. Here, we use the shallow ConvNet model from [1]_. These models are
 # pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
 # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
@@ -187,13 +188,13 @@ if cuda:
 
 
 ######################################################################
-# Training
-# --------
+# Model Training
+# --------------
 #
 
 
 ######################################################################
-# Now we train the network! EEGClassifier is a Braindecode object
+# Now we will train the network! ``EEGClassifier`` is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
 # from skorch.NeuralNetClassifier, so the training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
@@ -211,7 +212,7 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
-# These values we found good for shallow network:
+# We found these values to be good for the shallow network:
 lr = 0.0625 * 0.01
 weight_decay = 0
 
@@ -236,13 +237,13 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
-# Model training for a specified number of epochs. `y` is None as it is already supplied
+# Model training for the specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
-# Plot Results
+# Plotting Results
 # ------------
 #
 
@@ -291,13 +292,13 @@ plt.tight_layout()
 
 
 ######################################################################
-# Plot Confusion Matrix
-# ---------------------
+# Plotting a  Confusion Matrix
+# ----------------------------
 #
 
 
 #######################################################################
-# Generate a confusion matrix as in https://onlinelibrary.wiley.com/doi/full/10.1002/hbm.23730
+# Here we generate a confusion matrix as in [1]_.
 #
 
 
@@ -320,3 +321,13 @@ labels = list(dict(sorted(list(label_dict), key=lambda kv: kv[1])).keys())
 
 # plot the basic conf. matrix
 plot_confusion_matrix(confusion_mat, class_names=labels)
+
+#############################################################
+#
+#
+# References
+# ----------
+# .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
+#        Deep learning with convolutional neural networks for EEG decoding and visualization.
+#        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
