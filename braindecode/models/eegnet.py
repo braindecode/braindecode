@@ -31,8 +31,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
     Parameters
     ----------
-    n_chans : int
-        XXX
+    final_conv_length: int | "auto"
+        If int, final length of convolutional filters.
 
     Notes
     -----
