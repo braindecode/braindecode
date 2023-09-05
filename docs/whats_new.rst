@@ -46,6 +46,7 @@ Bugs
 
 API changes
 ~~~~~~~~~~~
+- Removing support for Python 3.7 (:gh:`397` by `Bruno Aristimunha`_)
 
 .. _changes_0_8_0:
 
