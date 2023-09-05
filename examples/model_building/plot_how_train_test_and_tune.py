@@ -11,9 +11,13 @@ defining a model, and other details which are not exclusive to this page (compar
 `Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
-In general we distinguish between "usual" training and evaluation and hyperparameter search.
+In general, we distinguish between "usual" training and evaluation and hyperparameter search.
 The tutorial is therefore split into two parts, one for the three different training schemes
 and one for the two different hyperparameter tuning methods.
+
+.. contents:: This example covers:
+   :local:
+   :depth: 2
 
 """
 
@@ -657,8 +661,16 @@ search.fit(X_train, y_train)
 search_results = pd.DataFrame(search.cv_results_)
 
 best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
+
+best_parameters = best_run["params"]
+
+if type(best_parameters) is dict:
+    best_parameters = str(best_parameters.items())
+else:
+    best_parameters = best_parameters.to_string()
+
 print(
-    f"Best hyperparameters were {str(best_run['params'])} which gave a validation "
+    f"Best hyperparameters were {best_parameters} which gave a validation "
     f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
     f"accuracy of {best_run['mean_train_score'] * 100:.2f}%)."
 )
