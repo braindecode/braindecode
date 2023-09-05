@@ -3,7 +3,7 @@ name: push-artifact-to-circle-ci
 # will be changed to on workflow_run
 on:
   workflow_run:
-    workflows: ["tests-and-docs"]
+    workflows: ["docs"]
     branches-ignore: ["master"]
     types:
       - completed
