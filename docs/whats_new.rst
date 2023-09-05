@@ -211,3 +211,4 @@ Authors
 .. _Marco Zamboni: https://github.com/ZamboniMarco99
 .. _Sara Sedlar: https://github.com/Sara04
 .. _Bruna Lopes: https://github.com/brunaafl
+.. _Sylvain Chevallier: https://github.com/sylvchev
