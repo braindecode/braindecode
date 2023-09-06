@@ -141,7 +141,9 @@ from braindecode.samplers import SequenceSampler
 n_windows = 3  # Sequences of 3 consecutive windows; originally 35 in paper
 n_windows_stride = 3  # Non-overlapping sequences
 
-train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
+train_sampler = SequenceSampler(
+    train_set.get_metadata(), n_windows, n_windows_stride, randomize=True
+)
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
