@@ -159,13 +159,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def get_torchinfo_statistics(
         self,
-        col_names: Iterable[str] | None = (
+        col_names: Optional[Iterable[str]] = (
             "input_size",
             "output_size",
             "num_params",
             "kernel_size",
         ),
-        row_settings: Iterable[str] | None = ("var_names", "depth"),
+        row_settings: Optional[Iterable[str]] = ("var_names", "depth"),
     ) -> ModelStatistics:
         """Generate table describing the model using torchinfo.summary.
 
