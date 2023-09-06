@@ -94,7 +94,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             self,
             n_chans=None,
             n_outputs=None,
-            n_times=None,
+            n_times=1000,
             sfreq=128,
             drop_prob=0.5,
             scales_samples_s=(0.5, 0.25, 0.125),
