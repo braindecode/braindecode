@@ -2,13 +2,15 @@
 #
 # License: BSD (3-clause)
 
+from collections import OrderedDict
+
 import numpy as np
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
 from einops.layers.torch import Rearrange
 
-from .modules import Expression, AvgPool2dWithConv, Ensure4d
+from .modules import Expression, AvgPool2dWithConv, Ensure4d, CombinedConv
 from .functions import identity, squeeze_final_output
 from ..util import np_to_th
 
@@ -157,25 +159,16 @@ class Deep4Net(nn.Sequential):
         first_pool_class = pool_class_dict[self.first_pool_mode]
         later_pool_class = pool_class_dict[self.later_pool_mode]
         if self.split_first_layer:
-            self.add_module("dimshuffle",
-                            Rearrange("batch C T 1 -> batch 1 T C"))
+            self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 T C"))
             self.add_module(
-                "conv_time",
-                nn.Conv2d(
-                    1,
-                    self.n_filters_time,
-                    (self.filter_time_length, 1),
-                    stride=1,
-                ),
-            )
-            self.add_module(
-                "conv_spat",
-                nn.Conv2d(
-                    self.n_filters_time,
-                    self.n_filters_spat,
-                    (1, self.in_chans),
-                    stride=(conv_stride, 1),
-                    bias=not self.batch_norm,
+                "conv_time_spat",
+                CombinedConv(
+                    in_chans=self.in_chans,
+                    n_filters_time=self.n_filters_time,
+                    n_filters_spat=self.n_filters_spat,
+                    filter_time_length=filter_time_length,
+                    bias_time=True,
+                    bias_spat=not self.batch_norm,
                 ),
             )
             n_filters_conv = self.n_filters_spat
@@ -244,9 +237,7 @@ class Deep4Net(nn.Sequential):
                     stride=(pool_stride, 1),
                 ),
             )
-            self.add_module(
-                "pool_nonlin" + suffix, Expression(self.later_pool_nonlin)
-            )
+            self.add_module("pool_nonlin" + suffix, Expression(self.later_pool_nonlin))
 
         add_conv_pool_block(
             self, n_filters_conv, self.n_filters_2, self.filter_length_2, 2
@@ -285,12 +276,12 @@ class Deep4Net(nn.Sequential):
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
-        init.xavier_uniform_(self.conv_time.weight, gain=1)
+        init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
         # maybe no bias in case of no split layer and batch norm
         if self.split_first_layer or (not self.batch_norm):
-            init.constant_(self.conv_time.bias, 0)
+            init.constant_(self.conv_time_spat.conv_time.bias, 0)
         if self.split_first_layer:
-            init.xavier_uniform_(self.conv_spat.weight, gain=1)
+            init.xavier_uniform_(self.conv_time_spat.conv_spat.weight, gain=1)
             if not self.batch_norm:
                 init.constant_(self.conv_spat.bias, 0)
         if self.batch_norm:
@@ -314,3 +305,18 @@ class Deep4Net(nn.Sequential):
 
         # Start in eval mode
         self.eval()
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was implemented"""
+        keys_to_change = [
+            "conv_time.weight",
+            "conv_spat.weight",
+            "conv_time.bias",
+            "conv_spat.bias",
+        ]
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            if k in keys_to_change:
+                k = f"conv_time_spat.{k}"
+            new_state_dict[k] = v
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
