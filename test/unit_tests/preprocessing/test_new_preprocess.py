@@ -1,6 +1,11 @@
-# Author: Bruna Lopes <brunajaflopes@gmail.com>
+# Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Lukas Gemein <l.gemein@gmail.com>
+#          Bruna Lopes <brunajaflopes@gmail.com>
+#
+# Adapting some tests from test_preprocess file
 #
 # License: BSD-3
+
 
 import os
 import copy
@@ -16,10 +21,8 @@ from pytest_cases import parametrize_with_cases
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
-    preprocess, Preprocessor, filterbank, exponential_moving_demean,
-    exponential_moving_standardize, _replace_inplace,
+    preprocess, Preprocessor, filterbank, exponential_moving_standardize,
     _set_preproc_kwargs)
-from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing.preprocess_classes import (
@@ -36,45 +39,22 @@ windows_ds = create_fixed_length_windows(
     drop_last_window=True, mapping=None, preload=True)
 
 
+# Get the raw data in fixture
 @pytest.fixture
 def base_concat_ds():
     # copy raw data
     return copy.deepcopy(raw_ds)
 
 
+# Get windowed data
 @pytest.fixture
 def windows_concat_ds():
     # copy windowed data
     return copy.deepcopy(windows_ds)
 
 
-def modify_windows_object(epochs, factor=1):
-    epochs._data *= factor
-
-
-def test_not_list():
-    with pytest.raises(AssertionError):
-        preprocess(None, {'test': 1})
-
-
-def test_no_raw_or_epochs():
-    class EmptyDataset(object):
-        def __init__(self):
-            self.datasets = [1, 2, 3]
-
-    ds = EmptyDataset()
-    with pytest.raises(AssertionError):
-        preprocess(ds, ["dummy", "dummy"])
-
-
-def test_method_not_available(base_concat_ds):
-    preprocessors = [Preprocessor('this_method_is_not_real', )]
-    with pytest.raises(AttributeError):
-        preprocess(base_concat_ds, preprocessors)
-
-
 def test_preprocess_raw_str(base_concat_ds):
-    preprocessors = [Preprocessor('crop', tmax=10, include_tmax=False)]
+    preprocessors = [Crop(tmax=10, include_tmax=False)]
     preprocess(base_concat_ds, preprocessors)
     assert len(base_concat_ds.datasets[0].raw.times) == 2500
     assert all([ds.raw_preproc_kwargs == [
@@ -84,7 +64,7 @@ def test_preprocess_raw_str(base_concat_ds):
 
 def test_preprocess_windows_str(windows_concat_ds):
     preprocessors = [
-        Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
+        Crop(tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
     assert windows_concat_ds[0][0].shape[1] == 25
     assert all([ds.window_preproc_kwargs == [
@@ -92,89 +72,42 @@ def test_preprocess_windows_str(windows_concat_ds):
     ] for ds in windows_concat_ds.datasets])
 
 
-def test_preprocess_raw_callable_on_array(base_concat_ds):
-    # Case tested in test_zscore_continuous
-    pass
+# To test one preprocessor at each time, using this fixture structure
+class PrepClasses:
+    @pytest.mark.parametrize("sfreq", [100, 300])
+    def prep_resample(self, sfreq):
+        return Resample(sfreq=sfreq)
+
+    @pytest.mark.parametrize("picks", ['eeg'])
+    def prep_picktype(self, picks):
+        return Pick(picks=picks)
+
+    @pytest.mark.parametrize("picks", [['Cz'], ['C4', 'FC3']])
+    def prep_pickchannels(self, picks):
+        return Pick(picks=picks)
+
+    @pytest.mark.parametrize("l_freq,h_freq", [(4, 30), (7, None), (None, 35)])
+    def prep_filter(self, l_freq, h_freq):
+        return Filter(l_freq=l_freq, h_freq=h_freq)
+
+    @pytest.mark.parametrize("ref_channels", ['average', ['C4'], ['C4', 'Cz']])
+    def prep_setref(self, ref_channels):
+        return SetEEGReference(ref_channels=ref_channels)
+
+    @pytest.mark.parametrize("tmin,tmax", [(0, .1), (.1, 1.2),
+                                           (0.1, None)])
+    def prep_crop(self, tmin, tmax):
+        return Crop(tmin=tmin, tmax=tmax)
+
+    @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
+    def prep_drop(self, ch_names):
+        return DropChannels(ch_names=ch_names)
 
 
-def test_preprocess_windows_callable_on_array(windows_concat_ds):
-    # Case tested in test_zscore_windows
-    pass
-
-
-def test_preprocess_raw_callable_on_object(base_concat_ds):
-    # Case tested in test_filterbank
-    pass
-
-
-def test_preprocess_windows_callable_on_object(windows_concat_ds):
-    factor = 10
-    preprocessors = [Preprocessor(modify_windows_object, apply_on_array=False,
-                                  factor=factor)]
-    raw_window = windows_concat_ds[0][0]
-    preprocess(windows_concat_ds, preprocessors)
-    np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
-                               rtol=1e-4, atol=1e-4)
-
-
-def test_scale_deprecated():
-    msg = 'Function scale is deprecated; will be removed in 0.8.0. ' \
-          'Use numpy.multiply inside a lambda function instead.'
-    with pytest.warns(FutureWarning, match=msg):
-        deprecated_scale(np.random.rand(2, 2), factor=2)
-
-
-@pytest.fixture(scope='module')
-def mock_data():
-    mock_input = np.random.RandomState(20200217).rand(2, 10).reshape(2, 10)
-    expected_standardized = np.array(
-        [[0., -1.41385996, -1.67770482, 1.95328935, 0.61618697,  # noqa: E201,E203,E241,E501
-          -0.55294099, -1.08890304, 1.04546089, -1.368485, -1.08669994],  # noqa: E201,E203,E241,E128,E501
-         [0., -1.41385996, -0.41117774, 1.65212819, -0.5392431,  # noqa: E201,E203,E241,E128,E501
-          -0.23009334, 0.15087203, -1.45238971, 1.88407553, -0.38583499]])  # noqa: E201,E203,E241,E128,E501
-    expected_demeaned = np.array(
-        [[0., -0.02547392, -0.10004415, 0.47681459, 0.1399319,  # noqa: E201,E203,E241,E501
-          -0.11764405, -0.23535964, 0.22749205, -0.3155749, -0.25316515],  # noqa: E201,E203,E241,E128,E501
-         [0., -0.29211105, -0.07138808, 0.44137798, -0.13274718,  # noqa: E201,E203,E241,E128,E501
-          -0.0519248, 0.03156507, -0.33137195, 0.52134583, -0.1020266]])  # noqa: E201,E202,E203,E241,E128,E501
-    return mock_input, expected_standardized, expected_demeaned
-
-
-def test_exponential_running_standardize(mock_data):
-    mock_input, expected_data, _ = mock_data
-    standardized_data = exponential_moving_standardize(mock_input)
-    assert mock_input.shape == standardized_data.shape == expected_data.shape
-    np.testing.assert_allclose(
-        standardized_data, expected_data, rtol=1e-4, atol=1e-4)
-
-
-def test_exponential_running_demean(mock_data):
-    mock_input, _, expected_data = mock_data
-    demeaned_data = exponential_moving_demean(mock_input)
-    assert mock_input.shape == demeaned_data.shape == expected_data.shape
-    np.testing.assert_allclose(
-        demeaned_data, expected_data, rtol=1e-4, atol=1e-4)
-
-
-def test_exponential_running_init_block_size(mock_data):
-    mock_input, _, _ = mock_data
-    init_block_size = 3
-    standardized_data = exponential_moving_standardize(
-        mock_input, init_block_size=init_block_size)
-    # mean over time axis (1!) should give 0 per channel
-    np.testing.assert_allclose(
-        standardized_data[:, :init_block_size].mean(axis=1), 0,
-        rtol=1e-4, atol=1e-4)
-    np.testing.assert_allclose(
-        standardized_data[:, :init_block_size].std(axis=1), 1,
-        rtol=1e-4, atol=1e-4)
-
-    # mean over time axis (1!) should give 0 per channel
-    demeaned_data = exponential_moving_demean(
-        mock_input, init_block_size=init_block_size)
-    np.testing.assert_allclose(
-        demeaned_data[:, :init_block_size].mean(axis=1), 0, rtol=1e-4,
-        atol=1e-4)
+@parametrize_with_cases("prep", cases=PrepClasses, prefix="prep_")
+def test_preprocessings(prep, base_concat_ds):
+    preprocessors = [prep]
+    preprocess(base_concat_ds, preprocessors, n_jobs=1)
 
 
 def test_new_filterbank(base_concat_ds):
@@ -204,16 +137,7 @@ def test_new_filterbank(base_concat_ds):
     ] for ds in base_concat_ds.datasets])
 
 
-def test_replace_inplace(base_concat_ds):
-    base_concat_ds2 = copy.deepcopy(base_concat_ds)
-    for i in range(len(base_concat_ds2.datasets)):
-        base_concat_ds2.datasets[i].raw.crop(0, 10, include_tmax=False)
-    _replace_inplace(base_concat_ds, base_concat_ds2)
-
-    assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
-
-
-def test_set_raw_preproc_kwargs(base_concat_ds):
+def test_new_raw_preproc_kwargs(base_concat_ds):
     raw_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     ds = base_concat_ds.datasets[0]
@@ -223,7 +147,7 @@ def test_set_raw_preproc_kwargs(base_concat_ds):
     assert ds.raw_preproc_kwargs == raw_preproc_kwargs
 
 
-def test_set_window_preproc_kwargs(windows_concat_ds):
+def test_new_window_preproc_kwargs(windows_concat_ds):
     window_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     ds = windows_concat_ds.datasets[0]
@@ -233,7 +157,7 @@ def test_set_window_preproc_kwargs(windows_concat_ds):
     assert ds.window_preproc_kwargs == window_preproc_kwargs
 
 
-def test_set_preproc_kwargs_wrong_type(base_concat_ds):
+def test_new_preproc_kwargs_wrong_type(base_concat_ds):
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     with pytest.raises(TypeError):
         _set_preproc_kwargs(base_concat_ds, preprocessors)
@@ -283,57 +207,6 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
         assert set(glob(save_dir + '/*')) == set(save_dirs)
 
 
-####################################################################################
-
-
-# Firstly, test one at each time
-class PrepClasses:
-    @pytest.mark.parametrize("sfreq", [100, 300])
-    def prep_resample(self, sfreq):
-        return Resample(sfreq=sfreq)
-
-    @pytest.mark.parametrize("picks", ['eeg'])
-    def prep_picktype(self, picks):
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("picks", [['Cz'], ['C4', 'FC3']])
-    def prep_pickchannels(self, picks):
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("l_freq,h_freq", [(4, 30), (7, None), (None, 35)])
-    def prep_filter(self, l_freq, h_freq):
-        return Filter(l_freq=l_freq, h_freq=h_freq)
-
-    @pytest.mark.parametrize("ref_channels", ['average', ['C4'], ['C4', 'Cz']])
-    def prep_setref(self, ref_channels):
-        return SetEEGReference(ref_channels=ref_channels)
-
-    @pytest.mark.parametrize("tmin,tmax", [(0, .1), (.1, 1.2),
-                                           (0.1, None)])
-    def prep_crop(self, tmin, tmax):
-        return Crop(tmin=tmin, tmax=tmax)
-
-    @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
-    def prep_drop(self, ch_names):
-        return DropChannels(ch_names=ch_names)
-
-
-@parametrize_with_cases("prep", cases=PrepClasses, prefix="prep_")
-def test_preprocessings(prep, base_concat_ds):
-    preprocessors = [prep]
-    preprocess(base_concat_ds, preprocessors, n_jobs=1)
-
-
-# @pytest.mark.parametrize("PrepMethod", [Resample, Pick, DropChannels,
-# SetEEGReference, Filter, Crop])
-# def test_eeginception_erp_n_params(base_concat_ds, prep_method):
-#    """Make sure the number of parameters is the same as in the paper when
-#    using the same archi'crop', tecture hyperparameters.
-#    """
-#
-#    preprocessors = [PrepMethod()]
-
-
 def test_new_basic(base_concat_ds):
     low_cut_hz = 4.0  # low cut frequency for filtering
     high_cut_hz = 38.0  # high cut frequency for filtering
@@ -342,10 +215,11 @@ def test_new_basic(base_concat_ds):
         Resample(sfreq=100),
         Pick(picks=['eeg']),  # Keep EEG sensors
         Filter(l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-        Preprocessor(exponential_moving_standardize)
+        Preprocessor(exponential_moving_standardize),
+        DropChannels(ch_names=['C4', 'Cz'])
     ]
 
-    preprocess(base_concat_ds, preprocessors, n_jobs=-1)
+    preprocess(base_concat_ds, preprocessors, n_jobs=1)
 
 
 def test_eegref(base_concat_ds):
