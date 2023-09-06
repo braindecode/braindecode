@@ -2,6 +2,7 @@
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#
 # License: BSD (3-clause)
 
 import warnings
@@ -15,7 +16,7 @@ from .training.scoring import predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
-class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
+class EEGClassifier(NeuralNetClassifier, _EEGNeuralNet):
     doc = """Classifier that does not assume softmax activation.
     Calls loss function directly without applying log or anything.
 
@@ -74,16 +75,15 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
 
     @property
     def _default_callbacks(self):
-        callbacks = super()._default_callbacks()
+        callbacks = super()._default_callbacks
         if not self.cropped:
-            callbacks.append((
-                'valid_acc',
+            callbacks.append([(
+                "valid_acc",
                 EpochScoring(
                     'accuracy',
                     name='valid_acc',
                     lower_is_better=False,
-                )
-            ))
+                ))])
         return callbacks
 
     def predict_proba(self, X):
