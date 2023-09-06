@@ -7,8 +7,6 @@ import copy
 from copy import deepcopy
 import warnings
 
-import numpy as np
-
 import torch
 from torch import nn
 import torch.nn.functional as F
