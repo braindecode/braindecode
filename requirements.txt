@@ -8,3 +8,4 @@ joblib
 mne
 einops
 docstring_inheritance
+torchinfo
