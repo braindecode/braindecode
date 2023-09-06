@@ -8,9 +8,9 @@ import warnings
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 
 
-def deprecated_args(obj, *args):
+def deprecated_args(obj, *old_new_args):
     out_args = []
-    for old_name, new_name, old_val, new_val in args:
+    for old_name, new_name, old_val, new_val in old_new_args:
         if old_val is None:
             out_args.append(new_val)
         else:
