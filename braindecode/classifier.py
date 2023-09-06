@@ -6,11 +6,10 @@
 
 import warnings
 
-import numpy as np
 from skorch.classifier import NeuralNetClassifier
 
 from .eegneuralnet import _EEGNeuralNet
-from .training.scoring import (predict_trials)
+from .training.scoring import predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
