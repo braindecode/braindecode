@@ -2,9 +2,9 @@
 #
 # License: BSD (3-clause)
 
-import numpy as np
 import torch
 from torch import nn
+
 from .base import EEGModuleMixin, deprecated_args
 
 

@@ -3,6 +3,8 @@
 # License: BSD-3
 
 
+from unittest.mock import patch
+
 import pytest
 from torch import nn
 
@@ -154,3 +156,54 @@ def test_init_submodule(
         input_window_seconds=input_window_seconds,
         sfreq=sfreq,
     )
+
+
+def test_get_torchinfo_statistics():
+    n_chans = 1
+    n_times = 200
+    model = DummyModule(
+        n_outputs=1,
+        n_chans=n_chans,
+        ch_names=['ch1'],
+        n_times=n_times,
+        input_window_seconds=2.,
+        sfreq=100.,
+        )
+    with patch("braindecode.models.base.ModelStatistics") as patch_stats:
+        with patch("braindecode.models.base.summary", return_value=patch_stats) as patch_summary:
+            result = model.get_torchinfo_statistics()
+    patch_summary.assert_called_once_with(
+        model,
+        input_size=(1, n_chans, n_times),
+        col_names=(
+            "input_size",
+            "output_size",
+            "num_params",
+            "kernel_size",
+        ),
+        row_settings=("var_names", "depth"),
+        verbose=0,
+        )
+    assert result == patch_stats
+
+
+def test__str__():
+    n_chans = 1
+    n_times = 200
+    model = DummyModule(
+        n_outputs=1,
+        n_chans=n_chans,
+        ch_names=['ch1'],
+        n_times=n_times,
+        input_window_seconds=2.,
+        sfreq=100.,
+        )
+    with patch("braindecode.models.base.ModelStatistics") as patch_stats:
+        with patch.object(
+            model, "get_torchinfo_statistics", return_value=patch_stats
+        ) as patch_method_stats:
+            result = str(model)
+
+    patch_method_stats.assert_called_once()
+    patch_stats.__str__.assert_called_once()
+    assert result == str(patch_stats)

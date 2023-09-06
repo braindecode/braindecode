@@ -39,6 +39,7 @@ Enhancements
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 - Improving documentation for the Convolutional neural network regression model on fake data (:gh:`491` by `Sara Sedlar`_)
 - Enforcing the eval mode in the fuction predict trial. (:gh:`497` by `Bruno Aristimunha`_)
+- Add models user-friendly representation with torchinfo tables to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`488` by `Maciej Śliwowski`_)
 
 Bugs
 ~~~~

@@ -33,7 +33,7 @@ setup(
     license='BSD 3-Clause',
 
     install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch',
-                      'einops', 'docstring_inheritance'],
+                      'einops', 'docstring_inheritance', 'torchinfo'],
     extras_require={
         'moabb': ["moabb"]
     },

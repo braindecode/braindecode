@@ -7,7 +7,6 @@ from torch.nn.utils import weight_norm
 from einops.layers.torch import Rearrange
 
 from .modules import Ensure4d
-from .base import EEGModuleMixin, deprecated_args
 
 
 class _BatchNormZG(nn.BatchNorm2d):
@@ -24,7 +23,6 @@ class _ConvBlock2D(nn.Module):
     """Implements Convolution block with order:
     Convolution, dropout, activation, batch-norm
     """
-
     def __init__(self, in_filters, out_filters, kernel, stride=(1, 1), padding=0, dilation=1,
                  groups=1, drop_prob=0.5, batch_norm=True, activation=nn.LeakyReLU, residual=False):
         super().__init__()
@@ -35,12 +33,17 @@ class _ConvBlock2D(nn.Module):
         self.conv = nn.Conv2d(in_filters, out_filters, kernel, stride=stride, padding=padding,
                               dilation=dilation, groups=groups, bias=not batch_norm)
         self.dropout = nn.Dropout2d(p=drop_prob)
-        self.batch_norm = _BatchNormZG(out_filters) if residual else nn.BatchNorm2d(out_filters) if \
-            batch_norm else lambda x: x
+        self.batch_norm = (
+            _BatchNormZG(out_filters)
+            if residual
+            else nn.BatchNorm2d(out_filters)
+            if batch_norm
+            else lambda x: x
+        )
 
     def forward(self, input):
         res = input
-        input = self.conv(input, )
+        input = self.conv(input,)
         input = self.dropout(input)
         input = self.activation(input)
         input = self.batch_norm(input)
@@ -162,13 +165,19 @@ class _TIDNetFeatures(nn.Module):
         return self.extract_features(x)
 
 
-class TIDNet(EEGModuleMixin, nn.Module):
+class TIDNet(nn.Module):
     """Thinker Invariance DenseNet model from Kostas et al 2020.
 
     See [TIDNet]_ for details.
 
     Parameters
     ----------
+    n_classes : int
+        Number of classes.
+    in_chans : int
+        Number of EEG channels.
+    input_window_samples : int
+        Number of samples.
     s_growth : int
         DenseNet-style growth factor (added filters per DenseFilter)
     t_filters : int
@@ -191,12 +200,6 @@ class TIDNet(EEGModuleMixin, nn.Module):
     summary : int
         Output size of AdaptiveAvgPool1D layer. If set to -1, value will be calculated
         automatically (input_window_samples // pooling).
-    n_classes : int
-        Alias for `n_outputs`.
-    in_chans : int
-        Alias for `n_chans`.
-    input_window_samples : int
-        Alias for `n_times`.
 
     Notes
     -----
@@ -210,56 +213,24 @@ class TIDNet(EEGModuleMixin, nn.Module):
         J. Neural Eng. 17, 056008 (2020).
         doi: 10.1088/1741-2552/abb7a7.
     """
+    def __init__(self, in_chans, n_classes, input_window_samples, s_growth=24, t_filters=32,
+                 drop_prob=0.4, pooling=15, temp_layers=2, spat_layers=2, temp_span=0.05,
+                 bottleneck=3, summary=-1):
+        super().__init__()
+        self.n_classes = n_classes
+        self.in_chans = in_chans
+        self.input_window_samples = input_window_samples
+        self.temp_len = ceil(temp_span * input_window_samples)
 
-    def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            n_times=None,
-            s_growth=24,
-            t_filters=32,
-            drop_prob=0.4,
-            pooling=15,
-            temp_layers=2,
-            spat_layers=2,
-            temp_span=0.05,
-            bottleneck=3,
-            summary=-1,
-            ch_names=None,
-            input_window_seconds=None,
-            sfreq=None,
-            in_chans=None,
-            n_classes=None,
-            input_window_samples=None,
-    ):
-        n_chans, n_outputs, n_times, = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            ch_names=ch_names,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_window_samples
-
-        self.temp_len = ceil(temp_span * self.n_times)
-
-        self.dscnn = _TIDNetFeatures(s_growth=s_growth, t_filters=t_filters, in_chans=self.n_chans,
-                                     input_window_samples=self.n_times,
+        self.dscnn = _TIDNetFeatures(s_growth=s_growth, t_filters=t_filters, in_chans=in_chans,
+                                     input_window_samples=input_window_samples,
                                      drop_prob=drop_prob, pooling=pooling, temp_layers=temp_layers,
                                      spat_layers=spat_layers, temp_span=temp_span,
                                      bottleneck=bottleneck, summary=summary)
 
         self._num_features = self.dscnn.num_features
 
-        self.classify = self._create_classifier(self.num_features, self.n_outputs)
+        self.classify = self._create_classifier(self.num_features, n_classes)
 
     def _create_classifier(self, incoming, n_classes):
         classifier = nn.Linear(incoming, n_classes)
