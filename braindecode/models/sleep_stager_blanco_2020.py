@@ -80,7 +80,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
-        del n_channels, n_classes
+        del n_channels, n_classes, input_size_s
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 

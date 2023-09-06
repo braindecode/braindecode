@@ -250,7 +250,7 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
     model = SleepStagerChambon2018(
         n_channels, sfreq, n_conv_chs=8, time_conv_size_s=time_conv_size_s,
         max_pool_size_s=max_pool_size_s, pad_size_s=pad_size_s,
-        input_size_s=input_size_s, n_classes=n_classes, dropout=0.25)
+        input_window_seconds=input_size_s, n_outputs=n_classes, dropout=0.25)
     model.eval()
 
     X = rng.randn(n_examples, n_channels, int(sfreq * input_size_s))
@@ -313,8 +313,8 @@ def test_sleep_stager_return_feats():
     n_classes = 3
 
     model = SleepStagerChambon2018(
-        n_channels, sfreq, n_conv_chs=8, input_size_s=input_size_s,
-        n_classes=n_classes, return_feats=True)
+        n_channels, sfreq, n_conv_chs=8, input_window_seconds=input_size_s,
+        n_outputs=n_classes, return_feats=True)
     model.eval()
 
     rng = np.random.RandomState(42)
