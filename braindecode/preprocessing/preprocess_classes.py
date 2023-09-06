@@ -117,8 +117,8 @@ class Resample(Preprocessor):
         # directly the said preprocess
 
         fn = 'resample'
-        #self.fn = fn
-        #self.kwargs = kwargs
+        self.fn = fn
+        self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
@@ -142,8 +142,8 @@ class DropChannels(Preprocessor):
 
     def __init__(self, **kwargs):
         fn = 'drop_channels'
-        #self.fn = fn
-        #self.kwargs = kwargs
+        self.fn = fn
+        self.kwargs = kwargs
         # Init parent
         super().__init__(fn, **kwargs)
 
@@ -166,8 +166,8 @@ class SetEEGReference(Preprocessor):
 
     def __init__(self, **kwargs):
         fn = 'set_eeg_reference'
-        #self.fn = fn
-        #self.kwargs = kwargs
+        self.fn = fn
+        self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
@@ -190,56 +190,8 @@ class Filter(Preprocessor):
 
     def __init__(self, **kwargs):
         fn = 'filter'
-        #self.fn = fn
-        #self.kwargs = kwargs
-
-        super().__init__(fn, **kwargs)
-
-
-class PickTypes(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to pick type of signals using mne.Epochs/mne.io.Raw's method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
-    try:
-        from mne.channels import channels
-        base_class = channels.UpdateChannelsMixin.pick_types
-        _doc__ = _update_moabb_docstring(base_class, doc)
-    except ModuleNotFoundError:
-        pass
-
-    def __init__(self, **kwargs):
-        fn = 'pick_types'
-        #self.fn = fn
-        #self.kwargs = kwargs
-
-        super().__init__(fn, **kwargs)
-
-
-class PickChannels(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to pick channels using mne.Epochs/mne.io.Raw's method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
-    try:
-        from mne.channels import channels
-        base_class = channels.UpdateChannelsMixin.pick_channels
-        _doc__ = _update_moabb_docstring(base_class, doc)
-    except ModuleNotFoundError:
-        pass
-
-    def __init__(self, **kwargs):
-        fn = 'pick_channels'
-        #self.fn = fn
-        #self.kwargs = kwargs
+        self.fn = fn
+        self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
@@ -263,8 +215,8 @@ class Pick(Preprocessor):
 
     def __init__(self, **kwargs):
         fn = 'pick'
-        #self.fn = fn
-        #self.kwargs = kwargs
+        self.fn = fn
+        self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
