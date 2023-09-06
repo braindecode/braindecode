@@ -37,7 +37,7 @@ setup(
                       'torch', 'einops', 'joblib'],
     extras_require={
         'moabb': ['moabb'],
-        'tests': ['pytest','pytest-cov','codecov'],
+        'tests': ['pytest', 'pytest-cov', 'codecov'],
         'docs': ['sphinx_gallery', 'sphinx_rtd_theme', 'pydata_sphinx_theme', 'numpydoc',
                  'memory_profiler', 'pillow', 'ipython', 'sphinx_design'],
     },
