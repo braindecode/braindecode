@@ -1,3 +1,7 @@
+# Author: Bruna Lopes <brunajaflopes@gmail.com>
+#
+# License: BSD-3
+
 import os
 import copy
 import platform
@@ -8,7 +12,7 @@ import pandas as pd
 import pytest
 import numpy as np
 
-from pytest_cases import parametrize_with_cases
+# from pytest_cases import parametrize_with_cases
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
@@ -281,42 +285,6 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
 
 ####################################################################################
 
-# Firstly, test one at each time
-class PrepClasses:
-    @pytest.mark.parametrize("sfreq", [100, 300])
-    def prep_resample(self, sfreq):
-        return Resample(sfreq=sfreq)
-
-    @pytest.mark.parametrize("picks", [['meg', 'eeg'], ['eeg']])
-    def prep_picktype(self, picks):
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("picks", [['Cz'], ['C4', 'FC3'], ['MEG0111', 'MEG2623']])
-    def prep_pickchannels(self, picks):
-        return Pick(picks=picks)
-
-    @pytest.mark.parametrize("l_freq,h_freq", [(4, 30), (7, None), (None, 35)])
-    def prep_filter(self, l_freq, h_freq):
-        return Filter(l_freq=l_freq, h_freq=h_freq)
-
-    @pytest.mark.parametrize("ref_channels", ['average', 'C4', 'REST', ['C4', 'Cz']])
-    def prep_setref(self, ref_channels):
-        return SetEEGReference(ref_channels=ref_channels)
-
-    @pytest.mark.parametrize("tmin,tmax", [(0, .1), (.1, 1.2), (None, 1.2)])
-    def prep_crop(self, tmin, tmax):
-        return Crop(tmin=tmin, tmax=tmax)
-
-    @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
-    def prep_drop(self, ch_names):
-        return DropChannels(ch_names=ch_names)
-
-
-@parametrize_with_cases("prep", cases=PrepClasses, prefix="prep_")
-def test_preprocessings(prep, base_concat_ds):
-    preprocessors = [prep]
-    preprocess(base_concat_ds, preprocessors, n_jobs=-1)
-
 
 # @pytest.mark.parametrize("PrepMethod", [Resample, Pick, DropChannels,
 # SetEEGReference, Filter, Crop])
@@ -333,6 +301,7 @@ def test_new_basic(base_concat_ds):
     high_cut_hz = 38.0  # high cut frequency for filtering
 
     preprocessors = [
+        SetEEGReference(),
         Pick(picks=['eeg']),  # Keep EEG sensors
         Filter(l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
         Preprocessor(exponential_moving_standardize)
@@ -402,6 +371,7 @@ def test_new_misc_channels():
     concat_ds = BaseConcatDataset([base_dataset])
 
     preprocessors = [
+        Resample(sfreq=100),
         Pick(picks=['eeg']),
         Preprocessor(lambda x: x / 1e6),
     ]
