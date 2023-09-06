@@ -40,10 +40,25 @@ If you have a local clone of the Braindecode git repository:
 
    pip install .
 
-You can also install Braindecode in editable mode (i.e. changes to the source code).
+This will install Braindecode in editable mode, i.e., changes to the source code could be used
+directly in python.
+
+You could also install optional dependency, like to import datasets from MOABB.
+
+.. code-block:: bash
+
+   pip install .[moabb]
+
+There is also optional dependencies for unit testing and building documentation, you could install
+them if you want to contribute to Braindecode.
+
+.. code-block:: bash
+
+   pip install .[moabb,tests,docs]
+
 
 Testing if your installation is working
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To verify that Braindecode is installed and running correctly, run the following command:
 
