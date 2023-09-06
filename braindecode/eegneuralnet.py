@@ -9,7 +9,7 @@ from .training.scoring import (CroppedTimeSeriesEpochScoring,
                                CroppedTrialEpochScoring, PostEpochTrainScoring)
 
 
-class _EEGBase:
+class _EEGNeuralNet:
     def _yield_callbacks(self):
         # Here we parse the callbacks supplied as strings,
         # e.g. 'accuracy', to the callbacks skorch expects

@@ -1,7 +1,7 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
-#
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 # License: BSD (3-clause)
 
 import warnings
@@ -9,12 +9,12 @@ import warnings
 import numpy as np
 from skorch.classifier import NeuralNetClassifier
 
-from .eegneuralnetwork import _EEGBase
+from .eegneuralnet import _EEGNeuralNet
 from .training.scoring import (predict_trials)
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
-class EEGClassifier(_EEGBase, NeuralNetClassifier):
+class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     doc = """Classifier that does not assume softmax activation.
     Calls loss function directly without applying log or anything.
 
