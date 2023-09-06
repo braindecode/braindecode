@@ -38,8 +38,10 @@ jobs:
     - name: Update pip
       run: pip install --upgrade pip
     # Install MOABB, skorch, torch as well
+    - name: Install experimental moabb
+      run: pip install git+https://github.com/PierreGtch/moabb.git@runs_sessions_names#egg=moabb
     - name: Install MOABB skorch torch
-      run: pip install moabb skorch torch
+      run: pip install skorch torch
     - name: Install Braindecode from Current Checkout
       run: pip install -e .
     # Show Braindecode Version
