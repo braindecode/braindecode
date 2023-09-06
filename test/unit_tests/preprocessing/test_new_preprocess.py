@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 import numpy as np
 
-# from pytest_cases import parametrize_with_cases
+from pytest_cases import parametrize_with_cases
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
@@ -198,7 +198,7 @@ def test_new_filterbank(base_concat_ds):
         'Cz', 'Cz_0-4', 'Cz_4-8', 'Cz_8-13',
     ])
     assert all([ds.raw_preproc_kwargs == [
-        ('pick_channels', {'ch_names': ['C4', 'Cz'], 'ordered': True}),
+        ('pick', {'picks': ['C4', 'Cz']}),
         ('filterbank', {'frequency_bands': [(0, 4), (4, 8), (8, 13)],
                         'drop_original_signals': False}),
     ] for ds in base_concat_ds.datasets])
@@ -286,6 +286,44 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
 ####################################################################################
 
 
+# Firstly, test one at each time
+class PrepClasses:
+    @pytest.mark.parametrize("sfreq", [100, 300])
+    def prep_resample(self, sfreq):
+        return Resample(sfreq=sfreq)
+
+    @pytest.mark.parametrize("picks", ['eeg'])
+    def prep_picktype(self, picks):
+        return Pick(picks=picks)
+
+    @pytest.mark.parametrize("picks", [['Cz'], ['C4', 'FC3']])
+    def prep_pickchannels(self, picks):
+        return Pick(picks=picks)
+
+    @pytest.mark.parametrize("l_freq,h_freq", [(4, 30), (7, None), (None, 35)])
+    def prep_filter(self, l_freq, h_freq):
+        return Filter(l_freq=l_freq, h_freq=h_freq)
+
+    @pytest.mark.parametrize("ref_channels", ['average', ['C4'], ['C4', 'Cz']])
+    def prep_setref(self, ref_channels):
+        return SetEEGReference(ref_channels=ref_channels)
+
+    @pytest.mark.parametrize("tmin,tmax", [(0, .1), (.1, 1.2),
+                                           (0.1, None)])
+    def prep_crop(self, tmin, tmax):
+        return Crop(tmin=tmin, tmax=tmax)
+
+    @pytest.mark.parametrize("ch_names", ["Pz", "P2", "P1", "POz"])
+    def prep_drop(self, ch_names):
+        return DropChannels(ch_names=ch_names)
+
+
+@parametrize_with_cases("prep", cases=PrepClasses, prefix="prep_")
+def test_preprocessings(prep, base_concat_ds):
+    preprocessors = [prep]
+    preprocess(base_concat_ds, preprocessors, n_jobs=1)
+
+
 # @pytest.mark.parametrize("PrepMethod", [Resample, Pick, DropChannels,
 # SetEEGReference, Filter, Crop])
 # def test_eeginception_erp_n_params(base_concat_ds, prep_method):
@@ -301,7 +339,7 @@ def test_new_basic(base_concat_ds):
     high_cut_hz = 38.0  # high cut frequency for filtering
 
     preprocessors = [
-        SetEEGReference(),
+        Resample(sfreq=100),
         Pick(picks=['eeg']),  # Keep EEG sensors
         Filter(l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
         Preprocessor(exponential_moving_standardize)
@@ -310,10 +348,15 @@ def test_new_basic(base_concat_ds):
     preprocess(base_concat_ds, preprocessors, n_jobs=-1)
 
 
+def test_eegref(base_concat_ds):
+    preprocessors = [SetEEGReference(ref_channels='average')]
+    preprocess(base_concat_ds, preprocessors, n_jobs=1)
+
+
 def test_filterbank_order_channels_by_freq(base_concat_ds):
     base_concat_ds = base_concat_ds.split([[0]])['0']
     preprocessors = [
-        DropChannels(ch_names=["P2", "P1"]),
+        # DropChannels(ch_names=["P2", "P1"]),
         Pick(picks=sorted(['C4', 'Cz'])),
         Preprocessor(
             filterbank, frequency_bands=[(0, 4), (4, 8), (8, 13)],
@@ -325,7 +368,7 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
         'C4_4-8', 'Cz_4-8', 'C4_8-13', 'Cz_8-13'
     ])
     assert all([ds.raw_preproc_kwargs == [
-        ('pick_channels', {'ch_names': ['C4', 'Cz'], 'ordered': True}),
+        ('pick', {'picks': ['C4', 'Cz']}),
         ('filterbank', {'frequency_bands': [(0, 4), (4, 8), (8, 13)],
                         'drop_original_signals': False,
                         'order_by_frequency_band': True}),
@@ -334,8 +377,9 @@ def test_filterbank_order_channels_by_freq(base_concat_ds):
 
 # Test overwriting
 @pytest.mark.parametrize('overwrite', [True, False])
-def test_new_overwrite(tmp_path, overwrite):
-    preprocessors = [Crop(tmax=10, include_tmax=False)]
+def test_new_overwrite(base_concat_ds, tmp_path, overwrite):
+    preprocessors = [
+        Crop(tmax=10, include_tmax=False)]
 
     # Create temporary directory with preexisting files
     save_dir = str(tmp_path)
@@ -371,8 +415,7 @@ def test_new_misc_channels():
     concat_ds = BaseConcatDataset([base_dataset])
 
     preprocessors = [
-        Resample(sfreq=100),
-        Pick(picks=['eeg']),
+        Pick(picks=['eeg', 'misc']),
         Preprocessor(lambda x: x / 1e6),
     ]
 
