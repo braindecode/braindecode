@@ -1,15 +1,13 @@
-"""Preprocessors that work on Raw or Epochs objects.
+"""Preprocessor objects based on mne methods.
 """
+
+# Author: Bruna Lopes <brunajaflopes@gmail.com>
+#
+# License: BSD-3
 
 from braindecode.util import _update_moabb_docstring
 from braindecode.preprocessing import Preprocessor
 
-
-###########
-# Compare with mne resample method
-# Idea: Implement classes for each preprocessing step (like Pick_types, Resample, ...)
-# those classes can be instantiated just like we did with Preprocess, and then passed
-# to the preprocess function to be applyed. What about the list idea?
 
 class Resample(Preprocessor):
     doc = """
@@ -40,7 +38,6 @@ class Resample(Preprocessor):
         super().__init__(fn, **kwargs)
 
 
-# Maby create this as a subclass of Preprocess?
 class DropChannels(Preprocessor):
     doc = """
     Subclass of Preprocessor to drop specific channels using mne.Epochs/mne.io.Raw's method.
