@@ -4,7 +4,7 @@ Searching the best data augmentation on BCIC IV 2a Dataset
 
 This tutorial shows how to search data augmentations using braindecode.
 Indeed, it is known that the best augmentation to use often dependent on the task
-or phenomenon studied. Here we follow the methodology proposed in [1] on the
+or phenomenon studied. Here we follow the methodology proposed in [1]_ on the
 openly available BCI IV 2a Dataset.
 
 
@@ -18,23 +18,11 @@ openly available BCI IV 2a Dataset.
     view of the data, both with pretext tasks and contrastive learning [2]_.
 
 
-Both approaches demand an intense comparison to find the best fit with the data.
-This view is supported by Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022),
-who demonstrate the importance of the selection the right transformation and
-strength for each different type of task considered.
-Here, we use the augmentation module present in braindecode in the context of
-trialwise decoding with the BCI IV 2a dataset.
-
-References
------------
-
-.. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
-       Data augmentation for learning predictive models on EEG:
-       a systematic comparison. https://arxiv.org/abs/2206.14483
-
-.. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
-       Uncovering the structure of clinical EEG signals with self-supervised learning.
-       Journal of Neural Engineering, 18(4), 046020.
+Data augmentation and self-supervised learning approaches demand an intense comparison
+to find the best fit with the data. This view is demonstrated in [1]_ and shows the
+importance of selecting the right transformation and strength for different type of
+task considered. Here, we use the augmentation module present in braindecode in
+the context of trialwise decoding with the BCI IV 2a dataset.
 
 .. contents:: This example covers:
    :local:
@@ -52,6 +40,11 @@ References
 #
 # Loading
 # ~~~~~~~
+#
+# First, we load the data. In this tutorial, we use the functionality of braindecode
+# to load BCI IV competition dataset 1. The dataset is available on the BNCI website.
+# There is 9 subjects recorded with 22 electrodes while doing a motor imagery task,
+# with 144 trials per class. We will load this dataset through the MOABB librairy.
 
 from skorch.callbacks import LRScheduler
 
@@ -65,6 +58,8 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # Preprocessing
 # ~~~~~~~~~~~~~
 #
+# We apply a bandpass filter, from 4 to 38 Hz to focus motor imagery-related
+# brain activity
 
 from braindecode.preprocessing import (
     exponential_moving_standardize, preprocess, Preprocessor)
@@ -77,6 +72,12 @@ factor_new = 1e-3
 init_block_size = 1000
 # Factor to convert from V to uV
 factor = 1e6
+
+######################################################################
+# In time series targets setup, targets variables are stored in mne.Raw object as channels
+# of type `misc`. Thus those channels have to be selected for further processing. However,
+# many mne functions ignore `misc` channels and perform operations only on data channels
+# (see https://mne.tools/stable/glossary.html#term-data-channels).
 
 preprocessors = [
     Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
@@ -92,6 +93,10 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # Extracting windows
 # ~~~~~~~~~~~~~~~~~~
 #
+# Now we cut out compute windows, the inputs for the deep networks during
+# training. We use the braindecode function for this, provinding parameters
+# to define how trials should be used.
+
 
 from braindecode.preprocessing import create_windows_from_events
 from skorch.helper import SliceDataset
@@ -104,8 +109,6 @@ assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Calculate the trial start offset in samples.
 trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
-# Create windows using braindecode function for this. It needs parameters to
-# define how trials should be used.
 windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
@@ -116,7 +119,9 @@ windows_dataset = create_windows_from_events(
 ######################################################################
 # Split dataset into train and valid
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Following the rules of the BCI competition
+# Following the split defined in the BCI competition
+
+
 splitted = windows_dataset.split('session')
 train_set = splitted['session_T']
 eval_set = splitted['session_E']
@@ -127,11 +132,14 @@ eval_set = splitted['session_E']
 #
 # In this tutorial, we will use three categories of augmentations.
 # This categorization has been proposed by [1]_ to explain and aggregate
-# the several possibilities of augmentations in EEG, being them: a) Frequency domain
-# augmentations, b) Time domain augmentations, and c) Spatial domain augmentations.
+# the several possibilities of augmentations in EEG, being them:
 #
-# From this same paper, we selected the best augmentations in each type: FTSurrogate,
-# SmoothTimeMask, ChannelsDropout, respectively.
+# a) Frequency domain augmentations,
+# b) Time domain augmentations,
+# c) Spatial domain augmentations.
+#
+# From this same paper, we selected the best augmentations in each type: ``FTSurrogate``,
+# ``SmoothTimeMask``, ``ChannelsDropout``, respectively.
 #
 # For each augmentation, we adjustable two values from a range for one parameter
 # inside the transformation.
@@ -177,12 +185,15 @@ device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 
+
+######################################################################
 # Set random seed to be able to roughly reproduce results
 # Note that with cudnn benchmark set to True, GPU indeterminism
 # may still make results substantially different between runs.
 # To obtain more consistent results at the cost of increased computation time,
-# you can set `cudnn_benchmark=False` in `set_random_seeds`
-# or remove `torch.backends.cudnn.benchmark = True`
+# you can set ``cudnn_benchmark=False`` in ``set_random_seeds``
+# or remove ``torch.backends.cudnn.benchmark = True``
+
 seed = 20200220
 set_random_seeds(seed=seed, cuda=cuda)
 
@@ -305,3 +316,29 @@ eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)
 score = search.score(eval_X, eval_y)
 print(f'Eval accuracy is {score * 100:.2f}%.')
+
+######################################################################
+# Plot results
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots()
+search_results.plot.bar(
+    x="param_iterator_train__transforms", y="mean_train_score", yerr="std_train_score",
+    rot=45, color=["C0", "C0", "C1", "C1", "C2", "C2"], legend=None, ax=ax)
+ax.set_xlabel("Data augmentation strategy")
+ax.set_ylim(0.2, 0.32)
+plt.tight_layout()
+
+######################################################################
+# References
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+#
+# .. [1] Rommel, C., Paillard, J., Moreau, T., & Gramfort, A. (2022)
+#        Data augmentation for learning predictive models on EEG:
+#        a systematic comparison. https://arxiv.org/abs/2206.14483
+# .. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
+#        Uncovering the structure of clinical EEG signals with self-supervised learning.
+#        Journal of Neural Engineering, 18(4), 046020.
