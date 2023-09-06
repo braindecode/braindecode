@@ -1,4 +1,3 @@
----
 # Tagging a commit with [circle front] will build the front page and
 # perform test-doc.
 # Tagging a commit with [circle full] will build everything.
