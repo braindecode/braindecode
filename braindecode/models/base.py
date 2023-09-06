@@ -29,10 +29,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     """
     Mixin class for EEG models.
 
-    .. note::
-
-       If some input signal-related parameters are not specified,
-       there will be an attempt to infer them from the other parameters.
 
     Parameters
     ----------
@@ -52,8 +48,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     Raises
     ------
-    AttributeError: If some input signal-related parameters are not specified
-                    and can not be inferred.
+    ValueError: If some input signal-related parameters are not specified
+                and can not be inferred.
+
+    Notes
+    -----
+    If some input signal-related parameters are not specified,
+    there will be an attempt to infer them from the other parameters.
     """
 
     def __init__(
