@@ -308,8 +308,8 @@ fig, ax = plt.subplots()
 sns.heatmap(pivot_table, annot=True, fmt=".3f",
             cmap="YlGnBu", cbar=True)
 plt.title('Grid Search Mean Test Scores')
-plt.xlabel('Learning Rate')
-plt.ylabel('Dropout Probability')
+plt.ylabel('Learning Rate')
+plt.xlabel('Dropout Probability')
 plt.tight_layout()
 plt.show()
 

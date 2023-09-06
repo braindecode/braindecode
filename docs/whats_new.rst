@@ -33,7 +33,9 @@ Enhancements
 - Improving documentation for MOABB dataset, Trialwise Decoding & Cropped Decoding (:gh:`490` by `Daniel Wilson`_)
 - Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
 - Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
+- Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Sylvain Chevallier`_)
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
+- Improving documentation for the Convolutional neural network regression model on fake data (:gh:`491` by `Sara Sedlar`_)
 
 Bugs
 ~~~~
@@ -42,6 +44,7 @@ Bugs
 
 API changes
 ~~~~~~~~~~~
+- Removing support for Python 3.7 (:gh:`397` by `Bruno Aristimunha`_)
 
 .. _changes_0_8_0:
 
@@ -132,7 +135,7 @@ Bugs
 
 API changes
 ~~~~~~~~~~~
-- Removing the default sampling frequency sfreq value in :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
+- Removing the default sampling frequency sfreq value in :func:`braindecode.datasets.create_windows_from_events` (:gh:`256` by `Ann-Kathrin Kiessner`_, `Daniel Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Made windowing arguments optional in :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` & :func:`braindecode.preprocessing.windowers.create_windows_from_events` (:gh:`269` by `Ann-Kathrin Kiessner`_, `Dan Wilson`_, `Henrik Bonsmann`_, `Vytautas Jankauskas`_)
 - Deprecating preprocessing functions :func:`braindecode.preprocessing.zscore` and :func:`braindecode.preprocessing.scale` in favour of sklearn's implementation (:gh:`292` by `Hubert Banville`_)
 - :func:`braindecode.preprocessing.preprocess` now returns a :class:`braindecode.dataset.BaseConcatDataset` object (:gh:`277` by `Hubert Banville`_)
@@ -207,4 +210,6 @@ Authors
 .. _Matthieu Terris: https://github.com/matthieutrs
 .. _Yonghao Song: https://github.com/eeyhsong
 .. _Marco Zamboni: https://github.com/ZamboniMarco99
+.. _Sara Sedlar: https://github.com/Sara04
 .. _Bruna Lopes: https://github.com/brunaafl
+.. _Sylvain Chevallier: https://github.com/sylvchev
