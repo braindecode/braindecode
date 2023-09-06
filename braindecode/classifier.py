@@ -6,9 +6,10 @@
 
 import warnings
 
+from skorch import NeuralNet
 from skorch.callbacks import EpochScoring
 from skorch.classifier import NeuralNetClassifier
-from skorch import NeuralNet
+
 from .eegneuralnet import _EEGNeuralNet
 from .training.scoring import predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
@@ -73,17 +74,17 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
 
     @property
     def _default_callbacks(self):
-         callbacks = super()._default_callbacks()
-         if not self.cropped:
-             callbacks.append((
-                 'valid_acc', 
-                 EpochScoring(
-                     'accuracy',
-                     name='valid_acc',
-                     lower_is_better=False,
-                 )
-             ))
-         return callbacks
+        callbacks = super()._default_callbacks()
+        if not self.cropped:
+            callbacks.append((
+                'valid_acc',
+                EpochScoring(
+                    'accuracy',
+                    name='valid_acc',
+                    lower_is_better=False,
+                )
+            ))
+        return callbacks
 
     def predict_proba(self, X):
         """Return the output of the module's forward method as a numpy
@@ -124,7 +125,8 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         # Predictions may be already averaged in CroppedTrialEpochScoring (y_pred.shape==2).
         # However, when predictions are computed outside of CroppedTrialEpochScoring
         # we have to average predictions, hence the check if len(y_pred.shape) == 3
-        if self.cropped and self.aggregate_predictions and len(y_pred.shape) == 3:
+        if self.cropped and self.aggregate_predictions and len(
+                y_pred.shape) == 3:
             return y_pred.mean(axis=-1)
         else:
             return y_pred
@@ -223,5 +225,6 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             dataset=X,
             return_targets=return_targets,
             batch_size=self.batch_size,
-            num_workers=self.get_iterator(X, training=False).loader.num_workers,
+            num_workers=self.get_iterator(X,
+                                          training=False).loader.num_workers,
         )

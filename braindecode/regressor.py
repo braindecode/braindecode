@@ -70,9 +70,6 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
         else:
             return iterator
 
-    # Method added to fix `predict_proba` behavior to return proper values
-    # in cropped mode even if regressor does not return probabilities.
-    # We implement `predict_proba` because it exists in skorch.NeuralNetRegressor.
     def predict_proba(self, X):
         """Return the output of the module's forward method as a numpy
         array. In case of cropped decoding returns averaged values for
