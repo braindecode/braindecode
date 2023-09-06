@@ -15,7 +15,7 @@ from .training.scoring import predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
-class EEGClassifier(NeuralNetClassifier, _EEGNeuralNet):
+class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     doc = """Classifier that does not assume softmax activation.
     Calls loss function directly without applying log or anything.
 
