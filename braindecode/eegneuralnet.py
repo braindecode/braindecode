@@ -35,9 +35,6 @@ class _EEGNeuralNet:
         train_name = f'train_{cb_supplied_name}'
         valid_name = f'valid_{cb_supplied_name}'
         if self.cropped:
-            # TODO: use CroppedTimeSeriesEpochScoring when time series target
-            # In case of cropped decoding we are using braindecode
-            # specific scoring created for cropped decoding
             train_scoring = CroppedTrialEpochScoring(
                 cb_supplied_name, lower_is_better, on_train=True, name=train_name
             )
@@ -57,39 +54,6 @@ class _EEGNeuralNet:
             (valid_name, valid_scoring, named_by_user)
         ]
         return train_valid_callbacks
-
-    # pylint: disable=arguments-differ
-    def get_loss(self, y_pred, y_true, *args, **kwargs):
-        """Return the loss for this batch by calling NeuralNet get_loss.
-
-        Parameters
-        ----------
-        y_pred : torch tensor
-            Predicted target values
-        y_true : torch tensor
-            True target values.
-        X : input data, compatible with skorch.dataset.Dataset
-            By default, you should be able to pass:
-
-                * numpy arrays
-                * torch tensors
-                * pandas DataFrame or Series
-                * scipy sparse CSR matrices
-                * a dictionary of the former three
-                * a list/tuple of the former three
-                * a Dataset
-
-            If this doesn't work with your data, you have to pass a
-            ``Dataset`` that can deal with the data.
-        training : bool (default=False)
-            Whether train mode should be used or not.
-
-        Returns
-        -------
-        loss : float
-            The loss value.
-        """
-        return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
 
     def on_batch_end(self, net, *batch, training=False, **kwargs):
         # If training is false, assume that our loader has indices for this
@@ -128,8 +92,8 @@ class _EEGNeuralNet:
             preds=preds, i_window_in_trials=i_window_in_trials,
             i_window_stops=i_window_stops, window_ys=window_ys)
 
-    # Removes default EpochScoring callback computing 'accuracy' to work properly
-    # with cropped decoding.
+    # Removes default EpochScoring callback computing 'accuracy' to work
+    # properly with cropped decoding.
     @property
     def _default_callbacks(self):
         return [
