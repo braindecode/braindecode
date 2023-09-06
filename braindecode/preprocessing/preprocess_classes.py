@@ -117,11 +117,156 @@ class Resample(Preprocessor):
         # directly the said preprocess
 
         fn = 'resample'
-        self.fn = fn
-        self.kwargs = kwargs
+        #self.fn = fn
+        #self.kwargs = kwargs
 
         super().__init__(fn, **kwargs)
 
+
+# Maby create this as a subclass of Preprocess?
+class DropChannels(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to drop specific channels using mne.Epochs/mne.io.Raw's method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.drop_channels
+        _doc__ = _update_moabb_docstring(base_class, doc)
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        fn = 'drop_channels'
+        #self.fn = fn
+        #self.kwargs = kwargs
+        # Init parent
+        super().__init__(fn, **kwargs)
+
+
+class SetEEGReference(Preprocessor):
+    doc = """Subclass of Preprocessor to specify the reference for EEG signals
+    using mne.Epochs/mne.io.Raw's method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.channels import channels
+        base_class = channels.ReferenceMixin.set_eeg_reference
+        _doc__ = _update_moabb_docstring(base_class, doc)
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        fn = 'set_eeg_reference'
+        #self.fn = fn
+        #self.kwargs = kwargs
+
+        super().__init__(fn, **kwargs)
+
+
+class Filter(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to perform filtering using mne.Epochs/mne.io.Raw's method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.filter import FilterMixin
+        base_class = FilterMixin.filter
+        _doc__ = _update_moabb_docstring(base_class, doc)
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        fn = 'filter'
+        #self.fn = fn
+        #self.kwargs = kwargs
+
+        super().__init__(fn, **kwargs)
+
+
+class PickTypes(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to pick type of signals using mne.Epochs/mne.io.Raw's method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.pick_types
+        _doc__ = _update_moabb_docstring(base_class, doc)
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        fn = 'pick_types'
+        #self.fn = fn
+        #self.kwargs = kwargs
+
+        super().__init__(fn, **kwargs)
+
+
+class PickChannels(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to pick channels using mne.Epochs/mne.io.Raw's method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.pick_channels
+        _doc__ = _update_moabb_docstring(base_class, doc)
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        fn = 'pick_channels'
+        #self.fn = fn
+        #self.kwargs = kwargs
+
+        super().__init__(fn, **kwargs)
+
+
+class Pick(Preprocessor):
+    doc = """
+    Subclass of Preprocessor to pick a subset of channels using mne.Epochs/mne.io.Raw's method.
+
+    Parameters
+    ----------
+    kwargs:
+        Keyword arguments to be passed to mne.Epochs's resample method.
+    """
+    try:
+        from mne.channels import channels
+        base_class = channels.UpdateChannelsMixin.pick
+        _doc__ = _update_moabb_docstring(base_class, doc)
+
+    except ModuleNotFoundError:
+        pass
+
+    def __init__(self, **kwargs):
+        fn = 'pick'
+        #self.fn = fn
+        #self.kwargs = kwargs
+
+        super().__init__(fn, **kwargs)
 
 def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
                n_jobs=None):
