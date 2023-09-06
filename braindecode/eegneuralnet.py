@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from sklearn.metrics import get_scorer
-from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
 from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
