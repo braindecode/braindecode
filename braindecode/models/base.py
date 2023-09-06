@@ -27,8 +27,7 @@ def deprecated_args(obj, *args):
 
 class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     """
-    Mixin class for EEG models.
-
+    Mixin class for all EEG models in braindecode.
 
     Parameters
     ----------
