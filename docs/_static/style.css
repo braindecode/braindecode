@@ -115,7 +115,7 @@ aside.sidebar {
 
 /* **************************************************************** homepage */
 img.logo {
-    max-width: 360px;
+    max-width: 500px;
     width: 100%;
 }
 
@@ -155,46 +155,6 @@ h5.card-header::before {
     font-weight: 600;
 }
 
-/* ***************************************************** front page carousel */
-div.frontpage-gallery {
-    overflow: hidden;
-    height: 180px;
-    justify-content: center;
-}
-div.frontpage-gallery a {
-    text-decoration: none;
-    color: rgb(var(--pst-color-text-base));
-}
-div.frontpage-gallery img.card-img {
-    transform: scale(1.8);
-    transform-origin: 40% 20%;
-    opacity: 0.2;
-    transition: 400ms ease-out;
-}
-div.frontpage-gallery:hover img.card-img {
-    transform: scale(1.2);
-    opacity: 1.0;
-    transition: 400ms ease-out;
-}
-div.frontpage-gallery .fadeout {
-    opacity: 1.0;
-    transition: 200ms linear;
-}
-div.frontpage-gallery:hover .fadeout {
-    opacity: 0.0;
-    transition: 200ms linear;
-}
-div.card img.institution {
-    background-color: #fffe;
-}
-div.card {
-    border: 1px solid var(--pst-color-border-rgba);
-    background-color: rgb(var(--pst-color-background));
-}
-.card-header {
-    border-bottom-color: var(--pst-color-border-rgba);
-    background-color: var(--pst-color-background-rgba);
-}
 /* ********************************************* sphinx-design compatibility */
 .sd-dropdown {
     border: 1px solid var(--pst-color-border-rgba) !important;

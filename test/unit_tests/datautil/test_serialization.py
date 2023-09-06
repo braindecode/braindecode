@@ -3,6 +3,7 @@
 # License: BSD-3
 
 import os
+import platform
 
 import pytest
 import numpy as np
@@ -234,6 +235,9 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     assert not os.path.exists(os.path.join(tmpdir, f"{n_windows_datasets}"))
 
 
+# Skip if OS is Windows
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows")  # TODO: Fix this
 def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)

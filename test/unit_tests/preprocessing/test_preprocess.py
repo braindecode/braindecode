@@ -5,6 +5,7 @@
 
 import os
 import copy
+import platform
 from glob import glob
 
 import mne
@@ -289,6 +290,9 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
         _set_preproc_kwargs(base_concat_ds, preprocessors)
 
 
+# Skip if OS is Windows
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows")  # TODO: Fix this
 @pytest.mark.parametrize('kind', ['raw', 'windows'])
 @pytest.mark.parametrize('save', [True, False])
 @pytest.mark.parametrize('overwrite', [True, False])

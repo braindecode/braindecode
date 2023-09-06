@@ -5,3 +5,4 @@ numpydoc
 memory_profiler
 pillow
 ipython
+sphinx_design

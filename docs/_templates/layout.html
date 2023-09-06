@@ -1,0 +1,22 @@
+{%- extends 'pydata_sphinx_theme/layout.html' %}
+
+{% block extrahead %}
+    <link rel="canonical" href="braindecode.org/index.html" />
+    {{ super() }}
+{% endblock %}
+
+{% block docs_body %}
+<div>
+  {% block body %} {% endblock %}
+  {% if pagename == 'index' %}
+    {%- include 'homepage.html' -%}
+  {% endif %}
+</div>
+{% endblock %}
+
+{%- block scripts_end %}
+    {{ super() }}
+    <script src="https://braindecode.org/versionwarning.js"></script>
+    {% if pagename == 'index' %}
+    {% endif %}
+{%- endblock %}
