@@ -2,10 +2,11 @@
 #
 # License: BSD-3
 
-from typing import List, Optional
 import warnings
+from typing import Iterable, List, Optional
 
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
+from torchinfo import summary
 
 
 def deprecated_args(obj, *args):
@@ -155,3 +156,41 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                 'Either specify sfreq or input_window_seconds and n_times.'
             )
         return self._sfreq
+
+    def get_torchinfo_table(
+        self,
+        col_names: Iterable[str] | None = (
+            "input_size",
+            "output_size",
+            "num_params",
+            "kernel_size",
+        ),
+        row_settings: Iterable[str] | None = ("var_names", "depth"),
+    ) -> str:
+        """Generate torchinfo table describing the model.
+
+        Parameters
+        ----------
+        col_names : tuple, optional
+            Specify which columns to show in the output, by default
+            ("input_size", "output_size", "num_params", "kernel_size")
+        row_settings : tuple, optional
+             Specify which features to show in a row, by default ("var_names", "depth")
+
+        Returns
+        -------
+        _type_
+            _description_
+        """
+        return str(
+            summary(
+                self,
+                input_size=(1, self.n_chans, self.n_times),
+                col_names=col_names,
+                row_settings=row_settings,
+                verbose=0,
+            )
+        )
+
+    def __str__(self):
+        return self.get_torchinfo_table()
