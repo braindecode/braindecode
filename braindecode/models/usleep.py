@@ -141,6 +141,8 @@ class USleep(nn.Module):
     time_conv_size_s : float
         Size of the temporal convolution kernel, in seconds. Set to 9 / 128 in
         [1]_.
+    seq_length : int
+        Number of sequence of the input.
     ensure_odd_conv_size : bool
         If True and the size of the convolutional kernel is an even number, one
         will be added to it to ensure it is odd, so that the decoder blocks can
@@ -166,8 +168,10 @@ class USleep(nn.Module):
                  n_classes=5,
                  input_size_s=30,
                  time_conv_size_s=9 / 128,
+                 seq_length=1,
                  ensure_odd_conv_size=False,
-                 apply_softmax=False
+                 apply_softmax=False,
+                 return_feats=False
                  ):
         super().__init__()
 
@@ -229,39 +233,53 @@ class USleep(nn.Module):
         # The temporal dimension remains unchanged
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
-        self.clf = nn.Sequential(
-            nn.Conv1d(
-                in_channels=channels[1],
-                out_channels=channels[1],
-                kernel_size=1,
-                stride=1,
-                padding=0,
-            ),                         # output is (B, C, 1, S * T)
-            nn.Tanh(),
-            nn.AvgPool1d(input_size),  # output is (B, C, S)
-            nn.Conv1d(
-                in_channels=channels[1],
-                out_channels=n_classes,
-                kernel_size=1,
-                stride=1,
-                padding=0,
-            ),                         # output is (B, n_classes, S)
-            nn.ELU(),
-            nn.Conv1d(
-                in_channels=n_classes,
-                out_channels=n_classes,
-                kernel_size=1,
-                stride=1,
-                padding=0,
-            ),
-            nn.Softmax(dim=1) if apply_softmax else nn.Identity(),
-            # output is (B, n_classes, S)
-        )
+        self.seq_length = seq_length
+        self.len_last_layer = channels[1] * seq_length * input_size
+        self.return_feats = return_feats
+        if not return_feats:
+            self.clf = nn.Sequential(
+                nn.Conv1d(
+                    in_channels=channels[1],
+                    out_channels=channels[1],
+                    kernel_size=1,
+                    stride=1,
+                    padding=0,
+                ),                         # output is (B, C, 1, S * T)
+                nn.Tanh(),
+                nn.AvgPool1d(input_size),  # output is (B, C, S)
+                nn.Conv1d(
+                    in_channels=channels[1],
+                    out_channels=n_classes,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0,
+                ),                         # output is (B, n_classes, S)
+                nn.ELU(),
+                nn.Conv1d(
+                    in_channels=n_classes,
+                    out_channels=n_classes,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0,
+                ),
+                nn.Softmax(dim=1) if apply_softmax else nn.Identity(),
+                # output is (B, n_classes, S)
+            )
 
     def forward(self, x):
         """If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).
         """
+        if (x.ndim == 4) and (x.shape[-3] != self.seq_length):
+            raise ValueError(f"Input sequence size ({x.shape[-3]}) does not match the "
+                             f"length of the sequences specified in the constructor "
+                             f"({self.seq_length}).")
+
+        if (x.ndim == 3) and self.seq_length != 1:
+            raise ValueError(f"Input sequence size is 1 but it does not match the "
+                             f"length of the sequences specified in the constructor "
+                             f"({self.seq_length}).")
+
         # reshape input
         if x.ndim == 4:  # input x has shape (B, S, C, T)
             x = x.permute(0, 2, 1, 3)  # (B, C, S, T)
@@ -281,10 +299,11 @@ class USleep(nn.Module):
         for up, res in zip(self.decoder, residuals):
             x = up(x, res)
 
-        # classifier
-        y_pred = self.clf(x)        # (B, n_classes, seq_length)
-
-        if y_pred.shape[-1] == 1:  # seq_length of 1
-            y_pred = y_pred[:, :, 0]
-
-        return y_pred
+        if self.return_feats:
+            assert x[0].numel() == self.len_last_layer
+            return x.flatten(start_dim=1)
+        else:
+            y_pred = self.clf(x)        # (B, n_classes, seq_length)
+            if y_pred.shape[-1] == 1:  # seq_length of 1
+                y_pred = y_pred[:, :, 0]
+            return y_pred

@@ -276,7 +276,8 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
 
     model = USleep(
         in_chans=in_chans, sfreq=sfreq, n_classes=n_classes,
-        input_size_s=input_size_s, ensure_odd_conv_size=True)
+        input_size_s=input_size_s, ensure_odd_conv_size=True,
+        seq_length=seq_length)
     model.eval()
 
     X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
@@ -291,6 +292,29 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
     assert y_pred3.shape == (n_examples, n_classes, seq_length)
     np.testing.assert_allclose(y_pred1.detach().cpu().numpy(),
                                y_pred2.detach().cpu().numpy())
+
+
+def test_usleep_feats():
+    rng = np.random.RandomState(42)
+    n_examples = 10
+    seq_length = 3
+    in_chans = 1
+    sfreq = 100
+    n_classes = 3
+    input_size_s = 30
+
+    model = USleep(
+        in_chans=in_chans, sfreq=sfreq, n_classes=n_classes,
+        input_size_s=input_size_s, seq_length=seq_length,
+        ensure_odd_conv_size=True, return_feats=True)
+    model.eval()
+
+    X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    out = model(torch.stack([X for idx in range(seq_length)],
+                axis=1))
+    assert out.shape == (10, model.len_last_layer)
 
 
 def test_usleep_n_params():
