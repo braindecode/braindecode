@@ -8,16 +8,14 @@ dependencies:
 - numpy
 - pandas
 - scipy
-- mkl
 - matplotlib
 - h5py
 - pytorch
-- pytest
 - pip
 - skorch
 - joblib
-- memory_profiler
 - einops
 - pip:
   - mne
+  - moabb
   - https://github.com/braindecode/braindecode/zipball/master
