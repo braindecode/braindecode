@@ -341,7 +341,8 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_channels = 1
     n_examples = 10
 
-    model = SleepStagerEldele2021(sfreq=sfreq, n_classes=n_classes, input_size_s=input_size_s,
+    model = SleepStagerEldele2021(sfreq=sfreq, n_outputs=n_classes,
+                                  input_window_seconds=input_size_s,
                                   d_model=d_model, return_feats=False)
     model.eval()
 
@@ -359,7 +360,7 @@ def test_eldele_2021_feats():
     n_classes = 3
     n_examples = 10
 
-    model = SleepStagerEldele2021(sfreq, input_size_s=input_size_s, n_classes=n_classes,
+    model = SleepStagerEldele2021(sfreq, input_window_seconds=input_size_s, n_outputs=n_classes,
                                   return_feats=True)
     model.eval()
 
