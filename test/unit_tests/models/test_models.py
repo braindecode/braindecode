@@ -275,8 +275,8 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
     seq_length = 3
 
     model = USleep(
-        in_chans=in_chans, sfreq=sfreq, n_classes=n_classes,
-        input_size_s=input_size_s, ensure_odd_conv_size=True)
+        n_chans=in_chans, sfreq=sfreq, n_outputs=n_classes,
+        input_window_seconds=input_size_s, ensure_odd_conv_size=True)
     model.eval()
 
     X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
@@ -298,9 +298,9 @@ def test_usleep_n_params():
     using the same architecture hyperparameters.
     """
     model = USleep(
-        in_chans=2, sfreq=128, depth=12, n_time_filters=5,
-        complexity_factor=1.67, with_skip_connection=True, n_classes=5,
-        input_size_s=30, time_conv_size_s=9 / 128)
+        n_chans=2, sfreq=128, depth=12, n_time_filters=5,
+        complexity_factor=1.67, with_skip_connection=True, n_outputs=5,
+        input_window_seconds=30, time_conv_size_s=9 / 128)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 3114337  # From paper's supplementary materials, Table 2
