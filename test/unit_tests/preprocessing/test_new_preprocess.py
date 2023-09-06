@@ -21,9 +21,8 @@ from pytest_cases import parametrize_with_cases
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
-    preprocess, Preprocessor, filterbank, exponential_moving_demean,
-    exponential_moving_standardize, _replace_inplace,
-    _set_preproc_kwargs)
+    preprocess, Preprocessor, filterbank, exponential_moving_standardize,
+    _replace_inplace, _set_preproc_kwargs)
 from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
@@ -117,7 +116,6 @@ class PrepClasses:
 def test_preprocessings(prep, base_concat_ds):
     preprocessors = [prep]
     preprocess(base_concat_ds, preprocessors, n_jobs=1)
-
 
 
 def test_new_filterbank(base_concat_ds):
