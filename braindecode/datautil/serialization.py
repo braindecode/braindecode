@@ -8,8 +8,10 @@ Convenience functions for storing and loading of windows datasets.
 
 import os
 import json
+import pickle
 import warnings
 from glob import glob
+from pathlib import Path
 
 import mne
 import pandas as pd
@@ -114,12 +116,33 @@ def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
 
 
 def _load_signals(fif_file, preload, is_raw):
+
+    # Reading the raw file from pickle if it has been save before.
+    # The pickle file only contain the raw object without the data.
+    pkl_file = fif_file.with_suffix(".pkl")
+    if pkl_file.exists():
+        with open(pkl_file, "rb") as f:
+            signals = pickle.load(f)
+        if preload:
+            signals.load_data()
+        return signals
+
     if is_raw:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
     elif fif_file.endswith('-epo.fif'):
         signals = mne.read_epochs(fif_file, preload=preload)
     else:
         raise ValueError('fif_file must end with raw.fif or epo.fif.')
+
+    # Saving the raw file without data into a pickle file, so it can be
+    # retrieved faster on the next use of this dataset.
+    with open(pkl_file, "wb") as f:
+        if preload:
+            data = signals._data
+            signals._data, signals.preload = None, False
+        pickle.dump(signals, f)
+        if preload:
+            signals._data, signals.preload = data, True
     return signals
 
 
@@ -146,6 +169,8 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     -------
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
     """
+    path = Path(path)
+
     # if we encounter a dataset that was saved in 'the old way', call the
     # corresponding 'old' loading function
     if _is_outdated_saved(path):
@@ -160,12 +185,12 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     # target_name.json, raw_preproc_kwargs.json, window_kwargs.json,
     # window_preproc_kwargs.json
     if ids_to_load is None:
-        ids_to_load = [os.path.split(p)[-1] for p in os.listdir(path)]
+        ids_to_load = [p.name for p in path.iterdir()]
         ids_to_load = sorted(ids_to_load, key=lambda i: int(i))
     ids_to_load = [str(i) for i in ids_to_load]
-    first_raw_fif_path = os.path.join(
-        path, ids_to_load[0], f'{ids_to_load[0]}-raw.fif')
-    is_raw = os.path.exists(first_raw_fif_path)
+    first_raw_fif_path = path / ids_to_load[0] / f'{ids_to_load[0]}-raw.fif'
+    is_raw = first_raw_fif_path.exists()
+
     # Parallelization of mne.read_epochs with preload=False fails with
     # 'TypeError: cannot pickle '_io.BufferedReader' object'.
     # So ignore n_jobs in that case and load with a single job.
@@ -176,24 +201,29 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
         n_jobs = 1
     datasets = Parallel(n_jobs)(
         delayed(_load_parallel)(path, i, preload, is_raw)
-        for i in ids_to_load)
+        for i in ids_to_load
+    )
     return BaseConcatDataset(datasets)
 
 
 def _load_parallel(path, i, preload, is_raw):
-    sub_dir = os.path.join(path, i)
+    sub_dir = path / i
     file_name_patterns = ['{}-raw.fif', '{}-epo.fif']
-    if all([os.path.exists(os.path.join(sub_dir, p.format(i))) for p in file_name_patterns]):
+    if all([(sub_dir / p.format(i)).exists() for p in file_name_patterns]):
         raise FileExistsError('Found -raw.fif and -epo.fif in directory.')
+
     fif_name_pattern = file_name_patterns[0] if is_raw else file_name_patterns[1]
     fif_file_name = fif_name_pattern.format(i)
-    fif_file_path = os.path.join(sub_dir, fif_file_name)
+    fif_file_path = sub_dir / fif_file_name
+
     signals = _load_signals(fif_file_path, preload, is_raw)
-    description_file_path = os.path.join(sub_dir, 'description.json')
+
+    description_file_path = sub_dir / 'description.json'
     description = pd.read_json(description_file_path, typ='series')
-    target_file_path = os.path.join(sub_dir, 'target_name.json')
+
+    target_file_path = sub_dir / 'target_name.json'
     target_name = None
-    if os.path.exists(target_file_path):
+    if target_file_path.exists():
         target_name = json.load(open(target_file_path, "r"))['target_name']
 
     if is_raw:
