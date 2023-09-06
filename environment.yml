@@ -18,6 +18,7 @@ dependencies:
   - joblib
   - memory_profiler
   - einops
+  - torchinfo
   - pip:
       - mne
       - https://github.com/braindecode/braindecode/zipball/master
