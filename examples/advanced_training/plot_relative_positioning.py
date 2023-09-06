@@ -59,7 +59,6 @@ from braindecode.datasets.sleep_physionet import SleepPhysionet
 dataset = SleepPhysionet(
     subject_ids=[0, 1, 2], recording_ids=[1], crop_wake_mins=30)
 
-
 ######################################################################
 # Preprocessing
 # ~~~~~~~~~~~~~
@@ -82,7 +81,6 @@ preprocessors = [
 
 # Transform the data
 preprocess(dataset, preprocessors)
-
 
 ######################################################################
 # Extracting windows
@@ -115,7 +113,6 @@ windows_dataset = create_windows_from_events(
     window_size_samples=window_size_samples,
     window_stride_samples=window_size_samples, preload=True, mapping=mapping)
 
-
 ######################################################################
 # Preprocessing windows
 # ~~~~~~~~~~~~~~~~~~~~~
@@ -125,7 +122,6 @@ windows_dataset = create_windows_from_events(
 from sklearn.preprocessing import scale as standard_scale
 
 preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
-
 
 ######################################################################
 # Splitting dataset into train, valid and test sets
@@ -150,6 +146,7 @@ subj_valid, subj_test = train_test_split(
 class RelativePositioningDataset(BaseConcatDataset):
     """BaseConcatDataset with __getitem__ that expects 2 indices and a target.
     """
+
     def __init__(self, list_of_ds):
         super().__init__(list_of_ds)
         self.return_pair = True
@@ -177,7 +174,6 @@ for name, values in split_ids.items():
     splitted[name] = RelativePositioningDataset(
         [ds for ds in windows_dataset.datasets
          if ds.description['subject'] in values])
-
 
 ######################################################################
 # Creating samplers
@@ -218,7 +214,6 @@ test_sampler = RelativePositioningSampler(
     n_examples=n_examples_test, same_rec_neg=True,
     random_state=random_state).presample()
 
-
 ######################################################################
 # Creating the model
 # ------------------
@@ -258,11 +253,11 @@ classes = list(range(5))
 emb = SleepStagerChambon2018(
     n_channels,
     sfreq,
-    n_classes=emb_size,
+    n_outputs=emb_size,
     n_conv_chs=16,
-    input_size_s=input_size_samples / sfreq,
+    n_times=input_size_samples,
     dropout=0,
-    apply_batch_norm=True
+    apply_batch_norm=True,
 )
 
 
@@ -278,6 +273,7 @@ class ContrastiveNet(nn.Module):
     dropout : float
         Dropout rate applied to the linear layer of the contrastive module.
     """
+
     def __init__(self, emb, emb_size, dropout=0.5):
         super().__init__()
         self.emb = emb
@@ -293,7 +289,6 @@ class ContrastiveNet(nn.Module):
 
 
 model = ContrastiveNet(emb, emb_size).to(device)
-
 
 ######################################################################
 # Training
@@ -353,7 +348,6 @@ clf.load_params(checkpoint=cp)  # Load the model with the lowest valid_loss
 
 os.remove('./params.pt')  # Delete parameters file
 
-
 ######################################################################
 # Visualizing the results
 # -----------------------
@@ -400,7 +394,6 @@ ax2.legend(lines1 + lines2, labels1 + labels2)
 
 plt.tight_layout()
 
-
 ######################################################################
 # We also display the confusion matrix and classification report for the
 # pretext task:
@@ -415,7 +408,6 @@ y_true = [y for _, _, y in test_sampler]
 
 print(confusion_matrix(y_true, y_pred))
 print(classification_report(y_true, y_pred))
-
 
 ######################################################################
 # Using the learned representation for sleep staging
@@ -488,7 +480,6 @@ for i, stage in enumerate(['W', 'N1', 'N2', 'N3', 'R']):
     ax.scatter(components[mask, 0], components[mask, 1], s=10, alpha=0.7,
                color=colors[i], label=stage)
 ax.legend()
-
 
 ######################################################################
 # We see that there is sleep stage-related structure in the embedding. A
