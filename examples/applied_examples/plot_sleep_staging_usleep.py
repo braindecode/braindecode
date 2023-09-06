@@ -176,7 +176,7 @@ model = USleep(
     sfreq=sfreq,
     depth=12,
     with_skip_connection=True,
-    n_classes=n_classes,
+    n_outputs=n_classes,
     n_times=input_size_samples,
     apply_softmax=False
 )
