@@ -72,9 +72,16 @@ class Transform(torch.nn.Module):
             Transformed labels. Only returned when y is not None.
         """
         X = torch.as_tensor(X).float()
+
+        # check if input has a batch dimension
+        if len(X.shape) < 3:
+            X = X[None, ...]
+
         out_X = X.clone()
         if y is not None:
             y = torch.as_tensor(y)
+            if len(y.shape) == 0:
+                y = y.reshape(1)
             out_y = y.clone()
         else:
             out_y = torch.zeros(X.shape[0])
