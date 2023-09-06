@@ -82,6 +82,12 @@ class ATCNet(EEGModuleMixin, nn.Module):
     max_norm_const : float
         Maximum L2-norm constraint imposed on weights of the last
         fully-connected layer. Defaults to 0.25.
+    n_channels:
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_size_s:
+        Alias for input_window_seconds.
 
     References
     ----------

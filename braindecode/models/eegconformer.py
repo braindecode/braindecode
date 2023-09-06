@@ -68,6 +68,12 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     return_features: bool
         If True, the forward method returns the features before the
         last classification layer. Defaults to False.
+    n_classes :
+        Alias for n_outputs.
+    n_channels :
+        Alias for n_chans.
+    input_window_samples :
+        Alias for n_times.
     References
     ----------
     .. [Song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG

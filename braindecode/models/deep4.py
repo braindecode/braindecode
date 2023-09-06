@@ -69,6 +69,13 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         Momentum for BatchNorm2d.
     stride_before_pool: bool
         Stride before pooling.
+    in_chans :
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_window_samples :
+        Alias for n_times.
+
 
     References
     ----------

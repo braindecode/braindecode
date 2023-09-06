@@ -31,8 +31,14 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
     Parameters
     ----------
-    final_conv_length: int | "auto"
+    final_conv_length : int | "auto"
         If int, final length of convolutional filters.
+    in_chans :
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_window_samples :
+        Alias for n_times.
 
     Notes
     -----
@@ -211,8 +217,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
 
     Parameters
     ----------
-    n_chans : int
-        XXX
+    in_chans :
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_window_samples :
+        Alias for n_times.
 
     Notes
     -----

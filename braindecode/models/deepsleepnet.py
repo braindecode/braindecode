@@ -176,6 +176,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
+    n_classes :
+        Alias for n_outputs.
 
     References
     ----------
