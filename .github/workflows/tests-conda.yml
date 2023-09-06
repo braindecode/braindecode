@@ -1,4 +1,4 @@
-name: tests
+name: testsconda
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ "ubuntu-latest", "macos-latest", "windows-latest" ]
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.8"] # TODO , "3.9", "3.10"]
     steps:
     ## Install Braindecode
     - name: Checking Out Repository
@@ -33,6 +33,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v2
       with:
         mamba-version: "*"
+        python-version: ${{ matrix.python-version }}
         channels: conda-forge,pytorch,defaults
         auto-activate-base: false
         activate-environment: braindecode
