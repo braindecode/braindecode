@@ -307,7 +307,8 @@ class Deep4Net(nn.Sequential):
         self.eval()
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was implemented"""
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented"""
         keys_to_change = [
             "conv_time.weight",
             "conv_spat.weight",
