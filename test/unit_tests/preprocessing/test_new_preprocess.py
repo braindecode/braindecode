@@ -21,8 +21,10 @@ from pytest_cases import parametrize_with_cases
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
-    preprocess, Preprocessor, filterbank, exponential_moving_standardize,
+    preprocess, Preprocessor, filterbank, exponential_moving_demean,
+    exponential_moving_standardize, _replace_inplace,
     _set_preproc_kwargs)
+from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing.preprocess_classes import (
@@ -72,6 +74,13 @@ def test_preprocess_windows_str(windows_concat_ds):
     ] for ds in windows_concat_ds.datasets])
 
 
+def test_scale_deprecated():
+    msg = 'Function scale is deprecated; will be removed in 0.8.0. ' \
+          'Use numpy.multiply inside a lambda function instead.'
+    with pytest.warns(FutureWarning, match=msg):
+        deprecated_scale(np.random.rand(2, 2), factor=2)
+
+
 # To test one preprocessor at each time, using this fixture structure
 class PrepClasses:
     @pytest.mark.parametrize("sfreq", [100, 300])
@@ -110,6 +119,7 @@ def test_preprocessings(prep, base_concat_ds):
     preprocess(base_concat_ds, preprocessors, n_jobs=1)
 
 
+
 def test_new_filterbank(base_concat_ds):
     base_concat_ds = base_concat_ds.split([[0]])['0']
     preprocessors = [
@@ -137,7 +147,16 @@ def test_new_filterbank(base_concat_ds):
     ] for ds in base_concat_ds.datasets])
 
 
-def test_new_raw_preproc_kwargs(base_concat_ds):
+def test_replace_inplace(base_concat_ds):
+    base_concat_ds2 = copy.deepcopy(base_concat_ds)
+    for i in range(len(base_concat_ds2.datasets)):
+        base_concat_ds2.datasets[i].raw.crop(0, 10, include_tmax=False)
+    _replace_inplace(base_concat_ds, base_concat_ds2)
+
+    assert all([len(ds.raw.times) == 2500 for ds in base_concat_ds.datasets])
+
+
+def test_set_raw_preproc_kwargs(base_concat_ds):
     raw_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     ds = base_concat_ds.datasets[0]
@@ -147,7 +166,7 @@ def test_new_raw_preproc_kwargs(base_concat_ds):
     assert ds.raw_preproc_kwargs == raw_preproc_kwargs
 
 
-def test_new_window_preproc_kwargs(windows_concat_ds):
+def test_set_window_preproc_kwargs(windows_concat_ds):
     window_preproc_kwargs = [('crop', {'tmax': 10, 'include_tmax': False})]
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     ds = windows_concat_ds.datasets[0]
@@ -157,7 +176,7 @@ def test_new_window_preproc_kwargs(windows_concat_ds):
     assert ds.window_preproc_kwargs == window_preproc_kwargs
 
 
-def test_new_preproc_kwargs_wrong_type(base_concat_ds):
+def test_set_preproc_kwargs_wrong_type(base_concat_ds):
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     with pytest.raises(TypeError):
         _set_preproc_kwargs(base_concat_ds, preprocessors)
@@ -215,19 +234,18 @@ def test_new_basic(base_concat_ds):
         Resample(sfreq=100),
         Pick(picks=['eeg']),  # Keep EEG sensors
         Filter(l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-        Preprocessor(exponential_moving_standardize),
-        DropChannels(ch_names=['C4', 'Cz'])
+        Preprocessor(exponential_moving_standardize)
     ]
 
-    preprocess(base_concat_ds, preprocessors, n_jobs=1)
+    preprocess(base_concat_ds, preprocessors, n_jobs=-1)
 
 
-def test_eegref(base_concat_ds):
+def test_new_eegref(base_concat_ds):
     preprocessors = [SetEEGReference(ref_channels='average')]
     preprocess(base_concat_ds, preprocessors, n_jobs=1)
 
 
-def test_filterbank_order_channels_by_freq(base_concat_ds):
+def test_new_filterbank_order_channels_by_freq(base_concat_ds):
     base_concat_ds = base_concat_ds.split([[0]])['0']
     preprocessors = [
         # DropChannels(ch_names=["P2", "P1"]),
