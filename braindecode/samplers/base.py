@@ -131,10 +131,10 @@ class SequenceSampler(RecordingSampler):
         Array of shape (n_sequences,) that indicates from which file each
         sequence comes from. Useful e.g. to do self-ensembling.
     """
-    def __init__(self, metadata, n_windows, n_windows_stride, random=False,
+    def __init__(self, metadata, n_windows, n_windows_stride, randomize=False,
                  random_state=None):
         super().__init__(metadata, random_state=random_state)
-        self.random = random
+        self.randomize = randomize
         self.n_windows = n_windows
         self.n_windows_stride = n_windows_stride
         self.start_inds, self.file_ids = self._compute_seq_start_inds()
@@ -161,7 +161,7 @@ class SequenceSampler(RecordingSampler):
         return len(self.start_inds)
 
     def __iter__(self):
-        if self.random:
+        if self.randomize:
             start_inds = self.start_inds.copy()
             self.rng.shuffle(start_inds)
             for start_ind in start_inds:
