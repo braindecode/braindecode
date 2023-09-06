@@ -8,7 +8,6 @@
 import warnings
 
 from skorch import NeuralNet
-from skorch.callbacks import EpochScoring
 from skorch.classifier import NeuralNetClassifier
 
 from .eegneuralnet import _EEGNeuralNet
@@ -72,7 +71,6 @@ class EEGClassifier(NeuralNetClassifier, _EEGNeuralNet):
             return ThrowAwayIndexLoader(self, iterator, is_regression=False)
         else:
             return iterator
-
 
     def predict_proba(self, X):
         """Return the output of the module's forward method as a numpy
