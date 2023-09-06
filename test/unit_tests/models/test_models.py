@@ -116,9 +116,9 @@ def test_tcn(input_sizes):
 
 def test_eegitnet(input_sizes):
     model = EEGITNet(
-        n_classes=input_sizes['n_classes'],
-        in_channels=input_sizes['n_channels'],
-        input_window_samples=input_sizes['n_in_times'])
+        n_outputs=input_sizes['n_classes'],
+        n_chans=input_sizes['n_channels'],
+        n_times=input_sizes['n_in_times'])
 
     check_forward_pass(model, input_sizes, )
 
@@ -126,9 +126,9 @@ def test_eegitnet(input_sizes):
 @pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
 def test_eeginception_erp(input_sizes, model_cls):
     model = model_cls(
-        n_classes=input_sizes['n_classes'],
-        in_channels=input_sizes['n_channels'],
-        input_window_samples=input_sizes['n_in_times'])
+        n_outputs=input_sizes['n_classes'],
+        n_chans=input_sizes['n_channels'],
+        n_times=input_sizes['n_in_times'])
 
     check_forward_pass(model, input_sizes, )
 
@@ -139,9 +139,9 @@ def test_eeginception_erp_n_params(model_cls):
     using the same architecture hyperparameters.
     """
     model = model_cls(
-        in_channels=8,
-        n_classes=2,
-        input_window_samples=128,  # input_time
+        n_chans=8,
+        n_outputs=2,
+        n_times=128,  # input_time
         sfreq=128,
         drop_prob=0.5,
         n_filters=8,
@@ -156,9 +156,9 @@ def test_eeginception_erp_n_params(model_cls):
 def test_eeginception_mi(input_sizes):
     sfreq = 250
     model = EEGInceptionMI(
-        n_classes=input_sizes['n_classes'],
-        in_channels=input_sizes['n_channels'],
-        input_window_s=input_sizes['n_in_times'] / sfreq,
+        n_outputs=input_sizes['n_classes'],
+        n_chans=input_sizes['n_channels'],
+        input_window_seconds=input_sizes['n_in_times'] / sfreq,
         sfreq=sfreq,
     )
 
@@ -180,9 +180,9 @@ def test_eeginception_mi_binary_n_params(n_filter, reported):
     case... Should be investigated by contacting the authors.
     """
     model = EEGInceptionMI(
-        in_channels=3,
-        n_classes=2,
-        input_window_s=3.,  # input_time
+        n_chans=3,
+        n_outputs=2,
+        input_window_seconds=3.,  # input_time
         sfreq=250,
         n_convs=3,
         n_filters=n_filter,

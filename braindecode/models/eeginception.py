@@ -248,7 +248,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             nn.Flatten(),
             nn.Linear(
                 spatial_dim_last_layer * n_channels_last_layer,
-                self.n_classes
+                self.n_outputs
             ),
             nn.Softmax(1)
         ))
