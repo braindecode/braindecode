@@ -83,14 +83,3 @@ repos:
           - --quiet-level=2
         exclude_types: [csv, json]
         exclude: ^tests/|generated/
-
-  - repo: https://github.com/adrienverge/yamllint.git
-    rev: v1.32.0
-    hooks:
-      - id: yamllint
-        exclude: >
-          (?x)^(
-            .pre-commit-config.yaml*|
-            .github/workflows/.*|
-
-          )$
