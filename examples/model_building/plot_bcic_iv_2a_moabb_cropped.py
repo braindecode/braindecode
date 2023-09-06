@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Cropped Decoding on BCIC IV 2a Dataset
-======================================
+Cropped Decoding on BCIC IV 2a Dataset [1]_
+===========================================
 
 .. contents:: This example covers:
    :local:
@@ -66,7 +66,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #     identical to sampling crops in your dataset, pushing them through the
 #     network and training directly on the individual crops. At the same time,
 #     the above training setup is much faster as it avoids redundant
-#     computations by using dilated convolutions, see [1]_.
+#     computations by using dilated convolutions, see [2]_.
 #     However, the two setups are only mathematically identical in case (1)
 #     your network does not use any padding or only left padding and
 #     (2) your loss function leads
@@ -350,7 +350,7 @@ plt.tight_layout()
 # Plot Confusion Matrix
 # ---------------------
 #
-# Generate a confusion matrix as in [1]_
+# Generate a confusion matrix as in [2]_
 #
 
 from sklearn.metrics import confusion_matrix
@@ -378,7 +378,13 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #
 # References
 # ----------
-# .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#
+# .. [1] Tangermann, M., Müller, K.R., Aertsen, A., Birbaumer, N., Braun, C.,
+#        Brunner, C., Leeb, R., Mehring, C., Miller, K.J., Mueller-Putz, G.
+#        and Nolte, G., 2012. Review of the BCI competition IV.
+#        Frontiers in neuroscience, 6, p.55.
+#
+# .. [2] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.

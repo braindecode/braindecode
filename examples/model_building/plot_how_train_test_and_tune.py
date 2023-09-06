@@ -3,12 +3,12 @@ How to train, test and tune your model
 ======================================
 
 This tutorial shows you how to properly train, tune and test your deep learning
-models with Braindecode. We will use the BCIC IV 2a dataset as a showcase example.
+models with Braindecode. We will use the BCIC IV 2a dataset [1]_ as a showcase example.
 
 The methods shown can be applied to any standard supervised trial-based decoding setting.
 This tutorial will include additional parts of code like loading and preprocessing,
-defining a model, and other details which are not exclusive to this page (compare
-`Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__). Therefore we
+defining a model, and other details which are not exclusive to this page (see
+`Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_cropped.html>`__). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
 In general, we distinguish between "usual" training and evaluation and hyperparameter search.
@@ -30,12 +30,28 @@ and one for the two different hyperparameter tuning methods.
 # data into two parts, training and testing sets. It sounds like a
 # simple division, right? But the story does not end here.
 #
+# ``What are model's parameters?``
+# ``Model's parameters are learnable weights which are used in the
+# extraction of the relevant features and in performing the final inference.
+# In the context of deep learning, these are usually fully connected weights,
+# convolutional kernels, biases, etc.``
+#
+# ``What are model's hyperparameters?``
+# ``Model's hyperparameters are used to set the capacity (size) of the model
+# and to guide the parameter learning process.
+# In the context of deep learning, examples of the hyperparameters are the
+# number of convolutional layers and the number of convolutional kernels in
+# each of them, the number and size of the fully connected weights, 
+# choice of the optimizer and its learning rate, the number of training epochs,
+# choice of the nonlinearities, etc.``
+#
+#
 # While developing a ML model you usually have to adjust and tune
 # hyperparameters of your model or pipeline (e.g., number of layers,
 # learning rate, number of epochs). Deep learning models usually have
-# many free parameters; they could be considered complex models with
+# many free parameters; they could be considered as complex models with
 # many degrees of freedom. If you kept using the test dataset to
-# evaluate your adjustmentyou would run into data leakage.
+# evaluate your adjustment you would run into data leakage.
 #
 # This means that if you use the test set to adjust the hyperparameters
 # of your model, the model implicitly learns or memorizes the test set.
@@ -65,20 +81,26 @@ and one for the two different hyperparameter tuning methods.
 
 
 ######################################################################
-# Loading
-# ~~~~~~~
+# Loading data
+# ~~~~~~~~~~~~~
 #
-
+# In this example, we load the BCI Competition IV 2a data [1]_, for one 
+# subject, using braindecode's wrapper to load via 
+# `MOABB library <https://github.com/NeuroTechX/moabb>`__ [2]_. 
+#
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 ######################################################################
-# Preprocessing
-# ~~~~~~~~~~~~~
+# Preprocessing data
+# ~~~~~~~~~~~~~~~~~~
 #
-
+# In this example, preprocessing includes signal rescaling, the bandpass filtering 
+# (low and high cut-off frequencies are 4 and 38 Hz) and the standardization using
+# the exponential moving mean and variance.
+#
 import numpy as np
 
 from braindecode.preprocessing import (
@@ -107,7 +129,7 @@ preprocessors = [
     ),
 ]
 
-# Transform the data
+# Preprocess the data
 preprocess(dataset, preprocessors, n_jobs=-1)
 
 ######################################################################
@@ -675,3 +697,16 @@ best_parameters = best_run["params"]
 # above with the ``KFold`` cross-validator from sklearn.
 
 train_val_split = KFold(n_splits=5, shuffle=False)
+
+#######################################################################
+# References
+# ----------
+#
+# .. [1] Tangermann, M., Müller, K.R., Aertsen, A., Birbaumer, N., Braun, C.,
+#        Brunner, C., Leeb, R., Mehring, C., Miller, K.J., Mueller-Putz, G.
+#        and Nolte, G., 2012. Review of the BCI competition IV.
+#        Frontiers in neuroscience, 6, p.55.
+#
+# .. [2] Jayaram, Vinay, and Alexandre Barachant. 
+#        "MOABB: trustworthy algorithm benchmarking for BCIs." 
+#        Journal of neural engineering 15.6 (2018): 066011.

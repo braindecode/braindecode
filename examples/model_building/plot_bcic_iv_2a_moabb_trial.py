@@ -26,8 +26,8 @@ labels (e.g., Right Hand, Left Hand, etc.).
 
 ######################################################################
 # First, we load the data. In this tutorial, we load the BCI Competition
-# IV 2a data using braindecode's wrapper to load via
-# `MOABB <https://github.com/NeuroTechX/moabb>`__.
+# IV 2a data [1]_ using braindecode's wrapper to load via
+# `MOABB library <https://github.com/NeuroTechX/moabb>`__ [2]_. 
 #
 # .. note::
 #    To load your own datasets either via mne or from
@@ -146,7 +146,7 @@ valid_set = splitted['session_E']
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
-# time-domain EEG. Here, we use the shallow ConvNet model from [1]_. These models are
+# time-domain EEG. Here, we use the shallow ConvNet model from [3]_. These models are
 # pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
 # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
@@ -299,7 +299,7 @@ plt.tight_layout()
 
 
 #######################################################################
-# Here we generate a confusion matrix as in [1]_.
+# Here we generate a confusion matrix as in [3]_.
 #
 
 
@@ -328,7 +328,17 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #
 # References
 # ----------
-# .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#
+# .. [1] Tangermann, M., Müller, K.R., Aertsen, A., Birbaumer, N., Braun, C.,
+#        Brunner, C., Leeb, R., Mehring, C., Miller, K.J., Mueller-Putz, G.
+#        and Nolte, G., 2012. Review of the BCI competition IV.
+#        Frontiers in neuroscience, 6, p.55.
+#
+# .. [2] Jayaram, Vinay, and Alexandre Barachant. 
+#        "MOABB: trustworthy algorithm benchmarking for BCIs." 
+#        Journal of neural engineering 15.6 (2018): 066011.
+#
+# .. [3] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
