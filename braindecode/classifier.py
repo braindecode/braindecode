@@ -70,6 +70,20 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         else:
             return iterator
 
+    @property
+    def _default_callbacks(self):
+         callbacks = super()._default_callbacks()
+         if not self.cropped:
+             callbacks.append((
+                 'valid_acc', 
+                 EpochScoring(
+                     'accuracy',
+                     name='valid_acc',
+                     lower_is_better=False,
+                 )
+             ))
+         return callbacks
+
     def predict_proba(self, X):
         """Return the output of the module's forward method as a numpy
         array. In case of cropped decoding returns averaged values for
