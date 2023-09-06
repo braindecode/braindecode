@@ -377,8 +377,8 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     n_examples = 10
 
-    model = SleepStagerBlanco2020(n_channels=n_channels, sfreq=sfreq, n_groups=n_groups,
-                                  input_size_s=input_size_s, n_classes=n_classes,
+    model = SleepStagerBlanco2020(n_chans=n_channels, sfreq=sfreq, n_groups=n_groups,
+                                  input_window_seconds=input_size_s, n_outputs=n_classes,
                                   return_feats=False)
     model.eval()
 
@@ -400,8 +400,8 @@ def test_blanco_2020_feats():
     n_classes = 3
     n_examples = 10
 
-    model = SleepStagerBlanco2020(n_channels, sfreq, input_size_s=input_size_s,
-                                  n_classes=n_classes, return_feats=True)
+    model = SleepStagerBlanco2020(n_channels, sfreq, input_window_seconds=input_size_s,
+                                  n_outputs=n_classes, return_feats=True)
     model.eval()
 
     rng = np.random.RandomState(42)
