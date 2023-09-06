@@ -26,7 +26,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 
 ######################################################################
 # First, we load the data. In this tutorial, we load the BCI Competition
-# IV 2a data by using braindecode to load through
+# IV 2a data using braindecode's wrapper to load via
 # `MOABB <https://github.com/NeuroTechX/moabb>`__.
 #
 # .. note::
@@ -88,14 +88,14 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
-# Cutting Compute Windows
-# ~~~~~~~~~~~~~~~~~~~~~~~
+# Extracting Compute Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
 ######################################################################
-# Now we cut compute windows from the signals, these will be the inputs
-# for the deep networks during training. In the case of trialwise
+# Now we extract compute windows from the signals, these will be the inputs
+# to the deep networks during training. In the case of trialwise
 # decoding, we just have to decide if we want to include some part
 # before and/or after the trial. For our work with this dataset,
 # it was often beneficial to also include the 500 ms before the trial.
@@ -196,13 +196,14 @@ if cuda:
 ######################################################################
 # Now we will train the network! ``EEGClassifier`` is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
-# from skorch.NeuralNetClassifier, so the training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# from skorch `NeuralNetClassifier <https://skorch.readthedocs.io/en/stable/classifier.html#>`__,
+# so the training logic is the same as in `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
 
 ######################################################################
-#    **Note**: In this tutorial, we use some default parameters that we
+# .. note::
+#    In this tutorial, we use some default parameters that we
 #    have found to work well for motor decoding, however we strongly
 #    encourage you to perform your own hyperparameter optimization using
 #    cross validation on your training data.
