@@ -4,7 +4,6 @@ channels:
   - pytorch
   - defaults
 dependencies:
-- python>=3.8
 - numpy
 - pandas
 - scipy
