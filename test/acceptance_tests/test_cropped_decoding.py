@@ -3,10 +3,10 @@
 #
 # License: BSD-3
 import sys
-import pytest
 
 import mne
 import numpy as np
+import pytest
 import torch
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
@@ -14,9 +14,9 @@ from torch import optim
 
 from braindecode import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
-from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
+from braindecode.models.util import to_dense_prediction_model
+from braindecode.training.losses import CroppedLoss
 from braindecode.util import set_random_seeds
 
 
@@ -89,7 +89,7 @@ def test_cropped_decoding():
         model.cuda()
 
     # Perform forward pass to determine how many outputs per input
-    n_preds_per_input = get_output_shape(model, in_chans, input_window_samples)[2]
+    n_preds_per_input = model.output_shape[2]
 
     train_set = create_from_X_y(X[:60], y[:60],
                                 drop_last_window=False,

@@ -9,22 +9,25 @@ import numpy as np
 import pytest
 import sklearn.datasets
 import torch
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import accuracy_score, f1_score
 from skorch import History
 from skorch.callbacks import Callback
 from skorch.utils import to_numpy, to_tensor
 from torch import optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
+
 from braindecode.classifier import EEGClassifier
-from braindecode.datasets.xy import create_from_X_y
-from braindecode.models import ShallowFBCSPNet, get_output_shape
-from braindecode.util import set_random_seeds
-from braindecode.training.scoring import (
-    CroppedTrialEpochScoring, PostEpochTrainScoring, trial_preds_from_window_preds,
-    predict_trials, CroppedTimeSeriesEpochScoring)
 from braindecode.datasets.moabb import MOABBDataset
+from braindecode.datasets.xy import create_from_X_y
+from braindecode.models import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 from braindecode.preprocessing import create_windows_from_events
+from braindecode.training.scoring import (CroppedTimeSeriesEpochScoring,
+                                          CroppedTrialEpochScoring,
+                                          PostEpochTrainScoring,
+                                          predict_trials,
+                                          trial_preds_from_window_preds)
+from braindecode.util import set_random_seeds
 
 
 class MockSkorchNet:
@@ -391,7 +394,7 @@ def test_predict_trials():
     )
     to_dense_prediction_model(model)
 
-    output_shape = get_output_shape(model, in_chans, window_size_samples)
+    output_shape = model.output_shape
     # the number of samples required to get 1 output
     receptive_field_size = window_size_samples - output_shape[-1] + 1
 

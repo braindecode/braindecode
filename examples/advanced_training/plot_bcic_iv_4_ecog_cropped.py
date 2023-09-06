@@ -82,8 +82,9 @@ test_set = dataset['test']
 #
 
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 1.  # low cut frequency for filtering
 high_cut_hz = 200.  # high cut frequency for filtering, for ECoG higher than for EEG
@@ -157,8 +158,9 @@ input_window_samples = 1000
 #
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -183,27 +185,23 @@ model = ShallowFBCSPNet(
     final_conv_length=2,
 )
 # We are removing the softmax layer to make it a regression model
-new_model = torch.nn.Sequential()
-for name, module_ in model.named_children():
-    if "softmax" in name:
-        continue
-    new_model.add_module(name, module_)
-model = new_model
+model.convert_to_regressor()
 
 # Send model to GPU
 if cuda:
     model.cuda()
 
-from braindecode.models import to_dense_prediction_model, get_output_shape
+from braindecode.models import to_dense_prediction_model
 
 to_dense_prediction_model(model)
 
-
+# Display torchinfo table describing the model after conversion to regressor
+print(model)
 ######################################################################
 # To know the models’ receptive field, we calculate the shape of model
 # output for a dummy input.
 
-n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
+n_preds_per_input = model.output_shape[2]
 
 
 ######################################################################
@@ -281,9 +279,8 @@ test_set.target_transform = lambda x: x[0: 1]
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
-from braindecode.training import TimeSeriesLoss
 from braindecode import EEGRegressor
-from braindecode.training import CroppedTimeSeriesEpochScoring
+from braindecode.training import CroppedTimeSeriesEpochScoring, TimeSeriesLoss
 
 # These values we found good for shallow network for EEG MI decoding:
 lr = 0.0625 * 0.01
@@ -365,8 +362,8 @@ preds_test, y_test = pad_and_select_predictions(preds_test, y_test)
 #    pipeline which may be not optimal for ECoG.
 #
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
+from matplotlib.lines import Line2D
 
 plt.style.use('seaborn')
 fig, axes = plt.subplots(3, 1, figsize=(8, 9))
