@@ -183,8 +183,8 @@ def test_dataset_with_transform(concat_windows_dataset):
 def test_single_input_aug(concat_windows_dataset):
     # Create single input without the batch dimension, just (channels, time)
     X, y, _ = concat_windows_dataset[0]
-    X = X[0]
     assert len(X.shape) == 2
+    assert isinstance(y, int)
 
     # Create dummy data augmentation
     factor = 10
@@ -193,11 +193,9 @@ def test_single_input_aug(concat_windows_dataset):
     # Check that the transformation forward works and outputs an augmented
     # input with the batch dimension
     transformed_X = transform(X)
-    assert len(transformed_X.shape) == 3
-    assert transformed_X.shape[0] == 1
+    assert transformed_X.shape == X.shape
 
     # Same check, when also passing y
     transformed_X, transformed_y = transform(X, y)
-    assert len(transformed_X.shape) == 3
     assert len(transformed_y.shape) == 1
-    assert transformed_X.shape[0] == transformed_y.shape[0] == 1
+    assert transformed_X.shape == X.shape
