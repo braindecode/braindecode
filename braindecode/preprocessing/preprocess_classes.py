@@ -1,11 +1,11 @@
 """Preprocessor objects based on mne methods.
 """
-import mne.io
 
 # Author: Bruna Lopes <brunajaflopes@gmail.com>
 #
 # License: BSD-3
 
+import mne.io
 from braindecode.util import _update_moabb_docstring
 from braindecode.preprocessing import Preprocessor
 
