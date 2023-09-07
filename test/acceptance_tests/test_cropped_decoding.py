@@ -15,7 +15,6 @@ from torch import optim
 from braindecode import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
 from braindecode.training.losses import CroppedLoss
 from braindecode.util import set_random_seeds
 
@@ -83,7 +82,7 @@ def test_cropped_decoding():
         input_window_samples=input_window_samples,
         final_conv_length=12,
     )
-    to_dense_prediction_model(model)
+    model.to_dense_prediction_model()
 
     if cuda:
         model.cuda()

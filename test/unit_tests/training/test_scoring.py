@@ -20,7 +20,6 @@ from braindecode.classifier import EEGClassifier
 from braindecode.datasets.moabb import MOABBDataset
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
 from braindecode.preprocessing import create_windows_from_events
 from braindecode.training.scoring import (CroppedTimeSeriesEpochScoring,
                                           CroppedTrialEpochScoring,
@@ -392,7 +391,7 @@ def test_predict_trials():
         in_chans=in_chans,
         n_classes=n_classes,
     )
-    to_dense_prediction_model(model)
+    model.to_dense_prediction_model()
 
     output_shape = model.output_shape
     # the number of samples required to get 1 output

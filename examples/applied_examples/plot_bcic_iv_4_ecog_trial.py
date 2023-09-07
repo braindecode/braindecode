@@ -223,10 +223,12 @@ model = ShallowFBCSPNet(
 )
 
 # We are removing the softmax layer to make it a regression model
-model.convert_to_regressor()
-
-# Display torchinfo table describing the model after conversion to regressor
-print(model)
+new_model = torch.nn.Sequential()
+for name, module_ in model.named_children():
+    if "softmax" in name:
+        continue
+    new_model.add_module(name, module_)
+model = new_model
 
 # Send model to GPU
 if cuda:

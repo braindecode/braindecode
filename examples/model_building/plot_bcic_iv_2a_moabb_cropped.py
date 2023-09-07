@@ -173,10 +173,7 @@ if cuda:
 # prediction, so we can use it to obtain predictions for all
 # crops.
 #
-
-from braindecode.models import to_dense_prediction_model
-
-to_dense_prediction_model(model)
+model.to_dense_prediction_model()
 
 
 ######################################################################
