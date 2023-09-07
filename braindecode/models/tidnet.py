@@ -236,7 +236,9 @@ class TIDNet(nn.Module):
         classifier = nn.Linear(incoming, n_classes)
         init.xavier_normal_(classifier.weight)
         classifier.bias.data.zero_()
-        return nn.Sequential(nn.Flatten(start_dim=1), classifier, nn.LogSoftmax(dim=-1))
+        seq_clf = nn.Sequential(nn.Flatten(start_dim=1), classifier,
+                                nn.LogSoftmax(dim=-1) if self.add_log_softmax else nn.Identity())
+        return seq_clf
 
     def forward(self, x):
         """Forward pass.

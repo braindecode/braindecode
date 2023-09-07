@@ -78,6 +78,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=True
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_channels, n_classes, input_size_s
@@ -121,7 +122,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             self.fc = nn.Sequential(
                 nn.Dropout(dropout),
                 nn.Linear(self.len_last_layer, self.n_outputs),
-                nn.Softmax(dim=1)
+                nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity()
             )
 
     def _len_last_layer(self, n_channels, input_size):

@@ -125,6 +125,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=True
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_channels, n_classes, input_window_samples
@@ -246,7 +247,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                 spatial_dim_last_layer * n_channels_last_layer,
                 self.n_outputs
             ),
-            nn.Softmax(1)
+            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
         ))
 
         _glorot_weight_zero_bias(self)

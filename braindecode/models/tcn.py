@@ -29,8 +29,6 @@ class TCN(EEGModuleMixin, nn.Module):
         kernel size of the convolutions
     drop_prob: float
         dropout probability
-    add_log_softmax: bool
-        whether to add a log softmax layer
     n_in_chans: int
         Alias for `n_chans`.
 
@@ -50,7 +48,6 @@ class TCN(EEGModuleMixin, nn.Module):
             n_filters=None,
             kernel_size=None,
             drop_prob=None,
-            add_log_softmax=None,
             chs_info=None,
             n_times=None,
             input_window_seconds=None,
@@ -68,6 +65,7 @@ class TCN(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=True,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_in_chans
@@ -88,8 +86,10 @@ class TCN(EEGModuleMixin, nn.Module):
             ))
         self.temporal_blocks = t_blocks
         self.fc = nn.Linear(in_features=n_filters, out_features=self.n_outputs)
-        if add_log_softmax:
-            self.log_softmax = nn.LogSoftmax(dim=1)
+        if self.add_log_softmax:
+            self.out_fun = nn.LogSoftmax(dim=1)
+        else:
+            self.out_fun = nn.Identity()
         self.squeeze = Expression(squeeze_final_output)
 
         self.min_len = 1
@@ -119,8 +119,7 @@ class TCN(EEGModuleMixin, nn.Module):
         x = x.transpose(1, 2).contiguous()
 
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
-        if hasattr(self, "log_softmax"):
-            fc_out = self.log_softmax(fc_out)
+        fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))
 
         out_size = 1 + max(0, time_size - self.min_len)

@@ -90,6 +90,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=True,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_channels, n_classes, input_window_s
@@ -171,7 +172,10 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             bias=True,
         )
 
-        self.softmax = nn.LogSoftmax(dim=1)
+        if self.add_log_softmax:
+            self.out_fun = nn.LogSoftmax(dim=1)
+        else:
+            self.out_fun = nn.Identity()
 
     def forward(
             self,
@@ -198,7 +202,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         out = self.ave_pooling(out)
         out = self.flat(out)
         out = self.fc(out)
-        return self.softmax(out)
+        return self.out_fun(out)
 
 
 class _InceptionModuleMI(nn.Module):

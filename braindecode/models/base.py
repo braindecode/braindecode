@@ -46,11 +46,16 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         Length of the input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recordings.
+    add_log_softmax: bool
+        Whether to use log-softmax non-linearity as the output function.
 
     Raises
     ------
     ValueError: If some input signal-related parameters are not specified
                 and can not be inferred.
+
+    FutureWarning: If add_log_softmax is True, since LogSoftmax final layer
+                   will be removed in the future.
 
     Notes
     -----
@@ -66,6 +71,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             n_times: Optional[int] = None,
             input_window_seconds: Optional[float] = None,
             sfreq: Optional[float] = None,
+            add_log_softmax: Optional[bool] = False,
     ):
         if (
                 n_chans is not None and
@@ -89,6 +95,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         self._n_times = n_times
         self._input_window_seconds = input_window_seconds
         self._sfreq = sfreq
+        self._add_log_softmax = add_log_softmax
         super().__init__()
 
     @property
@@ -157,6 +164,17 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                 'Either specify sfreq or input_window_seconds and n_times.'
             )
         return self._sfreq
+
+    @property
+    def add_log_softmax(self):
+        if self._add_log_softmax is None:
+            raise ValueError("add_log_softmax flag not specified.")
+
+        if self._add_log_softmax:
+            raise FutureWarning("LogSoftmax final layer will be removed! " +
+                                "Please adjust your hyperparameters " +
+                                "(e.g. loss function) accordingly!")
+        return self._add_log_softmax
 
     def get_torchinfo_statistics(
             self,

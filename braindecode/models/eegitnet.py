@@ -144,6 +144,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=True,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, in_channels, input_window_samples
@@ -200,7 +201,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module("classifier", nn.Sequential(
             torch.nn.Flatten(),
             nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs),
-            nn.Softmax(dim=1)))
+            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),))
 
     @staticmethod
     def _get_inception_branch(in_channels, out_channels, kernel_length, depth_multiplier=1):
