@@ -8,7 +8,6 @@ here = path.abspath(path.dirname(__file__))
 with open(path.join(here, 'README.rst'), encoding='utf-8') as f:
     long_description = f.read()
 
-
 # This will add __version__ to version dict
 version = {}
 with open(path.join(here, 'braindecode/version.py'), encoding='utf-8') as (
@@ -34,9 +33,12 @@ setup(
     license='BSD 3-Clause',
 
     install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch',
-                      'einops'],
+                      'torch', 'einops', 'joblib', 'docstring_inheritance', 'torchinfo'],
     extras_require={
-        'moabb': ["moabb"]
+        'moabb': ['moabb'],
+        'tests': ['pytest', 'pytest-cov', 'codecov'],
+        'docs': ['sphinx_gallery', 'sphinx_rtd_theme', 'pydata_sphinx_theme', 'numpydoc',
+                 'memory_profiler', 'pillow', 'ipython', 'sphinx_design'],
     },
     # tests_require = [...]
 

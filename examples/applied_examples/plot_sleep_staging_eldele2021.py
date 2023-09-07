@@ -135,13 +135,14 @@ from braindecode.samplers import SequenceSampler
 n_windows = 3  # Sequences of 3 consecutive windows
 n_windows_stride = 3  # Maximally overlapping sequences
 
-train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
+train_sampler = SequenceSampler(
+    train_set.get_metadata(), n_windows, n_windows_stride, randomize=True
+)
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
 print('Training examples: ', len(train_sampler))
 print('Validation examples: ', len(valid_sampler))
-
 
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
@@ -200,9 +201,10 @@ n_channels, input_size_samples = train_set[0][0].shape
 
 feat_extractor = SleepStagerEldele2021(
     sfreq,
-    n_classes=n_classes,
-    input_size_s=input_size_samples / sfreq,
-    return_feats=True)
+    n_outputs=n_classes,
+    n_times=input_size_samples,
+    return_feats=True,
+)
 
 model = nn.Sequential(
     TimeDistributed(feat_extractor),  # apply model on each 30-s window
@@ -216,7 +218,6 @@ model = nn.Sequential(
 # Send model to GPU
 if cuda:
     model.cuda()
-
 
 ######################################################################
 # Training
@@ -267,7 +268,6 @@ clf = EEGClassifier(
 # supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
-
 ######################################################################
 # Plot results
 # ------------
@@ -316,6 +316,7 @@ print(classification_report(y_true, y_pred))
 # different sleep stages with this amount of training.
 
 import matplotlib.pyplot as plt
+
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true, color='b', label='Expert annotations')
 ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)
