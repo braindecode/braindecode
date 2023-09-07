@@ -3,7 +3,7 @@
 # License: BSD-3
 
 import warnings
-from typing import Iterable, List, Optional, Dict
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -161,17 +161,17 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._sfreq
 
     @property
-    def input_shape(self) -> tuple[int]:
+    def input_shape(self) -> Tuple[int]:
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
     @property
-    def output_shape(self) -> tuple[int]:
+    def output_shape(self) -> Tuple[int]:
         """Returns shape of neural network output for batch size equal 1.
 
         Returns
         -------
-        output_shape: tuple[int]
+        output_shape: Tuple[int]
             shape of the network output for `batch_size==1` (1, ...)
     """
         with torch.inference_mode():
@@ -197,7 +197,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     raise ValueError(msg) from exc
                 raise exc
 
-    def to_dense_prediction_model(self, axis=(2, 3)):
+    def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
         """
         Transform a sequential model with strides to a model that outputs
         dense predictions by removing the strides and instead inserting dilations.
