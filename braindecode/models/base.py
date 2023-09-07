@@ -171,9 +171,9 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             raise ValueError("add_log_softmax flag not specified.")
 
         if self._add_log_softmax:
-            raise FutureWarning("LogSoftmax final layer will be removed! " +
-                                "Please adjust your hyperparameters " +
-                                "(e.g. loss function) accordingly!")
+            warnings.warn("LogSoftmax final layer will be removed! " +
+                          "Please adjust your hyperparameters " +
+                          "(e.g. loss function) accordingly!")
         return self._add_log_softmax
 
     def get_torchinfo_statistics(
