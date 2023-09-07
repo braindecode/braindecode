@@ -11,17 +11,9 @@ from braindecode.preprocessing import Preprocessor
 
 
 class Resample(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to perform resampling using mne.Epochs/mne.io.Raw's resample method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
     try:
         base_class = mne.io.Raw.resample
-        _doc__ = _update_moabb_docstring(base_class, doc)
+        __doc__ = base_class.__doc__
     except ModuleNotFoundError:
         pass
 
@@ -39,17 +31,9 @@ class Resample(Preprocessor):
 
 
 class DropChannels(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to drop specific channels using mne.Epochs/mne.io.Raw's method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
     try:
         base_class = mne.io.Raw.drop_channels
-        _doc__ = _update_moabb_docstring(base_class, doc)
+        __doc__ = base_class.__doc__
     except ModuleNotFoundError:
         pass
 
@@ -62,19 +46,10 @@ class DropChannels(Preprocessor):
 
 
 class SetEEGReference(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to specify the reference for EEG signals
-    using mne.Epochs/mne.io.Raw's method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
     try:
         from mne.channels import channels
         base_class = mne.io.Raw.set_eeg_reference
-        _doc__ = _update_moabb_docstring(base_class, doc)
+        __doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
 
@@ -87,17 +62,9 @@ class SetEEGReference(Preprocessor):
 
 
 class Filter(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to perform filtering using mne.Epochs/mne.io.Raw's method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
     try:
         base_class = mne.io.Raw.filter
-        _doc__ = _update_moabb_docstring(base_class, doc)
+        __doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
 
@@ -110,17 +77,9 @@ class Filter(Preprocessor):
 
 
 class Pick(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to pick a subset of channels using mne.Epochs/mne.io.Raw's method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
     try:
         base_class = mne.io.Raw.pick
-        _doc__ = _update_moabb_docstring(base_class, doc)
+        __doc__ = base_class.__doc__
     except ModuleNotFoundError:
         pass
 
@@ -133,17 +92,9 @@ class Pick(Preprocessor):
 
 
 class Crop(Preprocessor):
-    doc = """
-    Subclass of Preprocessor to crop a time interval using mne.Epochs/mne.io.Raw's method.
-
-    Parameters
-    ----------
-    kwargs:
-        Keyword arguments to be passed to mne.Epochs's resample method.
-    """
     try:
         base_class = mne.io.Raw.pick
-        _doc__ = _update_moabb_docstring(base_class, doc)
+        __doc__ = base_class.__doc__
     except ModuleNotFoundError:
         pass
 
