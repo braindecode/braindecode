@@ -241,7 +241,6 @@ if cuda:
 #
 
 
-from mne import set_log_level
 ######################################################################
 # Now we train the network! EEGRegressor is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
@@ -256,6 +255,7 @@ from mne import set_log_level
 #
 from skorch.callbacks import EpochScoring, LRScheduler
 from skorch.helper import predefined_split
+from mne import set_log_level
 
 from braindecode import EEGRegressor
 

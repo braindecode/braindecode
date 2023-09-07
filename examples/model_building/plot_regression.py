@@ -97,9 +97,6 @@ dataset = fake_regression_dataset(n_fake_recs=n_fake_rec,
                                   fake_duration=fake_duration,
                                   n_fake_targets=n_fake_targets)
 
-import torch
-
-from braindecode.models import Deep4Net, ShallowFBCSPNet
 ###################################################################################################
 # Defining a CNN regression model
 # -------------------------------
@@ -107,26 +104,29 @@ from braindecode.models import Deep4Net, ShallowFBCSPNet
 # Choosing and defining a CNN classifier, `ShallowFBCSPNet` or `Deep4Net`, introduced in [1]_.
 # To convert a classifier to a regressor, `softmax` function is removed from its output layer.
 from braindecode.util import set_random_seeds
+from braindecode.models import Deep4Net
+from braindecode.models import ShallowFBCSPNet
+import torch
 
 # Choosing a CNN model
 model_name = "shallow"  # 'shallow' or 'deep'
 
 # Defining a CNN model
 if model_name in ["shallow", "Shallow", "ShallowConvNet"]:
-    model = ShallowFBCSPNet(in_chans=n_fake_chans,
-                            n_classes=n_fake_targets,
-                            input_window_samples=fake_sfreq * fake_duration,
-                            n_filters_time=40, n_filters_spat=40,
-                            final_conv_length=35, )
+    model_clf = ShallowFBCSPNet(in_chans=n_fake_chans,
+                                n_classes=n_fake_targets,
+                                input_window_samples=fake_sfreq * fake_duration,
+                                n_filters_time=40, n_filters_spat=40,
+                                final_conv_length=35, )
 elif model_name in ["deep", "Deep", "DeepConvNet"]:
-    model = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
-                     input_window_samples=fake_sfreq * fake_duration,
-                     n_filters_time=25, n_filters_spat=25,
-                     stride_before_pool=True,
-                     n_filters_2=n_fake_chans * 2,
-                     n_filters_3=n_fake_chans * 4,
-                     n_filters_4=n_fake_chans * 8,
-                     final_conv_length=1, )
+    model_clf = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
+                         input_window_samples=fake_sfreq * fake_duration,
+                         n_filters_time=25, n_filters_spat=25,
+                         stride_before_pool=True,
+                         n_filters_2=n_fake_chans * 2,
+                         n_filters_3=n_fake_chans * 4,
+                         n_filters_4=n_fake_chans * 8,
+                         final_conv_length=1, )
 else:
     raise ValueError(f'{model_name} unknown')
 
@@ -134,12 +134,15 @@ else:
 # Converting a braindecode classifier model to a regressor model
 # ---------------------------------------------------------------
 #
-# Inplace conversion of the CNN classifier into regressor by removing `softmax` function from
-# the last layer
-model.convert_to_regressor()
+# Conversion of the CNN classifier into regressor by removing `softmax` function from the last
+# layer
+model_reg = torch.nn.Sequential()
+for name, module_ in model_clf.named_children():
+    if "softmax" in name:
+        continue
+    model_reg.add_module(name, module_)
+model = model_reg
 
-# Display torchinfo table describing the model after conversion to regressor
-print(model)
 ###################################################################################################
 # Choosing between GPU and CPU processors
 # ---------------------------------------
@@ -159,11 +162,13 @@ if cuda:
 # Data windowing
 # ----------------
 # Windowing data with a sliding window into the epochs of the size `window_size_samples`.
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.preprocessing import create_fixed_length_windows
 
 window_size_samples = fake_sfreq * fake_duration // 3
-model.to_dense_prediction_model()
-n_preds_per_input = model.output_shape[2]
+model = to_dense_prediction_model(model)
+n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[
+    2]
 windows_dataset = create_fixed_length_windows(dataset,
                                               start_offset_samples=0,
                                               stop_offset_samples=0,
@@ -179,9 +184,6 @@ train_set = splits["train"]
 valid_set = splits["valid"]
 test_set = splits["test"]
 
-from skorch.callbacks import LRScheduler
-from skorch.helper import predefined_split
-
 ###################################################################################################
 # Model training
 # -----------------
@@ -190,6 +192,8 @@ from skorch.helper import predefined_split
 # learning rate scheduler.
 from braindecode import EEGRegressor
 from braindecode.training.losses import CroppedLoss
+from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
 
 batch_size = 4
 n_epochs = 3
