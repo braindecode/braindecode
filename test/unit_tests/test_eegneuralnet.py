@@ -66,7 +66,7 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
             [0.9, 0.1],
         ]
     )
-    clf = eegneuralnet_cls(
+    eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
         module__n_outputs=2,
@@ -75,10 +75,10 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
         optimizer=optim.Adam,
         batch_size=32
     )
-    clf.initialize()
-    target_predict = preds if isinstance(clf, EEGRegressor) else preds.argmax(1)
-    np.testing.assert_array_equal(target_predict, clf.predict(MockDataset()))
-    np.testing.assert_array_equal(preds, clf.predict_proba(MockDataset()))
+    eegneuralnet.initialize()
+    target_predict = preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
+    np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
+    np.testing.assert_array_equal(preds, eegneuralnet.predict_proba(MockDataset()))
 
 
 def test_cropped_predict_and_predict_proba(eegneuralnet_cls):
@@ -90,7 +90,7 @@ def test_cropped_predict_and_predict_proba(eegneuralnet_cls):
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-    clf = eegneuralnet_cls(
+    eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
         module__n_outputs=4,
@@ -102,13 +102,13 @@ def test_cropped_predict_and_predict_proba(eegneuralnet_cls):
         optimizer=optim.Adam,
         batch_size=32
     )
-    clf.initialize()
-    target_predict = (preds.mean(-1) if isinstance(clf, EEGRegressor)
+    eegneuralnet.initialize()
+    target_predict = (preds.mean(-1) if isinstance(eegneuralnet, EEGRegressor)
                       else preds.mean(-1).argmax(1))
     # for cropped decoding classifier returns one label for each trial (averaged over all crops)
-    np.testing.assert_array_equal(target_predict, clf.predict(MockDataset()))
+    np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
     # for cropped decoding classifier returns values for each trial (average over all crops)
-    np.testing.assert_array_equal(preds.mean(-1), clf.predict_proba(MockDataset()))
+    np.testing.assert_array_equal(preds.mean(-1), eegneuralnet.predict_proba(MockDataset()))
 
 
 def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralnet_cls):
@@ -120,7 +120,7 @@ def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralne
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-    clf = eegneuralnet_cls(
+    eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
         module__n_outputs=4,
@@ -133,10 +133,10 @@ def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralne
         batch_size=32,
         aggregate_predictions=False
     )
-    clf.initialize()
-    target_predict = preds if isinstance(clf, EEGRegressor) else preds.argmax(1)
-    np.testing.assert_array_equal(target_predict, clf.predict(MockDataset()))
-    np.testing.assert_array_equal(preds, clf.predict_proba(MockDataset()))
+    eegneuralnet.initialize()
+    target_predict = preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
+    np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
+    np.testing.assert_array_equal(preds, eegneuralnet.predict_proba(MockDataset()))
 
 
 def test_predict_trials(eegneuralnet_cls):
@@ -148,7 +148,7 @@ def test_predict_trials(eegneuralnet_cls):
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-    clf = eegneuralnet_cls(
+    eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
         module__n_outputs=4,
@@ -160,10 +160,10 @@ def test_predict_trials(eegneuralnet_cls):
         optimizer=optim.Adam,
         batch_size=32
     )
-    clf.initialize()
+    eegneuralnet.initialize()
     with pytest.warns(UserWarning, match="This method was designed to predict "
                                          "trials in cropped mode."):
-        clf.predict_trials(MockDataset(), return_targets=False)
+        eegneuralnet.predict_trials(MockDataset(), return_targets=False)
 
 
 def test_clonable(eegneuralnet_cls):
@@ -175,7 +175,7 @@ def test_clonable(eegneuralnet_cls):
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-    clf = eegneuralnet_cls(
+    eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
         module__n_outputs=4,
@@ -190,6 +190,6 @@ def test_clonable(eegneuralnet_cls):
         optimizer=optim.Adam,
         batch_size=32
     )
-    clone(clf)
-    clf.initialize()
-    clone(clf)
+    clone(eegneuralnet)
+    eegneuralnet.initialize()
+    clone(eegneuralnet)
