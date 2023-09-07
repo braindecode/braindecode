@@ -129,7 +129,7 @@ def _load_signals(fif_file, preload, is_raw):
 
     if is_raw:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
-    elif fif_file.endswith('-epo.fif'):
+    elif fif_file.name.endswith('-epo.fif'):
         signals = mne.read_epochs(fif_file, preload=preload)
     else:
         raise ValueError('fif_file must end with raw.fif or epo.fif.')
