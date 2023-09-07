@@ -27,7 +27,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 ######################################################################
 # First, we load the data. In this tutorial, we load the BCI Competition
 # IV 2a data [1]_ using braindecode's wrapper to load via
-# `MOABB library <https://github.com/NeuroTechX/moabb>`__ [2]_. 
+# `MOABB library <https://github.com/NeuroTechX/moabb>`__ [2]_.
 #
 # .. note::
 #    To load your own datasets either via mne or from
@@ -334,8 +334,8 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #        and Nolte, G., 2012. Review of the BCI competition IV.
 #        Frontiers in neuroscience, 6, p.55.
 #
-# .. [2] Jayaram, Vinay, and Alexandre Barachant. 
-#        "MOABB: trustworthy algorithm benchmarking for BCIs." 
+# .. [2] Jayaram, Vinay, and Alexandre Barachant.
+#        "MOABB: trustworthy algorithm benchmarking for BCIs."
 #        Journal of neural engineering 15.6 (2018): 066011.
 #
 # .. [3] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,

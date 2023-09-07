@@ -473,7 +473,7 @@ clf = EEGClassifier(
 # and it is easier to understand it.``
 train_val_split = KFold(n_splits=5, shuffle=False)
 # By setting n_jobs=-1, cross-validation is performed
-# with all the processors, in this case the output of the training 
+# with all the processors, in this case the output of the training
 # process is not printed sequentially
 cv_results = cross_val_score(
     clf, X_train, y_train, scoring="accuracy", cv=train_val_split, n_jobs=1
@@ -564,7 +564,7 @@ param_grid = {
 }
 
 # By setting n_jobs=-1, grid search is performed
-# with all the processors, in this case the output of the training 
+# with all the processors, in this case the output of the training
 # process is not printed sequentially
 search = GridSearchCV(
     estimator=clf,

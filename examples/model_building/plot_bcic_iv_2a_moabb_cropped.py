@@ -10,8 +10,8 @@ Cropped Decoding on BCIC IV 2a Dataset [1]_
 """
 
 ######################################################################
-# Building on the `Trialwise decoding`, we now do more data-efficient
-# cropped decoding!
+# Building on the `Trialwise decoding <./plot_bcic_iv_2a_moabb_trial.html>`__,
+# we now do more data-efficient cropped decoding!
 #
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
@@ -29,7 +29,7 @@ Cropped Decoding on BCIC IV 2a Dataset [1]_
 #    compute the loss.
 #
 # On the right, you see cropped decoding:
-# 
+#
 # 1. Instead of a complete trial, crops are pushed through the network.
 # 2. For computational efficiency, multiple neighbouring crops are pushed
 #    through the network simultaneously (these neighbouring crops are
@@ -41,10 +41,10 @@ Cropped Decoding on BCIC IV 2a Dataset [1]_
 #
 # ``Why not calling it WindowWise decoding, as predictions are produced per window?``
 #
-# ``A bit confusing. A window is cropped into crops, these neighbouring crops are 
-# called compute windows, so a window is cropped into compute windows? 
+# ``A bit confusing. A window is cropped into crops, these neighbouring crops are
+# called compute windows, so a window is cropped into compute windows?
 # Neighbouring crops constitute a compute window?``
-# 
+#
 # .. note::
 #
 #     -  The network architecture implicitly defines the crop size (it is the
