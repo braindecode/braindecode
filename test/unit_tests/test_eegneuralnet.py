@@ -14,6 +14,7 @@ from torch.nn.functional import nll_loss
 
 from braindecode import EEGClassifier, EEGRegressor
 from braindecode.training import CroppedLoss
+from braindecode.models.base import EEGModuleMixin
 
 
 class MockDataset(torch.utils.data.Dataset):
@@ -24,11 +25,28 @@ class MockDataset(torch.utils.data.Dataset):
         return torch.rand(4, 1), torch.ones(4)
 
 
-class MockModule(torch.nn.Module):
-    def __init__(self, preds):
-        super().__init__()
+class MockModule(EEGModuleMixin, torch.nn.Module):
+    def __init__(
+            self,
+            preds,
+            n_outputs=None,
+            n_chans=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
         self.preds = to_tensor(preds, device='cpu')
-        self.linear = torch.nn.Linear(5, 5)
+        self.linear = torch.nn.Linear(self.n_times, self.n_chans)
+        self.final_layer = torch.nn.Linear(self.n_chans, self.n_outputs)
 
     def forward(self, x):
         return self.preds
@@ -48,8 +66,12 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
             [0.9, 0.1],
         ]
     )
-        MockModule(preds),
     clf = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        module__n_outputs=2,
+        module__n_chans=3,
+        module__n_times=3,
         optimizer=optim.Adam,
         batch_size=32
     )
@@ -68,8 +90,12 @@ def test_cropped_predict_and_predict_proba(eegneuralnet_cls):
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-        MockModule(preds),
     clf = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        module__n_outputs=4,
+        module__n_chans=3,
+        module__n_times=3,
         cropped=True,
         criterion=CroppedLoss,
         criterion__loss_function=nll_loss,
@@ -94,8 +120,12 @@ def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralne
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-        MockModule(preds),
     clf = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        module__n_outputs=4,
+        module__n_chans=3,
+        module__n_times=3,
         cropped=True,
         criterion=CroppedLoss,
         criterion__loss_function=nll_loss,
@@ -118,8 +148,12 @@ def test_predict_trials(eegneuralnet_cls):
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-        MockModule(preds),
     clf = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        module__n_outputs=4,
+        module__n_chans=3,
+        module__n_times=3,
         cropped=False,
         criterion=CroppedLoss,
         criterion__loss_function=nll_loss,
@@ -141,8 +175,12 @@ def test_clonable(eegneuralnet_cls):
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
     )
-        MockModule(preds),
     clf = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        module__n_outputs=4,
+        module__n_chans=3,
+        module__n_times=3,
         cropped=False,
         callbacks=[
             "accuracy",
