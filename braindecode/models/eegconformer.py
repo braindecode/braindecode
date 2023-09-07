@@ -100,7 +100,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             final_fc_length=2440,
             return_features=False,
             n_times=None,
-            ch_names=None,
+            chs_info=None,
             input_window_seconds=None,
             sfreq=None,
             n_classes=None,
@@ -116,12 +116,12 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, n_channels, input_window_samples
         if not (self.n_chans <= 64):
             warnings.warn("This model has only been tested on no more " +

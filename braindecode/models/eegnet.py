@@ -67,7 +67,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             kernel_length=64,
             third_kernel_size=(8, 4),
             drop_prob=0.25,
-            ch_names=None,
+            chs_info=None,
             input_window_seconds=None,
             sfreq=None,
             in_chans=None,
@@ -83,12 +83,12 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
             assert self.n_times is not None
@@ -248,7 +248,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             second_kernel_size=(2, 32),
             third_kernel_size=(8, 4),
             drop_prob=0.25,
-            ch_names=None,
+            chs_info=None,
             input_window_seconds=None,
             sfreq=None,
             in_chans=None,
@@ -264,12 +264,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
             assert self.n_times is not None

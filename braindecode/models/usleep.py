@@ -179,7 +179,7 @@ class USleep(EEGModuleMixin, nn.Module):
             time_conv_size_s=9 / 128,
             ensure_odd_conv_size=False,
             apply_softmax=False,
-            ch_names=None,
+            chs_info=None,
             n_times=None,
             in_chans=None,
             n_classes=None,
@@ -194,12 +194,12 @@ class USleep(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_size_s
 
         max_pool_size = 2  # Hardcoded to avoid dimensional errors

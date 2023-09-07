@@ -71,7 +71,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             n_filters=48,
             kernel_unit_s=0.1,
             activation=nn.ReLU(),
-            ch_names=None,
+            chs_info=None,
             n_times=None,
             in_channels=None,
             n_classes=None,
@@ -86,12 +86,12 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_channels, n_classes, input_window_s
 
         self.n_convs = n_convs

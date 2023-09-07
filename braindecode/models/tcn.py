@@ -51,7 +51,7 @@ class TCN(EEGModuleMixin, nn.Module):
             kernel_size=None,
             drop_prob=None,
             add_log_softmax=None,
-            ch_names=None,
+            chs_info=None,
             n_times=None,
             input_window_seconds=None,
             sfreq=None,
@@ -64,12 +64,12 @@ class TCN(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_in_chans
 
         self.ensuredims = Ensure4d()

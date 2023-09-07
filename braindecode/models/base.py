@@ -3,7 +3,7 @@
 # License: BSD-3
 
 import warnings
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Dict
 
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
@@ -37,8 +37,9 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         in the case of classification.
     n_chans : int
         Number of EEG channels.
-    ch_names : list of str
-        Names of the EEG channels.
+    chs_info : list of dict
+        Information about each individual EEG channel. This should be filled with
+        ``info["chs"]``. Refer to :class:`mne.Info` for more details.
     n_times : int
         Number of time samples of the input window.
     input_window_seconds : float
@@ -61,17 +62,17 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             self,
             n_outputs: Optional[int] = None,
             n_chans: Optional[int] = None,
-            ch_names: Optional[List[str]] = None,
+            chs_info: Optional[List[Dict]] = None,
             n_times: Optional[int] = None,
             input_window_seconds: Optional[float] = None,
             sfreq: Optional[float] = None,
     ):
         if (
                 n_chans is not None and
-                ch_names is not None and
-                len(ch_names) != n_chans
+                chs_info is not None and
+                len(chs_info) != n_chans
         ):
-            raise ValueError(f'{n_chans=} different from {ch_names=} length')
+            raise ValueError(f'{n_chans=} different from {chs_info=} length')
         if (
                 n_times is not None and
                 input_window_seconds is not None and
@@ -84,7 +85,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             )
         self._n_outputs = n_outputs
         self._n_chans = n_chans
-        self._ch_names = ch_names
+        self._chs_info = chs_info
         self._n_times = n_times
         self._input_window_seconds = input_window_seconds
         self._sfreq = sfreq
@@ -98,19 +99,19 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     @property
     def n_chans(self):
-        if self._n_chans is None and self._ch_names is not None:
-            return len(self._ch_names)
+        if self._n_chans is None and self._chs_info is not None:
+            return len(self._chs_info)
         elif self._n_chans is None:
             raise ValueError(
-                'n_chans could not be inferred. Either specify n_chans or ch_names.'
+                'n_chans could not be inferred. Either specify n_chans or chs_info.'
             )
         return self._n_chans
 
     @property
-    def ch_names(self):
-        if self._ch_names is None:
-            raise ValueError('ch_names not specified.')
-        return self._ch_names
+    def chs_info(self):
+        if self._chs_info is None:
+            raise ValueError('chs_info not specified.')
+        return self._chs_info
 
     @property
     def n_times(self):
@@ -158,14 +159,14 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._sfreq
 
     def get_torchinfo_statistics(
-        self,
-        col_names: Optional[Iterable[str]] = (
-            "input_size",
-            "output_size",
-            "num_params",
-            "kernel_size",
-        ),
-        row_settings: Optional[Iterable[str]] = ("var_names", "depth"),
+            self,
+            col_names: Optional[Iterable[str]] = (
+                    "input_size",
+                    "output_size",
+                    "num_params",
+                    "kernel_size",
+            ),
+            row_settings: Optional[Iterable[str]] = ("var_names", "depth"),
     ) -> ModelStatistics:
         """Generate table describing the model using torchinfo.summary.
 
@@ -189,7 +190,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             col_names=col_names,
             row_settings=row_settings,
             verbose=0,
-            )
+        )
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())

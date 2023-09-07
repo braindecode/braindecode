@@ -79,7 +79,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
             n_outputs=5,
             after_reduced_cnn_size=30,
             return_feats=False,
-            ch_names=None,
+            chs_info=None,
             n_chans=None,
             n_times=None,
             n_classes=None,
@@ -93,12 +93,12 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, input_size_s
 
         if not ((self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80) or

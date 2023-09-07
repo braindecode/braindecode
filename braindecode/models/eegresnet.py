@@ -46,7 +46,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             batch_norm_alpha=0.1,
             batch_norm_epsilon=1e-4,
             conv_weight_init_fn=lambda w: init.kaiming_normal_(w, a=0),
-            ch_names=None,
+            chs_info=None,
             input_window_seconds=None,
             sfreq=None,
             in_chans=None,
@@ -62,12 +62,12 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
 
         if final_pool_length == 'auto':

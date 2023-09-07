@@ -28,21 +28,21 @@ class DummyModuleNTime(EEGModuleMixin, nn.Sequential):
 
 
 @pytest.mark.parametrize(
-    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
+    'n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq',
     [
-        (None, 1, ['ch1'], 200, 2., 100.),
+        (None, 1, [{'ch_name': 'ch1'}], 200, 2., 100.),
         (1, None, None, 200, 2., 100.),
         (1, 1, None, 200, 2., 100.),
-        (1, 1, ['ch1'], None, None, None),
-        (1, 1, ['ch1'], None, None, 100.),
-        (1, 1, ['ch1'], None, 2., None),
-        (1, 1, ['ch1'], 200, None, None),
+        (1, 1, [{'ch_name': 'ch1'}], None, None, None),
+        (1, 1, [{'ch_name': 'ch1'}], None, None, 100.),
+        (1, 1, [{'ch_name': 'ch1'}], None, 2., None),
+        (1, 1, [{'ch_name': 'ch1'}], 200, None, None),
     ]
 )
 def test_missing_params(
         n_outputs,
         n_chans,
-        ch_names,
+        chs_info,
         n_times,
         input_window_seconds,
         sfreq,
@@ -50,7 +50,7 @@ def test_missing_params(
     module = DummyModule(
         n_outputs=n_outputs,
         n_chans=n_chans,
-        ch_names=ch_names,
+        chs_info=chs_info,
         n_times=n_times,
         input_window_seconds=input_window_seconds,
         sfreq=sfreq,
@@ -58,26 +58,26 @@ def test_missing_params(
     with pytest.raises(ValueError):
         assert module.n_outputs == 1
         assert module.n_chans == 1
-        assert module.ch_names == ['ch1']
+        assert module.chs_info == [{'ch_name': 'ch1'}]
         assert module.n_times == 200
         assert module.input_window_seconds == 2.
         assert module.sfreq == 100.
 
 
 @pytest.mark.parametrize(
-    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
+    'n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq',
     [
-        (1, 1, ['ch1'], 200, 2., 100.),
-        (1, None, ['ch1'], 200, 2., 100.),
-        (1, None, ['ch1'], None, 2., 100.),
-        (1, None, ['ch1'], 200, None, 100.),
-        (1, None, ['ch1'], 200, 2., None),
+        (1, 1, [{'ch_name': 'ch1'}], 200, 2., 100.),
+        (1, None, [{'ch_name': 'ch1'}], 200, 2., 100.),
+        (1, None, [{'ch_name': 'ch1'}], None, 2., 100.),
+        (1, None, [{'ch_name': 'ch1'}], 200, None, 100.),
+        (1, None, [{'ch_name': 'ch1'}], 200, 2., None),
     ]
 )
 def test_all_params(
         n_outputs,
         n_chans,
-        ch_names,
+        chs_info,
         n_times,
         input_window_seconds,
         sfreq,
@@ -85,30 +85,30 @@ def test_all_params(
     module = DummyModule(
         n_outputs=n_outputs,
         n_chans=n_chans,
-        ch_names=ch_names,
+        chs_info=chs_info,
         n_times=n_times,
         input_window_seconds=input_window_seconds,
         sfreq=sfreq,
     )
     assert module.n_outputs == 1
     assert module.n_chans == 1
-    assert module.ch_names == ['ch1']
+    assert module.chs_info == [{'ch_name': 'ch1'}]
     assert module.n_times == 200
     assert module.input_window_seconds == 2.
     assert module.sfreq == 100.
 
 
 @pytest.mark.parametrize(
-    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
+    'n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq',
     [
-        (1, 2, ['ch1'], 200, 2., 100.),
-        (1, 1, ['ch1'], 200, 3., 100.),
+        (1, 2, [{'ch_name': 'ch1'}], 200, 2., 100.),
+        (1, 1, [{'ch_name': 'ch1'}], 200, 3., 100.),
     ]
 )
 def test_incorrect_params(
         n_outputs,
         n_chans,
-        ch_names,
+        chs_info,
         n_times,
         input_window_seconds,
         sfreq,
@@ -117,7 +117,7 @@ def test_incorrect_params(
         _ = DummyModule(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
@@ -132,18 +132,18 @@ def test_inexistent_param():
 
 
 @pytest.mark.parametrize(
-    'n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq',
+    'n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq',
     [
-        (1, 1, ['ch1'], 200, 2., 100.),
-        (1, 1, ['ch1'], 200, 2., None),
-        (1, 1, ['ch1'], 200, None, 100.),
-        (1, 1, ['ch1'], None, 2., 100.),
+        (1, 1, [{'ch_name': 'ch1'}], 200, 2., 100.),
+        (1, 1, [{'ch_name': 'ch1'}], 200, 2., None),
+        (1, 1, [{'ch_name': 'ch1'}], 200, None, 100.),
+        (1, 1, [{'ch_name': 'ch1'}], None, 2., 100.),
     ]
 )
 def test_init_submodule(
         n_outputs,
         n_chans,
-        ch_names,
+        chs_info,
         n_times,
         input_window_seconds,
         sfreq,
@@ -151,7 +151,7 @@ def test_init_submodule(
     _ = DummyModuleNTime(
         n_outputs=n_outputs,
         n_chans=n_chans,
-        ch_names=ch_names,
+        chs_info=chs_info,
         n_times=n_times,
         input_window_seconds=input_window_seconds,
         sfreq=sfreq,
@@ -164,11 +164,11 @@ def test_get_torchinfo_statistics():
     model = DummyModule(
         n_outputs=1,
         n_chans=n_chans,
-        ch_names=['ch1'],
+        chs_info=[{'ch_name': 'ch1'}],
         n_times=n_times,
         input_window_seconds=2.,
         sfreq=100.,
-        )
+    )
     with patch("braindecode.models.base.ModelStatistics") as patch_stats:
         with patch("braindecode.models.base.summary", return_value=patch_stats) as patch_summary:
             result = model.get_torchinfo_statistics()
@@ -183,7 +183,7 @@ def test_get_torchinfo_statistics():
         ),
         row_settings=("var_names", "depth"),
         verbose=0,
-        )
+    )
     assert result == patch_stats
 
 
@@ -193,14 +193,14 @@ def test__str__():
     model = DummyModule(
         n_outputs=1,
         n_chans=n_chans,
-        ch_names=['ch1'],
+        chs_info=[{'ch_name': 'ch1'}],
         n_times=n_times,
         input_window_seconds=2.,
         sfreq=100.,
-        )
+    )
     with patch("braindecode.models.base.ModelStatistics") as patch_stats:
         with patch.object(
-            model, "get_torchinfo_statistics", return_value=patch_stats
+                model, "get_torchinfo_statistics", return_value=patch_stats
         ) as patch_method_stats:
             result = str(model)
 

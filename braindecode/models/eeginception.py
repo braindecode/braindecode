@@ -103,7 +103,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             batch_norm_alpha=0.01,
             depth_multiplier=2,
             pooling_sizes=(4, 2, 2, 2),
-            ch_names=None,
+            chs_info=None,
             input_window_seconds=None,
             in_channels=None,
             n_classes=None,
@@ -118,12 +118,12 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_channels, n_classes, input_window_samples
         warn(
             "The class EEGInception is deprecated and will be removed in the "

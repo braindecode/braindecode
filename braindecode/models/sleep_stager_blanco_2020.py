@@ -59,7 +59,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             dropout=0.5,
             apply_batch_norm=False,
             return_feats=False,
-            ch_names=None,
+            chs_info=None,
             n_times=None,
             n_channels=None,
             n_classes=None,
@@ -74,12 +74,12 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
-            ch_names=ch_names,
+            chs_info=chs_info,
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, ch_names, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_channels, n_classes, input_size_s
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
