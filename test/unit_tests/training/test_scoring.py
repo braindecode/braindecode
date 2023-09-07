@@ -390,6 +390,7 @@ def test_predict_trials():
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
+        n_times=window_size_samples,
     )
     model.to_dense_prediction_model()
 
