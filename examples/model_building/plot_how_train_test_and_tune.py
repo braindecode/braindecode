@@ -247,7 +247,7 @@ test_set = splitted["session_E"]
 #    which will make the reported generalization capability/decoding
 #    performance of your model less credible.
 #
-'''
+
 from skorch.callbacks import LRScheduler
 
 from braindecode import EEGClassifier
@@ -281,7 +281,7 @@ clf.fit(train_set, y=None)
 y_test = test_set.get_metadata().target
 test_acc = clf.score(test_set, y=y_test)
 print(f"Test acc: {(test_acc * 100):.2f}%")
-'''
+
 ######################################################################
 # Let's visualize the first option with a util function.
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -292,14 +292,14 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
-'''
+
 def plot_simple_train_test(ax, all_dataset, train_set, test_set):
     """Create a sample plot for training-testing split."""
     bd_cmap = ["#3A6190", "#683E00", "#DDF2FF", "#2196F3"]
 
-    ax.barh("Original\nDataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
-    ax.barh("Train-Test\nSplit", len(train_set), left=0, height=0.5, color=bd_cmap[1])
-    ax.barh("Train-Test\nSplit", len(test_set), left=len(train_set), height=0.5, color=bd_cmap[2])
+    ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
+    ax.barh("Train-Test\nsplit", len(train_set), left=0, height=0.5, color=bd_cmap[1])
+    ax.barh("Train-Test\nsplit", len(test_set), left=len(train_set), height=0.5, color=bd_cmap[2])
 
     ax.invert_yaxis()
     ax.set(xlabel="Number of samples.", title="Train-Test split")
@@ -311,7 +311,7 @@ def plot_simple_train_test(ax, all_dataset, train_set, test_set):
 fig, ax = plt.subplots(figsize=(12, 5))
 plot_simple_train_test(ax=ax, all_dataset=windows_dataset, train_set=train_set, test_set=test_set)
 fig.tight_layout()
-'''
+
 ######################################################################
 # Option 2: Train-Val-Test Split
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -357,7 +357,7 @@ val_subset = Subset(train_set, val_indices)
 #    advantage of correlated samples, which would make the validation
 #    performance less meaningful.
 #
-'''
+
 clf = EEGClassifier(
     model,
     criterion=torch.nn.NLLLoss,
@@ -380,7 +380,6 @@ clf.fit(train_subset, y=None)
 y_test = test_set.get_metadata().target
 test_acc = clf.score(test_set, y=y_test)
 print(f"Test acc: {(test_acc * 100):.2f}%")
-'''
 
 ######################################################################
 # Let's visualize the second option with a util function.
@@ -389,17 +388,18 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 # training, validation and testing subsets.
 # ``Making more compact plot_train_valid_test function.``
 #
-'''
+
+
 def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
     """Create a sample plot for training, validation, testing."""
 
     bd_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF",]
 
     n_train, n_val, n_test = len(train_subset), len(val_subset), len(test_set)
-    ax.barh("Original\nDataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
-    ax.barh("Train-Test-Valid\nSplit", n_train, left=0, height=0.5, color=bd_cmap[1])
-    ax.barh("Train-Test-Valid\nSplit", n_val, left=n_train, height=0.5, color=bd_cmap[2])
-    ax.barh("Train-Test-Valid\nSplit", n_test, left=n_train + n_val, height=0.5, color=bd_cmap[3])
+    ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
+    ax.barh("Train-Test-Valid\nsplit", n_train, left=0, height=0.5, color=bd_cmap[1])
+    ax.barh("Train-Test-Valid\nsplit", n_val, left=n_train, height=0.5, color=bd_cmap[2])
+    ax.barh("Train-Test-Valid\nsplit", n_test, left=n_train + n_val, height=0.5, color=bd_cmap[3])
 
     ax.invert_yaxis()
     ax.set(xlabel="Number of samples.", title="Train-Test-Valid split")
@@ -412,7 +412,7 @@ fig, ax = plt.subplots(figsize=(12, 5))
 plot_train_valid_test(ax=ax, all_dataset=windows_dataset,
                       train_subset=train_subset, val_subset=val_subset, test_set=test_set,)
 fig.tight_layout()
-'''
+
 ######################################################################
 # Option 3: k-Fold Cross Validation
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -482,6 +482,7 @@ print(
 # Let's visualize the third option with a util function.
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+
 def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
     """Create a sample plot for training, validation, testing."""
 
@@ -489,7 +490,7 @@ def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
 
     ax.barh("Original\nDataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
 
-    # Generate the training/testing visualizations for each CV split
+    # Generate the training/validation/testing data fraction visualizations for each CV split
     for ii, (tr_idx, val_idx) in enumerate(cv.split(X=X_train, y=y_train)):
         n_train, n_val, n_test = len(tr_idx), len(val_idx), len(test_set)
         n_train2 = n_train + n_val - max(val_idx) - 1
@@ -497,14 +498,22 @@ def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
         ax.barh("cv" + str(ii + 1), n_val, left=min(val_idx), height=0.5, color=bd_cmap[2])
         ax.barh("cv" + str(ii + 1), n_train2, left=max(val_idx) + 1, height=0.5, color=bd_cmap[1])
         ax.barh("cv" + str(ii + 1), n_test, left=n_train + n_val, height=0.5, color=bd_cmap[3])
-        ax.invert_yaxis()
 
+    ax.invert_yaxis()
+    ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
+    ax.set(xlabel="Number of samples.", title="KFold Train-Test-Valid split")
+    ax.legend([Patch(color=bd_cmap[i]) for i in range(4)],
+              ["Original set", "Training set", "Validation set", "Testing set"], loc=(1.02, 0.8))
+    ax.text(-0.07, 0.45, 'Train-Valid-Test split', rotation=90,
+            verticalalignment='center', horizontalalignment='left', transform=ax.transAxes)
     return ax
+
+
 fig, ax = plt.subplots(figsize=(15, 7))
 plot_k_fold(ax, cv=train_val_split, all_dataset=windows_dataset,
             X_train=X_train, y_train=y_train, test_set=test_set,)
 fig.tight_layout()
-plt.show()
+
 ######################################################################
 # How to tune your hyperparameters
 # --------------------------------
@@ -528,13 +537,14 @@ plt.show()
 #
 
 ######################################################################
-# We will again make use of the sklearn library to do the hyperparameter
-# search. `GridSearchCV <https://scikit-learn.org/stable/modules/
-# generated/sklearn.model_selection.GridSearchCV.html>`__ will perform
-# a Grid Search over the parameters specified in ``param_grid``.
-# We use grid search as a simple example, but you can use `any strategy
-# you want <https://scikit-learn.org/stable/modules/classes.html#
-# module-sklearn.model_selection>`__).
+# We will again make use of the `sklearn <https://scikit-learn.org/stable/>`__
+# library to do the hyperparameter search. `GridSearchCV
+# <https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html>`__
+# will perform a Grid Search over the parameters specified in ``param_grid``.
+# We use grid search for the model selection as a simple example, but you can use other strategies
+# as well.
+# (`List of the sklearn classes for model selection
+# <https://scikit-learn.org/stable/modules/classes.html#module-sklearn.model_selection>`__.)
 #
 
 import pandas as pd
@@ -556,7 +566,7 @@ search = GridSearchCV(
     refit=True,
     verbose=1,
     error_score="raise",
-    n_jobs=-1,
+    n_jobs=1,
 )
 
 search.fit(X_train, y_train)
@@ -574,7 +584,8 @@ best_parameters = best_run["params"]
 
 ######################################################################
 # To perform a full k-Fold CV just replace ``train_val_split`` from
-# above with the ``KFold`` cross-validator from sklearn.
+# above with the `KFold <https://scikit-learn.org/stable/modules/generated/
+# sklearn.model_selection.KFold.html>`__ cross-validator from sklearn.
 
 train_val_split = KFold(n_splits=5, shuffle=False)
 
