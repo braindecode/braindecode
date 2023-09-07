@@ -48,7 +48,6 @@ dataset = SleepPhysionet(
     subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30,
     crop=crop)
 
-
 ######################################################################
 # Preprocessing
 # ~~~~~~~~~~~~~
@@ -66,7 +65,6 @@ preprocessors = [Preprocessor(robust_scale, channel_wise=True)]
 # Transform the data
 preprocess(dataset, preprocessors)
 
-
 ######################################################################
 # Extract windows
 # ~~~~~~~~~~~~~~~
@@ -74,7 +72,6 @@ preprocess(dataset, preprocessors)
 # We extract 30-s windows to be used in the classification task.
 
 from braindecode.preprocessing import create_windows_from_events
-
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
     'Sleep stage W': 0,
@@ -126,13 +123,14 @@ from braindecode.samplers import SequenceSampler
 n_windows = 3  # Sequences of 3 consecutive windows; originally 35 in paper
 n_windows_stride = 3  # Non-overlapping sequences
 
-train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
+train_sampler = SequenceSampler(
+    train_set.get_metadata(), n_windows, n_windows_stride, randomize=True
+)
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
 print(len(train_sampler))
 print(len(valid_sampler))
-
 
 ######################################################################
 # Finally, since some sleep stages appear a lot more often than others (e.g.
@@ -145,7 +143,6 @@ from sklearn.utils import compute_class_weight
 
 y_train = [train_set[idx][1][1] for idx in train_sampler]
 class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
-
 
 ######################################################################
 # Create model
@@ -177,19 +174,18 @@ classes = list(range(n_classes))
 in_chans, input_size_samples = train_set[0][0].shape
 
 model = USleep(
-    in_chans=in_chans,
+    n_chans=in_chans,
     sfreq=sfreq,
     depth=12,
     with_skip_connection=True,
-    n_classes=n_classes,
-    input_size_s=input_size_samples / sfreq,
+    n_outputs=n_classes,
+    n_times=input_size_samples,
     apply_softmax=False
 )
 
 # Send model to GPU
 if cuda:
     model.cuda()
-
 
 ######################################################################
 # Training
@@ -306,6 +302,7 @@ print(classification_report(y_true.flatten(), y_pred.flatten()))
 # different sleep stages with this amount of training.
 
 import matplotlib.pyplot as plt
+
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true.flatten(), color='b', label='Expert annotations')
 ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)

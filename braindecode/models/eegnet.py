@@ -7,6 +7,7 @@ from torch import nn
 from torch.nn.functional import elu
 from einops.layers.torch import Rearrange
 
+from .base import EEGModuleMixin, deprecated_args
 from .modules import Expression, Ensure4d
 from .functions import squeeze_final_output
 
@@ -23,15 +24,21 @@ class Conv2dWithConstraint(nn.Conv2d):
         return super(Conv2dWithConstraint, self).forward(x)
 
 
-class EEGNetv4(nn.Sequential):
+class EEGNetv4(EEGModuleMixin, nn.Sequential):
     """EEGNet v4 model from Lawhern et al 2018.
 
     See details in [EEGNet4]_.
 
     Parameters
     ----------
-    in_chans : int
-        XXX
+    final_conv_length : int | "auto"
+        If int, final length of convolutional filters.
+    in_chans :
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_window_samples :
+        Alias for n_times.
 
     Notes
     -----
@@ -48,25 +55,43 @@ class EEGNetv4(nn.Sequential):
     """
 
     def __init__(
-        self,
-        in_chans,
-        n_classes,
-        input_window_samples=None,
-        final_conv_length="auto",
-        pool_mode="mean",
-        F1=8,
-        D=2,
-        F2=16,  # usually set to F1*D (?)
-        kernel_length=64,
-        third_kernel_size=(8, 4),
-        drop_prob=0.25,
+            self,
+            n_chans=None,
+            n_outputs=None,
+            n_times=None,
+            final_conv_length="auto",
+            pool_mode="mean",
+            F1=8,
+            D=2,
+            F2=16,  # usually set to F1*D (?)
+            kernel_length=64,
+            third_kernel_size=(8, 4),
+            drop_prob=0.25,
+            chs_info=None,
+            input_window_seconds=None,
+            sfreq=None,
+            in_chans=None,
+            n_classes=None,
+            input_window_samples=None,
     ):
-        super().__init__()
+        n_chans, n_outputs, n_times = deprecated_args(
+            self,
+            ("in_chans", "n_chans", in_chans, n_chans),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("input_window_samples", "n_times", input_window_samples, n_times),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
-            assert input_window_samples is not None
-        self.in_chans = in_chans
-        self.n_classes = n_classes
-        self.input_window_samples = input_window_samples
+            assert self.n_times is not None
         self.final_conv_length = final_conv_length
         self.pool_mode = pool_mode
         self.F1 = F1
@@ -101,7 +126,7 @@ class EEGNetv4(nn.Sequential):
             Conv2dWithConstraint(
                 self.F1,
                 self.F1 * self.D,
-                (self.in_chans, 1),
+                (self.n_chans, 1),
                 max_norm=1,
                 stride=1,
                 bias=False,
@@ -156,7 +181,7 @@ class EEGNetv4(nn.Sequential):
 
         out = self(
             torch.ones(
-                (1, self.in_chans, self.input_window_samples, 1),
+                (1, self.n_chans, self.n_times, 1),
                 dtype=torch.float32
             )
         )
@@ -170,7 +195,7 @@ class EEGNetv4(nn.Sequential):
             "conv_classifier",
             nn.Conv2d(
                 self.F2,
-                self.n_classes,
+                self.n_outputs,
                 (n_out_virtual_chans, self.final_conv_length),
                 bias=True,
             ),
@@ -185,15 +210,19 @@ class EEGNetv4(nn.Sequential):
         _glorot_weight_zero_bias(self)
 
 
-class EEGNetv1(nn.Sequential):
+class EEGNetv1(EEGModuleMixin, nn.Sequential):
     """EEGNet model from Lawhern et al. 2016.
 
     See details in [EEGNet]_.
 
     Parameters
     ----------
-    in_chans : int
-        XXX
+    in_chans :
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_window_samples :
+        Alias for n_times.
 
     Notes
     -----
@@ -210,22 +239,40 @@ class EEGNetv1(nn.Sequential):
     """
 
     def __init__(
-        self,
-        in_chans,
-        n_classes,
-        input_window_samples=None,
-        final_conv_length="auto",
-        pool_mode="max",
-        second_kernel_size=(2, 32),
-        third_kernel_size=(8, 4),
-        drop_prob=0.25,
+            self,
+            n_chans=None,
+            n_outputs=None,
+            n_times=None,
+            final_conv_length="auto",
+            pool_mode="max",
+            second_kernel_size=(2, 32),
+            third_kernel_size=(8, 4),
+            drop_prob=0.25,
+            chs_info=None,
+            input_window_seconds=None,
+            sfreq=None,
+            in_chans=None,
+            n_classes=None,
+            input_window_samples=None,
     ):
-        super().__init__()
+        n_chans, n_outputs, n_times = deprecated_args(
+            self,
+            ("in_chans", "n_chans", in_chans, n_chans),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("input_window_samples", "n_times", input_window_samples, n_times),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
-            assert input_window_samples is not None
-        self.in_chans = in_chans
-        self.n_classes = n_classes
-        self.input_window_samples = input_window_samples
+            assert self.n_times is not None
         self.final_conv_length = final_conv_length
         self.pool_mode = pool_mode
         self.second_kernel_size = second_kernel_size
@@ -237,7 +284,7 @@ class EEGNetv1(nn.Sequential):
         n_filters_1 = 16
         self.add_module(
             "conv_1",
-            nn.Conv2d(self.in_chans, n_filters_1, (1, 1), stride=1, bias=True),
+            nn.Conv2d(self.n_chans, n_filters_1, (1, 1), stride=1, bias=True),
         )
         self.add_module(
             "bnorm_1",
@@ -298,7 +345,7 @@ class EEGNetv1(nn.Sequential):
 
         out = self(
             torch.ones(
-                (1, self.in_chans, self.input_window_samples, 1),
+                (1, self.n_chans, self.n_times, 1),
                 dtype=torch.float32,
             )
         )
@@ -312,7 +359,7 @@ class EEGNetv1(nn.Sequential):
             "conv_classifier",
             nn.Conv2d(
                 n_filters_3,
-                self.n_classes,
+                self.n_outputs,
                 (n_out_virtual_chans, self.final_conv_length),
                 bias=True,
             ),
