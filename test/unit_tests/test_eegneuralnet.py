@@ -12,7 +12,7 @@ from skorch.utils import to_tensor
 from torch import optim
 from torch.nn.functional import nll_loss
 
-from braindecode import EEGClassifier
+from braindecode import EEGClassifier, EEGRegressor
 from braindecode.training import CroppedLoss
 
 
@@ -34,7 +34,12 @@ class MockModule(torch.nn.Module):
         return self.preds
 
 
-def test_trialwise_predict_and_predict_proba():
+@pytest.fixture(params=[EEGClassifier, EEGRegressor])
+def eegneuralnet_cls(request):
+    return request.param
+
+
+def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
     preds = np.array(
         [
             [0.125, 0.875],
@@ -49,11 +54,12 @@ def test_trialwise_predict_and_predict_proba():
         batch_size=32
     )
     clf.initialize()
-    np.testing.assert_array_equal(preds.argmax(1), clf.predict(MockDataset()))
+    target_predict = preds if isinstance(eegneuralnet_cls, EEGRegressor) else preds.argmax(1)
+    np.testing.assert_array_equal(target_predict, clf.predict(MockDataset()))
     np.testing.assert_array_equal(preds, clf.predict_proba(MockDataset()))
 
 
-def test_cropped_predict_and_predict_proba():
+def test_cropped_predict_and_predict_proba(eegneuralnet_cls):
     preds = np.array(
         [
             [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
@@ -71,13 +77,15 @@ def test_cropped_predict_and_predict_proba():
         batch_size=32
     )
     clf.initialize()
+    target_predict = (preds.mean(-1) if isinstance(eegneuralnet_cls, EEGRegressor)
+                      else preds.mean(-1).argmax(1))
     # for cropped decoding classifier returns one label for each trial (averaged over all crops)
-    np.testing.assert_array_equal(preds.mean(-1).argmax(1), clf.predict(MockDataset()))
+    np.testing.assert_array_equal(target_predict, clf.predict(MockDataset()))
     # for cropped decoding classifier returns values for each trial (average over all crops)
     np.testing.assert_array_equal(preds.mean(-1), clf.predict_proba(MockDataset()))
 
 
-def test_cropped_predict_and_predict_proba_not_aggregate_predictions():
+def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralnet_cls):
     preds = np.array(
         [
             [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
@@ -96,11 +104,12 @@ def test_cropped_predict_and_predict_proba_not_aggregate_predictions():
         aggregate_predictions=False
     )
     clf.initialize()
-    np.testing.assert_array_equal(preds.argmax(1), clf.predict(MockDataset()))
+    target_predict = preds if isinstance(eegneuralnet_cls, EEGRegressor) else preds.argmax(1)
+    np.testing.assert_array_equal(target_predict, clf.predict(MockDataset()))
     np.testing.assert_array_equal(preds, clf.predict_proba(MockDataset()))
 
 
-def test_predict_trials():
+def test_predict_trials(eegneuralnet_cls):
     preds = np.array(
         [
             [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
@@ -123,7 +132,7 @@ def test_predict_trials():
         clf.predict_trials(MockDataset(), return_targets=False)
 
 
-def test_eeg_classifier_clonable():
+def test_clonable(eegneuralnet_cls):
     preds = np.array(
         [
             [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
