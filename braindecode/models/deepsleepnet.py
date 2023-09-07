@@ -4,6 +4,8 @@
 import torch
 import torch.nn as nn
 
+from .base import EEGModuleMixin, deprecated_args
+
 
 class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal information
     def __init__(self):
@@ -162,7 +164,7 @@ class _BiLSTM(nn.Module):
         return out
 
 
-class DeepSleepNet(nn.Module):
+class DeepSleepNet(EEGModuleMixin, nn.Module):
     """Sleep staging architecture from Supratak et al 2017.
 
     Convolutional neural network and bidirectional-Long Short-Term
@@ -170,14 +172,12 @@ class DeepSleepNet(nn.Module):
 
     Parameters
     ----------
-    n_channels : int
-        Number of EEG channels.
-    sfreq : float
-        EEG sampling frequency.
     return_feats : bool
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
+    n_classes :
+        Alias for n_outputs.
 
     References
     ----------
@@ -187,9 +187,31 @@ class DeepSleepNet(nn.Module):
        and Rehabilitation Engineering, 25(11), 1998-2008.
     """
 
-    def __init__(self, n_classes=5, return_feats=False):
-        super().__init__()
-        self.n_channels = 1
+    def __init__(
+            self,
+            n_outputs=5,
+            return_feats=False,
+            n_chans=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+            n_classes=None,
+    ):
+        n_outputs, = deprecated_args(
+            self,
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_classes
         self.cnn1 = _SmallCNN()
         self.cnn2 = _LargeCNN()
         self.dropout = nn.Dropout(0.5)
@@ -201,7 +223,7 @@ class DeepSleepNet(nn.Module):
         self.len_last_layer = 1024
         self.return_feats = return_feats
         if not return_feats:
-            self.final_layer = nn.Linear(1024, n_classes)
+            self.final_layer = nn.Linear(1024, self.n_outputs)
 
     def forward(self, x):
         """Forward pass.
