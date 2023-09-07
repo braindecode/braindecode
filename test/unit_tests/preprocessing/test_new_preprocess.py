@@ -26,7 +26,7 @@ from braindecode.preprocessing.preprocess import (
 from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
-from braindecode.preprocessing.preprocess_classes import (
+from braindecode.preprocessing import (
     Pick, Crop, Filter, Resample, DropChannels, SetEEGReference)
 
 # We can't use fixtures with scope='module' as the dataset objects are modified
