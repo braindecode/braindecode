@@ -152,6 +152,20 @@ def test_sequence_sampler(windows_ds, n_windows, n_windows_stride):
 
     assert (sampler.file_ids == file_ids).all()
 
+    # for randomized sampler
+    sampler = SequenceSampler(
+        windows_ds.get_metadata(), n_windows, n_windows_stride,
+        randomize=True, random_state=31)
+
+    seqs = [seq for seq in sampler]
+
+    seq_lens = [(len(ds) - n_windows) // n_windows_stride + 1
+                for ds in windows_ds.datasets]
+    file_ids = np.concatenate([[i] * l for i, l in enumerate(seq_lens)])
+    n_seqs = sum(seq_lens)
+    assert len(seqs) == n_seqs
+    assert all([len(s) == n_windows for s in seqs])
+
 
 @pytest.mark.parametrize('n_sequences,n_windows', [[10, 2], [2, 40], [99, 1]])
 def test_balanced_sequence_sampler(target_windows_ds, n_sequences, n_windows):
