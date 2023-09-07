@@ -11,9 +11,11 @@ from braindecode.preprocessing import Preprocessor
 
 
 class Resample(Preprocessor):
+    doc = """ See mne.io.Raw.resample
+    """
     try:
         base_class = mne.io.Raw.resample
-        __doc__ = base_class.__doc__
+        __doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
 
@@ -31,9 +33,11 @@ class Resample(Preprocessor):
 
 
 class DropChannels(Preprocessor):
+    doc = """ See mne.io.Raw.drop_channels
+    """
     try:
         base_class = mne.io.Raw.drop_channels
-        __doc__ = base_class.__doc__
+        __doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
 
@@ -46,8 +50,9 @@ class DropChannels(Preprocessor):
 
 
 class SetEEGReference(Preprocessor):
+    doc = """ See mne.io.Raw.set_eeg_reference
+    """
     try:
-        from mne.channels import channels
         base_class = mne.io.Raw.set_eeg_reference
         __doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
@@ -62,6 +67,8 @@ class SetEEGReference(Preprocessor):
 
 
 class Filter(Preprocessor):
+    doc = """ See mne.io.Raw.filter
+    """
     try:
         base_class = mne.io.Raw.filter
         __doc__ = _update_moabb_docstring(base_class, doc)
@@ -77,9 +84,11 @@ class Filter(Preprocessor):
 
 
 class Pick(Preprocessor):
+    doc = """ See mne.io.Raw.pick
+    """
     try:
         base_class = mne.io.Raw.pick
-        __doc__ = base_class.__doc__
+        __doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
 
@@ -92,9 +101,11 @@ class Pick(Preprocessor):
 
 
 class Crop(Preprocessor):
+    doc = """See mne.io.Raw.crop
+    """
     try:
-        base_class = mne.io.Raw.pick
-        __doc__ = base_class.__doc__
+        base_class = mne.io.Raw.crop
+        __doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
 
