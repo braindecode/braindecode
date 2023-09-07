@@ -1,14 +1,32 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Pierre Guetschel
+#
+# License: BSD (3-clause)
+
+
+import abc
+import logging
+import inspect
+
 import numpy as np
 import torch
+from torch.utils.data import Dataset as torchDataset
 from sklearn.metrics import get_scorer
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
 from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
 
 from .training.scoring import (CroppedTimeSeriesEpochScoring,
                                CroppedTrialEpochScoring, PostEpochTrainScoring)
+from .datasets.base import BaseConcatDataset, WindowsDataset
+
+log = logging.getLogger(__name__)
 
 
-class _EEGNeuralNet:
+class _EEGNeuralNet(metaclass=abc.ABCMeta):
+    @property
+    def log(self):
+        return log.getChild(self.__class__.__name__)
+
     def _yield_callbacks(self):
         # Here we parse the callbacks supplied as strings,
         # e.g. 'accuracy', to the callbacks skorch expects
@@ -114,3 +132,68 @@ class _EEGNeuralNet:
             ),
             ("print_log", PrintLog()),
         ]
+
+    @abc.abstractmethod
+    def _get_n_outputs(self, y):
+        pass
+
+    def _set_signal_args(self, X, y):
+        # get kwargs from signal:
+        signal_kwargs = dict()
+        if isinstance(X, np.ndarray):
+            if y is None:
+                raise ValueError(f"y must be specified if X is a numpy array.")
+            self.log.info(f"Using numpy array to find signal-related parameters.")
+            Xshape = X.shape
+            signal_kwargs["n_times"] = Xshape[-1]
+            signal_kwargs["n_chans"] = Xshape[-2]
+            signal_kwargs['n_outputs'] = self._get_n_outputs(y)
+
+        elif isinstance(X, torchDataset):
+            self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
+            X0 = X[0][0]
+            Xshape = X0.shape
+            signal_kwargs["n_times"] = Xshape[-1]
+            signal_kwargs["n_chans"] = Xshape[-2]
+            if (
+                    isinstance(X, BaseConcatDataset) and
+                    all(ds.targets_from == 'metadata' for ds in X.datasets)
+            ):
+                y_target = X.get_metadata().target
+                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target)
+            elif (
+                    isinstance(X, WindowsDataset) and
+                    X.targets_from == "metadata"
+            ):
+                y_target = X.windows.metadata.target
+                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target)
+        else:
+            raise ValueError(
+                f"X must be a numpy array or a Dataset, "
+                f"got {type(X)!r}."
+            )
+
+        # kick out missing kwargs:
+        module_kwargs = dict()
+        all_module_kwargs = inspect.signature(self.module.__init__).parameters.keys()
+        for k, v in signal_kwargs.items():
+            if v is None:
+                continue
+            if k in all_module_kwargs:
+                module_kwargs[k] = v
+            else:
+                self.log.warning(
+                    f"Module {self.module!r} "
+                    f"is missing parameter {k!r}."
+                )
+
+        # save kwargs to self:
+        self.log.info(
+            f"Passing additional parameters {module_kwargs!r} "
+            f"to module {self.module!r}.")
+        module_kwargs = {f"module__{k}": v for k, v in module_kwargs.items()}
+        vars(self).update(module_kwargs)
+
+    def check_data(self, X, y):
+        super().check_data(X, y)
+        self._set_signal_args(X, y)

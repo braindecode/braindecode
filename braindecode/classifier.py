@@ -2,11 +2,13 @@
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Pierre Guetschel
 #
 # License: BSD (3-clause)
 
 import warnings
 
+import numpy as np
 from skorch import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 
@@ -214,3 +216,11 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             num_workers=self.get_iterator(X,
                                           training=False).loader.num_workers,
         )
+
+    @property
+    def _get_n_outputs(self, y):
+        try:
+            classes = self.classes_
+        except AttributeError:
+            classes = np.unique(y)
+        return len(classes)

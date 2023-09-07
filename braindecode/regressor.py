@@ -2,6 +2,7 @@
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Pierre Guetschel
 #
 # License: BSD (3-clause)
 
@@ -160,8 +161,17 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             num_workers=self.get_iterator(X, training=False).loader.num_workers,
         )
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, X, y=None, **kwargs):
         if y is not None:
             if y.ndim == 1:
                 y = np.array(y).reshape(-1, 1)
         super().fit(X=X, y=y, **kwargs)
+
+    @property
+    def _get_n_outputs(self, y):
+        if y is None:
+            return None
+        if y.ndim == 1:
+            return 1
+        else:
+            return y.shape[-1]
