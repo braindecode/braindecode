@@ -57,6 +57,18 @@ def eegneuralnet_cls(request):
     return request.param
 
 
+@pytest.fixture
+def preds():
+    return np.array(
+        [
+            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
+            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
+            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
+            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
+        ]
+    )
+
+
 def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
     preds = np.array(
         [
@@ -81,15 +93,7 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
     np.testing.assert_array_equal(preds, eegneuralnet.predict_proba(MockDataset()))
 
 
-def test_cropped_predict_and_predict_proba(eegneuralnet_cls):
-    preds = np.array(
-        [
-            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
-            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
-            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
-            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
-        ]
-    )
+def test_cropped_predict_and_predict_proba(eegneuralnet_cls, preds):
     eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
@@ -111,15 +115,7 @@ def test_cropped_predict_and_predict_proba(eegneuralnet_cls):
     np.testing.assert_array_equal(preds.mean(-1), eegneuralnet.predict_proba(MockDataset()))
 
 
-def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralnet_cls):
-    preds = np.array(
-        [
-            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
-            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
-            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
-            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
-        ]
-    )
+def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralnet_cls, preds):
     eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
@@ -139,15 +135,7 @@ def test_cropped_predict_and_predict_proba_not_aggregate_predictions(eegneuralne
     np.testing.assert_array_equal(preds, eegneuralnet.predict_proba(MockDataset()))
 
 
-def test_predict_trials(eegneuralnet_cls):
-    preds = np.array(
-        [
-            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
-            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
-            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
-            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
-        ]
-    )
+def test_predict_trials(eegneuralnet_cls, preds):
     eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
@@ -166,15 +154,7 @@ def test_predict_trials(eegneuralnet_cls):
         eegneuralnet.predict_trials(MockDataset(), return_targets=False)
 
 
-def test_clonable(eegneuralnet_cls):
-    preds = np.array(
-        [
-            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
-            [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
-            [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
-            [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
-        ]
-    )
+def test_clonable(eegneuralnet_cls, preds):
     eegneuralnet = eegneuralnet_cls(
         MockModule,
         module__preds=preds,
