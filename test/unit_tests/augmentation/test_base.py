@@ -12,7 +12,7 @@ from braindecode.augmentation.base import AugmentedDataLoader
 from braindecode.augmentation.base import Compose
 from braindecode.augmentation.base import Transform
 from braindecode.augmentation.transforms import SmoothTimeMask
-from braindecode.datautil import create_from_mne_epochs
+from braindecode.datasets import create_from_mne_epochs
 
 
 def dummy_k_operation(X, y, k):
@@ -178,3 +178,24 @@ def test_dataset_with_transform(concat_windows_dataset):
     concat_windows_dataset.transform = transform
     transformed_X = concat_windows_dataset[0][0]
     assert torch.all(transformed_X == factor)
+
+
+def test_single_input_aug(concat_windows_dataset):
+    # Create single input without the batch dimension, just (channels, time)
+    X, y, _ = concat_windows_dataset[0]
+    assert len(X.shape) == 2
+    assert isinstance(y, int)
+
+    # Create dummy data augmentation
+    factor = 10
+    transform = DummyTransform(k=factor, probability=1.)
+
+    # Check that the transformation forward works and outputs an augmented
+    # input with the batch dimension
+    transformed_X = transform(X)
+    assert transformed_X.shape == X.shape
+
+    # Same check, when also passing y
+    transformed_X, transformed_y = transform(X, y)
+    assert len(transformed_y.shape) == 1
+    assert transformed_X.shape == X.shape
