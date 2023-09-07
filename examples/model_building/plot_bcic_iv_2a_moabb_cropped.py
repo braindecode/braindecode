@@ -40,7 +40,10 @@ Cropped Decoding on BCIC IV 2a Dataset [1]_
 #    loss function
 #
 # ``Why not calling it WindowWise decoding, as predictions are produced per window?``
-#
+# ``The fact that predictions per crop are averaged should be somehow indicated in
+# the name of the approach.``
+# ``It should be clear that hyperparameters of the network change between trial and
+# cropped examples.``
 # ``A bit confusing. A window is cropped into crops, these neighbouring crops are
 # called compute windows, so a window is cropped into compute windows?
 # Neighbouring crops constitute a compute window?``
