@@ -198,7 +198,7 @@ if cuda:
 
 from braindecode.models import to_dense_prediction_model
 
-model = to_dense_prediction_model(model)
+to_dense_prediction_model(model)
 
 ######################################################################
 # To know the models’ receptive field, we calculate the shape of model

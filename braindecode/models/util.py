@@ -6,13 +6,13 @@
 import numpy as np
 import torch
 from scipy.special import log_softmax
+from sklearn.utils import deprecated
 
 
-@np.deprecate(
-    new_name="EEGModuleMixin.to_dense_prediction_model",
-    message=("`to_dense_prediction_model` method should be called directly on the model object that"
-             " should be modified inplace.")
-    )
+@deprecated(
+    "will be removed in version 1.0. Use EEGModuleMixin.to_dense_prediction_model method directly "
+    "on the model object."
+)
 def to_dense_prediction_model(model, axis=(2, 3)):
     """
     Transform a sequential model with strides to a model that outputs
@@ -59,10 +59,10 @@ def to_dense_prediction_model(model, axis=(2, 3)):
             module.stride = tuple(new_stride)
 
 
-@np.deprecate(
-    new_name="EEGModuleMixin.get_output_shape",
-    message=("`get_output_shape` method should be called directly on the model object.")
-    )
+@deprecated(
+    "will be removed in version 1.0. Use EEGModuleMixin.get_output_shape method directly on the "
+    "model object."
+)
 def get_output_shape(model, in_chans, input_window_samples):
     """Returns shape of neural network output for batch size equal 1.
 

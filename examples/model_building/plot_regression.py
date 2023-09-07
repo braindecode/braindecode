@@ -166,7 +166,7 @@ from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.preprocessing import create_fixed_length_windows
 
 window_size_samples = fake_sfreq * fake_duration // 3
-model = to_dense_prediction_model(model)
+to_dense_prediction_model(model)
 n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[
     2]
 windows_dataset = create_fixed_length_windows(dataset,
