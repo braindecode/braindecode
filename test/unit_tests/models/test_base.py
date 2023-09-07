@@ -221,7 +221,7 @@ def test__str__():
     assert result == str(patch_stats)
 
 
-def test_output_shape():
+def test_get_output_shape():
     n_outputs = 1
     n_chans = 1
     chs_info = [{'ch_name': 'ch1'}],
@@ -237,13 +237,13 @@ def test_output_shape():
         input_window_seconds=input_window_seconds,
         sfreq=sfreq,
     )
-    assert dummy_module.output_shape == (1, 1, 1)
+    assert dummy_module.get_output_shape() == (1, 1, 1)
 
     dummy_module.add_module("linear2", nn.Linear(1, 2))
-    assert dummy_module.output_shape == (1, 1, 2)
+    assert dummy_module.get_output_shape() == (1, 1, 2)
 
 
-def test_raised_runtimeerror_kernel_size_output_shape(dummy_module: DummyModule):
+def test_raised_runtimeerror_kernel_size_get_output_shape(dummy_module: DummyModule):
 
     dummy_module.add_module("too_big_conv", nn.Conv2d(1, 1, kernel_size=(1, 201)))
     err_msg = (
@@ -254,10 +254,10 @@ def test_raised_runtimeerror_kernel_size_output_shape(dummy_module: DummyModule)
         r"in the input than \(1, 1, 200\)."
     )
     with pytest.raises(ValueError, match=err_msg):
-        dummy_module.output_shape
+        dummy_module.get_output_shape()
 
 
-def test_raised_runtimeerror_output_size_output_shape(dummy_module: DummyModule):
+def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyModule):
 
     dummy_module.add_module("good_conv", nn.Conv2d(1, 1, kernel_size=(1, 100)))
     dummy_module.add_module("too_big_pool", nn.AvgPool2d(kernel_size=(1, 200)))
@@ -270,4 +270,4 @@ def test_raised_runtimeerror_output_size_output_shape(dummy_module: DummyModule)
         r"in the input than \(1, 1, 200\)."
     )
     with pytest.raises(ValueError, match=err_msg):
-        dummy_module.output_shape
+        dummy_module.get_output_shape()

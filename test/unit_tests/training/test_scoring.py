@@ -21,11 +21,13 @@ from braindecode.datasets.moabb import MOABBDataset
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models import ShallowFBCSPNet
 from braindecode.preprocessing import create_windows_from_events
-from braindecode.training.scoring import (CroppedTimeSeriesEpochScoring,
-                                          CroppedTrialEpochScoring,
-                                          PostEpochTrainScoring,
-                                          predict_trials,
-                                          trial_preds_from_window_preds)
+from braindecode.training.scoring import (
+    CroppedTimeSeriesEpochScoring,
+    CroppedTrialEpochScoring,
+    PostEpochTrainScoring,
+    predict_trials,
+    trial_preds_from_window_preds,
+)
 from braindecode.util import set_random_seeds
 
 
@@ -394,7 +396,7 @@ def test_predict_trials():
     )
     model.to_dense_prediction_model()
 
-    output_shape = model.output_shape
+    output_shape = model.get_output_shape()
     # the number of samples required to get 1 output
     receptive_field_size = window_size_samples - output_shape[-1] + 1
 

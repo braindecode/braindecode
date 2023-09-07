@@ -204,7 +204,7 @@ model = to_dense_prediction_model(model)
 # To know the models’ receptive field, we calculate the shape of model
 # output for a dummy input.
 
-n_preds_per_input = model.output_shape[2]
+n_preds_per_input = model.get_output_shape()[2]
 
 ######################################################################
 # Cut Compute Windows

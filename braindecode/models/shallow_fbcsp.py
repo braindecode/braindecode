@@ -169,7 +169,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":
-            self.final_conv_length = self.output_shape[2]
+            self.final_conv_length = self.get_output_shape()[2]
         self.add_module(
             "conv_classifier",
             nn.Conv2d(

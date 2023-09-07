@@ -179,7 +179,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
-        output_shape = self.output_shape
+        output_shape = self.get_output_shape()
         n_out_virtual_chans = output_shape[2]
 
         if self.final_conv_length == "auto":
@@ -338,7 +338,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         self.add_module("pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
-        output_shape = self.output_shape
+        output_shape = self.get_output_shape()
         n_out_virtual_chans = output_shape[2]
 
         if self.final_conv_length == "auto":

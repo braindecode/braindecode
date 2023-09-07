@@ -88,7 +88,7 @@ def test_cropped_decoding():
         model.cuda()
 
     # Perform forward pass to determine how many outputs per input
-    n_preds_per_input = model.output_shape[2]
+    n_preds_per_input = model.get_output_shape()[2]
 
     train_set = create_from_X_y(X[:60], y[:60],
                                 drop_last_window=False,

@@ -60,8 +60,8 @@ def to_dense_prediction_model(model, axis=(2, 3)):
 
 
 @np.deprecate(
-    new_name="EEGModuleMixin.output_shape",
-    message=("`output_shape` property should be accessed directly on the model object.")
+    new_name="EEGModuleMixin.get_output_shape",
+    message=("`get_output_shape` method should be called directly on the model object.")
     )
 def get_output_shape(model, in_chans, input_window_samples):
     """Returns shape of neural network output for batch size equal 1.

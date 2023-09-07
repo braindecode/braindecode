@@ -80,9 +80,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 from numpy import multiply
 
-from braindecode.preprocessing import (Preprocessor,
-                                       exponential_moving_standardize,
-                                       preprocess)
+from braindecode.preprocessing import (
+    Preprocessor,
+    exponential_moving_standardize,
+    preprocess,
+)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -181,7 +183,7 @@ model.to_dense_prediction_model()
 # output for a dummy input.
 #
 
-n_preds_per_input = model.output_shape[2]
+n_preds_per_input = model.get_output_shape()[2]
 
 
 ######################################################################

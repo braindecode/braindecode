@@ -165,8 +165,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
-    @property
-    def output_shape(self) -> Tuple[int]:
+    def get_output_shape(self) -> Tuple[int]:
         """Returns shape of neural network output for batch size equal 1.
 
         Returns
