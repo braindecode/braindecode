@@ -9,9 +9,10 @@ from torch.nn.utils import weight_norm
 
 from .modules import Ensure4d, Expression
 from .functions import squeeze_final_output
+from .base import EEGModuleMixin, deprecated_args
 
 
-class TCN(nn.Module):
+class TCN(EEGModuleMixin, nn.Module):
     """Temporal Convolutional Network (TCN) from Bai et al 2018.
 
     See [Bai2018]_ for details.
@@ -20,11 +21,6 @@ class TCN(nn.Module):
 
     Parameters
     ----------
-    n_in_chans: int
-        number of input EEG channels
-    n_outputs: int
-        number of outputs of the decoding task (for example number of classes in
-        classification)
     n_filters: int
         number of output filters of each convolution
     n_blocks: int
@@ -35,6 +31,8 @@ class TCN(nn.Module):
         dropout probability
     add_log_softmax: bool
         whether to add a log softmax layer
+    n_in_chans: int
+        Alias for `n_chans`.
 
     References
     ----------
@@ -43,13 +41,41 @@ class TCN(nn.Module):
        for sequence modeling.
        arXiv preprint arXiv:1803.01271.
     """
-    def __init__(self, n_in_chans, n_outputs, n_blocks, n_filters, kernel_size,
-                 drop_prob, add_log_softmax):
-        super().__init__()
+
+    def __init__(
+            self,
+            n_chans=None,
+            n_outputs=None,
+            n_blocks=None,
+            n_filters=None,
+            kernel_size=None,
+            drop_prob=None,
+            add_log_softmax=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+            n_in_chans=None,
+    ):
+        n_chans, = deprecated_args(
+            self,
+            ("n_in_chans", "n_chans", n_in_chans, n_chans),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_in_chans
+
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
-            n_inputs = n_in_chans if i == 0 else n_filters
+            n_inputs = self.n_chans if i == 0 else n_filters
             dilation_size = 2 ** i
             t_blocks.add_module("temporal_block_{:d}".format(i), TemporalBlock(
                 n_inputs=n_inputs,
@@ -61,7 +87,7 @@ class TCN(nn.Module):
                 drop_prob=drop_prob
             ))
         self.temporal_blocks = t_blocks
-        self.fc = nn.Linear(in_features=n_filters, out_features=n_outputs)
+        self.fc = nn.Linear(in_features=n_filters, out_features=self.n_outputs)
         if add_log_softmax:
             self.log_softmax = nn.LogSoftmax(dim=1)
         self.squeeze = Expression(squeeze_final_output)

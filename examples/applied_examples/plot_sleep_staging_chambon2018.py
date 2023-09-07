@@ -36,7 +36,6 @@ subject_ids = [0, 1]
 dataset = SleepPhysionet(
     subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30)
 
-
 ######################################################################
 # Preprocessing
 # ~~~~~~~~~~~~~
@@ -57,7 +56,6 @@ preprocessors = [
 # Transform the data
 preprocess(dataset, preprocessors)
 
-
 ######################################################################
 # Extract windows
 # ~~~~~~~~~~~~~~~
@@ -65,7 +63,6 @@ preprocess(dataset, preprocessors)
 # We extract 30-s windows to be used in the classification task.
 
 from braindecode.preprocessing import create_windows_from_events
-
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
     'Sleep stage W': 0,
@@ -90,7 +87,6 @@ windows_dataset = create_windows_from_events(
     mapping=mapping
 )
 
-
 ######################################################################
 # Window preprocessing
 # ~~~~~~~~~~~~~~~~~~~~
@@ -101,7 +97,6 @@ windows_dataset = create_windows_from_events(
 from sklearn.preprocessing import scale as standard_scale
 
 preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
-
 
 ######################################################################
 # Split dataset into train and valid
@@ -135,12 +130,15 @@ from braindecode.samplers import SequenceSampler
 n_windows = 3  # Sequences of 3 consecutive windows
 n_windows_stride = 3  # Maximally overlapping sequences
 
-train_sampler = SequenceSampler(train_set.get_metadata(), n_windows, n_windows_stride)
+train_sampler = SequenceSampler(
+    train_set.get_metadata(), n_windows, n_windows_stride, randomize=True
+)
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
 print('Training examples: ', len(train_sampler))
 print('Validation examples: ', len(valid_sampler))
+
 
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
@@ -167,7 +165,6 @@ from sklearn.utils import compute_class_weight
 
 y_train = [train_set[idx][1] for idx in train_sampler]
 class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
-
 
 ######################################################################
 # Create model
@@ -204,8 +201,8 @@ n_channels, input_size_samples = train_set[0][0].shape
 feat_extractor = SleepStagerChambon2018(
     n_channels,
     sfreq,
-    n_classes=n_classes,
-    input_size_s=input_size_samples / sfreq,
+    n_outputs=n_classes,
+    n_times=input_size_samples,
     return_feats=True
 )
 
@@ -221,7 +218,6 @@ model = nn.Sequential(
 # Send model to GPU
 if cuda:
     model.cuda()
-
 
 ######################################################################
 # Training
@@ -279,7 +275,6 @@ clf = EEGClassifier(
 # supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
-
 ######################################################################
 # Plot results
 # ------------
@@ -310,6 +305,7 @@ plt.show()
 
 from sklearn.metrics import confusion_matrix, classification_report
 from braindecode.visualization import plot_confusion_matrix
+
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]
 y_pred = clf.predict(valid_set)
 
@@ -327,6 +323,7 @@ print(classification_report(y_true, y_pred))
 # different sleep stages with this amount of training.
 
 import matplotlib.pyplot as plt
+
 fig, ax = plt.subplots(figsize=(15, 5))
 ax.plot(y_true, color='b', label='Expert annotations')
 ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)

@@ -33,8 +33,13 @@ class _ConvBlock2D(nn.Module):
         self.conv = nn.Conv2d(in_filters, out_filters, kernel, stride=stride, padding=padding,
                               dilation=dilation, groups=groups, bias=not batch_norm)
         self.dropout = nn.Dropout2d(p=drop_prob)
-        self.batch_norm = _BatchNormZG(out_filters) if residual else nn.BatchNorm2d(out_filters) if\
-            batch_norm else lambda x: x
+        self.batch_norm = (
+            _BatchNormZG(out_filters)
+            if residual
+            else nn.BatchNorm2d(out_filters)
+            if batch_norm
+            else lambda x: x
+        )
 
     def forward(self, input):
         res = input
