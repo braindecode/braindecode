@@ -1,5 +1,6 @@
 """Preprocessor objects based on mne methods.
 """
+import mne.io
 
 # Author: Bruna Lopes <brunajaflopes@gmail.com>
 #
@@ -19,8 +20,7 @@ class Resample(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.filter import FilterMixin
-        base_class = FilterMixin.resample
+        base_class = mne.io.Raw.resample
         _doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
@@ -48,8 +48,7 @@ class DropChannels(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.channels import channels
-        base_class = channels.UpdateChannelsMixin.drop_channels
+        base_class = mne.io.Raw.drop_channels
         _doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
@@ -63,7 +62,8 @@ class DropChannels(Preprocessor):
 
 
 class SetEEGReference(Preprocessor):
-    doc = """Subclass of Preprocessor to specify the reference for EEG signals
+    doc = """
+    Subclass of Preprocessor to specify the reference for EEG signals
     using mne.Epochs/mne.io.Raw's method.
 
     Parameters
@@ -73,7 +73,7 @@ class SetEEGReference(Preprocessor):
     """
     try:
         from mne.channels import channels
-        base_class = channels.ReferenceMixin.set_eeg_reference
+        base_class = mne.io.Raw.set_eeg_reference
         _doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
@@ -96,8 +96,7 @@ class Filter(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.filter import FilterMixin
-        base_class = FilterMixin.filter
+        base_class = mne.io.Raw.filter
         _doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
@@ -120,10 +119,8 @@ class Pick(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.channels import channels
-        base_class = channels.UpdateChannelsMixin.pick
+        base_class = mne.io.Raw.pick
         _doc__ = _update_moabb_docstring(base_class, doc)
-
     except ModuleNotFoundError:
         pass
 
@@ -145,8 +142,7 @@ class Crop(Preprocessor):
         Keyword arguments to be passed to mne.Epochs's resample method.
     """
     try:
-        from mne.epochs import BaseEpochs
-        base_class = BaseEpochs.crop
+        base_class = mne.io.Raw.pick
         _doc__ = _update_moabb_docstring(base_class, doc)
     except ModuleNotFoundError:
         pass
