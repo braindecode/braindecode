@@ -469,7 +469,12 @@ clf = EEGClassifier(
     max_epochs=n_epochs,
 )
 
+# ``Maybe it is better to use single thread (n_jobs=1), since the output is printed in order
+# and it is easier to understand it.``
 train_val_split = KFold(n_splits=5, shuffle=False)
+# By setting n_jobs=-1, cross-validation is performed
+# with all the processors, in this case the output of the training 
+# process is not printed sequentially
 cv_results = cross_val_score(
     clf, X_train, y_train, scoring="accuracy", cv=train_val_split, n_jobs=1
 )
@@ -557,6 +562,10 @@ train_val_split = [
 param_grid = {
     "optimizer__lr": [0.00625, 0.000625],
 }
+
+# By setting n_jobs=-1, grid search is performed
+# with all the processors, in this case the output of the training 
+# process is not printed sequentially
 search = GridSearchCV(
     estimator=clf,
     param_grid=param_grid,
@@ -568,7 +577,8 @@ search = GridSearchCV(
     error_score="raise",
     n_jobs=1,
 )
-
+# ``Maybe it is better to use single thread (n_jobs=1), since the output is printed in order
+# and it is easier to understand it.``
 search.fit(X_train, y_train)
 search_results = pd.DataFrame(search.cv_results_)
 
