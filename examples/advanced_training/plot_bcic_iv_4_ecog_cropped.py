@@ -196,7 +196,7 @@ model = new_model
 if cuda:
     model.cuda()
 
-from braindecode.models import to_dense_prediction_model
+from braindecode.models import get_output_shape, to_dense_prediction_model
 
 to_dense_prediction_model(model)
 
@@ -204,7 +204,7 @@ to_dense_prediction_model(model)
 # To know the models’ receptive field, we calculate the shape of model
 # output for a dummy input.
 
-n_preds_per_input = model.get_output_shape()[2]
+n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
 ######################################################################
 # Cut Compute Windows
