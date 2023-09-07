@@ -176,19 +176,23 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     """
         with torch.inference_mode():
             try:
-                return self.forward(
+                return tuple(self.forward(
                     torch.zeros(
                         self.input_shape,
                         dtype=next(self.parameters()).dtype,
                         device=next(self.parameters()).device
-                    )).shape
+                    )).shape)
             except RuntimeError as exc:
-                if str(exc).endswith("Output size is too small"):
+                if str(exc).endswith(
+                    ("Output size is too small",
+                     "Kernel size can't be greater than actual input size")
+                ):
                     msg = (
-                        "During model evaluation RuntimeError was thrown showing that at some "
-                        "layer `Output size is too small` (see above in the stacktrace). This "
+                        "During model prediction RuntimeError was thrown showing that at some "
+                        f"layer `{str(exc).split('.')[-1]}` (see above in the stacktrace). This "
                         "could be caused by providing too small `n_times`/`input_window_seconds`. "
-                        "Model may require longer chunks of signal in the input."
+                        "Model may require longer chunks of signal in the input than "
+                        f"{self.input_shape}."
                     )
                     raise ValueError(msg) from exc
                 raise exc
@@ -201,8 +205,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         Parameters
         ----------
-        model: torch.nn.Module
-            Model which modules will be modified
         axis: int or (int,int)
             Axis to transform (in terms of intermediate output axes)
             can either be 2, 3, or (2,3).
@@ -271,20 +273,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             row_settings=row_settings,
             verbose=0,
         )
-
-    def convert_to_regressor(self) -> None:
-        """Convert model to regressor by removing softmax layer, inplace."""
-        to_remove = []
-        for idx, (name, _) in enumerate(self.named_children()):
-            if "softmax" in name:
-                to_remove.append(idx)
-        if len(to_remove) == 0:
-            msg = ("When converting to regressor, no softmax layer found in the layers. Softmax "
-                   "layer may not contain `softmax` in the name or model could have been already "
-                   "converted to a regressor.")
-            warnings.warn(msg, UserWarning)
-        for idx in reversed(to_remove):
-            del self[idx]
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())

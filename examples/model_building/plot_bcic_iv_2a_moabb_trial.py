@@ -157,7 +157,6 @@ valid_set = splitted['session_E']
 import torch
 
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import get_output_shape
 from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
@@ -188,8 +187,6 @@ model = ShallowFBCSPNet(
 
 # Display torchinfo table describing the model
 print(model)
-
-get_output_shape(model, n_chans, input_window_samples)
 
 # Send model to GPU
 if cuda:
