@@ -7,3 +7,5 @@ skorch<0.14
 joblib
 mne
 einops
+docstring_inheritance
+torchinfo
