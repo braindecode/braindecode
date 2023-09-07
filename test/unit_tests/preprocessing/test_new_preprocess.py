@@ -43,14 +43,11 @@ windows_ds = create_fixed_length_windows(
 # Get the raw data in fixture
 @pytest.fixture
 def base_concat_ds():
-    # copy raw data
     return copy.deepcopy(raw_ds)
 
 
-# Get windowed data
 @pytest.fixture
 def windows_concat_ds():
-    # copy windowed data
     return copy.deepcopy(windows_ds)
 
 
@@ -180,7 +177,6 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
         _set_preproc_kwargs(base_concat_ds, preprocessors)
 
 
-# Skip if OS is Windows
 @pytest.mark.skipif(platform.system() == 'Windows',
                     reason="Not supported on Windows")
 @pytest.mark.parametrize('kind', ['raw', 'windows'])
