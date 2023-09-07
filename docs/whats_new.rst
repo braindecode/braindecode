@@ -38,6 +38,8 @@ Enhancements
 - Improving documentation for the Convolutional neural network regression model on fake data (:gh:`491` by `Sara Sedlar`_)
 - Enforcing the eval mode in the fuction predict trial. (:gh:`497` by `Bruno Aristimunha`_)
 - Adding extra requirements for pip install, update doc, removing conda env file (:gh:505 by `Sylvain Chevallier`_)
+- Merged temporal and spatial convolutions for Deep4 and ShallowFBCSP (by `Daniel Wilson`_ and `Sara Sedlar`_)
+- Enabling data augmentation of single inputs (with no batch dimension). (:gh:`503` by `Cedric Rommel`_)
 
 Bugs
 ~~~~

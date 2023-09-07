@@ -72,16 +72,23 @@ class Transform(torch.nn.Module):
             Transformed labels. Only returned when y is not None.
         """
         X = torch.as_tensor(X).float()
+
         out_X = X.clone()
+        # check if input has a batch dimension
+        if len(out_X.shape) < 3:
+            out_X = out_X[None, ...]
+
         if y is not None:
             y = torch.as_tensor(y)
             out_y = y.clone()
+            if len(out_y.shape) == 0:
+                out_y = out_y.reshape(1)
         else:
-            out_y = torch.zeros(X.shape[0])
+            out_y = torch.zeros(out_X.shape[0])
 
         # Samples a mask setting for each example whether they should stay
         # inchanged or not
-        mask = self._get_mask(X.shape[0])
+        mask = self._get_mask(out_X.shape[0])
         num_valid = mask.sum().long()
 
         if num_valid > 0:
@@ -97,9 +104,9 @@ class Transform(torch.nn.Module):
                 out_y[mask] = tr_y
 
         if y is not None:
-            return out_X, out_y
+            return out_X.reshape_as(X), out_y
         else:
-            return out_X
+            return out_X.reshape_as(X)
 
     def _get_mask(self, batch_size=None) -> torch.Tensor:
         """Samples whether to apply operation or not over the whole batch
