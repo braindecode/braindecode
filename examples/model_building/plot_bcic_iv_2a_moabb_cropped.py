@@ -158,6 +158,9 @@ model = ShallowFBCSPNet(
     final_conv_length=30,
 )
 
+# Display torchinfo table describing the model
+print(model)
+
 # Send model to GPU
 if cuda:
     model.cuda()

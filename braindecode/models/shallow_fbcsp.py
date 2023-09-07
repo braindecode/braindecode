@@ -11,22 +11,16 @@ from einops.layers.torch import Rearrange
 from ..util import np_to_th
 from .modules import Expression, Ensure4d, CombinedConv
 from .functions import safe_log, square, squeeze_final_output
+from .base import EEGModuleMixin, deprecated_args
 
 
-class ShallowFBCSPNet(nn.Sequential):
+class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     """Shallow ConvNet model from Schirrmeister et al 2017.
 
     Model described in [Schirrmeister2017]_.
 
     Parameters
     ----------
-    in_chans : int
-        Number of EEG input channels.
-    n_classes: int
-        Number of classes to predict (number of output filters of last layer).
-    input_window_samples: int | None
-        Only used to determine the length of the last convolutional kernel if
-        final_conv_length is "auto".
     n_filters_time: int
         Number of temporal filters.
     filter_time_length: int
@@ -39,7 +33,7 @@ class ShallowFBCSPNet(nn.Sequential):
         Length of stride between temporal pooling filters.
     final_conv_length: int | str
         Length of the final convolution layer.
-        If set to "auto", input_window_samples must not be None.
+        If set to "auto", length of the input signal must be specified.
     conv_nonlin: callable
         Non-linear function to be used after convolution layers.
     pool_mode: str
@@ -55,6 +49,12 @@ class ShallowFBCSPNet(nn.Sequential):
         Momentum for BatchNorm2d.
     drop_prob: float
         Dropout probability.
+    in_chans : int
+        Alias for `n_chans`.
+    n_classes: int
+        Alias for `n_outputs`.
+    input_window_samples: int | None
+        Alias for `n_times`.
 
     References
     ----------
@@ -68,30 +68,48 @@ class ShallowFBCSPNet(nn.Sequential):
     """
 
     def __init__(
-        self,
-        in_chans,
-        n_classes,
-        input_window_samples=None,
-        n_filters_time=40,
-        filter_time_length=25,
-        n_filters_spat=40,
-        pool_time_length=75,
-        pool_time_stride=15,
-        final_conv_length=30,
-        conv_nonlin=square,
-        pool_mode="mean",
-        pool_nonlin=safe_log,
-        split_first_layer=True,
-        batch_norm=True,
-        batch_norm_alpha=0.1,
-        drop_prob=0.5,
+            self,
+            n_chans=None,
+            n_outputs=None,
+            n_times=None,
+            n_filters_time=40,
+            filter_time_length=25,
+            n_filters_spat=40,
+            pool_time_length=75,
+            pool_time_stride=15,
+            final_conv_length=30,
+            conv_nonlin=square,
+            pool_mode="mean",
+            pool_nonlin=safe_log,
+            split_first_layer=True,
+            batch_norm=True,
+            batch_norm_alpha=0.1,
+            drop_prob=0.5,
+            chs_info=None,
+            input_window_seconds=None,
+            sfreq=None,
+            in_chans=None,
+            n_classes=None,
+            input_window_samples=None,
     ):
-        super().__init__()
+        n_chans, n_outputs, n_times = deprecated_args(
+            self,
+            ("in_chans", "n_chans", in_chans, n_chans),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("input_window_samples", "n_times", input_window_samples, n_times),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
-            assert input_window_samples is not None
-        self.in_chans = in_chans
-        self.n_classes = n_classes
-        self.input_window_samples = input_window_samples
+            assert self.n_times is not None
         self.n_filters_time = n_filters_time
         self.filter_time_length = filter_time_length
         self.n_filters_spat = n_filters_spat
@@ -113,7 +131,7 @@ class ShallowFBCSPNet(nn.Sequential):
             self.add_module(
                 "conv_time_spat",
                 CombinedConv(
-                    in_chans=self.in_chans,
+                    in_chans=self.n_chans,
                     n_filters_time=self.n_filters_time,
                     n_filters_spat=self.n_filters_spat,
                     filter_time_length=filter_time_length,
@@ -126,7 +144,7 @@ class ShallowFBCSPNet(nn.Sequential):
             self.add_module(
                 "conv_time",
                 nn.Conv2d(
-                    self.in_chans,
+                    self.n_chans,
                     self.n_filters_time,
                     (self.filter_time_length, 1),
                     stride=1,
@@ -156,7 +174,7 @@ class ShallowFBCSPNet(nn.Sequential):
             out = self(
                 np_to_th(
                     np.ones(
-                        (1, self.in_chans, self.input_window_samples, 1),
+                        (1, self.n_chans, self.n_times, 1),
                         dtype=np.float32,
                     )
                 )
@@ -167,7 +185,7 @@ class ShallowFBCSPNet(nn.Sequential):
             "conv_classifier",
             nn.Conv2d(
                 n_filters_conv,
-                self.n_classes,
+                self.n_outputs,
                 (self.final_conv_length, 1),
                 bias=True,
             ),

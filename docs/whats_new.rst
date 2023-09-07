@@ -8,13 +8,13 @@ What's new
 .. currentmodule:: braindecode
 
 .. NOTE: we are now using links to highlight new functions and classes.
-   Please follow the examples below like :class:`braindecode.EEGClassifier`, so the
-   whats_new page will have a link to the function/class documentation.
+Please follow the examples below like :class:`braindecode.EEGClassifier`, so the
+whats_new page will have a link to the function/class documentation.
 
 .. NOTE: there are 3 separate sections for changes, based on type:
-   - "Enhancements" for new features
-   - "Bugs" for bug fixes
-   - "API changes" for backward-incompatible changes
+- "Enhancements" for new features
+- "Bugs" for bug fixes
+- "API changes" for backward-incompatible changes
 
 .. _current:
 Current 0.8 (dev0)
@@ -33,13 +33,17 @@ Enhancements
 - Improving documentation for MOABB dataset, Trialwise Decoding & Cropped Decoding (:gh:`490` by `Daniel Wilson`_)
 - Improving the documentation for the sleep stage examples (:gh:`487` by `Bruno Aristimunha`_)
 - Improving the tutorial Hyperparameter tuning with scikit-learn (:gh:`473` by `Bruno Aristimunha`_)
+- Add :class:`braindecode.models.base.EEGModuleMixin` base class for all braindecode models (:gh:`488` by `Pierre Guetschel`_)
+- Normalize all models common parameters and leaving the old ones as deprecated (:gh:`488` by `Pierre Guetschel`_)
 - Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Sylvain Chevallier`_)
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 - Improving documentation for the Convolutional neural network regression model on fake data (:gh:`491` by `Sara Sedlar`_)
 - Enforcing the eval mode in the fuction predict trial. (:gh:`497` by `Bruno Aristimunha`_)
 - Adding extra requirements for pip install, update doc, removing conda env file (:gh:`505` by `Sylvain Chevallier`_)
+- Add models user-friendly representation with torchinfo tables to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`488` by `Maciej Śliwowski`_)
 - Merged temporal and spatial convolutions for Deep4 and ShallowFBCSP (by `Daniel Wilson`_ and `Sara Sedlar`_)
 - Enabling data augmentation of single inputs (with no batch dimension). (:gh:`503` by `Cedric Rommel`_)
+- Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
 
 Bugs
 ~~~~
@@ -88,6 +92,7 @@ Enhancements
 - Adding tutorial with a Unified Validation sheme (:gh:`378` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding `verbose` parameter to :func:`braindecode.preprocessing.create_windows_from_events`, :func:`braindecode.preprocessing.create_windows_from_target_channels`, and :func:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`391` by `Lukas Gemein`_)
 - Enable augmentation on GPU within :class:`AugmentedDataloader` via a new `device` parameter (:gh:`406` by `Martin Wimpff`_, `Bruno Aristimunha`_ and `Cedric Rommel`_)
+- Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
 
 Bugs
 ~~~~
