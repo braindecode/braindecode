@@ -226,8 +226,8 @@ if cuda:
 # Now we train the network! EEGClassifier is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
 # from `skorch.NeuralNetClassifier <https://skorch.readthedocs.io/
-# en/latest/classifier.html>`__, 
-# so the training logic is the same as in 
+# en/latest/classifier.html>`__,
+# so the training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
@@ -255,8 +255,8 @@ clf = EEGClassifier(
 ######################################################################
 # We use scikit-learn `GridSearchCV
 # <https://scikit-learn.org/stable/modules/generated/
-# sklearn.model_selection.GridSearchCV.html>`__ to tune hyperparameters. 
-# To be able to do this, we slice the braindecode datasets that by default 
+# sklearn.model_selection.GridSearchCV.html>`__ to tune hyperparameters.
+# To be able to do this, we slice the braindecode datasets that by default
 # return a 3-tuple to return X and y, respectively.
 #
 
@@ -288,7 +288,7 @@ param_grid = {
 }
 
 # By setting n_jobs=-1, grid search is performed
-# with all the processors, in this case the output of the training 
+# with all the processors, in this case the output of the training
 # process is not printed sequentially
 search = GridSearchCV(
     estimator=clf,
