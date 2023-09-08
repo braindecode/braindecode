@@ -4,10 +4,10 @@
 #
 # License: BSD-3
 import sys
-import pytest
 
 import mne
 import numpy as np
+import pytest
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch import optim
@@ -15,11 +15,10 @@ from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
-from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
+from braindecode.training.losses import CroppedLoss
 from braindecode.training.scoring import CroppedTrialEpochScoring
-from braindecode.util import set_random_seeds, np_to_th
+from braindecode.util import np_to_th, set_random_seeds
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -137,7 +136,7 @@ def test_eeg_classifier():
         input_window_samples=input_window_samples,
         final_conv_length=12,
     )
-    to_dense_prediction_model(model)
+    model.to_dense_prediction_model()
 
     if cuda:
         model.cuda()
