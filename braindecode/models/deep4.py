@@ -291,7 +291,8 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             ),
         )
         self.add_module("softmax", nn.LogSoftmax(dim=1))
-        self.add_module("squeeze", Expression(squeeze_final_output))
+        # Change last layer's name: squeeze --> final_layer
+        self.add_module("final_layer", Expression(squeeze_final_output))
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne

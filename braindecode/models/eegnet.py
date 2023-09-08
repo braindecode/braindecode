@@ -205,7 +205,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         # so time in third dimension (axis=2)
         self.add_module("permute_back",
                         Rearrange("batch x y z -> batch x z y"))
-        self.add_module("squeeze", Expression(squeeze_final_output))
+        # Renaming last layer squeeze --> final_layer
+        self.add_module("final_layer", Expression(squeeze_final_output))
 
         _glorot_weight_zero_bias(self)
 
@@ -370,7 +371,8 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "permute_2", Rearrange("batch x y z -> batch x z y")
         )
-        self.add_module("squeeze", Expression(squeeze_final_output))
+        # Change last layer's name: squeeze --> final_layer
+        self.add_module("final_layer", Expression(squeeze_final_output))
         _glorot_weight_zero_bias(self)
 
 
