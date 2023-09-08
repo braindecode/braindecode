@@ -1,4 +1,5 @@
 # Authors: Pierre Guetschel
+#          Maciej Sliwowski
 #
 # License: BSD-3
 

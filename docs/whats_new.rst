@@ -44,6 +44,7 @@ Enhancements
 - Merged temporal and spatial convolutions for Deep4 and ShallowFBCSP (by `Daniel Wilson`_ and `Sara Sedlar`_)
 - Enabling data augmentation of single inputs (with no batch dimension). (:gh:`503` by `Cedric Rommel`_)
 - Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
+- Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
 
 Bugs
 ~~~~
