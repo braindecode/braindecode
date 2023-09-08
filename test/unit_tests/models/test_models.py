@@ -232,7 +232,7 @@ def test_eegitnet(input_sizes):
         n_outputs=input_sizes['n_classes'],
         n_chans=input_sizes['n_channels'],
         n_times=input_sizes['n_in_times'],
-      )
+    )
 
     check_forward_pass(
         model,
@@ -479,9 +479,9 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_examples = 10
 
     model = SleepStagerEldele2021(
-      sfreq=sfreq, n_outputs=n_classes,
-      input_window_seconds=input_size_s,
-      d_model=d_model, return_feats=False,
+        sfreq=sfreq, n_outputs=n_classes,
+        input_window_seconds=input_size_s,
+        d_model=d_model, return_feats=False,
     )
     model.eval()
 
@@ -512,6 +512,7 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     out = model(X)
     assert out.shape == (n_examples, model.len_last_layer)"""
 
+
 @pytest.mark.parametrize(
     "n_channels,sfreq,n_groups,n_classes,input_size_s",
     [(20, 128, 2, 5, 30), (10, 100, 2, 4, 20), (1, 64, 1, 2, 30)],
@@ -521,9 +522,9 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     n_examples = 10
 
     model = SleepStagerBlanco2020(
-      n_chans=n_channels, sfreq=sfreq, n_groups=n_groups,
-      input_window_seconds=input_size_s, n_outputs=n_classes,
-      return_feats=False,
+        n_chans=n_channels, sfreq=sfreq, n_groups=n_groups,
+        input_window_seconds=input_size_s, n_outputs=n_classes,
+        return_feats=False,
     )
     model.eval()
 
