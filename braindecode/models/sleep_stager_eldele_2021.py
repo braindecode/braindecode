@@ -123,8 +123,13 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = self._len_last_layer(self.n_times)
         self.return_feats = return_feats
-        if not return_feats:
-            self.fc = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
+
+        # TODO: Add new way to handle return features
+        if return_feats:
+            raise ValueError("return_feat == True is not accepted anymore")
+
+        # Rename last layer: fc --> final_layer
+        self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
 
     def _len_last_layer(self, input_size):
         self.feature_extractor.eval()

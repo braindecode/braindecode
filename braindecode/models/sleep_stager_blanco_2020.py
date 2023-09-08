@@ -117,12 +117,17 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
 
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self.return_feats = return_feats
-        if not return_feats:
-            self.fc = nn.Sequential(
-                nn.Dropout(dropout),
-                nn.Linear(self.len_last_layer, self.n_outputs),
-                nn.Softmax(dim=1)
-            )
+
+        # TODO: Add new way to handle return_features == True
+        if return_feats:
+            raise ValueError("return_feat == True is not accepted anymore")
+
+        # Rename last layer: fc --> final_layer
+        self.final_layer = nn.Sequential(
+            nn.Dropout(dropout),
+            nn.Linear(self.len_last_layer, self.n_outputs),
+            nn.Softmax(dim=1)
+        )
 
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()

@@ -222,8 +222,13 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         self.features_extractor = nn.Identity()
         self.len_last_layer = 1024
         self.return_feats = return_feats
-        if not return_feats:
-            self.final_layer = nn.Linear(1024, self.n_outputs)
+
+        # TODO: Add new way to handle return_features == True
+        if return_feats:
+            raise ValueError("return_feat == True is not accepted anymore")
+
+        # Rename last layer: fc --> final_layer
+        self.final_layer = nn.Linear(1024, self.n_outputs)
 
     def forward(self, x):
         """Forward pass.
