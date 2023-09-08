@@ -409,6 +409,7 @@ def test_target_name_not_in_description(set_up):
     x, y = base_dataset[0]
 
 
-def test_windows_dataset_from_target_channels_raise_valuerror():
+def test_windows_dataset_from_target_channels_raise_valuerror(set_up):
+    _, _, epochs, _, _, _ = set_up
     with pytest.raises(ValueError):
-        WindowsDataset(None, None, targets_from='non-existing')
+        WindowsDataset(epochs, None, targets_from='non-existing')

@@ -174,8 +174,8 @@ class WindowsDataset(BaseDataset):
         if hasattr(self.windows, 'metadata'):
             metadata = self.windows.metadata
         else:
-            assert metadata is not None, (
-                "need to supply metadata if it is not given as part of mne epochs")
+            if metadata is None:
+                raise ValueError("Need to supply metadata if it is not given as part of mne epochs")
             self.metadata = metadata
 
         self._description = _create_description(description)
@@ -233,6 +233,11 @@ class WindowsDataset(BaseDataset):
                 y = X[misc_mask, :]
             # remove the target channels from raw
             X = X[~misc_mask, :]
+        # ensure we don't give the user the option
+        # to accidentally modify the underlying array
+        # (X or y could be just slices of the data)
+        X = X.copy()
+        y = y.copy()
         return X, y, crop_inds
 
     def __len__(self):
