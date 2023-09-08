@@ -241,8 +241,8 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
-# Model training for the specified number of epochs. `y` is None as it is already supplied
-# in the dataset.
+# Model training for the specified number of epochs. `y` is None as it is
+# already supplied in the dataset.
 _ = clf.fit(train_set, y=None, epochs=n_epochs)
 
 
