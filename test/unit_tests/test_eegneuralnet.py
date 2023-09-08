@@ -46,11 +46,11 @@ class MockModule(EEGModuleMixin, torch.nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        # self.preds = to_tensor(preds, device='cpu')
+        self.preds = to_tensor(preds, device='cpu')
         self.final_layer = torch.nn.Conv1d(self.n_chans, self.n_outputs, self.n_times)
 
     def forward(self, x):
-        return self.final_layer(x).reshape(x.shape[0], self.n_outputs)
+        return self.preds
 
 
 @pytest.fixture(params=[EEGClassifier, EEGRegressor])
