@@ -115,8 +115,6 @@ def test_windows_from_events_different_events(tmpdir_factory):
         concat_ds=concat_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
-    description = []
-    events = []
 
     ys = [y for X, y, i in windows]
     crop_start_inds = [i[1] for X, y, i in windows]
@@ -146,7 +144,7 @@ def test_one_window_per_original_trial(concat_ds_targets):
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1,
         drop_last_window=False)
-    ys = [y for X,y,i in windows]
+    ys = [y for X, y, i in windows]
     assert len(ys) == len(targets)
     np.testing.assert_array_equal(ys, targets)
 
@@ -158,7 +156,7 @@ def test_stride_has_no_effect(concat_ds_targets):
         trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1000,
         drop_last_window=False)
-    ys = [y for X,y,i in windows]
+    ys = [y for X, y, i in windows]
     assert len(ys) == len(targets)
     np.testing.assert_array_equal(ys, targets)
 
@@ -170,7 +168,7 @@ def test_trial_start_offset(concat_ds_targets):
         trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=250,
         drop_last_window=False)
-    ys = [y for X,y,i in windows]
+    ys = [y for X, y, i in windows]
     assert len(ys) == len(targets) * 2
     np.testing.assert_array_equal(ys[0::2], targets)
     np.testing.assert_array_equal(ys[1::2], targets)
@@ -183,7 +181,7 @@ def test_shifting_last_window_back_in(concat_ds_targets):
         trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=300,
         drop_last_window=False)
-    ys = [y for X,y,i in windows]
+    ys = [y for X, y, i in windows]
     assert len(ys) == len(targets) * 2
     np.testing.assert_array_equal(ys[0::2], targets)
     np.testing.assert_array_equal(ys[1::2], targets)
@@ -196,7 +194,7 @@ def test_dropping_last_incomplete_window(concat_ds_targets):
         trial_start_offset_samples=-250, trial_stop_offset_samples=-750,
         window_size_samples=250, window_stride_samples=300,
         drop_last_window=True)
-    ys = [y for X,y,i in windows]
+    ys = [y for X, y, i in windows]
     assert len(ys) == len(targets)
     np.testing.assert_array_equal(ys, targets)
 
@@ -208,7 +206,7 @@ def test_maximally_overlapping_windows(concat_ds_targets):
         trial_start_offset_samples=-2, trial_stop_offset_samples=0,
         window_size_samples=1000, window_stride_samples=1,
         drop_last_window=False)
-    ys = [y for X,y,i in windows]
+    ys = [y for X, y, i in windows]
     assert len(ys) == len(targets) * 3
     np.testing.assert_array_equal(ys[0::3], targets)
     np.testing.assert_array_equal(ys[1::3], targets)
@@ -230,7 +228,7 @@ def test_single_sample_size_windows(concat_ds_targets):
         window_size_samples=1, window_stride_samples=1,
         drop_last_window=False, mapping=dict(tongue=3, left_hand=1,
                                              right_hand=2, feet=4))
-    ys = [y for X,y,i in windows]
+    ys = [y for X, y, i in windows]
     assert len(ys) == len(targets) * 1000
     np.testing.assert_array_equal(ys[::1000], targets)
     np.testing.assert_array_equal(ys[999::1000], targets)
@@ -311,7 +309,7 @@ def test_fixed_length_windower(start_offset_samples, window_size_samples,
 
     if mapping is not None:
         assert base_ds.description[base_ds.target_name] == 48
-        ys = [y for X,y,i in epochs_ds]
+        ys = [y for X, y, i in epochs_ds]
         assert all([y == 0 for y in ys])
 
     epochs_data = np.stack([X for X, y, i in epochs_ds])
@@ -454,7 +452,6 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                 'flat': flat, 'on_missing': on_missing,
                 'accepted_bads_ratio': 0.0, 'verbose': 'error'})
         ]
-
 
 
 def test_window_sizes_from_events(concat_ds_targets):
