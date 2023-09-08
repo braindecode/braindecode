@@ -535,8 +535,7 @@ def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
 fig, ax = plt.subplots(figsize=(15, 7))
 plot_k_fold(ax, cv=train_val_split, all_dataset=windows_dataset,
             X_train=X_train, y_train=y_train, test_set=test_set,)
-#fig.tight_layout()
-plt.show()
+
 
 ######################################################################
 # How to tune your hyperparameters
