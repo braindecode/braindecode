@@ -31,40 +31,17 @@ repos:
       - id: pretty-format-json
         args: ["--autofix", "--no-sort-keys", "--indent=4"]
 
-
-
-  -   repo: https://github.com/asottile/blacken-docs
-      rev: 1.15.0
-      hooks:
-      -   id: blacken-docs
-          additional_dependencies: [black==23.3.0]
-          exclude: ^.github/
-
-  - repo: https://github.com/PyCQA/isort
-    rev: 5.12.0
-    hooks:
-      - id: isort
-
-  -   repo: https://github.com/PyCQA/flake8
-      rev: 6.1.0
-      hooks:
-      -   id: flake8
-          additional_dependencies: [
-              'flake8-blind-except',
-              'flake8-docstrings',
-              'flake8-bugbear',
-              'flake8-comprehensions',
-              'flake8-docstrings',
-              'flake8-implicit-str-concat',
-              'pydocstyle>=5.0.0',
-          ]
-          exclude: ^docs/ | ^setup\.py$ |
-
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.0.281
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501]
+
+  -   repo: https://github.com/asottile/blacken-docs
+      rev: 1.15.0
+      hooks:
+      -   id: blacken-docs
+          exclude: ^.github/
 
 #  - repo: https://github.com/pycqa/pydocstyle
 #    rev: 6.3.0
