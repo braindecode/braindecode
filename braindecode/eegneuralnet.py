@@ -11,6 +11,7 @@ import inspect
 import numpy as np
 import torch
 from torch.utils.data import Dataset as torchDataset
+from skorch import NeuralNet
 from sklearn.metrics import get_scorer
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
 from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
@@ -22,7 +23,9 @@ from .datasets.base import BaseConcatDataset, WindowsDataset
 log = logging.getLogger(__name__)
 
 
-class _EEGNeuralNet(metaclass=abc.ABCMeta):
+class _EEGNeuralNet(NeuralNet, abc.ABC):
+    signal_args_set_ = False
+
     @property
     def log(self):
         return log.getChild(self.__class__.__name__)
@@ -134,10 +137,10 @@ class _EEGNeuralNet(metaclass=abc.ABCMeta):
         ]
 
     @abc.abstractmethod
-    def _get_n_outputs(self, y):
+    def _get_n_outputs(self, y, classes):
         pass
 
-    def _set_signal_args(self, X, y):
+    def _set_signal_args(self, X, y, classes):
         # get kwargs from signal:
         signal_kwargs = dict()
         if isinstance(X, np.ndarray):
@@ -147,7 +150,7 @@ class _EEGNeuralNet(metaclass=abc.ABCMeta):
             Xshape = X.shape
             signal_kwargs["n_times"] = Xshape[-1]
             signal_kwargs["n_chans"] = Xshape[-2]
-            signal_kwargs['n_outputs'] = self._get_n_outputs(y)
+            signal_kwargs['n_outputs'] = self._get_n_outputs(y, classes)
 
         elif isinstance(X, torchDataset):
             self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
@@ -160,13 +163,13 @@ class _EEGNeuralNet(metaclass=abc.ABCMeta):
                     all(ds.targets_from == 'metadata' for ds in X.datasets)
             ):
                 y_target = X.get_metadata().target
-                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target)
+                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target, classes)
             elif (
                     isinstance(X, WindowsDataset) and
                     X.targets_from == "metadata"
             ):
                 y_target = X.windows.metadata.target
-                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target)
+                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target, classes)
         else:
             raise ValueError(
                 f"X must be a numpy array or a Dataset, "
@@ -194,6 +197,16 @@ class _EEGNeuralNet(metaclass=abc.ABCMeta):
         module_kwargs = {f"module__{k}": v for k, v in module_kwargs.items()}
         vars(self).update(module_kwargs)
 
-    def check_data(self, X, y):
-        super().check_data(X, y)
-        self._set_signal_args(X, y)
+    def partial_fit(self, X, y=None, classes=None, **fit_params):
+        # this needs to be executed before the net is initialized:
+        if not self.signal_args_set_:
+            self._set_signal_args(X, y, classes)
+            self.signal_args_set_ = True
+        return super().partial_fit(X=X, y=y, classes=classes, **fit_params)
+
+    def fit(self, X, y=None, **fit_params):
+        # this needs to be executed before the net is initialized:
+        if not self.signal_args_set_:
+            self._set_signal_args(X, y, classes=None)
+            self.signal_args_set_ = True
+        return super().fit(X=X, y=y, **fit_params)

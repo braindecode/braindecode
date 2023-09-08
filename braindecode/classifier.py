@@ -217,10 +217,10 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
                                           training=False).loader.num_workers,
         )
 
-    @property
-    def _get_n_outputs(self, y):
-        try:
-            classes = self.classes_
-        except AttributeError:
-            classes = np.unique(y)
+    def _get_n_outputs(self, y, classes):
+        classes_y = np.unique(y)
+        if classes is not None:
+            assert set(classes_y) <= set(classes)
+        else:
+            classes = classes_y
         return len(classes)
