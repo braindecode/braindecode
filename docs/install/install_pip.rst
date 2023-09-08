@@ -14,7 +14,7 @@ Below are the installation commands for the most common use cases.
 
    pip install braindecode
 
-Braindecode can also be installed alon MOABB to download open datasets:
+Braindecode can also be installed along MOABB to download open datasets:
 
 .. code-block:: bash
 
