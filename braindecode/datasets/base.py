@@ -220,6 +220,9 @@ class WindowsDataset(BaseDataset):
         else:
             X = self.windows._getitem((slice(None), slice(i_start, i_stop)), return_times=False)
         X = X.astype('float32')
+        # ensure we don't give the user the option
+        # to accidentally modify the underlying array
+        X = X.copy()
 
         if self.transform is not None:
             X = self.transform(X)
@@ -231,13 +234,11 @@ class WindowsDataset(BaseDataset):
                 y = X[misc_mask, -1]
             else:
                 y = X[misc_mask, :]
+            # ensure we don't give the user the option
+            # to accidentally modify the underlying array
+            y = y.copy()
             # remove the target channels from raw
             X = X[~misc_mask, :]
-        # ensure we don't give the user the option
-        # to accidentally modify the underlying array
-        # (X or y could be just slices of the data)
-        X = X.copy()
-        y = y.copy()
         return X, y, crop_inds
 
     def __len__(self):
