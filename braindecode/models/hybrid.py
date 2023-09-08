@@ -32,6 +32,14 @@ class HybridNet(EEGModuleMixin, nn.Module):
                  in_chans=None, n_classes=None, chs_info=None,
                  input_window_samples=None, input_window_seconds=None,
                  sfreq=None, add_log_softmax=True):
+
+        n_chans, n_outputs, n_times = deprecated_args(
+            self,
+            ('in_chans', 'n_chans', in_chans, n_chans),
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
+            ('input_window_samples', 'n_times', input_window_samples, n_times),
+        )
+
         deep_model = Deep4Net(
             n_chans,
             n_outputs,
@@ -53,12 +61,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
             final_conv_length=29,
         )
 
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ('in_chans', 'n_chans', in_chans, n_chans),
-            ('n_classes', 'n_outputs', n_classes, n_outputs),
-            ('input_window_samples', 'n_times', input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
