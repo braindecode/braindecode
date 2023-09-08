@@ -128,7 +128,6 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")
 
-        # Rename last layer: fc --> final_layer
         self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
 
     def _len_last_layer(self, input_size):

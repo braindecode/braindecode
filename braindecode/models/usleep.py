@@ -257,7 +257,6 @@ class USleep(EEGModuleMixin, nn.Module):
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
 
-        # Rename last layer: clf --> final_layer
         self.final_layer = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],

@@ -229,7 +229,6 @@ class TIDNet(nn.Module):
                                      bottleneck=bottleneck, summary=summary)
 
         self._num_features = self.dscnn.num_features
-        # Rename last layer: classify --> final_layer
         self.final_layer = self._create_classifier(self.num_features, n_classes)
 
     def _create_classifier(self, incoming, n_classes):

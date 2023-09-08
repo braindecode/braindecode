@@ -227,7 +227,6 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")
 
-        # Rename last layer: fc --> final_layer
         self.final_layer = nn.Linear(1024, self.n_outputs)
 
     def forward(self, x):

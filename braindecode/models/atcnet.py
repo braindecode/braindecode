@@ -223,7 +223,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 ) for _ in range(self.n_windows)
             ])
 
-        # Rename last layer: sfmx --> final_layer
         self.final_layer = nn.LogSoftmax(dim=1)
 
     def forward(self, X):
