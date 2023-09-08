@@ -19,7 +19,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 
 
 ######################################################################
-# Loading a MOABB dataset
+# Loading the dataset
 # ~~~~~~~~~~~~~~~~~~~~~~~
 #
 
@@ -187,7 +187,7 @@ print(model)
 
 # Send model to GPU
 if cuda:
-    model.cuda()
+    model = model.cuda()
 
 
 ######################################################################
@@ -243,7 +243,7 @@ clf = EEGClassifier(
 )
 # Model training for the specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+_ = clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################

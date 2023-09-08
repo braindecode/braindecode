@@ -164,6 +164,30 @@ windows_dataset = create_windows_from_events(
     preload=True,
 )
 
+
+######################################################################
+# Split dataset into train and test
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+
+######################################################################
+# We can easily split the dataset BCIC IV 2a dataset using additional
+# info stored in the description attribute, in this case the ``session``
+# column. We select ``session_T`` for training and ``session_E`` for testing.
+# For other datasets, you might have to choose another column and/or column.
+#
+# .. note::
+#    No matter which of the three schemes you use, this initial
+#    two-fold split into train_set and test_set always remains the same.
+#    Remember that you are not allowed to use the test_set during any
+#    stage of training or tuning.
+#
+
+splitted = windows_dataset.split("session")
+train_set = splitted["session_T"]
+test_set = splitted["session_E"]
+
+
 ######################################################################
 # Create model
 # ~~~~~~~~~~~~
@@ -207,29 +231,6 @@ if cuda:
 # How to train and evaluate your model
 # ------------------------------------
 #
-
-######################################################################
-# Split dataset into train and test
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#
-
-######################################################################
-# We can easily split the dataset BCIC IV 2a dataset using additional
-# info stored in the description attribute, in this case the ``session``
-# column. We select ``session_T`` for training and ``session_E`` for testing.
-# For other datasets, you might have to choose another column and/or column.
-#
-# .. note::
-#    No matter which of the three schemes you use, this initial
-#    two-fold split into train_set and test_set always remains the same.
-#    Remember that you are not allowed to use the test_set during any
-#    stage of training or tuning.
-#
-
-splitted = windows_dataset.split("session")
-train_set = splitted["session_T"]
-test_set = splitted["session_E"]
-
 
 ######################################################################
 # Option 1: Simple Train-Test Split
