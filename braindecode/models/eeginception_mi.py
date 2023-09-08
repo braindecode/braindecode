@@ -76,6 +76,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             in_channels=None,
             n_classes=None,
             input_window_s=None,
+            add_log_softmax=True,
     ):
         n_chans, n_outputs, input_window_seconds, = deprecated_args(
             self,
@@ -90,7 +91,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=True,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_channels, n_classes, input_window_s

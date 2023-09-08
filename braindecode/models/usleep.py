@@ -180,6 +180,7 @@ class USleep(EEGModuleMixin, nn.Module):
             in_chans=None,
             n_classes=None,
             input_size_s=None,
+            add_log_softmax=True,
     ):
         n_chans, n_outputs, input_window_seconds = deprecated_args(
             self,
@@ -194,7 +195,7 @@ class USleep(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=True,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_size_s

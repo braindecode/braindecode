@@ -172,7 +172,6 @@ n_classes = 5
 classes = list(range(n_classes))
 # Extract number of channels and time steps from dataset
 in_chans, input_size_samples = train_set[0][0].shape
-
 model = USleep(
     n_chans=in_chans,
     sfreq=sfreq,
@@ -186,7 +185,6 @@ model = USleep(
 # Send model to GPU
 if cuda:
     model.cuda()
-
 ######################################################################
 # Training
 # --------

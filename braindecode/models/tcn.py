@@ -53,6 +53,7 @@ class TCN(EEGModuleMixin, nn.Module):
             input_window_seconds=None,
             sfreq=None,
             n_in_chans=None,
+            add_log_softmax=True,
     ):
         n_chans, = deprecated_args(
             self,
@@ -65,7 +66,7 @@ class TCN(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=True,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_in_chans

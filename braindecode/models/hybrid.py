@@ -31,11 +31,10 @@ class HybridNet(EEGModuleMixin, nn.Module):
     def __init__(self, n_chans=None, n_outputs=None, n_times=None,
                  in_chans=None, n_classes=None, chs_info=None,
                  input_window_samples=None, input_window_seconds=None,
-                 sfreq=None):
-        super(HybridNet, self).__init__()
+                 sfreq=None, add_log_softmax=True):
         deep_model = Deep4Net(
-            in_chans,
-            n_classes,
+            n_chans,
+            n_outputs,
             n_filters_time=20,
             n_filters_spat=30,
             n_filters_2=40,
@@ -67,7 +66,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=True
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
@@ -135,6 +134,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
         if self.add_log_softmax:
             output = nn.LogSoftmax(dim=1)(linear_out)
         else:
-            output = linear_out
+            output = nn.Identity()(linear_out)
         squeezed = output.squeeze(3)
         return squeezed

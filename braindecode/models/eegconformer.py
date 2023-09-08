@@ -106,6 +106,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_classes=None,
             n_channels=None,
             input_window_samples=None,
+            add_log_softmax=True,
     ):
         n_outputs, n_chans, n_times = deprecated_args(
             self,
@@ -120,7 +121,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=True
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, n_channels, input_window_samples

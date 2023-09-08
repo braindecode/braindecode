@@ -48,6 +48,10 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         Sampling frequency of the EEG recordings.
     add_log_softmax: bool
         Whether to use log-softmax non-linearity as the output function.
+        LogSoftmax final layer will be removed in the future.
+        Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!
+        Check the documentation of the torch.nn loss functions:
+        https://pytorch.org/docs/stable/nn.html#loss-functions.
 
     Raises
     ------
@@ -167,13 +171,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     @property
     def add_log_softmax(self):
-        if self._add_log_softmax is None:
-            raise ValueError("add_log_softmax flag not specified.")
-
         if self._add_log_softmax:
             warnings.warn("LogSoftmax final layer will be removed! " +
-                          "Please adjust your hyperparameters " +
-                          "(e.g. loss function) accordingly!")
+                          "Please adjust your loss function accordingly (e.g. CrossEntropyLoss)! " +
+                          "Check the documentation of the torch.nn loss functions: " +
+                          "https://pytorch.org/docs/stable/nn.html#loss-functions .")
         return self._add_log_softmax
 
     def get_torchinfo_statistics(
