@@ -33,7 +33,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
 
     Parameters
     ----------
-    path: str
+    path: pathlib.Path
         Path to the directory of the .fif / -epo.fif and .json files.
     preload: bool
         Whether to preload the data.
@@ -48,17 +48,16 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
     """
     # assume we have a single concat dataset to load
-    is_raw = os.path.isfile(os.path.join(path, '0-raw.fif'))
+    is_raw = (path / '0-raw.fif').is_file()
     assert not (not is_raw and target_name is not None), (
         'Setting a new target is only supported for raws.')
-    is_epochs = os.path.isfile(os.path.join(path, '0-epo.fif'))
+    is_epochs = (path / '0-epo.fif').is_file()
     paths = [path]
     # assume we have multiple concat datasets to load
     if not (is_raw or is_epochs):
-        is_raw = os.path.isfile(os.path.join(path, '0', '0-raw.fif'))
-        is_epochs = os.path.isfile(os.path.join(path, '0', '0-epo.fif'))
-        path = os.path.join(path, '*', '')
-        paths = glob(path)
+        is_raw = (path / '0' / '0-raw.fif').is_file()
+        is_epochs = (path / '0' / '0-epo.fif').is_file()
+        paths = path.glob("*/")
         paths = sorted(paths, key=lambda p: int(p.split(os.sep)[-2]))
         if ids_to_load is not None:
             paths = [paths[i] for i in ids_to_load]
@@ -66,12 +65,12 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
     # if we have neither a single nor multiple datasets, something went wrong
     assert is_raw or is_epochs, (
         f'Expect either raw or epo to exist in {path} or in '
-        f'{os.path.join(path, "0")}')
+        f'{path / "0"}')
 
     datasets = []
     for path in paths:
         if is_raw and target_name is None:
-            target_file_name = os.path.join(path, 'target_name.json')
+            target_file_name = path / 'target_name.json'
             target_name = json.load(open(target_file_name, "r"))['target_name']
 
         all_signals, description = _load_signals_and_description(
@@ -89,9 +88,10 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
                 )
     concat_ds = BaseConcatDataset(datasets)
     for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs', 'window_preproc_kwargs']:
-        kwarg_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
-        if os.path.exists(kwarg_path):
-            kwargs = json.load(open(kwarg_path, 'r'))
+        kwarg_path = path / '.'.join([kwarg_name, 'json'])
+        if kwarg_path.exists():
+            with open(kwarg_path, 'r') as f:
+                kwargs = json.load(f)
             kwargs = [tuple(kwarg) for kwarg in kwargs]
             setattr(concat_ds, kwarg_name, kwargs)
     return concat_ds
@@ -123,6 +123,8 @@ def _load_signals(fif_file, preload, is_raw):
     if pkl_file.exists():
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
+        if fif_file != signals._fname:
+            signals._fname = str(fif_file)
         if preload:
             signals.load_data()
         return signals
@@ -134,15 +136,19 @@ def _load_signals(fif_file, preload, is_raw):
     else:
         raise ValueError('fif_file must end with raw.fif or epo.fif.')
 
-    # Saving the raw file without data into a pickle file, so it can be
-    # retrieved faster on the next use of this dataset.
-    with open(pkl_file, "wb") as f:
-        if preload:
-            data = signals._data
-            signals._data, signals.preload = None, False
-        pickle.dump(signals, f)
-        if preload:
-            signals._data, signals.preload = data, True
+    # Only do this for raw objects. Epoch objects are not picklable as they
+    # hold references to open files in `signals._raw[0].fid`.
+    if is_raw:
+        # Saving the raw file without data into a pickle file, so it can be
+        # retrieved faster on the next use of this dataset.
+        with open(pkl_file, "wb") as f:
+            if preload:
+                data = signals._data
+                signals._data, signals.preload = None, False
+            pickle.dump(signals, f)
+            if preload:
+                signals._data, signals.preload = data, True
+
     return signals
 
 
@@ -153,7 +159,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
 
     Parameters
     ----------
-    path: str
+    path: str | pathlib.Path
         Path to the directory of the .fif / -epo.fif and .json files.
     preload: bool
         Whether to preload the data.
@@ -169,6 +175,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     -------
     concat_dataset: BaseConcatDataset of BaseDatasets or WindowsDatasets
     """
+    # Make sure we always work with a pathlib.Path
     path = Path(path)
 
     # if we encounter a dataset that was saved in 'the old way', call the
