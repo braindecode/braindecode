@@ -58,7 +58,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
         is_raw = (path / '0' / '0-raw.fif').is_file()
         is_epochs = (path / '0' / '0-epo.fif').is_file()
         paths = path.glob("*/")
-        paths = sorted(paths, key=lambda p: int(p.split(os.sep)[-2]))
+        paths = sorted(paths, key=lambda p: int(p.name))
         if ids_to_load is not None:
             paths = [paths[i] for i in ids_to_load]
         ids_to_load = None
