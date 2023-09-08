@@ -33,17 +33,17 @@ Installation Braindecode
 
 1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
-2. Install latest release of braindecode via pip:
+1. If you want to download EEG datasets from `MOABB <https://github.com/NeuroTechX/moabb>`_, install it:
+
+.. code-block:: bash
+
+  pip install moabb
+
+1. Install latest release of braindecode via pip:
 
 .. code-block:: bash
 
   pip install braindecode
-
-If you want to also download EEG datasets from `MOABB <https://github.com/NeuroTechX/moabb>`_, you could use:
-
-.. code-block:: bash
-
-  pip install braindecode[moabb]
 
 If you want to install the latest development version of braindecode, please refer to `contributing page <https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md>`__
 
