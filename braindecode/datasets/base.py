@@ -223,7 +223,6 @@ class WindowsDataset(BaseDataset):
         # ensure we don't give the user the option
         # to accidentally modify the underlying array
         X = X.copy()
-
         if self.transform is not None:
             X = self.transform(X)
         if self.targets_from == 'metadata':

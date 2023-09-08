@@ -115,7 +115,6 @@ def test_windows_from_events_different_events(tmpdir_factory):
         concat_ds=concat_ds, trial_start_offset_samples=0,
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
-
     ys = [y for X, y, i in windows]
     crop_start_inds = [i[1] for X, y, i in windows]
 
@@ -626,4 +625,8 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         target_idx = i * 5 + 100
         np.testing.assert_array_almost_equal(targets[:, target_idx - 99: target_idx + 1], y)
         np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
+<<<<<<< HEAD
         np.testing.assert_array_almost_equal(np.array([i, i * 5 + 1, target_idx + 1]), window_inds)
+=======
+        np.testing.assert_array_almost_equal(np.array([i, i * 5 + 1, target_idx + 1]), window_inds)
+>>>>>>> 2a478b5 (Not using mne epochs for windowing)
