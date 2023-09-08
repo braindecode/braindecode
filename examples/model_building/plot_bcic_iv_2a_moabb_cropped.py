@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Cropped Decoding on BCIC IV 2a Dataset [1]_
-===========================================
+Cropped Decoding on BCIC IV 2a Dataset
+======================================
 
 .. contents:: This example covers:
    :local:
