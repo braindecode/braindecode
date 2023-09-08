@@ -36,9 +36,9 @@ setup(
                       'torch', 'einops', 'joblib', 'docstring_inheritance', 'torchinfo'],
     extras_require={
         'moabb': ['moabb'],
-        'tests': ['pytest', 'pytest-cov', 'codecov'],
+        'tests': ['pytest', 'pytest-cov', 'codecov', 'pytest_cases'],
         'docs': ['sphinx_gallery', 'sphinx_rtd_theme', 'pydata_sphinx_theme', 'numpydoc',
-                 'memory_profiler', 'pillow', 'ipython', 'sphinx_design'],
+                 'memory_profiler', 'pillow', 'ipython', 'sphinx_design', 'docstring_inheritance'],
     },
     # tests_require = [...]
 
