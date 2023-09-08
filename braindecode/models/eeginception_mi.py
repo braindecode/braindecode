@@ -167,7 +167,6 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         self.flat = nn.Flatten()
         self.fc = nn.Linear(
-            # in_features=self.input_window_samples * intermediate_in_channels,
             in_features=intermediate_in_channels,
             out_features=self.n_outputs,
             bias=True,
