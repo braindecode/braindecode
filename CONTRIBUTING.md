@@ -37,47 +37,25 @@ git remote add upstream git@github.com:braindecode/braindecode.git
 ``` 
 (change the url for https if you used that in the step before)
 
-Your `.git/config` file inside your local clone of the repository should look similar to this now:
+The results of the `git remote -v` command should look like this now:
 
 ```
-[core]
-        repositoryformatversion = 0
-        filemode = true
-        bare = false
-        logallrefupdates = true
-[remote "origin"]
-        url = git@github.com:<username>/braindecode.git
-        fetch = +refs/heads/*:refs/remotes/origin/*
-[branch "master"]
-        remote = origin
-        merge = refs/heads/master
-[remote "upstream"]
-        url = git@github.com:braindecode/braindecode.git
-        fetch = +refs/heads/*:refs/remotes/upstream/*
-
+origin	git@github.com: <username>/braindecode.git (fetch)
+origin	git@github.com: <username>/braindecode.git (push)
+upstream	git@github.com:braindecode/braindecode.git (fetch)
+upstream	git@github.com:braindecode/braindecode.git (push)
 ```
-
-### Install Conda
-Follow the installation guide here to install Conda:
-https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html
 
 ### Install Braindecode
 
-From within your local repository, run
+From within your local repository, install a virtual python
+environment. We will use conda, but feel free to use any other
+solution:
+
 ```
-conda env create -f environment.yml
+conda create --name braindecode python=3.10
 conda activate braindecode
-pip install moabb
-pip install -e .
-pip install --upgrade pytest pytest-cov codecov
-pip install --upgrade -r docs/requirements.txt
-pip install --upgrade scipy scikit-learn
-pip install --upgrade flake8
-```
-Ignore the error on the second-last step:
-```
-ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
-moabb 0.3.0 requires scikit-learn<0.24,>=0.23, but you have scikit-learn 0.24.2 which is incompatible.
+pip install -e .[moabb,tests,docs]
 ```
 
 ### Test your setup
