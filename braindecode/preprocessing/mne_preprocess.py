@@ -1,6 +1,6 @@
 """Preprocessor objects based on mne methods."""
 # Authors: Bruna Lopes <brunajaflopes@gmail.com>
-#        : Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD-3
 import inspect
@@ -9,7 +9,7 @@ from braindecode.preprocessing import Preprocessor
 from braindecode.util import _update_moabb_docstring
 
 
-def generate_init_method(func):
+def _generate_init_method(func):
     """
     Generate an __init__ method for a class based on the function's signature.
     """
@@ -27,7 +27,7 @@ def generate_init_method(func):
     return init_method
 
 
-def generate_mne_pre_processor(function):
+def _generate_mne_pre_processor(function):
     """
     Generate a class based on an MNE function for preprocessing.
     """
@@ -39,7 +39,7 @@ def generate_mne_pre_processor(function):
 
     base_classes = (Preprocessor,)
     class_attrs = {
-        "__init__": generate_init_method(function),
+        "__init__": _generate_init_method(function),
         "__doc__": _update_moabb_docstring(function, doc),
         "fn": function.__name__,
     }
@@ -60,7 +60,7 @@ mne_functions = [
 
 # Automatically generate and add classes to the global namespace
 for function in mne_functions:
-    class_obj = generate_mne_pre_processor(function)
+    class_obj = _generate_mne_pre_processor(function)
     globals()[class_obj.__name__] = class_obj
 
 # Define __all__ based on the generated class names
