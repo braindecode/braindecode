@@ -78,8 +78,9 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 #
 
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 1.  # low cut frequency for filtering
 high_cut_hz = 200.  # high cut frequency for filtering, for ECoG higher than for EEG
@@ -193,8 +194,8 @@ train_set = torch.utils.data.Subset(train_set, idx_train)
 # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
 
 
-from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -252,7 +253,7 @@ if cuda:
 #    encourage you to perform your own hyperparameter and preprocessing optimization using
 #    cross validation on your training data.
 #
-from skorch.callbacks import LRScheduler, EpochScoring
+from skorch.callbacks import EpochScoring, LRScheduler
 from skorch.helper import predefined_split
 from mne import set_log_level
 
@@ -323,8 +324,8 @@ y_valid = np.stack([data[1] for data in valid_set])
 #    pipeline which may be not optimal for ECoG.
 #
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
+from matplotlib.lines import Line2D
 
 plt.style.use('seaborn')
 fig, axes = plt.subplots(3, 1, figsize=(8, 9))
