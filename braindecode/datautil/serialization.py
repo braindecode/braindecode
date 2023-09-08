@@ -123,8 +123,10 @@ def _load_signals(fif_file, preload, is_raw):
     if pkl_file.exists():
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
-        if fif_file != signals._fname:
-            signals._fname = str(fif_file)
+
+        # If the file has been moved together with the pickle file, make sure
+        # the path links to correct fif file.
+        signals._fname = str(fif_file)
         if preload:
             signals.load_data()
         return signals
