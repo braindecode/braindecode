@@ -370,7 +370,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "permute_2", Rearrange("batch x y z -> batch x z y")
         )
-        # Rename last layer: squeeze --> final_layer
+
         self.add_module("final_layer", Expression(squeeze_final_output))
         _glorot_weight_zero_bias(self)
 

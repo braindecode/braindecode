@@ -82,7 +82,7 @@ class HybridNet(nn.Module):
         to_dense_prediction_model(reduced_shallow_model)
         self.reduced_deep_model = reduced_deep_model
         self.reduced_shallow_model = reduced_shallow_model
-        # Rename last layer: final_conv --> final_layer
+
         self.final_layer = nn.Conv2d(
             100, n_classes, kernel_size=(1, 1), stride=1
         )

@@ -193,7 +193,6 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
                                   (1, 1), bias=True))
         self.add_module('softmax', nn.LogSoftmax(dim=1))
 
-        # Rename last layer: squeeze --> final_layer
         self.add_module('final_layer', Expression(squeeze_final_output))
 
         # Initialize all weights
