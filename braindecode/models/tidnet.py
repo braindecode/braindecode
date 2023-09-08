@@ -135,7 +135,6 @@ class _TIDNetFeatures(nn.Module):
                  temp_layers, spat_layers, temp_span, bottleneck, summary):
         super().__init__()
         self.n_chans = n_chans
-        self.input_windows_samples = n_times
         self.temp_len = ceil(temp_span * n_times)
 
         self.temporal = nn.Sequential(
@@ -173,12 +172,6 @@ class TIDNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_classes : int
-        Number of classes.
-    n_chans : int
-        Number of EEG channels.
-    input_window_samples : int
-        Number of samples.
     s_growth : int
         DenseNet-style growth factor (added filters per DenseFilter)
     t_filters : int
@@ -192,15 +185,21 @@ class TIDNet(EEGModuleMixin, nn.Module):
     spat_layers : int
         Number of DenseFilters
     temp_span : float
-        Percentage of input_window_samples that defines the temporal filter length:
-        temp_len = ceil(temp_span * input_window_samples)
-        e.g A value of 0.05 for temp_span with 1500 input_window_samples will yield a temporal
+        Percentage of n_times that defines the temporal filter length:
+        temp_len = ceil(temp_span * n_times)
+        e.g A value of 0.05 for temp_span with 1500 n_times will yield a temporal
         filter of length 75.
     bottleneck : int
         Bottleneck factor within Densefilter
     summary : int
         Output size of AdaptiveAvgPool1D layer. If set to -1, value will be calculated
-        automatically (input_window_samples // pooling).
+        automatically (n_times // pooling).
+    in_chans :
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_window_samples :
+        Alias for n_times.
 
     Notes
     -----

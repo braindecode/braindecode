@@ -29,9 +29,8 @@ class HybridNet(EEGModuleMixin, nn.Module):
     """
 
     def __init__(self, n_chans=None, n_outputs=None, n_times=None,
-                 in_chans=None, n_classes=None, chs_info=None,
-                 input_window_samples=None, input_window_seconds=None,
-                 sfreq=None, add_log_softmax=True):
+                 in_chans=None, n_classes=None, input_window_samples=None,
+                 add_log_softmax=True):
 
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -39,10 +38,16 @@ class HybridNet(EEGModuleMixin, nn.Module):
             ('n_classes', 'n_outputs', n_classes, n_outputs),
             ('input_window_samples', 'n_times', input_window_samples, n_times),
         )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            n_times=n_times,
+            add_log_softmax=add_log_softmax,
+        )
 
         deep_model = Deep4Net(
-            n_chans,
-            n_outputs,
+            n_chans=n_chans,
+            n_outputs=n_outputs,
             n_filters_time=20,
             n_filters_spat=30,
             n_filters_2=40,
@@ -52,8 +57,8 @@ class HybridNet(EEGModuleMixin, nn.Module):
             final_conv_length=2,
         )
         shallow_model = ShallowFBCSPNet(
-            n_chans,
-            n_outputs,
+            n_chans=n_chans,
+            n_outputs=n_outputs,
             n_times=n_times,
             n_filters_time=30,
             n_filters_spat=40,
@@ -61,16 +66,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
             final_conv_length=29,
         )
 
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_outputs, n_chans, n_times
         del in_chans, n_classes, input_window_samples
 
         reduced_deep_model = nn.Sequential()
