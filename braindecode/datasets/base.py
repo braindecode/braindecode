@@ -238,6 +238,11 @@ class WindowsDataset(BaseDataset):
             y = y.copy()
             # remove the target channels from raw
             X = X[~misc_mask, :]
+        # ensure we don't give the user the option
+        # to accidentally modify the underlying array
+        # (X or y could be just slices of the data)
+        X = X.copy()
+        y = y.copy()
         return X, y, crop_inds
 
     def __len__(self):
