@@ -35,7 +35,7 @@ def _generate_mne_pre_processor(function):
         word.title() for word in function.__name__.split('_')).replace('Eeg',
                                                                        'EEG')
     import_path = f"{function.__module__}.{function.__name__}"
-    doc = f""" See more details in {import_path}"""
+    doc = f" See more details in {import_path}"
 
     base_classes = (Preprocessor,)
     class_attrs = {
