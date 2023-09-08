@@ -134,24 +134,24 @@ preprocessors = [
 preprocess(dataset, preprocessors, n_jobs=-1)
 
 ######################################################################
-# Extraction of the Compute Windows
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Extraction of the Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# Extraction of the windows from the time series is based on the events
-# inside the dataset. One event is the demarcation of the stimulus or the
-# beginning of the trial. In this example, we want to analyse 0.5 [s] long
+# Extraction of the trials (windows) from the time series is based on the
+# events inside the dataset. One event is the demarcation of the stimulus or
+# the beginning of the trial. In this example, we want to analyse 0.5 [s] long
 # before the corresponding event and the duration of the event itself.
 # #Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
 # ``trial_stop_offset_seconds`` to 0 [s].
 #
 # We extract from the dataset the sampling frequency, which is the same for
-# all datasets in this case, and we test it.
+# all datasets in this case, and we tested it.
 #
 # .. note::
 #    The ``trial_start_offset_seconds`` and ``trial_stop_offset_seconds`` are
-#    defined in seconds, and they are relative to the event. This variable is
-#    dataset dependent.
-
+#    defined in seconds and need to be converted into samples (multiplication
+#    with the sampling frequency), relative to the event.
+#    This variable is dataset dependent.
 #
 
 from braindecode.preprocessing import create_windows_from_events
