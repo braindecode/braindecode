@@ -150,7 +150,7 @@ class WindowsDataset(BaseDataset):
 
     Parameters
     ----------
-    windows : mne.Epochs
+    windows : mne.Raw or mne.Epochs (Epochs is outdated)
         Windows obtained through the application of a windower to a BaseDataset
         (see `braindecode.datautil.windowers`).
     description : dict | pandas.Series | None
@@ -158,24 +158,38 @@ class WindowsDataset(BaseDataset):
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
     targets_from : str
-        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
+        Defines whether targets will be extracted from  metadata or from `misc`
         channels (time series targets). It can be `metadata` (default) or `channels`.
+    last_target_only : bool
+        If targets are obtained from misc channels whether all targets if the entire
+    (compute) window will be returned or only the last target in the window.
+    metadata : pandas.DataFrame
+        Dataframe with crop indices, so `i_window_in_trial`, `i_start_in_trial`, `i_stop_in_trial`
+        as well as `targets`.
     """
+
     def __init__(self, windows, description=None, transform=None, targets_from='metadata',
-                 last_target_only=True):
+                 last_target_only=True, metadata=None, ):
         self.windows = windows
+        if hasattr(self.windows, 'metadata'):
+            metadata = self.windows.metadata
+        else:
+            assert metadata is not None, (
+                "need to supply metadata if it is not given as part of mne epochs")
+
         self._description = _create_description(description)
+
         self.transform = transform
         self.last_target_only = last_target_only
         if targets_from not in ('metadata', 'channels'):
             raise ValueError('Wrong value for parameter `targets_from`.')
         self.targets_from = targets_from
 
-        self.crop_inds = self.windows.metadata.loc[
-            :, ['i_window_in_trial', 'i_start_in_trial',
-                'i_stop_in_trial']].to_numpy()
+        self.crop_inds = metadata.loc[
+                         :, ['i_window_in_trial', 'i_start_in_trial',
+                             'i_stop_in_trial']].to_numpy()
         if self.targets_from == 'metadata':
-            self.y = self.windows.metadata.loc[:, 'target'].to_list()
+            self.y = metadata.loc[:, 'target'].to_list()
 
     def __getitem__(self, index):
         """Get a window and its target.
@@ -194,7 +208,18 @@ class WindowsDataset(BaseDataset):
         np.ndarray
             Crop indices.
         """
-        X = self.windows.get_data(item=index)[0].astype('float32')
+
+        # necessary to cast as list to get list of three tensors from batch,
+        # otherwise get single 2d-tensor...
+        crop_inds = self.crop_inds[index].tolist()
+
+        i_window_in_trial, i_start, i_stop = crop_inds
+        if hasattr(self.windows, 'metadata'):  # mne epochs case:
+            X = self.windows.get_data(item=index)[0].astype('float32')
+        else:
+            X = self.windows._getitem((slice(None), slice(i_start, i_stop)), return_times=False)
+        X = X.astype('float32')
+
         if self.transform is not None:
             X = self.transform(X)
         if self.targets_from == 'metadata':
@@ -207,13 +232,10 @@ class WindowsDataset(BaseDataset):
                 y = X[misc_mask, :]
             # remove the target channels from raw
             X = X[~misc_mask, :]
-        # necessary to cast as list to get list of three tensors from batch,
-        # otherwise get single 2d-tensor...
-        crop_inds = self.crop_inds[index].tolist()
         return X, y, crop_inds
 
     def __len__(self):
-        return len(self.windows.events)
+        return len(self.crop_inds)
 
     @property
     def transform(self):
