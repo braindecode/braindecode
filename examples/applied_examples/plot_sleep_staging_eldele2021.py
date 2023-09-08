@@ -201,7 +201,7 @@ feat_extractor = SleepStagerEldele2021(
     sfreq,
     n_outputs=n_classes,
     n_times=input_size_samples,
-    return_feats=True,
+    return_feats=False,
 )
 
 model = nn.Sequential(
