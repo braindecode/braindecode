@@ -125,11 +125,24 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
-# Extraction of the compute windows is based on the events. A single
-# compute window contains a trial with a margin extended 0.5 [s] before it.
-# ``It needs parameters to define how trials should be used.``
-# ``Not really clear. It needs parameters to define how trials should be extracted?
-# Do we call them windows or trials?``
+# Extraction of the Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Extraction of the trials (windows) from the time series is based on the
+# events inside the dataset. One event is the demarcation of the stimulus or
+# the beginning of the trial. In this example, we want to analyse 0.5 [s] long
+# before the corresponding event and the duration of the event itself.
+# #Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
+# ``trial_stop_offset_seconds`` to 0 [s].
+#
+# We extract from the dataset the sampling frequency, which is the same for
+# all datasets in this case, and we tested it.
+#
+# .. note::
+#    The ``trial_start_offset_seconds`` and ``trial_stop_offset_seconds`` are
+#    defined in seconds and need to be converted into samples (multiplication
+#    with the sampling frequency), relative to the event.
+#    This variable is dataset dependent.
 #
 
 from braindecode.preprocessing.windowers import create_windows_from_events
