@@ -222,11 +222,6 @@ model = ShallowFBCSPNet(
     add_log_softmax=False,
 )
 
-new_model = torch.nn.Sequential()
-for name, module_ in model.named_children():
-    new_model.add_module(name, module_)
-model = new_model
-
 # Send model to GPU
 if cuda:
     model.cuda()
