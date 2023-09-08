@@ -137,11 +137,21 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # Extraction of the Compute Windows
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# Extraction of the compute windows is based on the events. A single
-# compute window contains a trial with a margin extended 0.5 [s] before it.
-# ``It needs parameters to define how trials should be used.``
-# ``Not really clear. It needs parameters to define how trials should be extracted?
-# Do we call them windows or trials?``
+# Extraction of the windows from the time series is based on the events
+# inside the dataset. One event is the demarcation of the stimulus or the
+# beginning of the trial. In this example, we want to analyse 0.5 [s] long
+# before the corresponding event and the duration of the event itself.
+# #Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
+# ``trial_stop_offset_seconds`` to 0 [s].
+#
+# We extract from the dataset the sampling frequency, which is the same for
+# all datasets in this case, and we test it.
+#
+# .. note::
+#    The ``trial_start_offset_seconds`` and ``trial_stop_offset_seconds`` are
+#    defined in seconds, and they are relative to the event. This variable is
+#    dataset dependent.
+
 #
 
 from braindecode.preprocessing import create_windows_from_events
@@ -150,11 +160,11 @@ trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
 sfreq = dataset.datasets[0].raw.info["sfreq"]
 assert all([ds.raw.info["sfreq"] == sfreq for ds in dataset.datasets])
-# Calculate the trial start offset in samples.
+# Calculate the window start offset in samples.
 trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
-# Create windows using braindecode function for this. It needs parameters to define how
-# trials should be used.
+# Create windows using braindecode function for this. It needs parameters to
+# define how windows should be used.
 windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
@@ -190,8 +200,8 @@ test_set = splitted["session_E"]
 # Create model
 # ~~~~~~~~~~~~
 #
-# In this tutorial, ShallowFBCSPNet classifier [3]_ is explored. The model training is
-# performed on GPU if it exists, otherwise on CPU.
+# In this tutorial, ShallowFBCSPNet classifier [3]_ is explored. The model
+# training is performed on GPU if it exists, otherwise on CPU.
 #
 
 import torch
@@ -302,9 +312,12 @@ def plot_simple_train_test(ax, all_dataset, train_set, test_set):
     """Create a sample plot for training-testing split."""
     bd_cmap = ["#3A6190", "#683E00", "#DDF2FF", "#2196F3"]
 
-    ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
-    ax.barh("Train-Test\nsplit", len(train_set), left=0, height=0.5, color=bd_cmap[1])
-    ax.barh("Train-Test\nsplit", len(test_set), left=len(train_set), height=0.5, color=bd_cmap[2])
+    ax.barh("Original\ndataset", len(all_dataset), left=0,
+            height=0.5, color=bd_cmap[0])
+    ax.barh("Train-Test\nsplit", len(train_set), left=0,
+            height=0.5, color=bd_cmap[1])
+    ax.barh("Train-Test\nsplit", len(test_set), left=len(train_set),
+            height=0.5, color=bd_cmap[2])
 
     ax.invert_yaxis()
     ax.set(xlabel="Number of samples.", title="Train-Test split")
@@ -315,7 +328,8 @@ def plot_simple_train_test(ax, all_dataset, train_set, test_set):
 
 
 fig, ax = plt.subplots(figsize=(12, 8))
-plot_simple_train_test(ax=ax, all_dataset=windows_dataset, train_set=train_set, test_set=test_set)
+plot_simple_train_test(ax=ax, all_dataset=windows_dataset,
+                       train_set=train_set, test_set=test_set)
 
 ######################################################################
 # Option 2: Train-Val-Test Split
@@ -474,8 +488,6 @@ clf = EEGClassifier(
     max_epochs=n_epochs,
 )
 
-# ``Maybe it is better to use single thread (n_jobs=1), since the output is printed in order
-# and it is easier to understand it.``
 train_val_split = KFold(n_splits=5, shuffle=False)
 # By setting n_jobs=-1, cross-validation is performed
 # with all the processors, in this case the output of the training
@@ -584,8 +596,7 @@ search = GridSearchCV(
     error_score="raise",
     n_jobs=1,
 )
-# ``Maybe it is better to use single thread (n_jobs=1), since the output is printed in order
-# and it is easier to understand it.``
+
 search.fit(X_train, y_train)
 search_results = pd.DataFrame(search.cv_results_)
 
