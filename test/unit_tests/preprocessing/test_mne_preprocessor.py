@@ -1,7 +1,7 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Bruna Lopes <brunajaflopes@gmail.com>
-#
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 # Adapting some tests from test_preprocess file
 #
 # License: BSD-3
@@ -51,7 +51,7 @@ def windows_concat_ds():
     return copy.deepcopy(windows_ds)
 
 
-def test_preprocess_raw_str(base_concat_ds):
+def test_preprocess_raw_kwargs(base_concat_ds):
     preprocessors = [Crop(tmax=10, include_tmax=False)]
     preprocess(base_concat_ds, preprocessors)
     assert len(base_concat_ds.datasets[0].raw.times) == 2500
@@ -60,7 +60,7 @@ def test_preprocess_raw_str(base_concat_ds):
     ] for ds in base_concat_ds.datasets])
 
 
-def test_preprocess_windows_str(windows_concat_ds):
+def test_preprocess_windows_kwargs(windows_concat_ds):
     preprocessors = [
         Crop(tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
@@ -220,7 +220,7 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
         assert set(glob(save_dir + '/*')) == set(save_dirs)
 
 
-def test_new_basic(base_concat_ds):
+def test_mne_preprocessor(base_concat_ds):
     low_cut_hz = 4.0  # low cut frequency for filtering
     high_cut_hz = 38.0  # high cut frequency for filtering
 
