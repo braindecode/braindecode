@@ -90,7 +90,8 @@ class TCN(EEGModuleMixin, nn.Module):
         self.fc = nn.Linear(in_features=n_filters, out_features=self.n_outputs)
         if add_log_softmax:
             self.log_softmax = nn.LogSoftmax(dim=1)
-        self.squeeze = Expression(squeeze_final_output)
+        # Rename last layer: squeeze --> final_layer
+        self.final_layer = Expression(squeeze_final_output)
 
         self.min_len = 1
         for i in range(n_blocks):

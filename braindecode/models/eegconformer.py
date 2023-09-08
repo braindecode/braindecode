@@ -146,7 +146,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             att_heads=att_heads,
             att_drop=att_drop_prob)
 
-        self.classification_head = _ClassificationHead(
+        # Rename last layer: classification_head --> final_layer
+        self.final_layer = _ClassificationHead(
             final_fc_length=final_fc_length,
             n_classes=self.n_outputs, return_features=return_features)
 
