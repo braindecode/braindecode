@@ -150,4 +150,4 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         if self.return_feats:
             return feats
         else:
-            return self.fc(feats)
+            return self.final_layer(feats)

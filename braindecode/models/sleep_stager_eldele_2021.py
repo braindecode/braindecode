@@ -153,7 +153,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         if self.return_feats:
             return encoded_features
         else:
-            final_output = self.fc(encoded_features)
+            final_output = self.final_layer(encoded_features)
             return final_output
 
 

@@ -197,6 +197,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             nn.AvgPool2d((1, 4)),
             nn.Dropout(drop_prob)))
         # ============== Classifier ==================
+        # layer: classification --> final_layer
         self.add_module("final_layer", nn.Sequential(
             torch.nn.Flatten(),
             nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs),

@@ -82,6 +82,7 @@ class HybridNet(nn.Module):
         to_dense_prediction_model(reduced_shallow_model)
         self.reduced_deep_model = reduced_deep_model
         self.reduced_shallow_model = reduced_shallow_model
+        # Rename last layer: final_conv --> final_layer
         self.final_layer = nn.Conv2d(
             100, n_classes, kernel_size=(1, 1), stride=1
         )
@@ -109,7 +110,7 @@ class HybridNet(nn.Module):
             )
 
         merged_out = torch.cat((deep_out, shallow_out), dim=1)
-        linear_out = self.final_conv(merged_out)
+        linear_out = self.final_layer(merged_out)
         softmaxed = nn.LogSoftmax(dim=1)(linear_out)
         squeezed = softmaxed.squeeze(3)
         return squeezed

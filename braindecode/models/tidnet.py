@@ -247,7 +247,7 @@ class TIDNet(nn.Module):
         """
 
         x = self.dscnn(x)
-        return self.classify(x)
+        return self.final_layer(x)
 
     @property
     def num_features(self):

@@ -146,6 +146,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             att_heads=att_heads,
             att_drop=att_drop_prob)
 
+        # Rename last layer: classification_head --> final_layer
         self.final_layer = _ClassificationHead(
             final_fc_length=final_fc_length,
             n_classes=self.n_outputs, return_features=return_features)
@@ -154,7 +155,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
         x = self.transformer(x)
-        x = self.classification_head(x)
+        x = self.final_layer(x)
         return x
 
     def get_fc_size(self):

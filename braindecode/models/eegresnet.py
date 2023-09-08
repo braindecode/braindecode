@@ -192,7 +192,9 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
                         nn.Conv2d(n_cur_filters, self.n_outputs,
                                   (1, 1), bias=True))
         self.add_module('softmax', nn.LogSoftmax(dim=1))
-        self.add_module('squeeze', Expression(squeeze_final_output))
+
+        # Rename last layer: squeeze --> final_layer
+        self.add_module('final_layer', Expression(squeeze_final_output))
 
         # Initialize all weights
         self.apply(lambda module: _weights_init(module, self.conv_weight_init_fn))

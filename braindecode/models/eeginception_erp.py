@@ -240,6 +240,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                 self.n_times // prod(self.pooling_sizes))
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
+        # Rename last layer: classification --> final_layer
         self.add_module("final_layer", nn.Sequential(
             nn.Flatten(),
             nn.Linear(

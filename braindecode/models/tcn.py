@@ -90,6 +90,7 @@ class TCN(EEGModuleMixin, nn.Module):
         self.fc = nn.Linear(in_features=n_filters, out_features=self.n_outputs)
         if add_log_softmax:
             self.log_softmax = nn.LogSoftmax(dim=1)
+        # Rename last layer: squeeze --> final_layer
         self.final_layer = Expression(squeeze_final_output)
 
         self.min_len = 1
@@ -126,7 +127,7 @@ class TCN(EEGModuleMixin, nn.Module):
         out_size = 1 + max(0, time_size - self.min_len)
         out = fc_out[:, -out_size:, :].transpose(1, 2)
         # re-add 4th dimension for compatibility with braindecode
-        return self.squeeze(out[:, :, :, None])
+        return self.final_layer(out[:, :, :, None])
 
 
 class TemporalBlock(nn.Module):

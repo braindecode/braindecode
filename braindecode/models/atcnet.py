@@ -223,6 +223,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 ) for _ in range(self.n_windows)
             ])
 
+        # Rename last layer: sfmx --> final_layer
         self.final_layer = nn.LogSoftmax(dim=1)
 
     def forward(self, X):
@@ -271,7 +272,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             else:  # one window (# windows = 1)
                 sw_concat = sw_concat[0]
 
-        return self.sfmx(sw_concat)
+        return self.final_layer(sw_concat)
 
 
 class _ConvBlock(nn.Module):

@@ -257,6 +257,7 @@ class USleep(EEGModuleMixin, nn.Module):
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
 
+        # Rename last layer: clf --> final_layer
         self.final_layer = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],
@@ -310,7 +311,7 @@ class USleep(EEGModuleMixin, nn.Module):
             x = up(x, res)
 
         # classifier
-        y_pred = self.clf(x)  # (B, n_classes, seq_length)
+        y_pred = self.final_layer(x)  # (B, n_classes, seq_length)
 
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]

@@ -170,7 +170,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             out_features=self.n_outputs,
             bias=True,
         )
-
+        # Rename last layer: softmax --> final_layer
         self.final_layer = nn.LogSoftmax(dim=1)
 
     def forward(
@@ -198,7 +198,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         out = self.ave_pooling(out)
         out = self.flat(out)
         out = self.fc(out)
-        return self.softmax(out)
+        return self.final_layer(out)
 
 
 class _InceptionModuleMI(nn.Module):
