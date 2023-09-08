@@ -54,7 +54,7 @@ of the learning rate and dropout probability on the model's performance.
 ######################################################################
 # First, we load the data. In this tutorial, we use the functionality of
 # braindecode to load datasets via
-# `MOABB <https://github.com/NeuroTechX/moabb>`__ [2]_to load the BCI
+# `MOABB <https://github.com/NeuroTechX/moabb>`__ [2]_ to load the BCI
 # Competition IV 2a data [3]_.
 #
 # .. note::
