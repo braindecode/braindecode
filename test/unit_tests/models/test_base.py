@@ -27,6 +27,18 @@ class DummyModuleNTime(EEGModuleMixin, nn.Sequential):
         self.add_module('dummy', nn.Linear(self.n_times, 1))
 
 
+@pytest.fixture(scope="function")
+def dummy_module():
+    return DummyModule(
+        n_outputs=1,
+        n_chans=1,
+        chs_info=[{'ch_name': 'ch1'}],
+        n_times=200,
+        input_window_seconds=2.,
+        sfreq=100.,
+    )
+
+
 @pytest.mark.parametrize(
     'n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq',
     [
@@ -207,3 +219,55 @@ def test__str__():
     patch_method_stats.assert_called_once()
     patch_stats.__str__.assert_called_once()
     assert result == str(patch_stats)
+
+
+def test_get_output_shape():
+    n_outputs = 1
+    n_chans = 1
+    chs_info = [{'ch_name': 'ch1'}],
+    n_times = 200
+    input_window_seconds = 2.
+    sfreq = 100.
+
+    dummy_module = DummyModuleNTime(
+        n_outputs=n_outputs,
+        n_chans=n_chans,
+        chs_info=chs_info,
+        n_times=n_times,
+        input_window_seconds=input_window_seconds,
+        sfreq=sfreq,
+    )
+    assert dummy_module.get_output_shape() == (1, 1, 1)
+
+    dummy_module.add_module("linear2", nn.Linear(1, 2))
+    assert dummy_module.get_output_shape() == (1, 1, 2)
+
+
+def test_raised_runtimeerror_kernel_size_get_output_shape(dummy_module: DummyModule):
+
+    dummy_module.add_module("too_big_conv", nn.Conv2d(1, 1, kernel_size=(1, 201)))
+    err_msg = (
+        r"During model prediction RuntimeError was thrown showing that at some "
+        r"layer ` Kernel size can't be greater than actual input size` \(see above "
+        r"in the stacktrace\). This could be caused by providing too small "
+        r"`n_times`\/`input_window_seconds`. Model may require longer chunks of signal "
+        r"in the input than \(1, 1, 200\)."
+    )
+    with pytest.raises(ValueError, match=err_msg):
+        dummy_module.get_output_shape()
+
+
+def test_raised_runtimeerror_output_size_get_output_shape(dummy_module: DummyModule):
+
+    dummy_module.add_module("good_conv", nn.Conv2d(1, 1, kernel_size=(1, 100)))
+    dummy_module.add_module("too_big_pool", nn.AvgPool2d(kernel_size=(1, 200)))
+
+    err_msg = (
+        r"During model prediction RuntimeError was thrown showing that at some "
+        r"layer ` Output size is too small` \(see above "
+        r"in the stacktrace\). This could be caused by providing too small "
+        r"`n_times`\/`input_window_seconds`. Model may require longer chunks of signal "
+        r"in the input than \(1, 1, 200\)."
+    )
+    with pytest.raises(ValueError, match=err_msg):
+        dummy_module.get_output_shape()

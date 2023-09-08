@@ -63,9 +63,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
+
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -153,8 +155,9 @@ valid_set = splitted['session_E']
 #
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -216,6 +219,7 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
+
 # We found these values to be good for the shallow network:
 lr = 0.0625 * 0.01
 weight_decay = 0
@@ -258,8 +262,8 @@ _ = clf.fit(train_set, y=None, epochs=n_epochs)
 #
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
+from matplotlib.lines import Line2D
 
 # Extract loss and accuracy values for plotting from history object
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
@@ -307,6 +311,7 @@ plt.tight_layout()
 
 
 from sklearn.metrics import confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
 
 # generate confusion matrices

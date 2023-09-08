@@ -1,7 +1,7 @@
 .. _install_source:
 
 Installing from sources
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~
 
 If you want to test features under development or contribute to the library, or if you want to test the new tools that have been tested in braindecode and not released yet, this is the right tutorial for you!
 
@@ -12,7 +12,7 @@ If you want to test features under development or contribute to the library, or 
 .. _system-level:
 
 Clone the repository from GitHub
---------------------------------------------------
+--------------------------------
 
 The first thing you should do is clone the Braindecode repository to your computer and enter inside the repository.
 
@@ -23,7 +23,7 @@ The first thing you should do is clone the Braindecode repository to your comput
 You should now be in the root directory of the Braindecode repository.
 
 Installing Braindecode from the source
---------------------------------------------------------------------------------------------------------------------------------
+--------------------------------------
 
 If you want to only install Braindecode from source once and not do any development
 work, then the recommended way to build and install is to use ``pip``::
@@ -38,7 +38,7 @@ If you have a local clone of the Braindecode git repository:
 
 .. code-block:: bash
 
-   pip install .
+   pip install -e .
 
 This will install Braindecode in editable mode, i.e., changes to the source code could be used
 directly in python.
@@ -47,18 +47,18 @@ You could also install optional dependency, like to import datasets from MOABB.
 
 .. code-block:: bash
 
-   pip install .[moabb]
+   pip install -e .[moabb]
 
 There is also optional dependencies for unit testing and building documentation, you could install
 them if you want to contribute to Braindecode.
 
 .. code-block:: bash
 
-   pip install .[moabb,tests,docs]
+   pip install -e .[moabb,tests,docs]
 
 
 Testing if your installation is working
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To verify that Braindecode is installed and running correctly, run the following command:
 
@@ -66,4 +66,4 @@ To verify that Braindecode is installed and running correctly, run the following
 
    python -m "import braindecode; braindecode.__version__"
 
-For more information, please see the contributors' guidelines.
+For more information, please see the `contributors' guidelines <https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md>`__.

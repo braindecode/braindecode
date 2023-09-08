@@ -21,8 +21,9 @@ function from the classifier's output layer and how to train it on a fake regres
 
 import numpy as np
 import pandas as pd
+
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 from braindecode.util import create_mne_dummy_raw
-from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
 ###################################################################################################

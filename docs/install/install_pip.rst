@@ -14,13 +14,11 @@ Below are the installation commands for the most common use cases.
 
    pip install braindecode
 
-Braindecode can also be installed with sets of optional dependencies, for example to import datasets from MOABB:
+Braindecode can also be installed along MOABB to download open datasets:
 
 .. code-block:: bash
 
-   pip install braindecode[moabb]
-
-There is also optional dependencies for unit test and building the documentation.
+   pip install moabb
 
 To use the potential of the deep learning modules PyTorch with GPU, we recommend the following sequence before installing the braindecode:
 
