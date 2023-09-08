@@ -176,6 +176,7 @@ class WindowsDataset(BaseDataset):
         else:
             assert metadata is not None, (
                 "need to supply metadata if it is not given as part of mne epochs")
+            self.metadata = metadata
 
         self._description = _create_description(description)
 
@@ -392,7 +393,10 @@ class BaseConcatDataset(ConcatDataset):
 
         all_dfs = list()
         for ds in self.datasets:
-            df = ds.windows.metadata
+            if hasattr(ds.windows, 'metadata'):
+                df = ds.windows.metadata
+            else:
+                df = ds.metadata
             for k, v in ds.description.items():
                 df[k] = v
             all_dfs.append(df)
