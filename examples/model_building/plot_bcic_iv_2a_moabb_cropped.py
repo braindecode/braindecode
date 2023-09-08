@@ -36,17 +36,17 @@ Cropped Decoding on BCIC IV 2a Dataset
 #    called compute windows)
 # 3. Therefore, the network produces multiple predictions (one per crop in
 #    the window)
-# 4. The individual crop predictions are averaged before computing the
+# 4. The individual crop predictions are *AVERAGED* before computing the
 #    loss function
 #
-# ``Why not calling it WindowWise decoding, as predictions are produced per window?``
-# ``The fact that predictions per crop are averaged should be somehow indicated in
-# the name of the approach.``
-# ``It should be clear that hyperparameters of the network change between trial and
-# cropped examples.``
-# ``A bit confusing. A window is cropped into crops, these neighbouring crops are
-# called compute windows, so a window is cropped into compute windows?
-# Neighbouring crops constitute a compute window?``
+# This averaging of predictions of small sub-windows is the key difference
+# between trialwise and cropped decoding. It was introduced in [1]_ and it impact
+# on the parameters of the network.
+#
+# It is important to note that the averaging of predictions is only done
+# during training. During testing, the network is still applied to crops
+# and the predictions are averaged afterwards.
+#
 #
 # .. note::
 #
@@ -57,31 +57,26 @@ Cropped Decoding on BCIC IV 2a Dataset
 #        ``input_window_samples`` in Braindecode. It mostly affects runtime
 #        (larger window sizes should be faster). As a rule of thumb, you can
 #        set it to two times the crop size.
-#        ``How do you know crop size/receptive field size? It could be useful
-#        to have a function that returns the receptive field size, in addition
-#        to the function get_output_shape given the forumula below.``
 #     -  Crop size and window size together define how many predictions the
 #        network makes per window: ``#window − #crop + 1 = #predictions``
 #
 # .. note::
 #
 #     For cropped decoding, the above training setup is mathematically
-#     identical to sampling crops in your dataset, pushing them through the
-#     network and training directly on the individual crops. At the same time,
-#     the above training setup is much faster as it avoids redundant
-#     computations by using dilated convolutions, see [2]_.
-#     However, the two setups are only mathematically identical in case (1)
+#     similar to sampling crops in your dataset, pushing them through the
+#     network and training directly on the individual crops. However, the
+#     if their position would be randomly selected, the crops would be less
+#     correlated in contrast to the neighbourhood crops selected from a window.
+#     At the same time, the above training setup is much faster as it avoids
+#     redundant computations by using dilated convolutions, see [2]_.
+#     However, the two setups are only mathematically related in case (1)
 #     your network does not use any padding or only left padding and
 #     (2) your loss function leads
 #     to the same gradients when using the averaged output. The first is true
 #     for our shallow and deep ConvNet models and the second is true for the
 #     log-softmax outputs and negative log likelihood loss that is typically
 #     used for classification in PyTorch.
-# ``'...the above training setup is mathematically identical to sampling crops in your dataset...'``
-# ``I think that an important difference is that in the case of sampling crops from dataset, their
-# position would be randomly selected, therefore the crops would be less correlated in contrast
-# to the neighbourhood crops selected from a window.``
-#
+
 
 ######################################################################
 # Loading and preprocessing the dataset
@@ -124,12 +119,12 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # ---------------------------------------------
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
-# know the receptive field of the network to know how large the window
+# know the neural network parameters to know how large the sub-window
 # stride should be.
 #
 # We first choose the compute/input window size that will be fed to the
 # network during training. This has to be larger than the networks
-# receptive field size and can otherwise be chosen for computational
+# the number of timesteps size and can otherwise be chosen for computational
 # efficiency (see explanations in the beginning of this tutorial). Here we
 # choose 1000 samples, which are 4 seconds for the 250 Hz sampling rate.
 #
@@ -140,13 +135,11 @@ input_window_samples = 1000
 ######################################################################
 # Now we create the model. To enable it to be used in cropped decoding
 # efficiently, we manually set the length of the final convolution layer
-# to some length that makes the receptive field of the ConvNet smaller
+# to some length that makes the number of timesteps of the ConvNet smaller
 # than ``input_window_samples`` (see ``final_conv_length=30`` in the model
 # definition).
 #
-# ``This is confusing. At the beginning it is suggested to chose input_window_samples
-# in according to crop/receptive field size, but here receptive field size is reduced
-# to be smaller than input_window_samples.``
+
 import torch
 from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
@@ -182,7 +175,7 @@ print(model)
 
 # Send model to GPU
 if cuda:
-    model.cuda()
+    _ = model.cuda()
 
 
 ######################################################################
@@ -197,11 +190,9 @@ to_dense_prediction_model(model)
 
 
 ######################################################################
-# To know the models’ receptive field, we calculate the shape of model
-# output for a dummy input.
+# To know the models’ output shape without the last layer, we calculate the
+# shape of model output for a dummy input.
 #
-# ``This is confusing as the models's receptive field is never calculated
-# and the create_windows_from_events does not use it explicitely.``
 
 n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
@@ -300,14 +291,12 @@ clf = EEGClassifier(
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+_ = clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
 # Plot Results
 # ----------------
-# This is again the same code as in trialwise decoding.
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # .. note::
 #
 #     Note that we drop further in the classification error and
