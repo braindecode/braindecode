@@ -78,9 +78,13 @@ from braindecode.datasets import MOABBDataset
 subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
+
+from braindecode.preprocessing import (
+    Preprocessor,
+    exponential_moving_standardize,
+    preprocess,
+)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -129,9 +133,9 @@ input_window_samples = 1000
 #
 
 import torch
-from braindecode.util import set_random_seeds
-from braindecode.models import ShallowFBCSPNet
 
+from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -171,10 +175,7 @@ if cuda:
 # prediction, so we can use it to obtain predictions for all
 # crops.
 #
-
-from braindecode.models import to_dense_prediction_model, get_output_shape
-
-to_dense_prediction_model(model)
+model.to_dense_prediction_model()
 
 
 ######################################################################
@@ -182,7 +183,7 @@ to_dense_prediction_model(model)
 # output for a dummy input.
 #
 
-n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
+n_preds_per_input = model.get_output_shape()[2]
 
 
 ######################################################################
@@ -295,8 +296,8 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 #
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
+from matplotlib.lines import Line2D
 
 # Extract loss and accuracy values for plotting from history object
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
@@ -340,6 +341,7 @@ plt.tight_layout()
 #
 
 from sklearn.metrics import confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
 
 # generate confusion matrices
