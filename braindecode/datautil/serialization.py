@@ -100,16 +100,16 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None,
 def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
     all_signals = []
     file_name = "{}-raw.fif" if is_raw else "{}-epo.fif"
-    description_df = pd.read_json(os.path.join(path, "description.json"))
+    description_df = pd.read_json(path / "description.json")
     if ids_to_load is None:
-        file_names = glob(os.path.join(path, f"*{file_name.lstrip('{}')}"))
+        file_names = path.glob(f"*{file_name.lstrip('{}')}")
         # Extract ids, e.g.,
         # '/home/schirrmr/data/preproced-tuh/all-sensors/11-raw.fif' ->
         # '11-raw.fif' -> 11
         ids_to_load = sorted(
             [int(os.path.split(f)[-1].split('-')[0]) for f in file_names])
     for i in ids_to_load:
-        fif_file = os.path.join(path, file_name.format(i))
+        fif_file = path / file_name.format(i)
         all_signals.append(_load_signals(fif_file, preload, is_raw))
     description_df = description_df.iloc[ids_to_load]
     return all_signals, description_df
