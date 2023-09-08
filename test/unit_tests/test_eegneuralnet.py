@@ -2,10 +2,11 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
-
+import pandas as pd
 import pytest
 import numpy as np
 import torch
+import mne
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
 from skorch.utils import to_tensor
@@ -15,14 +16,15 @@ from torch.nn.functional import nll_loss
 from braindecode import EEGClassifier, EEGRegressor
 from braindecode.training import CroppedLoss
 from braindecode.models.base import EEGModuleMixin
+from braindecode.datasets import WindowsDataset, BaseConcatDataset
 
 
 class MockDataset(torch.utils.data.Dataset):
     def __len__(self):
-        return 4
+        return 5
 
     def __getitem__(self, item):
-        return torch.rand(4, 1), torch.ones(4)
+        return torch.rand(3, 10), item % 4
 
 
 class MockModule(EEGModuleMixin, torch.nn.Module):
@@ -44,12 +46,11 @@ class MockModule(EEGModuleMixin, torch.nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self.preds = to_tensor(preds, device='cpu')
-        self.linear = torch.nn.Linear(self.n_times, self.n_chans)
-        self.final_layer = torch.nn.Linear(self.n_chans, self.n_outputs)
+        # self.preds = to_tensor(preds, device='cpu')
+        self.final_layer = torch.nn.Conv1d(self.n_chans, self.n_outputs, self.n_times)
 
     def forward(self, x):
-        return self.preds
+        return self.final_layer(x).reshape(x.shape[0], self.n_outputs)
 
 
 @pytest.fixture(params=[EEGClassifier, EEGRegressor])
@@ -62,10 +63,72 @@ def preds():
     return np.array(
         [
             [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
+            [[0.2, 0.1, 0.1, 0.1], [0.8, 0.9, 0.9, 0.9]],
             [[1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 0.0, 0.0]],
             [[1.0, 1.0, 1.0, 0.2], [0.0, 0.0, 0.0, 0.8]],
             [[0.9, 0.8, 0.9, 1.0], [0.1, 0.2, 0.1, 0.0]],
         ]
+    )
+
+
+@pytest.fixture
+def Xy():
+    dataset = MockDataset()
+    X, y = zip(*[dataset[i] for i in range(len(dataset))])
+    return np.array(X), np.array(y)
+
+
+@pytest.fixture
+def epochs(Xy):
+    X, y = Xy
+    metadata = [(yi, 0, 0, 9) for yi in y]
+    metadata = pd.DataFrame(
+        metadata,
+        columns=['target', 'i_window_in_trial', 'i_start_in_trial', 'i_stop_in_trial']
+    )
+    return mne.EpochsArray(
+        X,
+        info=mne.create_info(
+            ch_names=['ch1', 'ch2', 'ch3', ],
+            sfreq=10,
+            ch_types='eeg',
+        ),
+        metadata=metadata,
+    )
+
+
+@pytest.fixture
+def windows_dataset_metadata(epochs):
+    return WindowsDataset(
+        windows=epochs,
+        targets_from='metadata',
+        description={},
+    )
+
+
+@pytest.fixture
+def windows_dataset_channels(epochs):
+    return WindowsDataset(
+        windows=epochs,
+        targets_from='channels',
+        description={},
+    )
+
+
+@pytest.fixture
+def concat_dataset_metadata(windows_dataset_metadata):
+    return BaseConcatDataset(
+        [windows_dataset_metadata, windows_dataset_metadata]
+    )
+
+
+@pytest.fixture
+def concat_dataset_channels(
+        windows_dataset_metadata,
+        windows_dataset_channels,
+):
+    return BaseConcatDataset(
+        [windows_dataset_metadata, windows_dataset_channels]
     )
 
 
@@ -173,3 +236,112 @@ def test_clonable(eegneuralnet_cls, preds):
     clone(eegneuralnet)
     eegneuralnet.initialize()
     clone(eegneuralnet)
+
+
+def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
+    X, y = Xy
+    net = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(X, y=y)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == (1 if isinstance(net, EEGRegressor) else 4)
+
+
+def test_set_signal_params_epochs(eegneuralnet_cls, preds):
+    pass
+
+
+def test_set_signal_params_torch_ds(eegneuralnet_cls, preds):
+    n_outputs = (1 if eegneuralnet_cls == EEGRegressor else 4)
+    net = eegneuralnet_cls(
+        MockModule,
+        module__n_outputs=n_outputs,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(MockDataset(), y=None)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == n_outputs
+
+
+def test_set_signal_params_windows_ds_metadata(eegneuralnet_cls, preds, windows_dataset_metadata):
+    n_outputs = (1 if eegneuralnet_cls == EEGRegressor else 4)
+    net = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(windows_dataset_metadata, y=None)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == n_outputs
+
+
+def test_set_signal_params_windows_ds_channels(eegneuralnet_cls, preds, windows_dataset_channels):
+    n_outputs = (1 if eegneuralnet_cls == EEGRegressor else 4)
+    net = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        module__n_outputs=n_outputs,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(windows_dataset_channels, y=None)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == n_outputs
+
+
+def test_set_signal_params_concat_ds_metadata(eegneuralnet_cls, preds, concat_dataset_metadata):
+    n_outputs = (1 if eegneuralnet_cls == EEGRegressor else 4)
+    net = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(concat_dataset_metadata, y=None)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == n_outputs
+
+
+def test_set_signal_params_concat_ds_channels(eegneuralnet_cls, preds, concat_dataset_channels):
+    n_outputs = (1 if eegneuralnet_cls == EEGRegressor else 4)
+    net = eegneuralnet_cls(
+        MockModule,
+        module__preds=preds,
+        module__n_outputs=n_outputs,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(concat_dataset_channels, y=None)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == n_outputs
