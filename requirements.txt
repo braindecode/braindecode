@@ -9,3 +9,4 @@ mne
 einops
 docstring_inheritance
 torchinfo
+pytest_cases

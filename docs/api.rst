@@ -148,6 +148,12 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
+    Resample
+    DropChannels
+    SetEEGReference
+    Filter
+    Pick
+    Crop
 
 Data Utils
 ==========
