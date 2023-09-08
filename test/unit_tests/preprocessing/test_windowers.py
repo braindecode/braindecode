@@ -626,7 +626,11 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         np.testing.assert_array_almost_equal(targets[:, target_idx - 99: target_idx + 1], y)
         np.testing.assert_array_almost_equal(signal[:, target_idx - 99: target_idx + 1], epoch)
 <<<<<<< HEAD
+<<<<<<< HEAD
         np.testing.assert_array_almost_equal(np.array([i, i * 5 + 1, target_idx + 1]), window_inds)
 =======
         np.testing.assert_array_almost_equal(np.array([i, i * 5 + 1, target_idx + 1]), window_inds)
 >>>>>>> 2a478b5 (Not using mne epochs for windowing)
+=======
+        np.testing.assert_array_almost_equal(np.array([i, i * 5 + 1, target_idx + 1]), window_inds)
+>>>>>>> 1bc3904 (fix flake8 in test windowers)
