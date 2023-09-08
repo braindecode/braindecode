@@ -20,10 +20,6 @@ and one for the two different hyperparameter tuning methods.
    :depth: 2
 
 """
-##########################################################################################
-# ``I think it is better to divide the tutorial into data loading, preprocessing, windowing on
-# one side and model creation, training and evaluation on the other side.``
-
 ######################################################################
 # Why should I care about model evaluation?
 # -----------------------------------------
@@ -33,20 +29,22 @@ and one for the two different hyperparameter tuning methods.
 # data into two parts, training and testing sets. It sounds like a
 # simple division, right? But the story does not end here.
 #
-# ``What are model's parameters?``
-# ``Model's parameters are learnable weights which are used in the
+# - What are model's parameters?
+#
+# Model's parameters are learnable weights which are used in the
 # extraction of the relevant features and in performing the final inference.
 # In the context of deep learning, these are usually fully connected weights,
-# convolutional kernels, biases, etc.``
+# convolutional kernels, biases, etc.
 #
-# ``What are model's hyperparameters?``
-# ``Model's hyperparameters are used to set the capacity (size) of the model
+# - What are model's hyperparameters?
+#
+# Model's hyperparameters are used to set the capacity (size) of the model
 # and to guide the parameter learning process.
 # In the context of deep learning, examples of the hyperparameters are the
 # number of convolutional layers and the number of convolutional kernels in
 # each of them, the number and size of the fully connected weights,
 # choice of the optimizer and its learning rate, the number of training epochs,
-# choice of the nonlinearities, etc.``
+# choice of the nonlinearities, etc.
 #
 #
 # While developing a ML model you usually have to adjust and tune
@@ -291,10 +289,13 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # The following figure illustrates split of entire dataset into the
 # training and testing subsets.
-# ``Making more compact plot_simple_train_test function.``
 #
+#
+import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+
+sns.set(font_scale=1.5)
 
 
 def plot_simple_train_test(ax, all_dataset, train_set, test_set):
@@ -307,14 +308,14 @@ def plot_simple_train_test(ax, all_dataset, train_set, test_set):
 
     ax.invert_yaxis()
     ax.set(xlabel="Number of samples.", title="Train-Test split")
-    ax.legend(["Original set", "Training set", "Testing set"], loc=(1.02, 0.8))
+    ax.legend(["Original set", "Training set", "Testing set"], loc='lower center',
+              ncols=4, bbox_to_anchor=(0.5, 0.5))
     ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
     return ax
 
 
-fig, ax = plt.subplots(figsize=(12, 5))
+fig, ax = plt.subplots(figsize=(12, 8))
 plot_simple_train_test(ax=ax, all_dataset=windows_dataset, train_set=train_set, test_set=test_set)
-fig.tight_layout()
 
 ######################################################################
 # Option 2: Train-Val-Test Split
@@ -407,7 +408,8 @@ def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
 
     ax.invert_yaxis()
     ax.set(xlabel="Number of samples.", title="Train-Test-Valid split")
-    ax.legend(["Original set", "Training set", "Validation set", "Testing set"], loc=(1.02, 0.8))
+    ax.legend(["Original set", "Training set", "Validation set", "Testing set"],
+              loc="lower center", ncols=2, bbox_to_anchor=(0.5, 0.4))
     ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
     return ax
 
@@ -415,7 +417,6 @@ def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
 fig, ax = plt.subplots(figsize=(12, 5))
 plot_train_valid_test(ax=ax, all_dataset=windows_dataset,
                       train_subset=train_subset, val_subset=val_subset, test_set=test_set,)
-fig.tight_layout()
 
 ######################################################################
 # Option 3: k-Fold Cross Validation
@@ -512,7 +513,8 @@ def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
     ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
     ax.set(xlabel="Number of samples.", title="KFold Train-Test-Valid split")
     ax.legend([Patch(color=bd_cmap[i]) for i in range(4)],
-              ["Original set", "Training set", "Validation set", "Testing set"], loc=(1.02, 0.8))
+              ["Original set", "Training set", "Validation set", "Testing set"],
+              loc="lower center", ncols=2)
     ax.text(-0.07, 0.45, 'Train-Valid-Test split', rotation=90,
             verticalalignment='center', horizontalalignment='left', transform=ax.transAxes)
     return ax
@@ -521,7 +523,8 @@ def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
 fig, ax = plt.subplots(figsize=(15, 7))
 plot_k_fold(ax, cv=train_val_split, all_dataset=windows_dataset,
             X_train=X_train, y_train=y_train, test_set=test_set,)
-fig.tight_layout()
+#fig.tight_layout()
+plt.show()
 
 ######################################################################
 # How to tune your hyperparameters
