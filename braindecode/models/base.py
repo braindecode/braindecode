@@ -180,7 +180,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                           "Check the documentation of the torch.nn loss functions: " +
                           "https://pytorch.org/docs/stable/nn.html#loss-functions .")
         return self._add_log_softmax
-      
+
     @property
     def input_shape(self) -> Tuple[int]:
         """Input data shape."""
