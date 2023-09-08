@@ -66,4 +66,4 @@ To verify that Braindecode is installed and running correctly, run the following
 
    python -m "import braindecode; braindecode.__version__"
 
-For more information, please see the contributors' guidelines.
+For more information, please see the `contributors' guidelines <https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md>`__.
