@@ -10,8 +10,8 @@ Cropped Decoding on BCIC IV 2a Dataset
 """
 
 ######################################################################
-# Building on the `Trialwise decoding, we now do more data-efficient
-# cropped decoding!
+# Building on the `Trialwise decoding <./plot_bcic_iv_2a_moabb_trial.html>`__,
+# we now do more data-efficient cropped decoding!
 #
 # In Braindecode, there are two supported configurations created for
 # training models: trialwise decoding and cropped decoding. We will
@@ -36,8 +36,17 @@ Cropped Decoding on BCIC IV 2a Dataset
 #    called compute windows)
 # 3. Therefore, the network produces multiple predictions (one per crop in
 #    the window)
-# 4. The individual crop predictions are averaged before computing the
+# 4. The individual crop predictions are *AVERAGED* before computing the
 #    loss function
+#
+# This averaging of predictions of small sub-windows is the key difference
+# between trialwise and cropped decoding. It was introduced in [1]_ and it impact
+# on the parameters of the network.
+#
+# It is important to note that the averaging of predictions is only done
+# during training. During testing, the network is still applied to crops
+# and the predictions are averaged afterwards.
+#
 #
 # .. note::
 #
@@ -54,19 +63,22 @@ Cropped Decoding on BCIC IV 2a Dataset
 # .. note::
 #
 #     For cropped decoding, the above training setup is mathematically
-#     identical to sampling crops in your dataset, pushing them through the
-#     network and training directly on the individual crops. At the same time,
-#     the above training setup is much faster as it avoids redundant
-#     computations by using dilated convolutions, see [1]_
-#     However, the two setups are only mathematically identical in case (1)
+#     similar to sampling crops in your dataset, pushing them through the
+#     network and training directly on the individual crops. However, the
+#     if their position would be randomly selected, the crops would be less
+#     correlated in contrast to the neighbourhood crops selected from a window.
+#     At the same time, the above training setup is much faster as it avoids
+#     redundant computations by using dilated convolutions, see [2]_.
+#     However, the two setups are only mathematically related in case (1)
 #     your network does not use any padding or only left padding and
 #     (2) your loss function leads
 #     to the same gradients when using the averaged output. The first is true
 #     for our shallow and deep ConvNet models and the second is true for the
 #     log-softmax outputs and negative log likelihood loss that is typically
 #     used for classification in PyTorch.
-#
 
+
+######################################################################
 # Loading and preprocessing the dataset
 # -------------------------------------
 #
@@ -111,12 +123,12 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # ---------------------------------------------
 # In contrast to trialwise decoding, we first have to create the model
 # before we can cut the dataset into windows. This is because we need to
-# know the receptive field of the network to know how large the window
+# know the neural network parameters to know how large the sub-window
 # stride should be.
 #
 # We first choose the compute/input window size that will be fed to the
-# network during training This has to be larger than the networks
-# receptive field size and can otherwise be chosen for computational
+# network during training. This has to be larger than the networks
+# the number of timesteps size and can otherwise be chosen for computational
 # efficiency (see explanations in the beginning of this tutorial). Here we
 # choose 1000 samples, which are 4 seconds for the 250 Hz sampling rate.
 #
@@ -127,7 +139,7 @@ input_window_samples = 1000
 ######################################################################
 # Now we create the model. To enable it to be used in cropped decoding
 # efficiently, we manually set the length of the final convolution layer
-# to some length that makes the receptive field of the ConvNet smaller
+# to some length that makes the number of timesteps of the ConvNet smaller
 # than ``input_window_samples`` (see ``final_conv_length=30`` in the model
 # definition).
 #
@@ -167,7 +179,7 @@ print(model)
 
 # Send model to GPU
 if cuda:
-    model.cuda()
+    _ = model.cuda()
 
 
 ######################################################################
@@ -179,12 +191,11 @@ model.to_dense_prediction_model()
 
 
 ######################################################################
-# To know the models’ receptive field, we calculate the shape of model
-# output for a dummy input.
+# To know the models’ output shape without the last layer, we calculate the
+# shape of model output for a dummy input.
 #
 
 n_preds_per_input = model.get_output_shape()[2]
-
 
 ######################################################################
 # Cut the data into windows
@@ -281,14 +292,12 @@ clf = EEGClassifier(
 )
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+_ = clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
 # Plot Results
 # ----------------
-# This is again the same code as in trialwise decoding.
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # .. note::
 #
 #     Note that we drop further in the classification error and
@@ -337,7 +346,7 @@ plt.tight_layout()
 # Plot Confusion Matrix
 # ---------------------
 #
-# Generate a confusion matrix as in [1]_
+# Generate a confusion matrix as in [2]_
 #
 
 from sklearn.metrics import confusion_matrix
@@ -366,7 +375,13 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #
 # References
 # ----------
-# .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#
+# .. [1] Tangermann, M., Müller, K.R., Aertsen, A., Birbaumer, N., Braun, C.,
+#        Brunner, C., Leeb, R., Mehring, C., Miller, K.J., Mueller-Putz, G.
+#        and Nolte, G., 2012. Review of the BCI competition IV.
+#        Frontiers in neuroscience, 6, p.55.
+#
+# .. [2] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.

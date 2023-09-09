@@ -1,6 +1,7 @@
 """
 Some predefined network architectures for EEG decoding.
 """
+from .base import EEGModuleMixin
 from .eegconformer import EEGConformer
 from .eegitnet import EEGITNet
 from .deep4 import Deep4Net
