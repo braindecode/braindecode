@@ -21,8 +21,9 @@ function from the classifier's output layer and how to train it on a fake regres
 
 import numpy as np
 import pandas as pd
+
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 from braindecode.util import create_mne_dummy_raw
-from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
 ###################################################################################################
@@ -246,8 +247,8 @@ y_estim = np.ravel(regressor.predict(test_set))
 y_gt = test_set.get_metadata()["target"].to_numpy()
 
 _ = axes.scatter(y_gt, y_estim)
-_ = axes.set_xlabel("Estimated targets.")
-_ = axes.set_ylabel("Ground truth targets.")
+_ = axes.set_ylabel("Estimated targets.")
+_ = axes.set_xlabel("Ground truth targets.")
 
 z = np.polyfit(y_gt, y_estim, 1)
 p = np.poly1d(z)

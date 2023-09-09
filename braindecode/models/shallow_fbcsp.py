@@ -3,15 +3,13 @@
 # License: BSD (3-clause)
 from collections import OrderedDict
 
-import numpy as np
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
-from einops.layers.torch import Rearrange
 
-from ..util import np_to_th
-from .modules import Expression, Ensure4d, CombinedConv
-from .functions import safe_log, square, squeeze_final_output
 from .base import EEGModuleMixin, deprecated_args
+from .functions import safe_log, square, squeeze_final_output
+from .modules import CombinedConv, Ensure4d, Expression
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -171,16 +169,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":
-            out = self(
-                np_to_th(
-                    np.ones(
-                        (1, self.n_chans, self.n_times, 1),
-                        dtype=np.float32,
-                    )
-                )
-            )
-            n_out_time = out.cpu().data.numpy().shape[2]
-            self.final_conv_length = n_out_time
+            self.final_conv_length = self.get_output_shape()[2]
         self.add_module(
             "conv_classifier",
             nn.Conv2d(

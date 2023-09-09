@@ -117,6 +117,9 @@ class SequenceSampler(RecordingSampler):
         Number of consecutive windows in a sequence.
     n_windows_stride : int
         Number of windows between two consecutive sequences.
+    random : bool
+        If True, sample sequences randomly. If False, sample sequences in
+        order.
     random_state : np.random.RandomState | int | None
         Random state.
 
@@ -128,10 +131,10 @@ class SequenceSampler(RecordingSampler):
         Array of shape (n_sequences,) that indicates from which file each
         sequence comes from. Useful e.g. to do self-ensembling.
     """
-    def __init__(self, metadata, n_windows, n_windows_stride,
+    def __init__(self, metadata, n_windows, n_windows_stride, randomize=False,
                  random_state=None):
         super().__init__(metadata, random_state=random_state)
-
+        self.randomize = randomize
         self.n_windows = n_windows
         self.n_windows_stride = n_windows_stride
         self.start_inds, self.file_ids = self._compute_seq_start_inds()
@@ -158,8 +161,14 @@ class SequenceSampler(RecordingSampler):
         return len(self.start_inds)
 
     def __iter__(self):
-        for start_ind in self.start_inds:
-            yield tuple(range(start_ind, start_ind + self.n_windows))
+        if self.randomize:
+            start_inds = self.start_inds.copy()
+            self.rng.shuffle(start_inds)
+            for start_ind in start_inds:
+                yield tuple(range(start_ind, start_ind + self.n_windows))
+        else:
+            for start_ind in self.start_inds:
+                yield tuple(range(start_ind, start_ind + self.n_windows))
 
 
 class BalancedSequenceSampler(RecordingSampler):

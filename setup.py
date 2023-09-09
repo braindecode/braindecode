@@ -33,9 +33,12 @@ setup(
     license='BSD 3-Clause',
 
     install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch',
-                      'einops', 'docstring_inheritance', 'torchinfo'],
+                      'torch', 'einops', 'joblib', 'docstring_inheritance', 'torchinfo'],
     extras_require={
-        'moabb': ["moabb"]
+        'moabb': ['moabb'],
+        'tests': ['pytest', 'pytest-cov', 'codecov', 'pytest_cases'],
+        'docs': ['sphinx_gallery', 'sphinx_rtd_theme', 'pydata_sphinx_theme', 'numpydoc',
+                 'memory_profiler', 'pillow', 'ipython', 'sphinx_design', 'docstring_inheritance'],
     },
     # tests_require = [...]
 

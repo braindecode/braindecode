@@ -3,13 +3,13 @@
 # License: BSD (3-clause)
 
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn.functional import elu
-from einops.layers.torch import Rearrange
 
 from .base import EEGModuleMixin, deprecated_args
-from .modules import Expression, Ensure4d
 from .functions import squeeze_final_output
+from .modules import Ensure4d, Expression
 
 
 class Conv2dWithConstraint(nn.Conv2d):
@@ -179,16 +179,11 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
-        out = self(
-            torch.ones(
-                (1, self.n_chans, self.n_times, 1),
-                dtype=torch.float32
-            )
-        )
-        n_out_virtual_chans = out.cpu().data.numpy().shape[2]
+        output_shape = self.get_output_shape()
+        n_out_virtual_chans = output_shape[2]
 
         if self.final_conv_length == "auto":
-            n_out_time = out.cpu().data.numpy().shape[3]
+            n_out_time = output_shape[3]
             self.final_conv_length = n_out_time
 
         self.add_module(
@@ -343,16 +338,11 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         self.add_module("pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
-        out = self(
-            torch.ones(
-                (1, self.n_chans, self.n_times, 1),
-                dtype=torch.float32,
-            )
-        )
-        n_out_virtual_chans = out.cpu().data.numpy().shape[2]
+        output_shape = self.get_output_shape()
+        n_out_virtual_chans = output_shape[2]
 
         if self.final_conv_length == "auto":
-            n_out_time = out.cpu().data.numpy().shape[3]
+            n_out_time = output_shape[3]
             self.final_conv_length = n_out_time
 
         self.add_module(
@@ -387,7 +377,7 @@ def _glorot_weight_zero_bias(model):
     """
     for module in model.modules():
         if hasattr(module, "weight"):
-            if not ("BatchNorm" in module.__class__.__name__):
+            if "BatchNorm" not in module.__class__.__name__:
                 nn.init.xavier_uniform_(module.weight, gain=1)
             else:
                 nn.init.constant_(module.weight, 1)

@@ -1,4 +1,4 @@
-:orphan:
+:Orphan:
 
 .. _whats_new:
 
@@ -39,9 +39,13 @@ Enhancements
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 - Improving documentation for the Convolutional neural network regression model on fake data (:gh:`491` by `Sara Sedlar`_)
 - Enforcing the eval mode in the fuction predict trial. (:gh:`497` by `Bruno Aristimunha`_)
+- Adding extra requirements for pip install, update doc, removing conda env file (:gh:`505` by `Sylvain Chevallier`_)
 - Add models user-friendly representation with torchinfo tables to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`488` by `Maciej Śliwowski`_)
 - Merged temporal and spatial convolutions for Deep4 and ShallowFBCSP (by `Daniel Wilson`_ and `Sara Sedlar`_)
 - Enabling data augmentation of single inputs (with no batch dimension). (:gh:`503` by `Cedric Rommel`_)
+- Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
+- Creating new preprocessor objects based on mne's raw/Epochs methods :class:`braindecode.preprocessing.Resample`, :class:`braindecode.preprocessing.DropChannels`, :class:`braindecode.preprocessing.SetEEGReference`, :class:`braindecode.preprocessing.Filter`, :class:`braindecode.preprocessing.Pick`, :class:`braindecode.preprocessing.Crop` (:gh:`500` by `Bruna Lopes`_ and `Bruno Aristimunha`_)
+- Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
 
 Bugs
 ~~~~
@@ -90,6 +94,7 @@ Enhancements
 - Adding tutorial with a Unified Validation sheme (:gh:`378` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding `verbose` parameter to :func:`braindecode.preprocessing.create_windows_from_events`, :func:`braindecode.preprocessing.create_windows_from_target_channels`, and :func:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`391` by `Lukas Gemein`_)
 - Enable augmentation on GPU within :class:`AugmentedDataloader` via a new `device` parameter (:gh:`406` by `Martin Wimpff`_, `Bruno Aristimunha`_ and `Cedric Rommel`_)
+- Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
 
 Bugs
 ~~~~

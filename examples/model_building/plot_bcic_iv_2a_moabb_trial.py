@@ -19,15 +19,15 @@ labels (e.g., Right Hand, Left Hand, etc.).
 
 
 ######################################################################
-# Loading a MOABB dataset
+# Loading the dataset
 # ~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
 ######################################################################
 # First, we load the data. In this tutorial, we load the BCI Competition
-# IV 2a data by using braindecode to load through
-# `MOABB <https://github.com/NeuroTechX/moabb>`__.
+# IV 2a data [1]_ using braindecode's wrapper to load via
+# `MOABB library <https://github.com/NeuroTechX/moabb>`__ [2]_.
 #
 # .. note::
 #    To load your own datasets either via mne or from
@@ -63,9 +63,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
 #
 
-from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
+
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
 low_cut_hz = 4.  # low cut frequency for filtering
 high_cut_hz = 38.  # high cut frequency for filtering
@@ -88,14 +90,14 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 
 
 ######################################################################
-# Cutting Compute Windows
-# ~~~~~~~~~~~~~~~~~~~~~~~
+# Extracting Compute Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
 ######################################################################
-# Now we cut compute windows from the signals, these will be the inputs
-# for the deep networks during training. In the case of trialwise
+# Now we extract compute windows from the signals, these will be the inputs
+# to the deep networks during training. In the case of trialwise
 # decoding, we just have to decide if we want to include some part
 # before and/or after the trial. For our work with this dataset,
 # it was often beneficial to also include the 500 ms before the trial.
@@ -146,15 +148,16 @@ valid_set = splitted['session_E']
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
-# time-domain EEG. Here, we use the shallow ConvNet model from [1]_. These models are
+# time-domain EEG. Here, we use the shallow ConvNet model from [3]_. These models are
 # pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
 # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
 #
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = 'cuda' if cuda else 'cpu'
@@ -187,7 +190,7 @@ print(model)
 
 # Send model to GPU
 if cuda:
-    model.cuda()
+    model = model.cuda()
 
 
 ######################################################################
@@ -199,13 +202,14 @@ if cuda:
 ######################################################################
 # Now we will train the network! ``EEGClassifier`` is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
-# from skorch.NeuralNetClassifier, so the training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# from skorch `NeuralNetClassifier <https://skorch.readthedocs.io/en/stable/classifier.html#>`__,
+# so the training logic is the same as in `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
 
 ######################################################################
-#    **Note**: In this tutorial, we use some default parameters that we
+# .. note::
+#    In this tutorial, we use some default parameters that we
 #    have found to work well for motor decoding, however we strongly
 #    encourage you to perform your own hyperparameter optimization using
 #    cross validation on your training data.
@@ -215,6 +219,7 @@ from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
 
 from braindecode import EEGClassifier
+
 # We found these values to be good for the shallow network:
 lr = 0.0625 * 0.01
 weight_decay = 0
@@ -240,9 +245,9 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
-# Model training for the specified number of epochs. `y` is None as it is already supplied
-# in the dataset.
-clf.fit(train_set, y=None, epochs=n_epochs)
+# Model training for the specified number of epochs. `y` is None as it is
+# already supplied in the dataset.
+_ = clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
@@ -257,8 +262,8 @@ clf.fit(train_set, y=None, epochs=n_epochs)
 #
 
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 import pandas as pd
+from matplotlib.lines import Line2D
 
 # Extract loss and accuracy values for plotting from history object
 results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
@@ -301,11 +306,12 @@ plt.tight_layout()
 
 
 #######################################################################
-# Here we generate a confusion matrix as in [1]_.
+# Here we generate a confusion matrix as in [3]_.
 #
 
 
 from sklearn.metrics import confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
 
 # generate confusion matrices
@@ -330,7 +336,17 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #
 # References
 # ----------
-# .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#
+# .. [1] Tangermann, M., Müller, K.R., Aertsen, A., Birbaumer, N., Braun, C.,
+#        Brunner, C., Leeb, R., Mehring, C., Miller, K.J., Mueller-Putz, G.
+#        and Nolte, G., 2012. Review of the BCI competition IV.
+#        Frontiers in neuroscience, 6, p.55.
+#
+# .. [2] Jayaram, Vinay, and Alexandre Barachant.
+#        "MOABB: trustworthy algorithm benchmarking for BCIs."
+#        Journal of neural engineering 15.6 (2018): 066011.
+#
+# .. [3] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.

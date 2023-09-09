@@ -2,19 +2,25 @@
 Hyperparameter tuning with scikit-learn
 =======================================
 
-The braindecode provides some compatibility with scikit-learn. This allows us
+The braindecode provides some compatibility with
+`scikit-learn <https://scikit-learn.org/stable/>`__. This allows us
 to use scikit-learn functionality to find the best hyperparameters for our
 model. This is especially useful to tune hyperparameters or
-parameters for one decoding task or specific dataset.
+parameters for one decoding task or a specific dataset.
 
 .. topic:: Why do you need to tune the neural networks model?
 
     Deep learning models are often sensitive to the choice of hyperparameters
     and parameters. Hyperparameters are the parameters set before
-    training the model, such as the learning rate, the number of epochs, the
-    batch size, etc. On the other hand, parameters are learned during
-    training, such as the neural network weights. The choice of these
-    can have a significant impact on the performance of the model.
+    training the model. The hyeperparameters determine (1) the capacity of the model,
+    e.g. its depth (the number of layers) and its width (the number of
+    convolutional kernels, sizes of fully connected layers) and (2) the
+    learning process via the choice of optimizer and its learning rate,
+    the number of epochs, the batch size, the choice of non-linearities,
+    the strategies to initialize the learning weights, etc.
+    On the other hand, parameters are learned during training,
+    such as the neural network weights. The choice of these can have a
+    significant impact on the performance of the model.
     Therefore, it is important to tune these to maximize the discriminative
     power of the model, in the case of decoding tasks (classification,
     regression, etc.), such as sleep staging, BCI, pathology detection, etc.
@@ -47,9 +53,9 @@ of the learning rate and dropout probability on the model's performance.
 
 ######################################################################
 # First, we load the data. In this tutorial, we use the functionality of
-# braindecode to load datasets through
-# `MOABB <https://github.com/NeuroTechX/moabb>`__ to load the BCI
-# Competition IV 2a data.
+# braindecode to load datasets via
+# `MOABB <https://github.com/NeuroTechX/moabb>`__ [2]_ to load the BCI
+# Competition IV 2a data [3]_.
 #
 # .. note::
 #    To load your own datasets either via mne or from
@@ -70,10 +76,12 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 
 ######################################################################
-# Now we apply preprocessing like bandpass filtering to our dataset. You
-# can either apply functions provided by
+# In this example, preprocessing includes signal rescaling, the bandpass filtering
+# (low and high cut-off frequencies are 4 and 38 Hz) and the standardization using
+# the exponential moving mean and variance.
+# You can either apply functions provided by
 # `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
-# `mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`__
+# `mne.Epochs <https://mne.tools/stable/generated/mne.Epochs.html>`__
 # or apply your own functions, either to the MNE object or the underlying
 # numpy array.
 #
@@ -107,21 +115,34 @@ preprocessors = [
                  factor_new=factor_new, init_block_size=init_block_size)
 ]
 
-# Transform the data
+# Preprocess the data
 preprocess(dataset, preprocessors, n_jobs=-1)
 
 ######################################################################
-# Cut Compute Windows
-# ~~~~~~~~~~~~~~~~~~~
+# Extraction of the Compute Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 
 ######################################################################
-# Now we cut out compute windows, the inputs for the deep networks during
-# training. In the case of trialwise decoding, we just have to decide if
-# we want to cut out some part before and/or after the trial. For this
-# dataset, in our work, it often was beneficial to also cut out 500 ms
-# before the trial.
+# Extraction of the Windows
+# ~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+# Extraction of the trials (windows) from the time series is based on the
+# events inside the dataset. One event is the demarcation of the stimulus or
+# the beginning of the trial. In this example, we want to analyse 0.5 [s] long
+# before the corresponding event and the duration of the event itself.
+# #Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
+# ``trial_stop_offset_seconds`` to 0 [s].
+#
+# We extract from the dataset the sampling frequency, which is the same for
+# all datasets in this case, and we tested it.
+#
+# .. note::
+#    The ``trial_start_offset_seconds`` and ``trial_stop_offset_seconds`` are
+#    defined in seconds and need to be converted into samples (multiplication
+#    with the sampling frequency), relative to the event.
+#    This variable is dataset dependent.
 #
 
 from braindecode.preprocessing.windowers import create_windows_from_events
@@ -167,9 +188,9 @@ eval_set = splitted['session_E']
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
-# time-domain EEG. Here, we use the shallow ConvNet model from `Deep
+# time-domain EEG. Here, we use the ShallowFBCSPNet model from `Deep
 # learning with convolutional neural networks for EEG decoding and
-# visualization <https://arxiv.org/abs/1703.05051>`__. These models are
+# visualization <https://arxiv.org/abs/1703.05051>`__ [4]_. These models are
 # pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
 # `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
@@ -217,7 +238,9 @@ if cuda:
 ######################################################################
 # Now we train the network! EEGClassifier is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
-# from skorch.NeuralNetClassifier, so the training logic is the same as in
+# from `skorch.NeuralNetClassifier <https://skorch.readthedocs.io/
+# en/latest/classifier.html>`__,
+# so the training logic is the same as in
 # `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
 #
 
@@ -243,13 +266,16 @@ clf = EEGClassifier(
 )
 
 ######################################################################
-# Use scikit-learn GridSearchCV to tune hyperparameters. To be able
-# to do this, we slice the braindecode datasets that by default return
-# a 3-tuple to return X and y, respectively.
+# We use scikit-learn `GridSearchCV
+# <https://scikit-learn.org/stable/modules/generated/
+# sklearn.model_selection.GridSearchCV.html>`__ to tune hyperparameters.
+# To be able to do this, we slice the braindecode datasets that by default
+# return a 3-tuple to return X and y, respectively.
 #
 
 ######################################################################
-#    **Note**: The KFold object splits the datasets based on their
+# .. note::
+#    The KFold object splits the datasets based on their
 #    length which corresponds to the number of compute windows. In
 #    this (trialwise) example this is fine to do. In a cropped setting
 #    this is not advisable since this might split compute windows
@@ -274,6 +300,9 @@ param_grid = {
     'module__drop_prob': drop_probs
 }
 
+# By setting n_jobs=-1, grid search is performed
+# with all the processors, in this case the output of the training
+# process is not printed sequentially
 search = GridSearchCV(
     estimator=clf,
     param_grid=param_grid,
@@ -283,7 +312,7 @@ search = GridSearchCV(
     refit=True,
     verbose=1,
     error_score='raise',
-    n_jobs=-1,
+    n_jobs=1,
 )
 
 search.fit(train_X, train_y, **fit_params)
@@ -335,3 +364,17 @@ print(f"Eval accuracy is {score * 100:.2f}%.")
 # .. [1] Varun Godbole, George E. Dahl, Justin Gilmer, Christopher J. Shallue,
 #       Zachary Nado (2022). Deep Learning Tuning Playbook.
 #       Github https://github.com/google-research/tuning_playbook
+#
+# .. [2] Jayaram, Vinay, and Alexandre Barachant.
+#        "MOABB: trustworthy algorithm benchmarking for BCIs."
+#        Journal of neural engineering 15.6 (2018): 066011.
+#
+# .. [3] Tangermann, M., Müller, K.R., Aertsen, A., Birbaumer, N., Braun, C.,
+#        Brunner, C., Leeb, R., Mehring, C., Miller, K.J., Mueller-Putz, G.
+#        and Nolte, G., 2012. Review of the BCI competition IV.
+#        Frontiers in neuroscience, 6, p.55.
+#
+# .. [4] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
+#        Deep learning with convolutional neural networks for EEG decoding and visualization.
+#        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
