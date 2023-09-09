@@ -216,7 +216,7 @@ class WindowsDataset(BaseDataset):
 
         i_window_in_trial, i_start, i_stop = crop_inds
         if hasattr(self.windows, 'metadata'):  # mne epochs case:
-            X = self.windows.get_data(item=index)[0].astype('float32')
+            X = self.windows.get_data(item=index)[0]
         else:
             X = self.windows._getitem((slice(None), slice(i_start, i_stop)), return_times=False)
         X = X.astype('float32')
