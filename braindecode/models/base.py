@@ -176,9 +176,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     def add_log_softmax(self):
         if self._add_log_softmax:
             warnings.warn("LogSoftmax final layer will be removed! " +
-                          "Please adjust your loss function accordingly (e.g. CrossEntropyLoss)! " +
-                          "Check the documentation of the torch.nn loss functions: " +
-                          "https://pytorch.org/docs/stable/nn.html#loss-functions .")
+                          "Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!")
         return self._add_log_softmax
 
     @property
