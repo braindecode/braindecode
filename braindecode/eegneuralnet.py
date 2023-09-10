@@ -144,20 +144,20 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         is_init = isinstance(self.module, torch.nn.Module)
         if is_init:
             self.log.warning(
-                f"The module passed is already initialized. "
-                f"This is deprecated and will be removed in the future. "
-                f"Instead, pass the module class and its parameters separately.\n"
-                f"For more details, see "
-                f"https://skorch.readthedocs.io/en/stable/user/neuralnet.html#module \n"
-                f"Skipping setting signal-related parameters from data."
+                "The module passed is already initialized. "
+                "This is deprecated and will be removed in the future. "
+                "Instead, pass the module class and its parameters separately.\n"
+                "For more details, see "
+                "https://skorch.readthedocs.io/en/stable/user/neuralnet.html#module \n"
+                "Skipping setting signal-related parameters from data."
             )
             return
         # get kwargs from signal:
         signal_kwargs = dict()
         if isinstance(X, np.ndarray):
             if y is None:
-                raise ValueError(f"y must be specified if X is a numpy array.")
-            self.log.info(f"Using numpy array to find signal-related parameters.")
+                raise ValueError("y must be specified if X is a numpy array.")
+            self.log.info("Using numpy array to find signal-related parameters.")
             Xshape = X.shape
             signal_kwargs["n_times"] = Xshape[-1]
             signal_kwargs["n_chans"] = Xshape[-2]
@@ -183,7 +183,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 signal_kwargs['n_outputs'] = self._get_n_outputs(y_target, classes)
         else:
             raise ValueError(
-                f"X must be a numpy array or a Dataset, "
+                "X must be a numpy array or a Dataset, "
                 f"got {type(X)!r}."
             )
 
