@@ -343,9 +343,8 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #
 
 from braindecode._api import get_model
-from braindecode.models.shallow_fbcsp import ShallowFBCSPNetWeights
 
-model = get_model('ShallowFBCSPNet', ShallowFBCSPNetWeights.BNCI2014001_S3)
+model = get_model('ShallowFBCSPNet', dataset_name=dataset_name, subject_id=subject_id)
 
 clf = EEGClassifier(
     model,
