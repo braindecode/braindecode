@@ -3,7 +3,11 @@ name: Check Whats News Changes
 on:
   push:
     branches:
-      - master
+      - "master"
+  pull_request:
+    branches:
+      - '*' # all branches, including forks
+
 
 jobs:
   check-whats-news:
@@ -16,7 +20,7 @@ jobs:
       - name: Check for changes in whats_news.rst
         run: |
           git fetch
-          changed_files=$(git diff --name-only HEAD ..origin/main)
+          changed_files=$(git diff --name-only HEAD ..origin/master)
           if echo "$changed_files" | grep -q "whats_news.rst"; then
             echo "whats_news.rst has been changed."
             # Add any additional steps you want to perform when the file has changed.
