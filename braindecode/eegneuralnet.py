@@ -1,3 +1,4 @@
+import mne
 import numpy as np
 import torch
 from sklearn.metrics import get_scorer
@@ -114,3 +115,42 @@ class _EEGNeuralNet:
             ),
             ("print_log", PrintLog()),
         ]
+
+    def get_dataset(self, X, y=None):
+        """Get a dataset that contains the input data and is passed to
+        the iterator.
+
+        Override this if you want to initialize your dataset
+        differently.
+
+        Parameters
+        ----------
+        X : input data, compatible with skorch.dataset.Dataset
+          By default, you should be able to pass:
+
+            * mne.Epochs
+            * numpy arrays
+            * torch tensors
+            * pandas DataFrame or Series
+            * scipy sparse CSR matrices
+            * a dictionary of the former three
+            * a list/tuple of the former three
+            * a Dataset
+
+          If this doesn't work with your data, you have to pass a
+          ``Dataset`` that can deal with the data.
+
+        y : target data, compatible with skorch.dataset.Dataset
+          The same data types as for ``X`` are supported. If your X is
+          a Dataset that contains the target, ``y`` may be set to
+          None.
+
+        Returns
+        -------
+        dataset
+          The initialized dataset.
+
+        """
+        if isinstance(X, mne.BaseEpochs):
+            X = X.get_data(units='uV')
+        super().get_dataset(X, y)
