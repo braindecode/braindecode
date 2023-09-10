@@ -14,7 +14,7 @@ from torch.utils.data import Dataset as torchDataset
 from skorch import NeuralNet
 from sklearn.metrics import get_scorer
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
-from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score
+from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score, is_dataset
 
 from .training.scoring import (CroppedTimeSeriesEpochScoring,
                                CroppedTrialEpochScoring, PostEpochTrainScoring)
@@ -162,8 +162,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             signal_kwargs["n_times"] = Xshape[-1]
             signal_kwargs["n_chans"] = Xshape[-2]
             signal_kwargs['n_outputs'] = self._get_n_outputs(y, classes)
-
-        elif isinstance(X, torchDataset):
+        elif is_dataset(X):
             self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
             X0 = X[0][0]
             Xshape = X0.shape
@@ -182,10 +181,11 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 y_target = X.windows.metadata.target
                 signal_kwargs['n_outputs'] = self._get_n_outputs(y_target, classes)
         else:
-            raise ValueError(
-                "X must be a numpy array or a Dataset, "
+            self.log.warning(
+                "Can only infer signal shape of numpy arrays or and Datasets, "
                 f"got {type(X)!r}."
             )
+            return
 
         # kick out missing kwargs:
         module_kwargs = dict()
