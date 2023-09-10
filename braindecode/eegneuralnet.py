@@ -141,6 +141,17 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         pass
 
     def _set_signal_args(self, X, y, classes):
+        is_init = isinstance(self.module, torch.nn.Module)
+        if is_init:
+            self.log.warning(
+                f"The module passed is already initialized. "
+                f"This is deprecated and will be removed in the future. "
+                f"Instead, pass the module class and its parameters separately.\n"
+                f"For more details, see "
+                f"https://skorch.readthedocs.io/en/stable/user/neuralnet.html#module \n"
+                f"Skipping setting signal-related parameters from data."
+            )
+            return
         # get kwargs from signal:
         signal_kwargs = dict()
         if isinstance(X, np.ndarray):
