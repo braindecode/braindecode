@@ -195,7 +195,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             f"Passing additional parameters {module_kwargs!r} "
             f"to module {self.module!r}.")
         module_kwargs = {f"module__{k}": v for k, v in module_kwargs.items()}
-        vars(self).update(module_kwargs)
+        self.set_params(**module_kwargs)
 
     def partial_fit(self, X, y=None, classes=None, **fit_params):
         # this needs to be executed before the net is initialized:
