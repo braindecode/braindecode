@@ -117,8 +117,9 @@ Now you can start writing the code to address the issue.
 Make sure to properly document and test your code.
 
 #### Add a model
-Braindecode models are all written in pytorch. They should all inherit from `braindecode.models.base.EEGModuleMixin`.
-You can use the following template to write a new model:
+The models present in braindecode are PyTorch models. To standardize inputs, variables, and documentation, all models inherit from the EEGModuleMixin class. With this class, we take care to standardize variables and ensure that your model can run within our EEGClassifier or EEGRegressor.
+
+Let's demonstrate how to implement a model for braindecode. Suppose we want to add a model called MyNewModel.
 ```python
 class MyNewModel(EEGModuleMixin, nn.Module):
     '''
