@@ -1,0 +1,26 @@
+name: Check Whats News Changes
+
+on:
+  push:
+    branches:
+      - main # Change to the name of your main branch
+
+jobs:
+  check-whats-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Check for changes in whats_news.rst
+        run: |
+          git fetch
+          changed_files=$(git diff --name-only HEAD ..origin/main)
+          if echo "$changed_files" | grep -q "whats_news.rst"; then
+            echo "whats_news.rst has been changed."
+            # Add any additional steps you want to perform when the file has changed.
+          else
+            echo "whats_news.rst has not been changed."
+            # Add any additional steps you want to perform when the file has not changed.
+          fi
