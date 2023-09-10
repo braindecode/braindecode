@@ -149,9 +149,6 @@ class USleep(EEGModuleMixin, nn.Module):
         will be added to it to ensure it is odd, so that the decoder blocks can
         work. This can ne useful when using different sampling rates from 128
         or 100 Hz.
-    apply_softmax : bool
-        If True, apply softmax on output (e.g. when using nn.NLLLoss). Use
-        False if using nn.CrossEntropyLoss.
     in_chans : int
         Alias for n_chans.
     n_classes : int
@@ -178,12 +175,12 @@ class USleep(EEGModuleMixin, nn.Module):
             input_window_seconds=30,
             time_conv_size_s=9 / 128,
             ensure_odd_conv_size=False,
-            apply_softmax=False,
             chs_info=None,
             n_times=None,
             in_chans=None,
             n_classes=None,
             input_size_s=None,
+            add_log_softmax=False,
     ):
         n_chans, n_outputs, input_window_seconds = deprecated_args(
             self,
@@ -198,6 +195,7 @@ class USleep(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_size_s
@@ -281,7 +279,7 @@ class USleep(EEGModuleMixin, nn.Module):
                 stride=1,
                 padding=0,
             ),
-            nn.Softmax(dim=1) if apply_softmax else nn.Identity(),
+            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
             # output is (B, n_classes, S)
         )
 
