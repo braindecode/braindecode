@@ -46,6 +46,7 @@ Enhancements
 - Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
 - Creating new preprocessor objects based on mne's raw/Epochs methods :class:`braindecode.preprocessing.Resample`, :class:`braindecode.preprocessing.DropChannels`, :class:`braindecode.preprocessing.SetEEGReference`, :class:`braindecode.preprocessing.Filter`, :class:`braindecode.preprocessing.Pick`, :class:`braindecode.preprocessing.Crop` (:gh:`500` by `Bruna Lopes`_ and `Bruno Aristimunha`_)
 - Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
+- Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
 
 Bugs
 ~~~~

@@ -2,11 +2,14 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
+import inspect
 
 import numpy as np
 import torch
 from scipy.special import log_softmax
 from sklearn.utils import deprecated
+
+import braindecode.models as models
 
 
 @deprecated(
@@ -146,3 +149,17 @@ def aggregate_probas(logits, n_windows_stride=1):
     """
     log_probas = log_softmax(logits, axis=1)
     return _pad_shift_array(log_probas, stride=n_windows_stride).sum(axis=0).T
+
+
+models_dict = {}
+
+# For the models inside the init model, go through all the models
+# check those have the EEGMixin class inherited. If they are, add them to the
+# list.
+
+
+def _init_models_dict():
+    for m in inspect.getmembers(models, inspect.isclass):
+        if (issubclass(m[1], models.base.EEGModuleMixin)
+                and m[1] != models.base.EEGModuleMixin):
+            models_dict[m[0]] = m[1]
