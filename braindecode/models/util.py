@@ -153,7 +153,8 @@ def aggregate_probas(logits, n_windows_stride=1):
 
 models_dict = {}
 
-
+# For the models inside the init model, go through all the models 
+# check those have the EEGMixin class inherited. If they are, add them to the list.
 def _init_models_dict():
     for m in inspect.getmembers(models, inspect.isclass):
         if (issubclass(m[1], models.base.EEGModuleMixin)
