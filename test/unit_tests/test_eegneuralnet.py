@@ -80,7 +80,7 @@ def preds():
 def Xy():
     dataset = MockDataset()
     X, y = zip(*[dataset[i] for i in range(len(dataset))])
-    return np.array(list(X)), np.array(list(y))
+    return np.stack(X), np.stack(y)
 
 
 @pytest.fixture
