@@ -26,6 +26,8 @@ jobs:
           else
             echo "whats_news.rst has not been changed."
             # Add any additional steps you want to perform when the file has not changed.
+            echo "::error::whats_news.rst has not been changed. CI will fail."
+            exit 1
           fi
 
 
