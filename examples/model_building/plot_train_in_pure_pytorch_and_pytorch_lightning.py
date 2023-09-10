@@ -1,6 +1,6 @@
 """
 Training a Braindecode model in PyTorch
-======================================
+=======================================
 
 This tutorial shows you how to train a Braindecode model with PyTorch. The data
 preparation and model instantiation steps are identical to that of the tutorial
@@ -248,7 +248,7 @@ from tqdm import tqdm
 
 def train_one_epoch(
         dataloader : DataLoader, model : Module, loss_fn, optimizer,
-        scheduler : LRScheduler, epoch, device, print_batch_stats=True
+        scheduler : LRScheduler, epoch : int, device, print_batch_stats=True
 ):
     model.train()  # Set the model to training mode
     train_loss, correct = 0, 0
@@ -389,10 +389,17 @@ class LitModule(L.LightningModule):
         return metrics
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs - 1)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
+                                      weight_decay=weight_decay)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                               T_max=n_epochs - 1)
         return [optimizer], [scheduler]
 
+# Creating the trainer with max_epochs=2 for demonstration purposes
 trainer = L.Trainer(max_epochs=n_epochs)
-trainer.fit(LitModule(model), DataLoader(train_set, batch_size=batch_size, shuffle=True))
+# Create and train the LightningModule
+lit_model = LitModule(model)
+trainer.fit(lit_model, train_loader)
+
+# After training, you can test the model using the test DataLoader
 trainer.test(dataloaders=test_loader)
