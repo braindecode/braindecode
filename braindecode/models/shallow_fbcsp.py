@@ -10,6 +10,7 @@ from torch.nn import init
 from .base import EEGModuleMixin, deprecated_args
 from .functions import safe_log, square, squeeze_final_output
 from .modules import CombinedConv, Ensure4d, Expression
+from ..pretrained import WeightsEnum, Weights
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -215,3 +216,9 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                 k = f"conv_time_spat.{k}"
             new_state_dict[k] = v
         return super().load_state_dict(new_state_dict, *args, **kwargs)
+
+
+class ShallowFBCSPNetWeights(WeightsEnum):  # Weights name should correponse to cls.__name__ can use verify func from torchvision?
+    BNCI2014001_S1 = Weights(path='BNCI2014001/1')
+    BNCI2014001_S2 = Weights(path="BNCI2014001/2")
+    BNCI2014001_S3 = Weights(path='BNCI2014001/3')
