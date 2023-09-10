@@ -3,7 +3,7 @@ name: Check Whats News Changes
 on:
   push:
     branches:
-      - main # Change to the name of your main branch
+      - master
 
 jobs:
   check-whats-news:
