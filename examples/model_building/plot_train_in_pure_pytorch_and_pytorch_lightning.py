@@ -14,6 +14,8 @@ defining a model, and other details which are not exclusive to this page (compar
 `Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
+The goal of this tutorial is to present braindecode in the PyTorch perpective.
+
 In general, we distinguish between "usual" training and evaluation and hyperparameter search.
 The tutorial is therefore split into two parts, one for the three different training schemes
 and one for the two different hyperparameter tuning methods.
@@ -68,9 +70,9 @@ and one for the two different hyperparameter tuning methods.
 
 
 ######################################################################
-# Loading
-# ~~~~~~~
-#
+# Loading the Dataset Structure
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Here, we have a data struture with equal behavior to the Pytorch Dataset.
 
 from braindecode.datasets import MOABBDataset
 
@@ -78,8 +80,8 @@ subject_id = 3
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 ######################################################################
-# Preprocessing
-# ~~~~~~~~~~~~~
+# Preprocessing, the offline transformation of the raw dataset
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
 import numpy as np
@@ -96,7 +98,7 @@ high_cut_hz = 38.0  # high cut frequency for filtering
 factor_new = 1e-3
 init_block_size = 1000
 
-preprocessors = [
+transforms = [
     Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
     Preprocessor(
         lambda data, factor: np.multiply(data, factor),  # Convert from V to uV
@@ -111,7 +113,7 @@ preprocessors = [
 ]
 
 # Transform the data
-preprocess(dataset, preprocessors, n_jobs=-1)
+preprocess(dataset, transforms, n_jobs=-1)
 
 ######################################################################
 # Cut Compute Windows
@@ -137,8 +139,8 @@ windows_dataset = create_windows_from_events(
 )
 
 ######################################################################
-# Create model
-# ~~~~~~~~~~~~
+# Create Pytorch model
+# ~~~~~~~~~~~~~~~~~~~~
 #
 
 import torch
@@ -157,6 +159,8 @@ classes = list(range(n_classes))
 # Extract number of chans and time steps from dataset
 n_channels = windows_dataset[0][0].shape[0]
 input_window_samples = windows_dataset[0][0].shape[1]
+
+# The ShallowFBCSPNet is a `nn.Sequential` model
 
 model = ShallowFBCSPNet(
     n_channels,
@@ -226,7 +230,7 @@ test_set = splitted["session_E"]
 #    would be higher, especially when it comes to batch n_epochs.
 
 from torch.nn import Module
-from torch.optim.lr_scheduler import CosineAnnealingLR, LRScheduler
+from torch.optim.lr_scheduler import LRScheduler
 from torch.utils.data import DataLoader
 
 lr = 0.0625 * 0.01
@@ -239,56 +243,92 @@ n_epochs = 2
 # The following method runs one training epoch over the dataloader for the
 # given model. It needs a loss function, optimization algorithm, and
 # learning rate updating callback.
+from tqdm import tqdm
+# Define a method for training one epoch
 
-def train(
-    dataloader: DataLoader, model: Module, loss_fn, optimizer, scheduler: LRScheduler
+def train_one_epoch(
+        dataloader : DataLoader, model : Module, loss_fn, optimizer,
+        scheduler : LRScheduler, epoch, device, print_batch_stats=True
 ):
-    size = len(dataloader.dataset)
-    n_batches = len(dataloader)
-    model.train()  # declare the model as trainable
+    model.train()  # Set the model to training mode
     train_loss, correct = 0, 0
-    for X, y, _ in dataloader:
-        X, y = X.to(device), y.to(device)  # map tensors to their device
+
+    if print_batch_stats:
+        progress_bar = tqdm(enumerate(dataloader), total=len(dataloader))
+    else:
+        progress_bar = enumerate(dataloader)
+
+    for batch_idx, (X, y, _) in progress_bar:
+        X, y = X.to(device), y.to(device)
+        optimizer.zero_grad()
         pred = model(X)
         loss = loss_fn(pred, y)
         loss.backward()
         optimizer.step()  # update the model weights
         optimizer.zero_grad()
+
         train_loss += loss.item()
-        correct += (pred.argmax(1) == y).type(torch.float).sum().item()
-    correct /= size
-    print(
-        f"Train Accuracy: {(100*correct):>0.5f}, Train Loss: {train_loss / n_batches:>8f}, "
-        f"lr: {scheduler.get_last_lr()[0]:<0.4f}",
-        end=", ",
-    )
+        correct += (pred.argmax(1) == y).sum().item()
+
+        if print_batch_stats:
+            progress_bar.set_description(
+                f"Epoch {epoch}/{n_epochs}, "
+                f"Batch {batch_idx + 1}/{len(dataloader)}, "
+                f"Loss: {loss.item():.6f}"
+            )
 
     # Update the learning rate
     scheduler.step()
+
+    correct /= len(dataloader.dataset)
+    return train_loss / len(dataloader), correct
 
 ######################################################################
 # Very similarly, the evaluation function loops over the entire dataloader
 # and accumulate the metrics, but doesn't update the model weights.
 
-
-def test(dataloader: DataLoader, model: Module, loss_fn):
+@torch.no_grad()
+def test_model(
+    dataloader: DataLoader, model: Module, loss_fn, print_batch_stats=True
+):
     size = len(dataloader.dataset)
     n_batches = len(dataloader)
-    model.eval()  # switch to eval mode
+    model.eval()  # Switch to evaluation mode
     test_loss, correct = 0, 0
-    with torch.no_grad():  # skip gradient computation as it's not necessary for evaluation
-        for X, y, _ in dataloader:
-            X, y = X.to(device), y.to(device)
-            pred = model(X)
-            test_loss += loss_fn(pred, y).item()
-            correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+
+    if print_batch_stats:
+        progress_bar = tqdm(enumerate(dataloader), total=len(dataloader))
+    else:
+        progress_bar = enumerate(dataloader)
+
+    for batch_idx, (X, y, _) in progress_bar:
+        X, y = X.to(device), y.to(device)
+        pred = model(X)
+        batch_loss = loss_fn(pred, y).item()
+
+        test_loss += batch_loss
+        correct += (pred.argmax(1) == y).type(torch.float).sum().item()
+
+        if print_batch_stats:
+            progress_bar.set_description(
+                f"Batch {batch_idx + 1}/{len(dataloader)}, "
+                f"Loss: {batch_loss:.6f}"
+            )
+
     test_loss /= n_batches
     correct /= size
-    print(f"Test Accuracy: {(100*correct):>0.1f}%, Test loss: {test_loss:>8f} \n")
 
+    print(
+        f"Test Accuracy: {100 * correct:.1f}%, Test Loss: {test_loss:.6f}\n"
+    )
+    return test_loss, correct
 
+# Define the optimization
 optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs - 1)
+# Define the loss function
+# We used the NNLoss function, which expects log probabilities as input
+# (which is the case for our model output)
 loss_fn = torch.nn.NLLLoss()
 
 # train_set and test_set are instances of torch Datasets, and can seamlessly be
@@ -296,10 +336,21 @@ loss_fn = torch.nn.NLLLoss()
 train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(test_set, batch_size=batch_size)
 
-for t in range(n_epochs):
-    print(f"Epoch {t+1}, ", end="")
-    train(train_loader, model, loss_fn, optimizer, scheduler)
-    test(test_loader, model, loss_fn)
+for epoch in range(1, n_epochs + 1):
+    print(f"Epoch {epoch}/{n_epochs}: ", end="")
+
+    train_loss, train_accuracy = train_one_epoch(
+        train_loader, model, loss_fn, optimizer, scheduler, epoch, device,
+    )
+
+    test_loss, test_accuracy = test_model(test_loader, model, loss_fn)
+
+    print(
+        f"Train Accuracy: {100 * train_accuracy:.2f}%, "
+        f"Average Train Loss: {train_loss:.6f}, "
+        f"Test Accuracy: {100 * test_accuracy:.1f}%, "
+        f"Average Test Loss: {test_loss:.6f}\n"
+    )
 
 
 ######################################################################
