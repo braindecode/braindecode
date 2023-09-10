@@ -47,6 +47,7 @@ Enhancements
 - Creating new preprocessor objects based on mne's raw/Epochs methods :class:`braindecode.preprocessing.Resample`, :class:`braindecode.preprocessing.DropChannels`, :class:`braindecode.preprocessing.SetEEGReference`, :class:`braindecode.preprocessing.Filter`, :class:`braindecode.preprocessing.Pick`, :class:`braindecode.preprocessing.Crop` (:gh:`500` by `Bruna Lopes`_ and `Bruno Aristimunha`_)
 - Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
 - Adding a pure PyTorch tutorial (:gh:`523` by `Remi Delbouys`_)
+- Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
 
 Bugs
 ~~~~
@@ -56,6 +57,7 @@ Bugs
 API changes
 ~~~~~~~~~~~
 - Removing support for Python 3.7 (:gh:`397` by `Bruno Aristimunha`_)
+- Removing the LogSoftmax layer from the models and adding deprecated warnings and temporary flags (:gh:`513` by `Sara Sedlar`_)
 
 .. _changes_0_8_0:
 

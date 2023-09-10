@@ -106,6 +106,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_classes=None,
             n_channels=None,
             input_window_samples=None,
+            add_log_softmax=True,
     ):
         n_outputs, n_chans, n_times = deprecated_args(
             self,
@@ -120,6 +121,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, n_channels, input_window_samples
@@ -148,7 +150,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
         self.classification_head = _ClassificationHead(
             final_fc_length=final_fc_length,
-            n_classes=self.n_outputs, return_features=return_features)
+            n_classes=self.n_outputs, return_features=return_features,
+            add_log_softmax=self.add_log_softmax)
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
@@ -345,7 +348,8 @@ class _TransformerEncoder(nn.Sequential):
 class _ClassificationHead(nn.Module):
     def __init__(self, final_fc_length, n_classes,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
-                 hidden_channels=32, return_features=False):
+                 hidden_channels=32, return_features=False,
+                 add_log_softmax=True):
         """"Classification head for the transformer encoder.
 
         Parameters
@@ -364,6 +368,8 @@ class _ClassificationHead(nn.Module):
             Number of output channels for the second linear layer.
         return_features : bool
             Whether to return input features.
+        add_log_softmax: bool
+            Whether to add LogSoftmax non-linearity as the final layer.
         """
 
         super().__init__()
@@ -377,7 +383,10 @@ class _ClassificationHead(nn.Module):
             nn.Linear(hidden_channels, n_classes),
         )
         self.return_features = return_features
-        self.classification = nn.LogSoftmax(dim=1)
+        if add_log_softmax:
+            self.classification = nn.LogSoftmax(dim=1)
+        else:
+            self.classification = nn.Identity()
 
     def forward(self, x):
         x = x.contiguous().view(x.size(0), -1)

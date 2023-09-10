@@ -183,14 +183,8 @@ model = ShallowFBCSPNet(
     n_chans,
     n_classes,
     final_conv_length=2,
+    add_log_softmax=False,
 )
-# We are removing the softmax layer to make it a regression model
-new_model = torch.nn.Sequential()
-for name, module_ in model.named_children():
-    if "softmax" in name:
-        continue
-    new_model.add_module(name, module_)
-model = new_model
 
 # Send model to GPU
 if cuda:
