@@ -116,10 +116,15 @@ git checkout -b <branch-name>
 Now you can start writing the code to address the issue.
 Make sure to properly document and test your code.
 
-#### Add a model
-The models present in braindecode are PyTorch models. To standardize inputs, variables, and documentation, all models inherit from the EEGModuleMixin class. With this class, we take care to standardize variables and ensure that your model can run within our EEGClassifier or EEGRegressor.
+### Adding Your model into the Braindecode
 
+All models present in braindecode are PyTorch models. You are more than welcome to use any published PyTorch model in braindecode!
 Let's demonstrate how to implement a model for braindecode. Suppose we want to add a model called MyNewModel.
+
+First, we create a new file called `my_new_model.py` in the `braindecode/models` directory.
+
+Then, we add the following template to the file:
+
 ```python
 class MyNewModel(EEGModuleMixin, nn.Module):
     '''
@@ -130,13 +135,13 @@ class MyNewModel(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     my_parameter : int
-        DESCRIBE YOUR PARAMETERS HERE, AND WHY YOU SET THESE
+        DESCRIBE YOUR PARAMETERS HERE AND WHY YOU SET THESE
         DEFAULT VALUES
 
     References
     ----------
     .. [1] First Author, Second Author (YEAR).
-       Title of the Article that Introduce this Architecture.
+       Title of the Article that Introduces this Architecture.
        Journal or Conference name, DATE.
        Online: URL/DOI OF THE PUBLICATION
     '''
@@ -170,17 +175,78 @@ class MyNewModel(EEGModuleMixin, nn.Module):
         # IMPLEMENT THE FORWARD PASS
         return self.final_layer(X)
 ```
-A few important notes:
-- The new model should accept all the parameters: `n_outputs`, `n_chans`, `chs_info`, `n_times`, `input_window_seconds`, and `sfreq`.
-  - The values of these parameters should be passed to the parent class `EEGModuleMixin` like described in the template, i.e. `super().__init__(...)`.
-  - They will be saved as attributes by `EEGModuleMixin`. i.e. for example, you can use `self.n_times` to access its value.
-  - The parameters that can be infered will be infered by `EEGModuleMixin`. i.e. for example, if the user passes values for `n_times` and `sfreq`, then `EEGModuleMixin` will infer the value of `self.input_window_seconds`.
-  - No need to add a description for the parameters passed to `EEGModuleMixin`, the docstring of your new model will automatically be updated.
-- The model should be able to process examples of shape `(batch_size, n_chans, n_times)` and must return elements of shape `(batch_size, n_outputs)` (`batch_size` can be anything).
-- The last linear classification layer of the model must be named `self.final_layer` and return outputs of shape `(batch_size, self.n_outputs)`.
-- The model should NOT have a softmax or log-softmax layer after the final layer.
 
-Alternatively, you can also implement your model as a `nn.Sequential`. All the above notes still hold in that case.
+Explaining the template and internal convention:
+
+1. **Inherit from EEGModuleMixin**: To ensure compatibility and standardization, all models in Braindecode should inherit from the EEGModuleMixin class. This helps standardize input parameters and ensure your model can seamlessly work with EEGClassifier or EEGRegressor.
+
+   ```python
+   from braindecode.model.base import EEGModuleMixin
+   class MyNewModel(EEGModuleMixin, nn.Module):
+       # ... (model definition)
+
+2. **Including the required parameters in the __init__ method is good practice**. These parameters ensure compatibility with other Braindecode components. Passing them to the parent class using super().__init__(...) is necessary.
+
+```python
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        my_parameter=10,  # Add your custom parameters here
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+   ```
+
+**The required parameters are**:
+- `n_outputs`, `n_chans`, `chs_info`, `n_times`, `input_window_seconds`, and `sfreq`. The values of these parameters should be passed to the parent class `EEGModuleMixin` as described in the template, i.e. `super().__init__(...)`.
+
+**Some notes about the inheritance**:
+- They will be saved as attributes by `EEGModuleMixin`. i.e. for example, you can use `self.n_times` (windows size) to access its value.
+- The parameters will be inferred by `EEGModuleMixin`. i.e. for example, if the user passes values for `n_times` and `sfreq`, then `EEGModuleMixin` will infer the value of `self.input_window_seconds`.
+- No need to add a description for the parameters passed to `EEGModuleMixin`. The docstring of your new model will automatically be updated.
+
+3. **Define the Model Architecture**: Implement your model's architecture within the __init__ method of your model class. Customize the layers, dimensions, and any other model-specific components as needed.
+
+```python
+def __init__(self, ...):
+    # ... (model definition)
+    self.final_layer = nn.Linear(emb_dim, self.n_outputs)
+```
+
+4. **Be aware of the braindecode input dimensions:** By default, your model needs to handle the input of shape (`batch_size`, `n_chans`, `n_times`).
+For instance, if your model was designed for input of shape (`batch_size`, `n_times`, `n_chans`), you can use one transpose layer to change the input shape inside your forward method.
+
+```python
+from einops.layers.torch import Rearrange
+
+def __init__(self, ...):
+    # ... (model definition)
+    self.dimshuffle = Rearrange("batch C T -> batch T C")
+
+def forward(self, X):
+    X = self.dimshuffle(X)
+    # ... (forward pass implementation)
+    return
+```
+
+Check how you can do this in the `braindecode.models` module. Your method needs to return a tensor of shape (`batch_size`, `n_outputs`).
+
+5. **Define the final layer**: Naming the final classification layer as `self.final_layer` and ensuring it returns outputs of shape `(batch_size, self.n_outputs)` is important for compatibility with Braindecode's classification process.
+
+6. **Avoid Softmax or Log-Softmax:** Not adding softmax or log-softmax layers after the final layer is a good practice. Braindecode's EEGClassifier class handles the softmax, which allows compatibility with both classification and regression tasks.
+
+Alternatively, you can implement your model as a `nn.Sequential`. All the above notes still hold in that case.
 
 #### Write Tests
 We have unit tests that test a unit like a function or a class method under 
