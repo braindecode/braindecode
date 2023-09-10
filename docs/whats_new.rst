@@ -57,6 +57,7 @@ Bugs
 API changes
 ~~~~~~~~~~~
 - Removing support for Python 3.7 (:gh:`397` by `Bruno Aristimunha`_)
+- Removing the LogSoftmax layer from the models and adding deprecated warnings and temporary flags (:gh:`513` by `Sara Sedlar`_)
 
 .. _changes_0_8_0:
 

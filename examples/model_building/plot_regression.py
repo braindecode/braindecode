@@ -113,35 +113,24 @@ model_name = "shallow"  # 'shallow' or 'deep'
 
 # Defining a CNN model
 if model_name in ["shallow", "Shallow", "ShallowConvNet"]:
-    model_clf = ShallowFBCSPNet(in_chans=n_fake_chans,
-                                n_classes=n_fake_targets,
-                                input_window_samples=fake_sfreq * fake_duration,
-                                n_filters_time=40, n_filters_spat=40,
-                                final_conv_length=35, )
+    model = ShallowFBCSPNet(in_chans=n_fake_chans,
+                            n_classes=n_fake_targets,
+                            input_window_samples=fake_sfreq * fake_duration,
+                            n_filters_time=40, n_filters_spat=40,
+                            final_conv_length=35,
+                            add_log_softmax=False,)
 elif model_name in ["deep", "Deep", "DeepConvNet"]:
-    model_clf = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
-                         input_window_samples=fake_sfreq * fake_duration,
-                         n_filters_time=25, n_filters_spat=25,
-                         stride_before_pool=True,
-                         n_filters_2=n_fake_chans * 2,
-                         n_filters_3=n_fake_chans * 4,
-                         n_filters_4=n_fake_chans * 8,
-                         final_conv_length=1, )
+    model = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
+                     input_window_samples=fake_sfreq * fake_duration,
+                     n_filters_time=25, n_filters_spat=25,
+                     stride_before_pool=True,
+                     n_filters_2=n_fake_chans * 2,
+                     n_filters_3=n_fake_chans * 4,
+                     n_filters_4=n_fake_chans * 8,
+                     final_conv_length=1,
+                     add_log_softmax=False, )
 else:
     raise ValueError(f'{model_name} unknown')
-
-###################################################################################################
-# Converting a braindecode classifier model to a regressor model
-# ---------------------------------------------------------------
-#
-# Conversion of the CNN classifier into regressor by removing `softmax` function from the last
-# layer
-model_reg = torch.nn.Sequential()
-for name, module_ in model_clf.named_children():
-    if "softmax" in name:
-        continue
-    model_reg.add_module(name, module_)
-model = model_reg
 
 ###################################################################################################
 # Choosing between GPU and CPU processors
