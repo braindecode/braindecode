@@ -116,6 +116,71 @@ git checkout -b <branch-name>
 Now you can start writing the code to address the issue.
 Make sure to properly document and test your code.
 
+#### Add a model
+Braindecode models are all written in pytorch. They should all inherit from `braindecode.models.base.EEGModuleMixin`.
+You can use the following template to write a new model:
+```python
+class MyNewModel(EEGModuleMixin, nn.Module):
+    '''
+    My new model.
+
+    Model described in [1]_.
+
+    Parameters
+    ----------
+    my_parameter : int
+        DESCRIBE YOUR PARAMETERS HERE, AND WHY YOU SET THESE
+        DEFAULT VALUES
+
+    References
+    ----------
+    .. [1] First Author, Second Author (YEAR).
+       Title of the Article that Introduce this Architecture.
+       Journal or Conference name, DATE.
+       Online: URL/DOI OF THE PUBLICATION
+    '''
+
+    def __init__(
+            self,
+            n_outputs=None,
+            n_chans=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+            my_parameter=10,  # ADD YOUR PARAMETERS HERE
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        self.my_parameter = my_parameter
+
+        # DEFINE YOUR MODEL HERE
+        emb_dim = None  # CHANGE THIS
+        
+        self.final_layer = nn.Linear(emb_dim, self.n_outputs)
+
+    def forward(self, X):
+        # IMPLEMENT THE FORWARD PASS
+        return self.final_layer(X)
+```
+A few important notes:
+- The new model should accept all the parameters: `n_outputs`, `n_chans`, `chs_info`, `n_times`, `input_window_seconds`, and `sfreq`.
+  - The values of these parameters should be passed to the parent class `EEGModuleMixin` like described in the template, i.e. `super().__init__(...)`.
+  - They will be saved as attributes by `EEGModuleMixin`. i.e. for example, you can use `self.n_times` to access its value.
+  - The parameters that can be infered will be infered by `EEGModuleMixin`. i.e. for example, if the user passes values for `n_times` and `sfreq`, then `EEGModuleMixin` will infer the value of `self.input_window_seconds`.
+  - No need to add a description for the parameters passed to `EEGModuleMixin`, the docstring of your new model will automatically be updated.
+- The model should be able to process examples of shape `(batch_size, n_chans, n_times)` and must return elements of shape `(batch_size, n_outputs)` (`batch_size` can be anything).
+- The last linear classification layer of the model must be named `self.final_layer` and return outputs of shape `(batch_size, self.n_outputs)`.
+- The model should NOT have a softmax or log-softmax layer after the final layer.
+
+Alternatively, you can also implement your model as a `nn.Sequential`. All the above notes still hold in that case.
+
 #### Write Tests
 We have unit tests that test a unit like a function or a class method under 
 `test/unit_tests`. The directories below `test/unit_tests` should mirror the directory structure in braindecode.
