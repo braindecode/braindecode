@@ -22,3 +22,9 @@ from .tidnet import TIDNet
 from .usleep import USleep
 from .util import get_output_shape, to_dense_prediction_model
 from .modules import TimeDistributed
+
+from .util import _init_models_dict
+
+# Call this last in order to make sure the dataset list is populated with
+# the datasets imported in this file.
+_init_models_dict()
