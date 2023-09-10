@@ -53,7 +53,7 @@ class TCN(EEGModuleMixin, nn.Module):
             input_window_seconds=None,
             sfreq=None,
             n_in_chans=None,
-            add_log_softmax=True,
+            add_log_softmax=False,
     ):
         n_chans, = deprecated_args(
             self,
