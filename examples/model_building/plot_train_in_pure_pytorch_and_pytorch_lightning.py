@@ -16,10 +16,6 @@ will not further elaborate on these parts and you can feel free to skip them.
 
 The goal of this tutorial is to present braindecode in the PyTorch perpective.
 
-In general, we distinguish between "usual" training and evaluation and hyperparameter search.
-The tutorial is therefore split into two parts, one for the three different training schemes
-and one for the two different hyperparameter tuning methods.
-
 .. contents:: This example covers:
    :local:
    :depth: 2
@@ -229,7 +225,7 @@ test_set = splitted["session_E"]
 # .. warning::
 #    The parameter values showcased here for optimizing the network are
 #    chosen to make this tutorial fast to run and build. Real-world values
-#    would be higher, especially when it comes to batch n_epochs.
+#    would be higher, especially when it comes to n_epochs.
 
 from torch.nn import Module
 from torch.optim.lr_scheduler import LRScheduler
@@ -256,10 +252,8 @@ def train_one_epoch(
     model.train()  # Set the model to training mode
     train_loss, correct = 0, 0
 
-    if print_batch_stats:
-        progress_bar = tqdm(enumerate(dataloader), total=len(dataloader))
-    else:
-        progress_bar = enumerate(dataloader)
+    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader),
+                        disable=not print_batch_stats)
 
     for batch_idx, (X, y, _) in progress_bar:
         X, y = X.to(device), y.to(device)
