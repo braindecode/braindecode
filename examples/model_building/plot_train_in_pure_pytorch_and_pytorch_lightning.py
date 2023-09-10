@@ -204,9 +204,11 @@ train_set = splitted["session_T"]
 test_set = splitted["session_E"]
 
 ######################################################################
-# Option 1: Pure pytorch training loop
+# Option 1: Pure PyTorch training loop
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
+# .. image:: https://upload.wikimedia.org/wikipedia/commons/9/96/Pytorch_logo.png
+#    :alt: Pytorch logo
 
 
 ######################################################################
@@ -246,9 +248,10 @@ n_epochs = 2
 from tqdm import tqdm
 # Define a method for training one epoch
 
+
 def train_one_epoch(
-        dataloader : DataLoader, model : Module, loss_fn, optimizer,
-        scheduler : LRScheduler, epoch : int, device, print_batch_stats=True
+        dataloader: DataLoader, model: Module, loss_fn, optimizer,
+        scheduler: LRScheduler, epoch: int, device, print_batch_stats=True
 ):
     model.train()  # Set the model to training mode
     train_loss, correct = 0, 0
@@ -287,6 +290,7 @@ def train_one_epoch(
 # Very similarly, the evaluation function loops over the entire dataloader
 # and accumulate the metrics, but doesn't update the model weights.
 
+
 @torch.no_grad()
 def test_model(
     dataloader: DataLoader, model: Module, loss_fn, print_batch_stats=True
@@ -323,9 +327,12 @@ def test_model(
     )
     return test_loss, correct
 
+
 # Define the optimization
-optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs - 1)
+optimizer = torch.optim.AdamW(model.parameters(),
+                              lr=lr, weight_decay=weight_decay)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                       T_max=n_epochs - 1)
 # Define the loss function
 # We used the NNLoss function, which expects log probabilities as input
 # (which is the case for our model output)
@@ -354,8 +361,10 @@ for epoch in range(1, n_epochs + 1):
 
 
 ######################################################################
-# Option 2: Train it with pytorch lightning
+# Option 2: Train it with PyTorch Lightning
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# .. image:: https://upload.wikimedia.org/wikipedia/commons/e/e6/Lightning_Logo_v2.png
+#    :alt: Pytorch Ligthing logo
 
 ######################################################################
 # Alternatively, lightning provides a nice interface around torch modules
@@ -394,6 +403,7 @@ class LitModule(L.LightningModule):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                                T_max=n_epochs - 1)
         return [optimizer], [scheduler]
+
 
 # Creating the trainer with max_epochs=2 for demonstration purposes
 trainer = L.Trainer(max_epochs=n_epochs)
