@@ -14,11 +14,25 @@ fetch_from_hf_hub = partial(
 
 @dataclass
 class Weights:
+    """
+    Mimic torchvisions Weights class
+    see: https://github.com/pytorch/vision/blob/main/torchvision/models/_api.py
+
+    Parameters
+    ----------
+    path : str
+        Path to weights file(s) in hugging face repo
+    """
     path: str
 
 
 class WeightsEnum(Enum):
     # TODO: add torch.device to uploaded file, so map location can be automatically set
+    """
+    Mimic torchvisions Weights class
+    see: https://github.com/pytorch/vision/blob/main/torchvision/models/_api.py
+
+    """
 
     def fetch_state_dict(self):
         p = fetch_from_hf_hub(filename=str(Path(self.path).joinpath("state_dict.pkl")))
