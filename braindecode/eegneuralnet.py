@@ -153,4 +153,4 @@ class _EEGNeuralNet:
         """
         if isinstance(X, mne.BaseEpochs):
             X = X.get_data(units='uV')
-        super().get_dataset(X, y)
+        return super().get_dataset(X, y)
