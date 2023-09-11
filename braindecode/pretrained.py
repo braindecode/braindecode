@@ -1,12 +1,6 @@
 from _warnings import warn
 
-from .models import ShallowFBCSPNet
-from .models.shallow_fbcsp import ShallowFBCSPNetWeights
-
-MODELS_AND_WEIGHTS = {
-    "shallowfbcspnet": {"model": ShallowFBCSPNet, "weights": ShallowFBCSPNetWeights}
-    # Other models go here
-}
+from .models.util import models_dict, weights_dict
 
 
 def initialize_model(
@@ -38,8 +32,7 @@ def initialize_model(
         The initialized model.
     """
 
-    name = name.lower()
-    model = MODELS_AND_WEIGHTS[name]["model"]
+    model = models_dict[name]
 
     if dataset_name is None and subject_id is None:
         return model(**init_params)
@@ -49,7 +42,7 @@ def initialize_model(
             " dataset name and subject id"
         )
 
-    weights_enum = MODELS_AND_WEIGHTS[name]["weights"]
+    weights_enum = weights_dict[name]
 
     try:
         weights = weights_enum[f"{dataset_name}_{subject_id}"]

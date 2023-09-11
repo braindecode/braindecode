@@ -8,7 +8,7 @@ from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
 from .eegnet import EEGNetv4, EEGNetv1
 from .hybrid import HybridNet
-from .shallow_fbcsp import ShallowFBCSPNet
+from .shallow_fbcsp import ShallowFBCSPNet, ShallowFBCSPNetWeights
 from .eegresnet import EEGResNet
 from .eeginception import EEGInception
 from .eeginception_erp import EEGInceptionERP
@@ -23,8 +23,9 @@ from .usleep import USleep
 from .util import get_output_shape, to_dense_prediction_model
 from .modules import TimeDistributed
 
-from .util import _init_models_dict
+from .util import _init_models_dict, _init_weights_dict
 
 # Call this last in order to make sure the dataset list is populated with
 # the datasets imported in this file.
 _init_models_dict()
+_init_weights_dict()
