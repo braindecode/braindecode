@@ -342,9 +342,9 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 # Fetch the specific model from hugging face
 #
 
-from braindecode._api import get_model
+from braindecode.pretrained import initialize_model
 
-model = get_model('ShallowFBCSPNet', dataset_name=dataset_name, subject_id=subject_id)
+model = initialize_model('ShallowFBCSPNet', dataset_name=dataset_name, subject_id=subject_id)
 
 clf = EEGClassifier(
     model,

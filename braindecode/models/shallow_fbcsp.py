@@ -10,7 +10,7 @@ from torch.nn import init
 from .base import EEGModuleMixin, deprecated_args
 from .functions import safe_log, square, squeeze_final_output
 from .modules import CombinedConv, Ensure4d, Expression
-from ..pretrained import WeightsEnum, Weights
+from ..weights import Weights, WeightsEnum
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
