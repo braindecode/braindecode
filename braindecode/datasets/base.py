@@ -162,7 +162,7 @@ class _EEGWindowsDataset(BaseDataset):
         channels (time series targets). It can be `metadata` (default) or `channels`.
     last_target_only : bool
         If targets are obtained from misc channels whether all targets if the entire
-    (compute) window will be returned or only the last target in the window.
+        (compute) window will be returned or only the last target in the window.
     metadata : pandas.DataFrame
         Dataframe with crop indices, so `i_window_in_trial`, `i_start_in_trial`, `i_stop_in_trial`
         as well as `targets`.

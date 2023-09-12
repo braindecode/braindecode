@@ -408,7 +408,7 @@ def _create_fixed_length_windows(
         description=ds.description,
         targets_from=targets_from,
         last_target_only=last_target_only,
-        )
+    )
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, 'window_kwargs', window_kwargs)
     kwargs_name = 'raw_preproc_kwargs'
