@@ -5,6 +5,8 @@ on:
     branches:
       - "master"
   pull_request:
+    paths:
+      - 'docs/whats_new.rst'
     branches:
       - '*' # all branches, including forks
 
@@ -16,18 +18,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Check for changes in whats_news.rst
+      - name: Check for file changes
         run: |
-          git fetch
-          diff_output=$(git diff --name-only FETCH_HEAD docs/whats_news.rst)
-          if [[ -n "$diff_output" ]]; then
-            echo "whats_news.rst has been changed."
-            # Add any additional steps you want to perform when the file has changed.
+          changed_files=$(git diff --name-only ${{ github.event.before }} ${{ github.event.after }})
+          if echo "$changed_files" | grep -q 'docs/whats_new.rst'; then
+            echo "File path/to/your/file.ext has been changed in the PR."
           else
-            echo "whats_news.rst has not been changed."
-            echo "::error::whats_news.rst has not been changed. CI will fail."
+            echo "File Whats New has not been changed in the PR."
+            echo "::error::File docs/whats_new.rst has not been changed in the PR."
             exit 1
           fi
-
 
 
