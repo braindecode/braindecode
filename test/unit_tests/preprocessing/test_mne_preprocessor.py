@@ -64,7 +64,7 @@ def test_preprocess_windows_kwargs(windows_concat_ds):
     preprocessors = [
         Crop(tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
-    # assert windows_concat_ds[0][0].shape[1] == 25
+    # assert windows_concat_ds[0][0].shape[1] == 25  no longer correct as raw preprocessed
     # Since windowed datasets are not using mne epochs anymore,
     # also for windows it is called raw_preproc_kwargs
     # as underlying data is always raw

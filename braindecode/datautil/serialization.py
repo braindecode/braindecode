@@ -199,7 +199,7 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     ids_to_load = [str(i) for i in ids_to_load]
     first_raw_fif_path = path / ids_to_load[0] / f'{ids_to_load[0]}-raw.fif'
     is_raw = first_raw_fif_path.exists()
-    metadata_path =  path / ids_to_load[0] / f'metadata_df.pkl'
+    metadata_path = path / ids_to_load[0] / 'metadata_df.pkl'
     has_stored_windows = metadata_path.exists()
 
     # Parallelization of mne.read_epochs with preload=False fails with
@@ -244,7 +244,7 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
         windows_ds_kwargs = [kwargs[1] for kwargs in window_kwargs if kwargs[0] == 'WindowsDataset']
         windows_ds_kwargs = windows_ds_kwargs[0] if len(windows_ds_kwargs) == 1 else {}
         if is_raw:
-            metadata = pd.read_pickle(path / i / f'metadata_df.pkl')
+            metadata = pd.read_pickle(path / i / 'metadata_df.pkl')
             dataset = _EEGWindowsDataset(
                 signals,
                 metadata=metadata,
@@ -254,10 +254,11 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
             )
         else:
             # MNE epochs dataset
-            dataset = WindowsDataset(signals, description,
-                                    targets_from=windows_ds_kwargs.get('targets_from', 'metadata'),
-                                    last_target_only=windows_ds_kwargs.get('last_target_only', True)
-                                    )
+            dataset = WindowsDataset(
+                signals, description,
+                targets_from=windows_ds_kwargs.get('targets_from', 'metadata'),
+                last_target_only=windows_ds_kwargs.get('last_target_only', True)
+            )
         setattr(dataset, 'window_kwargs', window_kwargs)
     for kwargs_name in ['raw_preproc_kwargs', 'window_preproc_kwargs']:
         kwargs = _load_kwargs_json(kwargs_name, sub_dir)

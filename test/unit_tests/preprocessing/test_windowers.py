@@ -449,7 +449,7 @@ def test_epochs_kwargs(lazy_loadable_dataset):
                 'drop_last_window': False, 'mapping': {'test': 0}, 'preload': False,
                 'drop_bad_windows': True, 'picks': picks, 'reject': reject,
                 'flat': flat, 'on_missing': on_missing,
-                'accepted_bads_ratio': 0.0, 'verbose': 'error'})
+                'accepted_bads_ratio': 0.0, 'verbose': 'error', 'use_mne_epochs': True})
         ]
 
 

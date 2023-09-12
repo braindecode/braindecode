@@ -19,7 +19,8 @@ from mne import create_info
 from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset, _EEGWindowsDataset
+from braindecode.datasets.base import (BaseConcatDataset, BaseDataset, WindowsDataset,
+                                       _EEGWindowsDataset)
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 

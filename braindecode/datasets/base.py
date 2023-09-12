@@ -581,7 +581,6 @@ class BaseConcatDataset(ConcatDataset):
 
         is_raw = hasattr(self.datasets[0], 'raw')
 
-
         if is_raw:
             file_name_template = file_name_templates[0]
         else:

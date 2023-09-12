@@ -12,7 +12,6 @@ import pandas as pd
 from braindecode.datasets import BaseConcatDataset, MOABBDataset
 from braindecode.preprocessing import (
     create_windows_from_events, Preprocessor, preprocess,)
-from braindecode.preprocessing.windowers import _create_windows_from_events_as_mne_epochs 
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 
@@ -30,16 +29,15 @@ def setup_concat_windows_dataset(setup_concat_raw_dataset):
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0)
 
+
 @pytest.fixture()
 def setup_concat_windows_mne_dataset(setup_concat_raw_dataset):
     moabb_dataset = setup_concat_raw_dataset
-    return BaseConcatDataset([_create_windows_from_events_as_mne_epochs(
-        ds=ds,
-        infer_mapping=True,
+    return create_windows_from_events(
+        concat_ds=moabb_dataset,
         trial_start_offset_samples=0,
         trial_stop_offset_samples=0,
-        mapping={},
-        infer_window_size_stride=True) for ds in moabb_dataset.datasets])
+        picks=moabb_dataset.datasets[0].raw.ch_names)
 
 
 def test_outdated_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
@@ -61,13 +59,13 @@ def test_outdated_save_concat_windows_dataset(
     n_windows_datasets = len(concat_windows_dataset.datasets)
     with pytest.warns(
             UserWarning, match='This function only exists for '
-                            'backwards compatibility purposes. DO NOT USE!'):
+                               'backwards compatibility purposes. DO NOT USE!'):
         concat_windows_dataset._outdated_save(path=tmpdir, overwrite=False)
     assert os.path.exists(tmpdir.join("description.json"))
     for windows_i in range(n_windows_datasets):
         assert os.path.exists(tmpdir.join(f"{windows_i}-epo.fif"))
     assert not os.path.exists(tmpdir.join(f"{n_windows_datasets}-epo.fif"))
-    
+
 
 def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
@@ -90,7 +88,6 @@ def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
 
 def test_fail_outdated_save_on_new_window_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
-    n_windows_datasets = len(concat_windows_dataset.datasets)
     with pytest.raises(
             NotImplementedError, match='Outdated save not implemented for new window datasets.'):
         concat_windows_dataset._outdated_save(path=tmpdir, overwrite=False)
@@ -114,7 +111,7 @@ def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
         np.testing.assert_array_equal(crop_inds, actual_crop_inds)
     pd.testing.assert_frame_equal(concat_windows_dataset.description,
-                                loaded_concat_windows_dataset.description)
+                                  loaded_concat_windows_dataset.description)
 
 
 def test_load_multiple_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
@@ -131,8 +128,7 @@ def test_load_multiple_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
             len(loaded_concat_raw_datasets.description))
 
 
-def test_load_multiple_concat_windows_dataset(setup_concat_windows_dataset,
-                                              tmpdir):                            
+def test_load_multiple_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     for i in range(2):
         i_offset = i * len(concat_windows_dataset.datasets)
@@ -188,7 +184,7 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
                     'feet': 0, 'left_hand': 1, 'right_hand': 2, 'tongue': 3},
                 'preload': False, 'drop_bad_windows': True, 'picks': None,
                 'reject': None, 'flat': None, 'on_missing': 'error',
-                'accepted_bads_ratio': 0.0, 'verbose': 'error'})
+                'accepted_bads_ratio': 0.0, 'verbose': 'error', 'use_mne_epochs': False})
         ]
         assert ds.raw_preproc_kwargs == [
             ('pick_channels', {'ch_names': ['Cz']}),
@@ -275,7 +271,7 @@ def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpd
         np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
         np.testing.assert_array_equal(crop_inds, actual_crop_inds)
     pd.testing.assert_frame_equal(concat_windows_dataset.description,
-                                loaded_concat_windows_dataset.description)
+                                  loaded_concat_windows_dataset.description)
 
 
 def test_save_varying_number_of_datasets_with_overwrite(setup_concat_windows_dataset, tmpdir):
