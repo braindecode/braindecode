@@ -2,7 +2,7 @@
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
-#          Pierre Guetschel
+#          Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)
 
