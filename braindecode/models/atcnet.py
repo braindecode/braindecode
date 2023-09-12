@@ -207,7 +207,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         ])
 
         if self.concat:
-            self.max_norm_linears = nn.ModuleList([
+            self.final_layer = nn.ModuleList([
                 MaxNormLinear(
                     in_features=self.F2 * self.n_windows,
                     out_features=self.n_outputs,
@@ -215,7 +215,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 )
             ])
         else:
-            self.max_norm_linears = nn.ModuleList([
+            self.final_layer = nn.ModuleList([
                 MaxNormLinear(
                     in_features=self.F2,
                     out_features=self.n_outputs,
@@ -223,7 +223,9 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 ) for _ in range(self.n_windows)
             ])
 
-        self.final_layer = nn.LogSoftmax(dim=1)
+        # Since LogSoftmax will be removed, it won't be incorporated
+        # into final_layer
+        self.lsfmx = nn.LogSoftmax(dim=1)
 
     def forward(self, X):
         # Dimension: (batch_size, C, T)
@@ -256,14 +258,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
             # mapped by dense layer or concatenated then mapped by a dense
             # layer
             if not self.concat:
-                tcn_feat = self.max_norm_linears[w](tcn_feat)
+                tcn_feat = self.final_layer[w](tcn_feat)
 
             sw_concat.append(tcn_feat)
 
         # ----- Aggregation and prediction -----
         if self.concat:
             sw_concat = torch.cat(sw_concat, dim=1)
-            sw_concat = self.max_norm_linears[0](sw_concat)
+            sw_concat = self.final_layer[0](sw_concat)
         else:
             if len(sw_concat) > 1:  # more than one window
                 sw_concat = torch.stack(sw_concat, dim=0)
@@ -271,7 +273,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             else:  # one window (# windows = 1)
                 sw_concat = sw_concat[0]
 
-        return self.final_layer(sw_concat)
+        return self.lsfmx(sw_concat)
 
 
 class _ConvBlock(nn.Module):

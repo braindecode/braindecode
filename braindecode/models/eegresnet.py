@@ -83,6 +83,11 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         self.batch_norm_epsilon = batch_norm_epsilon
         self.conv_weight_init_fn = conv_weight_init_fn
 
+        self.keys_to_change = [
+            "conv_classifier.weight",
+            "conv_classifier.bias"
+        ]
+
         self.add_module("ensuredims", Ensure4d())
         if self.split_first_layer:
             self.add_module('dimshuffle',
@@ -201,16 +206,6 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
 
         # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
-
-        """
-        self.add_module('conv_classifier',
-                nn.Conv2d(n_cur_filters, self.n_outputs,
-                          (1, 1), bias=True))
-        self.add_module('softmax', nn.LogSoftmax(dim=1))
-
-        self.add_module('final_layer', Expression(squeeze_final_output))
-
-        """
 
         # Initialize all weights
         self.apply(lambda module: _weights_init(module, self.conv_weight_init_fn))

@@ -100,6 +100,9 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.kernel_length = kernel_length
         self.third_kernel_size = third_kernel_size
         self.drop_prob = drop_prob
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
         self.keys_to_change = [
             "conv_classifier.weight",
             "conv_classifier.bias"
@@ -208,22 +211,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
 
-        """self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                self.F2,
-                self.n_outputs,
-                (n_out_virtual_chans, self.final_conv_length),
-                bias=True,
-            ),
-        )
-        self.add_module("softmax", nn.LogSoftmax(dim=1))
-        # Transpose back to the the logic of braindecode,
-        # so time in third dimension (axis=2)
-        self.add_module("permute_back",
-                        Rearrange("batch x y z -> batch x z y"))
-        self.add_module("final_layer", Expression(squeeze_final_output))"""
-
         _glorot_weight_zero_bias(self)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -302,8 +289,11 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         self.second_kernel_size = second_kernel_size
         self.third_kernel_size = third_kernel_size
         self.drop_prob = drop_prob
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
         self.keys_to_change = [
-            "conv_classifier.weight"
+            "conv_classifier.weight",
             "conv_classifier.bias"
         ]
 
@@ -389,31 +379,13 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
 
         # Transpose back to the the logic of braindecode,
         # so time in third dimension (axis=2)
-        module.add_module("permute_2", Rearrange("batch x y z -> batch x z y"),)
+        module.add_module("permute_2", Rearrange("batch x y z -> batch x z y"), )
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 
         # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
 
-        """
-        self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                n_filters_3,
-                self.n_outputs,
-                (n_out_virtual_chans, self.final_conv_length),
-                bias=True,
-            ),
-        )
-        self.add_module("softmax", nn.LogSoftmax(dim=1))
-        # Transpose back to the the logic of braindecode,
-        # so time in third dimension (axis=2)
-        self.add_module(
-            "permute_2", Rearrange("batch x y z -> batch x z y")
-        )
-
-        self.add_module("final_layer", Expression(squeeze_final_output))"""
         _glorot_weight_zero_bias(self)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
@@ -422,6 +394,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)
+
 
 def _glorot_weight_zero_bias(model):
     """Initalize parameters of all modules by initializing weights with

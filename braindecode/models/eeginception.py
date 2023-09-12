@@ -142,6 +142,11 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes
 
+        self.keys_to_change = [
+            'classification.1.weight',
+            'classification.1.bias'
+        ]
+
         self.add_module("ensuredims", Ensure4d())
 
         self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 C T"))

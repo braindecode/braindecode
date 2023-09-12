@@ -145,6 +145,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        self.keys_to_change = [
+            'classification.1.weight',
+            'classification.1.bias'
+        ]
+
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, in_channels, input_window_samples
 

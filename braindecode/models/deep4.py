@@ -165,6 +165,14 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.batch_norm_alpha = batch_norm_alpha
         self.stride_before_pool = stride_before_pool
 
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
+        self.keys_to_change = [
+            "conv_classifier.weight",
+            "conv_classifier.bias"
+        ]
+
         if self.stride_before_pool:
             conv_stride = self.pool_time_stride
             pool_stride = 1
@@ -272,7 +280,6 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             self.final_conv_length = self.get_output_shape()[2]
 
         # The conv_classifier will be the final_layer and the other ones will be incorporated
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
         module = nn.Sequential()
 
         module.add_module("conv_classifier",
@@ -282,6 +289,9 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         module.add_module("softmax", nn.LogSoftmax(dim=1))
 
         module.add_module("squeeze", Expression(squeeze_final_output))
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
@@ -318,15 +328,18 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
          implemented"""
-        keys_to_change = [
+        keys_time_spat = [
             "conv_time.weight",
             "conv_spat.weight",
             "conv_time.bias",
             "conv_spat.bias",
         ]
-        new_state_dict = OrderedDict()
+        state_dict_time_spat = OrderedDict()
         for k, v in state_dict.items():
-            if k in keys_to_change:
+            if k in keys_time_spat:
                 k = f"conv_time_spat.{k}"
-            new_state_dict[k] = v
+            state_dict_time_spat[k] = v
+
+        # I just added this to dan's function
+        new_state_dict = super().return_new_keys(state_dict_time_spat, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)

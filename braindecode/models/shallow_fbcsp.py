@@ -223,5 +223,5 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             state_dict_time_spat[k] = v
 
         # I just added this to dan's function
-        state_dict_final = super().return_new_keys(state_dict_time_spat, self.keys_to_change)
-        return super().load_state_dict(state_dict_final, *args, **kwargs)
+        new_state_dict = super().return_new_keys(state_dict_time_spat, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
