@@ -19,15 +19,15 @@ jobs:
       - name: Check for changes in whats_news.rst
         run: |
           git fetch
-          changed_files=$(git diff --name-only FETCH_HEAD)
-          if echo "$changed_files" | grep -q "whats_news.rst"; then
+          diff_output=$(git diff --name-only FETCH_HEAD docs/whats_news.rst)
+          if [[ -n "$diff_output" ]]; then
             echo "whats_news.rst has been changed."
             # Add any additional steps you want to perform when the file has changed.
           else
             echo "whats_news.rst has not been changed."
-            # Add any additional steps you want to perform when the file has not changed.
             echo "::error::whats_news.rst has not been changed. CI will fail."
             exit 1
           fi
+
 
 
