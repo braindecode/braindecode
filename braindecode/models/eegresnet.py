@@ -188,12 +188,29 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             self.add_module('mean_pool', AvgPool2dWithConv(
                 (self.final_pool_length, 1), (1, 1),
                 dilation=pool_dilation))
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(n_cur_filters, self.n_outputs, (1, 1), bias=True, ))
+
+        module.add_module("softmax", nn.LogSoftmax(dim=1))
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        self.add_module("final_layer", module)
+
+        """
         self.add_module('conv_classifier',
-                        nn.Conv2d(n_cur_filters, self.n_outputs,
-                                  (1, 1), bias=True))
+                nn.Conv2d(n_cur_filters, self.n_outputs,
+                          (1, 1), bias=True))
         self.add_module('softmax', nn.LogSoftmax(dim=1))
 
         self.add_module('final_layer', Expression(squeeze_final_output))
+
+        """
 
         # Initialize all weights
         self.apply(lambda module: _weights_init(module, self.conv_weight_init_fn))

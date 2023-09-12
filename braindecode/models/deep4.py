@@ -270,17 +270,18 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.eval()
         if self.final_conv_length == "auto":
             self.final_conv_length = self.get_output_shape()[2]
-        self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                self.n_filters_4,
-                self.n_outputs,
-                (self.final_conv_length, 1),
-                bias=True,
-            ),
-        )
-        self.add_module("softmax", nn.LogSoftmax(dim=1))
-        self.add_module("final_layer", Expression(squeeze_final_output))
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(n_filters_4, self.n_outputs,
+                                    (self.final_conv_length, 1), bias=True, ))
+
+        module.add_module("softmax", nn.LogSoftmax(dim=1))
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
@@ -308,8 +309,8 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                 init.constant_(bnorm_weight, 1)
                 init.constant_(bnorm_bias, 0)
 
-        init.xavier_uniform_(self.conv_classifier.weight, gain=1)
-        init.constant_(self.conv_classifier.bias, 0)
+        init.xavier_uniform_(self.final_layer[0].weight, gain=1)
+        init.constant_(self.final_layer[0].bias, 0)
 
         # Start in eval mode
         self.eval()

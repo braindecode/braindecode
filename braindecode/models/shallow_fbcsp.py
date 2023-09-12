@@ -122,6 +122,14 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.batch_norm_alpha = batch_norm_alpha
         self.drop_prob = drop_prob
 
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
+        self.keys_to_change = [
+            "conv_classifier.weight",
+            "conv_classifier.bias"
+        ]
+
         self.add_module("ensuredims", Ensure4d())
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         if self.split_first_layer:
@@ -170,17 +178,20 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.eval()
         if self.final_conv_length == "auto":
             self.final_conv_length = self.get_output_shape()[2]
-        self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                n_filters_conv,
-                self.n_outputs,
-                (self.final_conv_length, 1),
-                bias=True,
-            ),
-        )
-        self.add_module("softmax", nn.LogSoftmax(dim=1))
-        self.add_module("final_layer", Expression(squeeze_final_output))
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(n_filters_conv, self.n_outputs,
+                                    (self.final_conv_length, 1), bias=True, ))
+
+        module.add_module("softmax", nn.LogSoftmax(dim=1))
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in paper...
         init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
@@ -194,21 +205,23 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         if self.batch_norm:
             init.constant_(self.bnorm.weight, 1)
             init.constant_(self.bnorm.bias, 0)
-        init.xavier_uniform_(self.conv_classifier.weight, gain=1)
-        init.constant_(self.conv_classifier.bias, 0)
+        init.xavier_uniform_(self.final_layer[0].weight, gain=1)
+        init.constant_(self.final_layer[0].bias, 0)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
-        keys_to_change = [
-            "conv_time.weight",
-            "conv_spat.weight",
-            "conv_time.bias",
-            "conv_spat.bias",
-        ]
-        new_state_dict = OrderedDict()
+        implemented"""
+        keys_time_spat = ["conv_time.weight",
+                          "conv_spat.weight",
+                          "conv_time.bias",
+                          "conv_spat.bias", ]
+
+        state_dict_time_spat = OrderedDict()
         for k, v in state_dict.items():
-            if k in keys_to_change:
+            if k in keys_time_spat:
                 k = f"conv_time_spat.{k}"
-            new_state_dict[k] = v
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
+            state_dict_time_spat[k] = v
+
+        # I just added this to dan's function
+        state_dict_final = super().return_new_keys(state_dict_time_spat, self.keys_to_change)
+        return super().load_state_dict(state_dict_final, *args, **kwargs)
