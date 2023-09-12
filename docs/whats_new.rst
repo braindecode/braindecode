@@ -25,8 +25,8 @@ Enhancements
 - Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
 - Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
 - Replacing the replacing Pytorch layers to Rearrange from einops #468  (:gh:`468` by `Bruno Aristimunha`_)
-- Solving issues with slow conda and splitting the doc and test .yml to speed the CI. (:gh:`479` by `Bruno Aristimunha`_)
 - Refactoring the documentation and creating a sub-structure for the examples (:gh:`470` by `Denis A. Engemann`_ and `Bruno Aristimunha`_)
+- Solving issues with slow conda and splitting the doc and test .yml to speed the CI. (:gh:`479` by `Bruno Aristimunha`_)
 - Improving the GitHub Actions CI and solving the skorch compatibility in the examples (:gh:`472` by `Bruno Aristimunha`_)
 - Changing the documentation order (:gh:`489` by `Bruno Aristimunha`_)
 - Improve the documentation for the Temple University Hospital (TUH) EEG Corpus with discrete targets (:gh:`485` by `Pierre Guetschel`_ and `Bruno Aristimunha`_)
@@ -46,6 +46,9 @@ Enhancements
 - Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)
 - Creating new preprocessor objects based on mne's raw/Epochs methods :class:`braindecode.preprocessing.Resample`, :class:`braindecode.preprocessing.DropChannels`, :class:`braindecode.preprocessing.SetEEGReference`, :class:`braindecode.preprocessing.Filter`, :class:`braindecode.preprocessing.Pick`, :class:`braindecode.preprocessing.Crop` (:gh:`500` by `Bruna Lopes`_ and `Bruno Aristimunha`_)
 - Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
+- Automatically populate signal-related parameters in :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`517` by `Pierre Guetschel`_)
+- Adding a pure PyTorch tutorial (:gh:`523` by `Remi Delbouys`_  and `Bruno Aristimunha`_)
+- Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
 - Changing :class:`braindecode.models.Deep4Net` `final_conv_length` default value to 'auto' (:gh:`535` by `Maciej Śliwowski`_)
 
 Bugs
@@ -56,6 +59,7 @@ Bugs
 API changes
 ~~~~~~~~~~~
 - Removing support for Python 3.7 (:gh:`397` by `Bruno Aristimunha`_)
+- Removing the LogSoftmax layer from the models and adding deprecated warnings and temporary flags (:gh:`513` by `Sara Sedlar`_)
 
 .. _changes_0_8_0:
 
@@ -225,3 +229,4 @@ Authors
 .. _Sara Sedlar: https://github.com/Sara04
 .. _Bruna Lopes: https://github.com/brunaafl
 .. _Sylvain Chevallier: https://github.com/sylvchev
+.. _Remi Delbouys: https://github.com/remidbs

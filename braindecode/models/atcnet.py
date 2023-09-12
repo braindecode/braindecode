@@ -127,6 +127,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             n_channels=None,
             n_classes=None,
             input_size_s=None,
+            add_log_softmax=True,
     ):
         n_chans, n_outputs, input_window_seconds = deprecated_args(
             self,
@@ -141,6 +142,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_channels, n_classes, input_size_s
@@ -223,7 +225,10 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 ) for _ in range(self.n_windows)
             ])
 
-        self.sfmx = nn.LogSoftmax(dim=1)
+        if self.add_log_softmax:
+            self.out_fun = nn.LogSoftmax(dim=1)
+        else:
+            self.out_fun = nn.Identity()
 
     def forward(self, X):
         # Dimension: (batch_size, C, T)
@@ -271,7 +276,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             else:  # one window (# windows = 1)
                 sw_concat = sw_concat[0]
 
-        return self.sfmx(sw_concat)
+        return self.out_fun(sw_concat)
 
 
 class _ConvBlock(nn.Module):
