@@ -2,6 +2,8 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
+import logging
+
 import pandas as pd
 import pytest
 import numpy as np
@@ -351,3 +353,25 @@ def test_set_signal_params_concat_ds_channels(eegneuralnet_cls, preds, concat_da
     assert net.module_.n_times == 10
     assert net.module_.n_chans == 3
     assert net.module_.n_outputs == n_outputs
+
+
+def test_initialized_module(eegneuralnet_cls, preds, caplog, Xy):
+    X, y = Xy
+    module = MockModuleReturnMockedPreds(
+        preds=preds,
+        n_outputs=12,
+        n_chans=12,
+        n_times=12,
+    )
+    net = eegneuralnet_cls(
+        module,
+        cropped=False,
+        max_epochs=1,
+        train_split=None,
+    )
+    with caplog.at_level(logging.WARNING):
+        net.fit(X, y)
+    assert "The module passed is already initialized" in caplog.text
+    assert net.module_.n_outputs == 12
+    assert net.module_.n_chans == 12
+    assert net.module_.n_times == 12
