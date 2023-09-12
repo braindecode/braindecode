@@ -153,14 +153,19 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             return
         # get kwargs from signal:
         signal_kwargs = dict()
-        if isinstance(X, np.ndarray):
+        if isinstance(X, mne.BaseEpochs) or isinstance(X, np.ndarray):
             if y is None:
                 raise ValueError("y must be specified if X is a numpy array.")
-            self.log.info("Using numpy array to find signal-related parameters.")
-            Xshape = X.shape
-            signal_kwargs["n_times"] = Xshape[-1]
-            signal_kwargs["n_chans"] = Xshape[-2]
             signal_kwargs['n_outputs'] = self._get_n_outputs(y, classes)
+            if isinstance(X, mne.BaseEpochs):
+                self.log.info("Using mne.Epochs to find signal-related parameters.")
+                signal_kwargs["n_times"] = len(X.times)
+                signal_kwargs["sfreq"] = X.info['sfreq']
+                signal_kwargs["chs_info"] = X.info['chs']
+            else:
+                self.log.info("Using numpy array to find signal-related parameters.")
+                signal_kwargs["n_times"] = X.shape[-1]
+                signal_kwargs["n_chans"] = X.shape[-2]
         elif is_dataset(X):
             self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
             X0 = X[0][0]
