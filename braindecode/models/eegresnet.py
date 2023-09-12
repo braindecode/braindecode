@@ -213,6 +213,14 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         # Start in eval mode
         self.eval()
 
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented"""
+
+        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
+
+
 
 def _weights_init(module, conv_weight_init_fn):
     """

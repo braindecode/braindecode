@@ -211,6 +211,13 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # Softmax will be changed, so I took it put of final_layer
         self.add_module("sfmx", nn.Softmax(dim=1))
 
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented"""
+
+        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
+
     @staticmethod
     def _get_inception_branch(in_channels, out_channels, kernel_length, depth_multiplier=1):
         return nn.Sequential(
