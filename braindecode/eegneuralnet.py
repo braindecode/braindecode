@@ -10,7 +10,6 @@ import inspect
 
 import numpy as np
 import torch
-from torch.utils.data import Dataset as torchDataset
 from skorch import NeuralNet
 from sklearn.metrics import get_scorer
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
