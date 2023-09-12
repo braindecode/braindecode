@@ -296,14 +296,16 @@ Explaining the template and internal convention:
 
    Check how you can do this in the `braindecode.models` module.
 
-5. **Output shape:** Your method needs to return a tensor of
-   shape (`batch_size`, `self.n_outputs`).
+5. **Output shape:** Your method needs to return a tensor either of
+   shape (`batch_size`, `self.n_outputs`), or, in special cases, of shape (`batch_size`, `self.n_outputs`, `n_out_times`).
+   These special cases can be, for example, if your model should compute a temporal segmentation of the signal or in a
+   cropped-decoding scenario (c.f. example `plot_bcic_iv_4_ecog_cropped.py`).
 
-6. **Define the final layer:** Naming the final classification layer as `self.final_layer` and ensuring it returns
+7. **Define the final layer:** Naming the final classification layer as `self.final_layer` and ensuring it returns
    outputs of shape (`batch_size`, `self.n_outputs`) is important for compatibility with Braindecode's classification
    process.
 
-7. **Avoid Softmax or Log-Softmax:** Not adding softmax or log-softmax layers after the final layer is a good practice
+8. **Avoid Softmax or Log-Softmax:** Not adding softmax or log-softmax layers after the final layer is a good practice
    in general and mandatory for braindecode models.
    Braindecode's `EEGClassifier` class handles the softmax, which allows compatibility with both classification and
    regression tasks.
