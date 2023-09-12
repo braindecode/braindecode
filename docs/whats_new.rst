@@ -47,6 +47,7 @@ Enhancements
 - Creating new preprocessor objects based on mne's raw/Epochs methods :class:`braindecode.preprocessing.Resample`, :class:`braindecode.preprocessing.DropChannels`, :class:`braindecode.preprocessing.SetEEGReference`, :class:`braindecode.preprocessing.Filter`, :class:`braindecode.preprocessing.Pick`, :class:`braindecode.preprocessing.Crop` (:gh:`500` by `Bruna Lopes`_ and `Bruno Aristimunha`_)
 - Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
 - Automatically populate signal-related parameters in :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`517` by `Pierre Guetschel`_)
+- Adding a pure PyTorch tutorial (:gh:`523` by `Remi Delbouys`_  and `Bruno Aristimunha`_)
 - Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
 
 Bugs
@@ -227,3 +228,4 @@ Authors
 .. _Sara Sedlar: https://github.com/Sara04
 .. _Bruna Lopes: https://github.com/brunaafl
 .. _Sylvain Chevallier: https://github.com/sylvchev
+.. _Remi Delbouys: https://github.com/remidbs
