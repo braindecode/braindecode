@@ -22,8 +22,9 @@ jobs:
         run: |
           changed_files=$(git diff --name-only ${{ github.event.before }} ${{ github.event.after }})
           if echo "$changed_files" | grep -q 'docs/whats_new.rst'; then
-            echo "File path/to/your/file.ext has been changed in the PR."
+            echo "File docs/whats_new.rst has been changed in the PR."
           else
+            echo "$echo $changed_files"
             echo "File Whats New has not been changed in the PR."
             echo "::error::File docs/whats_new.rst has not been changed in the PR."
             exit 1
