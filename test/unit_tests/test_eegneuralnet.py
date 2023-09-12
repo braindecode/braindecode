@@ -369,7 +369,7 @@ def test_initialized_module(eegneuralnet_cls, preds, caplog, Xy):
         max_epochs=1,
         train_split=None,
     )
-    with caplog.at_level(logging.WARNING):
+    with caplog.at_level(logging.INFO):
         net.fit(X, y)
     assert "The module passed is already initialized" in caplog.text
     assert net.module_.n_outputs == 12

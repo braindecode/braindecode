@@ -142,10 +142,9 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
     def _set_signal_args(self, X, y, classes):
         is_init = isinstance(self.module, torch.nn.Module)
         if is_init:
-            self.log.warning(
-                "The module passed is already initialized. "
-                "This is deprecated and will be removed in the future. "
-                "Instead, pass the module class and its parameters separately.\n"
+            self.log.info(
+                "The module passed is already initialized which is not recommended. "
+                "Instead, you can pass the module class and its parameters separately.\n"
                 "For more details, see "
                 "https://skorch.readthedocs.io/en/stable/user/neuralnet.html#module \n"
                 "Skipping setting signal-related parameters from data."
