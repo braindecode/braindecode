@@ -312,7 +312,8 @@ def _create_windows_from_events(
         'i_window_in_trial': i_window_in_trials,
         'i_start_in_trial': starts,
         'i_stop_in_trial': stops,
-        'target': description})
+        'target': description
+    })
     if use_mne_epochs:
         # window size - 1, since tmax is inclusive
         mne_epochs = mne.Epochs(
@@ -398,7 +399,8 @@ def _create_fixed_length_windows(
     window_kwargs.append(
         (_EEGWindowsDataset.__name__, {
             'targets_from': targets_from,
-            'last_target_only': last_target_only})
+            'last_target_only': last_target_only
+        })
     )
     windows_ds = _EEGWindowsDataset(
         ds.raw,
@@ -467,7 +469,8 @@ def _create_windows_from_target_channels(
     window_kwargs.append(
         (_EEGWindowsDataset.__name__, {
             'targets_from': targets_from,
-            'last_target_only': last_target_only})
+            'last_target_only': last_target_only
+        })
     )
     windows_ds = _EEGWindowsDataset(
         ds.raw,
