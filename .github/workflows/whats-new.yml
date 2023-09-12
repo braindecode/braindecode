@@ -5,8 +5,6 @@ on:
     branches:
       - "master"
   pull_request:
-    paths:
-      - 'docs/whats_new.rst'
     branches:
       - '*' # all branches, including forks
 
