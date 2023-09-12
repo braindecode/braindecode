@@ -143,7 +143,7 @@ git checkout -b <branch-name>
 Now you can start writing the code to address the issue.
 Make sure to properly document and test your code.
 
-### Adding Your model into the Braindecode
+### Adding Your model into Braindecode
 
 All models present in braindecode are PyTorch models. You are more than welcome to use any published PyTorch model in
 braindecode!
