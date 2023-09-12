@@ -2,6 +2,7 @@
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -160,8 +161,59 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             num_workers=self.get_iterator(X, training=False).loader.num_workers,
         )
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, X, y=None, **kwargs):
+        """Initialize and fit the module.
+
+        If the module was already initialized, by calling fit, the
+        module will be re-initialized (unless ``warm_start`` is True).
+        If possible, signal-related parameters are inferred from the
+        data and passed to the module at initialisation.
+        Depending on the type of input passed, the following parameters
+        are inferred:
+
+          * mne.Epochs: ``n_times``, ``n_chans``, ``n_outputs``, ``chs_info``,
+            ``sfreq``, ``input_window_seconds``
+          * numpy array: ``n_times``, ``n_chans``, ``n_outputs``
+          * WindowsDataset with ``targets_from='metadata'``
+            (or BaseConcatDataset of such datasets): ``n_times``, ``n_chans``, ``n_outputs``
+          * other Dataset: ``n_times``, ``n_chans``
+          * other types: no parameters are inferred.
+
+        Parameters
+        ----------
+        X : input data, compatible with skorch.dataset.Dataset
+          By default, you should be able to pass:
+
+            * mne.Epochs
+            * numpy arrays
+            * torch tensors
+            * pandas DataFrame or Series
+            * scipy sparse CSR matrices
+            * a dictionary of the former three
+            * a list/tuple of the former three
+            * a Dataset
+
+          If this doesn't work with your data, you have to pass a
+          ``Dataset`` that can deal with the data.
+
+        y : target data, compatible with skorch.dataset.Dataset
+          The same data types as for ``X`` are supported. If your X is
+          a Dataset that contains the target, ``y`` may be set to
+          None.
+
+        **fit_params : dict
+          Additional parameters passed to the ``forward`` method of
+          the module and to the ``self.train_split`` call.
+        """
         if y is not None:
             if y.ndim == 1:
                 y = np.array(y).reshape(-1, 1)
         super().fit(X=X, y=y, **kwargs)
+
+    def _get_n_outputs(self, y, classes):
+        if y is None:
+            return None
+        if y.ndim == 1:
+            return 1
+        else:
+            return y.shape[-1]
