@@ -207,7 +207,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         module_kwargs = {f"module__{k}": v for k, v in module_kwargs.items()}
         self.set_params(**module_kwargs)
 
-  def get_dataset(self, X, y=None):
+    def get_dataset(self, X, y=None):
         """Get a dataset that contains the input data and is passed to
         the iterator.
 
@@ -264,7 +264,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             (or BaseConcatDataset of such datasets): ``n_times``, ``n_chans``, ``n_outputs``
           * other Dataset: ``n_times``, ``n_chans``
           * other types: no parameters are inferred.
-      
+
         Parameters
         ----------
         X : input data, compatible with skorch.dataset.Dataset
@@ -286,7 +286,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
           The same data types as for ``X`` are supported. If your X is
           a Dataset that contains the target, ``y`` may be set to
           None.
-    
+
         classes : array, sahpe (n_classes,)
           Solely for sklearn compatibility, currently unused.
 
