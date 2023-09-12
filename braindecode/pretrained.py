@@ -4,12 +4,14 @@ from .models.util import models_dict, weights_dict
 
 
 def initialize_model(
-    name: str, dataset_name: str = None, subject_id: int = None, **init_params
+    name: str, weights_id: None, **init_params
 ):
     """
-    Initialize and return a model specified by the `name` parameter. If `dataset_name` and
-    `subject_id` are provided, pretrained weights associated with those parameters will be downloaded
-    and used for initialization; otherwise, random initialization will be performed.
+    Initialize and return a model specified by the `name` parameter. If `weights_id` is provided,
+    pretrained weights will be downloaded and used for initialization; otherwise, random
+    initialization will be performed.
+
+    TODO: add weight_id naming guide once we've decided on a setup
 
     Specific initialization parameters can be passed via `**init_params`. When using pretrained
     weights, any parameters provided via `init_params` will override the associated parameters used
@@ -19,9 +21,7 @@ def initialize_model(
     ----------
     name : str
         Model name.
-    dataset_name : str or None, optional
-        Dataset name (corresponding to MOABB) for downloading pretrained weights. Default is None.
-    subject_id : int or None, optional
+    weights_id : str or None, optional
         Subject identifier for downloading pretrained weights. Default is None.
     init_params : kwargs, optional
         Additional parameters to pass to the model for initialization.
@@ -33,23 +33,7 @@ def initialize_model(
     """
 
     model = models_dict[name]
-
-    if dataset_name is None and subject_id is None:
-        return model(**init_params)
-    elif dataset_name is None or subject_id is None:
-        raise ValueError(
-            "If using pretrained weights need to specify both"
-            " dataset name and subject id"
-        )
-
-    weights_enum = weights_dict[name]
-
-    try:
-        weights = weights_enum[f"{dataset_name}_{subject_id}"]
-    except KeyError as e:
-        raise KeyError(
-            f"Pretrained weights for {dataset_name} & {subject_id} not available!"
-        )
+    weights = weights_dict[name][weights_id]
 
     pretrained_init_params = weights.fetch_init_params()
     init_params = _check_params(pretrained_init_params, init_params)
