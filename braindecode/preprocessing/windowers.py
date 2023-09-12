@@ -21,7 +21,7 @@ import mne
 import pandas as pd
 from joblib import Parallel, delayed
 
-from ..datasets.base import WindowsDataset, BaseConcatDataset
+from ..datasets.base import WindowsDataset, BaseConcatDataset, _EEGWindowsDataset
 
 
 # XXX it's called concat_ds...
@@ -238,7 +238,7 @@ def _create_windows_from_events(
 
     Returns
     -------
-    WindowsDataset :
+    _EEGWindowsDataset :
         Windowed dataset.
     """
     # catch window_kwargs to store to dataset
@@ -313,9 +313,13 @@ def _create_windows_from_events(
         'i_start_in_trial': starts,
         'i_stop_in_trial': stops,
         'target': description})
-    windows_ds = WindowsDataset(
-        ds.raw, ds.description, metadata=metadata,)
+    windows_ds = _EEGWindowsDataset(
+        ds.raw, metadata=metadata, description=ds.description,)
     # add window_kwargs and raw_preproc_kwargs to windows dataset
+    setattr(windows_ds, 'window_kwargs', window_kwargs)
+    kwargs_name = 'raw_preproc_kwargs'
+    if hasattr(ds, kwargs_name):
+        setattr(windows_ds, kwargs_name, getattr(ds, kwargs_name))
     return windows_ds
 
 
@@ -498,15 +502,15 @@ def _create_fixed_length_windows(
     })
 
     window_kwargs.append(
-        (WindowsDataset.__name__, {'targets_from': targets_from,
+        (_EEGWindowsDataset.__name__, {'targets_from': targets_from,
                                    'last_target_only': last_target_only})
     )
-    windows_ds = WindowsDataset(
+    windows_ds = _EEGWindowsDataset(
         ds.raw,
-        ds.description,
+        metadata=metadata,
+        description=ds.description,
         targets_from=targets_from,
         last_target_only=last_target_only,
-        metadata=metadata,
         )
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, 'window_kwargs', window_kwargs)
@@ -566,15 +570,15 @@ def _create_windows_from_target_channels(
 
     targets_from = 'channels'
     window_kwargs.append(
-        (WindowsDataset.__name__, {'targets_from': targets_from,
+        (_EEGWindowsDataset.__name__, {'targets_from': targets_from,
                                    'last_target_only': last_target_only})
     )
-    windows_ds = WindowsDataset(
+    windows_ds = _EEGWindowsDataset(
         ds.raw,
-        ds.description,
+        metadata=metadata,
+        description=ds.description,
         targets_from=targets_from,
         last_target_only=last_target_only,
-        metadata=metadata,
     )
     setattr(windows_ds, 'window_kwargs', window_kwargs)
     kwargs_name = 'raw_preproc_kwargs'

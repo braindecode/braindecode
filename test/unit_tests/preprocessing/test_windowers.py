@@ -58,7 +58,7 @@ def test_windows_from_events_preload_false(lazy_loadable_dataset):
         trial_stop_offset_samples=0, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False)
 
-    assert all([not ds.windows.preload for ds in windows.datasets])
+    assert all([not ds.raw.preload for ds in windows.datasets])
 
 
 # Skip if OS is Windows
@@ -74,12 +74,12 @@ def test_windows_from_events_n_jobs(lazy_loadable_dataset):
 
     assert windows[0].description.equals(windows[1].description)
     for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
-        # assert ds1.windows == ds2.windows  # Runs locally, fails in CI
-        assert np.allclose(ds1.windows.get_data(), ds2.windows.get_data())
-        assert pd.Series(ds1.windows.info).to_json() == pd.Series(ds2.windows.info).to_json()
+        assert len(ds1) == len(ds2)
+        for (x1, y1, i1), (x2, y2, i2) in zip(ds1, ds2):
+            assert np.allclose(x1, x2)
+            assert y1 == y2
+            assert i1 == i2
         assert ds1.description.equals(ds2.description)
-        assert np.array_equal(ds1.y, ds2.y)
-        assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
 
 
 def test_windows_from_events_mapping_filter(tmpdir_factory):
@@ -133,7 +133,7 @@ def test_fixed_length_windows_preload_false(lazy_loadable_dataset):
         stop_offset_samples=100, window_size_samples=100,
         window_stride_samples=100, drop_last_window=False, preload=False)
 
-    assert all([not ds.windows.preload for ds in windows.datasets])
+    assert all([not ds.raw.preload for ds in windows.datasets])
 
 
 def test_one_window_per_original_trial(concat_ds_targets):
@@ -345,12 +345,12 @@ def test_fixed_length_windower_n_jobs(lazy_loadable_dataset):
 
     assert windows[0].description.equals(windows[1].description)
     for ds1, ds2 in zip(windows[0].datasets, windows[1].datasets):
-        # assert ds1.windows == ds2.windows  # Runs locally, fails in CI
-        assert np.allclose(ds1.windows.get_data(), ds2.windows.get_data())
-        assert pd.Series(ds1.windows.info).to_json() == pd.Series(ds2.windows.info).to_json()
+        assert len(ds1) == len(ds2)
+        for (x1, y1, i1), (x2, y2, i2) in zip(ds1, ds2):
+            assert np.allclose(x1, x2)
+            assert y1 == y2
+            assert i1 == i2
         assert ds1.description.equals(ds2.description)
-        assert np.array_equal(ds1.y, ds2.y)
-        assert np.array_equal(ds1.crop_inds, ds2.crop_inds)
 
 
 def test_windows_from_events_cropped(lazy_loadable_dataset):
