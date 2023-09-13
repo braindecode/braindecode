@@ -363,9 +363,9 @@ confusion_mat = confusion_matrix(y_true, y_pred)
 
 # add class labels
 # label_dict is class_name : str -> i_class : int
-label_dict = valid_set.datasets[0].windows.event_id.items()
+label_dict = valid_set.datasets[0].window_kwargs[0][1]['mapping']
 # sort the labels by values (values are integer class labels)
-labels = list(dict(sorted(list(label_dict), key=lambda kv: kv[1])).keys())
+labels = [k for k, v in sorted(label_dict.items(), key=lambda kv: kv[1])]
 
 # plot the basic conf. matrix
 plot_confusion_matrix(confusion_mat, class_names=labels)
