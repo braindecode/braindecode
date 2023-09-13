@@ -134,6 +134,7 @@ X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
 import mne
 import matplotlib.pyplot as plt
 
+
 def plot_psd(data, axis, label, color):
     psds, freqs = mne.time_frequency.psd_array_multitaper(data, sfreq=sfreq,
                                                           fmin=0.1, fmax=100)
