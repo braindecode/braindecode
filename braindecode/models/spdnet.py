@@ -36,7 +36,7 @@ class EigenvalueModificator(torch.autograd.Function):
         Symmetric matrix
     function_applied : callable
         Function applied to the eigenvalues of X
-    derivative_function_applied : callable
+    derivative : callable
         Derivative of the function applied to the
         eigenvalues of X during backpropagation
 
@@ -52,12 +52,12 @@ class EigenvalueModificator(torch.autograd.Function):
     """
 
     @staticmethod
-    def forward(ctx, X, function_applied, derivative_function_applied):
+    def forward(ctx, X, function_applied, derivative):
         s, U = torch.linalg.eigh(X)
         s_modified = function_applied(s)
         output = U @ torch.diag_embed(s_modified) @ U.transpose(-1, -2)
         ctx.save_for_backward(s, U, s_modified)
-        ctx.derivative_function_applied_ = derivative_function_applied
+        ctx.derivative_ = derivative
         return output
 
     @staticmethod
@@ -73,7 +73,7 @@ class EigenvalueModificator(torch.autograd.Function):
         numerator = s_modified.unsqueeze(-1) - s_modified.unsqueeze(-1).transpose(-1, -2)
 
         # case: sigma_i == sigma_j
-        s_derivativated = ctx.derivative_function_applied_(s)
+        s_derivativated = ctx.derivative_(s)
         numerator[is_eq] = 0.5 * (
             s_derivativated.unsqueeze(-1) + s_derivativated.unsqueeze(-1).transpose(-1, -2)
         )[is_eq]
@@ -163,12 +163,12 @@ class ReEig(nn.Module):
     def function_applied(self, s):
         return s.clamp(min=self.threshold_)
 
-    def derivative_function_applied(self, s):
+    def derivative(self, s):
         return s > self.threshold_
 
     def forward(self, X):
         return EigenvalueModificator.apply(
-            X, self.function_applied, self.derivative_function_applied
+            X, self.function_applied, self.derivative
         )
 
 
@@ -202,14 +202,14 @@ class LogEig(nn.Module):
     def function_applied(self, s):
         return s.clamp(min=self.threshold_).log()
 
-    def derivative_function_applied(self, s):
+    def derivative(self, s):
         s_derivated = s.reciprocal()
         s_derivated[s <= self.threshold_] = 0
         return s_derivated
 
     def forward(self, X):
         return EigenvalueModificator.apply(
-            X, self.function_applied, self.derivative_function_applied
+            X, self.function_applied, self.derivative
         )
 
 
