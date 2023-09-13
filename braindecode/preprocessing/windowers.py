@@ -301,7 +301,7 @@ def _create_windows_from_events(
         onsets, stops, trial_start_offset_samples,
         trial_stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window, accepted_bads_ratio)
-        
+
     if any(np.diff(starts) <= 0):
         raise NotImplementedError('Trial overlap not implemented.')
 
@@ -458,13 +458,11 @@ def _create_windows_from_target_channels(
     stops = np.nonzero((~np.isnan(target[0, :])))[0] + 1
     stops = stops[(stops < stop) & (stops >= window_size_samples)]
     stops = stops.astype(int)
-    # TODO: Make sure that indices are correct
-    fake_events = [[stop, window_size_samples, -1] for stop in stops]
     metadata = pd.DataFrame({
-        'i_window_in_trial': np.arange(len(fake_events)),
+        'i_window_in_trial': np.arange(len(stops)),
         'i_start_in_trial': stops - window_size_samples,
         'i_stop_in_trial': stops,
-        'target': len(fake_events) * [target]
+        'target': len(stops) * [target]
     })
 
     targets_from = 'channels'
