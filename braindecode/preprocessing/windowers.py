@@ -249,18 +249,20 @@ def _create_windows_from_events(
         unique_events = np.unique(ds.raw.annotations.description)
         new_unique_events = [x for x in unique_events if x not in mapping]
         # mapping event descriptions to integers from 0 on
-        max_id_mapping = len(mapping)
-        mapping.update(
-            {v: k + max_id_mapping for k, v in enumerate(new_unique_events)}
-        )
+        max_id_existing_mapping = len(mapping)
+        mapping.update({
+                event_name: i_event_type + max_id_existing_mapping
+                for i_event_type, event_name in enumerate(new_unique_events)
+        })
 
     events, events_id = mne.events_from_annotations(ds.raw, mapping)
     onsets = events[:, 0]
     # Onsets are relative to the beginning of the recording
-    filtered_durations = np.array(
-        [a['duration'] for a in ds.raw.annotations
-            if a['description'] in events_id]
-    )
+    filtered_durations = np.array([
+        a['duration'] for a in ds.raw.annotations
+        if a['description'] in events_id
+    ])
+
     stops = onsets + (filtered_durations * ds.raw.info['sfreq']).astype(int)
     # XXX This could probably be simplified by using chunk_duration in
     #     `events_from_annotations`
@@ -299,13 +301,13 @@ def _create_windows_from_events(
         onsets, stops, trial_start_offset_samples,
         trial_stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window, accepted_bads_ratio)
+        
+    if any(np.diff(starts) <= 0):
+        raise NotImplementedError('Trial overlap not implemented.')
 
     events = [[start, window_size_samples, description[i_trials[i_start]]]
               for i_start, start in enumerate(starts)]
     events = np.array(events)
-
-    if any(np.diff(events[:, 0]) <= 0):
-        raise NotImplementedError('Trial overlap not implemented.')
 
     description = events[:, -1]
 
