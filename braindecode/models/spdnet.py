@@ -55,7 +55,7 @@ class EigenvalueModificator(torch.autograd.Function):
     def forward(ctx, X, function_applied, derivative_function_applied):
         s, U = torch.linalg.eigh(X)
         s_modified = function_applied(s)
-        output = U @ torch.diag_embed(s) @ U.transpose(-1, -2)
+        output = U @ torch.diag_embed(s_modified) @ U.transpose(-1, -2)
         ctx.save_for_backward(s, U, s_modified)
         ctx.derivative_function_applied_ = derivative_function_applied
         return output
@@ -203,8 +203,9 @@ class LogEig(nn.Module):
         return s.clamp(min=self.threshold_).log()
 
     def derivative_function_applied(self, s):
-        smod = s.reciprocal()
-        return smod.clamp(min=self.threshold_)
+        s_derivated = s.reciprocal()
+        s_derivated[s<=self.threshold_] = 0
+        return s_derivated
 
     def forward(self, X):
         return EigenvalueModificator.apply(
