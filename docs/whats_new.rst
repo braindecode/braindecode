@@ -48,6 +48,7 @@ Enhancements
 - Moving :function:`braindecode.models.util.get_output_shape` and :function:`braindecode.models.util.to_dense_prediction_model` to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`514` by `Maciej Śliwowski`_)
 - Adding a pure PyTorch tutorial (:gh:`523` by `Remi Delbouys`_  and `Bruno Aristimunha`_)
 - Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
+- Keep using `mne.Raw` after windowing to speed up windowing, do not create `mne.Epochs` (:gh:`515` by `Robin Tibor Schirrmeister`_)
 
 Bugs
 ~~~~
