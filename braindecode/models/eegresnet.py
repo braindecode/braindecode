@@ -194,7 +194,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
                 (self.final_pool_length, 1), (1, 1),
                 dilation=pool_dilation))
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
         module.add_module("conv_classifier",
@@ -204,7 +204,6 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
 
         # Initialize all weights
@@ -215,7 +214,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
+         implemented and the las layers' names were normalized"""
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)

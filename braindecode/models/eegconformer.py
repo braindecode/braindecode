@@ -121,6 +121,11 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        self.keys_to_change = [
+            'classification_head.fc.6.weight',
+            'classification_head.fc.6.bias',
+        ]
+
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, n_channels, input_window_samples
         if not (self.n_chans <= 64):
@@ -146,14 +151,16 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             att_heads=att_heads,
             att_drop=att_drop_prob)
 
-        self.final_layer = _ClassificationHead(
-            final_fc_length=final_fc_length,
-            n_classes=self.n_outputs, return_features=return_features)
+        self.classification_head = _ClassificationHead(
+            final_fc_length=final_fc_length)
+
+        self.final_layer = _FinalLayer(n_classes=self.n_outputs, return_features=return_features)
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
         x = self.transformer(x)
+        x = self.classification_head(x)
         x = self.final_layer(x)
         return x
 
@@ -166,6 +173,14 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         size_embedding_2 = out.cpu().data.numpy().shape[2]
 
         return size_embedding_1 * size_embedding_2
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented and the las layers' names were normalized"""
+
+        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
+
 
 
 class _PatchEmbedding(nn.Module):
@@ -343,9 +358,9 @@ class _TransformerEncoder(nn.Sequential):
 
 
 class _ClassificationHead(nn.Module):
-    def __init__(self, final_fc_length, n_classes,
+    def __init__(self, final_fc_length,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
-                 hidden_channels=32, return_features=False):
+                 hidden_channels=32):
         """"Classification head for the transformer encoder.
 
         Parameters
@@ -374,15 +389,51 @@ class _ClassificationHead(nn.Module):
             nn.Linear(out_channels, hidden_channels),
             nn.ELU(),
             nn.Dropout(drop_prob_2),
+            # nn.Linear(hidden_channels, n_classes),
+        )
+        #self.return_features = return_features
+        #self.classification = nn.LogSoftmax(dim=1)
+
+    def forward(self, x):
+        x = x.contiguous().view(x.size(0), -1)
+        out = self.fc(x)
+        return out
+
+
+class _FinalLayer(nn.Module):
+    def __init__(self, n_classes, hidden_channels=32, return_features=False):
+        """"Classification head for the transformer encoder.
+
+        Parameters
+        ----------
+        final_fc_length : int
+            Length of the final fully connected layer.
+        n_classes : int
+            Number of classes for classification.
+        drop_prob_1 : float
+            Dropout probability for the first dropout layer.
+        drop_prob_2 : float
+            Dropout probability for the second dropout layer.
+        out_channels : int
+            Number of output channels for the first linear layer.
+        hidden_channels : int
+            Number of output channels for the second linear layer.
+        return_features : bool
+            Whether to return input features.
+        """
+
+        super().__init__()
+        self.final_layer = nn.Sequential(
             nn.Linear(hidden_channels, n_classes),
         )
         self.return_features = return_features
         self.classification = nn.LogSoftmax(dim=1)
 
     def forward(self, x):
-        x = x.contiguous().view(x.size(0), -1)
-        out = self.fc(x)
         if self.return_features:
+            out = self.final_layer(x)
             return out, x
         else:
-            return self.classification(out)
+            self.final_layer.add_module('classification', nn.LogSoftmax(dim=1))
+            out = self.final_layer(x)
+            return out

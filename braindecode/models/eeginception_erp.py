@@ -245,10 +245,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                 self.n_times // prod(self.pooling_sizes))
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
-        # Moved flatten to another layer
         self.add_module("flat", nn.Flatten())
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
         module.add_module("fc",
@@ -259,14 +258,13 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
         module.add_module("softmax", nn.Softmax(1))
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
+         implemented and the las layers' names were normalized"""
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)

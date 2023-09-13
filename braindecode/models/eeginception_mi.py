@@ -102,6 +102,11 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.ensuredims = Ensure4d()
         self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")
 
+        self.keys_to_change = [
+            'final_layer.fc.weight',
+            'final_layer.fc.bias'
+        ]
+
         # ======== Inception branches ========================
 
         self.initial_inception_module = _InceptionModuleMI(
@@ -164,14 +169,14 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         )
 
         self.flat = nn.Flatten()
-        self.fc = nn.Linear(
-            # in_features=self.input_window_samples * intermediate_in_channels,
-            in_features=intermediate_in_channels,
-            out_features=self.n_outputs,
-            bias=True,
-        )
 
-        self.final_layer = nn.LogSoftmax(dim=1)
+        module = nn.Sequential()
+        module.add_module('fc',
+                          nn.Linear(in_features=intermediate_in_channels,
+                                    out_features=self.n_outputs,
+                                    bias=True,))
+        module.add_module('softmax', nn.LogSoftmax(dim=1))
+        self.final_layer = module
 
     def forward(
             self,
@@ -197,8 +202,15 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         out = self.ave_pooling(out)
         out = self.flat(out)
-        out = self.fc(out)
-        return self.final_layer(out)
+        out = self.final_layer(out)
+        return out #self.final_layer(out)
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented and the las layers' names were normalized"""
+
+        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
 
 
 class _InceptionModuleMI(nn.Module):

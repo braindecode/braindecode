@@ -279,7 +279,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         if self.final_conv_length == "auto":
             self.final_conv_length = self.get_output_shape()[2]
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
         module.add_module("conv_classifier",
@@ -290,7 +290,6 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in our paper...
@@ -327,7 +326,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
+         implemented and the las layers' names were normalized"""
         keys_time_spat = [
             "conv_time.weight",
             "conv_spat.weight",
@@ -340,6 +339,5 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                 k = f"conv_time_spat.{k}"
             state_dict_time_spat[k] = v
 
-        # I just added this to dan's function
         new_state_dict = super().return_new_keys(state_dict_time_spat, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)

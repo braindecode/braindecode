@@ -193,7 +193,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             n_out_time = output_shape[3]
             self.final_conv_length = n_out_time
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
         module.add_module("conv_classifier",
@@ -208,14 +208,13 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
+         implemented and the las layers' names were normalized"""
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)
@@ -368,7 +367,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             n_out_time = output_shape[3]
             self.final_conv_length = n_out_time
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
         module.add_module("conv_classifier",
@@ -377,20 +376,19 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
 
         module.add_module("softmax", nn.LogSoftmax(dim=1))
 
-        # Transpose back to the the logic of braindecode,
+        # Transpose back to the logic of braindecode,
         # so time in third dimension (axis=2)
         module.add_module("permute_2", Rearrange("batch x y z -> batch x z y"), )
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
+         implemented and the las layers' names were normalized"""
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)

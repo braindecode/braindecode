@@ -156,6 +156,13 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
             final_output = self.final_layer(encoded_features)
             return final_output
 
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented and the las layers' names were normalized"""
+
+        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
+
 
 class _SELayer(nn.Module):
     def __init__(self, channel, reduction=16):

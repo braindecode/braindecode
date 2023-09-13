@@ -205,11 +205,16 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # Moved flatten to another layer
         self.add_module("flatten", nn.Flatten())
 
-        self.add_module("final_layer",
-                        nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs))
+        # Incorporating classification module and subsequent ones in one final layer
+        module = nn.Sequential()
+
+        module.add_module("final_layer",
+                          nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs))
 
         # Softmax will be changed, so I took it put of final_layer
-        self.add_module("sfmx", nn.Softmax(dim=1))
+        module.add_module("softmax", nn.Softmax(dim=1))
+
+        self.add_module("final_layer", module)
 
     def load_state_dict(self, state_dict, *args, **kwargs):
         """Wrapper to allow for loading of a state_dict from a model before CombinedConv was

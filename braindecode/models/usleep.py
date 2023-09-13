@@ -202,6 +202,13 @@ class USleep(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_size_s
 
+        self.keys_to_change = [
+            'clf.3.weight',
+            'clf.3.bias',
+            'clf.5.weight',
+            'clf.5.bias',
+        ]
+
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
         time_conv_size = np.round(time_conv_size_s * self.sfreq).astype(int)
         if time_conv_size % 2 == 0:
@@ -257,7 +264,7 @@ class USleep(EEGModuleMixin, nn.Module):
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
 
-        self.final_layer = nn.Sequential(
+        self.clf = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],
                 out_channels=channels[1],
@@ -267,6 +274,9 @@ class USleep(EEGModuleMixin, nn.Module):
             ),  # output is (B, C, 1, S * T)
             nn.Tanh(),
             nn.AvgPool1d(self.n_times),  # output is (B, C, S)
+        )
+
+        self.final_layer = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],
                 out_channels=self.n_outputs,
@@ -310,9 +320,17 @@ class USleep(EEGModuleMixin, nn.Module):
             x = up(x, res)
 
         # classifier
+        x = self.clf(x)
         y_pred = self.final_layer(x)  # (B, n_classes, seq_length)
 
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]
 
         return y_pred
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented and the las layers' names were normalized"""
+
+        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)

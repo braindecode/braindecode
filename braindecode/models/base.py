@@ -199,9 +199,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     raise ValueError(msg) from exc
                 raise exc
 
-    def return_new_keys(self, state_dict, keys_to_change):  # personalised keys_to_change
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
+    def return_new_keys(self, state_dict, keys_to_change):
+        """Returns new changed state dictionary after the renaming of layers"""
 
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
@@ -209,7 +208,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                 k = f"final_layer.{k}"
             new_state_dict[k] = v
 
-        return new_state_dict  # not module to return state dict
+        return new_state_dict
 
     def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
         """

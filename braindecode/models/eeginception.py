@@ -249,10 +249,8 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                 self.n_times // prod(self.pooling_sizes))
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
-        # Moved flatten to another layer
         self.add_module("flat", nn.Flatten())
 
-        # The conv_classifier will be the final_layer and the other ones will be incorporated
         module = nn.Sequential()
 
         module.add_module("fc",

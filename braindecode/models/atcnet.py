@@ -163,6 +163,12 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.concat = concat
         self.max_norm_const = max_norm_const
 
+        keys_to_change_list = []
+        for w in range(self.n_windows):
+            keys_to_change_list.append(f'max_norm_linears.[{w}].weight')
+            keys_to_change_list.append(f'max_norm_linears.[{w}].bias')
+        self.keys_to_change = keys_to_change_list
+
         # Check later if we want to keep the Ensure4d. Not sure if we can
         # remove it or replace it with eipsum.
         self.ensuredims = Ensure4d()
@@ -274,6 +280,13 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 sw_concat = sw_concat[0]
 
         return self.lsfmx(sw_concat)
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         implemented and the las layers' names were normalized"""
+
+        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
 
 
 class _ConvBlock(nn.Module):
