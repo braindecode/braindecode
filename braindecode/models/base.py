@@ -186,8 +186,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     )).shape)
             except RuntimeError as exc:
                 if str(exc).endswith(
-                        ("Output size is too small",
-                         "Kernel size can't be greater than actual input size")
+                    ("Output size is too small",
+                     "Kernel size can't be greater than actual input size")
                 ):
                     msg = (
                         "During model prediction RuntimeError was thrown showing that at some "
