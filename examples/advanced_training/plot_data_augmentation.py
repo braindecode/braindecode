@@ -120,9 +120,9 @@ transform = FrequencyShift(
 # data of an mne Epoch is used here to make usage of mne functions.
 
 import torch
+import numpy as np
 
-epochs = train_set.datasets[0].windows  # original epochs
-X = epochs.get_data()
+X = np.stack([X for X, y, i in train_set.datasets[0]])
 # This allows to apply the transform with a fixed shift (10 Hz) for
 # visualization instead of sampling the shift randomly between -2 and 2 Hz
 X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
@@ -133,8 +133,6 @@ X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
 
 import mne
 import matplotlib.pyplot as plt
-import numpy as np
-
 
 def plot_psd(data, axis, label, color):
     psds, freqs = mne.time_frequency.psd_array_multitaper(data, sfreq=sfreq,
