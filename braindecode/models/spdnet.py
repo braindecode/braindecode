@@ -204,7 +204,7 @@ class LogEig(nn.Module):
 
     def derivative_function_applied(self, s):
         s_derivated = s.reciprocal()
-        s_derivated[s<=self.threshold_] = 0
+        s_derivated[s <= self.threshold_] = 0
         return s_derivated
 
     def forward(self, X):
