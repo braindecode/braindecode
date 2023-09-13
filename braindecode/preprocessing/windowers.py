@@ -11,6 +11,7 @@
 #          Dan Wilson <dan.c.wil@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
+#          Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -367,16 +368,16 @@ def _create_fixed_length_windows(
     if window_stride_samples is None:
         window_stride_samples = window_size_samples
 
-    stop = stop - window_size_samples
+    last_potential_start = stop - window_size_samples
     # already includes last incomplete window start
     starts = np.arange(
         start_offset_samples,
-        stop + 1,
+        last_potential_start + 1,
         window_stride_samples)
 
-    if not drop_last_window and starts[-1] < stop:
+    if not drop_last_window and starts[-1] < last_potential_start:
         # if last window does not end at trial stop, make it stop there
-        starts = np.append(starts, stop)
+        starts = np.append(starts, last_potential_start)
 
     # get targets from dataset description if they exist
     target = -1 if ds.target_name is None else ds.description[ds.target_name]
@@ -388,12 +389,11 @@ def _create_fixed_length_windows(
         else:
             target = mapping[target]
 
-    fake_events = [[start, window_size_samples, -1] for start in starts]
     metadata = pd.DataFrame({
-        'i_window_in_trial': np.arange(len(fake_events)),
+        'i_window_in_trial': np.arange(len(starts)),
         'i_start_in_trial': starts,
         'i_stop_in_trial': starts + window_size_samples,
-        'target': len(fake_events) * [target]
+        'target': len(starts) * [target]
     })
 
     window_kwargs.append(
