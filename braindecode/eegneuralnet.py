@@ -24,6 +24,16 @@ from .datasets.base import BaseConcatDataset, WindowsDataset
 log = logging.getLogger(__name__)
 
 
+def _get_model(model):
+    ''' Returns the corresponding class in case the model passed is a string. '''
+    if isinstance(model, str):
+        if model in models_dict:
+            model = models_dict[model]
+        else:
+            raise ValueError(f'Unknown model name {model!r}.')
+    return model
+
+
 class _EEGNeuralNet(NeuralNet, abc.ABC):
     signal_args_set_ = False
 
@@ -41,12 +51,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
 
         """
         kwargs = self.get_params_for('module')
-        module = self.module
-        if isinstance(module, str):
-            if module in models_dict:
-                module = models_dict[module]
-            else:
-                raise ValueError(f'Unknown model name {module!r}.')
+        module = _get_model(self.module)
         module = self.initialized_instance(module, kwargs)
         # pylint: disable=attribute-defined-outside-init
         self.module_ = module
@@ -215,7 +220,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
 
         # kick out missing kwargs:
         module_kwargs = dict()
-        all_module_kwargs = inspect.signature(self.module.__init__).parameters.keys()
+        module = _get_model(self.module)
+        all_module_kwargs = inspect.signature(module.__init__).parameters.keys()
         for k, v in signal_kwargs.items():
             if v is None:
                 continue
