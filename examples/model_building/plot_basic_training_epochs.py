@@ -72,7 +72,7 @@ model = ShallowFBCSPNet(
     n_outputs=2,
     final_conv_length='auto',
 )
-print(str(model))
+print(model)
 
 ######################################################################
 # Loading your own data with MNE
@@ -122,12 +122,13 @@ print(epochs)
 # If you want to pass parameters to your model, you can give them to the wrapper
 # with the prefix ``module__``.
 #
-
+from skorch.dataset import ValidSplit
 from braindecode import EEGClassifier
 
 net = EEGClassifier(
     'ShallowFBCSPNet',
     module__final_conv_length='auto',
+    train_split=ValidSplit(0.2), # To train an neural network you need validation split, here, we use 20%.
 )
 
 ######################################################################
