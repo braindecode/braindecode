@@ -415,6 +415,8 @@ class _FinalLayer(nn.Module):
             Number of output channels for the second linear layer.
         return_features : bool
             Whether to return input features.
+        add_log_softmax : bool
+            Adding LogSoftmax or not.
         """
 
         super().__init__()
