@@ -51,6 +51,7 @@ Enhancements
 - Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
 - Add support for :class:`mne.Epochs` in :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`529` by `Pierre Guetschel`_)
 - Allow passing only the name of a braindecode model to :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`528` by `Pierre Guetschel`_)
+- Add basic training example with MNE epochs (:gh:`539` by `Pierre Guetschel`_)
 
 Bugs
 ~~~~
