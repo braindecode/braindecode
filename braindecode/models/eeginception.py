@@ -261,7 +261,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                           ),)
 
         if self.add_log_softmax:
-            module.add_module("logsoftmax", nn.LogSoftmax(dim=1)
+            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
         else:
             module.add_module("identity", nn.Identity())
 
