@@ -40,6 +40,7 @@ setup(
         'docs': ['sphinx_gallery', 'sphinx_rtd_theme', 'pydata_sphinx_theme', 'numpydoc',
                  'memory_profiler', 'pillow', 'ipython', 'sphinx_design', 'docstring_inheritance',
                  'lightning'],
+        'riemann': ['pyriemann', 'geoopt'],
     },
     # tests_require = [...]
 
