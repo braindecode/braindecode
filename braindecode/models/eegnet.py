@@ -103,10 +103,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
-        """self.keys_to_change = [
-            "conv_classifier.weight",
-            "conv_classifier.bias"
-        ]"""
         self.mapping = {
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
             "conv_classifier.bias": "final_layer.conv_classifier.bias"
