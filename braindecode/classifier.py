@@ -23,6 +23,12 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
 
     Parameters
     ----------
+    module: str or torch Module (class or instance)
+        Either the name of one of the braindecode models (see
+        :obj:`braindecode.models.util.models_dict`) or directly a PyTorch module.
+        When passing directly a torch module, uninstantiated class should be prefered,
+        although instantiated modules will also work.
+
     cropped: bool (default=False)
         Defines whether torch model passed to this class is cropped or not.
         Currently used for callbacks definition.
@@ -54,14 +60,15 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetClassifier, doc)
 
-    def __init__(self, *args, cropped=False, callbacks=None,
+    def __init__(self, module, *args, cropped=False, callbacks=None,
                  iterator_train__shuffle=True,
                  iterator_train__drop_last=True,
                  aggregate_predictions=True, **kwargs):
         self.cropped = cropped
         self.aggregate_predictions = aggregate_predictions
         self._last_window_inds_ = None
-        super().__init__(*args,
+        super().__init__(module,
+                         *args,
                          callbacks=callbacks,
                          iterator_train__shuffle=iterator_train__shuffle,
                          iterator_train__drop_last=iterator_train__drop_last,
