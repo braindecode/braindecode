@@ -1,11 +1,10 @@
 """
-Simple training on MNE epochs.
-==============================
+Simple training on MNE epochs
+=============================
 
 The braindecode library gives you access to a large number of neural network
 architectures that were developed for EEG data decoding. This tutorial will
 show you how you can easily use any of these models to decode your own data.
-
 In particular, we assume that have your data in an MNE format and want to
 train one of the Braindecode models on it.
 
@@ -29,12 +28,12 @@ train one of the Braindecode models on it.
 # Let's suppose you recently stumbled upon the Schirrmeister 2017 article [1]_.
 # In this article, the authors mention that their novel architecture ShallowConvNet
 # is performing well on the BCI Competition IV 2a dataset and you would like to use
-# it yourself. Fortunately, the authors also mentioned they published their
+# it on your own data. Fortunately, the authors also mentioned they published their
 # architecture on Braindecode!
 #
 # In order to use this architecture, you first need to find what is its exact
-# name in Braindecode. To do so, you can visit the Braindecode online which lists
-# all the available models.
+# name in Braindecode. To do so, you can visit the Braindecode online documentation
+# which lists all the available models.
 #
 # Models list: https://braindecode.org/stable/api.html#models
 #
@@ -42,7 +41,7 @@ train one of the Braindecode models on it.
 
 from braindecode.models.util import models_dict
 
-print(models_dict.keys())
+print(f'All the Braindecode models:\n{list(models_dict.keys())}')
 
 ######################################################################
 # After your investigation, you found out that the model you are looking for is
@@ -63,7 +62,7 @@ print(ShallowFBCSPNet.__doc__)
 ######################################################################
 # Additionally, you might be interested in visualizing the model's architecture.
 # This can be done by initializing the model and calling its ``__str__()`` method.
-# To initialize it, we need to specify some parameters that we will set at random
+# To initialize it, we need to specify some parameters that we set at random
 # values for now:
 
 model = ShallowFBCSPNet(
@@ -78,15 +77,15 @@ print(model)
 # Loading your own data with MNE
 # ------------------------------
 #
-# In this tutorial, we will demonstrate how to train the model on MNE data.
+# In this tutorial, we demonstrate how to train the model on MNE data.
 # MNE is quite a popular library for EEG data analysis as it provides methods
 # to load data from many different file formats and a large collection of algorithms
 # to preprocess it.
 # However, Braindecode is not limited to MNE and can be used with numpy arrays or
 # PyTorch tensors/datasets.
 #
-# For this example, we will generate some random data containing 100 examples with each
-# 3 channels and 1024 time points. We will also generate some random labels for our data
+# For this example, we generate some random data containing 100 examples with each
+# 3 channels and 1024 time points. We also generate some random labels for our data
 # that simulate a 4-class classification problem.
 
 import mne
@@ -118,7 +117,7 @@ print(epochs)
 #
 # The wrapper :class:`braindecode.EEGClassifier` expects a model class as its first argument but
 # to facilitate the usage, you can also simply pass the name of any braindecode model as a string.
-# The wrapper will automatically find and instantiate the model for you.
+# The wrapper automatically finds and instantiates the model for you.
 # If you want to pass parameters to your model, you can give them to the wrapper
 # with the prefix ``module__``.
 #
@@ -128,12 +127,13 @@ from braindecode import EEGClassifier
 net = EEGClassifier(
     'ShallowFBCSPNet',
     module__final_conv_length='auto',
-    train_split=ValidSplit(0.2), # To train an neural network you need validation split, here, we use 20%.
+    train_split=ValidSplit(0.2),
+    # To train a neural network you need validation split, here, we use 20%.
 )
 
 ######################################################################
-# In this example, we passed one additional parameter to teh wrapper: ``module__final_conv_length``
-# that wil be forwarded to the model (without the prefix ``module__``).
+# In this example, we passed one additional parameter to the wrapper: ``module__final_conv_length``
+# that will be forwarded to the model (without the prefix ``module__``).
 #
 # We also note that the parameters ``n_chans``, ``n_times`` and ``n_outputs`` were not specified
 # even if :class:`braindecode.ShallowFBCSPNet` needs them to be initialized. This is because the
