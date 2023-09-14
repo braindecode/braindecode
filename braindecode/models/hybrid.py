@@ -75,12 +75,12 @@ class HybridNet(EEGModuleMixin, nn.Module):
 
         reduced_deep_model = nn.Sequential()
         for name, module in deep_model.named_children():
-            if name == "conv_classifier":
+            if name == "final_layer":
                 new_conv_layer = nn.Conv2d(
-                    module.in_channels,
+                    module.conv_classifier.in_channels,
                     60,
-                    kernel_size=module.kernel_size,
-                    stride=module.stride,
+                    kernel_size=module.conv_classifier.kernel_size,
+                    stride=module.conv_classifier.stride,
                 )
                 reduced_deep_model.add_module("deep_final_conv", new_conv_layer)
                 break
@@ -88,12 +88,12 @@ class HybridNet(EEGModuleMixin, nn.Module):
 
         reduced_shallow_model = nn.Sequential()
         for name, module in shallow_model.named_children():
-            if name == "conv_classifier":
+            if name == "final_layer":
                 new_conv_layer = nn.Conv2d(
-                    module.in_channels,
+                    module.conv_classifier.in_channels,
                     40,
-                    kernel_size=module.kernel_size,
-                    stride=module.stride,
+                    kernel_size=module.conv_classifier.kernel_size,
+                    stride=module.conv_classifier.stride,
                 )
                 reduced_shallow_model.add_module(
                     "shallow_final_conv", new_conv_layer
@@ -106,7 +106,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
         self.reduced_deep_model = reduced_deep_model
         self.reduced_shallow_model = reduced_shallow_model
 
-        self.final_conv = nn.Conv2d(
+        self.final_layer = nn.Conv2d(
             100, self.n_outputs, kernel_size=(1, 1), stride=1
         )
 
@@ -134,7 +134,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
 
         merged_out = torch.cat((deep_out, shallow_out), dim=1)
 
-        linear_out = self.final_conv(merged_out)
+        linear_out = self.final_layer(merged_out)
         if self.add_log_softmax:
             output = nn.LogSoftmax(dim=1)(linear_out)
         else:
