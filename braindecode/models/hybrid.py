@@ -106,9 +106,18 @@ class HybridNet(EEGModuleMixin, nn.Module):
         self.reduced_deep_model = reduced_deep_model
         self.reduced_shallow_model = reduced_shallow_model
 
-        self.final_layer = nn.Conv2d(
+        module = nn.Sequential(
+            nn.Conv2d(
+                100,
+                self.n_outputs,
+                kernel_size=(1, 1),
+                stride=1),
+            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity())
+
+        self.final_layer = module
+        """self.final_layer = nn.Conv2d(
             100, self.n_outputs, kernel_size=(1, 1), stride=1
-        )
+        )"""
 
     def forward(self, x):
         """Forward pass.
@@ -134,11 +143,8 @@ class HybridNet(EEGModuleMixin, nn.Module):
 
         merged_out = torch.cat((deep_out, shallow_out), dim=1)
 
-        linear_out = self.final_layer(merged_out)
-        if self.add_log_softmax:
-            output = nn.LogSoftmax(dim=1)(linear_out)
-        else:
-            output = nn.Identity()(linear_out)
+        output = self.final_layer(merged_out)
+
         squeezed = output.squeeze(3)
 
         return squeezed
