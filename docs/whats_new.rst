@@ -49,6 +49,7 @@ Enhancements
 - Automatically populate signal-related parameters in :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`517` by `Pierre Guetschel`_)
 - Adding a pure PyTorch tutorial (:gh:`523` by `Remi Delbouys`_  and `Bruno Aristimunha`_)
 - Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
+- Allow passing only the name of a braindecode model to :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`528` by `Pierre Guetschel`_)
 
 Bugs
 ~~~~

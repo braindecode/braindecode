@@ -17,6 +17,7 @@ from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score, is_
 
 from .training.scoring import (CroppedTimeSeriesEpochScoring,
                                CroppedTrialEpochScoring, PostEpochTrainScoring)
+from .models.util import models_dict
 from .datasets.base import BaseConcatDataset, WindowsDataset
 
 log = logging.getLogger(__name__)
@@ -28,6 +29,27 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
     @property
     def log(self):
         return log.getChild(self.__class__.__name__)
+
+    def initialize_module(self):
+        """Initializes the module.
+
+        A Braindecode model name can also be passed as module argument.
+
+        If the module is already initialized and no parameter was changed, it
+        will be left as is.
+
+        """
+        kwargs = self.get_params_for('module')
+        module = self.module
+        if isinstance(module, str):
+            if module in models_dict:
+                module = models_dict[module]
+            else:
+                raise ValueError(f'Unknown model name {module!r}.')
+        module = self.initialized_instance(module, kwargs)
+        # pylint: disable=attribute-defined-outside-init
+        self.module_ = module
+        return self
 
     def _yield_callbacks(self):
         # Here we parse the callbacks supplied as strings,
