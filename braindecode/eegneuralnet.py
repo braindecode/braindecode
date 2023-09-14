@@ -8,6 +8,7 @@ import abc
 import logging
 import inspect
 
+import mne
 import numpy as np
 import torch
 from skorch import NeuralNet
@@ -174,14 +175,19 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             return
         # get kwargs from signal:
         signal_kwargs = dict()
-        if isinstance(X, np.ndarray):
+        if isinstance(X, mne.BaseEpochs) or isinstance(X, np.ndarray):
             if y is None:
                 raise ValueError("y must be specified if X is a numpy array.")
-            self.log.info("Using numpy array to find signal-related parameters.")
-            Xshape = X.shape
-            signal_kwargs["n_times"] = Xshape[-1]
-            signal_kwargs["n_chans"] = Xshape[-2]
             signal_kwargs['n_outputs'] = self._get_n_outputs(y, classes)
+            if isinstance(X, mne.BaseEpochs):
+                self.log.info("Using mne.Epochs to find signal-related parameters.")
+                signal_kwargs["n_times"] = len(X.times)
+                signal_kwargs["sfreq"] = X.info['sfreq']
+                signal_kwargs["chs_info"] = X.info['chs']
+            else:
+                self.log.info("Using numpy array to find signal-related parameters.")
+                signal_kwargs["n_times"] = X.shape[-1]
+                signal_kwargs["n_chans"] = X.shape[-2]
         elif is_dataset(X):
             self.log.info(f"Using Dataset {X!r} to find signal-related parameters.")
             X0 = X[0][0]
@@ -227,6 +233,45 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             f"to module {self.module!r}.")
         module_kwargs = {f"module__{k}": v for k, v in module_kwargs.items()}
         self.set_params(**module_kwargs)
+
+    def get_dataset(self, X, y=None):
+        """Get a dataset that contains the input data and is passed to
+        the iterator.
+
+        Override this if you want to initialize your dataset
+        differently.
+
+        Parameters
+        ----------
+        X : input data, compatible with skorch.dataset.Dataset
+          By default, you should be able to pass:
+
+            * mne.Epochs
+            * numpy arrays
+            * torch tensors
+            * pandas DataFrame or Series
+            * scipy sparse CSR matrices
+            * a dictionary of the former three
+            * a list/tuple of the former three
+            * a Dataset
+
+          If this doesn't work with your data, you have to pass a
+          ``Dataset`` that can deal with the data.
+
+        y : target data, compatible with skorch.dataset.Dataset
+          The same data types as for ``X`` are supported. If your X is
+          a Dataset that contains the target, ``y`` may be set to
+          None.
+
+        Returns
+        -------
+        dataset
+          The initialized dataset.
+
+        """
+        if isinstance(X, mne.BaseEpochs):
+            X = X.get_data(units='uV')
+        return super().get_dataset(X, y)
 
     def partial_fit(self, X, y=None, classes=None, **fit_params):
         """Fit the module.

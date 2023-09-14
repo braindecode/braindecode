@@ -265,8 +265,24 @@ def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
     assert net.module_.n_outputs == (1 if isinstance(net, EEGRegressor) else 4)
 
 
-def test_set_signal_params_epochs(eegneuralnet_cls, preds):
-    pass
+def test_set_signal_params_epochs(eegneuralnet_cls, preds, epochs):
+    y = epochs.metadata.target.values
+    net = eegneuralnet_cls(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(epochs, y=y)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == (1 if isinstance(net, EEGRegressor) else 4)
+    assert net.module_.chs_info == epochs.info['chs']
+    assert net.module_.input_window_seconds == 10 / 10
+    assert net.module_.sfreq == 10
 
 
 def test_set_signal_params_torch_ds(eegneuralnet_cls, preds):
