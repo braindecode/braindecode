@@ -432,6 +432,6 @@ class _FinalLayer(nn.Module):
             out = self.final_layer(x)
             return out, x
         else:
-            self.final_layer.add_module('classification', nn.LogSoftmax(dim=1))
+            self.final_layer.add_module('classification', self.classification)
             out = self.final_layer(x)
             return out
