@@ -1,7 +1,6 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-from collections import OrderedDict
 
 from einops.layers.torch import Rearrange
 from torch import nn
@@ -187,9 +186,9 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
 
         module.add_module("conv_classifier",
                           nn.Conv2d(
-                            n_filters_conv, 
-                            self.n_outputs,    
-                            (self.final_conv_length, 1), 
+                            n_filters_conv,
+                            self.n_outputs,
+                            (self.final_conv_length, 1),
                             bias=True, ))
 
         if self.add_log_softmax:

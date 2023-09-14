@@ -2,8 +2,6 @@
 #
 # License: BSD (3-clause)
 
-from collections import OrderedDict
-
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
@@ -290,9 +288,9 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
         module.add_module("conv_classifier",
                           nn.Conv2d(
-                            self.n_filters_4, 
+                            self.n_filters_4,
                             self.n_outputs,
-                            (self.final_conv_length, 1), 
+                            (self.final_conv_length, 1),
                             bias=True, ))
 
         if self.add_log_softmax:

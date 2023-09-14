@@ -201,7 +201,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
 
         module.add_module("conv_classifier",
                           nn.Conv2d(n_cur_filters, self.n_outputs, (1, 1), bias=True, ))
-      
+
         if self.add_log_softmax:
             module.add_module('logsoftmax', nn.LogSoftmax(dim=1))
 

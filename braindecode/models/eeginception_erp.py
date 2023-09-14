@@ -255,17 +255,16 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                           nn.Linear(
                               spatial_dim_last_layer * n_channels_last_layer,
                               self.n_outputs
-                          ),)
+                          ), )
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
         else:
             module.add_module("identity", nn.Identity())
-            
+
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
-
 
     @staticmethod
     def _get_inception_branch_1(in_channels, out_channels, kernel_length,

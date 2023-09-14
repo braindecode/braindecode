@@ -109,7 +109,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         ]"""
         self.mapping = {
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias" : "final_layer.conv_classifier.bias"
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
         }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
@@ -206,7 +206,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
-            
+
         # Transpose back to the logic of braindecode,
         # so time in third dimension (axis=2)
         module.add_module("permute_back", Rearrange("batch x y z -> batch x z y"), )
@@ -300,7 +300,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         # add the old's parameters here
         self.mapping = {
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias" : "final_layer.conv_classifier.bias"
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
         }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
@@ -373,7 +373,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         if self.final_conv_length == "auto":
             n_out_time = output_shape[3]
             self.final_conv_length = n_out_time
-            
+
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 

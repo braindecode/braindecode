@@ -258,7 +258,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                           nn.Linear(
                               spatial_dim_last_layer * n_channels_last_layer,
                               self.n_outputs
-                          ),)
+                          ), )
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
@@ -276,7 +276,6 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
         return super().load_state_dict(new_state_dict, *args, **kwargs)
-
 
     @staticmethod
     def _get_inception_branch_1(in_channels, out_channels, kernel_length,

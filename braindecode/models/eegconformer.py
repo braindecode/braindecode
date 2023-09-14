@@ -156,7 +156,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         self.classification_head = _ClassificationHead(
             final_fc_length=final_fc_length)
 
-        self.final_layer = _FinalLayer(n_classes=self.n_outputs, return_features=return_features, add_log_softmax=self.add_log_softmax)
+        self.final_layer = _FinalLayer(n_classes=self.n_outputs,
+                                       return_features=return_features,
+                                       add_log_softmax=self.add_log_softmax)
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
@@ -175,6 +177,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         size_embedding_2 = out.cpu().data.numpy().shape[2]
 
         return size_embedding_1 * size_embedding_2
+
 
 class _PatchEmbedding(nn.Module):
     """Patch Embedding.

@@ -204,8 +204,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     )).shape)
             except RuntimeError as exc:
                 if str(exc).endswith(
-                    ("Output size is too small",
-                     "Kernel size can't be greater than actual input size")
+                        ("Output size is too small",
+                         "Kernel size can't be greater than actual input size")
                 ):
                     msg = (
                         "During model prediction RuntimeError was thrown showing that at some "
@@ -217,18 +217,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     raise ValueError(msg) from exc
                 raise exc
 
-    def return_new_keys(self, state_dict, keys_to_change):
-        """Returns new changed state dictionary after the renaming of layers"""
-
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            if k in keys_to_change:
-                k = f"final_layer.{k}"
-            new_state_dict[k] = v
-
-        return new_state_dict
-
-    def load_state_dict(self, state_dict,  *args, **kwargs):
+    def load_state_dict(self, state_dict, *args, **kwargs):
 
         mapping = self.mapping
         new_state_dict = OrderedDict()
@@ -239,7 +228,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                 new_state_dict[k] = v
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
-
 
     def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
         """

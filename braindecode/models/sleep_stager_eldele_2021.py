@@ -161,6 +161,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
             final_output = self.final_layer(encoded_features)
             return final_output
 
+
 class _SELayer(nn.Module):
     def __init__(self, channel, reduction=16):
         super(_SELayer, self).__init__()

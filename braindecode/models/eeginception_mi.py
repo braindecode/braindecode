@@ -175,11 +175,11 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         module.add_module('fc',
                           nn.Linear(in_features=intermediate_in_channels,
                                     out_features=self.n_outputs,
-                                    bias=True,))
+                                    bias=True, ))
         if self.add_log_softmax:
-            module.add_module('out_fun',  nn.LogSoftmax(dim=1))
+            module.add_module('out_fun', nn.LogSoftmax(dim=1))
         else:
-            module.add_module('out_fun',  nn.Identity())
+            module.add_module('out_fun', nn.Identity())
         self.final_layer = module
 
     def forward(
@@ -208,6 +208,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         out = self.flat(out)
         out = self.final_layer(out)
         return out
+
 
 class _InceptionModuleMI(nn.Module):
     def __init__(

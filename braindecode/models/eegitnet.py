@@ -151,7 +151,6 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             'classification.1.weight': 'final_layer.clf.weight',
             'classification.1.bias': 'final_layer.clf.weight'}
 
-
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, in_channels, input_window_samples
 

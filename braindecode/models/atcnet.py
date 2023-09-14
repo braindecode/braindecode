@@ -236,7 +236,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
         else:
             self.out_fun = nn.Identity()
 
-
     def forward(self, X):
         # Dimension: (batch_size, C, T)
         X = self.ensuredims(X)

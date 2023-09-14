@@ -73,7 +73,7 @@ class TCN(EEGModuleMixin, nn.Module):
 
         self.mapping = {
             "fc.weight": "final_layer.fc.weight",
-            "fc.bias" : "final_layer.fc.bias"
+            "fc.bias": "final_layer.fc.bias"
         }
         self.keys_to_change = [
             'fc.weight',
@@ -136,7 +136,7 @@ class _FinalLayer(nn.Module):
         super().__init__()
 
         self.fc = nn.Linear(in_features=in_features, out_features=out_features)
-        
+
         if add_log_softmax:
             self.out_fun = nn.LogSoftmax(dim=1)
         else:
