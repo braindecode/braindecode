@@ -103,10 +103,14 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
-        self.keys_to_change = [
+        """self.keys_to_change = [
             "conv_classifier.weight",
             "conv_classifier.bias"
-        ]
+        ]"""
+        self.mapping = {
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias" : "final_layer.conv_classifier.bias"
+        }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
@@ -212,12 +216,12 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         _glorot_weight_zero_bias(self)
 
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
+    """def load_state_dict(self, state_dict, *args, **kwargs):
+         # Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         # implemented and the las layers' names were normalized
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)"""
 
 
 class EEGNetv1(EEGModuleMixin, nn.Sequential):
@@ -291,10 +295,10 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
-        self.keys_to_change = [
-            "conv_classifier.weight",
-            "conv_classifier.bias"
-        ]
+        self.mapping = {
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias" : "final_layer.conv_classifier.bias"
+        }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
@@ -386,12 +390,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
 
         _glorot_weight_zero_bias(self)
 
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
+    """def load_state_dict(self, state_dict, *args, **kwargs):
+         # Wrapper to allow for loading of a state_dict from a model before CombinedConv was
+         # implemented and the las layers' names were normalized
 
         new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
+        return super().load_state_dict(new_state_dict, *args, **kwargs)"""
 
 
 def _glorot_weight_zero_bias(model):

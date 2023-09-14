@@ -224,9 +224,6 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return_features == True
-        if return_feats:
-            raise ValueError("return_feat == True is not accepted anymore")
-
         if not return_feats:
             self.final_layer = nn.Linear(1024, self.n_outputs)
 

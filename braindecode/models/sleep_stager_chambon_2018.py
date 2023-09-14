@@ -87,10 +87,10 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_channels, n_classes, input_size_s
 
-        self.keys_to_change = [
-            "fc.1.weight",
-            "fc.1.bias"
-        ]
+        self.mapping = {
+            "fc.1.weight": "final_layer.1.weight",
+            "fc.1.bias": "final_layer.1.bias"
+        }
 
         time_conv_size = np.ceil(time_conv_size_s * self.sfreq).astype(int)
         max_pool_size = np.ceil(max_pool_size_s * self.sfreq).astype(int)
@@ -118,13 +118,11 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return_features == True
-        if return_feats:
-            raise ValueError("return_feat == True is not accepted anymore")
-
-        self.final_layer = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(self.len_last_layer, self.n_outputs),
-        )
+        if not return_feats:
+            self.final_layer = nn.Sequential(
+                nn.Dropout(dropout),
+                nn.Linear(self.len_last_layer, self.n_outputs),
+            )
 
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()
@@ -156,10 +154,3 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             return feats
         else:
             return self.final_layer(feats)
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)

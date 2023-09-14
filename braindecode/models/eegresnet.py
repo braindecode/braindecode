@@ -83,10 +83,10 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         self.batch_norm_epsilon = batch_norm_epsilon
         self.conv_weight_init_fn = conv_weight_init_fn
 
-        self.keys_to_change = [
-            "conv_classifier.weight",
-            "conv_classifier.bias"
-        ]
+        self.mapping = {
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+        }
 
         self.add_module("ensuredims", Ensure4d())
         if self.split_first_layer:
@@ -211,14 +211,6 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
 
         # Start in eval mode
         self.eval()
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
-
 
 
 def _weights_init(module, conv_weight_init_fn):

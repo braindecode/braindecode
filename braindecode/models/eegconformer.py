@@ -121,10 +121,10 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self.keys_to_change = [
-            'classification_head.fc.6.weight',
-            'classification_head.fc.6.bias',
-        ]
+        self.mapping = {
+            'classification_head.fc.6.weight': 'final_layer.final_layer.0.weight',
+            'classification_head.fc.6.bias': 'final_layer.final_layer.0.bias'
+        }
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, n_channels, input_window_samples
@@ -173,15 +173,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         size_embedding_2 = out.cpu().data.numpy().shape[2]
 
         return size_embedding_1 * size_embedding_2
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
-
-
 
 class _PatchEmbedding(nn.Module):
     """Patch Embedding.
@@ -391,8 +382,8 @@ class _ClassificationHead(nn.Module):
             nn.Dropout(drop_prob_2),
             # nn.Linear(hidden_channels, n_classes),
         )
-        #self.return_features = return_features
-        #self.classification = nn.LogSoftmax(dim=1)
+        # self.return_features = return_features
+        # self.classification = nn.LogSoftmax(dim=1)
 
     def forward(self, x):
         x = x.contiguous().view(x.size(0), -1)

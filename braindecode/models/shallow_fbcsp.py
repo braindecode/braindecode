@@ -129,6 +129,14 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             "conv_classifier.weight",
             "conv_classifier.bias"
         ]
+        self.mapping = {
+            "conv_time.weight": "conv_time_spat.conv_time.weight",
+            "conv_spat.weight": "conv_time_spat.conv_spat.weight",
+            "conv_time.bias": "conv_time_spat.conv_time.bias",
+            "conv_spat.bias": "conv_time_spat.conv_spat.bias",
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+        }
 
         self.add_module("ensuredims", Ensure4d())
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
@@ -206,20 +214,3 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             init.constant_(self.bnorm.bias, 0)
         init.xavier_uniform_(self.final_layer[0].weight, gain=1)
         init.constant_(self.final_layer[0].bias, 0)
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-        keys_time_spat = ["conv_time.weight",
-                          "conv_spat.weight",
-                          "conv_time.bias",
-                          "conv_spat.bias", ]
-
-        state_dict_time_spat = OrderedDict()
-        for k, v in state_dict.items():
-            if k in keys_time_spat:
-                k = f"conv_time_spat.{k}"
-            state_dict_time_spat[k] = v
-
-        new_state_dict = super().return_new_keys(state_dict_time_spat, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)

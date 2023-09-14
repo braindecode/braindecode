@@ -29,10 +29,10 @@ class HybridNet(nn.Module):
 
     def __init__(self, in_chans, n_classes, input_window_samples):
         super(HybridNet, self).__init__()
-        self.keys_to_change = [
-            'final_conv.weight',
-            'final_conv.bias'
-        ]
+        self.mapping = {
+            'final_conv.weight': 'final_layer.weight',
+            'final_conv.bias': 'final_layer.bias'
+        }
 
         deep_model = Deep4Net(
             in_chans,
@@ -119,10 +119,3 @@ class HybridNet(nn.Module):
         softmaxed = nn.LogSoftmax(dim=1)(linear_out)
         squeezed = softmaxed.squeeze(3)
         return squeezed
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)

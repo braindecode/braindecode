@@ -223,10 +223,11 @@ class TIDNet(nn.Module):
         self.in_chans = in_chans
         self.input_window_samples = input_window_samples
         self.temp_len = ceil(temp_span * input_window_samples)
-        self.keys_to_change = [
-            'classify.1.weight',
-            'classify.1.bias'
-        ]
+
+        self.mapping = {
+            'classify.1.weight': 'final_layer.0.weight',
+            'classify.1.bias': 'final_layer.0.bias'
+        }
 
         self.dscnn = _TIDNetFeatures(s_growth=s_growth, t_filters=t_filters, in_chans=in_chans,
                                      input_window_samples=input_window_samples,
@@ -260,12 +261,6 @@ class TIDNet(nn.Module):
         x = self.flatten(x)
         return self.final_layer(x)
 
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
 
     @property
     def num_features(self):

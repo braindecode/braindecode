@@ -142,10 +142,9 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes
 
-        self.keys_to_change = [
-            'classification.1.weight',
-            'classification.1.bias'
-        ]
+        self.mapping = {
+            'classification.1.weight': 'final_layer.fc.weight',
+            'classification.1.bias': 'final_layer.fc.bias'}
 
         self.add_module("ensuredims", Ensure4d())
 

@@ -163,11 +163,11 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.concat = concat
         self.max_norm_const = max_norm_const
 
-        keys_to_change_list = []
+        map = dict()
         for w in range(self.n_windows):
-            keys_to_change_list.append(f'max_norm_linears.[{w}].weight')
-            keys_to_change_list.append(f'max_norm_linears.[{w}].bias')
-        self.keys_to_change = keys_to_change_list
+            map[f'max_norm_linears.[{w}].weight'] = f'final_layer.[{w}].weight'
+            map[f'max_norm_linears.[{w}].bias'] = f'final_layer.[{w}].bias'
+        self.mapping = map
 
         # Check later if we want to keep the Ensure4d. Not sure if we can
         # remove it or replace it with eipsum.

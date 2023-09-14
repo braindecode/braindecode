@@ -101,6 +101,11 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, input_size_s
 
+        self.mapping = {
+            "fc.weight": "final_layer.weight",
+            "fc.bias": "final_layer.bias"
+        }
+
         if not ((self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80) or
                 (self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100)):
             warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
@@ -125,10 +130,10 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return features
-        if return_feats:
-            raise ValueError("return_feat == True is not accepted anymore")
-
-        self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
+        """if return_feats:
+            raise ValueError("return_feat == True is not accepted anymore")"""
+        if not return_feats:
+            self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
 
     def _len_last_layer(self, input_size):
         self.feature_extractor.eval()
@@ -155,14 +160,6 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         else:
             final_output = self.final_layer(encoded_features)
             return final_output
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
-
 
 class _SELayer(nn.Module):
     def __init__(self, channel, reduction=16):

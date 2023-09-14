@@ -145,10 +145,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        self.keys_to_change = [
-            'classification.1.weight',
-            'classification.1.bias'
-        ]
+        self.keys_to_change = {
+            'classification.1.weight': 'final_layer.clf.weight',
+            'classification.1.bias': 'final_layer.clf.weight'}
+
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, in_channels, input_window_samples
@@ -208,20 +208,13 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
-        module.add_module("final_layer",
+        module.add_module("clf",
                           nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs))
 
         # Softmax will be changed, so I took it put of final_layer
         module.add_module("softmax", nn.Softmax(dim=1))
 
         self.add_module("final_layer", module)
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
 
     @staticmethod
     def _get_inception_branch(in_channels, out_channels, kernel_length, depth_multiplier=1):

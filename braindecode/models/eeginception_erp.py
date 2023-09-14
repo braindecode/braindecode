@@ -138,10 +138,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes
 
-        self.keys_to_change = [
-            'classification.1.weight',
-            'classification.1.bias'
-        ]
+        self.mapping = {
+            'classification.1.weight': 'final_layer.fc.weight',
+            'classification.1.bias': 'final_layer.fc.bias'}
 
         self.add_module("ensuredims", Ensure4d())
 
@@ -261,13 +260,6 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)
 
 
     @staticmethod

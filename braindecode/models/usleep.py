@@ -202,12 +202,12 @@ class USleep(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_size_s
 
-        self.keys_to_change = [
-            'clf.3.weight',
-            'clf.3.bias',
-            'clf.5.weight',
-            'clf.5.bias',
-        ]
+        self.mapping = {
+            'clf.3.weight': 'final_layer.0.weight',
+            'clf.3.bias': 'final_layer.0.bias',
+            'clf.5.weight': 'final_layer.2.weight',
+            'clf.5.bias': 'final_layer.2.bias'
+        }
 
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
         time_conv_size = np.round(time_conv_size_s * self.sfreq).astype(int)
@@ -327,10 +327,3 @@ class USleep(EEGModuleMixin, nn.Module):
             y_pred = y_pred[:, :, 0]
 
         return y_pred
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented and the las layers' names were normalized"""
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)

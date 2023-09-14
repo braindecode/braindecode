@@ -210,6 +210,19 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         return new_state_dict
 
+    def load_state_dict(self, state_dict,  *args, **kwargs):
+
+        mapping = self.mapping
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            if k in mapping:
+                new_state_dict[mapping[k]] = v
+            else:
+                new_state_dict[k] = v
+
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
+
+
     def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
         """
         Transform a sequential model with strides to a model that outputs
