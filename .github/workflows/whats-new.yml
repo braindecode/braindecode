@@ -1,9 +1,6 @@
 name: Check Whats News Changes
 
 on:
-  push:
-    branches:
-      - "master"
   pull_request:
     paths:
       - 'docs/whats_new.rst'
