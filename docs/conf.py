@@ -237,7 +237,6 @@ sphinx_gallery_conf = {
     'reference_url': dict(braindecode=None),
     'subsection_order': ExplicitOrder(
         [
-            '../examples/basic_training',
             '../examples/model_building',
             '../examples/datasets_io',
             '../examples/advanced_training',
