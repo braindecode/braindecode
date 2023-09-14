@@ -106,6 +106,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_classes=None,
             n_channels=None,
             input_window_samples=None,
+            add_log_softmax=True,
     ):
         n_outputs, n_chans, n_times = deprecated_args(
             self,
@@ -120,6 +121,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
         )
         self.mapping = {
             'classification_head.fc.6.weight': 'final_layer.final_layer.0.weight',
@@ -154,7 +156,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         self.classification_head = _ClassificationHead(
             final_fc_length=final_fc_length)
 
-        self.final_layer = _FinalLayer(n_classes=self.n_outputs, return_features=return_features)
+        self.final_layer = _FinalLayer(n_classes=self.n_outputs, return_features=return_features, add_log_softmax=self.add_log_softmax)
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
@@ -370,6 +372,8 @@ class _ClassificationHead(nn.Module):
             Number of output channels for the second linear layer.
         return_features : bool
             Whether to return input features.
+        add_log_softmax: bool
+            Whether to add LogSoftmax non-linearity as the final layer.
         """
 
         super().__init__()
@@ -380,10 +384,7 @@ class _ClassificationHead(nn.Module):
             nn.Linear(out_channels, hidden_channels),
             nn.ELU(),
             nn.Dropout(drop_prob_2),
-            # nn.Linear(hidden_channels, n_classes),
         )
-        # self.return_features = return_features
-        # self.classification = nn.LogSoftmax(dim=1)
 
     def forward(self, x):
         x = x.contiguous().view(x.size(0), -1)
@@ -392,7 +393,7 @@ class _ClassificationHead(nn.Module):
 
 
 class _FinalLayer(nn.Module):
-    def __init__(self, n_classes, hidden_channels=32, return_features=False):
+    def __init__(self, n_classes, hidden_channels=32, return_features=False, add_log_softmax=True):
         """"Classification head for the transformer encoder.
 
         Parameters
@@ -418,7 +419,10 @@ class _FinalLayer(nn.Module):
             nn.Linear(hidden_channels, n_classes),
         )
         self.return_features = return_features
-        self.classification = nn.LogSoftmax(dim=1)
+        if add_log_softmax:
+            self.classification = nn.LogSoftmax(dim=1)
+        else:
+            self.classification = nn.Identity()
 
     def forward(self, x):
         if self.return_features:

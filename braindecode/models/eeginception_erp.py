@@ -111,6 +111,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             in_channels=None,
             n_classes=None,
             input_window_samples=None,
+            add_log_softmax=True,
     ):
         n_chans, n_outputs, n_times, = deprecated_args(
             self,
@@ -125,6 +126,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=add_log_softmax
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_channels, n_classes, input_window_samples
@@ -255,8 +257,11 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                               self.n_outputs
                           ),)
 
-        module.add_module("softmax", nn.Softmax(1))
-
+        if self.add_log_softmax:
+            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
+        else:
+            module.add_module("identity", nn.Identity())
+            
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)

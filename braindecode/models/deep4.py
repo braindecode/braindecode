@@ -122,6 +122,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             in_chans=None,
             n_classes=None,
             input_window_samples=None,
+            add_log_softmax=True,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -136,6 +137,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
@@ -287,10 +289,14 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         module = nn.Sequential()
 
         module.add_module("conv_classifier",
-                          nn.Conv2d(n_filters_4, self.n_outputs,
-                                    (self.final_conv_length, 1), bias=True, ))
+                          nn.Conv2d(
+                            self.n_filters_4, 
+                            self.n_outputs,
+                            (self.final_conv_length, 1), 
+                            bias=True, ))
 
-        module.add_module("softmax", nn.LogSoftmax(dim=1))
+        if self.add_log_softmax:
+            self.add_module("logsoftmax", nn.LogSoftmax(dim=1))
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 

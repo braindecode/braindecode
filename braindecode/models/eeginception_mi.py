@@ -76,6 +76,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             in_channels=None,
             n_classes=None,
             input_window_s=None,
+            add_log_softmax=True,
     ):
         n_chans, n_outputs, input_window_seconds, = deprecated_args(
             self,
@@ -90,6 +91,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_channels, n_classes, input_window_s
@@ -174,7 +176,10 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
                           nn.Linear(in_features=intermediate_in_channels,
                                     out_features=self.n_outputs,
                                     bias=True,))
-        module.add_module('softmax', nn.LogSoftmax(dim=1))
+        if self.add_log_softmax:
+            module.add_module('out_fun',  nn.LogSoftmax(dim=1))
+        else:
+            module.add_module('out_fun',  nn.Identity())
         self.final_layer = module
 
     def forward(
