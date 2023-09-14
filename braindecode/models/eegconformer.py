@@ -401,16 +401,8 @@ class _FinalLayer(nn.Module):
 
         Parameters
         ----------
-        final_fc_length : int
-            Length of the final fully connected layer.
         n_classes : int
             Number of classes for classification.
-        drop_prob_1 : float
-            Dropout probability for the first dropout layer.
-        drop_prob_2 : float
-            Dropout probability for the second dropout layer.
-        out_channels : int
-            Number of output channels for the first linear layer.
         hidden_channels : int
             Number of output channels for the second linear layer.
         return_features : bool
