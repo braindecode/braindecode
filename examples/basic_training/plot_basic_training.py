@@ -1,13 +1,13 @@
 """
-Simple training example.
-========================
+Simple training on MNE epochs.
+==============================
 
 The braindecode library gives you access to a large number of neural network
 architectures that were developed for EEG data decoding. This tutorial will
 show you how you can easily use any of these models to decode your own data.
 
 In particular, we assume that have your data in an MNE format and want to
-train one of the braindecode models on it.
+train one of the Braindecode models on it.
 
 .. contents:: This example covers:
    :local:
