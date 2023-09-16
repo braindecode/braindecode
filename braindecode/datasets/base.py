@@ -918,7 +918,7 @@ class ZarrDataset(BaseDataset):
     ):
         """
         Split the dataset in train and test sets using `train_test_split`
-        
+
         Parameters
         ----------
         train_indices : list, default None
