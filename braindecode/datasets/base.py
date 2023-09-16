@@ -122,8 +122,7 @@ class BaseDataset(Dataset):
             self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
-        if target_name is not None and not isinstance(target_name,
-                                                      (str, tuple, list)):
+        if target_name is not None and not isinstance(target_name, (str, tuple, list)):
             raise ValueError('target_name has to be None, str, tuple or list')
         if target_name is None:
             return target_name
