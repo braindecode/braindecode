@@ -60,7 +60,6 @@ class BaseDataset(Dataset):
     transform : callable | None
         On-the-fly transform applied to the example before it is returned.
     """
-
     def __init__(self, raw, description=None, target_name=None,
                  transform=None):
         self.raw = raw
@@ -170,8 +169,7 @@ class WindowsDataset(BaseDataset):
         Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
         channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-
-def __init__(self, windows, description=None, transform=None, targets_from='metadata',
+    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
                  last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
@@ -272,7 +270,6 @@ class BaseConcatDataset(ConcatDataset):
     target_transform : callable | None
         Optional function to call on targets before returning them.
     """
-
     def __init__(self, list_of_ds, target_transform=None):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
@@ -362,8 +359,7 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds], 
-target_transform=self.target_transform)
+            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):
