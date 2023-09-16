@@ -853,7 +853,7 @@ class ZarrDataset(BaseDataset):
             The size of each window in samples.
         max_recording_length_sample : int
             The maximum recording length in samples.
-        window_stride : int, optional
+        window_stride : int, default None
             The stride between windows (default is None, which implies no
             stride).
 
