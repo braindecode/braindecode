@@ -167,13 +167,11 @@ class WindowsDataset(BaseDataset):
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
     targets_from : str
-        Defines whether targets will be extracted from mne.Epochs metadata or
-        mne.Epochs `misc` channels (time series targets). It can be `metadata`
-         (default) or `channels`.
+        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
+        channels (time series targets). It can be `metadata` (default) or `channels`.
     """
 
-    def __init__(self, windows, description=None, transform=None,
-                 targets_from='metadata',
+def __init__(self, windows, description=None, transform=None, targets_from='metadata',
                  last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
@@ -184,8 +182,8 @@ class WindowsDataset(BaseDataset):
         self.targets_from = targets_from
 
         self.crop_inds = self.windows.metadata.loc[
-                         :, ['i_window_in_trial', 'i_start_in_trial',
-                             'i_stop_in_trial']].to_numpy()
+            :, ['i_window_in_trial', 'i_start_in_trial',
+                'i_stop_in_trial']].to_numpy()
         if self.targets_from == 'metadata':
             self.y = self.windows.metadata.loc[:, 'target'].to_list()
 
@@ -364,8 +362,8 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds],
-            target_transform=self.target_transform)
+            [self.datasets[ds_ind] for ds_ind in ds_inds], 
+target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):
@@ -576,13 +574,12 @@ class BaseConcatDataset(ConcatDataset):
         if overwrite:
             # the following will be True for all datasets preprocessed and
             # stored in parallel with braindecode.preprocessing.preprocess
-            if i_ds + 1 + offset < n_sub_dirs:
-                warnings.warn(
-                    f"The number of saved datasets ({i_ds + 1 + offset}) "
-                    f"does not match the number of existing "
-                    f"subdirectories ({n_sub_dirs}). You may now "
-                    f"encounter a mix of differently preprocessed "
-                    f"datasets!", UserWarning)
+            if i_ds+1+offset < n_sub_dirs:
+                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
+                              f"does not match the number of existing "
+                              f"subdirectories ({n_sub_dirs}). You may now "
+                              f"encounter a mix of differently preprocessed "
+                              f"datasets!", UserWarning)
         # if path contains files or directories that were not touched, raise
         # warning
         if path_contents:
