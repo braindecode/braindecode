@@ -774,7 +774,8 @@ class ZarrDataset(BaseDataset):
             window_stride=None,
     ) -> dict:
         """
-        Args:
+        Parameters
+        ----------
         targets : list
             A list of target values.
         start_offset : int
