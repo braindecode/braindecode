@@ -3,6 +3,8 @@
 #
 # License: BSD (3-clause)
 
+import inspect
+
 import pytest
 import numpy as np
 from torch import nn
@@ -10,7 +12,8 @@ from sklearn.preprocessing import OneHotEncoder
 
 from braindecode.models.modules import Expression
 from braindecode.models.util import (
-    get_output_shape, aggregate_probas, _pad_shift_array)
+    get_output_shape, aggregate_probas, _pad_shift_array, models_dict)
+from braindecode import models
 
 
 def test_get_output_shape_1d_model():
@@ -74,3 +77,18 @@ def test_aggregate_probas(n_sequences, n_classes, n_windows, stride):
 
     # Make sure results of aggregation match the original targets
     assert (y_pred_probas.argmax(axis=1) == y_true).all()
+
+
+def test_models_dict():
+    all_models = [
+        (name, m)
+        for name, m in models.__dict__.items()
+        if (
+                inspect.isclass(m)
+                and issubclass(m, models.base.EEGModuleMixin)
+                and m != models.base.EEGModuleMixin
+        )
+    ]
+    models_list = list(models_dict.items())
+    assert len(all_models) == len(models_list)
+    assert set(all_models) == set(models_list)

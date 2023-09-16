@@ -3,8 +3,10 @@ pandas
 scipy
 matplotlib
 h5py
-skorch<0.14
+skorch
 joblib
 mne
 einops
-zarr
+docstring_inheritance
+torchinfo
+pytest_cases

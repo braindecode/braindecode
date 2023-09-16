@@ -1,0 +1,56 @@
+name: tests
+
+on:
+  push:
+    branches:
+      - "master"
+  pull_request:
+    branches:
+      - '*' # all branches, including forks
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ "ubuntu-latest", "macos-latest", "windows-latest" ]
+        python-version: ["3.8", "3.9", "3.10"]
+    steps:
+    ## Install Braindecode
+    - name: Checking Out Repository
+      uses: actions/checkout@v2
+    # Cache MNE Data
+    # The cache key here is fixed except for os
+    # so if you download a new mne dataset in the code, best to manually increment the key below
+    - name: Create/Restore MNE Data Cache
+      id: cache-mne_data
+      uses: actions/cache@v2
+      with:
+        path: ~/mne_data
+        key: ${{ runner.os }}-v3
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Show Python Version
+      run: python --version
+    # Update pip
+    - name: Update pip
+      run: pip install --upgrade pip
+    - name: Install Braindecode from Current Checkout
+      run: pip install -e .[moabb,tests]
+    # Show Braindecode Version
+    - run: python -c "import braindecode; print(braindecode.__version__)"
+
+    ## Run Tests
+    - name: Run Tests # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
+      run: pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+    - name: Upload Coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8'}}
+      with:
+        fail_ci_if_error: true
+        file: ./coverage.xml
+        path_to_write_report: ./codecov_report.txt
+        env_vars: OS,PYTHON
+

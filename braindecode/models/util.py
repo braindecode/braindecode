@@ -2,12 +2,20 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
+import inspect
 
-import torch
 import numpy as np
+import torch
 from scipy.special import log_softmax
+from sklearn.utils import deprecated
+
+import braindecode.models as models
 
 
+@deprecated(
+    "will be removed in version 1.0. Use EEGModuleMixin.to_dense_prediction_model method directly "
+    "on the model object."
+)
 def to_dense_prediction_model(model, axis=(2, 3)):
     """
     Transform a sequential model with strides to a model that outputs
@@ -54,6 +62,10 @@ def to_dense_prediction_model(model, axis=(2, 3)):
             module.stride = tuple(new_stride)
 
 
+@deprecated(
+    "will be removed in version 1.0. Use EEGModuleMixin.get_output_shape method directly on the "
+    "model object."
+)
 def get_output_shape(model, in_chans, input_window_samples):
     """Returns shape of neural network output for batch size equal 1.
 
@@ -137,3 +149,17 @@ def aggregate_probas(logits, n_windows_stride=1):
     """
     log_probas = log_softmax(logits, axis=1)
     return _pad_shift_array(log_probas, stride=n_windows_stride).sum(axis=0).T
+
+
+models_dict = {}
+
+# For the models inside the init model, go through all the models
+# check those have the EEGMixin class inherited. If they are, add them to the
+# list.
+
+
+def _init_models_dict():
+    for m in inspect.getmembers(models, inspect.isclass):
+        if (issubclass(m[1], models.base.EEGModuleMixin)
+                and m[1] != models.base.EEGModuleMixin):
+            models_dict[m[0]] = m[1]

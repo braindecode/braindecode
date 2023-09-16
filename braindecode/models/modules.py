@@ -46,10 +46,7 @@ class Expression(nn.Module):
             expression_str = self.expression_fn.__name__
         else:
             expression_str = repr(self.expression_fn)
-        return (
-            self.__class__.__name__ +
-            "(expression=%s) " % expression_str
-        )
+        return self.__class__.__name__ + "(expression=%s) " % expression_str
 
 
 class AvgPool2dWithConv(nn.Module):
@@ -90,14 +87,12 @@ class AvgPool2dWithConv(nn.Module):
             self.kernel_size[1],
         )
         if self._pool_weights is None or (
-            (tuple(self._pool_weights.size()) != tuple(weight_shape)) or
-            (self._pool_weights.is_cuda != x.is_cuda) or
-            (self._pool_weights.data.type() != x.data.type())
+            (tuple(self._pool_weights.size()) != tuple(weight_shape))
+            or (self._pool_weights.is_cuda != x.is_cuda)
+            or (self._pool_weights.data.type() != x.data.type())
         ):
             n_pool = np.prod(self.kernel_size)
-            weights = np_to_th(
-                np.ones(weight_shape, dtype=np.float32) / float(n_pool)
-            )
+            weights = np_to_th(np.ones(weight_shape, dtype=np.float32) / float(n_pool))
             weights = weights.type_as(x)
             if x.is_cuda:
                 weights = weights.cuda()
@@ -170,6 +165,7 @@ class TimeDistributed(nn.Module):
         Module to be applied to the input windows. Must accept an input of
         shape (batch_size, n_channels, n_times).
     """
+
     def __init__(self, module):
         super().__init__()
         self.module = module
@@ -217,6 +213,7 @@ class CausalConv1d(nn.Conv1d):
     .. [1] https://discuss.pytorch.org/t/causal-convolution/3456/4
     .. [2] https://gist.github.com/paultsw/7a9d6e3ce7b70e9e2c61bc9287addefc
     """
+
     def __init__(
         self,
         in_channels,
@@ -237,12 +234,12 @@ class CausalConv1d(nn.Conv1d):
             kernel_size=kernel_size,
             dilation=dilation,
             padding=(kernel_size - 1) * dilation,
-            **kwargs
+            **kwargs,
         )
 
     def forward(self, X):
         out = super().forward(X)
-        return out[..., :-self.padding[0]]
+        return out[..., : -self.padding[0]]
 
 
 class MaxNormLinear(nn.Linear):
@@ -269,20 +266,12 @@ class MaxNormLinear(nn.Linear):
     .. [3] https://discuss.pytorch.org/t/how-to-correctly-implement-in-place-
            max-norm-constraint/96769
     """
+
     def __init__(
-        self,
-        in_features,
-        out_features,
-        bias=True,
-        max_norm_val=2,
-        eps=1e-5,
-        **kwargs
+        self, in_features, out_features, bias=True, max_norm_val=2, eps=1e-5, **kwargs
     ):
         super().__init__(
-            in_features=in_features,
-            out_features=out_features,
-            bias=bias,
-            **kwargs
+            in_features=in_features, out_features=out_features, bias=bias, **kwargs
         )
         self._max_norm_val = max_norm_val
         self._eps = eps
@@ -297,4 +286,73 @@ class MaxNormLinear(nn.Linear):
                 min=self._max_norm_val / 2
             )
             desired = torch.clamp(norm, max=self._max_norm_val)
-            self.weight *= (desired / (self._eps + norm))
+            self.weight *= desired / (self._eps + norm)
+
+
+class CombinedConv(nn.Module):
+    """Merged convolutional layer for temporal and spatial convs in Deep4/ShallowFBCSP
+
+    Numerically equivalent to the separate sequential approach, but this should be faster.
+
+    Parameters
+    ----------
+    in_chans : int
+        Number of EEG input channels.
+    n_filters_time: int
+        Number of temporal filters.
+    filter_time_length: int
+        Length of the temporal filter.
+    n_filters_spat: int
+        Number of spatial filters.
+    bias_time: bool
+        Whether to use bias in the temporal conv
+    bias_spat: bool
+        Whether to use bias in the spatial conv
+
+    """
+
+    def __init__(
+        self,
+        in_chans,
+        n_filters_time=40,
+        n_filters_spat=40,
+        filter_time_length=25,
+        bias_time=True,
+        bias_spat=True,
+    ):
+        super().__init__()
+        self.bias_time = bias_time
+        self.bias_spat = bias_spat
+        self.conv_time = nn.Conv2d(
+            1, n_filters_time, (filter_time_length, 1), bias=bias_time, stride=1
+        )
+        self.conv_spat = nn.Conv2d(
+            n_filters_time, n_filters_spat, (1, in_chans), bias=bias_spat, stride=1
+        )
+
+    def forward(self, x):
+        # Merge time and spat weights
+        combined_weight = (
+            (self.conv_time.weight * self.conv_spat.weight.permute(1, 0, 2, 3))
+            .sum(0)
+            .unsqueeze(1)
+        )
+
+        # Calculate bias term
+        if not self.bias_spat and not self.bias_time:
+            bias = None
+        else:
+            bias = 0
+            if self.bias_time:
+                bias += (
+                    self.conv_spat.weight.squeeze()
+                    .sum(-1)
+                    .mm(self.conv_time.bias.unsqueeze(-1))
+                    .squeeze()
+                )
+            if self.bias_spat:
+                bias += self.conv_spat.bias
+
+        return F.conv2d(
+            x, weight=combined_weight, bias=bias, stride=(1, 1)
+        )

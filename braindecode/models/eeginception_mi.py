@@ -7,9 +7,10 @@ from torch import nn
 from einops.layers.torch import Rearrange
 
 from .modules import Ensure4d
+from .base import EEGModuleMixin, deprecated_args
 
 
-class EEGInceptionMI(nn.Module):
+class EEGInceptionMI(EEGModuleMixin, nn.Module):
     """EEG Inception for Motor Imagery, as proposed in [1]_
 
     The model is strongly based on the original InceptionNet for computer
@@ -26,11 +27,7 @@ class EEGInceptionMI(nn.Module):
 
     Parameters
     ----------
-    in_channels : int
-        Number of EEG channels.
-    n_classes : int
-        Number of classes.
-    input_window_s : float, optional
+    input_window_seconds : float, optional
         Size of the input, in seconds. Set to 4.5 s as in [1]_ for dataset
         BCI IV 2a.
     sfreq : float, optional
@@ -49,6 +46,12 @@ class EEGInceptionMI(nn.Module):
         0.9 here for `n_convs`=5). Defaults to 0.1 s.
     activation: nn.Module
         Activation function. Defaults to ReLU activation.
+    in_channels : int
+        Alias for `n_chans`.
+    n_classes : int
+        Alias for `n_outputs`.
+    input_window_s : float, optional
+        Alias for `input_window_seconds`.
 
     References
     ----------
@@ -60,22 +63,39 @@ class EEGInceptionMI(nn.Module):
 
     def __init__(
             self,
-            in_channels,
-            n_classes,
-            input_window_s=4.5,
+            n_chans=None,
+            n_outputs=None,
+            input_window_seconds=4.5,
             sfreq=250,
             n_convs=5,
             n_filters=48,
             kernel_unit_s=0.1,
             activation=nn.ReLU(),
+            chs_info=None,
+            n_times=None,
+            in_channels=None,
+            n_classes=None,
+            input_window_s=None,
+            add_log_softmax=True,
     ):
-        super().__init__()
+        n_chans, n_outputs, input_window_seconds, = deprecated_args(
+            self,
+            ('in_channels', 'n_chans', in_channels, n_chans),
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
+            ('input_window_s', 'input_window_seconds', input_window_s, input_window_seconds),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del in_channels, n_classes, input_window_s
 
-        self.in_channels = in_channels
-        self.n_classes = n_classes
-        self.input_window_s = input_window_s
-        self.input_window_samples = int(input_window_s * sfreq)
-        self.sfreq = sfreq
         self.n_convs = n_convs
         self.n_filters = n_filters
         self.kernel_unit_s = kernel_unit_s
@@ -87,7 +107,7 @@ class EEGInceptionMI(nn.Module):
         # ======== Inception branches ========================
 
         self.initial_inception_module = _InceptionModuleMI(
-            in_channels=self.in_channels,
+            in_channels=self.n_chans,
             n_filters=self.n_filters,
             n_convs=self.n_convs,
             kernel_unit_s=self.kernel_unit_s,
@@ -109,7 +129,7 @@ class EEGInceptionMI(nn.Module):
         ])
 
         self.residual_block_1 = _ResidualModuleMI(
-            in_channels=self.in_channels,
+            in_channels=self.n_chans,
             n_filters=intermediate_in_channels,
             activation=self.activation,
         )
@@ -142,22 +162,24 @@ class EEGInceptionMI(nn.Module):
         # channel. We follow this last hypothesis here to comply with the
         # number of parameters reported in the paper.
         self.ave_pooling = nn.AvgPool2d(
-            kernel_size=(1, self.input_window_samples),
+            kernel_size=(1, self.n_times),
         )
 
         self.flat = nn.Flatten()
         self.fc = nn.Linear(
-            # in_features=self.input_window_samples * intermediate_in_channels,
             in_features=intermediate_in_channels,
-            out_features=self.n_classes,
+            out_features=self.n_outputs,
             bias=True,
         )
 
-        self.softmax = nn.LogSoftmax(dim=1)
+        if self.add_log_softmax:
+            self.out_fun = nn.LogSoftmax(dim=1)
+        else:
+            self.out_fun = nn.Identity()
 
     def forward(
-        self,
-        X: torch.Tensor,
+            self,
+            X: torch.Tensor,
     ) -> torch.Tensor:
         X = self.ensuredims(X)
         X = self.dimshuffle(X)
@@ -180,18 +202,18 @@ class EEGInceptionMI(nn.Module):
         out = self.ave_pooling(out)
         out = self.flat(out)
         out = self.fc(out)
-        return self.softmax(out)
+        return self.out_fun(out)
 
 
 class _InceptionModuleMI(nn.Module):
     def __init__(
-        self,
-        in_channels,
-        n_filters,
-        n_convs,
-        kernel_unit_s=0.1,
-        sfreq=250,
-        activation=nn.ReLU(),
+            self,
+            in_channels,
+            n_filters,
+            n_convs,
+            kernel_unit_s=0.1,
+            sfreq=250,
+            activation=nn.ReLU(),
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -241,8 +263,8 @@ class _InceptionModuleMI(nn.Module):
         self.activation = activation
 
     def forward(
-        self,
-        X: torch.Tensor,
+            self,
+            X: torch.Tensor,
     ) -> torch.Tensor:
         X1 = self.bottleneck(X)
 
@@ -259,10 +281,10 @@ class _InceptionModuleMI(nn.Module):
 
 class _ResidualModuleMI(nn.Module):
     def __init__(
-        self,
-        in_channels,
-        n_filters,
-        activation=nn.ReLU()
+            self,
+            in_channels,
+            n_filters,
+            activation=nn.ReLU()
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -278,8 +300,8 @@ class _ResidualModuleMI(nn.Module):
         )
 
     def forward(
-        self,
-        X: torch.Tensor,
+            self,
+            X: torch.Tensor,
     ) -> torch.Tensor:
         out = self.conv(X)
         out = self.bn(out)

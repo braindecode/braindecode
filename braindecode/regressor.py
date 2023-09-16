@@ -1,31 +1,32 @@
 # Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
+#          Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)
 
 import warnings
 
 import numpy as np
-from sklearn.metrics import get_scorer
-from skorch.callbacks import EpochTimer, BatchScoring, PrintLog, EpochScoring
-from skorch.classifier import NeuralNet
 from skorch.regressor import NeuralNetRegressor
-from skorch.utils import train_loss_score, valid_loss_score, noop, to_numpy
-import torch
 
-from .training.scoring import (PostEpochTrainScoring,
-                               CroppedTrialEpochScoring,
-                               CroppedTimeSeriesEpochScoring,
-                               predict_trials)
+from .training.scoring import predict_trials
+from .eegneuralnet import _EEGNeuralNet
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 
-class EEGRegressor(NeuralNetRegressor):
+class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
     doc = """Regressor that calls loss function directly.
 
     Parameters
     ----------
+    module: str or torch Module (class or instance)
+        Either the name of one of the braindecode models (see
+        :obj:`braindecode.models.util.models_dict`) or directly a PyTorch module.
+        When passing directly a torch module, uninstantiated class should be prefered,
+        although instantiated modules will also work.
+
     cropped: bool (default=False)
         Defines whether torch model passed to this class is cropped or not.
         Currently used for callbacks definition.
@@ -57,99 +58,19 @@ class EEGRegressor(NeuralNetRegressor):
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
-    def __init__(self, *args, cropped=False, callbacks=None,
+    def __init__(self, module, *args, cropped=False, callbacks=None,
                  iterator_train__shuffle=True,
                  iterator_train__drop_last=True,
                  aggregate_predictions=True, **kwargs):
         self.cropped = cropped
         self.aggregate_predictions = aggregate_predictions
         self._last_window_inds_ = None
-        super().__init__(*args,
+        super().__init__(module,
+                         *args,
                          callbacks=callbacks,
                          iterator_train__shuffle=iterator_train__shuffle,
                          iterator_train__drop_last=iterator_train__drop_last,
                          **kwargs)
-
-    def _yield_callbacks(self):
-        # Here we parse the callbacks supplied as strings,
-        # e.g. 'accuracy', to the callbacks skorch expects
-        for name, cb, named_by_user in super()._yield_callbacks():
-            if name == 'str':
-                train_cb, valid_cb = self._parse_str_callback(cb)
-                yield train_cb
-                if self.train_split is not None:
-                    yield valid_cb
-            else:
-                yield name, cb, named_by_user
-
-    def _parse_str_callback(self, cb_supplied_name):
-        scoring = get_scorer(cb_supplied_name)
-        scoring_name = scoring._score_func.__name__
-        assert scoring_name.endswith(
-                        ('_score', '_error', '_deviance', '_loss'))
-        if (scoring_name.endswith('_score') or
-                cb_supplied_name.startswith('neg_')):
-            lower_is_better = False
-        else:
-            lower_is_better = True
-        train_name = f'train_{cb_supplied_name}'
-        valid_name = f'valid_{cb_supplied_name}'
-        if self.cropped:
-            # TODO: use CroppedTimeSeriesEpochScoring when time series target
-            # In case of cropped decoding we are using braindecode
-            # specific scoring created for cropped decoding
-            train_scoring = CroppedTrialEpochScoring(
-                cb_supplied_name, lower_is_better, on_train=True, name=train_name
-            )
-            valid_scoring = CroppedTrialEpochScoring(
-                cb_supplied_name, lower_is_better, on_train=False, name=valid_name
-            )
-        else:
-            train_scoring = PostEpochTrainScoring(
-                cb_supplied_name, lower_is_better, name=train_name
-            )
-            valid_scoring = EpochScoring(
-                cb_supplied_name, lower_is_better, on_train=False, name=valid_name
-            )
-        named_by_user = True
-        train_valid_callbacks = [
-            (train_name, train_scoring, named_by_user),
-            (valid_name, valid_scoring, named_by_user)
-        ]
-        return train_valid_callbacks
-
-    # pylint: disable=arguments-differ
-    def get_loss(self, y_pred, y_true, *args, **kwargs):
-        """Return the loss for this batch by calling NeuralNet get_loss.
-
-        Parameters
-        ----------
-        y_pred : torch tensor
-            Predicted target values
-        y_true : torch tensor
-            True target values.
-        X : input data, compatible with skorch.dataset.Dataset
-            By default, you should be able to pass:
-
-                * numpy arrays
-                * torch tensors
-                * pandas DataFrame or Series
-                * scipy sparse CSR matrices
-                * a dictionary of the former three
-                * a list/tuple of the former three
-                * a Dataset
-
-            If this doesn't work with your data, you have to pass a
-            ``Dataset`` that can deal with the data.
-        training : bool (default=False)
-            Whether train mode should be used or not.
-
-        Returns
-        -------
-        loss : float
-            The loss value.
-        """
-        return NeuralNet.get_loss(self, y_pred, y_true, *args, **kwargs)
 
     def get_iterator(self, dataset, training=False, drop_index=True):
         iterator = super().get_iterator(dataset, training=training)
@@ -158,70 +79,6 @@ class EEGRegressor(NeuralNetRegressor):
         else:
             return iterator
 
-    def on_batch_end(self, net, *batch, training=False, **kwargs):
-        # If training is false, assume that our loader has indices for this
-        # batch
-        if not training:
-            epoch_cbs = []
-            for name, cb in self.callbacks_:
-                if isinstance(cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)) and (
-                        hasattr(cb, 'window_inds_')) and (not cb.on_train):
-                    epoch_cbs.append(cb)
-            # for trialwise decoding stuffs it might also be we don't have
-            # cropped loader, so no indices there
-            if len(epoch_cbs) > 0:
-                assert self._last_window_inds_ is not None
-                for cb in epoch_cbs:
-                    cb.window_inds_.append(self._last_window_inds_)
-                self._last_window_inds_ = None
-
-    def predict_with_window_inds_and_ys(self, dataset):
-        self.module.eval()
-        preds = []
-        i_window_in_trials = []
-        i_window_stops = []
-        window_ys = []
-        for X, y, i in self.get_iterator(dataset, drop_index=False):
-            i_window_in_trials.append(i[0].cpu().numpy())
-            i_window_stops.append(i[2].cpu().numpy())
-            with torch.no_grad():
-                preds.append(to_numpy(self.module.forward(X.to(self.device))))
-            window_ys.append(y.cpu().numpy())
-        preds = np.concatenate(preds)
-        i_window_in_trials = np.concatenate(i_window_in_trials)
-        i_window_stops = np.concatenate(i_window_stops)
-        window_ys = np.concatenate(window_ys)
-        return dict(
-            preds=preds, i_window_in_trials=i_window_in_trials,
-            i_window_stops=i_window_stops, window_ys=window_ys)
-
-    # Removes default EpochScoring callback computing 'accuracy' to work properly
-    # with cropped decoding.
-    @property
-    def _default_callbacks(self):
-        return [
-            ("epoch_timer", EpochTimer()),
-            (
-                "train_loss",
-                BatchScoring(
-                    train_loss_score,
-                    name="train_loss",
-                    on_train=True,
-                    target_extractor=noop,
-                ),
-            ),
-            (
-                "valid_loss",
-                BatchScoring(
-                    valid_loss_score, name="valid_loss", target_extractor=noop,
-                ),
-            ),
-            ("print_log", PrintLog()),
-        ]
-
-    # Method added to fix `predict_proba` behavior to return proper values
-    # in cropped mode even if regressor does not return probabilities.
-    # We implement `predict_proba` because it exists in skorch.NeuralNetRegressor.
     def predict_proba(self, X):
         """Return the output of the module's forward method as a numpy
         array. In case of cropped decoding returns averaged values for
@@ -311,8 +168,59 @@ class EEGRegressor(NeuralNetRegressor):
             num_workers=self.get_iterator(X, training=False).loader.num_workers,
         )
 
-    def fit(self, X, y, **kwargs):
+    def fit(self, X, y=None, **kwargs):
+        """Initialize and fit the module.
+
+        If the module was already initialized, by calling fit, the
+        module will be re-initialized (unless ``warm_start`` is True).
+        If possible, signal-related parameters are inferred from the
+        data and passed to the module at initialisation.
+        Depending on the type of input passed, the following parameters
+        are inferred:
+
+          * mne.Epochs: ``n_times``, ``n_chans``, ``n_outputs``, ``chs_info``,
+            ``sfreq``, ``input_window_seconds``
+          * numpy array: ``n_times``, ``n_chans``, ``n_outputs``
+          * WindowsDataset with ``targets_from='metadata'``
+            (or BaseConcatDataset of such datasets): ``n_times``, ``n_chans``, ``n_outputs``
+          * other Dataset: ``n_times``, ``n_chans``
+          * other types: no parameters are inferred.
+
+        Parameters
+        ----------
+        X : input data, compatible with skorch.dataset.Dataset
+          By default, you should be able to pass:
+
+            * mne.Epochs
+            * numpy arrays
+            * torch tensors
+            * pandas DataFrame or Series
+            * scipy sparse CSR matrices
+            * a dictionary of the former three
+            * a list/tuple of the former three
+            * a Dataset
+
+          If this doesn't work with your data, you have to pass a
+          ``Dataset`` that can deal with the data.
+
+        y : target data, compatible with skorch.dataset.Dataset
+          The same data types as for ``X`` are supported. If your X is
+          a Dataset that contains the target, ``y`` may be set to
+          None.
+
+        **fit_params : dict
+          Additional parameters passed to the ``forward`` method of
+          the module and to the ``self.train_split`` call.
+        """
         if y is not None:
             if y.ndim == 1:
                 y = np.array(y).reshape(-1, 1)
         super().fit(X=X, y=y, **kwargs)
+
+    def _get_n_outputs(self, y, classes):
+        if y is None:
+            return None
+        if y.ndim == 1:
+            return 1
+        else:
+            return y.shape[-1]

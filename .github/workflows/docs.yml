@@ -1,0 +1,62 @@
+name: docs
+on:
+  push:
+    branches:
+      - "master"
+  pull_request:
+    branches:
+      - '*' # all branches, including forks
+
+jobs:
+  build_docs:
+    runs-on: ubuntu-latest
+    steps:
+      ## Install Braindecode
+      - name: Checking Out Repository
+        uses: actions/checkout@v2
+      # Cache MNE Data
+      # The cache key here is fixed except for os
+      # so if you download a new mne dataset in the code, best to manually increment the key below
+      - name: Create/Restore MNE Data Cache
+        id: cache-mne_data
+        uses: actions/cache@v2
+        with:
+          path: ~/mne_data
+          key: ${{ runner.os }}-v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Show Python Version
+        run: python --version
+      # Update pip
+      - name: Update pip
+        run: pip install --upgrade pip
+      # Install with MOABB and docs dependencies
+      - name: Install with doc dependencies
+        run: pip install -e .[moabb,docs]
+      # Show Braindecode Version
+      - run: python -c "import braindecode; print(braindecode.__version__)"
+
+      - name: Checking Out Repository
+        uses: actions/checkout@v2
+      - name: Create Docs
+        run: |
+          cd docs
+          make html
+      - name: Upload HTML Docs as Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: HTML-Docs
+          path: ./docs/_build/
+
+      - name: Deploy to Github Pages if on Master
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          deploy_key: ${{ secrets.ACTIONS_DEPLOY_KEY }}
+          external_repository: braindecode/braindecode.github.io
+          destination_dir: dev
+          publish_branch: master
+          publish_dir: ./docs/_build/html
+          cname: braindecode.org
+

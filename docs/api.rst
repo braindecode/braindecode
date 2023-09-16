@@ -47,6 +47,15 @@ Regressor
 Models
 ======
 
+:py:mod:`braindecode.models.base`:
+
+.. currentmodule:: braindecode.models
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGModuleMixin
+
 :py:mod:`braindecode.models`:
 
 .. currentmodule:: braindecode.models
@@ -139,6 +148,12 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
+    Resample
+    DropChannels
+    SetEEGReference
+    Filter
+    Pick
+    Crop
 
 Data Utils
 ==========
