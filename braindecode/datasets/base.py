@@ -60,7 +60,6 @@ class BaseDataset(Dataset):
     transform : callable | None
         On-the-fly transform applied to the example before it is returned.
     """
-
     def __init__(self, raw, description=None, target_name=None,
                  transform=None):
         self.raw = raw
@@ -122,8 +121,7 @@ class BaseDataset(Dataset):
             self._description = pd.concat([self.description, description])
 
     def _target_name(self, target_name):
-        if target_name is not None and not isinstance(target_name,
-                                                      (str, tuple, list)):
+        if target_name is not None and not isinstance(target_name, (str, tuple, list)):
             raise ValueError('target_name has to be None, str, tuple or list')
         if target_name is None:
             return target_name
@@ -168,14 +166,10 @@ class WindowsDataset(BaseDataset):
     transform : callable | None
         On-the-fly transform applied to a window before it is returned.
     targets_from : str
-        Defines whether targets will be extracted from mne.Epochs metadata or
-        mne.Epochs `misc`
-        channels (time series targets). It can be `metadata` (default) or
-        `channels`.
+        Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
+        channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-
-    def __init__(self, windows, description=None, transform=None,
-                 targets_from='metadata',
+    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
                  last_target_only=True):
         self.windows = windows
         self._description = _create_description(description)
@@ -186,8 +180,8 @@ class WindowsDataset(BaseDataset):
         self.targets_from = targets_from
 
         self.crop_inds = self.windows.metadata.loc[
-                         :, ['i_window_in_trial', 'i_start_in_trial',
-                             'i_stop_in_trial']].to_numpy()
+            :, ['i_window_in_trial', 'i_start_in_trial',
+                'i_stop_in_trial']].to_numpy()
         if self.targets_from == 'metadata':
             self.y = self.windows.metadata.loc[:, 'target'].to_list()
 
@@ -276,7 +270,6 @@ class BaseConcatDataset(ConcatDataset):
     target_transform : callable | None
         Optional function to call on targets before returning them.
     """
-
     def __init__(self, list_of_ds, target_transform=None):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
@@ -366,8 +359,7 @@ class BaseConcatDataset(ConcatDataset):
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
         return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds],
-            target_transform=self.target_transform)
+            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
             for split_name, ds_inds in split_ids.items()}
 
     def get_metadata(self):
@@ -578,13 +570,12 @@ class BaseConcatDataset(ConcatDataset):
         if overwrite:
             # the following will be True for all datasets preprocessed and
             # stored in parallel with braindecode.preprocessing.preprocess
-            if i_ds + 1 + offset < n_sub_dirs:
-                warnings.warn(
-                    f"The number of saved datasets ({i_ds + 1 + offset}) "
-                    f"does not match the number of existing "
-                    f"subdirectories ({n_sub_dirs}). You may now "
-                    f"encounter a mix of differently preprocessed "
-                    f"datasets!", UserWarning)
+            if i_ds+1+offset < n_sub_dirs:
+                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
+                              f"does not match the number of existing "
+                              f"subdirectories ({n_sub_dirs}). You may now "
+                              f"encounter a mix of differently preprocessed "
+                              f"datasets!", UserWarning)
         # if path contains files or directories that were not touched, raise
         # warning
         if path_contents:
@@ -925,6 +916,19 @@ class ZarrDataset(BaseDataset):
             train_indices=None,
             test_indices=None,
     ):
+        """
+        Split the dataset in train and test sets using `train_test_split`
+        
+        Parameters
+        ----------
+        train_indices : list, default None
+        test_indices : list, default None
+
+        Returns
+        -------
+        train_set : ZarrDataset
+        test_set : ZarrDataset
+        """
         if train_indices is None:
             train_indices, test_indices = train_test_split(
                 np.arange((len(self)))
