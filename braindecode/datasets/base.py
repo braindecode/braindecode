@@ -790,7 +790,8 @@ class ZarrDataset(BaseDataset):
             The stride between windows (default is None, which implies no
             stride).
 
-        Returns:
+        Returns
+        -------
             Dictionary with keys being the windows ids and values the
             information
             describing, subject_idx, start_idx, stop_idx, target.
