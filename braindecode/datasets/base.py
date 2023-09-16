@@ -794,7 +794,8 @@ class ZarrDataset(BaseDataset):
             information
             describing, subject_idx, start_idx, stop_idx, target.
 
-        Notes:
+        Notes
+        -----
             Other information could be added to the output dict.
 
         """
