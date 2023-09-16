@@ -775,12 +775,19 @@ class ZarrDataset(BaseDataset):
     ) -> dict:
         """
         Args:
-            targets:
-            start_offset:
-            stop_offset:
-            window_size_samples:
-            max_recording_length_sample:
-            window_stride:
+        targets : list
+            A list of target values.
+        start_offset : int
+            The start offset for window creation.
+        stop_offset : int
+            The stop offset for window creation.
+        window_size_samples : int
+            The size of each window in samples.
+        max_recording_length_sample : int
+            The maximum recording length in samples.
+        window_stride : int, default None
+            The stride between windows (default is None, which implies no
+            stride).
 
         Returns:
             Dictionary with keys being the windows ids and values the
