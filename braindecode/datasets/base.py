@@ -713,15 +713,15 @@ class BaseConcatDataset(ConcatDataset):
         raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'epo'
         fif_file_name = f'{i_ds + offset}-{raw_or_epo}.fif'
         fif_file_path = os.path.join(sub_dir, fif_file_name)
-        raw_or_epo = 'raw' if raw_or_epo == 'raw' else 'windows'
+        raw_or_windows = 'raw' if raw_or_epo == 'raw' else 'windows'
 
         # The following appears to be necessary to avoid a CI failure when
         # preprocessing WindowsDatasets with serialization enabled. The failure
         # comes from `mne.epochs._check_consistency` which ensures the Epochs's
         # object `times` attribute is not writeable.
-        getattr(ds, raw_or_epo).times.flags['WRITEABLE'] = False
+        getattr(ds, raw_or_windows).times.flags['WRITEABLE'] = False
 
-        getattr(ds, raw_or_epo).save(fif_file_path)
+        getattr(ds, raw_or_windows).save(fif_file_path)
 
     @staticmethod
     def _save_metadata(sub_dir, ds):
