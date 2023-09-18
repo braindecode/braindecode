@@ -115,9 +115,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
             nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity())
 
         self.final_layer = module
-        """self.final_layer = nn.Conv2d(
-            100, self.n_outputs, kernel_size=(1, 1), stride=1
-        )"""
 
     def forward(self, x):
         """Forward pass.
