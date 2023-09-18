@@ -27,6 +27,7 @@ Enhancements
 - Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.SPDNet model :class:`braindecode.models.SPDNet` (:gh:`534` by `Théo Gnassounou`_ and `Bruno Aristimunha`_)
 
 
 Bugs
