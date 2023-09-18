@@ -181,7 +181,6 @@ class SPDNet(EEGModuleMixin, nn.Module):
         n_outputs=1,
         chs_info=None,
         n_times=None,
-        input_window_seconds=None,
         sfreq=None,
         add_log_softmax=False,
     ):
@@ -190,7 +189,6 @@ class SPDNet(EEGModuleMixin, nn.Module):
             n_chans=n_chans,
             chs_info=chs_info,
             n_times=n_times,
-            input_window_seconds=input_window_seconds,
             sfreq=sfreq,
             add_log_softmax=add_log_softmax,
         )
