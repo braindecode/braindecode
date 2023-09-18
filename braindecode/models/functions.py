@@ -242,7 +242,7 @@ def modeig_backward(grad_output, s, U, s_modified, derivative, threshold=1e-4):
     return grad_input
 
 
-class Logm(torch.autograd.Function):
+class logm(torch.autograd.Function):
     """Matrix logarithm of a symmetric matrix.
 
     This class computes the matrix logarithm of a symmetric matrix X.
@@ -277,7 +277,7 @@ class Logm(torch.autograd.Function):
         return modeig_backward(grad_output, s, U, s_modified, derivative)
 
 
-class Regm(torch.autograd.Function):
+class regm(torch.autograd.Function):
     """Regularized matrix logarithm of a symmetric matrix.
 
     This class computes the regularized matrix logarithm of a symmetric matrix X.
