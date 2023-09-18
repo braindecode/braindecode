@@ -353,7 +353,7 @@ class _TransformerEncoder(nn.Sequential):
         )
 
 
-class _ClassificationHead(nn.Module):
+class _FullyConnected(nn.Module):
     def __init__(self, final_fc_length,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
                  hidden_channels=32):
