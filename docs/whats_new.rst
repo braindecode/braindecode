@@ -49,6 +49,7 @@ Enhancements
 - Automatically populate signal-related parameters in :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`517` by `Pierre Guetschel`_)
 - Adding a pure PyTorch tutorial (:gh:`523` by `Remi Delbouys`_  and `Bruno Aristimunha`_)
 - Add ``models_dict`` to :mod:`braindecode.models.util` (:gh:`524` by `Pierre Guetschel`_)
+- Add SPDNet model :class:`braindecode.models.SPDNet` (:gh:`534` by `Théo Gnassounou`_)
 
 Bugs
 ~~~~
