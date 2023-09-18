@@ -6,82 +6,32 @@ from geoopt.tensor import ManifoldParameter
 from geoopt.manifolds import Stiefel
 import torch
 import torch.nn as nn
+from .functions import Logm, Regm
+from .base import EEGModuleMixin
 
 
 class CovLayer(nn.Module):
-    def __init__(self, estimator="cov"):
-        super().__init__()
-        self.estimator = estimator
-        if self.estimator != "cov":
-            raise NotImplementedError
+    """Covariance layer.
 
+    This class compute the covariance of a batch of
+    symmetric matrices.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        Batch of symmetric matrices
+
+    Returns
+    -------
+    torch.Tensor
+        Batch of covariance matrices
+    """
     def forward(self, X):
         n_batch, n_channels, _ = X.size()
         torch_covs = torch.empty((n_batch, n_channels, n_channels)).to(X.device)
         for i, batch in enumerate(X):
             torch_covs[i] = batch.cov(correction=0)
         return torch_covs
-
-
-class EigenvalueModificator(torch.autograd.Function):
-    """Eigenvalue modificator following [1]_.
-
-    This class modifies the eigenvalues of a symmetric matrix X
-    according to a given function f. It also adapt the backpropagation
-    according to the chain rule [1]_.
-
-    Parameters
-    ----------
-    X : torch.Tensor
-        Symmetric matrix
-    function_applied : callable
-        Function applied to the eigenvalues of X
-    derivative : callable
-        Derivative of the function applied to the
-        eigenvalues of X during backpropagation
-
-    Returns
-    -------
-    torch.Tensor
-        Modified symmetric matrix
-
-    References
-    ----------
-    .. [1] Brooks et al. 2019, Riemannian batch normalization
-           for SPD neural networks, NeurIPS
-    """
-
-    @staticmethod
-    def forward(ctx, X, function_applied, derivative):
-        s, U = torch.linalg.eigh(X)
-        s_modified = function_applied(s)
-        output = U @ torch.diag_embed(s_modified) @ U.transpose(-1, -2)
-        ctx.save_for_backward(s, U, s_modified)
-        ctx.derivative_ = derivative
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        s, U, s_modified = ctx.saved_tensors
-        # compute Loewner matrix
-        denominator = s.unsqueeze(-1) - s.unsqueeze(-1).transpose(-1, -2)
-
-        is_eq = denominator.abs() < 1e-4  # XXX maybe should be a parameter threshold
-        denominator[is_eq] = 1.0
-
-        # case: sigma_i != sigma_j
-        numerator = s_modified.unsqueeze(-1) - s_modified.unsqueeze(-1).transpose(-1, -2)
-
-        # case: sigma_i == sigma_j
-        s_derivativated = ctx.derivative_(s)
-        numerator[is_eq] = 0.5 * (
-            s_derivativated.unsqueeze(-1) + s_derivativated.unsqueeze(-1).transpose(-1, -2)
-        )[is_eq]
-        L = numerator / denominator
-
-        grad_input = U @  (L * (U.transpose(-1, -2) @ grad_output @ U)) @ U.transpose(-1, -2)
-
-        return grad_input, None, None
 
 
 class BiMap(nn.Module):
@@ -160,16 +110,8 @@ class ReEig(nn.Module):
         super(ReEig, self).__init__()
         self.register_buffer("threshold_", torch.tensor(threshold))
 
-    def function_applied(self, s):
-        return s.clamp(min=self.threshold_)
-
-    def derivative(self, s):
-        return s > self.threshold_
-
     def forward(self, X):
-        return EigenvalueModificator.apply(
-            X, self.function_applied, self.derivative
-        )
+        return Regm.apply(X, self.threshold_)
 
 
 class LogEig(nn.Module):
@@ -197,36 +139,31 @@ class LogEig(nn.Module):
 
     def __init__(self, threshold=1e-4):
         super(LogEig, self).__init__()
-        self.threshold_ = threshold
-
-    def function_applied(self, s):
-        return s.clamp(min=self.threshold_).log()
-
-    def derivative(self, s):
-        s_derivated = s.reciprocal()
-        s_derivated[s <= self.threshold_] = 0
-        return s_derivated
 
     def forward(self, X):
-        return EigenvalueModificator.apply(
-            X, self.function_applied, self.derivative
-        )
+        return Logm.apply(X)
 
 
-class SPDNet(nn.Module):
+class SPDNet(EEGModuleMixin, nn.Module):
     """SPDNet from [1]_.
 
     This class is a SPDNet implementation from [1]_.
 
     Parameters
     ----------
-    input_shape : int
-        Input shape
+    input_type : str
+        Input type
+        If "raw", the input is a batch of raw EEG signals and
+        a covariance matrix is computed
+        If "cov", the input is a batch of covariance matrices and
+        the covariance matrix is used as input
+    n_chans : int
+        Number of channels
     subspacedim : int
         Subspace dimension
     threshold : float
         Threshold for the rectified linear unit
-    out_features : int
+    n_outputs : int
         Output shape
 
     References
@@ -238,25 +175,37 @@ class SPDNet(nn.Module):
     def __init__(
         self,
         input_type,
-        input_shape,
+        n_chans,
         subspacedim,
         threshold=1e-4,
-        out_features=1,
-        add_log_softmax=True
+        n_outputs=1,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        add_log_softmax=False,
     ):
-        super(SPDNet, self).__init__()
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
+        )
         if input_type == "raw":
             self.cov = CovLayer()
         elif input_type == "cov":
             self.cov = nn.Identity()
-        self.bimap = BiMap(input_shape, subspacedim)
+        self.bimap = BiMap(n_chans, subspacedim)
         self.reeig = ReEig(threshold)
         self.logeig = torch.nn.Sequential(
             LogEig(threshold),
             torch.nn.Flatten(start_dim=1),
         )
         self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(subspacedim**2, out_features),
+            torch.nn.Linear(subspacedim**2, n_outputs),
         )
         if add_log_softmax:
             self.logsoftmax = nn.LogSoftmax(dim=1)
