@@ -6,7 +6,7 @@ from geoopt.tensor import ManifoldParameter
 from geoopt.manifolds import Stiefel
 import torch
 import torch.nn as nn
-from .functions import logm, regm
+from .functions import Logm, Regm
 from .base import EEGModuleMixin
 
 
@@ -111,7 +111,7 @@ class ReEig(nn.Module):
         self.register_buffer("threshold_", torch.tensor(threshold))
 
     def forward(self, X):
-        return regm.apply(X, self.threshold_)
+        return Regm.apply(X, self.threshold_)
 
 
 class LogEig(nn.Module):
@@ -141,7 +141,7 @@ class LogEig(nn.Module):
         super(LogEig, self).__init__()
 
     def forward(self, X):
-        return logm.apply(X)
+        return Logm.apply(X)
 
 
 class SPDNet(EEGModuleMixin, nn.Module):
@@ -160,7 +160,7 @@ class SPDNet(EEGModuleMixin, nn.Module):
     n_chans : int
         Number of channels
     subspacedim : int
-        Subspace dimension of the Stiefel manifold in BiMap
+        Subspace dimension
     threshold : float
         Threshold for the rectified linear unit
     n_outputs : int
@@ -181,6 +181,7 @@ class SPDNet(EEGModuleMixin, nn.Module):
         n_outputs=1,
         chs_info=None,
         n_times=None,
+        input_window_seconds=None,
         sfreq=None,
         add_log_softmax=False,
     ):
@@ -189,6 +190,7 @@ class SPDNet(EEGModuleMixin, nn.Module):
             n_chans=n_chans,
             chs_info=chs_info,
             n_times=n_times,
+            input_window_seconds=input_window_seconds,
             sfreq=sfreq,
             add_log_softmax=add_log_softmax,
         )
