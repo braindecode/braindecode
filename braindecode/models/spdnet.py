@@ -122,8 +122,10 @@ class LogEig(nn.Module):
 
     Parameters
     ----------
-    threshold : float
-        Threshold for the rectified linear unit
+    dim : int
+        Dimension of the symmetric matrix
+    tril : bool
+        If True, only the lower triangular part of the matrix is used
 
     Returns
     -------
@@ -137,11 +139,25 @@ class LogEig(nn.Module):
            AAAI
     """
 
-    def __init__(self, threshold=1e-4):
+    def __init__(self, dim, tril=True, ):
         super(LogEig, self).__init__()
+        self.tril = tril
+        if self.tril:
+            idx_lower = torch.tril_indices(dim, dim, offset=-1)
+            idx_diag = torch.arange(start=0, end=dim, dtype=torch.long)
+            self.idx = torch.cat((idx_diag[None, :].tile((2, 1)), idx_lower), dim=1)
+        self.dim = dim
 
     def forward(self, X):
-        return logm.apply(X)
+        return self.embed(logm.apply(X))
+
+    def embed(self, X):
+        if self.tril:
+            x_vec = X[:, self.idx[0], self.idx[1]]
+            x_vec[:, self.dim:] *= 2 ** 0.5
+        else:
+            x_vec = X.flatten(start_dim=1)
+        return x_vec
 
 
 class SPDNet(EEGModuleMixin, nn.Module):
@@ -160,11 +176,13 @@ class SPDNet(EEGModuleMixin, nn.Module):
     n_chans : int
         Number of channels
     subspacedim : int
-        Subspace dimension of the Stiefel manifold in BiMap
+        Subspace dimension
     threshold : float
         Threshold for the rectified linear unit
     n_outputs : int
         Output shape
+    tril : bool
+        If True, only the lower triangular part of the matrix is used
 
     References
     ----------
@@ -181,14 +199,17 @@ class SPDNet(EEGModuleMixin, nn.Module):
         n_outputs=1,
         chs_info=None,
         n_times=None,
+        input_window_seconds=None,
         sfreq=None,
         add_log_softmax=False,
+        tril=True,
     ):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
             chs_info=chs_info,
             n_times=n_times,
+            input_window_seconds=input_window_seconds,
             sfreq=sfreq,
             add_log_softmax=add_log_softmax,
         )
@@ -198,13 +219,10 @@ class SPDNet(EEGModuleMixin, nn.Module):
             self.cov = nn.Identity()
         self.bimap = BiMap(n_chans, subspacedim)
         self.reeig = ReEig(threshold)
-        self.logeig = torch.nn.Sequential(
-            LogEig(threshold),
-            torch.nn.Flatten(start_dim=1),
-        )
-        self.classifier = torch.nn.Sequential(
-            torch.nn.Linear(subspacedim**2, n_outputs),
-        )
+        self.logeig = LogEig(subspacedim, tril=tril)
+        self.len_last_layer = subspacedim * (subspacedim + 1) // 2 if tril else subspacedim**2
+        self.classifier = torch.nn.Linear(self.len_last_layer, n_outputs)
+
         if add_log_softmax:
             self.logsoftmax = nn.LogSoftmax(dim=1)
         else:
