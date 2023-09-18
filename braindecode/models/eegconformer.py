@@ -153,7 +153,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             att_heads=att_heads,
             att_drop=att_drop_prob)
 
-        self.classification_head = _ClassificationHead(
+        self.fc = _FullyConnected(
             final_fc_length=final_fc_length)
 
         self.final_layer = _FinalLayer(n_classes=self.n_outputs,
@@ -164,7 +164,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
         x = self.transformer(x)
-        x = self.classification_head(x)
+        x = fc(x)
         x = self.final_layer(x)
         return x
 
@@ -353,11 +353,11 @@ class _TransformerEncoder(nn.Sequential):
         )
 
 
-class _ClassificationHead(nn.Module):
+class _FullyConnected(nn.Module):
     def __init__(self, final_fc_length,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
                  hidden_channels=32):
-        """"Classification head for the transformer encoder.
+        "”””Fully-connected layer for the transformer encoder.
 
         Parameters
         ----------
@@ -401,20 +401,14 @@ class _FinalLayer(nn.Module):
 
         Parameters
         ----------
-        final_fc_length : int
-            Length of the final fully connected layer.
         n_classes : int
             Number of classes for classification.
-        drop_prob_1 : float
-            Dropout probability for the first dropout layer.
-        drop_prob_2 : float
-            Dropout probability for the second dropout layer.
-        out_channels : int
-            Number of output channels for the first linear layer.
         hidden_channels : int
             Number of output channels for the second linear layer.
         return_features : bool
             Whether to return input features.
+        add_log_softmax : bool
+            Adding LogSoftmax or not.
         """
 
         super().__init__()
@@ -432,6 +426,6 @@ class _FinalLayer(nn.Module):
             out = self.final_layer(x)
             return out, x
         else:
-            self.final_layer.add_module('classification', nn.LogSoftmax(dim=1))
+            self.final_layer.add_module('classification', self.classification)
             out = self.final_layer(x)
             return out

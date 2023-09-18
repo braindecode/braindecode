@@ -103,10 +103,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
-        """self.keys_to_change = [
-            "conv_classifier.weight",
-            "conv_classifier.bias"
-        ]"""
         self.mapping = {
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
             "conv_classifier.bias": "final_layer.conv_classifier.bias"
@@ -216,13 +212,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
-
-    """def load_state_dict(self, state_dict, *args, **kwargs):
-         # Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         # implemented and the las layers' names were normalized
-
-        new_state_dict = super().return_new_keys(state_dict, self.keys_to_change)
-        return super().load_state_dict(new_state_dict, *args, **kwargs)"""
 
 
 class EEGNetv1(EEGModuleMixin, nn.Sequential):
