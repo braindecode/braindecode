@@ -153,7 +153,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             att_heads=att_heads,
             att_drop=att_drop_prob)
 
-        self.classification_head = _ClassificationHead(
+        self.fc = _FullyConnected(
             final_fc_length=final_fc_length)
 
         self.final_layer = _FinalLayer(n_classes=self.n_outputs,
