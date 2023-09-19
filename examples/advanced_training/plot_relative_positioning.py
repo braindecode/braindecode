@@ -302,7 +302,7 @@ model = ContrastiveNet(emb, emb_size).to(device)
 import os
 
 from skorch.helper import predefined_split
-from skorch.callbacks import Checkpoint, EarlyStopping, EpochScoring
+from skorch.callbacks import Checkpoint, EarlyStopping
 from braindecode import EEGClassifier
 
 lr = 5e-3
