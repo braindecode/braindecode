@@ -86,7 +86,7 @@ class ReEig(nn.Module):
 
     This class add non-linearity to the network by
     applying a rectified linear unit to the eigenvalues
-    of a symmetric matrix. If threshold > 0, the matrix 
+    of a symmetric matrix. If threshold > 0, the matrix
     is non-negative and positive.
 
     Parameters
