@@ -52,6 +52,7 @@ Enhancements
 - Add support for :class:`mne.Epochs` in :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`529` by `Pierre Guetschel`_)
 - Allow passing only the name of a braindecode model to :class:`braindecode.EEGClassifier` and :class:`braindecode.EEGRegressor` (:gh:`528` by `Pierre Guetschel`_)
 - Standardizing models' last layer names (:gh:`520` by `Bruna Lopes`_ and `Pierre Guetschel`_)
+- Add basic training example with MNE epochs (:gh:`539` by `Pierre Guetschel`_)
 
 Bugs
 ~~~~
