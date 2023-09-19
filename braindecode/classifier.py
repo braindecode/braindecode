@@ -11,6 +11,8 @@ import warnings
 import numpy as np
 from skorch import NeuralNet
 from skorch.classifier import NeuralNetClassifier
+from skorch.callbacks import EpochScoring
+from skorch.utils import noop
 
 from .eegneuralnet import _EEGNeuralNet
 from .training.scoring import predict_trials
@@ -231,3 +233,19 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         else:
             classes = classes_y
         return len(classes)
+
+    # Only add the 'accuracy' callback if we are not in cropped mode.
+    @property
+    def _default_callbacks(self):
+        callbacks = list(super()._default_callbacks)
+        if not self.cropped:
+            callbacks.append((
+                'valid_acc',
+                EpochScoring(
+                    'accuracy',
+                    name='valid_acc',
+                    lower_is_better=False,
+                    target_extractor=noop,
+                )
+            ))
+        return callbacks
