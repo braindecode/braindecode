@@ -694,7 +694,7 @@ def test_patch_embedding(sample_input, model):
 def test_model_trainable_parameters(model):
     patch_parameters = model.patch_embedding.parameters()
     transformer_parameters = model.transformer.parameters()
-    classification_parameters = model.classification_head.parameters()
+    classification_parameters = model.fc.parameters()
     final_layer_parameters = model.final_layer.parameters()
 
     trainable_patch_params = sum(p.numel() for p in patch_parameters if p.requires_grad)
