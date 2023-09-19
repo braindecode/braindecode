@@ -147,7 +147,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             sfreq=sfreq,
             add_log_softmax=add_log_softmax,
         )
-        self.keys_to_change = {
+        self.mapping = {
             'classification.1.weight': 'final_layer.clf.weight',
             'classification.1.bias': 'final_layer.clf.weight'}
 
