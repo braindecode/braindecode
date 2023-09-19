@@ -218,7 +218,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                 raise exc
 
     mapping = None
-    
+
     def load_state_dict(self, state_dict, *args, **kwargs):
 
         mapping = self.mapping if self.mapping else {}

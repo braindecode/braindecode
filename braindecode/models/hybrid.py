@@ -114,7 +114,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
                 stride=1),
             nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity())
 
-
     def forward(self, x):
         """Forward pass.
 
