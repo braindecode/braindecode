@@ -239,6 +239,15 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         callbacks = list(super()._default_callbacks)
         if not self.cropped:
             callbacks.append((
+                'train_acc',
+                EpochScoring(
+                    scoring='accuracy',
+                    name='train_acc',
+                    on_train=True,
+                    lower_is_better=False,
+                )
+            ))
+            callbacks.append((
                 'valid_acc',
                 EpochScoring(
                     'accuracy',
