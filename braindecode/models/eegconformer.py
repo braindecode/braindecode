@@ -164,7 +164,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
         x = self.transformer(x)
-        x = fc(x)
+        x = self.fc(x)
         x = self.final_layer(x)
         return x
 
