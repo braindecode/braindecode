@@ -427,6 +427,5 @@ if not self.return_features:
             out = self.final_layer(x)
             return out, x
         else:
-            self.final_layer.add_module('classification', self.classification)
             out = self.final_layer(x)
             return out
