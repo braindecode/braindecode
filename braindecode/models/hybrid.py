@@ -106,7 +106,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
         self.reduced_deep_model = reduced_deep_model
         self.reduced_shallow_model = reduced_shallow_model
 
-        module = nn.Sequential(
+        self.final_layer = nn.Sequential(
             nn.Conv2d(
                 100,
                 self.n_outputs,
@@ -114,7 +114,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
                 stride=1),
             nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity())
 
-        self.final_layer = module
 
     def forward(self, x):
         """Forward pass.
