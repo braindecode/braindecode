@@ -420,7 +420,8 @@ class _FinalLayer(nn.Module):
             self.classification = nn.LogSoftmax(dim=1)
         else:
             self.classification = nn.Identity()
-
+if not self.return_features:
+    self.final_layer.add_module("classification", classification)
     def forward(self, x):
         if self.return_features:
             out = self.final_layer(x)
