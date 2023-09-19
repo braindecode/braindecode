@@ -312,16 +312,10 @@ num_workers = 0 if n_jobs <= 1 else n_jobs
 
 cp = Checkpoint(dirname='', f_criterion=None, f_optimizer=None, f_history=None)
 early_stopping = EarlyStopping(patience=10)
-train_acc = EpochScoring(
-    scoring='accuracy', on_train=True, name='train_acc', lower_is_better=False)
-valid_acc = EpochScoring(
-    scoring='accuracy', on_train=False, name='valid_acc',
-    lower_is_better=False)
+
 callbacks = [
     ('cp', cp),
     ('patience', early_stopping),
-    ('train_acc', train_acc),
-    ('valid_acc', valid_acc)
 ]
 
 clf = EEGClassifier(
