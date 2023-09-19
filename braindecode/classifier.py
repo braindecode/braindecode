@@ -12,7 +12,6 @@ import numpy as np
 from skorch import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.callbacks import EpochScoring
-from skorch.utils import noop
 
 from .eegneuralnet import _EEGNeuralNet
 from .training.scoring import predict_trials
@@ -245,7 +244,6 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
                     'accuracy',
                     name='valid_acc',
                     lower_is_better=False,
-                    target_extractor=noop,
                 )
             ))
         return callbacks
