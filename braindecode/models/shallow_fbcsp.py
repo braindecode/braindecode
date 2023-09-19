@@ -210,5 +210,5 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         if self.batch_norm:
             init.constant_(self.bnorm.weight, 1)
             init.constant_(self.bnorm.bias, 0)
-        init.xavier_uniform_(self.final_layer[0].weight, gain=1)
-        init.constant_(self.final_layer[0].bias, 0)
+        init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
+        init.constant_(self.final_layer.conv_classifier.bias, 0)
