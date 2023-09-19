@@ -212,7 +212,7 @@ class regm(torch.autograd.Function):
         return modeig_backward(grad_output, s, U, s_modified, derivative), None
 
 
-def modeig_forward(X, function_applied):
+def _modify_eig_forward(X, function_applied):
     """Modified eigenvalue of symmetric matrix X."""
     s, U = torch.linalg.eigh(X)
     s_modified = function_applied(s)
@@ -220,7 +220,7 @@ def modeig_forward(X, function_applied):
     return output, s, U, s_modified
 
 
-def modeig_backward(grad_output, s, U, s_modified, derivative, threshold=1e-4):
+def _modify_eig_backward(grad_output, s, U, s_modified, derivative, threshold=1e-4):
     """Backward pass of modified eigenvalue of symmetric matrix X."""
     # compute Loewner matrix
     denominator = s.unsqueeze(-1) - s.unsqueeze(-1).transpose(-1, -2)
@@ -266,7 +266,7 @@ class logm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, X):
         def function_applied(s): return s.log()
-        output, s, U, s_modified = modeig_forward(X, function_applied)
+        output, s, U, s_modified = _modify_eig_forward(X, function_applied)
         ctx.save_for_backward(s, U, s_modified)
         return output
 
@@ -274,7 +274,7 @@ class logm(torch.autograd.Function):
     def backward(ctx, grad_output):
         s, U, s_modified = ctx.saved_tensors
         def derivative(s): return s.reciprocal()
-        return modeig_backward(grad_output, s, U, s_modified, derivative)
+        return _modify_eig_backward(grad_output, s, U, s_modified, derivative)
 
 
 class regm(torch.autograd.Function):
@@ -301,7 +301,7 @@ class regm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, X, threshold):
         def function_applied(s): return s.clamp(min=threshold)
-        output, s, U, s_modified = modeig_forward(X, function_applied)
+        output, s, U, s_modified = _modify_eig_forward(X, function_applied)
         ctx.save_for_backward(s, U, s_modified)
         ctx.threshold_ = threshold
         return output
@@ -310,4 +310,4 @@ class regm(torch.autograd.Function):
     def backward(ctx, grad_output):
         s, U, s_modified = ctx.saved_tensors
         def derivative(s): return s > ctx.threshold_
-        return modeig_backward(grad_output, s, U, s_modified, derivative), None
+        return _modify_eig_backward(grad_output, s, U, s_modified, derivative), None
