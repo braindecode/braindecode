@@ -357,7 +357,7 @@ class _FullyConnected(nn.Module):
     def __init__(self, final_fc_length,
                  drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
                  hidden_channels=32):
-        "”””Fully-connected layer for the transformer encoder.
+        """Fully-connected layer for the transformer encoder.
 
         Parameters
         ----------
