@@ -75,11 +75,6 @@ class TCN(EEGModuleMixin, nn.Module):
             "fc.weight": "final_layer.fc.weight",
             "fc.bias": "final_layer.fc.bias"
         }
-        self.keys_to_change = [
-            'fc.weight',
-            'fc.bias'
-        ]
-
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
