@@ -86,7 +86,7 @@ class logm(torch.autograd.Function):
     Parameters
     ----------
     X : torch.Tensor
-        Symmetric matrix
+        Symmetric matrix of shape (batch_size, n_channels, n_channels)
 
     Returns
     -------
@@ -121,7 +121,7 @@ class regm(torch.autograd.Function):
     Parameters
     ----------
     X : torch.Tensor
-        Symmetric matrix
+        Symmetric matrix of shape (batch_size, n_channels, n_channels)
 
     Returns
     -------

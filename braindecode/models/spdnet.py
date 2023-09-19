@@ -15,18 +15,21 @@ class CovLayer(nn.Module):
 
     This class compute the covariance of a batch of
     symmetric matrices.
-
-    Parameters
-    ----------
-    X : torch.Tensor
-        Batch of symmetric matrices
-
-    Returns
-    -------
-    torch.Tensor
-        Batch of covariance matrices
     """
     def forward(self, X):
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        X: torch.Tensor
+            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Batch of covariance matrices of shape (batch_size, n_channels, n_channels).
+        """
         n_batch, n_channels, _ = X.size()
         torch_covs = torch.empty((n_batch, n_channels, n_channels)).to(X.device)
         for i, batch in enumerate(X):
@@ -47,11 +50,6 @@ class BiMap(nn.Module):
         Input shape
     output_shape : int
         Output shape
-
-    Returns
-    -------
-    torch.Tensor
-        Modified symmetric matrix
 
     References
     ----------
@@ -88,17 +86,13 @@ class ReEig(nn.Module):
 
     This class add non-linearity to the network by
     applying a rectified linear unit to the eigenvalues
-    of a symmetric matrix.
+    of a symmetric matrix. If threshold > 0, the matrix 
+    is non-negative and positive.
 
     Parameters
     ----------
     threshold : float
         Threshold for the rectified linear unit
-
-    Returns
-    -------
-    torch.Tensor
-        Modified symmetric matrix
 
     References
     ----------
@@ -119,6 +113,7 @@ class LogEig(nn.Module):
 
     This class perform Riemannian projection into a flat space
     by applying the logarithm to the eigenvalues of a symmetric matrix.
+    The output is flattened to obtain a vector representation of the matrix.
 
     Parameters
     ----------
@@ -126,11 +121,6 @@ class LogEig(nn.Module):
         Dimension of the symmetric matrix
     tril : bool
         If True, only the lower triangular part of the matrix is used
-
-    Returns
-    -------
-    torch.Tensor
-        Modified symmetric matrix
 
     References
     ----------
@@ -168,7 +158,6 @@ class SPDNet(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     input_type : str
-        Input type
         If "raw", the input is a batch of raw EEG signals and
         a covariance matrix is computed
         If "cov", the input is a batch of covariance matrices and
