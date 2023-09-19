@@ -19,6 +19,8 @@ from braindecode import EEGClassifier, EEGRegressor
 from braindecode.training import CroppedLoss
 from braindecode.models.base import EEGModuleMixin
 from braindecode.datasets import WindowsDataset, BaseConcatDataset
+# from braindecode.models.util import models_dict
+from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 
 
 class MockDataset(torch.utils.data.Dataset):
@@ -263,8 +265,24 @@ def test_set_signal_params_numpy(eegneuralnet_cls, preds, Xy):
     assert net.module_.n_outputs == (1 if isinstance(net, EEGRegressor) else 4)
 
 
-def test_set_signal_params_epochs(eegneuralnet_cls, preds):
-    pass
+def test_set_signal_params_epochs(eegneuralnet_cls, preds, epochs):
+    y = epochs.metadata.target.values
+    net = eegneuralnet_cls(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(epochs, y=y)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == (1 if isinstance(net, EEGRegressor) else 4)
+    assert net.module_.chs_info == epochs.info['chs']
+    assert net.module_.input_window_seconds == 10 / 10
+    assert net.module_.sfreq == 10
 
 
 def test_set_signal_params_torch_ds(eegneuralnet_cls, preds):
@@ -375,3 +393,25 @@ def test_initialized_module(eegneuralnet_cls, preds, caplog, Xy):
     assert net.module_.n_outputs == 12
     assert net.module_.n_chans == 12
     assert net.module_.n_times == 12
+
+
+# @pytest.mark.parametrize("model_name,model_cls", models_dict.items())
+def test_module_name(eegneuralnet_cls):
+    net = eegneuralnet_cls(
+        "ShallowFBCSPNet",
+        module__n_outputs=4,
+        module__n_chans=3,
+        module__n_times=100,
+        cropped=False,
+    )
+    net.initialize()
+    assert isinstance(net.module_, ShallowFBCSPNet)
+
+
+def test_unknown_module_name(eegneuralnet_cls):
+    net = eegneuralnet_cls(
+        "InexistentModel",
+    )
+    with pytest.raises(ValueError) as excinfo:
+        net.initialize()
+    assert "Unknown model name" in str(excinfo.value)
