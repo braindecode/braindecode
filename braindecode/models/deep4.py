@@ -23,7 +23,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
     ----------
     final_conv_length: int | str
         Length of the final convolution layer.
-        If set to "auto", n_times must not be None.
+        If set to "auto", n_times must not be None. Default: "auto".
     n_filters_time: int
         Number of temporal filters.
     n_filters_spat: int
@@ -93,7 +93,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             n_chans=None,
             n_outputs=None,
             n_times=None,
-            final_conv_length=None,
+            final_conv_length="auto",
             n_filters_time=25,
             n_filters_spat=25,
             filter_time_length=10,
