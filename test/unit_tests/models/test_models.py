@@ -232,7 +232,7 @@ def test_eegitnet(input_sizes):
         n_outputs=input_sizes['n_classes'],
         n_chans=input_sizes['n_channels'],
         n_times=input_sizes['n_in_times'],
-      )
+    )
 
     check_forward_pass(
         model,
@@ -479,9 +479,9 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_examples = 10
 
     model = SleepStagerEldele2021(
-      sfreq=sfreq, n_outputs=n_classes,
-      input_window_seconds=input_size_s,
-      d_model=d_model, return_feats=False,
+        sfreq=sfreq, n_outputs=n_classes,
+        input_window_seconds=input_size_s,
+        d_model=d_model, return_feats=False,
     )
     model.eval()
 
@@ -522,9 +522,9 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     n_examples = 10
 
     model = SleepStagerBlanco2020(
-      n_chans=n_channels, sfreq=sfreq, n_groups=n_groups,
-      input_window_seconds=input_size_s, n_outputs=n_classes,
-      return_feats=False,
+        n_chans=n_channels, sfreq=sfreq, n_groups=n_groups,
+        input_window_seconds=input_size_s, n_outputs=n_classes,
+        return_feats=False,
     )
     model.eval()
 
@@ -694,7 +694,8 @@ def test_patch_embedding(sample_input, model):
 def test_model_trainable_parameters(model):
     patch_parameters = model.patch_embedding.parameters()
     transformer_parameters = model.transformer.parameters()
-    classification_parameters = model.classification_head.parameters()
+    classification_parameters = model.fc.parameters()
+    final_layer_parameters = model.final_layer.parameters()
 
     trainable_patch_params = sum(p.numel() for p in patch_parameters if p.requires_grad)
 
@@ -706,6 +707,11 @@ def test_model_trainable_parameters(model):
         p.numel() for p in classification_parameters if p.requires_grad
     )
 
+    trainable_final_layer_parameters = sum(
+        p.numel() for p in final_layer_parameters if p.requires_grad
+    )
+
     assert trainable_patch_params == 22000
     assert trainable_transformer_params == 118320
-    assert trainable_classification_params == 633186
+    assert trainable_classification_params == 633120
+    assert trainable_final_layer_parameters == 66

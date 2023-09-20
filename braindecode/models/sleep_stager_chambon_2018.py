@@ -87,6 +87,11 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_channels, n_classes, input_size_s
 
+        self.mapping = {
+            "fc.1.weight": "final_layer.1.weight",
+            "fc.1.bias": "final_layer.1.bias"
+        }
+
         time_conv_size = np.ceil(time_conv_size_s * self.sfreq).astype(int)
         max_pool_size = np.ceil(max_pool_size_s * self.sfreq).astype(int)
         pad_size = np.ceil(pad_size_s * self.sfreq).astype(int)
@@ -111,8 +116,10 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         )
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self.return_feats = return_feats
+
+        # TODO: Add new way to handle return_features == True
         if not return_feats:
-            self.fc = nn.Sequential(
+            self.final_layer = nn.Sequential(
                 nn.Dropout(dropout),
                 nn.Linear(self.len_last_layer, self.n_outputs),
             )
@@ -146,4 +153,4 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         if self.return_feats:
             return feats
         else:
-            return self.fc(feats)
+            return self.final_layer(feats)

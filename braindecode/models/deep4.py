@@ -2,8 +2,6 @@
 #
 # License: BSD (3-clause)
 
-from collections import OrderedDict
-
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
@@ -167,6 +165,18 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.batch_norm_alpha = batch_norm_alpha
         self.stride_before_pool = stride_before_pool
 
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
+        self.mapping = {
+            "conv_time.weight": "conv_time_spat.conv_time.weight",
+            "conv_spat.weight": "conv_time_spat.conv_spat.weight",
+            "conv_time.bias": "conv_time_spat.conv_time.bias",
+            "conv_spat.bias": "conv_time_spat.conv_spat.bias",
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+        }
+
         if self.stride_before_pool:
             conv_stride = self.pool_time_stride
             pool_stride = 1
@@ -272,18 +282,23 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.eval()
         if self.final_conv_length == "auto":
             self.final_conv_length = self.get_output_shape()[2]
-        self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                self.n_filters_4,
-                self.n_outputs,
-                (self.final_conv_length, 1),
-                bias=True,
-            ),
-        )
+
+        # Incorporating classification module and subsequent ones in one final layer
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(
+                            self.n_filters_4,
+                            self.n_outputs,
+                            (self.final_conv_length, 1),
+                            bias=True, ))
+
         if self.add_log_softmax:
             self.add_module("logsoftmax", nn.LogSoftmax(dim=1))
-        self.add_module("squeeze", Expression(squeeze_final_output))
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
+
+        self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
@@ -311,24 +326,8 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                 init.constant_(bnorm_weight, 1)
                 init.constant_(bnorm_bias, 0)
 
-        init.xavier_uniform_(self.conv_classifier.weight, gain=1)
-        init.constant_(self.conv_classifier.bias, 0)
+        init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
+        init.constant_(self.final_layer.conv_classifier.bias, 0)
 
         # Start in eval mode
         self.eval()
-
-    def load_state_dict(self, state_dict, *args, **kwargs):
-        """Wrapper to allow for loading of a state_dict from a model before CombinedConv was
-         implemented"""
-        keys_to_change = [
-            "conv_time.weight",
-            "conv_spat.weight",
-            "conv_time.bias",
-            "conv_spat.bias",
-        ]
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            if k in keys_to_change:
-                k = f"conv_time_spat.{k}"
-            new_state_dict[k] = v
-        return super().load_state_dict(new_state_dict, *args, **kwargs)

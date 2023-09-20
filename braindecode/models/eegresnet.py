@@ -85,6 +85,11 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         self.batch_norm_epsilon = batch_norm_epsilon
         self.conv_weight_init_fn = conv_weight_init_fn
 
+        self.mapping = {
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+        }
+
         self.add_module("ensuredims", Ensure4d())
         if self.split_first_layer:
             self.add_module('dimshuffle',
@@ -190,12 +195,19 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             self.add_module('mean_pool', AvgPool2dWithConv(
                 (self.final_pool_length, 1), (1, 1),
                 dilation=pool_dilation))
-        self.add_module('conv_classifier',
-                        nn.Conv2d(n_cur_filters, self.n_outputs,
-                                  (1, 1), bias=True))
+
+        # Incorporating classification module and subsequent ones in one final layer
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(n_cur_filters, self.n_outputs, (1, 1), bias=True, ))
+
         if self.add_log_softmax:
-            self.add_module('logsoftmax', nn.LogSoftmax(dim=1))
-        self.add_module('squeeze', Expression(squeeze_final_output))
+            module.add_module('logsoftmax', nn.LogSoftmax(dim=1))
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
+
+        self.add_module("final_layer", module)
 
         # Initialize all weights
         self.apply(lambda module: _weights_init(module, self.conv_weight_init_fn))
