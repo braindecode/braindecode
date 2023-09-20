@@ -386,8 +386,14 @@ Explaining the template and internal convention:
 2. **Mandatory parameters:** Some parameters are mandatory and must be provided in every braindecode model.
    These parameters ensure compatibility with other Braindecode components. Passing them to the parent class
    using `super().__init__(...)` is necessary.
-    - **The required parameters are**: `n_outputs`, `n_chans`, `chs_info`, `n_times`, `input_window_seconds`,
-      and `sfreq`.
+    - **The required parameters are**:
+      + `n_outputs`: Number of outputs of the model. This is the number of classes in the case of classification.
+      + `n_chans`: Number of EEG channels.
+      + `chs_info`: Information about each individual EEG channel. This should be filled with
+        `info["chs"]`. Refer to `mne.Info` for more details.
+      + `n_times`: Number of time samples of the input window.
+      + `input_window_seconds`: Length of the input window in seconds.
+      + `sfreq`: Sampling frequency of the EEG recordings.
     - The values of these parameters should be passed to the parent class `EEGModuleMixin` with `super().__init__(...)`
       as described in the template:
 
