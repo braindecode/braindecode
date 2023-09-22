@@ -249,6 +249,9 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
+# Deactivate the default valid_acc callback:
+clf.set_params(callbacks__valid_acc=None)
+
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
