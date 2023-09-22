@@ -9,6 +9,7 @@ import pytest
 import numpy as np
 import torch
 import mne
+from scipy.special import softmax
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
 from skorch.utils import to_tensor
@@ -162,8 +163,9 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
     )
     eegneuralnet.initialize()
     target_predict = preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
+    preds = preds if isinstance(eegneuralnet, EEGRegressor) else softmax(preds, axis=1)
     np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
-    np.testing.assert_array_equal(preds, eegneuralnet.predict_proba(MockDataset()))
+    np.testing.assert_allclose(preds, eegneuralnet.predict_proba(MockDataset()))
 
 
 def test_cropped_predict_and_predict_proba(eegneuralnet_cls, preds):

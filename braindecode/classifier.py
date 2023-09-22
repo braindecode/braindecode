@@ -12,6 +12,7 @@ import numpy as np
 from skorch import NeuralNet
 from skorch.classifier import NeuralNetClassifier
 from skorch.callbacks import EpochScoring
+from torch.nn import CrossEntropyLoss
 
 from .eegneuralnet import _EEGNeuralNet
 from .training.scoring import predict_trials
@@ -61,19 +62,30 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetClassifier, doc)
 
-    def __init__(self, module, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True,
-                 iterator_train__drop_last=True,
-                 aggregate_predictions=True, **kwargs):
+    def __init__(
+            self,
+            module,
+            *args,
+            criterion=CrossEntropyLoss,
+            cropped=False,
+            callbacks=None,
+            iterator_train__shuffle=True,
+            iterator_train__drop_last=True,
+            aggregate_predictions=True,
+            **kwargs
+    ):
         self.cropped = cropped
         self.aggregate_predictions = aggregate_predictions
         self._last_window_inds_ = None
-        super().__init__(module,
-                         *args,
-                         callbacks=callbacks,
-                         iterator_train__shuffle=iterator_train__shuffle,
-                         iterator_train__drop_last=iterator_train__drop_last,
-                         **kwargs)
+        super().__init__(
+            module,
+            *args,
+            criterion=criterion,
+            callbacks=callbacks,
+            iterator_train__shuffle=iterator_train__shuffle,
+            iterator_train__drop_last=iterator_train__drop_last,
+            **kwargs,
+        )
 
     def get_iterator(self, dataset, training=False, drop_index=True):
         iterator = super().get_iterator(dataset, training=training)
