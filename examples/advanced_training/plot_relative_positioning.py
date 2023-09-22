@@ -302,7 +302,7 @@ model = ContrastiveNet(emb, emb_size).to(device)
 import os
 
 from skorch.helper import predefined_split
-from skorch.callbacks import Checkpoint, EarlyStopping
+from skorch.callbacks import Checkpoint, EarlyStopping, EpochScoring
 from braindecode import EEGClassifier
 
 lr = 5e-3
@@ -312,10 +312,13 @@ num_workers = 0 if n_jobs <= 1 else n_jobs
 
 cp = Checkpoint(dirname='', f_criterion=None, f_optimizer=None, f_history=None)
 early_stopping = EarlyStopping(patience=10)
+train_acc = EpochScoring(
+    scoring='accuracy', on_train=True, name='train_acc', lower_is_better=False)
 
 callbacks = [
     ('cp', cp),
     ('patience', early_stopping),
+    ('train_acc', train_acc),
 ]
 
 clf = EEGClassifier(
@@ -365,7 +368,6 @@ ys1 = ['train_loss', 'valid_loss']
 ys2 = ['train_acc', 'valid_acc']
 styles = ['-', ':']
 markers = ['.', '.']
-
 
 fig, ax1 = plt.subplots(figsize=(8, 3))
 ax2 = ax1.twinx()
