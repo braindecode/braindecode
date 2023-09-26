@@ -24,6 +24,7 @@ class _ConvBlock2D(nn.Module):
     """Implements Convolution block with order:
     Convolution, dropout, activation, batch-norm
     """
+
     def __init__(self, in_filters, out_filters, kernel, stride=(1, 1), padding=0, dilation=1,
                  groups=1, drop_prob=0.5, batch_norm=True, activation=nn.LeakyReLU, residual=False):
         super().__init__()
@@ -44,7 +45,7 @@ class _ConvBlock2D(nn.Module):
 
     def forward(self, input):
         res = input
-        input = self.conv(input,)
+        input = self.conv(input, )
         input = self.dropout(input)
         input = self.activation(input)
         input = self.batch_norm(input)
@@ -213,12 +214,12 @@ class TIDNet(EEGModuleMixin, nn.Module):
         J. Neural Eng. 17, 056008 (2020).
         doi: 10.1088/1741-2552/abb7a7.
     """
+
     def __init__(self, n_chans=None, n_outputs=None, n_times=None,
                  in_chans=None, n_classes=None, input_window_samples=None,
                  s_growth=24, t_filters=32, drop_prob=0.4, pooling=15,
                  temp_layers=2, spat_layers=2, temp_span=0.05,
                  bottleneck=3, summary=-1, add_log_softmax=True):
-
         n_chans, n_outputs, n_times = deprecated_args(
             self,
             ('in_chans', 'n_chans', in_chans, n_chans),
@@ -234,6 +235,11 @@ class TIDNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, n_times
         del in_chans, n_classes, input_window_samples
 
+        self.mapping = {
+            'classify.1.weight': 'final_layer.0.weight',
+            'classify.1.bias': 'final_layer.0.bias'
+        }
+
         self.temp_len = ceil(temp_span * self.n_times)
 
         self.dscnn = _TIDNetFeatures(s_growth=s_growth, t_filters=t_filters, n_chans=self.n_chans,
@@ -244,14 +250,18 @@ class TIDNet(EEGModuleMixin, nn.Module):
 
         self._num_features = self.dscnn.num_features
 
-        self.classify = self._create_classifier(self.num_features, self.n_outputs)
+        self.flatten = nn.Flatten(start_dim=1)
+
+        self.final_layer = self._create_classifier(self.num_features, self.n_outputs)
 
     def _create_classifier(self, incoming, n_outputs):
         classifier = nn.Linear(incoming, n_outputs)
         init.xavier_normal_(classifier.weight)
         classifier.bias.data.zero_()
-        seq_clf = nn.Sequential(nn.Flatten(start_dim=1), classifier,
-                                nn.LogSoftmax(dim=-1) if self.add_log_softmax else nn.Identity())
+        seq_clf = nn.Sequential(
+            classifier,
+            nn.LogSoftmax(dim=-1) if self.add_log_softmax else nn.Identity())
+
         return seq_clf
 
     def forward(self, x):
@@ -264,7 +274,8 @@ class TIDNet(EEGModuleMixin, nn.Module):
         """
 
         x = self.dscnn(x)
-        return self.classify(x)
+        x = self.flatten(x)
+        return self.final_layer(x)
 
     @property
     def num_features(self):

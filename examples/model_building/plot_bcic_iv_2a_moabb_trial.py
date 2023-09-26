@@ -275,7 +275,6 @@ df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns,
 df = df.assign(train_misclass=100 - 100 * df.train_accuracy,
                valid_misclass=100 - 100 * df.valid_accuracy)
 
-plt.style.use('seaborn')
 fig, ax1 = plt.subplots(figsize=(8, 3))
 df.loc[:, ['train_loss', 'valid_loss']].plot(
     ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14)

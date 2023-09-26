@@ -104,6 +104,10 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.ensuredims = Ensure4d()
         self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")
 
+        self.mapping = {
+            'fc.weight': 'final_layer.fc.weight',
+            'tc.bias': 'final_layer.fc.bias'}
+
         # ======== Inception branches ========================
 
         self.initial_inception_module = _InceptionModuleMI(
@@ -166,16 +170,17 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         )
 
         self.flat = nn.Flatten()
-        self.fc = nn.Linear(
-            in_features=intermediate_in_channels,
-            out_features=self.n_outputs,
-            bias=True,
-        )
 
+        module = nn.Sequential()
+        module.add_module('fc',
+                          nn.Linear(in_features=intermediate_in_channels,
+                                    out_features=self.n_outputs,
+                                    bias=True, ))
         if self.add_log_softmax:
-            self.out_fun = nn.LogSoftmax(dim=1)
+            module.add_module('out_fun', nn.LogSoftmax(dim=1))
         else:
-            self.out_fun = nn.Identity()
+            module.add_module('out_fun', nn.Identity())
+        self.final_layer = module
 
     def forward(
             self,
@@ -201,8 +206,8 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         out = self.ave_pooling(out)
         out = self.flat(out)
-        out = self.fc(out)
-        return self.out_fun(out)
+        out = self.final_layer(out)
+        return out
 
 
 class _InceptionModuleMI(nn.Module):

@@ -71,6 +71,10 @@ class TCN(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_in_chans
 
+        self.mapping = {
+            "fc.weight": "final_layer.fc.weight",
+            "fc.bias": "final_layer.fc.bias"
+        }
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
@@ -86,13 +90,10 @@ class TCN(EEGModuleMixin, nn.Module):
                 drop_prob=drop_prob
             ))
         self.temporal_blocks = t_blocks
-        self.fc = nn.Linear(in_features=n_filters, out_features=self.n_outputs)
-        if self.add_log_softmax:
-            self.out_fun = nn.LogSoftmax(dim=1)
-        else:
-            self.out_fun = nn.Identity()
-        self.squeeze = Expression(squeeze_final_output)
 
+        # Here, change to final_layer
+        self.final_layer = _FinalLayer(in_features=n_filters, out_features=self.n_outputs,
+                                       add_log_softmax=add_log_softmax)
         self.min_len = 1
         for i in range(n_blocks):
             dilation = 2 ** i
@@ -119,11 +120,32 @@ class TCN(EEGModuleMixin, nn.Module):
         # Convert to: B x T x C
         x = x.transpose(1, 2).contiguous()
 
+        out = self.final_layer(x, batch_size, time_size, self.min_len)
+
+        return out
+
+
+class _FinalLayer(nn.Module):
+    def __init__(self, in_features, out_features, add_log_softmax=True):
+
+        super().__init__()
+
+        self.fc = nn.Linear(in_features=in_features, out_features=out_features)
+
+        if add_log_softmax:
+            self.out_fun = nn.LogSoftmax(dim=1)
+        else:
+            self.out_fun = nn.Identity()
+
+        self.squeeze = Expression(squeeze_final_output)
+
+    def forward(self, x, batch_size, time_size, min_len):
+
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))
 
-        out_size = 1 + max(0, time_size - self.min_len)
+        out_size = 1 + max(0, time_size - min_len)
         out = fc_out[:, -out_size:, :].transpose(1, 2)
         # re-add 4th dimension for compatibility with braindecode
         return self.squeeze(out[:, :, :, None])

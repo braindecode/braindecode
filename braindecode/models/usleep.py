@@ -200,8 +200,15 @@ class USleep(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_size_s
 
+        self.mapping = {
+            'clf.3.weight': 'final_layer.0.weight',
+            'clf.3.bias': 'final_layer.0.bias',
+            'clf.5.weight': 'final_layer.2.weight',
+            'clf.5.bias': 'final_layer.2.bias'
+        }
+
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
-        time_conv_size = np.round(time_conv_size_s * self.sfreq).astype(int)
+        time_conv_size = int(np.round(time_conv_size_s * self.sfreq))
         if time_conv_size % 2 == 0:
             if ensure_odd_conv_size:
                 time_conv_size += 1
@@ -254,6 +261,7 @@ class USleep(EEGModuleMixin, nn.Module):
         # The temporal dimension remains unchanged
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
+
         self.clf = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],
@@ -264,6 +272,9 @@ class USleep(EEGModuleMixin, nn.Module):
             ),  # output is (B, C, 1, S * T)
             nn.Tanh(),
             nn.AvgPool1d(self.n_times),  # output is (B, C, S)
+        )
+
+        self.final_layer = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],
                 out_channels=self.n_outputs,
@@ -307,7 +318,8 @@ class USleep(EEGModuleMixin, nn.Module):
             x = up(x, res)
 
         # classifier
-        y_pred = self.clf(x)  # (B, n_classes, seq_length)
+        x = self.clf(x)
+        y_pred = self.final_layer(x)  # (B, n_classes, seq_length)
 
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]

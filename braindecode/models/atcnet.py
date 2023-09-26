@@ -165,6 +165,12 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.concat = concat
         self.max_norm_const = max_norm_const
 
+        map = dict()
+        for w in range(self.n_windows):
+            map[f'max_norm_linears.[{w}].weight'] = f'final_layer.[{w}].weight'
+            map[f'max_norm_linears.[{w}].bias'] = f'final_layer.[{w}].bias'
+        self.mapping = map
+
         # Check later if we want to keep the Ensure4d. Not sure if we can
         # remove it or replace it with eipsum.
         self.ensuredims = Ensure4d()
@@ -209,7 +215,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         ])
 
         if self.concat:
-            self.max_norm_linears = nn.ModuleList([
+            self.final_layer = nn.ModuleList([
                 MaxNormLinear(
                     in_features=self.F2 * self.n_windows,
                     out_features=self.n_outputs,
@@ -217,7 +223,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 )
             ])
         else:
-            self.max_norm_linears = nn.ModuleList([
+            self.final_layer = nn.ModuleList([
                 MaxNormLinear(
                     in_features=self.F2,
                     out_features=self.n_outputs,
@@ -261,14 +267,14 @@ class ATCNet(EEGModuleMixin, nn.Module):
             # mapped by dense layer or concatenated then mapped by a dense
             # layer
             if not self.concat:
-                tcn_feat = self.max_norm_linears[w](tcn_feat)
+                tcn_feat = self.final_layer[w](tcn_feat)
 
             sw_concat.append(tcn_feat)
 
         # ----- Aggregation and prediction -----
         if self.concat:
             sw_concat = torch.cat(sw_concat, dim=1)
-            sw_concat = self.max_norm_linears[0](sw_concat)
+            sw_concat = self.final_layer[0](sw_concat)
         else:
             if len(sw_concat) > 1:  # more than one window
                 sw_concat = torch.stack(sw_concat, dim=0)

@@ -100,6 +100,13 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.kernel_length = kernel_length
         self.third_kernel_size = third_kernel_size
         self.drop_prob = drop_prob
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
+        self.mapping = {
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+        }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
@@ -186,22 +193,23 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             n_out_time = output_shape[3]
             self.final_conv_length = n_out_time
 
-        self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                self.F2,
-                self.n_outputs,
-                (n_out_virtual_chans, self.final_conv_length),
-                bias=True,
-            ),
-        )
+        # Incorporating classification module and subsequent ones in one final layer
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(self.F2, self.n_outputs,
+                                    (n_out_virtual_chans, self.final_conv_length), bias=True, ))
+
         if self.add_log_softmax:
-            self.add_module("logsoftmax", nn.LogSoftmax(dim=1))
-        # Transpose back to the the logic of braindecode,
+            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
+
+        # Transpose back to the logic of braindecode,
         # so time in third dimension (axis=2)
-        self.add_module("permute_back",
-                        Rearrange("batch x y z -> batch x z y"))
-        self.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("permute_back", Rearrange("batch x y z -> batch x z y"), )
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
+
+        self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
 
@@ -276,6 +284,13 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         self.second_kernel_size = second_kernel_size
         self.third_kernel_size = third_kernel_size
         self.drop_prob = drop_prob
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
+        self.mapping = {
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+        }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
@@ -348,23 +363,24 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             n_out_time = output_shape[3]
             self.final_conv_length = n_out_time
 
-        self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                n_filters_3,
-                self.n_outputs,
-                (n_out_virtual_chans, self.final_conv_length),
-                bias=True,
-            ),
-        )
+        # Incorporating classification module and subsequent ones in one final layer
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(n_filters_3, self.n_outputs,
+                                    (n_out_virtual_chans, self.final_conv_length), bias=True, ))
+
         if self.add_log_softmax:
-            self.add_module("softmax", nn.LogSoftmax(dim=1))
-        # Transpose back to the the logic of braindecode,
+            module.add_module("softmax", nn.LogSoftmax(dim=1))
+        # Transpose back to the logic of braindecode,
+
         # so time in third dimension (axis=2)
-        self.add_module(
-            "permute_2", Rearrange("batch x y z -> batch x z y")
-        )
-        self.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("permute_2", Rearrange("batch x y z -> batch x z y"), )
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
+
+        self.add_module("final_layer", module)
+
         _glorot_weight_zero_bias(self)
 
 

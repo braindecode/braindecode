@@ -101,6 +101,11 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, input_size_s
 
+        self.mapping = {
+            "fc.weight": "final_layer.weight",
+            "fc.bias": "final_layer.bias"
+        }
+
         if not ((self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80) or
                 (self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100)):
             warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
@@ -123,8 +128,12 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = self._len_last_layer(self.n_times)
         self.return_feats = return_feats
+
+        # TODO: Add new way to handle return features
+        """if return_feats:
+            raise ValueError("return_feat == True is not accepted anymore")"""
         if not return_feats:
-            self.fc = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
+            self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
 
     def _len_last_layer(self, input_size):
         self.feature_extractor.eval()
@@ -149,7 +158,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         if self.return_feats:
             return encoded_features
         else:
-            final_output = self.fc(encoded_features)
+            final_output = self.final_layer(encoded_features)
             return final_output
 
 

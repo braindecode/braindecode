@@ -361,7 +361,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from matplotlib.lines import Line2D
 
-plt.style.use('seaborn')
 fig, axes = plt.subplots(3, 1, figsize=(8, 9))
 
 axes[0].set_title('Training dataset')
