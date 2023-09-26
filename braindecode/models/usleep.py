@@ -208,7 +208,7 @@ class USleep(EEGModuleMixin, nn.Module):
         }
 
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
-        time_conv_size = np.round(time_conv_size_s * self.sfreq).astype(int)
+        time_conv_size = int(np.round(time_conv_size_s * self.sfreq))
         if time_conv_size % 2 == 0:
             if ensure_odd_conv_size:
                 time_conv_size += 1
