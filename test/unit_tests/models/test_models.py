@@ -33,6 +33,7 @@ from braindecode.models import (
     TIDNet,
     ATCNet,
     EEGConformer,
+    SPDNet,
 )
 
 from braindecode.util import set_random_seeds
@@ -655,6 +656,59 @@ def test_deepsleepnet_feats_with_hook():
         model.len_last_layer,
     )
     assert y_pred.shape == (n_examples, n_classes)
+
+
+@pytest.mark.parametrize("subspacedim", [10, 5])
+def test_spdnet(subspacedim):
+    n_channels = 10
+    sfreq = 100
+    input_size_s = 30
+    n_examples = 10
+    n_classes = 3
+
+    model = SPDNet(
+        input_type="raw",
+        n_chans=n_channels,
+        n_outputs=n_classes,
+        subspacedim=subspacedim,
+        n_times=int(sfreq * input_size_s)
+    )
+    model.eval()
+
+    rng = np.random.RandomState(42)
+    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = torch.from_numpy(X.astype(np.float32))
+
+    model = SPDNet(
+        input_type="raw",
+        n_chans=n_channels,
+        n_outputs=n_classes,
+        subspacedim=subspacedim,
+        n_times=int(sfreq * input_size_s)
+    )
+    model.eval()
+
+    y_pred1 = model(X)  # 3D inputs
+    assert y_pred1.shape == (n_examples, n_classes)
+
+    cov = np.stack([np.cov(x, bias=True) for x in X.numpy()])
+    cov_net = model.cov(X)
+    np.testing.assert_allclose(
+        cov, cov_net.detach().cpu().numpy(), rtol=1e-4
+    )
+
+    cov = torch.from_numpy(cov.astype(np.float32))
+    model = SPDNet(
+        input_type="cov",
+        n_chans=n_channels,
+        n_outputs=n_classes,
+        subspacedim=subspacedim,
+        n_times=int(sfreq * input_size_s)
+    )
+    model.eval()
+
+    y_pred2 = model(cov)  # 3D inputs
+    assert y_pred2.shape == (n_examples, n_classes)
 
 
 @pytest.fixture
