@@ -144,6 +144,10 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes
 
+        self.mapping = {
+            'classification.1.weight': 'final_layer.fc.weight',
+            'classification.1.bias': 'final_layer.fc.bias'}
+
         self.add_module("ensuredims", Ensure4d())
 
         self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 C T"))
@@ -246,14 +250,23 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                 self.n_times // prod(self.pooling_sizes))
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
-        self.add_module("classification", nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(
-                spatial_dim_last_layer * n_channels_last_layer,
-                self.n_outputs
-            ),
-            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
-        ))
+        self.add_module("flat", nn.Flatten())
+
+        module = nn.Sequential()
+
+        module.add_module("fc",
+                          nn.Linear(
+                              spatial_dim_last_layer * n_channels_last_layer,
+                              self.n_outputs
+                          ), )
+
+        if self.add_log_softmax:
+            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
+        else:
+            module.add_module("identity", nn.Identity())
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
 

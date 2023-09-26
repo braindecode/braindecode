@@ -147,6 +147,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             sfreq=sfreq,
             add_log_softmax=add_log_softmax,
         )
+        self.mapping = {
+            'classification.1.weight': 'final_layer.clf.weight',
+            'classification.1.bias': 'final_layer.clf.weight'}
+
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, in_channels, input_window_samples
 
@@ -199,10 +203,21 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             nn.AvgPool2d((1, 4)),
             nn.Dropout(drop_prob)))
         # ============== Classifier ==================
-        self.add_module("classifier", nn.Sequential(
-            torch.nn.Flatten(),
-            nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs),
-            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),))
+        # Moved flatten to another layer
+        self.add_module("flatten", nn.Flatten())
+
+        # Incorporating classification module and subsequent ones in one final layer
+        module = nn.Sequential()
+
+        module.add_module("clf",
+                          nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs))
+
+        if self.add_log_softmax:
+            module.add_module("out_fun", nn.LogSoftmax(dim=1))
+        else:
+            module.add_module("out_fun", nn.Identity())
+
+        self.add_module("final_layer", module)
 
     @staticmethod
     def _get_inception_branch(in_channels, out_channels, kernel_length, depth_multiplier=1):

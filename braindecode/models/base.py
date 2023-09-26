@@ -6,6 +6,8 @@
 import warnings
 from typing import Dict, Iterable, List, Optional, Tuple
 
+from collections import OrderedDict
+
 import numpy as np
 import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
@@ -202,8 +204,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     )).shape)
             except RuntimeError as exc:
                 if str(exc).endswith(
-                    ("Output size is too small",
-                     "Kernel size can't be greater than actual input size")
+                        ("Output size is too small",
+                         "Kernel size can't be greater than actual input size")
                 ):
                     msg = (
                         "During model prediction RuntimeError was thrown showing that at some "
@@ -214,6 +216,20 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     )
                     raise ValueError(msg) from exc
                 raise exc
+
+    mapping = None
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+
+        mapping = self.mapping if self.mapping else {}
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            if k in mapping:
+                new_state_dict[mapping[k]] = v
+            else:
+                new_state_dict[k] = v
+
+        return super().load_state_dict(new_state_dict, *args, **kwargs)
 
     def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
         """

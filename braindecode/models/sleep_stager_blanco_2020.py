@@ -84,6 +84,11 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_channels, n_classes, input_size_s
 
+        self.mapping = {
+            "fc.1.weight": "final_layer.1.weight",
+            "fc.1.bias": "final_layer.1.bias"
+        }
+
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 
         self.feature_extractor = nn.Sequential(
@@ -119,8 +124,10 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
 
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self.return_feats = return_feats
+
+        # TODO: Add new way to handle return_features == True
         if not return_feats:
-            self.fc = nn.Sequential(
+            self.final_layer = nn.Sequential(
                 nn.Dropout(dropout),
                 nn.Linear(self.len_last_layer, self.n_outputs),
                 nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity()
@@ -148,4 +155,4 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         if self.return_feats:
             return feats
         else:
-            return self.fc(feats)
+            return self.final_layer(feats)
