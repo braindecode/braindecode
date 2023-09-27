@@ -209,7 +209,6 @@ regressor.fit(train_set, y=None, epochs=n_epochs)
 # Plotting training and validation losses and negative root mean square error
 import matplotlib.pyplot as plt
 
-plt.style.use("seaborn")
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 axes[0].set_title("Train and valid losses")

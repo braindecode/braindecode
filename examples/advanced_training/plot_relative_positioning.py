@@ -372,7 +372,6 @@ ys2 = ['train_acc', 'valid_acc']
 styles = ['-', ':']
 markers = ['.', '.']
 
-plt.style.use('seaborn-talk')
 
 fig, ax1 = plt.subplots(figsize=(8, 3))
 ax2 = ax1.twinx()

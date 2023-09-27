@@ -23,6 +23,7 @@ import inspect
 import os.path as op
 
 import matplotlib
+
 matplotlib.use('agg')
 from datetime import datetime, timezone
 import faulthandler
@@ -129,6 +130,7 @@ def linkcode_resolve(domain, info):
 
     return f"{repo}/blob/master/braindecode/{fn}{linespec}"
 
+
 # -- Options for sphinx gallery --------------------------------------------
 faulthandler.enable()
 os.environ['_BRAINDECODE_BROWSER_NO_BLOCK'] = 'true'
@@ -188,6 +190,7 @@ author = 'Braindecode developers'
 #
 # The short X.Y version.
 import braindecode
+
 release = braindecode.__version__
 # The full version, including alpha/beta/rc tags.
 version = '.'.join(release.split('.')[:2])
@@ -209,7 +212,6 @@ pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
-
 
 # Sphinx-gallery configuration
 
@@ -250,6 +252,7 @@ sphinx_gallery_conf = {
 # a list of builtin themes.
 #
 import sphinx_rtd_theme  # noqa
+
 html_theme = "pydata_sphinx_theme"
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 switcher_version_match = 'dev' if release.endswith('dev0') else version
@@ -275,8 +278,8 @@ html_theme_options = {
     'show_toc_level': 1,
     'navbar_end': ['theme-switcher', 'version-switcher'],
     'switcher': {
-      'json_url': 'https://braindecode.org/stable/_static/versions.json',
-      'version_match': switcher_version_match,
+        'json_url': 'https://braindecode.org/stable/_static/versions.json',
+        'version_match': switcher_version_match,
     },
     "logo": {
         "image_light": "_static/braindecode_symbol.png",
@@ -284,7 +287,7 @@ html_theme_options = {
         "alt_text": "Braindecode Logo",
     },
     'footer_start': ['copyright'],
-    #'pygment_light_style': 'default',
+    # 'pygment_light_style': 'default',
     'analytics': dict(google_analytics_id='G-7Q43R82K6D'),
 }
 
@@ -345,7 +348,6 @@ html_context = {
 
 }
 
-
 # -- Options for LaTeX output ---------------------------------------------
 
 latex_elements = {
@@ -377,8 +379,6 @@ latex_documents = [
      'Robin Tibor Schirrmeister', 'manual'),
 ]
 
-
-
 # -- Fontawesome support -----------------------------------------------------
 
 # here the "fab" and "fas" refer to "brand" and "solid" (determines which font
@@ -398,7 +398,7 @@ other_icons = (
 icons = dict()
 for icon in brand_icons + fixed_icons + other_icons:
     font = ('fab' if icon in brand_icons else 'fas',)  # brand or solid font
-    fw = ('fa-fw',) if icon in fixed_icons else ()     # fixed-width
+    fw = ('fa-fw',) if icon in fixed_icons else ()  # fixed-width
     icons[icon] = font + fw
 
 prolog = ''
@@ -422,7 +422,6 @@ prolog += '''
 .. |ensp| unicode:: U+2002 .. EN SPACE
 '''
 
-
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples
@@ -431,7 +430,6 @@ man_pages = [
     (master_doc, 'braindecode', 'Braindecode',
      [author], 1)
 ]
-
 
 # -- Options for Texinfo output -------------------------------------------
 
