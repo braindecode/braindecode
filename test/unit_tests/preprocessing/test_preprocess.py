@@ -82,8 +82,12 @@ def test_preprocess_windows_str(windows_concat_ds):
     preprocessors = [
         Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
-    assert windows_concat_ds[0][0].shape[1] == 25
-    assert all([ds.window_preproc_kwargs == [
+    # assert windows_concat_ds[0][0].shape[1] == 25  no longer correct as raw preprocessed
+
+    # Since windowed datasets are not using mne epochs anymore,
+    # also for windows it is called raw_preproc_kwargs
+    # as underlying data is always raw
+    assert all([ds.raw_preproc_kwargs == [
         ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False}),
     ] for ds in windows_concat_ds.datasets])
 
@@ -146,7 +150,7 @@ def test_scale_windows(windows_concat_ds):
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
                                rtol=1e-4, atol=1e-4)
-    assert all([ds.window_preproc_kwargs == [
+    assert all([ds.raw_preproc_kwargs == [
         ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
         ('scale', {'factor': 1e6}),
     ] for ds in windows_concat_ds.datasets])
@@ -280,8 +284,8 @@ def test_set_window_preproc_kwargs(windows_concat_ds):
     ds = windows_concat_ds.datasets[0]
     _set_preproc_kwargs(ds, preprocessors)
 
-    assert hasattr(ds, 'window_preproc_kwargs')
-    assert ds.window_preproc_kwargs == window_preproc_kwargs
+    assert hasattr(ds, 'raw_preproc_kwargs')
+    assert ds.raw_preproc_kwargs == window_preproc_kwargs
 
 
 def test_set_preproc_kwargs_wrong_type(base_concat_ds):
@@ -305,12 +309,14 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
         Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
 
     save_dir = str(tmp_path) if save else None
+    # Since windowed datasets are not using mne epochs anymore,
+    # also for windows it is called raw_preproc_kwargs
+    # as underlying data is always raw
+    preproc_kwargs_name = 'raw_preproc_kwargs'
     if kind == 'raw':
         concat_ds = base_concat_ds
-        preproc_kwargs_name = 'raw_preproc_kwargs'
     elif kind == 'windows':
         concat_ds = windows_concat_ds
-        preproc_kwargs_name = 'window_preproc_kwargs'
 
     concat_ds = preprocess(
         concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs)
@@ -318,16 +324,16 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
     assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
     assert all([getattr(ds, preproc_kwargs_name) == preproc_kwargs
                 for ds in concat_ds.datasets])
-    assert all([len(getattr(ds, kind).times) == 25
+    assert all([len(ds.raw.times) == 25
                 for ds in concat_ds.datasets])
     if kind == 'raw':
         assert all([hasattr(ds, 'target_name') for ds in concat_ds.datasets])
 
     if save_dir is None:
-        assert all([getattr(ds, kind).preload
+        assert all([ds.raw.preload
                     for ds in concat_ds.datasets])
     else:
-        assert all([not getattr(ds, kind).preload
+        assert all([not ds.raw.preload
                     for ds in concat_ds.datasets])
         save_dirs = [os.path.join(save_dir, str(i))
                      for i in range(len(concat_ds.datasets))]

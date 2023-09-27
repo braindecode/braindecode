@@ -17,7 +17,7 @@ import mne
 import pandas as pd
 from joblib import Parallel, delayed
 
-from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset, EEGWindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
@@ -116,7 +116,6 @@ def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
 
 
 def _load_signals(fif_file, preload, is_raw):
-
     # Reading the raw file from pickle if it has been save before.
     # The pickle file only contain the raw object without the data.
     pkl_file = fif_file.with_suffix(".pkl")
@@ -131,6 +130,7 @@ def _load_signals(fif_file, preload, is_raw):
             signals.load_data()
         return signals
 
+    # If pickle didn't exist read via mne (likely slower) and save pkl after
     if is_raw:
         signals = mne.io.read_raw_fif(fif_file, preload=preload)
     elif fif_file.name.endswith('-epo.fif'):
@@ -199,6 +199,8 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
     ids_to_load = [str(i) for i in ids_to_load]
     first_raw_fif_path = path / ids_to_load[0] / f'{ids_to_load[0]}-raw.fif'
     is_raw = first_raw_fif_path.exists()
+    metadata_path = path / ids_to_load[0] / 'metadata_df.pkl'
+    has_stored_windows = metadata_path.exists()
 
     # Parallelization of mne.read_epochs with preload=False fails with
     # 'TypeError: cannot pickle '_io.BufferedReader' object'.
@@ -209,13 +211,13 @@ def load_concat_dataset(path, preload, ids_to_load=None, target_name=None,
             'windowed data. Will use `n_jobs=1`.', UserWarning)
         n_jobs = 1
     datasets = Parallel(n_jobs)(
-        delayed(_load_parallel)(path, i, preload, is_raw)
+        delayed(_load_parallel)(path, i, preload, is_raw, has_stored_windows)
         for i in ids_to_load
     )
     return BaseConcatDataset(datasets)
 
 
-def _load_parallel(path, i, preload, is_raw):
+def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     sub_dir = path / i
     file_name_patterns = ['{}-raw.fif', '{}-epo.fif']
     if all([(sub_dir / p.format(i)).exists() for p in file_name_patterns]):
@@ -235,16 +237,28 @@ def _load_parallel(path, i, preload, is_raw):
     if target_file_path.exists():
         target_name = json.load(open(target_file_path, "r"))['target_name']
 
-    if is_raw:
+    if is_raw and (not has_stored_windows):
         dataset = BaseDataset(signals, description, target_name)
     else:
         window_kwargs = _load_kwargs_json('window_kwargs', sub_dir)
         windows_ds_kwargs = [kwargs[1] for kwargs in window_kwargs if kwargs[0] == 'WindowsDataset']
         windows_ds_kwargs = windows_ds_kwargs[0] if len(windows_ds_kwargs) == 1 else {}
-        dataset = WindowsDataset(signals, description,
-                                 targets_from=windows_ds_kwargs.get('targets_from', 'metadata'),
-                                 last_target_only=windows_ds_kwargs.get('last_target_only', True)
-                                 )
+        if is_raw:
+            metadata = pd.read_pickle(path / i / 'metadata_df.pkl')
+            dataset = EEGWindowsDataset(
+                signals,
+                metadata=metadata,
+                description=description,
+                targets_from=windows_ds_kwargs.get('targets_from', 'metadata'),
+                last_target_only=windows_ds_kwargs.get('last_target_only', True),
+            )
+        else:
+            # MNE epochs dataset
+            dataset = WindowsDataset(
+                signals, description,
+                targets_from=windows_ds_kwargs.get('targets_from', 'metadata'),
+                last_target_only=windows_ds_kwargs.get('last_target_only', True)
+            )
         setattr(dataset, 'window_kwargs', window_kwargs)
     for kwargs_name in ['raw_preproc_kwargs', 'window_preproc_kwargs']:
         kwargs = _load_kwargs_json(kwargs_name, sub_dir)

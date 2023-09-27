@@ -19,7 +19,8 @@ from mne import create_info
 from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
+from braindecode.datasets.base import (BaseConcatDataset, BaseDataset, WindowsDataset,
+                                       EEGWindowsDataset)
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 
@@ -124,21 +125,26 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
+    parallel_processing = (n_jobs is not None) and (n_jobs > 1)
+
     list_of_ds = Parallel(n_jobs=n_jobs)(
-        delayed(_preprocess)(ds, i, preprocessors, save_dir, overwrite)
-        for i, ds in enumerate(concat_ds.datasets))
+        delayed(_preprocess)(
+            ds, i, preprocessors, save_dir, overwrite,
+            copy_data=(parallel_processing and (save_dir is None)))
+        for i, ds in enumerate(concat_ds.datasets)
+    )
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         concat_ds_reloaded = load_concat_dataset(
             save_dir, preload=False, target_name=None)
         _replace_inplace(concat_ds, concat_ds_reloaded)
     else:
-        if n_jobs is None or n_jobs == 1:  # joblib did not make copies, the
+        if parallel_processing:  # joblib made copies
+            _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
+        else:  # joblib did not make copies, the
             # preprocessing happened in-place
             # Recompute cumulative sizes as transforms might have changed them
             concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
-        else:  # joblib made copies
-            _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
 
     return concat_ds
 
@@ -165,7 +171,7 @@ def _replace_inplace(concat_ds, new_concat_ds):
                 getattr(new_concat_ds, preproc_kwargs_attr))
 
 
-def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
+def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False, copy_data=False):
     """Apply preprocessor(s) to Raw or Epochs object.
 
     Parameters
@@ -182,9 +188,15 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
         specified directory.
     overwrite : bool
         If True, overwrite existing file with the same name.
+    copy_data : bool
+        First copy the data in case it is preloaded. Necessary for parallel processing to work.
     """
 
     def _preprocess_raw_or_epochs(raw_or_epochs, preprocessors):
+        # Copying the data necessary in some scenarios for parallel processing
+        # to work when data is in memory (else error about _data not being writeable)
+        if (raw_or_epochs.preload and copy_data):
+            raw_or_epochs._data = raw_or_epochs._data.copy()
         for preproc in preprocessors:
             preproc.apply(raw_or_epochs)
 
@@ -239,6 +251,8 @@ def _set_preproc_kwargs(ds, preprocessors):
     preproc_kwargs = _get_preproc_kwargs(preprocessors)
     if isinstance(ds, WindowsDataset):
         kind = 'window'
+    if isinstance(ds, EEGWindowsDataset):
+        kind = 'raw'
     elif isinstance(ds, BaseDataset):
         kind = 'raw'
     else:

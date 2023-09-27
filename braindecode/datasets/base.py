@@ -135,6 +135,139 @@ class BaseDataset(Dataset):
         return target_name if len(target_name) > 1 else target_name[0]
 
 
+class EEGWindowsDataset(BaseDataset):
+    """Returns windows from an mne.Raw object, its window indices, along with a target.
+
+    Dataset which serves windows from an mne.Epochs object along with their
+    target and additional information. The `metadata` attribute of the Epochs
+    object must contain a column called `target`, which will be used to return
+    the target that corresponds to a window. Additional columns
+    `i_window_in_trial`, `i_start_in_trial`, `i_stop_in_trial` are also
+    required to serve information about the windowing (e.g., useful for cropped
+    training).
+    See `braindecode.datautil.windowers` to directly create a `WindowsDataset`
+    from a `BaseDataset` object.
+
+    Parameters
+    ----------
+    windows : mne.Raw or mne.Epochs (Epochs is outdated)
+        Windows obtained through the application of a windower to a BaseDataset
+        (see `braindecode.datautil.windowers`).
+    description : dict | pandas.Series | None
+        Holds additional info about the windows.
+    transform : callable | None
+        On-the-fly transform applied to a window before it is returned.
+    targets_from : str
+        Defines whether targets will be extracted from  metadata or from `misc`
+        channels (time series targets). It can be `metadata` (default) or `channels`.
+    last_target_only : bool
+        If targets are obtained from misc channels whether all targets if the entire
+        (compute) window will be returned or only the last target in the window.
+    metadata : pandas.DataFrame
+        Dataframe with crop indices, so `i_window_in_trial`, `i_start_in_trial`, `i_stop_in_trial`
+        as well as `targets`.
+    """
+
+    def __init__(self, raw, metadata, description=None, transform=None, targets_from='metadata',
+                 last_target_only=True, ):
+        self.raw = raw
+        self.metadata = metadata
+        self._description = _create_description(description)
+
+        self.transform = transform
+        self.last_target_only = last_target_only
+        if targets_from not in ('metadata', 'channels'):
+            raise ValueError('Wrong value for parameter `targets_from`.')
+        self.targets_from = targets_from
+        self.crop_inds = metadata.loc[
+                         :, ['i_window_in_trial', 'i_start_in_trial',
+                             'i_stop_in_trial']].to_numpy()
+        if self.targets_from == 'metadata':
+            self.y = metadata.loc[:, 'target'].to_list()
+
+    def __getitem__(self, index):
+        """Get a window and its target.
+
+        Parameters
+        ----------
+        index : int
+            Index to the window (and target) to return.
+
+        Returns
+        -------
+        np.ndarray
+            Window of shape (n_channels, n_times).
+        int
+            Target for the windows.
+        np.ndarray
+            Crop indices.
+        """
+
+        # necessary to cast as list to get list of three tensors from batch,
+        # otherwise get single 2d-tensor...
+        crop_inds = self.crop_inds[index].tolist()
+
+        i_window_in_trial, i_start, i_stop = crop_inds
+        X = self.raw._getitem((slice(None), slice(i_start, i_stop)), return_times=False)
+        X = X.astype('float32')
+        # ensure we don't give the user the option
+        # to accidentally modify the underlying array
+        X = X.copy()
+        if self.transform is not None:
+            X = self.transform(X)
+        if self.targets_from == 'metadata':
+            y = self.y[index]
+        else:
+            misc_mask = np.array(self.raw.get_channel_types()) == 'misc'
+            if self.last_target_only:
+                y = X[misc_mask, -1]
+            else:
+                y = X[misc_mask, :]
+            # ensure we don't give the user the option
+            # to accidentally modify the underlying array
+            y = y.copy()
+            # remove the target channels from raw
+            X = X[~misc_mask, :]
+        return X, y, crop_inds
+
+    def __len__(self):
+        return len(self.crop_inds)
+
+    @property
+    def transform(self):
+        return self._transform
+
+    @transform.setter
+    def transform(self, value):
+        if value is not None and not callable(value):
+            raise ValueError('Transform needs to be a callable.')
+        self._transform = value
+
+    @property
+    def description(self):
+        return self._description
+
+    def set_description(self, description, overwrite=False):
+        """Update (add or overwrite) the dataset description.
+
+        Parameters
+        ----------
+        description: dict | pd.Series
+            Description in the form key: value.
+        overwrite: bool
+            Has to be True if a key in description already exists in the
+            dataset description.
+        """
+        description = _create_description(description)
+        for key, value in description.items():
+            # if they key is already in the existing description, drop it
+            if key in self._description:
+                assert overwrite, (f"'{key}' already in description. Please "
+                                   f"rename or set overwrite to True.")
+                self._description.pop(key)
+        self._description = pd.concat([self.description, description])
+
+
 class WindowsDataset(BaseDataset):
     """Returns windows from an mne.Epochs object along with a target.
 
@@ -364,13 +497,16 @@ class BaseConcatDataset(ConcatDataset):
             BaseConcatDataset, with the metadata and description information
             for each window.
         """
-        if not all([isinstance(ds, WindowsDataset) for ds in self.datasets]):
+        if not all([isinstance(ds, (WindowsDataset, EEGWindowsDataset)) for ds in self.datasets]):
             raise TypeError('Metadata dataframe can only be computed when all '
                             'datasets are WindowsDataset.')
 
         all_dfs = list()
         for ds in self.datasets:
-            df = ds.windows.metadata
+            if hasattr(ds, 'windows'):
+                df = ds.windows.metadata
+            else:
+                df = ds.metadata
             for k, v in ds.description.items():
                 df[k] = v
             all_dfs.append(df)
@@ -413,6 +549,8 @@ class BaseConcatDataset(ConcatDataset):
         """
         warnings.warn('This function only exists for backwards compatibility '
                       'purposes. DO NOT USE!', UserWarning)
+        if isinstance(self.datasets[0], EEGWindowsDataset):
+            raise NotImplementedError("Outdated save not implemented for new window datasets.")
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
         if not (hasattr(self.datasets[0], 'raw') or hasattr(
@@ -442,11 +580,9 @@ class BaseConcatDataset(ConcatDataset):
                     os.remove(kwarg_path)
 
         is_raw = hasattr(self.datasets[0], 'raw')
+
         if is_raw:
             file_name_template = file_name_templates[0]
-            # for checks that all have same target name and for
-            # saving later
-            target_name = self.datasets[0].target_name
         else:
             file_name_template = file_name_templates[1]
 
@@ -454,13 +590,9 @@ class BaseConcatDataset(ConcatDataset):
             full_file_path = os.path.join(path, file_name_template.format(i_ds))
             if is_raw:
                 ds.raw.save(full_file_path, overwrite=overwrite)
-                assert ds.target_name == target_name, (
-                    "All datasets should have same target name")
             else:
                 ds.windows.save(full_file_path, overwrite=overwrite)
 
-        if is_raw:
-            json.dump({'target_name': target_name}, open(target_file_name, 'w'))
         self.description.to_json(description_file_name)
         for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
                            'window_preproc_kwargs']:
@@ -551,6 +683,8 @@ class BaseConcatDataset(ConcatDataset):
             os.makedirs(sub_dir)
             # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
             self._save_signals(sub_dir, ds, i_ds, offset)
+            # save_dir/{i_ds+offset}/metadata_df.pkl
+            self._save_metadata(sub_dir, ds)
             # save_dir/{i_ds+offset}/description.json
             self._save_description(sub_dir, ds.description)
             # save_dir/{i_ds+offset}/raw_preproc_kwargs.json
@@ -579,15 +713,21 @@ class BaseConcatDataset(ConcatDataset):
         raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'epo'
         fif_file_name = f'{i_ds + offset}-{raw_or_epo}.fif'
         fif_file_path = os.path.join(sub_dir, fif_file_name)
-        raw_or_epo = 'raw' if raw_or_epo == 'raw' else 'windows'
+        raw_or_windows = 'raw' if raw_or_epo == 'raw' else 'windows'
 
         # The following appears to be necessary to avoid a CI failure when
         # preprocessing WindowsDatasets with serialization enabled. The failure
         # comes from `mne.epochs._check_consistency` which ensures the Epochs's
         # object `times` attribute is not writeable.
-        getattr(ds, raw_or_epo).times.flags['WRITEABLE'] = False
+        getattr(ds, raw_or_windows).times.flags['WRITEABLE'] = False
 
-        getattr(ds, raw_or_epo).save(fif_file_path)
+        getattr(ds, raw_or_windows).save(fif_file_path)
+
+    @staticmethod
+    def _save_metadata(sub_dir, ds):
+        if hasattr(ds, 'metadata'):
+            metadata_file_path = os.path.join(sub_dir, 'metadata_df.pkl')
+            ds.metadata.to_pickle(metadata_file_path)
 
     @staticmethod
     def _save_description(sub_dir, description):
