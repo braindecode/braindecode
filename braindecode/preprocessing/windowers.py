@@ -125,9 +125,10 @@ def create_windows_from_events(
                       'and this argument may be removed in the future.')
 
     use_mne_epochs = (reject is not None) or (picks is not None) or (flat is not None) or (
-        drop_bad_windows == True)
+        drop_bad_windows is True)
     if use_mne_epochs:
-        warnings.warn('Using reject or picks or flat or dropping bad windowsmeans mne Epochs are created, '
+        warnings.warn('Using reject or picks or flat or dropping bad windows means '
+                      'mne Epochs are created, '
                       'which will be substantially slower and may be deprecated in the future.')
         if drop_bad_windows is None:
             drop_bad_windows = True
