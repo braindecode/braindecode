@@ -33,7 +33,8 @@ setup(
     license='BSD 3-Clause',
 
     install_requires=['mne', 'numpy', 'pandas', 'scipy', 'matplotlib', 'h5py', 'skorch',
-                      'torch', 'einops', 'joblib', 'docstring_inheritance', 'torchinfo', 'huggingface_hub'],
+                      'torch', 'einops', 'joblib', 'docstring_inheritance', 'torchinfo',
+                      'huggingface_hub'],
     extras_require={
         'moabb': ['moabb'],
         'tests': ['pytest', 'pytest-cov', 'codecov', 'pytest_cases'],
