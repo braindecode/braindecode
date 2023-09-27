@@ -171,4 +171,4 @@ def _init_weights_dict():
     for (name, cls) in inspect.getmembers(models, inspect.isclass):
         if (issubclass(cls, WeightsEnum)
                 and cls != WeightsEnum):
-            weights_dict[name] = cls
+            weights_dict[name[:-7]] = cls
