@@ -22,7 +22,7 @@ import mne
 import pandas as pd
 from joblib import Parallel, delayed
 
-from ..datasets.base import WindowsDataset, BaseConcatDataset, _EEGWindowsDataset
+from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
 
 
 # XXX it's called concat_ds...
@@ -242,7 +242,7 @@ def _create_windows_from_events(
 
     Returns
     -------
-    _EEGWindowsDataset :
+    EEGWindowsDataset :
         Windowed dataset.
     """
     # catch window_kwargs to store to dataset
@@ -332,7 +332,7 @@ def _create_windows_from_events(
             mne_epochs.drop_bad()
         windows_ds = WindowsDataset(mne_epochs, ds.description,)
     else:
-        windows_ds = _EEGWindowsDataset(
+        windows_ds = EEGWindowsDataset(
             ds.raw, metadata=metadata, description=ds.description,)
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, 'window_kwargs', window_kwargs)
@@ -403,12 +403,12 @@ def _create_fixed_length_windows(
     })
 
     window_kwargs.append(
-        (_EEGWindowsDataset.__name__, {
+        (EEGWindowsDataset.__name__, {
             'targets_from': targets_from,
             'last_target_only': last_target_only
         })
     )
-    windows_ds = _EEGWindowsDataset(
+    windows_ds = EEGWindowsDataset(
         ds.raw,
         metadata=metadata,
         description=ds.description,
@@ -471,12 +471,12 @@ def _create_windows_from_target_channels(
 
     targets_from = 'channels'
     window_kwargs.append(
-        (_EEGWindowsDataset.__name__, {
+        (EEGWindowsDataset.__name__, {
             'targets_from': targets_from,
             'last_target_only': last_target_only
         })
     )
-    windows_ds = _EEGWindowsDataset(
+    windows_ds = EEGWindowsDataset(
         ds.raw,
         metadata=metadata,
         description=ds.description,

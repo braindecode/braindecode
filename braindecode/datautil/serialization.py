@@ -17,7 +17,7 @@ import mne
 import pandas as pd
 from joblib import Parallel, delayed
 
-from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset, _EEGWindowsDataset
+from ..datasets.base import BaseDataset, BaseConcatDataset, WindowsDataset, EEGWindowsDataset
 
 
 def save_concat_dataset(path, concat_dataset, overwrite=False):
@@ -245,7 +245,7 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
         windows_ds_kwargs = windows_ds_kwargs[0] if len(windows_ds_kwargs) == 1 else {}
         if is_raw:
             metadata = pd.read_pickle(path / i / 'metadata_df.pkl')
-            dataset = _EEGWindowsDataset(
+            dataset = EEGWindowsDataset(
                 signals,
                 metadata=metadata,
                 description=description,

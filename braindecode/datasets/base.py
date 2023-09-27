@@ -135,7 +135,7 @@ class BaseDataset(Dataset):
         return target_name if len(target_name) > 1 else target_name[0]
 
 
-class _EEGWindowsDataset(BaseDataset):
+class EEGWindowsDataset(BaseDataset):
     """Returns windows from an mne.Raw object, its window indices, along with a target.
 
     Dataset which serves windows from an mne.Epochs object along with their
@@ -497,7 +497,7 @@ class BaseConcatDataset(ConcatDataset):
             BaseConcatDataset, with the metadata and description information
             for each window.
         """
-        if not all([isinstance(ds, (WindowsDataset, _EEGWindowsDataset)) for ds in self.datasets]):
+        if not all([isinstance(ds, (WindowsDataset, EEGWindowsDataset)) for ds in self.datasets]):
             raise TypeError('Metadata dataframe can only be computed when all '
                             'datasets are WindowsDataset.')
 
@@ -549,7 +549,7 @@ class BaseConcatDataset(ConcatDataset):
         """
         warnings.warn('This function only exists for backwards compatibility '
                       'purposes. DO NOT USE!', UserWarning)
-        if isinstance(self.datasets[0], _EEGWindowsDataset):
+        if isinstance(self.datasets[0], EEGWindowsDataset):
             raise NotImplementedError("Outdated save not implemented for new window datasets.")
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")

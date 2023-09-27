@@ -20,7 +20,7 @@ from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
 from braindecode.datasets.base import (BaseConcatDataset, BaseDataset, WindowsDataset,
-                                       _EEGWindowsDataset)
+                                       EEGWindowsDataset)
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 
@@ -251,7 +251,7 @@ def _set_preproc_kwargs(ds, preprocessors):
     preproc_kwargs = _get_preproc_kwargs(preprocessors)
     if isinstance(ds, WindowsDataset):
         kind = 'window'
-    if isinstance(ds, _EEGWindowsDataset):
+    if isinstance(ds, EEGWindowsDataset):
         kind = 'raw'
     elif isinstance(ds, BaseDataset):
         kind = 'raw'
