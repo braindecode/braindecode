@@ -139,8 +139,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             preds=preds, i_window_in_trials=i_window_in_trials,
             i_window_stops=i_window_stops, window_ys=window_ys)
 
-    # Removes default EpochScoring callback computing 'accuracy' to work
-    # properly with cropped decoding.
+    # Changes the default target extractor to noop
     @property
     def _default_callbacks(self):
         return [
