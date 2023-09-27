@@ -244,25 +244,16 @@ def test_overlapping_trial_offsets(concat_ds_targets):
             drop_last_window=False)
 
 
-# @pytest.mark.parametrize('drop_bad_windows,preload',
-#                          [(True, False), (True, False)])
-# def test_drop_bad_windows(concat_ds_targets, drop_bad_windows, preload):
-#     concat_ds, _ = concat_ds_targets
-#     windows_from_events = create_windows_from_events(
-#         concat_ds=concat_ds, trial_start_offset_samples=0,
-#         trial_stop_offset_samples=0, window_size_samples=100,
-#         window_stride_samples=100, drop_last_window=False, preload=preload,
-#         drop_bad_windows=drop_bad_windows)
-#
-#     windows_fixed_length = create_fixed_length_windows(
-#         concat_ds=concat_ds, start_offset_samples=0, stop_offset_samples=1000,
-#         window_size_samples=1000, window_stride_samples=1000,
-#         drop_last_window=False, preload=preload, drop_bad_windows=drop_bad_windows)
-#
-#     assert (windows_from_events.datasets[0].windows._bad_dropped ==
-#             drop_bad_windows)
-#     assert (windows_fixed_length.datasets[0].windows._bad_dropped ==
-#             drop_bad_windows)
+@pytest.mark.parametrize('preload', [(True, False)])
+def test_drop_bad_windows(concat_ds_targets, preload):
+    concat_ds, _ = concat_ds_targets
+    windows_from_events = create_windows_from_events(
+        concat_ds=concat_ds, trial_start_offset_samples=0,
+        trial_stop_offset_samples=0, window_size_samples=100,
+        window_stride_samples=100, drop_last_window=False, preload=preload,
+        drop_bad_windows=True)
+
+    assert windows_from_events.datasets[0].windows._bad_dropped
 
 
 def test_windows_from_events_(lazy_loadable_dataset):

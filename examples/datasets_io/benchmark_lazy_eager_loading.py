@@ -106,7 +106,7 @@ def load_example_data(preload, window_len_s, n_recordings=10):
         ds, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=window_len_samples,
         window_stride_samples=window_stride_samples, drop_last_window=True,
-        preload=preload, drop_bad_windows=True)
+        preload=preload)
 
     # Drop bad epochs
     # XXX: This could be parallelized.

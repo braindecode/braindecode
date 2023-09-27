@@ -164,7 +164,6 @@ windows_dataset = create_fixed_length_windows(dataset,
                                               window_size_samples=window_size_samples,
                                               window_stride_samples=n_preds_per_input,
                                               drop_last_window=False,
-                                              drop_bad_windows=True,
                                               preload=True)
 
 # Splitting windowed data into train, valid and test subsets.

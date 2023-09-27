@@ -30,7 +30,7 @@ def create_windows_from_events(
         concat_ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
-        drop_bad_windows=True, picks=None, reject=None, flat=None,
+        drop_bad_windows=None, picks=None, reject=None, flat=None,
         on_missing='error', accepted_bads_ratio=0.0, n_jobs=1, verbose='error'):
     """Create windows based on events in mne.Raw.
 
@@ -120,10 +120,18 @@ def create_windows_from_events(
     mapping = dict() if infer_mapping else mapping
     infer_window_size_stride = window_size_samples is None
 
-    use_mne_epochs = (reject is not None) or (picks is not None) or (flat is not None)
+    if drop_bad_windows is not None:
+        warnings.warn('Drop bad windows only has an effect if mne epochs are created, '
+                      'and this argument may be removed in the future.')
+
+    use_mne_epochs = (reject is not None) or (picks is not None) or (flat is not None) or (
+        drop_bad_windows == True)
     if use_mne_epochs:
-        warnings.warn('Using reject or picks or flat means mne Epochs are created, '
+        warnings.warn('Using reject or picks or flat or dropping bad windowsmeans mne Epochs are created, '
                       'which will be substantially slower and may be deprecated in the future.')
+        if drop_bad_windows is None:
+            drop_bad_windows = True
+
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_events)(
             ds, infer_mapping, infer_window_size_stride,
@@ -137,7 +145,7 @@ def create_windows_from_events(
 def create_fixed_length_windows(
         concat_ds, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=None, window_stride_samples=None, drop_last_window=None,
-        mapping=None, preload=False, drop_bad_windows=True, picks=None,
+        mapping=None, preload=False, picks=None,
         reject=None, flat=None, targets_from='metadata', last_target_only=True,
         on_missing='error', n_jobs=1, verbose='error'):
     """Windower that creates sliding windows.
@@ -165,11 +173,6 @@ def create_fixed_length_windows(
         Mapping from event description to target value.
     preload: bool
         If True, preload the data of the Epochs objects.
-    drop_bad_windows: bool
-        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifying e.g., windows that fall outside of the
-        continuous recording. It is suggested to run this step here as
-        otherwise the BaseConcatDataset has to be updated as well.
     picks: str | list | slice | None
         Channels to include. If None, all available channels are used. See
         mne.Epochs.
@@ -208,7 +211,7 @@ def create_fixed_length_windows(
         delayed(_create_fixed_length_windows)(
             ds, start_offset_samples, stop_offset_samples, window_size_samples,
             window_stride_samples, drop_last_window, mapping, preload,
-            drop_bad_windows, picks, reject, flat, targets_from, last_target_only,
+            picks, reject, flat, targets_from, last_target_only,
             on_missing, verbose) for ds in concat_ds.datasets)
     return BaseConcatDataset(list_of_windows_ds)
 
@@ -341,7 +344,7 @@ def _create_windows_from_events(
 def _create_fixed_length_windows(
         ds, start_offset_samples, stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window, mapping=None, preload=False,
-        drop_bad_windows=True, picks=None, reject=None, flat=None, targets_from='metadata',
+        picks=None, reject=None, flat=None, targets_from='metadata',
         last_target_only=True, on_missing='error', verbose='error'):
     """Create WindowsDataset from BaseDataset with sliding windows.
 
@@ -420,18 +423,18 @@ def _create_fixed_length_windows(
 
 
 def create_windows_from_target_channels(
-        concat_ds, window_size_samples=None, preload=False, drop_bad_windows=True,
+        concat_ds, window_size_samples=None, preload=False,
         picks=None, reject=None, flat=None, n_jobs=1, last_target_only=True,
         verbose='error'):
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
-            ds, window_size_samples, preload, drop_bad_windows, picks, reject,
+            ds, window_size_samples, preload, picks, reject,
             flat, last_target_only, 'error', verbose) for ds in concat_ds.datasets)
     return BaseConcatDataset(list_of_windows_ds)
 
 
 def _create_windows_from_target_channels(
-        ds, window_size_samples, preload=False, drop_bad_windows=True, picks=None,
+        ds, window_size_samples, preload=False, picks=None,
         reject=None, flat=None, last_target_only=True, on_missing='error',
         verbose='error'):
     """Create WindowsDataset from BaseDataset using targets `misc` channels from mne.Raw.

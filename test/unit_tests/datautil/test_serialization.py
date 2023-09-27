@@ -182,7 +182,7 @@ def test_load_save_window_preproc_kwargs(setup_concat_windows_dataset, tmpdir):
                 'window_size_samples': None, 'window_stride_samples': None,
                 'drop_last_window': False, 'mapping':  {
                     'feet': 0, 'left_hand': 1, 'right_hand': 2, 'tongue': 3},
-                'preload': False, 'drop_bad_windows': True, 'picks': None,
+                'preload': False, 'drop_bad_windows': None, 'picks': None,
                 'reject': None, 'flat': None, 'on_missing': 'error',
                 'accepted_bads_ratio': 0.0, 'verbose': 'error', 'use_mne_epochs': False})
         ]
