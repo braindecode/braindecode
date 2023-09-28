@@ -79,16 +79,16 @@ class Transform(torch.nn.Module):
             out_X = out_X[None, ...]
 
         if y is not None:
-            y = torch.as_tensor(y)
+            y = torch.as_tensor(y).to(out_X.device)
             out_y = y.clone()
             if len(out_y.shape) == 0:
                 out_y = out_y.reshape(1)
         else:
-            out_y = torch.zeros(out_X.shape[0])
+            out_y = torch.zeros(out_X.shape[0], device=out_X.device)
 
         # Samples a mask setting for each example whether they should stay
         # inchanged or not
-        mask = self._get_mask(out_X.shape[0])
+        mask = self._get_mask(out_X.shape[0], out_X.device)
         num_valid = mask.sum().long()
 
         if num_valid > 0:
@@ -103,17 +103,19 @@ class Transform(torch.nn.Module):
             else:
                 out_y[mask] = tr_y
 
+        # potentially remove empty batch dimension again
+        out_X = out_X.reshape_as(X)
         if y is not None:
-            return out_X.reshape_as(X), out_y
+            return out_X, out_y
         else:
-            return out_X.reshape_as(X)
+            return out_X
 
-    def _get_mask(self, batch_size=None) -> torch.Tensor:
+    def _get_mask(self, batch_size, device) -> torch.Tensor:
         """Samples whether to apply operation or not over the whole batch
         """
         return torch.as_tensor(
             self.probability > self.rng.uniform(size=batch_size)
-        )
+        ).to(device)
 
     @property
     def probability(self):

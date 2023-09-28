@@ -62,6 +62,7 @@ Bugs
 - Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
 - Fix skorch version issue (:gh:`465` by `Marco Zamboni`_)
 - Fix wrong `kernel_size` dtype when running torchinfo in :class:`braindecode.models.USleep` (:gh:`538` by `Maciej Śliwowski`_)
+- Fix bug when using GPU and channel shuffle transform (:gh:`546` by `Robin Tibor Schirrmeister`_)
 
 API changes
 ~~~~~~~~~~~
