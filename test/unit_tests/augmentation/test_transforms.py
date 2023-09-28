@@ -46,7 +46,7 @@ def time_aranged_batch(batch_size=5):
     X = torch.stack(
         [torch.stack([torch.arange(50, device=device)] * 64)] * batch_size
     ).float()
-    return X, torch.zeros(batch_size)
+    return X, torch.zeros(batch_size, device=device)
 
 
 @pytest.fixture
@@ -150,7 +150,7 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
         X = torch.ones(batch_size, *shape, device=device)
     nb_zero_rows = int(round(X.shape[1] * zeros_ratio))
     X[:, :nb_zero_rows, :] *= 0
-    return X, torch.zeros(batch_size)
+    return X, torch.zeros(batch_size, device=device)
 
 
 @pytest.mark.parametrize("p_drop", [0.25, 0.5])

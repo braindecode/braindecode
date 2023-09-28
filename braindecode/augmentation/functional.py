@@ -231,15 +231,11 @@ def _make_permutation_matrix(X, mask, random_state):
         batch_size, n_channels, n_channels, device=X.device
     )
     for b, mask in enumerate(hard_mask):
-        channels_to_shuffle = torch.arange(n_channels)
+        channels_to_shuffle = torch.arange(n_channels, device=X.device)
         channels_to_shuffle = channels_to_shuffle[mask.bool()]
-        channels_permutation = np.arange(n_channels)
-        channels_permutation[channels_to_shuffle] = rng.permutation(
-            channels_to_shuffle
-        )
-        channels_permutation = torch.as_tensor(
-            channels_permutation, dtype=torch.int64, device=X.device
-        )
+        reordered_channels = torch.tensor(rng.permutation(channels_to_shuffle.cpu()), device=X.device)
+        channels_permutation = torch.arange(n_channels, device=X.device)
+        channels_permutation[channels_to_shuffle] = reordered_channels
         batch_permutations[b, ...] = one_hot(channels_permutation)
     return batch_permutations
 
