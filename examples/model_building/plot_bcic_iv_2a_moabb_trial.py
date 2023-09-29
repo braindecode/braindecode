@@ -343,7 +343,7 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 
 from braindecode.pretrained import initialize_model
 
-model = initialize_model('ShallowFBCSPNet', weights_id=f'{dataset_name}_{subject_id}')
+model = initialize_model('ShallowFBCSPNet', weights_id=f'{dataset_name}_S{subject_id}')
 
 clf = EEGClassifier(
     model,
