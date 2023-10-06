@@ -294,7 +294,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                             bias=True, ))
 
         if self.add_log_softmax:
-            self.add_module("logsoftmax", nn.LogSoftmax(dim=1))
+            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 
