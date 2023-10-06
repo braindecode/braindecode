@@ -106,7 +106,8 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         the corresponding subdirectories already exist, a ``FileExistsError``
         will be raised.
     n_jobs : int | None
-        Number of jobs for parallel execution.
+        Number of jobs for parallel execution. See `joblib.Parallel` for
+        a more detailed explanation.
 
     Returns
     -------
@@ -125,7 +126,7 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
-    parallel_processing = (n_jobs is not None) and (n_jobs > 1)
+    parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
     list_of_ds = Parallel(n_jobs=n_jobs)(
         delayed(_preprocess)(
