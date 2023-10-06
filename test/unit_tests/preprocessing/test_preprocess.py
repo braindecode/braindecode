@@ -300,7 +300,7 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
 @pytest.mark.parametrize('kind', ['raw', 'windows'])
 @pytest.mark.parametrize('save', [True, False])
 @pytest.mark.parametrize('overwrite', [True, False])
-@pytest.mark.parametrize('n_jobs', [1, 2, None])
+@pytest.mark.parametrize('n_jobs', [-1, 1, 2, None])
 def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
                              kind, save, overwrite, n_jobs):
     preproc_kwargs = [
