@@ -5,7 +5,7 @@
 #          Valentin Iovene <val@too.gy>
 # License: BSD (3-clause)
 
-from typing import List, Tuple, Any, Optional, Union, Callable
+from typing import List, Tuple, Any, Optional, Union, Callable, TypeAlias
 from numbers import Real
 
 from sklearn.utils import check_random_state
@@ -16,10 +16,17 @@ from torch.utils.data._utils.collate import default_collate
 
 from .functional import identity
 
-Batch = List[Tuple[torch.Tensor, int, Any]]
-Output = Union[
+Batch: TypeAlias = List[Tuple[torch.Tensor, int, Any]]
+Output: TypeAlias = Union[
     torch.Tensor,
     Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]]
+]
+Operation: TypeAlias = Callable[
+    [torch.Tensor, torch.Tensor], 
+    Tuple[
+        torch.Tensor, 
+        Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+    ]
 ]
 
 
@@ -40,9 +47,7 @@ class Transform(torch.nn.Module):
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
-    operation: Callable[[torch.Tensor, torch.Tensor], Tuple[
-        torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-    ]]
+    operation: Operation
 
     def __init__(self, probability=1.0, random_state=None):
         super().__init__()
