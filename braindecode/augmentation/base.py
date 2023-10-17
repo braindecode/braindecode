@@ -5,7 +5,7 @@
 #          Valentin Iovene <val@too.gy>
 # License: BSD (3-clause)
 
-from typing import List, Tuple, Any, Optional, Union, Callable, TypeAlias
+from typing import List, Tuple, Any, Optional, Union, Callable
 from numbers import Real
 
 from sklearn.utils import check_random_state
@@ -16,12 +16,15 @@ from torch.utils.data._utils.collate import default_collate
 
 from .functional import identity
 
-Batch: TypeAlias = List[Tuple[torch.Tensor, int, Any]]
-Output: TypeAlias = Union[
+Batch = List[Tuple[torch.Tensor, int, Any]]
+Output = Union[
+    # just outputing X
     torch.Tensor,
+    # outputing (X, y) where y can be a tensor or tuple of tensors
     Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]]
 ]
-Operation: TypeAlias = Callable[
+# (X, y) -> (X', y') where y' can be a tensor or a tuple of tensors
+Operation = Callable[
     [torch.Tensor, torch.Tensor], 
     Tuple[
         torch.Tensor, 
