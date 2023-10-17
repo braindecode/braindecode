@@ -25,9 +25,9 @@ Output = Union[
 ]
 # (X, y) -> (X', y') where y' can be a tensor or a tuple of tensors
 Operation = Callable[
-    [torch.Tensor, torch.Tensor], 
+    [torch.Tensor, torch.Tensor],
     Tuple[
-        torch.Tensor, 
+        torch.Tensor,
         Union[torch.Tensor, Tuple[torch.Tensor, ...]]
     ]
 ]
