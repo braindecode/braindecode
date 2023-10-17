@@ -56,6 +56,7 @@ Enhancements
 - Standardizing models' last layer names (:gh:`520` by `Bruna Lopes`_ and `Pierre Guetschel`_)
 - Add basic training example with MNE epochs (:gh:`539` by `Pierre Guetschel`_)
 - Log validation accuracy in :class:`braindecode.EEGClassifier` (:gh:`541` by `Pierre Guetschel`_)
+- Better type hints in :mod:`braindecode.augmentation.base` (:gh:`551` by `Valentin Iovene`_)
 
 Bugs
 ~~~~
@@ -238,3 +239,4 @@ Authors
 .. _Bruna Lopes: https://github.com/brunaafl
 .. _Sylvain Chevallier: https://github.com/sylvchev
 .. _Remi Delbouys: https://github.com/remidbs
+.. _Valentin Iovene: https://github.com/tgy
