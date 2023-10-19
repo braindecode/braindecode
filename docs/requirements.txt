@@ -7,3 +7,4 @@ pillow
 ipython
 sphinx_design
 docstring_inheritance
+huggingface_hub

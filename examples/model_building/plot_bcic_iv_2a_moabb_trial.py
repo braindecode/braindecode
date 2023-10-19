@@ -39,7 +39,8 @@ labels (e.g., Right Hand, Left Hand, etc.).
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset_name = 'BNCI2014001'
+dataset = MOABBDataset(dataset_name=dataset_name, subject_ids=[subject_id])
 
 
 ######################################################################
@@ -330,6 +331,46 @@ labels = [k for k, v in sorted(label_dict.items(), key=lambda kv: kv[1])]
 # plot the basic conf. matrix
 plot_confusion_matrix(confusion_mat, class_names=labels)
 
+
+##############################################################
+# Using a pre-trained model
+# -----------------------------------------------
+#
+
+##############################################################
+# Fetch the specific model from hugging face
+#
+
+from braindecode.pretrained import initialize_model
+
+model = initialize_model('ShallowFBCSPNet', weights_id=f'{dataset_name}_S{subject_id}')
+
+clf = EEGClassifier(
+    model,
+    device=device,
+)
+clf.initialize()
+########################################################################
+# Plot the confusion matrix using predictions from the pre-trained model
+#
+
+
+# generate confusion matrices
+# get the targets
+y_true = valid_set.get_metadata().target
+y_pred = clf.predict(valid_set)
+
+# generating confusion matrix
+confusion_mat = confusion_matrix(y_true, y_pred)
+
+# add class labels
+# label_dict is class_name : str -> i_class : int
+label_dict = valid_set.datasets[0].windows.event_id.items()
+# sort the labels by values (values are integer class labels)
+labels = list(dict(sorted(list(label_dict), key=lambda kv: kv[1])).keys())
+
+# plot the basic conf. matrix
+plot_confusion_matrix(confusion_mat, class_names=labels)
 #############################################################
 #
 #

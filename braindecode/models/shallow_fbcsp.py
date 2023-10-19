@@ -9,6 +9,7 @@ from torch.nn import init
 from .base import EEGModuleMixin, deprecated_args
 from .functions import safe_log, square, squeeze_final_output
 from .modules import CombinedConv, Ensure4d, Expression
+from ..weights import Weights, WeightsEnum
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -212,3 +213,15 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             init.constant_(self.bnorm.bias, 0)
         init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
         init.constant_(self.final_layer.conv_classifier.bias, 0)
+
+
+class ShallowFBCSPNetWeights(WeightsEnum):
+    BNCI2014001_S1 = Weights(path='BNCI2014001/1')
+    BNCI2014001_S2 = Weights(path="BNCI2014001/2")
+    BNCI2014001_S3 = Weights(path='BNCI2014001/3')
+    BNCI2014001_S4 = Weights(path='BNCI2014001/4')
+    BNCI2014001_S5 = Weights(path='BNCI2014001/5')
+    BNCI2014001_S6 = Weights(path="BNCI2014001/6")
+    BNCI2014001_S7 = Weights(path='BNCI2014001/7')
+    BNCI2014001_S8 = Weights(path="BNCI2014001/8")
+    BNCI2014001_S9 = Weights(path='BNCI2014001/9')
