@@ -45,7 +45,8 @@ dependencies = [
     'torch',
 	 'einops',
 	 'joblib',
-	 'torchinfo'
+	 'torchinfo',
+	 'docstring_inheritance'
 ]
 
 [project.optional-dependencies]
@@ -65,7 +66,6 @@ docs = [
 	 'pillow',
 	 'ipython',
 	 'sphinx_design',
-	 'docstring_inheritance',
     'lightning',
 	 'seaborn'
 ]
