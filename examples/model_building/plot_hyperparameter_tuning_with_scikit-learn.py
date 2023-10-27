@@ -172,12 +172,12 @@ windows_dataset = create_windows_from_events(
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select
-# ``session_T`` for training and ``session_E`` for evaluation.
+# ``0train`` for training and ``1test`` for evaluation.
 #
 
 splitted = windows_dataset.split('session')
-train_set = splitted['session_T']
-eval_set = splitted['session_E']
+train_set = splitted['0train']  # Session train
+eval_set = splitted['1test']  # Session evaluation
 
 ######################################################################
 # Create model

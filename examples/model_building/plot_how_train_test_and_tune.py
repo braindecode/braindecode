@@ -181,7 +181,7 @@ windows_dataset = create_windows_from_events(
 ######################################################################
 # We can easily split the dataset BCIC IV 2a dataset using additional
 # info stored in the description attribute, in this case the ``session``
-# column. We select ``session_T`` for training and ``session_E`` for testing.
+# column. We select ``0train`` for training and ``0test`` for testing.
 # For other datasets, you might have to choose another column and/or column.
 #
 # .. note::
