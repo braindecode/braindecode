@@ -412,7 +412,7 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
     """Create a sample plot for training, validation, testing."""
 
-    bd_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF",]
+    bd_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF", ]
 
     n_train, n_val, n_test = len(train_subset), len(val_subset), len(test_set)
     ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
@@ -508,7 +508,7 @@ print(
 def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
     """Create a sample plot for training, validation, testing."""
 
-    bd_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF",]
+    bd_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF", ]
 
     ax.barh("Original\nDataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
 

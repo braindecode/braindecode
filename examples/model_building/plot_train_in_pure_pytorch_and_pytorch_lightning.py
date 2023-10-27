@@ -196,7 +196,7 @@ if cuda:
 #
 
 splitted = windows_dataset.split("session")
-train_set = splitted['0train'] # Session train
+train_set = splitted['0train']  # Session train
 test_set = splitted['1test']  # Session evaluation
 
 ######################################################################
