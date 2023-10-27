@@ -192,8 +192,8 @@ windows_dataset = create_windows_from_events(
 #
 
 splitted = windows_dataset.split("session")
-train_set = splitted["session_T"]
-test_set = splitted["session_E"]
+train_set = splitted['0train']  # Session train
+test_set = splitted['1test']  # Session evaluation
 
 
 ######################################################################
