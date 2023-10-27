@@ -15,17 +15,17 @@ jobs:
       fail-fast: false
       matrix:
         os: [ "ubuntu-latest", "macos-latest", "windows-latest" ]
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.8", "3.9", "3.10", "3.11"]
     steps:
     ## Install Braindecode
     - name: Checking Out Repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
     # Cache MNE Data
     # The cache key here is fixed except for os
     # so if you download a new mne dataset in the code, best to manually increment the key below
     - name: Create/Restore MNE Data Cache
       id: cache-mne_data
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/mne_data
         key: ${{ runner.os }}-v3

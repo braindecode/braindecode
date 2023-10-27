@@ -202,8 +202,8 @@ def test_split_dataset(concat_ds_targets):
     splits = concat_ds.split(split_ids)
     assert len(splits) == len(split_ids)
     assert splits.keys() == split_ids.keys()
-    assert (splits["train"].description["run"] == "run_1").all()
-    assert (splits["test"].description["run"] == "run_2").all()
+    assert (splits["train"].description["run"] == "1").all()
+    assert (splits["test"].description["run"] == "2").all()
 
 
 def test_metadata(concat_windows_dataset):

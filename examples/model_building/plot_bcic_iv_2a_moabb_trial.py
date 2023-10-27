@@ -39,7 +39,7 @@ labels (e.g., Right Hand, Left Hand, etc.).
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 
 ######################################################################
@@ -131,12 +131,12 @@ windows_dataset = create_windows_from_events(
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select
-# ``session_T`` for training and ``session_E`` for validation.
+# ``T`` for training and ``test`` for validation.
 #
 
 splitted = windows_dataset.split('session')
-train_set = splitted['session_T']
-valid_set = splitted['session_E']
+train_set = splitted['0train']  # Session train
+valid_set = splitted['1test']  # Session evaluation
 
 
 ######################################################################

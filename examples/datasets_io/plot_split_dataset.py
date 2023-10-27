@@ -48,7 +48,7 @@ dataset.description
 
 splits = dataset.split("run")
 print(splits)
-splits["run_4"].description
+splits["4"].description
 
 ###############################################################################
 # By row index

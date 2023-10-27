@@ -88,7 +88,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 from numpy import multiply
 
@@ -107,16 +107,18 @@ init_block_size = 1000
 factor = 1e6
 
 preprocessors = [
-    Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
+    Preprocessor('pick_types', eeg=True, meg=False, stim=False),
+    # Keep EEG sensors
     Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-    Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
+    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),
+    # Bandpass filter
+    Preprocessor(exponential_moving_standardize,
+                 # Exponential moving standardization
                  factor_new=factor_new, init_block_size=init_block_size)
 ]
 
 # Transform the data
 preprocess(dataset, preprocessors, n_jobs=-1)
-
 
 ######################################################################
 # Create model and compute windowing parameters
@@ -134,7 +136,6 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 #
 
 input_window_samples = 1000
-
 
 ######################################################################
 # Now we create the model. To enable it to be used in cropped decoding
@@ -181,14 +182,12 @@ print(model)
 if cuda:
     _ = model.cuda()
 
-
 ######################################################################
 # And now we transform model with strides to a model that outputs dense
 # prediction, so we can use it to obtain predictions for all
 # crops.
 #
 model.to_dense_prediction_model()
-
 
 ######################################################################
 # To know the models’ output shape without the last layer, we calculate the
@@ -227,7 +226,6 @@ windows_dataset = create_windows_from_events(
     preload=True
 )
 
-
 ######################################################################
 # Split the dataset
 # -----------------
@@ -236,9 +234,8 @@ windows_dataset = create_windows_from_events(
 #
 
 splitted = windows_dataset.split('session')
-train_set = splitted['session_T']
-valid_set = splitted['session_E']
-
+train_set = splitted['0train']  # Session train
+valid_set = splitted['1test']  # Session evaluation
 
 ######################################################################
 # Training
@@ -285,7 +282,8 @@ clf = EEGClassifier(
     iterator_train__shuffle=True,
     batch_size=batch_size,
     callbacks=[
-        "accuracy", ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        "accuracy",
+        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
     classes=classes,
@@ -293,7 +291,6 @@ clf = EEGClassifier(
 # Model training for a specified number of epochs. `y` is None as it is already supplied
 # in the dataset.
 _ = clf.fit(train_set, y=None, epochs=n_epochs)
-
 
 ######################################################################
 # Plot Results
@@ -309,7 +306,8 @@ import pandas as pd
 from matplotlib.lines import Line2D
 
 # Extract loss and accuracy values for plotting from history object
-results_columns = ['train_loss', 'valid_loss', 'train_accuracy', 'valid_accuracy']
+results_columns = ['train_loss', 'valid_loss', 'train_accuracy',
+                   'valid_accuracy']
 df = pd.DataFrame(clf.history[:, results_columns], columns=results_columns,
                   index=clf.history[:, 'epoch'])
 
@@ -319,7 +317,8 @@ df = df.assign(train_misclass=100 - 100 * df.train_accuracy,
 
 fig, ax1 = plt.subplots(figsize=(8, 3))
 df.loc[:, ['train_loss', 'valid_loss']].plot(
-    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14)
+    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False,
+    fontsize=14)
 
 ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
 ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
@@ -335,11 +334,12 @@ ax1.set_xlabel("Epoch", fontsize=14)
 
 # where some data has already been plotted to ax
 handles = []
-handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
-handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
+handles.append(
+    Line2D([0], [0], color='black', linewidth=1, linestyle='-', label='Train'))
+handles.append(
+    Line2D([0], [0], color='black', linewidth=1, linestyle=':', label='Valid'))
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14)
 plt.tight_layout()
-
 
 ######################################################################
 # Plot Confusion Matrix

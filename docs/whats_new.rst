@@ -57,6 +57,7 @@ Enhancements
 - Add basic training example with MNE epochs (:gh:`539` by `Pierre Guetschel`_)
 - Log validation accuracy in :class:`braindecode.EEGClassifier` (:gh:`541` by `Pierre Guetschel`_)
 - Better type hints in :mod:`braindecode.augmentation.base` (:gh:`551` by `Valentin Iovene`_)
+- Support for MOABB 1.0.0 and switch to pyproject.toml (:gh:`553` by `Sylvain Chevallier`_)
 
 Bugs
 ~~~~

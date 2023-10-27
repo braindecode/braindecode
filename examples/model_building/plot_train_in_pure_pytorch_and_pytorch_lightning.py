@@ -73,7 +73,7 @@ The goal of this tutorial is to present braindecode in the PyTorch perpective.
 from braindecode.datasets import MOABBDataset
 
 subject_id = 3
-dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
+dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 ######################################################################
 # Preprocessing, the offline transformation of the raw dataset
@@ -185,7 +185,7 @@ if cuda:
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case the ``session`` column. We
-# select ``session_T`` for training and ``session_E`` for testing.
+# select ``Train`` for training and ``test`` for testing.
 # For other datasets, you might have to choose another column.
 #
 # .. note::
@@ -196,8 +196,8 @@ if cuda:
 #
 
 splitted = windows_dataset.split("session")
-train_set = splitted["session_T"]
-test_set = splitted["session_E"]
+train_set = splitted['0train']  # Session train
+test_set = splitted['1test']  # Session evaluation
 
 ######################################################################
 # Option 1: Pure PyTorch training loop
