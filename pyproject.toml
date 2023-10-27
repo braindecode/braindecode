@@ -11,17 +11,17 @@ maintainers = [
 license = {text = "BSD-3-Clause"}
 keywords = [
     "python",
-	 "deep-learning",
-	 "neuroscience",
-	 "pytorch",
-	 "meg",
-	 "eeg",
-	 "neuroimaging",
-	 "electroencephalography",
-	 "magnetoencephalography",
-	 "electrocorticography",
-	 "ecog",
-	 "electroencephalogram"
+	"deep-learning",
+	"neuroscience",
+	"pytorch",
+	"meg",
+	"eeg",
+	"neuroimaging",
+	"electroencephalography",
+	"magnetoencephalography",
+	"electrocorticography",
+	"ecog",
+	"electroencephalogram"
 ]
 classifiers=[
     'Development Status :: 3 - Alpha',
@@ -35,18 +35,18 @@ classifiers=[
 
 requires-python = ">=3.8"
 dependencies = [
-    'mne',
-	 'numpy',
-	 'pandas',
-	 'scipy',
-	 'matplotlib',
-	 'h5py',
-	 'skorch',
-    'torch',
-	 'einops',
-	 'joblib',
-	 'torchinfo',
-	 'docstring_inheritance'
+	'mne',
+	'numpy',
+	'pandas',
+	'scipy',
+	'matplotlib',
+	'h5py',
+	'skorch',
+	'torch',
+	'einops',
+	'joblib',
+	'torchinfo',
+	'docstring_inheritance'
 ]
 
 [project.optional-dependencies]
@@ -54,23 +54,25 @@ moabb = ["moabb >= 1.0.0"]
 tests = [
     'pytest',
     'pytest-cov',
-	 'codecov',
-	 'pytest_cases'
+	'codecov',
+	'pytest_cases'
 ]
 docs = [
     'sphinx_gallery',
-	 'sphinx_rtd_theme',
-	 'pydata_sphinx_theme',
-	 'numpydoc',
-	 'memory_profiler',
-	 'pillow',
-	 'ipython',
-	 'sphinx_design',
-    'lightning',
-	 'seaborn'
+	'sphinx_rtd_theme',
+	'pydata_sphinx_theme',
+	'numpydoc',
+	'memory_profiler',
+	'pillow',
+	'ipython',
+	'sphinx_design',
+	'lightning',
+	'seaborn'
 ]
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+py-modules = []
