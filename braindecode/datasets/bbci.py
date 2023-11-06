@@ -71,7 +71,7 @@ class BBCIDataset(object):
             ch_types = ["eeg"] * len(wanted_chan_inds)
         else:
             warnings.warn("Setting to misc channel type as channel type not known")
-            # Assume we cant know channel type here automatically
+            # Assume we can't know channel type here automatically
             ch_types = ["misc"] * len(wanted_chan_inds)
         info = mne.create_info(
             ch_names=wanted_sensor_names, sfreq=fs, ch_types=ch_types

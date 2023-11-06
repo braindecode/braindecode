@@ -42,7 +42,7 @@ When inside the cloned braindecode folder, we add the upstream remote like this:
 
 ```
 git remote add upstream git@github.com:braindecode/braindecode.git
-``` 
+```
 
 (change the url for https if you used that in the step before)
 
@@ -97,7 +97,8 @@ You can look at the documentation by opening `docs/_build/html/index.html` in yo
 From within your local repository, run
 
 ```
-flake8
+pre-commit install
+pre-commit run pre -a
 ```
 
 There should be an empty output as there should be no style mistakes.
@@ -120,7 +121,7 @@ Don't forget to activate your conda environment that you installed braindecode i
 
 ```
 conda activate braindecode
-``` 
+```
 
 ### Create a local branch for your contribution
 
@@ -147,8 +148,8 @@ Make sure to follow the model conventions, and to properly document and test you
 
 If you want to contribute by adding a new model,
 you should be aware that the Braindecode models must all follow certain conventions,
-otherwise, your model will fail some tests. 
-Please follow the detailed guide on *Adding a model to Braindecode* provided at 
+otherwise, your model will fail some tests.
+Please follow the detailed guide on *Adding a model to Braindecode* provided at
 [the end of this document](#adding-a-model-to-braindecode).
 
 #### Write Tests
@@ -164,7 +165,7 @@ the future.
 Please try to make sure that your tests run reasonably fast (<5 sec).
 
 For more complex functionality like an entire training pipeline, we have tests under `test/acceptance_tests`.
-You may add another file there if needed. Theses tests may also run a bit longer.
+You may add another file there if needed. These tests may also run a bit longer.
 Make sure your test passes by running:
 `pytest test/<yourtestfilepath>`
 Also before pushing, make sure to run all tests with:
@@ -182,7 +183,7 @@ follows:
 
 ```
 from .xy import create_from_X_y
-``` 
+```
 
 Also add your function to `docs/api.rst` under the appropriate submodule.
 For example the `create_from_X_y` function is added here:
@@ -447,13 +448,13 @@ Explaining the template and internal convention:
 
    ```python
    from einops.layers.torch import Rearrange
-   
-   
+
+
    def __init__(self, ...):
        # ... (model definition)
        self.dimshuffle = Rearrange("batch C T -> batch T C")
-   
-   
+
+
    def forward(self, X):
        X = self.dimshuffle(X)
        # ... (forward pass implementation)
@@ -477,4 +478,3 @@ Explaining the template and internal convention:
    regression tasks.
 
 Alternatively, you can implement your model as a `nn.Sequential`. All the above notes still hold in that case.
-

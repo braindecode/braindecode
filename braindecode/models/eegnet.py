@@ -312,7 +312,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
         n_filters_2 = 4
-        # keras padds unequal padding more in front, so padding
+        # keras pads unequal padding more in front, so padding
         # too large should be ok.
         # Not padding in time so that cropped training makes sense
         # https://stackoverflow.com/questions/43994604/padding-with-even-kernel-size-in-a-convolutional-layer-in-keras-theano
@@ -385,7 +385,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
 
 
 def _glorot_weight_zero_bias(model):
-    """Initalize parameters of all modules by initializing weights with
+    """Initialize parameters of all modules by initializing weights with
     glorot
      uniform/xavier initialization, and setting biases to zero. Weights from
      batch norm layers are set to 1.

@@ -26,7 +26,7 @@ def trial_preds_from_window_preds(
 
     Parameters
     ----------
-    preds: list of ndarrays (atleast 2darrays)
+    preds: list of ndarrays (at least 2darrays)
         List of window predictions, in each window prediction
          time is in axis=1
     i_window_in_trials: list

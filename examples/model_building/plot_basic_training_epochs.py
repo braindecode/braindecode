@@ -105,7 +105,7 @@ print(epochs)
 # and that we have some fake data, it is time to train the model!
 #
 # .. note::
-#    `Skorch <https://skorch.readthedocs.io>`_  is a library that allows you to wrapp
+#    `Skorch <https://skorch.readthedocs.io>`_  is a library that allows you to wrap
 #    any PyTorch module into a scikit-learn-compatible classifier or regressor.
 #    Braindecode provides wrappers that inherit form the original Skorch ones and simply
 #    implement a few additional features that facilitate the use of Braindecode models.

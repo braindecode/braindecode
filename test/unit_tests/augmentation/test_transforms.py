@@ -40,7 +40,7 @@ from braindecode.augmentation.transforms import _get_standard_10_20_positions
 @pytest.fixture
 def time_aranged_batch(batch_size=5):
     """Generates a batch of size 1, where the feature matrix has 64 repeated
-    rows of integers aranged between 0 and 49.
+    rows of integers arranged between 0 and 49.
     """
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     X = torch.stack(
@@ -52,7 +52,7 @@ def time_aranged_batch(batch_size=5):
 @pytest.fixture
 def ch_aranged_batch(time_aranged_batch):
     """Generates a batch of size 1, where the feature matrix has 50 repeated
-    columns of integers aranged between 0 and 63.
+    columns of integers arranged between 0 and 63.
     """
     X, y = time_aranged_batch
     return X.transpose(1, 2), y

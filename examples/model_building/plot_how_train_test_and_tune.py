@@ -69,7 +69,7 @@ and one for the two different hyperparameter tuning methods.
 # .. warning::
 #    You might recognize that the accuracy gets better throughout
 #    the experiments of this tutorial. The reason behind that is that
-#    we always use the same model with the same paramters in every
+#    we always use the same model with the same parameters in every
 #    segment to keep the tutorial short and readable. If you do your
 #    own experiments you always have to reinitialize the model before
 #    training.
@@ -545,12 +545,12 @@ plot_k_fold(ax, cv=train_val_split, all_dataset=windows_dataset,
 ######################################################################
 # One way to do hyperparameter tuning is to run each configuration
 # manually (via Option 2 or 3 from above) and compare the validation
-# performance afterwards. In the early stages of your developement
+# performance afterwards. In the early stages of your development
 # process this might be sufficient to get a rough understanding of
 # how your hyperparameter should look like for your model to converge.
 # However, this manual tuning process quickly becomes messy as the
 # number of hyperparameters you want to (jointly) tune increases.
-# Therefore you sould automate this process. We will present two
+# Therefore you should, automate this process. We will present two
 # different options, analogous to Option 2 and 3 from above.
 #
 
@@ -632,4 +632,4 @@ train_val_split = KFold(n_splits=5, shuffle=False)
 # .. [3] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
-#        Hum. Brain Mapp., 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.

@@ -414,7 +414,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         filtered = raw.copy()
         filtered.filter(l_freq=l_freq, h_freq=h_freq, **mne_filter_kwargs)
         # mne automatically changes the highpass/lowpass info values
-        # when applying filters and channels cant be added if they have
+        # when applying filters and channels can't be added if they have
         # different such parameters. Not needed when making picks as
         # high pass is not modified by filter if pick is specified
 

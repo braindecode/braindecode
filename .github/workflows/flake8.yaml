@@ -1,5 +1,5 @@
 name: flake8-codestyle
-on: [pull_request]   
+on: [pull_request]
 
 jobs:
   Flake8-Codestyle-Check:

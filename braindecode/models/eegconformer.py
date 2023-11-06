@@ -19,7 +19,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     The paper and original code with more details about the methodological
     choices are available at the [Song2022]_ and [ConformerCode]_.
 
-    This neural network architecture recieves a traditional braindecode input.
+    This neural network architecture receives a traditional braindecode input.
     The input shape should be three-dimensional matrix representing the EEG
     signals.
 
@@ -33,7 +33,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     Notes
     -----
     The authors recommend using data augmentation before using Conformer,
-    e.g. sementation and recombination,
+    e.g. segmentation and recombination,
     Please refer to the original paper and code for more details.
 
     The model was initially tuned on 4 seconds of 250 Hz data.
