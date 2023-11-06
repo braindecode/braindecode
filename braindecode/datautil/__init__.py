@@ -48,6 +48,3 @@ def __getattr__(name):
         return windowers.__dict__[name]
 
     raise AttributeError("No possible import named " + name)
-
-
-__all_ = ["save_concat_dataset", "load_concat_dataset", "_check_save_dir_empty"]
