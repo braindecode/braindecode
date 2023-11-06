@@ -67,7 +67,8 @@ docs = [
 	'ipython',
 	'sphinx_design',
 	'lightning',
-	'seaborn'
+	'seaborn',
+	'pre-commit'
 ]
 
 [build-system]
