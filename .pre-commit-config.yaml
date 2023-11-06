@@ -37,12 +37,6 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501]
 
-  -   repo: https://github.com/asottile/blacken-docs
-      rev: 1.15.0
-      hooks:
-      -   id: blacken-docs
-          exclude: ^.github/
-
 #  - repo: https://github.com/pycqa/pydocstyle
 #    rev: 6.3.0
 #    hooks:
