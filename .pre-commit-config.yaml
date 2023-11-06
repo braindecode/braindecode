@@ -37,12 +37,12 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
 
-#  - repo: https://github.com/pycqa/pydocstyle
-#    rev: 6.3.0
-#    hooks:
-#    -   id: pydocstyle
-#        args:
-#          - --ignore=D100,D203,D405
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+    -   id: pydocstyle
+        args:
+          - --ignore=D100,D203,D405
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.5
