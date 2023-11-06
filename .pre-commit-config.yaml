@@ -53,4 +53,4 @@ repos:
           - --skip="./.*,*.csv,*.json,*.ambr"
           - --quiet-level=2
         exclude_types: [csv, json]
-        exclude: ^tests/|generated/
+        exclude: ^tests/|generated/^.github
