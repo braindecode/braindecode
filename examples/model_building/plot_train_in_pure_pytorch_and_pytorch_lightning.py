@@ -14,7 +14,7 @@ defining a model, and other details which are not exclusive to this page (compar
 `Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
-The goal of this tutorial is to present braindecode in the PyTorch perpective.
+The goal of this tutorial is to present braindecode in the PyTorch perceptive.
 
 .. contents:: This example covers:
    :local:
