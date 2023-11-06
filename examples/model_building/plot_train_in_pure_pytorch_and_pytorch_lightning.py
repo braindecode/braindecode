@@ -358,7 +358,7 @@ for epoch in range(1, n_epochs + 1):
 # Option 2: Train it with PyTorch Lightning
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # .. image:: https://upload.wikimedia.org/wikipedia/commons/e/e6/Lightning_Logo_v2.png
-#    :alt: Pytorch Lighting logo
+#    :alt: Pytorch Lightning logo
 
 ######################################################################
 # Alternatively, lightning provides a nice interface around torch modules
