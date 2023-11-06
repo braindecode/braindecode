@@ -395,7 +395,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
     order_by_frequency_band: bool
         If True will return channels ordered by frequency bands, so if there
         are channels Cz, O1 and filterbank ranges [(4,8), (8,13)], returned
-        channels will be [Cz_4-8, O1_4-8, Cz_8-13, O1_8-13]. If False, ordered
+        channels will be [Cz_4-8, O1_4-8, Cz_8-13, O1_8-13]. If False, order
         will be [Cz_4-8, Cz_8-13, O1_4-8, O1_8-13].
     mne_filter_kwargs: dict
         Keyword arguments for filtering supported by mne.io.Raw.filter().
