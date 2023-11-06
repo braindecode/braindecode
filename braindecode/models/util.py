@@ -76,7 +76,9 @@ def get_output_shape(model, in_chans, input_window_samples):
     """
     with torch.no_grad():
         dummy_input = torch.ones(
-            1, in_chans, input_window_samples,
+            1,
+            in_chans,
+            input_window_samples,
             dtype=next(model.parameters()).dtype,
             device=next(model.parameters()).device,
         )
@@ -106,13 +108,15 @@ def _pad_shift_array(x, stride=1):
     """
     if x.ndim != 3:
         raise NotImplementedError(
-            'x must be of shape (n_rows, n_classes, n_windows), got '
-            f'{x.shape}')
+            "x must be of shape (n_rows, n_classes, n_windows), got " f"{x.shape}"
+        )
     x_padded = np.pad(x, ((0, 0), (0, 0), (0, (x.shape[0] - 1) * stride)))
     orig_strides = x_padded.strides
-    new_strides = (orig_strides[0] - stride * orig_strides[2],
-                   orig_strides[1],
-                   orig_strides[2])
+    new_strides = (
+        orig_strides[0] - stride * orig_strides[2],
+        orig_strides[1],
+        orig_strides[2],
+    )
     return np.lib.stride_tricks.as_strided(x_padded, strides=new_strides)
 
 
@@ -160,6 +164,8 @@ models_dict = {}
 
 def _init_models_dict():
     for m in inspect.getmembers(models, inspect.isclass):
-        if (issubclass(m[1], models.base.EEGModuleMixin)
-                and m[1] != models.base.EEGModuleMixin):
+        if (
+            issubclass(m[1], models.base.EEGModuleMixin)
+            and m[1] != models.base.EEGModuleMixin
+        ):
             models_dict[m[0]] = m[1]

@@ -22,9 +22,25 @@ from .transforms import (
 
 from . import functional
 
-__all__ = ["Transform", "IdentityTransform", "Compose", "AugmentedDataLoader",
-           "TimeReverse", "SignFlip", "FTSurrogate", "ChannelsShuffle",
-           "ChannelsDropout", "GaussianNoise", "ChannelsSymmetry",
-           "SmoothTimeMask", "BandstopFilter", "FrequencyShift",
-           "SensorsRotation", "SensorsZRotation", "SensorsYRotation",
-           "SensorsXRotation", "Mixup", "functional"]
+__all__ = [
+    "Transform",
+    "IdentityTransform",
+    "Compose",
+    "AugmentedDataLoader",
+    "TimeReverse",
+    "SignFlip",
+    "FTSurrogate",
+    "ChannelsShuffle",
+    "ChannelsDropout",
+    "GaussianNoise",
+    "ChannelsSymmetry",
+    "SmoothTimeMask",
+    "BandstopFilter",
+    "FrequencyShift",
+    "SensorsRotation",
+    "SensorsZRotation",
+    "SensorsYRotation",
+    "SensorsXRotation",
+    "Mixup",
+    "functional",
+]

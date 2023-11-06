@@ -7,7 +7,6 @@ from braindecode.datasets.xy import create_from_X_y
 
 
 def test_crops_data_loader_explicit():
-
     X = np.arange(0, 15)
     y = [0]
 
@@ -18,11 +17,12 @@ def test_crops_data_loader_explicit():
     expected_crops = [np.arange(0, 10), np.arange(4, 14), np.arange(5, 15)]
 
     dataset = create_from_X_y(
-        X[None, None], y,
+        X[None, None],
+        y,
         sfreq=sfreq,
         window_size_samples=n_time_in,
         window_stride_samples=n_time_out,
-        drop_last_window=False
+        drop_last_window=False,
     )
 
     Xs, ys, i_s = zip(*list(dataset))

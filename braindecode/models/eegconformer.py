@@ -86,33 +86,33 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-            self,
-            n_outputs=None,
-            n_chans=None,
-            n_filters_time=40,
-            filter_time_length=25,
-            pool_time_length=75,
-            pool_time_stride=15,
-            drop_prob=0.5,
-            att_depth=6,
-            att_heads=10,
-            att_drop_prob=0.5,
-            final_fc_length=2440,
-            return_features=False,
-            n_times=None,
-            chs_info=None,
-            input_window_seconds=None,
-            sfreq=None,
-            n_classes=None,
-            n_channels=None,
-            input_window_samples=None,
-            add_log_softmax=True,
+        self,
+        n_outputs=None,
+        n_chans=None,
+        n_filters_time=40,
+        filter_time_length=25,
+        pool_time_length=75,
+        pool_time_stride=15,
+        drop_prob=0.5,
+        att_depth=6,
+        att_heads=10,
+        att_drop_prob=0.5,
+        final_fc_length=2440,
+        return_features=False,
+        n_times=None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+        n_classes=None,
+        n_channels=None,
+        input_window_samples=None,
+        add_log_softmax=True,
     ):
         n_outputs, n_chans, n_times = deprecated_args(
             self,
-            ('n_classes', 'n_outputs', n_classes, n_outputs),
-            ('n_channels', 'n_chans', n_channels, n_chans),
-            ('input_window_samples', 'n_times', input_window_samples, n_times)
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("n_channels", "n_chans", n_channels, n_chans),
+            ("input_window_samples", "n_times", input_window_samples, n_times),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -124,16 +124,19 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             add_log_softmax=add_log_softmax,
         )
         self.mapping = {
-            'classification_head.fc.6.weight': 'final_layer.final_layer.0.weight',
-            'classification_head.fc.6.bias': 'final_layer.final_layer.0.bias'
+            "classification_head.fc.6.weight": "final_layer.final_layer.0.weight",
+            "classification_head.fc.6.bias": "final_layer.final_layer.0.bias",
         }
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes, n_channels, input_window_samples
         if not (self.n_chans <= 64):
-            warnings.warn("This model has only been tested on no more " +
-                          "than 64 channels. no guarantee to work with " +
-                          "more channels.", UserWarning)
+            warnings.warn(
+                "This model has only been tested on no more "
+                + "than 64 channels. no guarantee to work with "
+                + "more channels.",
+                UserWarning,
+            )
 
         self.patch_embedding = _PatchEmbedding(
             n_filters_time=n_filters_time,
@@ -141,7 +144,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_channels=self.n_chans,
             pool_time_length=pool_time_length,
             stride_avg_pool=pool_time_stride,
-            drop_prob=drop_prob)
+            drop_prob=drop_prob,
+        )
 
         if final_fc_length == "auto":
             assert self.n_times is not None
@@ -151,14 +155,16 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             att_depth=att_depth,
             emb_size=n_filters_time,
             att_heads=att_heads,
-            att_drop=att_drop_prob)
+            att_drop=att_drop_prob,
+        )
 
-        self.fc = _FullyConnected(
-            final_fc_length=final_fc_length)
+        self.fc = _FullyConnected(final_fc_length=final_fc_length)
 
-        self.final_layer = _FinalLayer(n_classes=self.n_outputs,
-                                       return_features=return_features,
-                                       add_log_softmax=self.add_log_softmax)
+        self.final_layer = _FinalLayer(
+            n_classes=self.n_outputs,
+            return_features=return_features,
+            add_log_softmax=self.add_log_softmax,
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
@@ -169,10 +175,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         return x
 
     def get_fc_size(self):
-
-        out = self.patch_embedding(torch.ones((1, 1,
-                                               self.n_chans,
-                                               self.n_times)))
+        out = self.patch_embedding(torch.ones((1, 1, self.n_chans, self.n_times)))
         size_embedding_1 = out.cpu().data.numpy().shape[1]
         size_embedding_2 = out.cpu().data.numpy().shape[2]
 
@@ -207,26 +210,23 @@ class _PatchEmbedding(nn.Module):
     """
 
     def __init__(
-            self,
-            n_filters_time,
-            filter_time_length,
-            n_channels,
-            pool_time_length,
-            stride_avg_pool,
-            drop_prob,
+        self,
+        n_filters_time,
+        filter_time_length,
+        n_channels,
+        pool_time_length,
+        stride_avg_pool,
+        drop_prob,
     ):
         super().__init__()
 
         self.shallownet = nn.Sequential(
-            nn.Conv2d(1, n_filters_time,
-                      (1, filter_time_length), (1, 1)),
-            nn.Conv2d(n_filters_time, n_filters_time,
-                      (n_channels, 1), (1, 1)),
+            nn.Conv2d(1, n_filters_time, (1, filter_time_length), (1, 1)),
+            nn.Conv2d(n_filters_time, n_filters_time, (n_channels, 1), (1, 1)),
             nn.BatchNorm2d(num_features=n_filters_time),
             nn.ELU(),
             nn.AvgPool2d(
-                kernel_size=(1, pool_time_length),
-                stride=(1, stride_avg_pool)
+                kernel_size=(1, pool_time_length), stride=(1, stride_avg_pool)
             ),
             # pooling acts as slicing to obtain 'patch' along the
             # time dimension as in ViT
@@ -258,15 +258,9 @@ class _MultiHeadAttention(nn.Module):
         self.projection = nn.Linear(emb_size, emb_size)
 
     def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
-        queries = rearrange(
-            self.queries(x), "b n (h d) -> b h n d", h=self.num_heads
-        )
-        keys = rearrange(
-            self.keys(x), "b n (h d) -> b h n d", h=self.num_heads
-        )
-        values = rearrange(
-            self.values(x), "b n (h d) -> b h n d", h=self.num_heads
-        )
+        queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
+        keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
+        values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
         energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
         if mask is not None:
             fill_value = torch.finfo(torch.float32).min
@@ -317,8 +311,7 @@ class _TransformerEncoderBlock(nn.Sequential):
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
                     _FeedForwardBlock(
-                        emb_size, expansion=forward_expansion,
-                        drop_p=att_drop
+                        emb_size, expansion=forward_expansion, drop_p=att_drop
                     ),
                     nn.Dropout(att_drop),
                 )
@@ -354,9 +347,14 @@ class _TransformerEncoder(nn.Sequential):
 
 
 class _FullyConnected(nn.Module):
-    def __init__(self, final_fc_length,
-                 drop_prob_1=0.5, drop_prob_2=0.3, out_channels=256,
-                 hidden_channels=32):
+    def __init__(
+        self,
+        final_fc_length,
+        drop_prob_1=0.5,
+        drop_prob_2=0.3,
+        out_channels=256,
+        hidden_channels=32,
+    ):
         """Fully-connected layer for the transformer encoder.
 
         Parameters
@@ -396,7 +394,9 @@ class _FullyConnected(nn.Module):
 
 
 class _FinalLayer(nn.Module):
-    def __init__(self, n_classes, hidden_channels=32, return_features=False, add_log_softmax=True):
+    def __init__(
+        self, n_classes, hidden_channels=32, return_features=False, add_log_softmax=True
+    ):
         """Classification head for the transformer encoder.
 
         Parameters

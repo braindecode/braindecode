@@ -45,8 +45,8 @@ from braindecode.datasets import SleepPhysionet
 subject_ids = [0, 1]
 crop = (0, 30 * 400)  # we only keep 400 windows of 30s to speed example
 dataset = SleepPhysionet(
-    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30,
-    crop=crop)
+    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30, crop=crop
+)
 
 ######################################################################
 # Preprocessing
@@ -74,12 +74,12 @@ preprocess(dataset, preprocessors)
 from braindecode.preprocessing import create_windows_from_events
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    'Sleep stage W': 0,
-    'Sleep stage 1': 1,
-    'Sleep stage 2': 2,
-    'Sleep stage 3': 3,
-    'Sleep stage 4': 3,
-    'Sleep stage R': 4,
+    "Sleep stage W": 0,
+    "Sleep stage 1": 1,
+    "Sleep stage 2": 2,
+    "Sleep stage 3": 3,
+    "Sleep stage 4": 3,
+    "Sleep stage R": 4,
 }
 
 window_size_s = 30
@@ -142,7 +142,7 @@ import numpy as np
 from sklearn.utils import compute_class_weight
 
 y_train = [train_set[idx][1][1] for idx in train_sampler]
-class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
 
 ######################################################################
 # Create model
@@ -157,7 +157,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import USleep
 
 cuda = torch.cuda.is_available()  # check if GPU is available
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda" if torch.cuda.is_available() else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to roughly reproduce results
@@ -178,7 +178,7 @@ model = USleep(
     depth=12,
     with_skip_connection=True,
     n_outputs=n_classes,
-    n_times=input_size_samples
+    n_times=input_size_samples,
 )
 
 # Send model to GPU
@@ -220,19 +220,16 @@ def balanced_accuracy_multi(model, X, y):
 train_bal_acc = EpochScoring(
     scoring=balanced_accuracy_multi,
     on_train=True,
-    name='train_bal_acc',
+    name="train_bal_acc",
     lower_is_better=False,
 )
 valid_bal_acc = EpochScoring(
     scoring=balanced_accuracy_multi,
     on_train=False,
-    name='valid_bal_acc',
+    name="valid_bal_acc",
     lower_is_better=False,
 )
-callbacks = [
-    ('train_bal_acc', train_bal_acc),
-    ('valid_bal_acc', valid_bal_acc)
-]
+callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
 
 clf = EEGClassifier(
     model,
@@ -271,12 +268,12 @@ import pandas as pd
 df = pd.DataFrame(clf.history.to_list())
 df.index.name = "Epoch"
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-df[['train_loss', 'valid_loss']].plot(color=['r', 'b'], ax=ax1)
-df[['train_bal_acc', 'valid_bal_acc']].plot(color=['r', 'b'], ax=ax2)
-ax1.set_ylabel('Loss')
-ax2.set_ylabel('Balanced accuracy')
-ax1.legend(['Train', 'Valid'])
-ax2.legend(['Train', 'Valid'])
+df[["train_loss", "valid_loss"]].plot(color=["r", "b"], ax=ax1)
+df[["train_bal_acc", "valid_bal_acc"]].plot(color=["r", "b"], ax=ax2)
+ax1.set_ylabel("Loss")
+ax2.set_ylabel("Balanced accuracy")
+ax1.legend(["Train", "Valid"])
+ax2.legend(["Train", "Valid"])
 fig.tight_layout()
 plt.show()
 
@@ -290,8 +287,9 @@ y_pred = clf.predict(valid_set)
 
 confusion_mat = confusion_matrix(y_true.flatten(), y_pred.flatten())
 
-plot_confusion_matrix(confusion_mat=confusion_mat,
-                      class_names=['Wake', 'N1', 'N2', 'N3', 'REM'])
+plot_confusion_matrix(
+    confusion_mat=confusion_mat, class_names=["Wake", "N1", "N2", "N3", "REM"]
+)
 
 print(classification_report(y_true.flatten(), y_pred.flatten()))
 
@@ -304,10 +302,10 @@ print(classification_report(y_true.flatten(), y_pred.flatten()))
 import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots(figsize=(15, 5))
-ax.plot(y_true.flatten(), color='b', label='Expert annotations')
-ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)
-ax.set_xlabel('Time (epochs)')
-ax.set_ylabel('Sleep stage')
+ax.plot(y_true.flatten(), color="b", label="Expert annotations")
+ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
+ax.set_xlabel("Time (epochs)")
+ax.set_ylabel("Sleep stage")
 
 ######################################################################
 # Our model was able to learn, as shown by the decreasing training and

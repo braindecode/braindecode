@@ -52,29 +52,38 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            sfreq=None,
-            n_conv_chs=8,
-            time_conv_size_s=0.5,
-            max_pool_size_s=0.125,
-            pad_size_s=0.25,
-            input_window_seconds=30,
-            n_outputs=5,
-            dropout=0.25,
-            apply_batch_norm=False,
-            return_feats=False,
-            chs_info=None,
-            n_times=None,
-            n_channels=None,
-            input_size_s=None,
-            n_classes=None,
+        self,
+        n_chans=None,
+        sfreq=None,
+        n_conv_chs=8,
+        time_conv_size_s=0.5,
+        max_pool_size_s=0.125,
+        pad_size_s=0.25,
+        input_window_seconds=30,
+        n_outputs=5,
+        dropout=0.25,
+        apply_batch_norm=False,
+        return_feats=False,
+        chs_info=None,
+        n_times=None,
+        n_channels=None,
+        input_size_s=None,
+        n_classes=None,
     ):
-        n_chans, n_outputs, input_window_seconds, = deprecated_args(
+        (
+            n_chans,
+            n_outputs,
+            input_window_seconds,
+        ) = deprecated_args(
             self,
             ("n_channels", "n_chans", n_channels, n_chans),
             ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_size_s", "input_window_seconds", input_size_s, input_window_seconds),
+            (
+                "input_size_s",
+                "input_window_seconds",
+                input_size_s,
+                input_window_seconds,
+            ),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -89,7 +98,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
 
         self.mapping = {
             "fc.1.weight": "final_layer.1.weight",
-            "fc.1.bias": "final_layer.1.bias"
+            "fc.1.bias": "final_layer.1.bias",
         }
 
         time_conv_size = np.ceil(time_conv_size_s * self.sfreq).astype(int)
@@ -102,17 +111,16 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(
-                1, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
+            nn.Conv2d(1, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
             batch_norm(n_conv_chs),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
-                n_conv_chs, n_conv_chs, (1, time_conv_size),
-                padding=(0, pad_size)),
+                n_conv_chs, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)
+            ),
             batch_norm(n_conv_chs),
             nn.ReLU(),
-            nn.MaxPool2d((1, max_pool_size))
+            nn.MaxPool2d((1, max_pool_size)),
         )
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self.return_feats = return_feats
@@ -127,8 +135,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()
         with torch.no_grad():
-            out = self.feature_extractor(
-                torch.Tensor(1, 1, n_channels, input_size))
+            out = self.feature_extractor(torch.Tensor(1, 1, n_channels, input_size))
         self.feature_extractor.train()
         return len(out.flatten())
 

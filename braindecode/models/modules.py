@@ -353,6 +353,4 @@ class CombinedConv(nn.Module):
             if self.bias_spat:
                 bias += self.conv_spat.bias
 
-        return F.conv2d(
-            x, weight=combined_weight, bias=bias, stride=(1, 1)
-        )
+        return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))

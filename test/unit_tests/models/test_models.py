@@ -229,9 +229,9 @@ def test_tcn(input_sizes):
 
 def test_eegitnet(input_sizes):
     model = EEGITNet(
-        n_outputs=input_sizes['n_classes'],
-        n_chans=input_sizes['n_channels'],
-        n_times=input_sizes['n_in_times'],
+        n_outputs=input_sizes["n_classes"],
+        n_chans=input_sizes["n_channels"],
+        n_times=input_sizes["n_in_times"],
     )
 
     check_forward_pass(
@@ -243,9 +243,9 @@ def test_eegitnet(input_sizes):
 @pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
 def test_eeginception_erp(input_sizes, model_cls):
     model = model_cls(
-        n_outputs=input_sizes['n_classes'],
-        n_chans=input_sizes['n_channels'],
-        n_times=input_sizes['n_in_times'],
+        n_outputs=input_sizes["n_classes"],
+        n_chans=input_sizes["n_channels"],
+        n_times=input_sizes["n_in_times"],
     )
 
     check_forward_pass(
@@ -277,13 +277,16 @@ def test_eeginception_erp_n_params(model_cls):
 def test_eeginception_mi(input_sizes):
     sfreq = 250
     model = EEGInceptionMI(
-        n_outputs=input_sizes['n_classes'],
-        n_chans=input_sizes['n_channels'],
-        input_window_seconds=input_sizes['n_in_times'] / sfreq,
+        n_outputs=input_sizes["n_classes"],
+        n_chans=input_sizes["n_channels"],
+        input_window_seconds=input_sizes["n_in_times"] / sfreq,
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(
+        model,
+        input_sizes,
+    )
 
 
 @pytest.mark.parametrize(
@@ -303,7 +306,7 @@ def test_eeginception_mi_binary_n_params(n_filter, reported):
     model = EEGInceptionMI(
         n_chans=3,
         n_outputs=2,
-        input_window_seconds=3.,  # input_time
+        input_window_seconds=3.0,  # input_time
         sfreq=250,
         n_convs=3,
         n_filters=n_filter,
@@ -319,13 +322,16 @@ def test_atcnet(input_sizes):
     sfreq = 250
     input_sizes["n_in_times"] = 1125
     model = ATCNet(
-        n_chans=input_sizes['n_channels'],
-        n_outputs=input_sizes['n_classes'],
-        input_window_seconds=input_sizes['n_in_times'] / sfreq,
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
+        input_window_seconds=input_sizes["n_in_times"] / sfreq,
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(
+        model,
+        input_sizes,
+    )
 
 
 def test_atcnet_n_params():
@@ -432,9 +438,16 @@ def test_usleep_n_params():
     using the same architecture hyperparameters.
     """
     model = USleep(
-        n_chans=2, sfreq=128, depth=12, n_time_filters=5,
-        complexity_factor=1.67, with_skip_connection=True, n_outputs=5,
-        input_window_seconds=30, time_conv_size_s=9 / 128)
+        n_chans=2,
+        sfreq=128,
+        depth=12,
+        n_time_filters=5,
+        complexity_factor=1.67,
+        with_skip_connection=True,
+        n_outputs=5,
+        input_window_seconds=30,
+        time_conv_size_s=9 / 128,
+    )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 3114337  # From paper's supplementary materials, Table 2
@@ -447,8 +460,13 @@ def test_sleep_stager_return_feats():
     n_classes = 3
 
     model = SleepStagerChambon2018(
-        n_channels, sfreq, n_conv_chs=8, input_window_seconds=input_size_s,
-        n_outputs=n_classes, return_feats=True)
+        n_channels,
+        sfreq,
+        n_conv_chs=8,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
+        return_feats=True,
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -479,9 +497,11 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_examples = 10
 
     model = SleepStagerEldele2021(
-        sfreq=sfreq, n_outputs=n_classes,
+        sfreq=sfreq,
+        n_outputs=n_classes,
         input_window_seconds=input_size_s,
-        d_model=d_model, return_feats=False,
+        d_model=d_model,
+        return_feats=False,
     )
     model.eval()
 
@@ -500,8 +520,10 @@ def test_eldele_2021_feats():
     n_examples = 10
 
     model = SleepStagerEldele2021(
-      sfreq, input_window_seconds=input_size_s, n_outputs=n_classes,
-      return_feats=True,
+        sfreq,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
+        return_feats=True,
     )
     model.eval()
 
@@ -522,8 +544,11 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     n_examples = 10
 
     model = SleepStagerBlanco2020(
-        n_chans=n_channels, sfreq=sfreq, n_groups=n_groups,
-        input_window_seconds=input_size_s, n_outputs=n_classes,
+        n_chans=n_channels,
+        sfreq=sfreq,
+        n_groups=n_groups,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
         return_feats=False,
     )
     model.eval()
@@ -548,8 +573,11 @@ def test_blanco_2020_feats():
     n_examples = 10
 
     model = SleepStagerBlanco2020(
-      n_channels, sfreq, input_window_seconds=input_size_s,
-      n_outputs=n_classes, return_feats=True,
+        n_channels,
+        sfreq,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
+        return_feats=True,
     )
     model.eval()
 

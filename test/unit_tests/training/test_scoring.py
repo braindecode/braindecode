@@ -43,16 +43,13 @@ class MockSkorchNet:
         return self
 
     def predict(self, X):
-        return np.concatenate(
-            [to_numpy(x.argmax(1)) for x in self.forward_iter(X)], 0
-        )
+        return np.concatenate([to_numpy(x.argmax(1)) for x in self.forward_iter(X)], 0)
 
     def get_iterator(self, X_test, training):
         return DataLoader(X_test, batch_size=2)
 
 
 def test_cropped_trial_epoch_scoring():
-
     dataset_train = None
     # Definition of test cases
     predictions_cases = [
@@ -81,29 +78,36 @@ def test_cropped_trial_epoch_scoring():
     ]
     expected_accuracies_cases = [0.25, 0.75]
 
-    window_inds = [(
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    ), (
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    )]
+    window_inds = [
+        (
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),
+        (
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),
+    ]
 
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
     ):
         dataset_valid = create_from_X_y(
-            np.zeros((4, 1, 10)), np.concatenate(y_true),
-            sfreq=100, window_size_samples=10, window_stride_samples=4,
-            drop_last_window=False)
+            np.zeros((4, 1, 10)),
+            np.concatenate(y_true),
+            sfreq=100,
+            window_size_samples=10,
+            window_stride_samples=4,
+            drop_last_window=False,
+        )
 
         mock_skorch_net = MockSkorchNet()
         cropped_trial_epoch_scoring = CroppedTrialEpochScoring(
-            "accuracy", on_train=False)
-        mock_skorch_net.callbacks_ = [(
-            "", cropped_trial_epoch_scoring)]
+            "accuracy", on_train=False
+        )
+        mock_skorch_net.callbacks_ = [("", cropped_trial_epoch_scoring)]
         cropped_trial_epoch_scoring.initialize()
         cropped_trial_epoch_scoring.y_preds_ = [
             to_tensor(predictions[:2], device="cpu"),
@@ -116,9 +120,7 @@ def test_cropped_trial_epoch_scoring():
             mock_skorch_net, dataset_train, dataset_valid
         )
 
-        np.testing.assert_almost_equal(
-            mock_skorch_net.history[0]["accuracy"], accuracy
-        )
+        np.testing.assert_almost_equal(mock_skorch_net.history[0]["accuracy"], accuracy)
 
 
 def test_cropped_trial_epoch_scoring_none_x_test():
@@ -133,16 +135,18 @@ def test_cropped_trial_epoch_scoring_none_x_test():
         ]
     )
     y_true = [torch.tensor([0, 0]), torch.tensor([1, 1])]
-    window_inds = [(
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    ),
+    window_inds = [
         (
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    )]
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),
+        (
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),
+    ]
     cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy")
     cropped_trial_epoch_scoring.initialize()
     cropped_trial_epoch_scoring.y_preds_ = [
@@ -153,8 +157,7 @@ def test_cropped_trial_epoch_scoring_none_x_test():
     cropped_trial_epoch_scoring.window_inds_ = window_inds
 
     mock_skorch_net = MockSkorchNet()
-    mock_skorch_net.callbacks_ = [(
-        "", cropped_trial_epoch_scoring)]
+    mock_skorch_net.callbacks_ = [("", cropped_trial_epoch_scoring)]
     output = cropped_trial_epoch_scoring.on_epoch_end(
         mock_skorch_net, dataset_train, dataset_valid
     )
@@ -162,7 +165,6 @@ def test_cropped_trial_epoch_scoring_none_x_test():
 
 
 def test_cropped_time_series_trial_epoch_scoring():
-
     dataset_train = None
     # Definition of test cases
     predictions_cases = [
@@ -196,28 +198,36 @@ def test_cropped_time_series_trial_epoch_scoring():
     y_true_cases[1] = torch.tensor(y_true_cases[1][0]).split(2)
     expected_accuracies_cases = [0.25, 0.75]
 
-    window_inds = [(
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    ), (
-        torch.tensor([0, 0]),  # i_window_in_trials
-        [None],  # won't be used
-        torch.tensor([4, 4]),  # i_window_stops
-    )]
+    window_inds = [
+        (
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),
+        (
+            torch.tensor([0, 0]),  # i_window_in_trials
+            [None],  # won't be used
+            torch.tensor([4, 4]),  # i_window_stops
+        ),
+    ]
 
     for predictions, y_true, accuracy in zip(
         predictions_cases, y_true_cases, expected_accuracies_cases
     ):
         dataset_valid = create_from_X_y(
-            np.zeros((4, 1, 10)), np.concatenate(y_true), sfreq=100,
-            window_size_samples=10, window_stride_samples=4, drop_last_window=False)
+            np.zeros((4, 1, 10)),
+            np.concatenate(y_true),
+            sfreq=100,
+            window_size_samples=10,
+            window_stride_samples=4,
+            drop_last_window=False,
+        )
 
         mock_skorch_net = MockSkorchNet()
         cropped_trial_epoch_scoring = CroppedTimeSeriesEpochScoring(
-            "accuracy", on_train=False)
-        mock_skorch_net.callbacks_ = [(
-            "", cropped_trial_epoch_scoring)]
+            "accuracy", on_train=False
+        )
+        mock_skorch_net.callbacks_ = [("", cropped_trial_epoch_scoring)]
         cropped_trial_epoch_scoring.initialize()
         cropped_trial_epoch_scoring.y_preds_ = [
             to_tensor(predictions[:2], device="cpu"),
@@ -230,9 +240,7 @@ def test_cropped_time_series_trial_epoch_scoring():
             mock_skorch_net, dataset_train, dataset_valid
         )
 
-        np.testing.assert_almost_equal(
-            mock_skorch_net.history[0]["accuracy"], accuracy
-        )
+        np.testing.assert_almost_equal(mock_skorch_net.history[0]["accuracy"], accuracy)
 
 
 def test_post_epoch_train_scoring():
@@ -313,9 +321,7 @@ def test_post_epoch_train_scoring():
             ),
             (
                 "train_f1_score",
-                PostEpochTrainScoring(
-                    "f1", lower_is_better=False, name="train_f1"
-                ),
+                PostEpochTrainScoring("f1", lower_is_better=False, name="train_f1"),
             ),
             ("test_callback", TestCallback()),
         ],
@@ -333,14 +339,24 @@ def _check_preds_windows_trials(preds, window_inds, expected_trial_preds):
         i_window_in_trials.append(i_window_in_trial)
         i_stop_in_trials.append(i_stop_in_trial)
     trial_preds = trial_preds_from_window_preds(
-        preds, i_window_in_trials, i_stop_in_trials)
-    np.testing.assert_equal(len(trial_preds), len(expected_trial_preds),)
+        preds, i_window_in_trials, i_stop_in_trials
+    )
+    np.testing.assert_equal(
+        len(trial_preds),
+        len(expected_trial_preds),
+    )
     for expected_pred, actual_pred in zip(expected_trial_preds, trial_preds):
-        np.testing.assert_array_equal(actual_pred, expected_pred, )
+        np.testing.assert_array_equal(
+            actual_pred,
+            expected_pred,
+        )
 
 
 def test_two_windows_same_trial_with_overlap():
-    preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], ]
+    preds = [
+        [[4, 5, 6, 7]],
+        [[6, 7, 8, 9]],
+    ]
     window_inds = ((0, 0, 8), (1, 2, 10))
     expected_trial_preds = [[[4, 5, 6, 7, 8, 9]]]
     _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
@@ -348,7 +364,15 @@ def test_two_windows_same_trial_with_overlap():
 
 def test_three_windows_two_trials_with_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    window_inds = ((0, 0, 8), (1, 2, 10), (0, 0, 6,))
+    window_inds = (
+        (0, 0, 8),
+        (1, 2, 10),
+        (
+            0,
+            0,
+            6,
+        ),
+    )
     expected_trial_preds = [[[4, 5, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
     _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
@@ -362,14 +386,22 @@ def test_one_window_one_trial():
 
 def test_three_windows_two_trials_no_overlap():
     preds = [[[4, 5, 6, 7]], [[6, 7, 8, 9]], [[0, 1, 2, 3]]]
-    window_inds = ((0, 0, 8), (1, 4, 12), (0, 0, 6,))
+    window_inds = (
+        (0, 0, 8),
+        (1, 4, 12),
+        (
+            0,
+            0,
+            6,
+        ),
+    )
     expected_trial_preds = [[[4, 5, 6, 7, 6, 7, 8, 9]], [[0, 1, 2, 3]]]
     _check_preds_windows_trials(preds, window_inds, expected_trial_preds)
 
 
 def test_predict_trials():
-    ds = MOABBDataset('BNCI2014001', subject_ids=1)
-    ds1 = ds.split([0])['0']
+    ds = MOABBDataset("BNCI2014001", subject_ids=1)
+    ds1 = ds.split([0])["0"]
 
     # determine original trial size
     windows_ds1 = create_windows_from_events(
@@ -388,7 +420,7 @@ def test_predict_trials():
     )
 
     in_chans = windows_ds1[0][0].shape[0]
-    n_classes = len(windows_ds1.get_metadata()['target'].unique())
+    n_classes = len(windows_ds1.get_metadata()["target"].unique())
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
@@ -407,14 +439,15 @@ def test_predict_trials():
     assert preds.shape[1] == n_classes
     assert preds.shape[0] == targets.shape[0]
     metadata = windows_ds1.get_metadata()
-    expected_targets = metadata[metadata['i_window_in_trial'] == 0][
-        'target'].values
+    expected_targets = metadata[metadata["i_window_in_trial"] == 0]["target"].values
     np.testing.assert_array_equal(expected_targets, targets)
 
     # some model, trialwise data
     windows_ds2 = create_windows_from_events(ds1)
-    with pytest.warns(UserWarning, match='This function was designed to predict'
-                                         ' trials from cropped datasets.'):
+    with pytest.warns(
+        UserWarning,
+        match="This function was designed to predict" " trials from cropped datasets.",
+    ):
         predict_trials(model, windows_ds2)
 
     # cropped EEGClassifier, cropped data
@@ -431,8 +464,11 @@ def test_predict_trials():
     clf.predict_trials(windows_ds1, return_targets=True)
 
     # cropped EEGClassifier, trialwise data
-    with pytest.warns(UserWarning, match="This method was designed to predict "
-                                         "trials in cropped mode. Calling it "
-                                         "when cropped is False will give the "
-                                         "same result as '.predict'."):
+    with pytest.warns(
+        UserWarning,
+        match="This method was designed to predict "
+        "trials in cropped mode. Calling it "
+        "when cropped is False will give the "
+        "same result as '.predict'.",
+    ):
         clf.predict_trials(windows_ds2)

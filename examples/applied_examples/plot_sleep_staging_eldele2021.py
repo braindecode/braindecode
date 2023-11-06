@@ -34,8 +34,8 @@ from braindecode.datasets import SleepPhysionet
 subject_ids = [0, 1]
 crop = (0, 30 * 400)  # we only keep 400 windows of 30s to speed example
 dataset = SleepPhysionet(
-    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30,
-    crop=crop)
+    subject_ids=subject_ids, recording_ids=[2], crop_wake_mins=30, crop=crop
+)
 
 ######################################################################
 # Preprocessing
@@ -53,7 +53,7 @@ factor = 1e6
 
 preprocessors = [
     Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    Preprocessor('filter', l_freq=None, h_freq=high_cut_hz)
+    Preprocessor("filter", l_freq=None, h_freq=high_cut_hz),
 ]
 
 # Transform the data
@@ -70,12 +70,12 @@ preprocess(dataset, preprocessors)
 from braindecode.preprocessing import create_windows_from_events
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    'Sleep stage W': 0,
-    'Sleep stage 1': 1,
-    'Sleep stage 2': 2,
-    'Sleep stage 3': 3,
-    'Sleep stage 4': 3,
-    'Sleep stage R': 4
+    "Sleep stage W": 0,
+    "Sleep stage 1": 1,
+    "Sleep stage 2": 2,
+    "Sleep stage 3": 3,
+    "Sleep stage 4": 3,
+    "Sleep stage R": 4,
 }
 
 window_size_s = 30
@@ -90,7 +90,7 @@ windows_dataset = create_windows_from_events(
     window_stride_samples=window_size_samples,
     picks="Fpz-Cz",  # the other option is Pz-Oz,
     preload=True,
-    mapping=mapping
+    mapping=mapping,
 )
 
 ######################################################################
@@ -141,8 +141,8 @@ train_sampler = SequenceSampler(
 valid_sampler = SequenceSampler(valid_set.get_metadata(), n_windows, n_windows_stride)
 
 # Print number of examples per class
-print('Training examples: ', len(train_sampler))
-print('Validation examples: ', len(valid_sampler))
+print("Training examples: ", len(train_sampler))
+print("Validation examples: ", len(valid_sampler))
 
 ######################################################################
 # We also implement a transform to extract the label of the center window of a
@@ -170,7 +170,7 @@ valid_set.target_transform = get_center_label
 from sklearn.utils import compute_class_weight
 
 y_train = [train_set[idx][1] for idx in train_sampler]
-class_weights = compute_class_weight('balanced', classes=np.unique(y_train), y=y_train)
+class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y_train)
 
 ######################################################################
 # Create model
@@ -189,7 +189,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerEldele2021, TimeDistributed
 
 cuda = torch.cuda.is_available()  # check if GPU is available
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = "cuda" if torch.cuda.is_available() else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to reproduce results
@@ -211,8 +211,8 @@ model = nn.Sequential(
     nn.Sequential(  # apply linear layer on concatenated feature vectors
         nn.Flatten(start_dim=1),
         nn.Dropout(0.5),
-        nn.Linear(feat_extractor.len_last_layer * n_windows, n_classes)
-    )
+        nn.Linear(feat_extractor.len_last_layer * n_windows, n_classes),
+    ),
 )
 
 # Send model to GPU
@@ -239,15 +239,18 @@ batch_size = 32
 n_epochs = 3  # we use few epochs for speed and but more than one for plotting
 
 train_bal_acc = EpochScoring(
-    scoring='balanced_accuracy', on_train=True, name='train_bal_acc',
-    lower_is_better=False)
+    scoring="balanced_accuracy",
+    on_train=True,
+    name="train_bal_acc",
+    lower_is_better=False,
+)
 valid_bal_acc = EpochScoring(
-    scoring='balanced_accuracy', on_train=False, name='valid_bal_acc',
-    lower_is_better=False)
-callbacks = [
-    ('train_bal_acc', train_bal_acc),
-    ('valid_bal_acc', valid_bal_acc)
-]
+    scoring="balanced_accuracy",
+    on_train=False,
+    name="valid_bal_acc",
+    lower_is_better=False,
+)
+callbacks = [("train_bal_acc", train_bal_acc), ("valid_bal_acc", valid_bal_acc)]
 
 clf = EEGClassifier(
     model,
@@ -262,7 +265,7 @@ clf = EEGClassifier(
     batch_size=batch_size,
     callbacks=callbacks,
     device=device,
-    classes=np.unique(y_train)
+    classes=np.unique(y_train),
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
@@ -283,12 +286,12 @@ import pandas as pd
 df = pd.DataFrame(clf.history.to_list())
 df.index.name = "Epoch"
 fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 7), sharex=True)
-df[['train_loss', 'valid_loss']].plot(color=['r', 'b'], ax=ax1)
-df[['train_bal_acc', 'valid_bal_acc']].plot(color=['r', 'b'], ax=ax2)
-ax1.set_ylabel('Loss')
-ax2.set_ylabel('Balanced accuracy')
-ax1.legend(['Train', 'Valid'])
-ax2.legend(['Train', 'Valid'])
+df[["train_loss", "valid_loss"]].plot(color=["r", "b"], ax=ax1)
+df[["train_bal_acc", "valid_bal_acc"]].plot(color=["r", "b"], ax=ax2)
+ax1.set_ylabel("Loss")
+ax2.set_ylabel("Balanced accuracy")
+ax1.legend(["Train", "Valid"])
+ax2.legend(["Train", "Valid"])
 fig.tight_layout()
 plt.show()
 
@@ -318,10 +321,10 @@ print(classification_report(y_true, y_pred))
 import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots(figsize=(15, 5))
-ax.plot(y_true, color='b', label='Expert annotations')
-ax.plot(y_pred.flatten(), color='r', label='Predict annotations', alpha=0.5)
-ax.set_xlabel('Time (epochs)')
-ax.set_ylabel('Sleep stage')
+ax.plot(y_true, color="b", label="Expert annotations")
+ax.plot(y_pred.flatten(), color="r", label="Predict annotations", alpha=0.5)
+ax.set_xlabel("Time (epochs)")
+ax.set_ylabel("Sleep stage")
 
 ######################################################################
 # The model was able to learn despite the low amount of data that was available

@@ -61,7 +61,10 @@ from memory_profiler import memory_usage
 
 from braindecode.datasets import SleepPhysionet
 from braindecode.preprocessing import (
-    preprocess, Preprocessor, create_fixed_length_windows)
+    preprocess,
+    Preprocessor,
+    create_fixed_length_windows,
+)
 
 
 ###############################################################################
@@ -80,27 +83,36 @@ def prepare_data(n_recs, save, preload, n_jobs):
 
     # (1) Load the data
     concat_ds = SleepPhysionet(
-        subject_ids=range(n_recs), recording_ids=[1], crop_wake_mins=30,
-        preload=preload)
-    sfreq = concat_ds.datasets[0].raw.info['sfreq']
+        subject_ids=range(n_recs), recording_ids=[1], crop_wake_mins=30, preload=preload
+    )
+    sfreq = concat_ds.datasets[0].raw.info["sfreq"]
 
     # (2) Preprocess the continuous data
     preprocessors = [
-        Preprocessor('crop', tmin=10),
-        Preprocessor('filter', l_freq=None, h_freq=30)
+        Preprocessor("crop", tmin=10),
+        Preprocessor("filter", l_freq=None, h_freq=30),
     ]
-    preprocess(concat_ds, preprocessors, save_dir=save_dir, overwrite=True,
-               n_jobs=n_jobs)
+    preprocess(
+        concat_ds, preprocessors, save_dir=save_dir, overwrite=True, n_jobs=n_jobs
+    )
 
     # (3) Window the data
     windows_ds = create_fixed_length_windows(
-        concat_ds, 0, None, int(30 * sfreq), int(30 * sfreq), True,
-        preload=preload, n_jobs=n_jobs)
+        concat_ds,
+        0,
+        None,
+        int(30 * sfreq),
+        int(30 * sfreq),
+        True,
+        preload=preload,
+        n_jobs=n_jobs,
+    )
 
     # Preprocess the windowed data
     preprocessors = [Preprocessor(scale, channel_wise=True)]
-    preprocess(windows_ds, preprocessors, save_dir=save_dir, overwrite=True,
-               n_jobs=n_jobs)
+    preprocess(
+        windows_ds, preprocessors, save_dir=save_dir, overwrite=True, n_jobs=n_jobs
+    )
 
 
 ###############################################################################
@@ -120,20 +132,21 @@ all_n_jobs = [1, 2]  # Number of parallel processes
 
 results = list()
 for _, n_recs, save, n_jobs in product(
-        range(n_repets), [all_n_recs], [True, False], all_n_jobs):
-
+    range(n_repets), [all_n_recs], [True, False], all_n_jobs
+):
     start = time.time()
-    mem = max(memory_usage(
-        proc=(prepare_data, [n_recs, save, False, n_jobs], {})))
+    mem = max(memory_usage(proc=(prepare_data, [n_recs, save, False, n_jobs], {})))
     time_taken = time.time() - start
 
-    results.append({
-        'n_recs': n_recs,
-        'max_mem': mem,
-        'save': save,
-        'n_jobs': n_jobs,
-        'time': time_taken
-    })
+    results.append(
+        {
+            "n_recs": n_recs,
+            "max_mem": mem,
+            "save": save,
+            "n_jobs": n_jobs,
+            "time": time_taken,
+        }
+    )
 
 
 ###############################################################################
@@ -142,16 +155,22 @@ for _, n_recs, save, n_jobs in product(
 df = pd.DataFrame(results)
 
 fig, ax = plt.subplots(figsize=(6, 4))
-colors = {True: 'tab:orange', False: 'tab:blue'}
-markers = {n: m for n, m in zip(all_n_jobs, ['o', 'x', '.'])}
-for (save, n_jobs), sub_df in df.groupby(['save', 'n_jobs']):
-    ax.scatter(x=sub_df['time'], y=sub_df['max_mem'], color=colors[save],
-               marker=markers[n_jobs], label=f'save={save}, n_jobs={n_jobs}')
+colors = {True: "tab:orange", False: "tab:blue"}
+markers = {n: m for n, m in zip(all_n_jobs, ["o", "x", "."])}
+for (save, n_jobs), sub_df in df.groupby(["save", "n_jobs"]):
+    ax.scatter(
+        x=sub_df["time"],
+        y=sub_df["max_mem"],
+        color=colors[save],
+        marker=markers[n_jobs],
+        label=f"save={save}, n_jobs={n_jobs}",
+    )
 ax.legend()
-ax.set_xlabel('Execution time (s)')
-ax.set_ylabel('Memory usage (MiB)')
-ax.set_title(f'Loading and preprocessing {all_n_recs} recordings from Sleep '
-             'Physionet')
+ax.set_xlabel("Execution time (s)")
+ax.set_ylabel("Memory usage (MiB)")
+ax.set_title(
+    f"Loading and preprocessing {all_n_recs} recordings from Sleep " "Physionet"
+)
 plt.show()
 
 

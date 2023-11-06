@@ -44,7 +44,7 @@ def common_tranform_assertions(
     expected_X=None,
     diff_param=None,
 ):
-    """ Assert whether shapes and devices are conserved. Also, (optional)
+    """Assert whether shapes and devices are conserved. Also, (optional)
     checks whether the expected features matrix is produced.
 
     Parameters
@@ -83,36 +83,32 @@ def test_transform_call_with_no_label(random_batch, dummy_transform):
     assert torch.equal(tr_X1, tr_X2)
 
 
-@pytest.mark.parametrize("k1,k2,expected,p1,p2", [
-    (1, 0, 0, 1, 1),  # replace by 1s with p=1, then 0s with p=1 -> 0s
-    (0, 1, 1, 1, 1),  # replace by 0s with p=1, then 1s with p=1 -> 1s
-    (1, 0, 1, 1, 0),  # replace by 1s with p=1, then 1s with p=0 -> 1s
-    (0, 1, 0, 1, 0),  # replace by 0s with p=1, then 0s with p=0 -> 0s
-    (1, 0, 0, 0, 1),  # replace by 1s with p=0, then 0s with p=1 -> 0s
-    (0, 1, 1, 0, 1),  # replace by 0s with p=0, then 1s with p=1 -> 1s
-])
+@pytest.mark.parametrize(
+    "k1,k2,expected,p1,p2",
+    [
+        (1, 0, 0, 1, 1),  # replace by 1s with p=1, then 0s with p=1 -> 0s
+        (0, 1, 1, 1, 1),  # replace by 0s with p=1, then 1s with p=1 -> 1s
+        (1, 0, 1, 1, 0),  # replace by 1s with p=1, then 1s with p=0 -> 1s
+        (0, 1, 0, 1, 0),  # replace by 0s with p=1, then 0s with p=0 -> 0s
+        (1, 0, 0, 0, 1),  # replace by 1s with p=0, then 0s with p=1 -> 0s
+        (0, 1, 1, 0, 1),  # replace by 0s with p=0, then 1s with p=1 -> 1s
+    ],
+)
 def test_transform_composition(random_batch, k1, k2, expected, p1, p2):
     X, y = random_batch
     dummy_transform1 = DummyTransform(k=k1, probability=p1)
     dummy_transform2 = DummyTransform(k=k2, probability=p2)
     concat_transform = Compose([dummy_transform1, dummy_transform2])
-    expected_tensor = torch.ones(
-        X.shape,
-        device=X.device
-    ) * expected
+    expected_tensor = torch.ones(X.shape, device=X.device) * expected
 
-    common_tranform_assertions(
-        random_batch,
-        concat_transform(X, y),
-        expected_tensor
-    )
+    common_tranform_assertions(random_batch, concat_transform(X, y), expected_tensor)
 
 
 def test_transform_proba_exception(rng_seed, dummy_transform):
     rng = check_random_state(rng_seed)
     with pytest.raises(AssertionError):
         DummyTransform(
-            probability='a',
+            probability="a",
             random_state=rng,
         )
 
@@ -125,39 +121,48 @@ def concat_windows_dataset():
     subject_id = 22
     event_codes = [5, 6, 9, 10, 13, 14]
     physionet_paths = mne.datasets.eegbci.load_data(
-        subject_id, event_codes, update_path=False)
+        subject_id, event_codes, update_path=False
+    )
 
-    parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto')
-             for path in physionet_paths]
-    list_of_epochs = [mne.Epochs(raw, [[0, 0, 0]], tmin=0, baseline=None)
-                      for raw in parts]
+    parts = [
+        mne.io.read_raw_edf(path, preload=True, stim_channel="auto")
+        for path in physionet_paths
+    ]
+    list_of_epochs = [
+        mne.Epochs(raw, [[0, 0, 0]], tmin=0, baseline=None) for raw in parts
+    ]
     windows_datasets = create_from_mne_epochs(
         list_of_epochs,
         window_size_samples=50,
         window_stride_samples=50,
-        drop_last_window=False
+        drop_last_window=False,
     )
 
     return windows_datasets
 
 
 # test AugmentedDataLoader with 0, 1 and 2 composed transforms
-@pytest.mark.parametrize("nb_transforms,no_list,dummy", [
-    (0, False, True), (1, False, True), (1, True, True), (2, False, True),
-    (1, False, False)
-])
-def test_data_loader(dummy_transform, concat_windows_dataset, nb_transforms,
-                     no_list, dummy):
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+@pytest.mark.parametrize(
+    "nb_transforms,no_list,dummy",
+    [
+        (0, False, True),
+        (1, False, True),
+        (1, True, True),
+        (2, False, True),
+        (1, False, False),
+    ],
+)
+def test_data_loader(
+    dummy_transform, concat_windows_dataset, nb_transforms, no_list, dummy
+):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     transform = dummy_transform if dummy else SmoothTimeMask(0.5)
     transforms = [transform for _ in range(nb_transforms)]
     if no_list:
         transforms = transforms[0]
     data_loader = AugmentedDataLoader(
-        concat_windows_dataset,
-        transforms=transforms,
-        batch_size=128,
-        device=device)
+        concat_windows_dataset, transforms=transforms, batch_size=128, device=device
+    )
     for idx_batch, _ in enumerate(data_loader):
         if idx_batch >= 3:
             break
@@ -165,11 +170,7 @@ def test_data_loader(dummy_transform, concat_windows_dataset, nb_transforms,
 
 def test_data_loader_exception(concat_windows_dataset):
     with pytest.raises(TypeError):
-        AugmentedDataLoader(
-            concat_windows_dataset,
-            transforms='a',
-            batch_size=128
-        )
+        AugmentedDataLoader(concat_windows_dataset, transforms="a", batch_size=128)
 
 
 def test_dataset_with_transform(concat_windows_dataset):
@@ -188,7 +189,7 @@ def test_single_input_aug(concat_windows_dataset):
 
     # Create dummy data augmentation
     factor = 10
-    transform = DummyTransform(k=factor, probability=1.)
+    transform = DummyTransform(k=factor, probability=1.0)
 
     # Check that the transformation forward works and outputs an augmented
     # input with the batch dimension

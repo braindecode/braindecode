@@ -56,8 +56,7 @@ n_jobs = 1
 
 from braindecode.datasets.sleep_physionet import SleepPhysionet
 
-dataset = SleepPhysionet(
-    subject_ids=[0, 1, 2], recording_ids=[1], crop_wake_mins=30)
+dataset = SleepPhysionet(subject_ids=[0, 1, 2], recording_ids=[1], crop_wake_mins=30)
 
 ######################################################################
 # Preprocessing
@@ -76,7 +75,7 @@ factor = 1e6
 
 preprocessors = [
     Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    Preprocessor('filter', l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs)
+    Preprocessor("filter", l_freq=None, h_freq=high_cut_hz, n_jobs=n_jobs),
 ]
 
 # Transform the data
@@ -100,18 +99,23 @@ sfreq = 100
 window_size_samples = window_size_s * sfreq
 
 mapping = {  # We merge stages 3 and 4 following AASM standards.
-    'Sleep stage W': 0,
-    'Sleep stage 1': 1,
-    'Sleep stage 2': 2,
-    'Sleep stage 3': 3,
-    'Sleep stage 4': 3,
-    'Sleep stage R': 4
+    "Sleep stage W": 0,
+    "Sleep stage 1": 1,
+    "Sleep stage 2": 2,
+    "Sleep stage 3": 3,
+    "Sleep stage 4": 3,
+    "Sleep stage R": 4,
 }
 
 windows_dataset = create_windows_from_events(
-    dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0,
+    dataset,
+    trial_start_offset_samples=0,
+    trial_stop_offset_samples=0,
     window_size_samples=window_size_samples,
-    window_stride_samples=window_size_samples, preload=True, mapping=mapping)
+    window_stride_samples=window_size_samples,
+    preload=True,
+    mapping=mapping,
+)
 
 ######################################################################
 # Preprocessing windows
@@ -136,16 +140,17 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from braindecode.datasets import BaseConcatDataset
 
-subjects = np.unique(windows_dataset.description['subject'])
+subjects = np.unique(windows_dataset.description["subject"])
 subj_train, subj_test = train_test_split(
-    subjects, test_size=0.4, random_state=random_state)
+    subjects, test_size=0.4, random_state=random_state
+)
 subj_valid, subj_test = train_test_split(
-    subj_test, test_size=0.5, random_state=random_state)
+    subj_test, test_size=0.5, random_state=random_state
+)
 
 
 class RelativePositioningDataset(BaseConcatDataset):
-    """BaseConcatDataset with __getitem__ that expects 2 indices and a target.
-    """
+    """BaseConcatDataset with __getitem__ that expects 2 indices and a target."""
 
     def __init__(self, list_of_ds):
         super().__init__(list_of_ds)
@@ -154,8 +159,7 @@ class RelativePositioningDataset(BaseConcatDataset):
     def __getitem__(self, index):
         if self.return_pair:
             ind1, ind2, y = index
-            return (super().__getitem__(ind1)[0],
-                    super().__getitem__(ind2)[0]), y
+            return (super().__getitem__(ind1)[0], super().__getitem__(ind2)[0]), y
         else:
             return super().__getitem__(index)
 
@@ -168,12 +172,12 @@ class RelativePositioningDataset(BaseConcatDataset):
         self._return_pair = value
 
 
-split_ids = {'train': subj_train, 'valid': subj_valid, 'test': subj_test}
+split_ids = {"train": subj_train, "valid": subj_valid, "test": subj_test}
 splitted = dict()
 for name, values in split_ids.items():
     splitted[name] = RelativePositioningDataset(
-        [ds for ds in windows_dataset.datasets
-         if ds.description['subject'] in values])
+        [ds for ds in windows_dataset.datasets if ds.description["subject"] in values]
+    )
 
 ######################################################################
 # Creating samplers
@@ -198,21 +202,34 @@ for name, values in split_ids.items():
 from braindecode.samplers import RelativePositioningSampler
 
 tau_pos, tau_neg = int(sfreq * 60), int(sfreq * 15 * 60)
-n_examples_train = 250 * len(splitted['train'].datasets)
-n_examples_valid = 250 * len(splitted['valid'].datasets)
-n_examples_test = 250 * len(splitted['test'].datasets)
+n_examples_train = 250 * len(splitted["train"].datasets)
+n_examples_valid = 250 * len(splitted["valid"].datasets)
+n_examples_test = 250 * len(splitted["test"].datasets)
 
 train_sampler = RelativePositioningSampler(
-    splitted['train'].get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
-    n_examples=n_examples_train, same_rec_neg=True, random_state=random_state)
+    splitted["train"].get_metadata(),
+    tau_pos=tau_pos,
+    tau_neg=tau_neg,
+    n_examples=n_examples_train,
+    same_rec_neg=True,
+    random_state=random_state,
+)
 valid_sampler = RelativePositioningSampler(
-    splitted['valid'].get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
-    n_examples=n_examples_valid, same_rec_neg=True,
-    random_state=random_state).presample()
+    splitted["valid"].get_metadata(),
+    tau_pos=tau_pos,
+    tau_neg=tau_neg,
+    n_examples=n_examples_valid,
+    same_rec_neg=True,
+    random_state=random_state,
+).presample()
 test_sampler = RelativePositioningSampler(
-    splitted['test'].get_metadata(), tau_pos=tau_pos, tau_neg=tau_neg,
-    n_examples=n_examples_test, same_rec_neg=True,
-    random_state=random_state).presample()
+    splitted["test"].get_metadata(),
+    tau_pos=tau_pos,
+    tau_neg=tau_neg,
+    n_examples=n_examples_test,
+    same_rec_neg=True,
+    random_state=random_state,
+).presample()
 
 ######################################################################
 # Creating the model
@@ -234,8 +251,8 @@ from torch import nn
 from braindecode.util import set_random_seeds
 from braindecode.models import SleepStagerChambon2018
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-if device == 'cuda':
+device = "cuda" if torch.cuda.is_available() else "cpu"
+if device == "cuda":
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to roughly reproduce results
 # Note that with cudnn benchmark set to True, GPU indeterminism
@@ -243,7 +260,7 @@ if device == 'cuda':
 # To obtain more consistent results at the cost of increased computation time,
 # you can set `cudnn_benchmark=False` in `set_random_seeds`
 # or remove `torch.backends.cudnn.benchmark = True`
-set_random_seeds(seed=random_state, cuda=device == 'cuda')
+set_random_seeds(seed=random_state, cuda=device == "cuda")
 
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = windows_dataset[0][0].shape
@@ -277,10 +294,7 @@ class ContrastiveNet(nn.Module):
     def __init__(self, emb, emb_size, dropout=0.5):
         super().__init__()
         self.emb = emb
-        self.clf = nn.Sequential(
-            nn.Dropout(dropout),
-            nn.Linear(emb_size, 1)
-        )
+        self.clf = nn.Sequential(nn.Dropout(dropout), nn.Linear(emb_size, 1))
 
     def forward(self, x):
         x1, x2 = x
@@ -310,15 +324,16 @@ batch_size = 128  # 512 if data large enough
 n_epochs = 25
 num_workers = 0 if n_jobs <= 1 else n_jobs
 
-cp = Checkpoint(dirname='', f_criterion=None, f_optimizer=None, f_history=None)
+cp = Checkpoint(dirname="", f_criterion=None, f_optimizer=None, f_history=None)
 early_stopping = EarlyStopping(patience=10)
 train_acc = EpochScoring(
-    scoring='accuracy', on_train=True, name='train_acc', lower_is_better=False)
+    scoring="accuracy", on_train=True, name="train_acc", lower_is_better=False
+)
 
 callbacks = [
-    ('cp', cp),
-    ('patience', early_stopping),
-    ('train_acc', train_acc),
+    ("cp", cp),
+    ("patience", early_stopping),
+    ("train_acc", train_acc),
 ]
 
 clf = EEGClassifier(
@@ -331,7 +346,7 @@ clf = EEGClassifier(
     iterator_valid__sampler=valid_sampler,
     iterator_train__num_workers=num_workers,
     iterator_valid__num_workers=num_workers,
-    train_split=predefined_split(splitted['valid']),
+    train_split=predefined_split(splitted["valid"]),
     optimizer__lr=lr,
     batch_size=batch_size,
     callbacks=callbacks,
@@ -340,10 +355,10 @@ clf = EEGClassifier(
 )
 # Model training for a specified number of epochs. `y` is None as it is already
 # supplied in the dataset.
-clf.fit(splitted['train'], y=None)
+clf.fit(splitted["train"], y=None)
 clf.load_params(checkpoint=cp)  # Load the model with the lowest valid_loss
 
-os.remove('./params.pt')  # Delete parameters file
+os.remove("./params.pt")  # Delete parameters file
 
 ######################################################################
 # Visualizing the results
@@ -361,27 +376,27 @@ import pandas as pd
 # Extract loss and balanced accuracy values for plotting from history object
 df = pd.DataFrame(clf.history.to_list())
 
-df['train_acc'] *= 100
-df['valid_acc'] *= 100
+df["train_acc"] *= 100
+df["valid_acc"] *= 100
 
-ys1 = ['train_loss', 'valid_loss']
-ys2 = ['train_acc', 'valid_acc']
-styles = ['-', ':']
-markers = ['.', '.']
+ys1 = ["train_loss", "valid_loss"]
+ys2 = ["train_acc", "valid_acc"]
+styles = ["-", ":"]
+markers = [".", "."]
 
 fig, ax1 = plt.subplots(figsize=(8, 3))
 ax2 = ax1.twinx()
 for y1, y2, style, marker in zip(ys1, ys2, styles, markers):
-    ax1.plot(df['epoch'], df[y1], ls=style, marker=marker, ms=7,
-             c='tab:blue', label=y1)
-    ax2.plot(df['epoch'], df[y2], ls=style, marker=marker, ms=7,
-             c='tab:orange', label=y2)
+    ax1.plot(df["epoch"], df[y1], ls=style, marker=marker, ms=7, c="tab:blue", label=y1)
+    ax2.plot(
+        df["epoch"], df[y2], ls=style, marker=marker, ms=7, c="tab:orange", label=y2
+    )
 
-ax1.tick_params(axis='y', labelcolor='tab:blue')
-ax1.set_ylabel('Loss', color='tab:blue')
-ax2.tick_params(axis='y', labelcolor='tab:orange')
-ax2.set_ylabel('Accuracy [%]', color='tab:orange')
-ax1.set_xlabel('Epoch')
+ax1.tick_params(axis="y", labelcolor="tab:blue")
+ax1.set_ylabel("Loss", color="tab:blue")
+ax2.tick_params(axis="y", labelcolor="tab:orange")
+ax2.set_ylabel("Accuracy [%]", color="tab:orange")
+ax1.set_xlabel("Epoch")
 
 lines1, labels1 = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
@@ -398,7 +413,7 @@ from sklearn.metrics import classification_report
 
 # Switch to the test sampler
 clf.iterator_valid__sampler = test_sampler
-y_pred = clf.forward(splitted['test'], training=False) > 0
+y_pred = clf.forward(splitted["test"], training=False) > 0
 y_true = [y for _, _, y in test_sampler]
 
 print(confusion_matrix(y_true, y_pred))
@@ -424,34 +439,38 @@ for name, split in splitted.items():
     split.return_pair = False  # Return single windows
     loader = DataLoader(split, batch_size=batch_size, num_workers=num_workers)
     with torch.no_grad():
-        feats = [emb(batch_x.to(device)).cpu().numpy()
-                 for batch_x, _, _ in loader]
-    data[name] = (np.concatenate(feats), split.get_metadata()['target'].values)
+        feats = [emb(batch_x.to(device)).cpu().numpy() for batch_x, _, _ in loader]
+    data[name] = (np.concatenate(feats), split.get_metadata()["target"].values)
 
 # Initialize the logistic regression model
 log_reg = LogisticRegression(
-    penalty='l2', C=1.0, class_weight='balanced', solver='lbfgs',
-    multi_class='multinomial', random_state=random_state)
+    penalty="l2",
+    C=1.0,
+    class_weight="balanced",
+    solver="lbfgs",
+    multi_class="multinomial",
+    random_state=random_state,
+)
 clf_pipe = make_pipeline(StandardScaler(), log_reg)
 
 # Fit and score the logistic regression
-clf_pipe.fit(*data['train'])
-train_y_pred = clf_pipe.predict(data['train'][0])
-valid_y_pred = clf_pipe.predict(data['valid'][0])
-test_y_pred = clf_pipe.predict(data['test'][0])
+clf_pipe.fit(*data["train"])
+train_y_pred = clf_pipe.predict(data["train"][0])
+valid_y_pred = clf_pipe.predict(data["valid"][0])
+test_y_pred = clf_pipe.predict(data["test"][0])
 
-train_bal_acc = balanced_accuracy_score(data['train'][1], train_y_pred)
-valid_bal_acc = balanced_accuracy_score(data['valid'][1], valid_y_pred)
-test_bal_acc = balanced_accuracy_score(data['test'][1], test_y_pred)
+train_bal_acc = balanced_accuracy_score(data["train"][1], train_y_pred)
+valid_bal_acc = balanced_accuracy_score(data["valid"][1], valid_y_pred)
+test_bal_acc = balanced_accuracy_score(data["test"][1], test_y_pred)
 
-print('Sleep staging performance with logistic regression:')
-print(f'Train bal acc: {train_bal_acc:0.4f}')
-print(f'Valid bal acc: {valid_bal_acc:0.4f}')
-print(f'Test bal acc: {test_bal_acc:0.4f}')
+print("Sleep staging performance with logistic regression:")
+print(f"Train bal acc: {train_bal_acc:0.4f}")
+print(f"Valid bal acc: {valid_bal_acc:0.4f}")
+print(f"Test bal acc: {test_bal_acc:0.4f}")
 
-print('Results on test set:')
-print(confusion_matrix(data['test'][1], test_y_pred))
-print(classification_report(data['test'][1], test_y_pred))
+print("Results on test set:")
+print(confusion_matrix(data["test"][1], test_y_pred))
+print(classification_report(data["test"][1], test_y_pred))
 
 ######################################################################
 # The balanced accuracy is much higher than chance-level (i.e., 20% for our
@@ -469,11 +488,17 @@ pca = PCA(n_components=2)
 components = pca.fit_transform(X)
 
 fig, ax = plt.subplots()
-colors = cm.get_cmap('viridis', 5)(range(5))
-for i, stage in enumerate(['W', 'N1', 'N2', 'N3', 'R']):
+colors = cm.get_cmap("viridis", 5)(range(5))
+for i, stage in enumerate(["W", "N1", "N2", "N3", "R"]):
     mask = y == i
-    ax.scatter(components[mask, 0], components[mask, 1], s=10, alpha=0.7,
-               color=colors[i], label=stage)
+    ax.scatter(
+        components[mask, 0],
+        components[mask, 1],
+        s=10,
+        alpha=0.7,
+        color=colors[i],
+        label=stage,
+    )
 ax.legend()
 
 ######################################################################

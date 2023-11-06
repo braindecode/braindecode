@@ -31,9 +31,9 @@ def _generate_mne_pre_processor(function):
     """
     Generate a class based on an MNE function for preprocessing.
     """
-    class_name = ''.join(
-        word.title() for word in function.__name__.split('_')).replace('Eeg',
-                                                                       'EEG')
+    class_name = "".join(word.title() for word in function.__name__.split("_")).replace(
+        "Eeg", "EEG"
+    )
     import_path = f"{function.__module__}.{function.__name__}"
     doc = f" See more details in {import_path}"
 
@@ -55,7 +55,7 @@ mne_functions = [
     mne.io.Raw.filter,
     mne.io.Raw.crop,
     mne.io.Raw.pick,
-    mne.io.Raw.set_eeg_reference
+    mne.io.Raw.set_eeg_reference,
 ]
 
 # Automatically generate and add classes to the global namespace
@@ -64,8 +64,11 @@ for function in mne_functions:
     globals()[class_obj.__name__] = class_obj
 
 # Define __all__ based on the generated class names
-__all__ = [class_obj.__name__ for class_obj in globals().values() if
-           isinstance(class_obj, type)]
+__all__ = [
+    class_obj.__name__
+    for class_obj in globals().values()
+    if isinstance(class_obj, type)
+]
 
 # Clean up unnecessary variables
 del mne_functions, function, class_obj

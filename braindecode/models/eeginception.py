@@ -15,7 +15,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGInception(EEGModuleMixin, nn.Sequential):
-    """ EEG Inception for ERP-based classification
+    """EEG Inception for ERP-based classification
 
     --> DEPRECATED <--
     THIS CLASS IS DEPRECATED AND WILL BE REMOVED IN THE RELEASE 0.9 OF
@@ -91,30 +91,34 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            n_times=1000,
-            sfreq=128,
-            drop_prob=0.5,
-            scales_samples_s=(0.5, 0.25, 0.125),
-            n_filters=8,
-            activation=nn.ELU(),
-            batch_norm_alpha=0.01,
-            depth_multiplier=2,
-            pooling_sizes=(4, 2, 2, 2),
-            chs_info=None,
-            input_window_seconds=None,
-            in_channels=None,
-            n_classes=None,
-            input_window_samples=None,
-            add_log_softmax=True,
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=1000,
+        sfreq=128,
+        drop_prob=0.5,
+        scales_samples_s=(0.5, 0.25, 0.125),
+        n_filters=8,
+        activation=nn.ELU(),
+        batch_norm_alpha=0.01,
+        depth_multiplier=2,
+        pooling_sizes=(4, 2, 2, 2),
+        chs_info=None,
+        input_window_seconds=None,
+        in_channels=None,
+        n_classes=None,
+        input_window_samples=None,
+        add_log_softmax=True,
     ):
-        n_chans, n_outputs, n_times, = deprecated_args(
+        (
+            n_chans,
+            n_outputs,
+            n_times,
+        ) = deprecated_args(
             self,
-            ('in_channels', 'n_chans', in_channels, n_chans),
-            ('n_classes', 'n_outputs', n_classes, n_outputs),
-            ('input_window_samples', 'n_times', input_window_samples, n_times),
+            ("in_channels", "n_chans", in_channels, n_chans),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("input_window_samples", "n_times", input_window_samples, n_times),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -131,22 +135,24 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             "The class EEGInception is deprecated and will be removed in the "
             "release 0.9 of braindecode. Please use "
             "braindecode.models.EEGInceptionERP instead in the future.",
-            DeprecationWarning
+            DeprecationWarning,
         )
 
         self.drop_prob = drop_prob
         self.n_filters = n_filters
         self.scales_samples_s = scales_samples_s
         self.scales_samples = tuple(
-            int(size_s * self.sfreq) for size_s in self.scales_samples_s)
+            int(size_s * self.sfreq) for size_s in self.scales_samples_s
+        )
         self.activation = activation
         self.alpha_momentum = batch_norm_alpha
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes
 
         self.mapping = {
-            'classification.1.weight': 'final_layer.fc.weight',
-            'classification.1.bias': 'final_layer.fc.bias'}
+            "classification.1.weight": "final_layer.fc.weight",
+            "classification.1.bias": "final_layer.fc.bias",
+        }
 
         self.add_module("ensuredims", Ensure4d())
 
@@ -181,7 +187,9 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             depth_multiplier=self.depth_multiplier,
         )
 
-        self.add_module("inception_block_1", _InceptionBlock((block11, block12, block13)))
+        self.add_module(
+            "inception_block_1", _InceptionBlock((block11, block12, block13))
+        )
 
         self.add_module("avg_pool_1", nn.AvgPool2d((1, self.pooling_sizes[0])))
 
@@ -194,7 +202,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             kernel_length=self.scales_samples[0] // 4,
             alpha_momentum=self.alpha_momentum,
             activation=self.activation,
-            drop_prob=self.drop_prob
+            drop_prob=self.drop_prob,
         )
         block22 = self._get_inception_branch_2(
             in_channels=n_concat_dw_filters,
@@ -202,7 +210,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             kernel_length=self.scales_samples[1] // 4,
             alpha_momentum=self.alpha_momentum,
             activation=self.activation,
-            drop_prob=self.drop_prob
+            drop_prob=self.drop_prob,
         )
         block23 = self._get_inception_branch_2(
             in_channels=n_concat_dw_filters,
@@ -210,55 +218,54 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
             kernel_length=self.scales_samples[2] // 4,
             alpha_momentum=self.alpha_momentum,
             activation=self.activation,
-            drop_prob=self.drop_prob
+            drop_prob=self.drop_prob,
         )
 
         self.add_module(
-            "inception_block_2", _InceptionBlock((block21, block22, block23)))
+            "inception_block_2", _InceptionBlock((block21, block22, block23))
+        )
 
         self.add_module("avg_pool_2", nn.AvgPool2d((1, self.pooling_sizes[1])))
 
-        self.add_module("final_block", nn.Sequential(
-            nn.Conv2d(
-                n_concat_filters,
-                n_concat_filters // 2,
-                (1, 8),
-                padding="same",
-                bias=False
+        self.add_module(
+            "final_block",
+            nn.Sequential(
+                nn.Conv2d(
+                    n_concat_filters,
+                    n_concat_filters // 2,
+                    (1, 8),
+                    padding="same",
+                    bias=False,
+                ),
+                nn.BatchNorm2d(n_concat_filters // 2, momentum=self.alpha_momentum),
+                activation,
+                nn.Dropout(self.drop_prob),
+                nn.AvgPool2d((1, self.pooling_sizes[2])),
+                nn.Conv2d(
+                    n_concat_filters // 2,
+                    n_concat_filters // 4,
+                    (1, 4),
+                    padding="same",
+                    bias=False,
+                ),
+                nn.BatchNorm2d(n_concat_filters // 4, momentum=self.alpha_momentum),
+                activation,
+                nn.Dropout(self.drop_prob),
+                nn.AvgPool2d((1, self.pooling_sizes[3])),
             ),
-            nn.BatchNorm2d(n_concat_filters // 2,
-                           momentum=self.alpha_momentum),
-            activation,
-            nn.Dropout(self.drop_prob),
-            nn.AvgPool2d((1, self.pooling_sizes[2])),
+        )
 
-            nn.Conv2d(
-                n_concat_filters // 2,
-                n_concat_filters // 4,
-                (1, 4),
-                padding="same",
-                bias=False
-            ),
-            nn.BatchNorm2d(n_concat_filters // 4,
-                           momentum=self.alpha_momentum),
-            activation,
-            nn.Dropout(self.drop_prob),
-            nn.AvgPool2d((1, self.pooling_sizes[3])),
-        ))
-
-        spatial_dim_last_layer = (
-                self.n_times // prod(self.pooling_sizes))
+        spatial_dim_last_layer = self.n_times // prod(self.pooling_sizes)
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
         self.add_module("flat", nn.Flatten())
 
         module = nn.Sequential()
 
-        module.add_module("fc",
-                          nn.Linear(
-                              spatial_dim_last_layer * n_channels_last_layer,
-                              self.n_outputs
-                          ), )
+        module.add_module(
+            "fc",
+            nn.Linear(spatial_dim_last_layer * n_channels_last_layer, self.n_outputs),
+        )
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
@@ -271,16 +278,22 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
         _glorot_weight_zero_bias(self)
 
     @staticmethod
-    def _get_inception_branch_1(in_channels, out_channels, kernel_length,
-                                alpha_momentum, drop_prob, activation,
-                                depth_multiplier):
+    def _get_inception_branch_1(
+        in_channels,
+        out_channels,
+        kernel_length,
+        alpha_momentum,
+        drop_prob,
+        activation,
+        depth_multiplier,
+    ):
         return nn.Sequential(
             nn.Conv2d(
                 1,
                 out_channels,
                 kernel_size=(1, kernel_length),
                 padding="same",
-                bias=True
+                bias=True,
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
             activation,
@@ -292,24 +305,22 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                 bias=False,
                 padding="valid",
             ),
-            nn.BatchNorm2d(
-                depth_multiplier * out_channels,
-                momentum=alpha_momentum
-            ),
+            nn.BatchNorm2d(depth_multiplier * out_channels, momentum=alpha_momentum),
             activation,
             nn.Dropout(drop_prob),
         )
 
     @staticmethod
-    def _get_inception_branch_2(in_channels, out_channels, kernel_length,
-                                alpha_momentum, drop_prob, activation):
+    def _get_inception_branch_2(
+        in_channels, out_channels, kernel_length, alpha_momentum, drop_prob, activation
+    ):
         return nn.Sequential(
             nn.Conv2d(
                 in_channels,
                 out_channels,
                 kernel_size=(1, kernel_length),
                 padding="same",
-                bias=False
+                bias=False,
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
             activation,
