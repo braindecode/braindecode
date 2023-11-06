@@ -35,7 +35,7 @@ repos:
     rev: v0.0.281
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501]
+        args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
 
 #  - repo: https://github.com/pycqa/pydocstyle
 #    rev: 6.3.0

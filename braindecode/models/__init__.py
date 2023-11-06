@@ -26,5 +26,5 @@ from .modules import TimeDistributed
 from .util import _init_models_dict
 
 # Call this last in order to make sure the dataset list is populated with
-# the datasets imported in this file.
+# the models imported in this file.
 _init_models_dict()
