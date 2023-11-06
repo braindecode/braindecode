@@ -42,7 +42,6 @@ repos:
     rev: v0.1.4
     hooks:
       - id: ruff-format
-        args: [--check]
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.6
