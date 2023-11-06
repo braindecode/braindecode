@@ -93,14 +93,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #
 
 from braindecode.preprocessing.preprocess import (
-    exponential_moving_standardize,
-    preprocess,
-    Preprocessor,
-)
+    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
 
-low_cut_hz = 4.0  # low cut frequency for filtering
-high_cut_hz = 38.0  # high cut frequency for filtering
+low_cut_hz = 4.  # low cut frequency for filtering
+high_cut_hz = 38.  # high cut frequency for filtering
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
@@ -108,17 +105,14 @@ init_block_size = 1000
 factor = 1e6
 
 preprocessors = [
-    Preprocessor("pick_types", eeg=True, meg=False, stim=False),
+    Preprocessor('pick_types', eeg=True, meg=False, stim=False),
     # Keep EEG sensors
     Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),
+    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),
     # Bandpass filter
-    Preprocessor(
-        exponential_moving_standardize,
-        # Exponential moving standardization
-        factor_new=factor_new,
-        init_block_size=init_block_size,
-    ),
+    Preprocessor(exponential_moving_standardize,
+                 # Exponential moving standardization
+                 factor_new=factor_new, init_block_size=init_block_size)
 ]
 
 # Preprocess the data
@@ -155,8 +149,8 @@ from braindecode.preprocessing.windowers import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
-sfreq = dataset.datasets[0].raw.info["sfreq"]
-assert all([ds.raw.info["sfreq"] == sfreq for ds in dataset.datasets])
+sfreq = dataset.datasets[0].raw.info['sfreq']
+assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Calculate the trial start offset in samples.
 trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
@@ -181,9 +175,9 @@ windows_dataset = create_windows_from_events(
 # ``0train`` for training and ``1test`` for evaluation.
 #
 
-splitted = windows_dataset.split("session")
-train_set = splitted["0train"]  # Session train
-eval_set = splitted["1test"]  # Session evaluation
+splitted = windows_dataset.split('session')
+train_set = splitted['0train']  # Session train
+eval_set = splitted['1test']  # Session evaluation
 
 ######################################################################
 # Create model
@@ -208,7 +202,7 @@ from braindecode.models import ShallowFBCSPNet
 
 # check if GPU is available, if True chooses to use it
 cuda = torch.cuda.is_available()
-device = "cuda" if cuda else "cpu"
+device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 seed = 20200220  # random seed to make results reproducible
@@ -227,13 +221,9 @@ input_window_samples = train_set[0][0].shape[1]
 # try to initialize the model with the parameters we want to tune but
 # without the parameters we do not want to tune. This will result in an
 # error.
-model = partial(
-    ShallowFBCSPNet,
-    n_chans,
-    n_classes,
-    input_window_samples=input_window_samples,
-    final_conv_length="auto",
-)
+model = partial(ShallowFBCSPNet, n_chans, n_classes,
+                input_window_samples=input_window_samples,
+                final_conv_length='auto', )
 
 # Send model to GPU
 if cuda:
@@ -270,7 +260,7 @@ clf = EEGClassifier(
     train_split=ValidSplit(0.2, random_state=seed),
     callbacks=[
         "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
+        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
 )
@@ -304,8 +294,11 @@ cv = KFold(n_splits=2, shuffle=True, random_state=42)
 learning_rates = [0.00625, 0.0000625]
 drop_probs = [0.2, 0.5, 0.8]
 
-fit_params = {"epochs": n_epochs}
-param_grid = {"optimizer__lr": learning_rates, "module__drop_prob": drop_probs}
+fit_params = {'epochs': n_epochs}
+param_grid = {
+    'optimizer__lr': learning_rates,
+    'module__drop_prob': drop_probs
+}
 
 # By setting n_jobs=-1, grid search is performed
 # with all the processors, in this case the output of the training
@@ -315,10 +308,10 @@ search = GridSearchCV(
     param_grid=param_grid,
     cv=cv,
     return_train_score=True,
-    scoring="accuracy",
+    scoring='accuracy',
     refit=True,
     verbose=1,
-    error_score="raise",
+    error_score='raise',
     n_jobs=1,
 )
 
@@ -336,17 +329,16 @@ import seaborn as sns
 
 
 # Create a pivot table for the heatmap
-pivot_table = search_results.pivot(
-    index="param_optimizer__lr",
-    columns="param_module__drop_prob",
-    values="mean_test_score",
-)
+pivot_table = search_results.pivot(index='param_optimizer__lr',
+                                   columns='param_module__drop_prob',
+                                   values='mean_test_score')
 # Create the heatmap
 fig, ax = plt.subplots()
-sns.heatmap(pivot_table, annot=True, fmt=".3f", cmap="YlGnBu", cbar=True)
-plt.title("Grid Search Mean Test Scores")
-plt.ylabel("Learning Rate")
-plt.xlabel("Dropout Probability")
+sns.heatmap(pivot_table, annot=True, fmt=".3f",
+            cmap="YlGnBu", cbar=True)
+plt.title('Grid Search Mean Test Scores')
+plt.ylabel('Learning Rate')
+plt.xlabel('Dropout Probability')
 plt.tight_layout()
 plt.show()
 
@@ -354,12 +346,11 @@ plt.show()
 # Get the best hyperparameters
 # ----------------------------
 #
-best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
+best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
 print(
     f"Best hyperparameters were {best_run['params']} which gave a validation "
     f"accuracy of {best_run['mean_test_score'] * 100:.2f}% (training "
-    f"accuracy of {best_run['mean_train_score'] * 100:.2f}%)."
-)
+    f"accuracy of {best_run['mean_train_score'] * 100:.2f}%).")
 
 eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)

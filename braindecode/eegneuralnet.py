@@ -16,11 +16,8 @@ from sklearn.metrics import get_scorer
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
 from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score, is_dataset
 
-from .training.scoring import (
-    CroppedTimeSeriesEpochScoring,
-    CroppedTrialEpochScoring,
-    PostEpochTrainScoring,
-)
+from .training.scoring import (CroppedTimeSeriesEpochScoring,
+                               CroppedTrialEpochScoring, PostEpochTrainScoring)
 from .models.util import models_dict
 from .datasets.base import BaseConcatDataset, WindowsDataset
 
@@ -28,12 +25,12 @@ log = logging.getLogger(__name__)
 
 
 def _get_model(model):
-    """Returns the corresponding class in case the model passed is a string."""
+    ''' Returns the corresponding class in case the model passed is a string. '''
     if isinstance(model, str):
         if model in models_dict:
             model = models_dict[model]
         else:
-            raise ValueError(f"Unknown model name {model!r}.")
+            raise ValueError(f'Unknown model name {model!r}.')
     return model
 
 
@@ -53,7 +50,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         will be left as is.
 
         """
-        kwargs = self.get_params_for("module")
+        kwargs = self.get_params_for('module')
         module = _get_model(self.module)
         module = self.initialized_instance(module, kwargs)
         # pylint: disable=attribute-defined-outside-init
@@ -64,7 +61,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         # Here we parse the callbacks supplied as strings,
         # e.g. 'accuracy', to the callbacks skorch expects
         for name, cb, named_by_user in super()._yield_callbacks():
-            if name == "str":
+            if name == 'str':
                 train_cb, valid_cb = self._parse_str_callback(cb)
                 yield train_cb
                 if self.train_split is not None:
@@ -75,13 +72,15 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
     def _parse_str_callback(self, cb_supplied_name):
         scoring = get_scorer(cb_supplied_name)
         scoring_name = scoring._score_func.__name__
-        assert scoring_name.endswith(("_score", "_error", "_deviance", "_loss"))
-        if scoring_name.endswith("_score") or cb_supplied_name.startswith("neg_"):
+        assert scoring_name.endswith(
+            ('_score', '_error', '_deviance', '_loss'))
+        if (scoring_name.endswith('_score') or
+                cb_supplied_name.startswith('neg_')):
             lower_is_better = False
         else:
             lower_is_better = True
-        train_name = f"train_{cb_supplied_name}"
-        valid_name = f"valid_{cb_supplied_name}"
+        train_name = f'train_{cb_supplied_name}'
+        valid_name = f'valid_{cb_supplied_name}'
         if self.cropped:
             train_scoring = CroppedTrialEpochScoring(
                 cb_supplied_name, lower_is_better, on_train=True, name=train_name
@@ -99,7 +98,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         named_by_user = True
         train_valid_callbacks = [
             (train_name, train_scoring, named_by_user),
-            (valid_name, valid_scoring, named_by_user),
+            (valid_name, valid_scoring, named_by_user)
         ]
         return train_valid_callbacks
 
@@ -109,13 +108,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         if not training:
             epoch_cbs = []
             for name, cb in self.callbacks_:
-                if (
-                    isinstance(
-                        cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)
-                    )
-                    and (hasattr(cb, "window_inds_"))
-                    and (not cb.on_train)
-                ):
+                if isinstance(cb, (CroppedTrialEpochScoring, CroppedTimeSeriesEpochScoring)) and (
+                        hasattr(cb, 'window_inds_')) and (not cb.on_train):
                     epoch_cbs.append(cb)
             # for trialwise decoding stuffs it might also be we don't have
             # cropped loader, so no indices there
@@ -142,11 +136,8 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         i_window_stops = np.concatenate(i_window_stops)
         window_ys = np.concatenate(window_ys)
         return dict(
-            preds=preds,
-            i_window_in_trials=i_window_in_trials,
-            i_window_stops=i_window_stops,
-            window_ys=window_ys,
-        )
+            preds=preds, i_window_in_trials=i_window_in_trials,
+            i_window_stops=i_window_stops, window_ys=window_ys)
 
     # Changes the default target extractor to noop
     @property
@@ -165,9 +156,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             (
                 "valid_loss",
                 BatchScoring(
-                    valid_loss_score,
-                    name="valid_loss",
-                    target_extractor=noop,
+                    valid_loss_score, name="valid_loss", target_extractor=noop,
                 ),
             ),
             ("print_log", PrintLog()),
@@ -193,12 +182,12 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         if isinstance(X, mne.BaseEpochs) or isinstance(X, np.ndarray):
             if y is None:
                 raise ValueError("y must be specified if X is a numpy array.")
-            signal_kwargs["n_outputs"] = self._get_n_outputs(y, classes)
+            signal_kwargs['n_outputs'] = self._get_n_outputs(y, classes)
             if isinstance(X, mne.BaseEpochs):
                 self.log.info("Using mne.Epochs to find signal-related parameters.")
                 signal_kwargs["n_times"] = len(X.times)
-                signal_kwargs["sfreq"] = X.info["sfreq"]
-                signal_kwargs["chs_info"] = X.info["chs"]
+                signal_kwargs["sfreq"] = X.info['sfreq']
+                signal_kwargs["chs_info"] = X.info['chs']
             else:
                 self.log.info("Using numpy array to find signal-related parameters.")
                 signal_kwargs["n_times"] = X.shape[-1]
@@ -209,14 +198,18 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             Xshape = X0.shape
             signal_kwargs["n_times"] = Xshape[-1]
             signal_kwargs["n_chans"] = Xshape[-2]
-            if isinstance(X, BaseConcatDataset) and all(
-                ds.targets_from == "metadata" for ds in X.datasets
+            if (
+                    isinstance(X, BaseConcatDataset) and
+                    all(ds.targets_from == 'metadata' for ds in X.datasets)
             ):
                 y_target = X.get_metadata().target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
-            elif isinstance(X, WindowsDataset) and X.targets_from == "metadata":
+                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target, classes)
+            elif (
+                    isinstance(X, WindowsDataset) and
+                    X.targets_from == "metadata"
+            ):
                 y_target = X.windows.metadata.target
-                signal_kwargs["n_outputs"] = self._get_n_outputs(y_target, classes)
+                signal_kwargs['n_outputs'] = self._get_n_outputs(y_target, classes)
         else:
             self.log.warning(
                 "Can only infer signal shape of numpy arrays or and Datasets, "
@@ -235,14 +228,14 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 module_kwargs[k] = v
             else:
                 self.log.warning(
-                    f"Module {self.module!r} " f"is missing parameter {k!r}."
+                    f"Module {self.module!r} "
+                    f"is missing parameter {k!r}."
                 )
 
         # save kwargs to self:
         self.log.info(
             f"Passing additional parameters {module_kwargs!r} "
-            f"to module {self.module!r}."
-        )
+            f"to module {self.module!r}.")
         module_kwargs = {f"module__{k}": v for k, v in module_kwargs.items()}
         self.set_params(**module_kwargs)
 
@@ -282,7 +275,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
 
         """
         if isinstance(X, mne.BaseEpochs):
-            X = X.get_data(units="uV")
+            X = X.get_data(units='uV')
         return super().get_dataset(X, y)
 
     def partial_fit(self, X, y=None, classes=None, **fit_params):

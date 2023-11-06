@@ -37,11 +37,6 @@ repos:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    # Ruff version.
-    rev: v0.1.4
-    hooks:
-      - id: ruff-format
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.6

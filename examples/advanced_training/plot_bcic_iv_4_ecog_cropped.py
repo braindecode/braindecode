@@ -54,9 +54,9 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select `train` dataset
 # for training and validation and `test` for final evaluation.
-dataset = dataset.split("session")
-train_set = dataset["train"]
-test_set = dataset["test"]
+dataset = dataset.split('session')
+train_set = dataset['train']
+test_set = dataset['test']
 
 ######################################################################
 # Preprocessing
@@ -82,14 +82,12 @@ test_set = dataset["test"]
 #
 
 
-from braindecode.preprocessing import (
-    Preprocessor,
-    exponential_moving_standardize,
-    preprocess,
-)
+from braindecode.preprocessing import (Preprocessor,
+                                       exponential_moving_standardize,
+                                       preprocess)
 
-low_cut_hz = 1.0  # low cut frequency for filtering
-high_cut_hz = 200.0  # high cut frequency for filtering, for ECoG higher than for EEG
+low_cut_hz = 1.  # low cut frequency for filtering
+high_cut_hz = 200.  # high cut frequency for filtering, for ECoG higher than for EEG
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
@@ -98,11 +96,10 @@ init_block_size = 1000
 # We select only first 30 seconds from the training dataset to limit time and memory
 # to run this example. We split training dataset into train and validation (only 6 seconds).
 # To obtain full results whole datasets should be used.
-valid_set = preprocess(
-    copy.deepcopy(train_set), [Preprocessor("crop", tmin=24, tmax=30)], n_jobs=-1
-)
-preprocess(train_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
-preprocess(test_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
+valid_set = preprocess(copy.deepcopy(train_set),
+                       [Preprocessor('crop', tmin=24, tmax=30)], n_jobs=-1)
+preprocess(train_set, [Preprocessor('crop', tmin=0, tmax=24)], n_jobs=-1)
+preprocess(test_set, [Preprocessor('crop', tmin=0, tmax=24)], n_jobs=-1)
 
 
 ######################################################################
@@ -112,15 +109,11 @@ preprocess(test_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
 # (see https://mne.tools/stable/glossary.html#term-data-channels).
 preprocessors = [
     # TODO: ensure that misc is not removed
-    Preprocessor("pick_types", ecog=True, misc=True),
-    Preprocessor(lambda x: x / 1e6, picks="ecog"),  # Convert from V to uV
-    Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-    Preprocessor(
-        exponential_moving_standardize,  # Exponential moving standardization
-        factor_new=factor_new,
-        init_block_size=init_block_size,
-        picks="ecog",
-    ),
+    Preprocessor('pick_types', ecog=True, misc=True),
+    Preprocessor(lambda x: x / 1e6, picks='ecog'),  # Convert from V to uV
+    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
+    Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
+                 factor_new=factor_new, init_block_size=init_block_size, picks='ecog')
 ]
 # Transform the data
 preprocess(train_set, preprocessors)
@@ -128,10 +121,10 @@ preprocess(valid_set, preprocessors)
 preprocess(test_set, preprocessors)
 
 # Extract sampling frequency, check that they are same in all datasets
-sfreq = train_set.datasets[0].raw.info["sfreq"]
-assert all([ds.raw.info["sfreq"] == sfreq for ds in train_set.datasets])
+sfreq = train_set.datasets[0].raw.info['sfreq']
+assert all([ds.raw.info['sfreq'] == sfreq for ds in train_set.datasets])
 # Extract target sampling frequency
-target_sfreq = train_set.datasets[0].raw.info["temp"]["target_sfreq"]
+target_sfreq = train_set.datasets[0].raw.info['temp']['target_sfreq']
 
 
 ######################################################################
@@ -170,7 +163,7 @@ from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
-device = "cuda" if cuda else "cpu"
+device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 # Set random seed to be able to roughly reproduce results
@@ -224,9 +217,9 @@ train_set = create_fixed_length_windows(
     window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
-    targets_from="channels",
+    targets_from='channels',
     last_target_only=False,
-    preload=False,
+    preload=False
 )
 
 valid_set = create_fixed_length_windows(
@@ -236,9 +229,9 @@ valid_set = create_fixed_length_windows(
     window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
-    targets_from="channels",
+    targets_from='channels',
     last_target_only=False,
-    preload=False,
+    preload=False
 )
 
 test_set = create_fixed_length_windows(
@@ -248,9 +241,9 @@ test_set = create_fixed_length_windows(
     window_size_samples=input_window_samples,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
-    targets_from="channels",
+    targets_from='channels',
     last_target_only=False,
-    preload=False,
+    preload=False
 )
 ######################################################################
 # We select only the thumb's finger flexion to create one model per finger.
@@ -259,9 +252,9 @@ test_set = create_fixed_length_windows(
 #    Methods to predict all 5 fingers flexion with the same model may be considered as well.
 #    We encourage you to find your own way to use braindecode models to predict fingers flexions.
 #
-train_set.target_transform = lambda x: x[0:1]
-valid_set.target_transform = lambda x: x[0:1]
-test_set.target_transform = lambda x: x[0:1]
+train_set.target_transform = lambda x: x[0: 1]
+valid_set.target_transform = lambda x: x[0: 1]
+test_set.target_transform = lambda x: x[0: 1]
 
 #####################################################################
 # Training
@@ -304,29 +297,21 @@ regressor = EEGRegressor(
     iterator_train__shuffle=True,
     batch_size=batch_size,
     callbacks=[
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
-        (
-            "r2_train",
-            CroppedTimeSeriesEpochScoring(
-                sklearn.metrics.r2_score,
-                lower_is_better=False,
-                on_train=True,
-                name="r2_train",
-            ),
-        ),
-        (
-            "r2_valid",
-            CroppedTimeSeriesEpochScoring(
-                sklearn.metrics.r2_score,
-                lower_is_better=False,
-                on_train=False,
-                name="r2_valid",
-            ),
-        ),
+        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        ('r2_train', CroppedTimeSeriesEpochScoring(sklearn.metrics.r2_score,
+                                                   lower_is_better=False,
+                                                   on_train=True,
+                                                   name='r2_train')
+         ),
+        ('r2_valid', CroppedTimeSeriesEpochScoring(sklearn.metrics.r2_score,
+                                                   lower_is_better=False,
+                                                   on_train=False,
+                                                   name='r2_valid')
+         )
     ],
     device=device,
 )
-set_log_level(verbose="WARNING")
+set_log_level(verbose='WARNING')
 
 ######################################################################
 # Model training for a specified number of epochs. ``y`` is None as it is already supplied
@@ -338,12 +323,10 @@ regressor.fit(train_set, y=None, epochs=n_epochs)
 
 
 def pad_and_select_predictions(preds, y):
-    preds = np.pad(
-        preds,
-        ((0, 0), (0, 0), (y.shape[2] - preds.shape[2], 0)),
-        "constant",
-        constant_values=0,
-    )
+    preds = np.pad(preds,
+                   ((0, 0), (0, 0), (y.shape[2] - preds.shape[2], 0)),
+                   'constant',
+                   constant_values=0)
 
     mask = ~np.isnan(y[0, 0, :])
     preds = np.squeeze(preds[..., mask], 0)
@@ -380,29 +363,25 @@ from matplotlib.lines import Line2D
 
 fig, axes = plt.subplots(3, 1, figsize=(8, 9))
 
-axes[0].set_title("Training dataset")
-axes[0].plot(np.arange(y_train.shape[0]) / target_sfreq, y_train[:, 0], label="Target")
-axes[0].plot(
-    np.arange(preds_train.shape[0]) / target_sfreq, preds_train[:, 0], label="Predicted"
-)
-axes[0].set_ylabel("Finger flexion")
+axes[0].set_title('Training dataset')
+axes[0].plot(np.arange(y_train.shape[0]) / target_sfreq, y_train[:, 0], label='Target')
+axes[0].plot(np.arange(preds_train.shape[0]) / target_sfreq, preds_train[:, 0],
+             label='Predicted')
+axes[0].set_ylabel('Finger flexion')
 axes[0].legend()
 
-axes[1].set_title("Validation dataset")
-axes[1].plot(np.arange(y_valid.shape[0]) / target_sfreq, y_valid[:, 0], label="Target")
-axes[1].plot(
-    np.arange(preds_valid.shape[0]) / target_sfreq, preds_valid[:, 0], label="Predicted"
-)
-axes[1].set_ylabel("Finger flexion")
+axes[1].set_title('Validation dataset')
+axes[1].plot(np.arange(y_valid.shape[0]) / target_sfreq, y_valid[:, 0], label='Target')
+axes[1].plot(np.arange(preds_valid.shape[0]) / target_sfreq, preds_valid[:, 0],
+             label='Predicted')
+axes[1].set_ylabel('Finger flexion')
 axes[1].legend()
 
-axes[2].set_title("Test dataset")
-axes[2].plot(np.arange(y_test.shape[0]) / target_sfreq, y_test[:, 0], label="Target")
-axes[2].plot(
-    np.arange(preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label="Predicted"
-)
-axes[2].set_xlabel("Time [s]")
-axes[2].set_ylabel("Finger flexion")
+axes[2].set_title('Test dataset')
+axes[2].plot(np.arange(y_test.shape[0]) / target_sfreq, y_test[:, 0], label='Target')
+axes[2].plot(np.arange(preds_test.shape[0]) / target_sfreq, preds_test[:, 0], label='Predicted')
+axes[2].set_xlabel('Time [s]')
+axes[2].set_ylabel('Finger flexion')
 axes[2].legend()
 plt.tight_layout()
 
@@ -411,44 +390,39 @@ plt.tight_layout()
 #
 corr_coeffs = []
 for dim in range(y_test.shape[1]):
-    corr_coeffs.append(np.corrcoef(preds_test[:, dim], y_test[:, dim])[0, 1])
-print("Correlation coefficient for each dimension: ", np.round(corr_coeffs, 2))
+    corr_coeffs.append(
+        np.corrcoef(preds_test[:, dim], y_test[:, dim])[0, 1]
+    )
+print('Correlation coefficient for each dimension: ', np.round(corr_coeffs, 2))
 
 ######################################################################
 # Now we use the history stored by Skorch throughout training to plot
 # accuracy and loss curves.
 # Extract loss and accuracy values for plotting from history object
-results_columns = ["train_loss", "valid_loss", "r2_train", "r2_valid"]
-df = pd.DataFrame(
-    regressor.history[:, results_columns],
-    columns=results_columns,
-    index=regressor.history[:, "epoch"],
-)
+results_columns = ['train_loss', 'valid_loss', 'r2_train', 'r2_valid']
+df = pd.DataFrame(regressor.history[:, results_columns], columns=results_columns,
+                  index=regressor.history[:, 'epoch'])
 
 fig, ax1 = plt.subplots(figsize=(8, 3))
-df.loc[:, ["train_loss", "valid_loss"]].plot(
-    ax=ax1, style=["-", ":"], marker="o", color="tab:blue", legend=False, fontsize=14
-)
+df.loc[:, ['train_loss', 'valid_loss']].plot(
+    ax=ax1, style=['-', ':'], marker='o', color='tab:blue', legend=False, fontsize=14)
 
-ax1.tick_params(axis="y", labelcolor="tab:blue", labelsize=14)
-ax1.set_ylabel("Loss", color="tab:blue", fontsize=14)
+ax1.tick_params(axis='y', labelcolor='tab:blue', labelsize=14)
+ax1.set_ylabel("Loss", color='tab:blue', fontsize=14)
 
 ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
 
-df.loc[:, ["r2_train", "r2_valid"]].plot(
-    ax=ax2, style=["-", ":"], marker="o", color="tab:red", legend=False
-)
-ax2.tick_params(axis="y", labelcolor="tab:red", labelsize=14)
-ax2.set_ylabel("R2 score", color="tab:red", fontsize=14)
+df.loc[:, ['r2_train', 'r2_valid']].plot(
+    ax=ax2, style=['-', ':'], marker='o', color='tab:red', legend=False)
+ax2.tick_params(axis='y', labelcolor='tab:red', labelsize=14)
+ax2.set_ylabel("R2 score", color='tab:red', fontsize=14)
 ax1.set_xlabel("Epoch", fontsize=14)
 
 # where some data has already been plotted to ax
 handles = []
-handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle="-", label="Train")
-)
-handles.append(
-    Line2D([0], [0], color="black", linewidth=1, linestyle=":", label="Valid")
-)
-plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc="center right")
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle='-',
+                      label='Train'))
+handles.append(Line2D([0], [0], color='black', linewidth=1, linestyle=':',
+                      label='Valid'))
+plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc='center right')
 plt.tight_layout()

@@ -20,14 +20,17 @@ from braindecode.preprocessing import create_windows_from_events
 ###############################################################################
 # First, we load some dataset using MOABB.
 dataset = MOABBDataset(
-    dataset_name="BNCI2014001",
+    dataset_name='BNCI2014001',
     subject_ids=[1],
 )
 
 ###############################################################################
 # We can apply preprocessing steps to the dataset. It is also possible to skip
 # this step and not apply any preprocessing.
-preprocess(concat_ds=dataset, preprocessors=[Preprocessor(fn="resample", sfreq=10)])
+preprocess(
+    concat_ds=dataset,
+    preprocessors=[Preprocessor(fn='resample', sfreq=10)]
+)
 
 ###############################################################################
 # We save the dataset to a an existing directory. It will create a '.fif' file

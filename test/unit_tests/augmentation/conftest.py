@@ -26,10 +26,10 @@ def rng_seed(pytestconfig):
 
 @pytest.fixture
 def random_batch(rng_seed, batch_size=5):
-    """Generate batch of elements containing feature matrix of size 66x50
+    """ Generate batch of elements containing feature matrix of size 66x50
     filled with random floats between 0 and 1.
     """
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     rng = check_random_state(rng_seed)
     X = torch.from_numpy(rng.random((batch_size, 22, 51))).float().to(device)
     return X, torch.zeros(batch_size, device=device)
@@ -38,7 +38,7 @@ def random_batch(rng_seed, batch_size=5):
 class MockModule(torch.nn.Module):
     def __init__(self, preds):
         super().__init__()
-        self.preds = to_tensor(preds, device="cpu")
+        self.preds = to_tensor(preds, device='cpu')
         self.linear = torch.nn.Linear(5, 5)
 
     def forward(self, x):

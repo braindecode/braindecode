@@ -87,46 +87,46 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
     """
 
     def __init__(
-        self,
-        n_chans=None,
-        n_outputs=None,
-        n_times=None,
-        final_conv_length="auto",
-        n_filters_time=25,
-        n_filters_spat=25,
-        filter_time_length=10,
-        pool_time_length=3,
-        pool_time_stride=3,
-        n_filters_2=50,
-        filter_length_2=10,
-        n_filters_3=100,
-        filter_length_3=10,
-        n_filters_4=200,
-        filter_length_4=10,
-        first_conv_nonlin=elu,
-        first_pool_mode="max",
-        first_pool_nonlin=identity,
-        later_conv_nonlin=elu,
-        later_pool_mode="max",
-        later_pool_nonlin=identity,
-        drop_prob=0.5,
-        split_first_layer=True,
-        batch_norm=True,
-        batch_norm_alpha=0.1,
-        stride_before_pool=False,
-        chs_info=None,
-        input_window_seconds=None,
-        sfreq=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=True,
+            self,
+            n_chans=None,
+            n_outputs=None,
+            n_times=None,
+            final_conv_length="auto",
+            n_filters_time=25,
+            n_filters_spat=25,
+            filter_time_length=10,
+            pool_time_length=3,
+            pool_time_stride=3,
+            n_filters_2=50,
+            filter_length_2=10,
+            n_filters_3=100,
+            filter_length_3=10,
+            n_filters_4=200,
+            filter_length_4=10,
+            first_conv_nonlin=elu,
+            first_pool_mode="max",
+            first_pool_nonlin=identity,
+            later_conv_nonlin=elu,
+            later_pool_mode="max",
+            later_pool_nonlin=identity,
+            drop_prob=0.5,
+            split_first_layer=True,
+            batch_norm=True,
+            batch_norm_alpha=0.1,
+            stride_before_pool=False,
+            chs_info=None,
+            input_window_seconds=None,
+            sfreq=None,
+            in_chans=None,
+            n_classes=None,
+            input_window_samples=None,
+            add_log_softmax=True,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
+            ('in_chans', 'n_chans', in_chans, n_chans),
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
+            ('input_window_samples', 'n_times', input_window_samples, n_times),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -174,7 +174,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             "conv_time.bias": "conv_time_spat.conv_time.bias",
             "conv_spat.bias": "conv_time_spat.conv_spat.bias",
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias": "final_layer.conv_classifier.bias",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
         }
 
         if self.stride_before_pool:
@@ -233,7 +233,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.add_module("pool_nonlin", Expression(self.first_pool_nonlin))
 
         def add_conv_pool_block(
-            model, n_filters_before, n_filters, filter_length, block_nr
+                model, n_filters_before, n_filters, filter_length, block_nr
         ):
             suffix = "_{:d}".format(block_nr)
             self.add_module("drop" + suffix, nn.Dropout(p=self.drop_prob))
@@ -286,15 +286,12 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
-        module.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                self.n_filters_4,
-                self.n_outputs,
-                (self.final_conv_length, 1),
-                bias=True,
-            ),
-        )
+        module.add_module("conv_classifier",
+                          nn.Conv2d(
+                            self.n_filters_4,
+                            self.n_outputs,
+                            (self.final_conv_length, 1),
+                            bias=True, ))
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))

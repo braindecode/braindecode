@@ -154,7 +154,9 @@ class _BiLSTM(nn.Module):
 
     def forward(self, x):
         # set initial hidden and cell states
-        h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
+        h0 = torch.zeros(
+            self.num_layers * 2, x.size(0), self.hidden_size
+        ).to(x.device)
         c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
 
         # forward propagate LSTM
@@ -186,19 +188,19 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-        self,
-        n_outputs=5,
-        return_feats=False,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        n_classes=None,
-    ):
-        (n_outputs,) = deprecated_args(
             self,
-            ("n_classes", "n_outputs", n_classes, n_outputs),
+            n_outputs=5,
+            return_feats=False,
+            n_chans=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+            n_classes=None,
+    ):
+        n_outputs, = deprecated_args(
+            self,
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -214,9 +216,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         self.cnn2 = _LargeCNN()
         self.dropout = nn.Dropout(0.5)
         self.bilstm = _BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
-        self.fc = nn.Sequential(
-            nn.Linear(3072, 1024, bias=False), nn.BatchNorm1d(num_features=1024)
-        )
+        self.fc = nn.Sequential(nn.Linear(3072, 1024, bias=False),
+                                nn.BatchNorm1d(num_features=1024))
 
         self.features_extractor = nn.Identity()
         self.len_last_layer = 1024

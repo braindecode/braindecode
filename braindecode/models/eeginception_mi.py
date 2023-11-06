@@ -62,36 +62,27 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-        self,
-        n_chans=None,
-        n_outputs=None,
-        input_window_seconds=4.5,
-        sfreq=250,
-        n_convs=5,
-        n_filters=48,
-        kernel_unit_s=0.1,
-        activation=nn.ReLU(),
-        chs_info=None,
-        n_times=None,
-        in_channels=None,
-        n_classes=None,
-        input_window_s=None,
-        add_log_softmax=True,
-    ):
-        (
-            n_chans,
-            n_outputs,
-            input_window_seconds,
-        ) = deprecated_args(
             self,
-            ("in_channels", "n_chans", in_channels, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_window_s",
-                "input_window_seconds",
-                input_window_s,
-                input_window_seconds,
-            ),
+            n_chans=None,
+            n_outputs=None,
+            input_window_seconds=4.5,
+            sfreq=250,
+            n_convs=5,
+            n_filters=48,
+            kernel_unit_s=0.1,
+            activation=nn.ReLU(),
+            chs_info=None,
+            n_times=None,
+            in_channels=None,
+            n_classes=None,
+            input_window_s=None,
+            add_log_softmax=True,
+    ):
+        n_chans, n_outputs, input_window_seconds, = deprecated_args(
+            self,
+            ('in_channels', 'n_chans', in_channels, n_chans),
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
+            ('input_window_s', 'input_window_seconds', input_window_s, input_window_seconds),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -114,9 +105,8 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")
 
         self.mapping = {
-            "fc.weight": "final_layer.fc.weight",
-            "tc.bias": "final_layer.fc.bias",
-        }
+            'fc.weight': 'final_layer.fc.weight',
+            'tc.bias': 'final_layer.fc.bias'}
 
         # ======== Inception branches ========================
 
@@ -131,19 +121,16 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         intermediate_in_channels = (self.n_convs + 1) * self.n_filters
 
-        self.intermediate_inception_modules_1 = nn.ModuleList(
-            [
-                _InceptionModuleMI(
-                    in_channels=intermediate_in_channels,
-                    n_filters=self.n_filters,
-                    n_convs=self.n_convs,
-                    kernel_unit_s=self.kernel_unit_s,
-                    sfreq=self.sfreq,
-                    activation=self.activation,
-                )
-                for _ in range(2)
-            ]
-        )
+        self.intermediate_inception_modules_1 = nn.ModuleList([
+            _InceptionModuleMI(
+                in_channels=intermediate_in_channels,
+                n_filters=self.n_filters,
+                n_convs=self.n_convs,
+                kernel_unit_s=self.kernel_unit_s,
+                sfreq=self.sfreq,
+                activation=self.activation,
+            ) for _ in range(2)
+        ])
 
         self.residual_block_1 = _ResidualModuleMI(
             in_channels=self.n_chans,
@@ -151,19 +138,16 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             activation=self.activation,
         )
 
-        self.intermediate_inception_modules_2 = nn.ModuleList(
-            [
-                _InceptionModuleMI(
-                    in_channels=intermediate_in_channels,
-                    n_filters=self.n_filters,
-                    n_convs=self.n_convs,
-                    kernel_unit_s=self.kernel_unit_s,
-                    sfreq=self.sfreq,
-                    activation=self.activation,
-                )
-                for _ in range(3)
-            ]
-        )
+        self.intermediate_inception_modules_2 = nn.ModuleList([
+            _InceptionModuleMI(
+                in_channels=intermediate_in_channels,
+                n_filters=self.n_filters,
+                n_convs=self.n_convs,
+                kernel_unit_s=self.kernel_unit_s,
+                sfreq=self.sfreq,
+                activation=self.activation,
+            ) for _ in range(3)
+        ])
 
         self.residual_block_2 = _ResidualModuleMI(
             in_channels=intermediate_in_channels,
@@ -188,23 +172,19 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.flat = nn.Flatten()
 
         module = nn.Sequential()
-        module.add_module(
-            "fc",
-            nn.Linear(
-                in_features=intermediate_in_channels,
-                out_features=self.n_outputs,
-                bias=True,
-            ),
-        )
+        module.add_module('fc',
+                          nn.Linear(in_features=intermediate_in_channels,
+                                    out_features=self.n_outputs,
+                                    bias=True, ))
         if self.add_log_softmax:
-            module.add_module("out_fun", nn.LogSoftmax(dim=1))
+            module.add_module('out_fun', nn.LogSoftmax(dim=1))
         else:
-            module.add_module("out_fun", nn.Identity())
+            module.add_module('out_fun', nn.Identity())
         self.final_layer = module
 
     def forward(
-        self,
-        X: torch.Tensor,
+            self,
+            X: torch.Tensor,
     ) -> torch.Tensor:
         X = self.ensuredims(X)
         X = self.dimshuffle(X)
@@ -232,13 +212,13 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
 class _InceptionModuleMI(nn.Module):
     def __init__(
-        self,
-        in_channels,
-        n_filters,
-        n_convs,
-        kernel_unit_s=0.1,
-        sfreq=250,
-        activation=nn.ReLU(),
+            self,
+            in_channels,
+            n_filters,
+            n_convs,
+            kernel_unit_s=0.1,
+            sfreq=250,
+            activation=nn.ReLU(),
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -273,26 +253,23 @@ class _InceptionModuleMI(nn.Module):
             bias=True,
         )
 
-        self.conv_list = nn.ModuleList(
-            [
-                nn.Conv2d(
-                    in_channels=self.n_filters,
-                    out_channels=self.n_filters,
-                    kernel_size=(1, (n_units * 2 + 1) * kernel_unit),
-                    padding="same",
-                    bias=True,
-                )
-                for n_units in range(self.n_convs)
-            ]
-        )
+        self.conv_list = nn.ModuleList([
+            nn.Conv2d(
+                in_channels=self.n_filters,
+                out_channels=self.n_filters,
+                kernel_size=(1, (n_units * 2 + 1) * kernel_unit),
+                padding="same",
+                bias=True,
+            ) for n_units in range(self.n_convs)
+        ])
 
         self.bn = nn.BatchNorm2d(self.n_filters * (self.n_convs + 1))
 
         self.activation = activation
 
     def forward(
-        self,
-        X: torch.Tensor,
+            self,
+            X: torch.Tensor,
     ) -> torch.Tensor:
         X1 = self.bottleneck(X)
 
@@ -308,7 +285,12 @@ class _InceptionModuleMI(nn.Module):
 
 
 class _ResidualModuleMI(nn.Module):
-    def __init__(self, in_channels, n_filters, activation=nn.ReLU()):
+    def __init__(
+            self,
+            in_channels,
+            n_filters,
+            activation=nn.ReLU()
+    ):
         super().__init__()
         self.in_channels = in_channels
         self.n_filters = n_filters
@@ -323,8 +305,8 @@ class _ResidualModuleMI(nn.Module):
         )
 
     def forward(
-        self,
-        X: torch.Tensor,
+            self,
+            X: torch.Tensor,
     ) -> torch.Tensor:
         out = self.conv(X)
         out = self.bn(out)

@@ -37,7 +37,6 @@ class TimeReverse(Transform):
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
-
     operation = staticmethod(time_reverse)
 
     def __init__(
@@ -63,11 +62,17 @@ class SignFlip(Transform):
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
-
     operation = staticmethod(sign_flip)
 
-    def __init__(self, probability, random_state=None):
-        super().__init__(probability=probability, random_state=random_state)
+    def __init__(
+        self,
+        probability,
+        random_state=None
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
 
 
 class FTSurrogate(Transform):
@@ -97,7 +102,6 @@ class FTSurrogate(Transform):
        Problems of Noisy Signals by using Fourier Transform Surrogates. arXiv
        preprint arXiv:1806.08675.
     """
-
     operation = staticmethod(ft_surrogate)
 
     def __init__(
@@ -105,18 +109,18 @@ class FTSurrogate(Transform):
         probability,
         phase_noise_magnitude=1,
         channel_indep=False,
-        random_state=None,
+        random_state=None
     ):
-        super().__init__(probability=probability, random_state=random_state)
-        assert isinstance(
-            phase_noise_magnitude, (float, int, torch.Tensor)
-        ), "phase_noise_magnitude should be a float."
-        assert (
-            0 <= phase_noise_magnitude <= 1
-        ), "phase_noise_magnitude should be between 0 and 1."
-        assert isinstance(
-            channel_indep, bool
-        ), "channel_indep is expected to be a boolean"
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
+        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)), \
+            "phase_noise_magnitude should be a float."
+        assert 0 <= phase_noise_magnitude <= 1, \
+            "phase_noise_magnitude should be between 0 and 1."
+        assert isinstance(channel_indep, bool), (
+            "channel_indep is expected to be a boolean")
         self.phase_noise_magnitude = phase_noise_magnitude
         self.channel_indep = channel_indep
 
@@ -170,11 +174,18 @@ class ChannelsDropout(Transform):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-
     operation = staticmethod(channels_dropout)
 
-    def __init__(self, probability, p_drop=0.2, random_state=None):
-        super().__init__(probability=probability, random_state=random_state)
+    def __init__(
+        self,
+        probability,
+        p_drop=0.2,
+        random_state=None
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
         self.p_drop = p_drop
 
     def get_augmentation_params(self, *batch):
@@ -228,11 +239,18 @@ class ChannelsShuffle(Transform):
        Learning from Heterogeneous EEG Signals with Differentiable Channel
        Reordering. arXiv preprint arXiv:2010.13694.
     """
-
     operation = staticmethod(channels_shuffle)
 
-    def __init__(self, probability, p_shuffle=0.2, random_state=None):
-        super().__init__(probability=probability, random_state=random_state)
+    def __init__(
+        self,
+        probability,
+        p_shuffle=0.2,
+        random_state=None
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
         self.p_shuffle = p_shuffle
 
     def get_augmentation_params(self, *batch):
@@ -290,10 +308,14 @@ class GaussianNoise(Transform):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
-
     operation = staticmethod(gaussian_noise)
 
-    def __init__(self, probability, std=0.1, random_state=None):
+    def __init__(
+        self,
+        probability,
+        std=0.1,
+        random_state=None
+    ):
         super().__init__(
             probability=probability,
             random_state=random_state,
@@ -351,23 +373,28 @@ class ChannelsSymmetry(Transform):
        (2018). HAMLET: interpretable human and machine co-learning technique.
        arXiv preprint arXiv:1803.09702.
     """
-
     operation = staticmethod(channels_permute)
 
-    def __init__(self, probability, ordered_ch_names, random_state=None):
+    def __init__(
+        self,
+        probability,
+        ordered_ch_names,
+        random_state=None
+    ):
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
-        assert isinstance(ordered_ch_names, list) and all(
-            isinstance(ch, str) for ch in ordered_ch_names
+        assert (
+            isinstance(ordered_ch_names, list) and
+            all(isinstance(ch, str) for ch in ordered_ch_names)
         ), "ordered_ch_names should be a list of str."
 
         permutation = list()
         for idx, ch_name in enumerate(ordered_ch_names):
             new_position = idx
             # Find digits in channel name (assuming 10-20 system)
-            d = "".join(list(filter(str.isdigit, ch_name)))
+            d = ''.join(list(filter(str.isdigit, ch_name)))
             if len(d) > 0:
                 d = int(d)
                 if d % 2 == 0:  # pair/right electrodes
@@ -427,17 +454,22 @@ class SmoothTimeMask(Transform):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
-
     operation = staticmethod(smooth_time_mask)
 
-    def __init__(self, probability, mask_len_samples=100, random_state=None):
+    def __init__(
+        self,
+        probability,
+        mask_len_samples=100,
+        random_state=None
+    ):
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
 
         assert (
-            isinstance(mask_len_samples, (int, torch.Tensor)) and mask_len_samples > 0
+            isinstance(mask_len_samples, (int, torch.Tensor)) and
+            mask_len_samples > 0
         ), "mask_len_samples has to be a positive integer"
         self.mask_len_samples = mask_len_samples
 
@@ -472,14 +504,9 @@ class SmoothTimeMask(Transform):
         mask_len_samples = self.mask_len_samples
         if isinstance(mask_len_samples, torch.Tensor):
             mask_len_samples = mask_len_samples.to(X.device)
-        mask_start = torch.as_tensor(
-            self.rng.uniform(
-                low=0,
-                high=1,
-                size=X.shape[0],
-            ),
-            device=X.device,
-        ) * (seq_length - mask_len_samples)
+        mask_start = torch.as_tensor(self.rng.uniform(
+            low=0, high=1, size=X.shape[0],
+        ), device=X.device) * (seq_length - mask_len_samples)
         return {
             "mask_start_per_sample": mask_start,
             "mask_len_samples": mask_len_samples,
@@ -519,26 +546,27 @@ class BandstopFilter(Transform):
        Representation Learning for Electroencephalogram Classification. In
        Machine Learning for Health (pp. 238-253). PMLR.
     """
-
     operation = staticmethod(bandstop_filter)
 
     def __init__(
-        self, probability, sfreq, bandwidth=1, max_freq=None, random_state=None
+        self,
+        probability,
+        sfreq,
+        bandwidth=1,
+        max_freq=None,
+        random_state=None
     ):
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
-        assert (
-            isinstance(bandwidth, Real) and bandwidth >= 0
-        ), "bandwidth should be a non-negative float."
-        assert (
-            isinstance(sfreq, Real) and sfreq > 0
-        ), "sfreq should be a positive float."
+        assert isinstance(bandwidth, Real) and bandwidth >= 0, \
+            "bandwidth should be a non-negative float."
+        assert isinstance(sfreq, Real) and sfreq > 0, \
+            "sfreq should be a positive float."
         if max_freq is not None:
-            assert (
-                isinstance(max_freq, Real) and max_freq > 0
-            ), "max_freq should be a positive float."
+            assert isinstance(max_freq, Real) and max_freq > 0, \
+                "max_freq should be a positive float."
         nyq = sfreq / 2
         if max_freq is None or max_freq > nyq:
             max_freq = nyq
@@ -547,9 +575,8 @@ class BandstopFilter(Transform):
                 f" Nyquist frequency ({nyq} Hz)."
                 f" Falling back to max_freq = {nyq}."
             )
-        assert (
-            bandwidth < max_freq
-        ), f"`bandwidth` needs to be smaller than max_freq={max_freq}"
+        assert bandwidth < max_freq, \
+            f"`bandwidth` needs to be smaller than max_freq={max_freq}"
 
         # override bandwidth value when a magnitude is passed
         self.sfreq = sfreq
@@ -592,7 +619,7 @@ class BandstopFilter(Transform):
         notched_freqs = self.rng.uniform(
             low=1 + 2 * self.bandwidth,
             high=self.max_freq - 1 - 2 * self.bandwidth,
-            size=X.shape[0],
+            size=X.shape[0]
         )
         return {
             "sfreq": self.sfreq,
@@ -619,17 +646,21 @@ class FrequencyShift(Transform):
         Seed to be used to instantiate numpy random number generator instance.
         Defaults to None.
     """
-
     operation = staticmethod(frequency_shift)
 
-    def __init__(self, probability, sfreq, max_delta_freq=2, random_state=None):
+    def __init__(
+        self,
+        probability,
+        sfreq,
+        max_delta_freq=2,
+        random_state=None
+    ):
         super().__init__(
             probability=probability,
             random_state=random_state,
         )
-        assert (
-            isinstance(sfreq, Real) and sfreq > 0
-        ), "sfreq should be a positive float."
+        assert isinstance(sfreq, Real) and sfreq > 0, \
+            "sfreq should be a positive float."
         self.sfreq = sfreq
 
         self.max_delta_freq = max_delta_freq
@@ -658,7 +689,10 @@ class FrequencyShift(Transform):
             return super().get_augmentation_params(*batch)
         X = batch[0]
 
-        u = torch.as_tensor(self.rng.uniform(size=X.shape[0]), device=X.device)
+        u = torch.as_tensor(
+            self.rng.uniform(size=X.shape[0]),
+            device=X.device
+        )
         max_delta_freq = self.max_delta_freq
         if isinstance(max_delta_freq, torch.Tensor):
             max_delta_freq = max_delta_freq.to(X.device)
@@ -684,13 +718,12 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
         matrices that will be fed to `SensorsRotation` transform. By
         default None.
     """
-    assert (
-        raw_or_epoch is not None or ordered_ch_names is not None
-    ), "At least one of raw_or_epoch and ordered_ch_names is needed."
+    assert raw_or_epoch is not None or ordered_ch_names is not None, \
+        "At least one of raw_or_epoch and ordered_ch_names is needed."
     if ordered_ch_names is None:
-        ordered_ch_names = raw_or_epoch.info["ch_names"]
-    ten_twenty_montage = make_standard_montage("standard_1020")
-    positions_dict = ten_twenty_montage.get_positions()["ch_pos"]
+        ordered_ch_names = raw_or_epoch.info['ch_names']
+    ten_twenty_montage = make_standard_montage('standard_1020')
+    positions_dict = ten_twenty_montage.get_positions()['ch_pos']
     positions_subdict = {
         k: positions_dict[k] for k in ordered_ch_names if k in positions_dict
     }
@@ -737,38 +770,37 @@ class SensorsRotation(Transform):
        Conference of the IEEE Engineering in Medicine and Biology Society
        (EMBC) (pp. 471-474).
     """
-
     operation = staticmethod(sensors_rotation)
 
     def __init__(
         self,
         probability,
         sensors_positions_matrix,
-        axis="z",
+        axis='z',
         max_degrees=15,
         spherical_splines=True,
-        random_state=None,
+        random_state=None
     ):
-        super().__init__(probability=probability, random_state=random_state)
+        super().__init__(
+            probability=probability,
+            random_state=random_state
+        )
         if isinstance(sensors_positions_matrix, (np.ndarray, list)):
-            sensors_positions_matrix = torch.as_tensor(sensors_positions_matrix)
-        assert isinstance(
-            sensors_positions_matrix, torch.Tensor
-        ), "sensors_positions should be an Tensor"
+            sensors_positions_matrix = torch.as_tensor(
+                sensors_positions_matrix
+            )
+        assert isinstance(sensors_positions_matrix, torch.Tensor), \
+            "sensors_positions should be an Tensor"
         assert (
-            isinstance(max_degrees, (Real, torch.Tensor)) and max_degrees >= 0
+            isinstance(max_degrees, (Real, torch.Tensor)) and
+            max_degrees >= 0
         ), "max_degrees should be non-negative float."
-        assert isinstance(axis, str) and axis in [
-            "x",
-            "y",
-            "z",
-        ], "axis can be either x, y or z."
-        assert (
-            sensors_positions_matrix.shape[0] == 3
-        ), "sensors_positions_matrix shape should be 3 x n_channels."
-        assert isinstance(
-            spherical_splines, bool
-        ), "spherical_splines should be a boolean"
+        assert isinstance(axis, str) and axis in ['x', 'y', 'z'], \
+            "axis can be either x, y or z."
+        assert sensors_positions_matrix.shape[0] == 3, \
+            "sensors_positions_matrix shape should be 3 x n_channels."
+        assert isinstance(spherical_splines, bool), \
+            "spherical_splines should be a boolean"
         self.sensors_positions_matrix = sensors_positions_matrix
         self.axis = axis
         self.spherical_splines = spherical_splines
@@ -809,18 +841,21 @@ class SensorsRotation(Transform):
             return super().get_augmentation_params(*batch)
         X = batch[0]
 
-        u = self.rng.uniform(low=0, high=1, size=X.shape[0])
+        u = self.rng.uniform(
+            low=0,
+            high=1,
+            size=X.shape[0]
+        )
         max_degrees = self.max_degrees
         if isinstance(max_degrees, torch.Tensor):
             max_degrees = max_degrees.to(X.device)
-        random_angles = (
-            torch.as_tensor(u, device=X.device) * 2 * max_degrees - max_degrees
-        )
+        random_angles = torch.as_tensor(
+            u, device=X.device) * 2 * max_degrees - max_degrees
         return {
             "sensors_positions_matrix": self.sensors_positions_matrix,
             "axis": self.axis,
             "angles": random_angles,
-            "spherical_splines": self.spherical_splines,
+            "spherical_splines": self.spherical_splines
         }
 
 
@@ -865,7 +900,7 @@ class SensorsZRotation(SensorsRotation):
         ordered_ch_names,
         max_degrees=15,
         spherical_splines=True,
-        random_state=None,
+        random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
             _get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
@@ -873,10 +908,10 @@ class SensorsZRotation(SensorsRotation):
         super().__init__(
             probability=probability,
             sensors_positions_matrix=sensors_positions_matrix,
-            axis="z",
+            axis='z',
             max_degrees=max_degrees,
             spherical_splines=spherical_splines,
-            random_state=random_state,
+            random_state=random_state
         )
 
 
@@ -921,7 +956,7 @@ class SensorsYRotation(SensorsRotation):
         ordered_ch_names,
         max_degrees=15,
         spherical_splines=True,
-        random_state=None,
+        random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
             _get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
@@ -929,10 +964,10 @@ class SensorsYRotation(SensorsRotation):
         super().__init__(
             probability=probability,
             sensors_positions_matrix=sensors_positions_matrix,
-            axis="y",
+            axis='y',
             max_degrees=max_degrees,
             spherical_splines=spherical_splines,
-            random_state=random_state,
+            random_state=random_state
         )
 
 
@@ -977,7 +1012,7 @@ class SensorsXRotation(SensorsRotation):
         ordered_ch_names,
         max_degrees=15,
         spherical_splines=True,
-        random_state=None,
+        random_state=None
     ):
         sensors_positions_matrix = torch.as_tensor(
             _get_standard_10_20_positions(ordered_ch_names=ordered_ch_names)
@@ -985,10 +1020,10 @@ class SensorsXRotation(SensorsRotation):
         super().__init__(
             probability=probability,
             sensors_positions_matrix=sensors_positions_matrix,
-            axis="x",
+            axis='x',
             max_degrees=max_degrees,
             spherical_splines=spherical_splines,
-            random_state=random_state,
+            random_state=random_state
         )
 
 
@@ -1015,13 +1050,17 @@ class Mixup(Transform):
        Online: https://arxiv.org/abs/1710.09412
     .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
-
     operation = staticmethod(mixup)
 
-    def __init__(self, alpha, beta_per_sample=False, random_state=None):
+    def __init__(
+        self,
+        alpha,
+        beta_per_sample=False,
+        random_state=None
+    ):
         super().__init__(
             probability=1.0,  # Mixup has to be applied to whole batches
-            random_state=random_state,
+            random_state=random_state
         )
         self.alpha = alpha
         self.beta_per_sample = beta_per_sample
@@ -1059,11 +1098,7 @@ class Mixup(Transform):
         else:
             lam = torch.ones(batch_size).to(device)
 
-        idx_perm = torch.as_tensor(
-            self.rng.permutation(
-                batch_size,
-            )
-        )
+        idx_perm = torch.as_tensor(self.rng.permutation(batch_size,))
 
         return {
             "lam": lam,

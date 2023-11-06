@@ -41,7 +41,7 @@ train one of the Braindecode models on it.
 
 from braindecode.models.util import models_dict
 
-print(f"All the Braindecode models:\n{list(models_dict.keys())}")
+print(f'All the Braindecode models:\n{list(models_dict.keys())}')
 
 ######################################################################
 # After your investigation, you found out that the model you are looking for is
@@ -69,7 +69,7 @@ model = ShallowFBCSPNet(
     n_chans=32,
     n_times=1000,
     n_outputs=2,
-    final_conv_length="auto",
+    final_conv_length='auto',
 )
 print(model)
 
@@ -91,7 +91,7 @@ print(model)
 import mne
 import numpy as np
 
-info = mne.create_info(ch_names=["C3", "C4", "Cz"], sfreq=256.0, ch_types="eeg")
+info = mne.create_info(ch_names=['C3', 'C4', 'Cz'], sfreq=256., ch_types='eeg')
 X = np.random.randn(100, 3, 1024)  # 100 epochs, 3 channels, 4 seconds (@256Hz)
 epochs = mne.EpochsArray(X, info=info)
 y = np.random.randint(0, 4, size=100)  # 4 classes
@@ -125,8 +125,8 @@ from skorch.dataset import ValidSplit
 from braindecode import EEGClassifier
 
 net = EEGClassifier(
-    "ShallowFBCSPNet",
-    module__final_conv_length="auto",
+    'ShallowFBCSPNet',
+    module__final_conv_length='auto',
     train_split=ValidSplit(0.2),
     # To train a neural network you need validation split, here, we use 20%.
 )
@@ -154,10 +154,8 @@ print(net.module_)
 # And we can see that all the following parameters were automatically inferred
 # from the training data:
 
-print(
-    f"{net.module_.n_chans=}\n{net.module_.n_times=}\n{net.module_.n_outputs=}"
-    f"\n{net.module_.input_window_seconds=}\n{net.module_.sfreq=}\n{net.module_.chs_info=}"
-)
+print(f'{net.module_.n_chans=}\n{net.module_.n_times=}\n{net.module_.n_outputs=}'
+      f'\n{net.module_.input_window_seconds=}\n{net.module_.sfreq=}\n{net.module_.chs_info=}')
 
 ######################################################################
 # Depending on the type of data used for training, some parameters might not be

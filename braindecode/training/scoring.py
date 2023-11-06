@@ -18,7 +18,8 @@ from skorch.dataset import unpack_data
 from torch.utils.data import DataLoader
 
 
-def trial_preds_from_window_preds(preds, i_window_in_trials, i_stop_in_trials):
+def trial_preds_from_window_preds(
+        preds, i_window_in_trials, i_stop_in_trials):
     """
     Assigning window predictions to trials  while removing duplicate
     predictions.
@@ -39,9 +40,8 @@ def trial_preds_from_window_preds(preds, i_window_in_trials, i_stop_in_trials):
         Predictions in each trial, duplicates removed
 
     """
-    assert (
-        len(preds) == len(i_window_in_trials) == len(i_stop_in_trials)
-    ), f"{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}"
+    assert len(preds) == len(i_window_in_trials) == len(i_stop_in_trials), (
+        f'{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}')
 
     # Algorithm for assigning window predictions to trials
     # while removing duplicate predictions:
@@ -64,11 +64,11 @@ def trial_preds_from_window_preds(preds, i_window_in_trials, i_stop_in_trials):
     i_last_stop = None
     i_last_window = -1
     for window_preds, i_window, i_stop in zip(
-        preds, i_window_in_trials, i_stop_in_trials
-    ):
+            preds, i_window_in_trials, i_stop_in_trials):
         window_preds = np.array(window_preds)
         if i_window != (i_last_window + 1):
-            assert i_window == 0, "window numbers in new trial should start from 0"
+            assert i_window == 0, (
+                "window numbers in new trial should start from 0")
             preds_per_trial.append(np.concatenate(cur_trial_preds, axis=1))
             cur_trial_preds = []
             i_last_stop = None
@@ -117,17 +117,16 @@ class CroppedTrialEpochScoring(EpochScoring):
     """
     Class to compute scores for trials from a model that predicts (super)crops.
     """
-
     # XXX needs a docstring !!!
 
     def __init__(
-        self,
-        scoring,
-        lower_is_better=True,
-        on_train=False,
-        name=None,
-        target_extractor=to_numpy,
-        use_caching=True,
+            self,
+            scoring,
+            lower_is_better=True,
+            on_train=False,
+            name=None,
+            target_extractor=to_numpy,
+            use_caching=True,
     ):
         super().__init__(
             scoring=scoring,
@@ -148,7 +147,8 @@ class CroppedTrialEpochScoring(EpochScoring):
         if not self.on_train:
             self.window_inds_ = []
 
-    def on_batch_end(self, net, batch, y_pred, training, **kwargs):
+    def on_batch_end(
+             self, net, batch, y_pred, training, **kwargs):
         # Skorch saves the predictions without moving them from GPU
         # https://github.com/skorch-dev/skorch/blob/fe71e3d55a4ae5f5f94ef7bdfc00fca3b3fd267f/skorch/callbacks/scoring.py#L385
         # This can cause memory issues in case of a large number of predictions
@@ -164,42 +164,41 @@ class CroppedTrialEpochScoring(EpochScoring):
                 # Prevent that rng state of torch is changed by
                 # creation+usage of iterator
                 rng_state = torch.random.get_rng_state()
-                pred_results = net.predict_with_window_inds_and_ys(dataset_train)
+                pred_results = net.predict_with_window_inds_and_ys(
+                    dataset_train)
                 torch.random.set_rng_state(rng_state)
             else:
                 pred_results = {}
-                pred_results["i_window_in_trials"] = np.concatenate(
+                pred_results['i_window_in_trials'] = np.concatenate(
                     [i[0].cpu().numpy() for i in self.window_inds_]
                 )
-                pred_results["i_window_stops"] = np.concatenate(
+                pred_results['i_window_stops'] = np.concatenate(
                     [i[2].cpu().numpy() for i in self.window_inds_]
                 )
-                pred_results["preds"] = np.concatenate(
-                    [y_pred.cpu().numpy() for y_pred in self.y_preds_]
-                )
-                pred_results["window_ys"] = np.concatenate(
-                    [y.cpu().numpy() for y in self.y_trues_]
-                )
+                pred_results['preds'] = np.concatenate(
+                    [y_pred.cpu().numpy() for y_pred in self.y_preds_])
+                pred_results['window_ys'] = np.concatenate(
+                    [y.cpu().numpy() for y in self.y_trues_])
 
             # A new trial starts
             # when the index of the window in trials
             # does not increment by 1
             # Add dummy infinity at start
-            window_0_per_trial_mask = (
-                np.diff(pred_results["i_window_in_trials"], prepend=[np.inf]) != 1
-            )
-            trial_ys = pred_results["window_ys"][window_0_per_trial_mask]
+            window_0_per_trial_mask = np.diff(
+                pred_results['i_window_in_trials'], prepend=[np.inf]) != 1
+            trial_ys = pred_results['window_ys'][window_0_per_trial_mask]
             trial_preds = trial_preds_from_window_preds(
-                pred_results["preds"],
-                pred_results["i_window_in_trials"],
-                pred_results["i_window_stops"],
-            )
+                pred_results['preds'],
+                pred_results['i_window_in_trials'],
+                pred_results['i_window_stops'])
 
             # Average across the timesteps of each trial so we have per-trial
             # predictions already, these will be just passed through the forward
             # method of the classifier/regressor to the skorch scoring function.
             # trial_preds is a list, each item is a 2d array classes x time
-            y_preds_per_trial = np.array([np.mean(p, axis=1) for p in trial_preds])
+            y_preds_per_trial = np.array(
+                [np.mean(p, axis=1) for p in trial_preds]
+            )
             # Move into format expected by skorch (list of torch tensors)
             y_preds_per_trial = [torch.tensor(y_preds_per_trial)]
 
@@ -207,10 +206,9 @@ class CroppedTrialEpochScoring(EpochScoring):
             # that are also on same set
             cbs = net.callbacks_
             epoch_cbs = [
-                cb
-                for name, cb in cbs
-                if isinstance(cb, CroppedTrialEpochScoring)
-                and (cb.on_train == self.on_train)
+                cb for name, cb in cbs if
+                isinstance(cb, CroppedTrialEpochScoring) and (
+                        cb.on_train == self.on_train)
             ]
             for cb in epoch_cbs:
                 cb.y_preds_ = y_preds_per_trial
@@ -220,7 +218,7 @@ class CroppedTrialEpochScoring(EpochScoring):
         dataset = dataset_train if self.on_train else dataset_valid
 
         with _cache_net_forward_iter(
-            net, self.use_caching, self.y_preds_
+                net, self.use_caching, self.y_preds_
         ) as cached_net:
             current_score = self._scoring(cached_net, dataset, self.y_trues_)
         self._record_score(net.history, current_score)
@@ -233,7 +231,6 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
     Class to compute scores for trials from a model that predicts (super)crops with
     time series target.
     """
-
     def on_epoch_end(self, net, dataset_train, dataset_valid, **kwargs):
         assert self.use_caching
         if not self.crops_to_trials_computed:
@@ -241,40 +238,37 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
                 # Prevent that rng state of torch is changed by
                 # creation+usage of iterator
                 rng_state = torch.random.get_rng_state()
-                pred_results = net.predict_with_window_inds_and_ys(dataset_train)
+                pred_results = net.predict_with_window_inds_and_ys(
+                    dataset_train)
                 torch.random.set_rng_state(rng_state)
             else:
                 pred_results = {}
-                pred_results["i_window_in_trials"] = np.concatenate(
+                pred_results['i_window_in_trials'] = np.concatenate(
                     [i[0].cpu().numpy() for i in self.window_inds_]
                 )
-                pred_results["i_window_stops"] = np.concatenate(
+                pred_results['i_window_stops'] = np.concatenate(
                     [i[2].cpu().numpy() for i in self.window_inds_]
                 )
-                pred_results["preds"] = np.concatenate(
-                    [y_pred.cpu().numpy() for y_pred in self.y_preds_]
-                )
-                pred_results["window_ys"] = np.concatenate(
-                    [y.cpu().numpy() for y in self.y_trues_]
-                )
+                pred_results['preds'] = np.concatenate(
+                    [y_pred.cpu().numpy() for y_pred in self.y_preds_])
+                pred_results['window_ys'] = np.concatenate(
+                    [y.cpu().numpy() for y in self.y_trues_])
 
-            num_preds = pred_results["preds"][-1].shape[-1]
+            num_preds = pred_results['preds'][-1].shape[-1]
             # slice the targets to fit preds shape
-            pred_results["window_ys"] = [
-                targets[:, -num_preds:] for targets in pred_results["window_ys"]
+            pred_results['window_ys'] = [
+                targets[:, -num_preds:] for targets in pred_results['window_ys']
             ]
 
             trial_preds = trial_preds_from_window_preds(
-                pred_results["preds"],
-                pred_results["i_window_in_trials"],
-                pred_results["i_window_stops"],
-            )
+                pred_results['preds'],
+                pred_results['i_window_in_trials'],
+                pred_results['i_window_stops'])
 
             trial_ys = trial_preds_from_window_preds(
-                pred_results["window_ys"],
-                pred_results["i_window_in_trials"],
-                pred_results["i_window_stops"],
-            )
+                pred_results['window_ys'],
+                pred_results['i_window_in_trials'],
+                pred_results['i_window_stops'])
 
             # the output is a list of predictions/targets per trial where each item is a
             # timeseries of predictions/targets of shape (n_classes x timesteps)
@@ -296,10 +290,9 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
             # that are also on same set
             cbs = net.callbacks_
             epoch_cbs = [
-                cb
-                for name, cb in cbs
-                if isinstance(cb, CroppedTimeSeriesEpochScoring)
-                and (cb.on_train == self.on_train)
+                cb for name, cb in cbs if
+                isinstance(cb, CroppedTimeSeriesEpochScoring) and (
+                    cb.on_train == self.on_train)
             ]
             masked_preds = [torch.tensor(masked_preds.T)]
             for cb in epoch_cbs:
@@ -372,7 +365,7 @@ class PostEpochTrainScoring(EpochScoring):
             for batch in iterator:
                 batch_X, batch_y = unpack_data(batch)
                 # TODO: remove after skorch 0.10 release
-                if not check_version("skorch", min_version="0.10.1"):
+                if not check_version('skorch', min_version='0.10.1'):
                     yp = net.evaluation_step(batch_X, training=False)
                 # X, y unpacking has been pushed downstream in skorch 0.10
                 else:
@@ -401,7 +394,9 @@ class PostEpochTrainScoring(EpochScoring):
         with _cache_net_forward_iter(
             net, use_caching=True, y_preds=self.y_preds_
         ) as cached_net:
-            current_score = self._scoring(cached_net, dataset_train, self.y_trues_)
+            current_score = self._scoring(
+                cached_net, dataset_train, self.y_trues_
+            )
         self._record_score(net.history, current_score)
 
 
@@ -437,14 +432,12 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
     module.eval()
     # we have a cropped dataset if there exists at least one trial with more
     # than one compute window
-    more_than_one_window = sum(dataset.get_metadata()["i_window_in_trial"] != 0) > 0
+    more_than_one_window = sum(dataset.get_metadata()['i_window_in_trial'] != 0) > 0
     if not more_than_one_window:
-        warnings.warn(
-            "This function was designed to predict trials from "
-            "cropped datasets, which typically have multiple compute "
-            "windows per trial. The given dataset has exactly one "
-            "window per trial."
-        )
+        warnings.warn('This function was designed to predict trials from '
+                      'cropped datasets, which typically have multiple compute '
+                      'windows per trial. The given dataset has exactly one '
+                      'window per trial.')
     loader = DataLoader(
         dataset=dataset,
         batch_size=batch_size,
@@ -470,8 +463,7 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
         if all_ys[0].shape == ():
             all_ys = np.array(all_ys)
             ys_per_trial = all_ys[
-                np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1
-            ]
+                np.diff(torch.cat(all_inds[0::3]), prepend=[np.inf]) != 1]
         else:
             ys_per_trial = trial_preds_from_window_preds(
                 preds=all_ys,

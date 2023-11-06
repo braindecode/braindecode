@@ -62,14 +62,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 # brain activity
 
 from braindecode.preprocessing import (
-    exponential_moving_standardize,
-    preprocess,
-    Preprocessor,
-)
+    exponential_moving_standardize, preprocess, Preprocessor)
 from numpy import multiply
 
-low_cut_hz = 4.0  # low cut frequency for filtering
-high_cut_hz = 38.0  # high cut frequency for filtering
+low_cut_hz = 4.  # low cut frequency for filtering
+high_cut_hz = 38.  # high cut frequency for filtering
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
@@ -83,14 +80,11 @@ factor = 1e6
 # (see https://mne.tools/stable/glossary.html#term-data-channels).
 
 preprocessors = [
-    Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
+    Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
     Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-    Preprocessor(
-        exponential_moving_standardize,  # Exponential moving standardization
-        factor_new=factor_new,
-        init_block_size=init_block_size,
-    ),
+    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
+    Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
+                 factor_new=factor_new, init_block_size=init_block_size)
 ]
 
 preprocess(dataset, preprocessors, n_jobs=-1)
@@ -110,8 +104,8 @@ from numpy import array
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
-sfreq = dataset.datasets[0].raw.info["sfreq"]
-assert all([ds.raw.info["sfreq"] == sfreq for ds in dataset.datasets])
+sfreq = dataset.datasets[0].raw.info['sfreq']
+assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
 # Calculate the trial start offset in samples.
 trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
@@ -128,9 +122,9 @@ windows_dataset = create_windows_from_events(
 # Following the split defined in the BCI competition
 
 
-splitted = windows_dataset.split("session")
-train_set = splitted["0train"]  # Session train
-eval_set = splitted["1test"]  # Session evaluation
+splitted = windows_dataset.split('session')
+train_set = splitted['0train']  # Session train
+eval_set = splitted['1test']  # Session evaluation
 
 ######################################################################
 # Defining a list of transforms
@@ -160,22 +154,14 @@ from braindecode.augmentation import FTSurrogate, SmoothTimeMask, ChannelsDropou
 
 seed = 20200220
 
-transforms_freq = [
-    FTSurrogate(probability=0.5, phase_noise_magnitude=phase_freq, random_state=seed)
-    for phase_freq in linspace(0, 1, 2)
-]
+transforms_freq = [FTSurrogate(probability=0.5, phase_noise_magnitude=phase_freq,
+                               random_state=seed) for phase_freq in linspace(0, 1, 2)]
 
-transforms_time = [
-    SmoothTimeMask(
-        probability=0.5, mask_len_samples=int(sfreq * second), random_state=seed
-    )
-    for second in linspace(0.1, 2, 2)
-]
+transforms_time = [SmoothTimeMask(probability=0.5, mask_len_samples=int(sfreq * second),
+                                  random_state=seed) for second in linspace(0.1, 2, 2)]
 
-transforms_spatial = [
-    ChannelsDropout(probability=0.5, p_drop=prob, random_state=seed)
-    for prob in linspace(0, 1, 2)
-]
+transforms_spatial = [ChannelsDropout(probability=0.5, p_drop=prob,
+                                      random_state=seed) for prob in linspace(0, 1, 2)]
 
 ######################################################################
 # Training a model with data augmentation
@@ -195,7 +181,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
-device = "cuda" if cuda else "cpu"
+device = 'cuda' if cuda else 'cpu'
 if cuda:
     torch.backends.cudnn.benchmark = True
 
@@ -221,7 +207,7 @@ model = ShallowFBCSPNet(
     n_channels,
     n_classes,
     input_window_samples=input_window_samples,
-    final_conv_length="auto",
+    final_conv_length='auto',
 )
 
 ######################################################################
@@ -260,11 +246,11 @@ clf = EEGClassifier(
     optimizer__weight_decay=weight_decay,
     batch_size=batch_size,
     callbacks=[
-        "accuracy",
-        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
+        'accuracy',
+        ('lr_scheduler', LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
     ],
     device=device,
-    classes=classes,
+    classes=classes
 )
 
 #####################################################################
@@ -282,12 +268,12 @@ train_y = array(list(SliceDataset(train_set, idx=1)))
 from sklearn.model_selection import KFold, GridSearchCV
 
 cv = KFold(n_splits=2, shuffle=True, random_state=seed)
-fit_params = {"epochs": n_epochs}
+fit_params = {'epochs': n_epochs}
 
 transforms = transforms_freq + transforms_time + transforms_spatial
 
 param_grid = {
-    "iterator_train__transforms": transforms,
+    'iterator_train__transforms': transforms,
 }
 
 clf.verbose = 0
@@ -297,11 +283,10 @@ search = GridSearchCV(
     param_grid=param_grid,
     cv=cv,
     return_train_score=True,
-    scoring="accuracy",
+    scoring='accuracy',
     refit=True,
     verbose=1,
-    error_score="raise",
-)
+    error_score='raise')
 
 search.fit(train_X, train_y, **fit_params)
 
@@ -317,22 +302,20 @@ import numpy as np
 
 search_results = pd.DataFrame(search.cv_results_)
 
-best_run = search_results[search_results["rank_test_score"] == 1].squeeze()
-best_aug = best_run["params"]
-validation_score = np.around(best_run["mean_test_score"] * 100, 2).mean()
-training_score = np.around(best_run["mean_train_score"] * 100, 2).mean()
+best_run = search_results[search_results['rank_test_score'] == 1].squeeze()
+best_aug = best_run['params']
+validation_score = np.around(best_run['mean_test_score'] * 100, 2).mean()
+training_score = np.around(best_run['mean_train_score'] * 100, 2).mean()
 
-report_message = (
-    "Best augmentation is saved in best_aug which gave a mean validation accuracy"
-    + "of {}% (train accuracy of {}%).".format(validation_score, training_score)
-)
+report_message = 'Best augmentation is saved in best_aug which gave a mean validation accuracy' + \
+                 'of {}% (train accuracy of {}%).'.format(validation_score, training_score)
 
 print(report_message)
 
 eval_X = SliceDataset(eval_set, idx=0)
 eval_y = SliceDataset(eval_set, idx=1)
 score = search.score(eval_X, eval_y)
-print(f"Eval accuracy is {score * 100:.2f}%.")
+print(f'Eval accuracy is {score * 100:.2f}%.')
 
 ######################################################################
 # Plot results
@@ -342,14 +325,8 @@ import matplotlib.pyplot as plt
 
 fig, ax = plt.subplots()
 search_results.plot.bar(
-    x="param_iterator_train__transforms",
-    y="mean_train_score",
-    yerr="std_train_score",
-    rot=45,
-    color=["C0", "C0", "C1", "C1", "C2", "C2"],
-    legend=None,
-    ax=ax,
-)
+    x="param_iterator_train__transforms", y="mean_train_score", yerr="std_train_score",
+    rot=45, color=["C0", "C0", "C1", "C1", "C2", "C2"], legend=None, ax=ax)
 ax.set_xlabel("Data augmentation strategy")
 ax.set_ylim(0.2, 0.32)
 plt.tight_layout()

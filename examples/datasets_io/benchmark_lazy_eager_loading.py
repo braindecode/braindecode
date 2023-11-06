@@ -49,7 +49,7 @@ from braindecode.preprocessing import create_fixed_length_windows
 from braindecode.models import ShallowFBCSPNet, Deep4Net
 
 
-mne.set_log_level("WARNING")  # avoid messages every time a window is extracted
+mne.set_log_level('WARNING')  # avoid messages every time a window is extracted
 
 ###############################################################################
 # We start by setting two pytorch internal parameters that can affect the
@@ -67,7 +67,6 @@ torch.set_num_threads(N_JOBS)  # Sets the available number of threads
 #
 # Each one of these steps will be timed, so we can report the total time taken
 # to prepare the data and train the model.
-
 
 def load_example_data(preload, window_len_s, n_recordings=10):
     """Create windowed dataset from subjects of the TUH Abnormal dataset.
@@ -95,25 +94,19 @@ def load_example_data(preload, window_len_s, n_recordings=10):
     recording_ids = list(range(n_recordings))
 
     ds = TUHAbnormal(
-        TUH_PATH,
-        recording_ids=recording_ids,
-        target_name="pathological",
-        preload=preload,
-    )
+        TUH_PATH, recording_ids=recording_ids,
+        target_name='pathological',
+        preload=preload)
 
-    fs = ds.datasets[0].raw.info["sfreq"]
+    fs = ds.datasets[0].raw.info['sfreq']
     window_len_samples = int(fs * window_len_s)
     window_stride_samples = int(fs * 4)
     # window_stride_samples = int(fs * window_len_s)
     windows_ds = create_fixed_length_windows(
-        ds,
-        start_offset_samples=0,
-        stop_offset_samples=None,
+        ds, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=window_len_samples,
-        window_stride_samples=window_stride_samples,
-        drop_last_window=True,
-        preload=preload,
-    )
+        window_stride_samples=window_stride_samples, drop_last_window=True,
+        preload=preload)
 
     # Drop bad epochs
     # XXX: This could be parallelized.
@@ -125,9 +118,8 @@ def load_example_data(preload, window_len_s, n_recordings=10):
     return windows_ds
 
 
-def create_example_model(
-    n_channels, n_classes, window_len_samples, kind="shallow", cuda=False
-):
+def create_example_model(n_channels, n_classes, window_len_samples,
+                         kind='shallow', cuda=False):
     """Create model, loss and optimizer.
 
     Parameters
@@ -152,48 +144,23 @@ def create_example_model(
     optimizer :
         Optimizer
     """
-    if kind == "shallow":
+    if kind == 'shallow':
         model = ShallowFBCSPNet(
-            n_channels,
-            n_classes,
-            input_window_samples=window_len_samples,
-            n_filters_time=40,
-            filter_time_length=25,
-            n_filters_spat=40,
-            pool_time_length=75,
-            pool_time_stride=15,
-            final_conv_length="auto",
-            split_first_layer=True,
-            batch_norm=True,
-            batch_norm_alpha=0.1,
-            drop_prob=0.5,
-        )
-    elif kind == "deep":
+            n_channels, n_classes, input_window_samples=window_len_samples,
+            n_filters_time=40, filter_time_length=25, n_filters_spat=40,
+            pool_time_length=75, pool_time_stride=15, final_conv_length='auto',
+            split_first_layer=True, batch_norm=True, batch_norm_alpha=0.1,
+            drop_prob=0.5)
+    elif kind == 'deep':
         model = Deep4Net(
-            n_channels,
-            n_classes,
-            input_window_samples=window_len_samples,
-            final_conv_length="auto",
-            n_filters_time=25,
-            n_filters_spat=25,
-            filter_time_length=10,
-            pool_time_length=3,
-            pool_time_stride=3,
-            n_filters_2=50,
-            filter_length_2=10,
-            n_filters_3=100,
-            filter_length_3=10,
-            n_filters_4=200,
-            filter_length_4=10,
-            first_pool_mode="max",
-            later_pool_mode="max",
-            drop_prob=0.5,
-            double_time_convs=False,
-            split_first_layer=True,
-            batch_norm=True,
-            batch_norm_alpha=0.1,
-            stride_before_pool=False,
-        )
+            n_channels, n_classes, input_window_samples=window_len_samples,
+            final_conv_length='auto', n_filters_time=25, n_filters_spat=25,
+            filter_time_length=10, pool_time_length=3, pool_time_stride=3,
+            n_filters_2=50, filter_length_2=10, n_filters_3=100,
+            filter_length_3=10, n_filters_4=200, filter_length_4=10,
+            first_pool_mode="max", later_pool_mode="max", drop_prob=0.5,
+            double_time_convs=False, split_first_layer=True, batch_norm=True,
+            batch_norm_alpha=0.1, stride_before_pool=False)
     else:
         raise ValueError
 
@@ -245,7 +212,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
             loss_val.backward()
             optimizer.step()
 
-        print(f"Epoch {i + 1} - mean training loss: {np.mean(loss_vals)}")
+        print(f'Epoch {i + 1} - mean training loss: {np.mean(loss_vals)}')
 
     return model
 
@@ -258,67 +225,43 @@ N_RECORDINGS = [10]  # Number of recordings to load from the TUH Abnormal corpus
 WINDOW_LEN_S = [2, 4, 15]  # Window length, in seconds
 N_EPOCHS = [2]  # Number of epochs to train the model for
 BATCH_SIZE = [64, 256]  # Training minibatch size
-MODEL = ["shallow", "deep"]
+MODEL = ['shallow', 'deep']
 
 NUM_WORKERS = [8, 0]  # number of processes used by pytorch's Dataloader
 PIN_MEMORY = [False]  # whether to use pinned memory
-CUDA = (
-    [True, False] if torch.cuda.is_available() else [False]
-)  # whether to use a CUDA device
+CUDA = [True, False] if torch.cuda.is_available() else [False]  # whether to use a CUDA device
 
-N_REPETITIONS = (
-    3  # Number of times to repeat the experiment (to get better time estimates)
-)
+N_REPETITIONS = 3  # Number of times to repeat the experiment (to get better time estimates)
 
 ###############################################################################
 # The following path needs to be changed to your local folder containing the
 # TUH Abnormal corpus:
-TUH_PATH = (
-    "/storage/store/data/tuh_eeg/www.isip.piconepress.com/projects/"
-    "tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/edf/"
-)
+TUH_PATH = ('/storage/store/data/tuh_eeg/www.isip.piconepress.com/projects/'
+            'tuh_eeg/downloads/tuh_eeg_abnormal/v2.0.0/edf/')
 
 ###############################################################################
 # We can finally cycle through all the different combinations of the parameters
 # we set above to evaluate their execution time:
 
 all_results = list()
-for (
-    i,
-    preload,
-    n_recordings,
-    win_len_s,
-    n_epochs,
-    batch_size,
-    model_kind,
-    num_workers,
-    pin_memory,
-    cuda,
-) in product(
-    range(N_REPETITIONS),
-    PRELOAD,
-    N_RECORDINGS,
-    WINDOW_LEN_S,
-    N_EPOCHS,
-    BATCH_SIZE,
-    MODEL,
-    NUM_WORKERS,
-    PIN_MEMORY,
-    CUDA,
-):
+for (i, preload, n_recordings, win_len_s, n_epochs, batch_size, model_kind,
+        num_workers, pin_memory, cuda) in product(
+            range(N_REPETITIONS), PRELOAD, N_RECORDINGS, WINDOW_LEN_S, N_EPOCHS,
+            BATCH_SIZE, MODEL, NUM_WORKERS, PIN_MEMORY, CUDA):
+
     results = {
-        "repetition": i,
-        "preload": preload,
-        "n_recordings": n_recordings,
-        "win_len_s": win_len_s,
-        "n_epochs": n_epochs,
-        "batch_size": batch_size,
-        "model_kind": model_kind,
-        "num_workers": num_workers,
-        "pin_memory": pin_memory,
-        "cuda": cuda,
+        'repetition': i,
+        'preload': preload,
+        'n_recordings': n_recordings,
+        'win_len_s': win_len_s,
+        'n_epochs': n_epochs,
+        'batch_size': batch_size,
+        'model_kind': model_kind,
+        'num_workers': num_workers,
+        'pin_memory': pin_memory,
+        'cuda': cuda
     }
-    print(f"\nRepetition {i + 1}/{N_REPETITIONS}:\n{results}")
+    print(f'\nRepetition {i + 1}/{N_REPETITIONS}:\n{results}')
 
     # Load the dataset
     data_loading_start = time.time()
@@ -328,36 +271,29 @@ for (
     # Create the data loader
     training_setup_start = time.time()
     dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        pin_memory=pin_memory,
-        num_workers=num_workers,
-        worker_init_fn=None,
-    )
+        dataset, batch_size=batch_size, shuffle=False, pin_memory=pin_memory,
+        num_workers=num_workers, worker_init_fn=None)
 
     # Instantiate model and optimizer
     n_channels = len(dataset.datasets[0].windows.ch_names)
     n_times = len(dataset.datasets[0].windows.times)
     n_classes = 2
     model, loss, optimizer = create_example_model(
-        n_channels, n_classes, n_times, kind=model_kind, cuda=cuda
-    )
+        n_channels, n_classes, n_times, kind=model_kind, cuda=cuda)
     training_setup_end = time.time()
 
     # Start training loop
     model_training_start = time.time()
     trained_model = run_training(
-        model, dataloader, loss, optimizer, n_epochs=n_epochs, cuda=cuda
-    )
+        model, dataloader, loss, optimizer, n_epochs=n_epochs, cuda=cuda)
     model_training_end = time.time()
 
     del dataset, model, loss, optimizer, trained_model
 
     # Record timing results
-    results["data_preparation"] = data_loading_end - data_loading_start
-    results["training_setup"] = training_setup_end - training_setup_start
-    results["model_training"] = model_training_end - model_training_start
+    results['data_preparation'] = data_loading_end - data_loading_start
+    results['training_setup'] = training_setup_end - training_setup_start
+    results['model_training'] = model_training_end - model_training_start
     all_results.append(results)
 
 ###############################################################################
@@ -365,22 +301,16 @@ for (
 # file.
 
 results_df = pd.DataFrame(all_results)
-fname = "lazy_vs_eager_loading_results.csv"
+fname = 'lazy_vs_eager_loading_results.csv'
 results_df.to_csv(fname)
-print(f"Results saved under {fname}.")
+print(f'Results saved under {fname}.')
 
 ###############################################################################
 # We can finally summarize this information into the following plot:
 
 sns.catplot(
-    data=results_df,
-    row="cuda",
-    x="model_kind",
-    y="model_training",
-    hue="num_workers",
-    col="preload",
-    kind="strip",
-)
+    data=results_df, row='cuda', x='model_kind', y='model_training',
+    hue='num_workers', col='preload', kind='strip')
 
 ###############################################################################
 # .. warning::
