@@ -12,13 +12,13 @@ import mne
 import pandas as pd
 import pytest
 import numpy as np
+from numpy import multiply
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
     preprocess, Preprocessor, filterbank, exponential_moving_demean,
     exponential_moving_standardize, _replace_inplace,
     _set_preproc_kwargs)
-from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 
@@ -117,18 +117,12 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
-def test_scale_deprecated():
-    msg = 'Function scale is deprecated; will be removed in 0.8.0. ' \
-          'Use numpy.multiply inside a lambda function instead.'
-    with pytest.warns(FutureWarning, match=msg):
-        deprecated_scale(np.random.rand(2, 2), factor=2)
-
 
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(deprecated_scale, factor=factor)
+        Preprocessor(lambda data: multiply(data, factor), factor=factor)
     ]
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(base_concat_ds, preprocessors)
@@ -144,7 +138,7 @@ def test_scale_windows(windows_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(deprecated_scale, factor=factor)
+        Preprocessor(lambda data: multiply(data, factor), factor=factor)
     ]
     raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(windows_concat_ds, preprocessors)
