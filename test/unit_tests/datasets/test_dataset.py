@@ -22,6 +22,7 @@ bnci_kwargs = {"n_sessions": 2, "n_runs": 3,
                             'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
                             'P1', 'Pz', 'P2', 'POz')}
 
+
 # TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")
 # TODO: add test for transformers and case when subject_info is used
