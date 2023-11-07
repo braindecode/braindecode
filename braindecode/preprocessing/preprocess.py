@@ -16,7 +16,6 @@ from collections.abc import Iterable
 import numpy as np
 import pandas as pd
 from mne import create_info
-from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
 from braindecode.datasets.base import (BaseConcatDataset, BaseDataset, WindowsDataset,
