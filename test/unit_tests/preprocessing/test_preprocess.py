@@ -146,7 +146,7 @@ def test_scale_windows(windows_concat_ds):
 
     assert all([('pick_types', {'eeg': True, 'meg': False, 'stim': False}) in
                 ds.raw_preproc_kwargs
-                for ds in base_concat_ds.datasets])
+                for ds in windows_concat_ds.datasets])
 
 
 @pytest.fixture(scope='module')
