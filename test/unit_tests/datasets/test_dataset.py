@@ -13,6 +13,7 @@ from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_windows_from_events, create_fixed_length_windows)
 
+from test import bnci_kwargs
 
 # TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")
@@ -53,7 +54,9 @@ def set_up():
 @pytest.fixture(scope="module")
 def concat_ds_targets():
     raws, description = fetch_data_with_moabb(
-        dataset_name="BNCI2014001", subject_ids=4)
+        dataset_name="FakeDataset", subject_ids=1,
+        dataset_kwargs=bnci_kwargs)
+
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]

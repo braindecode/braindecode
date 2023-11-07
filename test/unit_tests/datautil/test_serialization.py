@@ -15,10 +15,13 @@ from braindecode.preprocessing import (
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 
+from test import bnci_kwargs
+
 
 @pytest.fixture()
 def setup_concat_raw_dataset():
-    return MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
+    return MOABBDataset(dataset_name="FakeDataset", subject_ids=[1],
+                        dataset_kwargs=bnci_kwargs)
 
 
 @pytest.fixture()

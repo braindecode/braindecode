@@ -20,11 +20,14 @@ from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows, create_windows_from_events)
 
+from test import bnci_kwargs
+
 
 @pytest.fixture(scope='module')
 def windows_ds():
     raws, description = fetch_data_with_moabb(
-        dataset_name='BNCI2014001', subject_ids=4)
+        dataset_name="FakeDataset", subject_ids=1,
+        dataset_kwargs=bnci_kwargs)
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
 
@@ -38,8 +41,10 @@ def windows_ds():
 
 @pytest.fixture(scope='module')
 def target_windows_ds():
+
     raws, description = fetch_data_with_moabb(
-        dataset_name='BNCI2014001', subject_ids=4)
+        dataset_name="FakeDataset", subject_ids=1,
+        dataset_kwargs=bnci_kwargs)
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
     concat_ds = BaseConcatDataset(ds)
 
