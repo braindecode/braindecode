@@ -22,7 +22,11 @@ from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 
-from test import bnci_kwargs
+bnci_kwargs = {"n_sessions": 1, "n_runs": 1,
+               "n_subjects": 1, "paradigm": "imagery",
+               "duration": 386.9, "sfreq": 250,
+               "event_list": ("left", "right"),
+               "channels": ('C4', 'Cz', 'C1')}
 # We can't use fixtures with scope='module' as the dataset objects are modified
 # inplace during preprocessing. To avoid the long setup time caused by calling
 # the dataset/windowing functions multiple times, we instantiate the dataset

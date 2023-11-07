@@ -13,7 +13,14 @@ from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_windows_from_events, create_fixed_length_windows)
 
-from test import bnci_kwargs
+bnci_kwargs = {"n_sessions": 2, "n_runs": 3,
+               "n_subjects": 9, "paradigm": "imagery",
+               "duration": 386.9, "sfreq": 250,
+               "event_list": ("left", "right"),
+               "channels": ('Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+                            'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+                            'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+                            'P1', 'Pz', 'P2', 'POz')}
 
 # TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")

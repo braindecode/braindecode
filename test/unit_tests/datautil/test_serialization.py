@@ -15,7 +15,11 @@ from braindecode.preprocessing import (
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 
-from test import bnci_kwargs
+bnci_kwargs = {"n_sessions": 2, "n_runs": 3,
+               "n_subjects": 9, "paradigm": "imagery",
+               "duration": 386.9, "sfreq": 250,
+               "event_list": ('feet', 'left_hand', 'right_hand', 'tongue'),
+               "channels": ('C3', 'Cz', 'C2')}
 
 
 @pytest.fixture()
@@ -86,7 +90,8 @@ def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
         x, y = loaded_concat_raw_dataset[raw_i]
         np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
     pd.testing.assert_frame_equal(
-        concat_raw_dataset.description, loaded_concat_raw_dataset.description)
+        concat_raw_dataset.description.astype(str),
+        loaded_concat_raw_dataset.description.astype(str))
 
 
 def test_fail_outdated_save_on_new_window_dataset(setup_concat_windows_dataset, tmpdir):
@@ -113,8 +118,8 @@ def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
         np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
         np.testing.assert_array_equal(crop_inds, actual_crop_inds)
-    pd.testing.assert_frame_equal(concat_windows_dataset.description,
-                                  loaded_concat_windows_dataset.description)
+    pd.testing.assert_frame_equal(concat_windows_dataset.description.astype(str),
+                                  loaded_concat_windows_dataset.description.astype(str))
 
 
 def test_load_multiple_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
@@ -247,7 +252,8 @@ def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
         x, y = loaded_concat_raw_dataset[raw_i]
         np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
     pd.testing.assert_frame_equal(
-        concat_raw_dataset.description, loaded_concat_raw_dataset.description)
+        concat_raw_dataset.description.astype(str),
+        loaded_concat_raw_dataset.description.astype(str))
 
 
 def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpdir):
@@ -273,8 +279,8 @@ def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpd
         np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
         np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
         np.testing.assert_array_equal(crop_inds, actual_crop_inds)
-    pd.testing.assert_frame_equal(concat_windows_dataset.description,
-                                  loaded_concat_windows_dataset.description)
+    pd.testing.assert_frame_equal(concat_windows_dataset.description.astype(str),
+                                  loaded_concat_windows_dataset.description.astype(str))
 
 
 def test_save_varying_number_of_datasets_with_overwrite(setup_concat_windows_dataset, tmpdir):
