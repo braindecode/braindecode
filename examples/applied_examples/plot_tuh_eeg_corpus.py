@@ -25,7 +25,8 @@ import mne
 
 from braindecode.datasets import TUH
 from braindecode.preprocessing import (
-    preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
+    preprocess, Preprocessor, create_fixed_length_windows)
+from numpy import multiply
 
 mne.set_log_level('ERROR')  # avoid messages every time a window is extracted
 
@@ -243,6 +244,7 @@ def custom_crop(raw, tmin=0.0, tmax=None, include_tmax=True):
 tmin = 1 * 60
 tmax = 6 * 60
 sfreq = 100
+factor = 1e6
 
 preprocessors = [
     Preprocessor(custom_crop, tmin=tmin, tmax=tmax, include_tmax=False,
@@ -251,7 +253,7 @@ preprocessors = [
     Preprocessor(custom_rename_channels, mapping=ch_mapping,
                  apply_on_array=False),
     Preprocessor('pick_channels', ch_names=short_ch_names, ordered=True),
-    Preprocessor(multiply, factor=1e6, apply_on_array=True),
+    Preprocessor(lambda data: multiply(data, factor), apply_on_array=True),  # Convert from V to uV
     Preprocessor(np.clip, a_min=-800, a_max=800, apply_on_array=True),
     Preprocessor('resample', sfreq=sfreq),
 ]
