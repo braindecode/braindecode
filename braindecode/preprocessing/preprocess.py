@@ -347,36 +347,6 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
-@deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda function instead.')
-def scale(data, factor):
-    """Scale continuous or windowed data in-place
-
-    Parameters
-    ----------
-    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        continuous or windowed signal
-    factor: float
-        multiplication factor
-
-    Returns
-    -------
-    scaled: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        normalized continuous or windowed data
-
-    ..note:
-        If this function is supposed to preprocess continuous data, it should be
-        given to raw.apply_function().
-    """
-    scaled = np.multiply(data, factor)
-    # TODO: the overriding of protected '_data' should be implemented in the
-    # TODO: dataset when transforms are applied to windows
-    if hasattr(data, '_data'):
-        data._data = scaled
-    return scaled
-
-
 def filterbank(raw, frequency_bands, drop_original_signals=True,
                order_by_frequency_band=False, **mne_filter_kwargs):
     """Applies multiple bandpass filters to the signals in raw. The raw will be
