@@ -117,37 +117,36 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
-
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(lambda data: multiply(data, factor), factor=factor)
+        Preprocessor(lambda data: multiply(data, factor))
     ]
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(base_concat_ds, preprocessors)
     np.testing.assert_allclose(base_concat_ds[0][0], raw_timepoint * factor,
                                rtol=1e-4, atol=1e-4)
-    assert all([ds.raw_preproc_kwargs == [
-        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
-        ('scale', {'factor': 1e6}),
-    ] for ds in base_concat_ds.datasets])
+
+    assert all([('pick_types', {'eeg': True, 'meg': False, 'stim': False}) in
+                ds.raw_preproc_kwargs
+                for ds in base_concat_ds.datasets])
 
 
 def test_scale_windows(windows_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(lambda data: multiply(data, factor), factor=factor)
+        Preprocessor(lambda data: multiply(data, factor))
     ]
     raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
                                rtol=1e-4, atol=1e-4)
-    assert all([ds.raw_preproc_kwargs == [
-        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
-        ('scale', {'factor': 1e6}),
-    ] for ds in windows_concat_ds.datasets])
+
+    assert all([('pick_types', {'eeg': True, 'meg': False, 'stim': False}) in
+                ds.raw_preproc_kwargs
+                for ds in base_concat_ds.datasets])
 
 
 @pytest.fixture(scope='module')

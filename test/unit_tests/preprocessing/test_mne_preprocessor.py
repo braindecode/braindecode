@@ -23,7 +23,6 @@ from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
     preprocess, Preprocessor, filterbank, exponential_moving_standardize,
     _replace_inplace, _set_preproc_kwargs)
-from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing import (
@@ -71,13 +70,6 @@ def test_preprocess_windows_kwargs(windows_concat_ds):
     assert all([ds.raw_preproc_kwargs == [
         ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False}),
     ] for ds in windows_concat_ds.datasets])
-
-
-def test_scale_deprecated():
-    msg = 'Function scale is deprecated; will be removed in 0.8.0. ' \
-          'Use numpy.multiply inside a lambda function instead.'
-    with pytest.warns(FutureWarning, match=msg):
-        deprecated_scale(np.random.rand(2, 2), factor=2)
 
 
 # To test one preprocessor at each time, using this fixture structure
