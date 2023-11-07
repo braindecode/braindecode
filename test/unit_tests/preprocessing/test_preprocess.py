@@ -22,17 +22,12 @@ from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 
-bnci_kwargs = {"n_sessions": 1, "n_runs": 1,
-               "n_subjects": 1, "paradigm": "imagery",
-               "duration": 386.9, "sfreq": 250,
-               "event_list": ("left", "right"),
-               "channels": ('C4', 'Cz', 'C1')}
+
 # We can't use fixtures with scope='module' as the dataset objects are modified
 # inplace during preprocessing. To avoid the long setup time caused by calling
 # the dataset/windowing functions multiple times, we instantiate the dataset
 # objects once and deep-copy them in fixture.
-raw_ds = MOABBDataset(dataset_name='FakeDataset', subject_ids=[1],
-                      dataset_kwargs=bnci_kwargs)
+raw_ds = MOABBDataset(dataset_name='BNCI2014001', subject_ids=[1, 2])
 
 windows_ds = create_fixed_length_windows(
     raw_ds, start_offset_samples=100, stop_offset_samples=None,
