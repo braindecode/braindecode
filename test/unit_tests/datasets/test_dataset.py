@@ -282,7 +282,7 @@ def test_set_description_base_dataset(concat_ds_targets):
     assert 'test' in base_ds.description
     assert base_ds.description['test'] == 4
 
-    # overwrite singe entry in single base using a Series
+    # overwrite single entry in single base using a Series
     base_ds.set_description(pd.Series({'test': 0}), overwrite=True)
     assert base_ds.description['test'] == 0
 

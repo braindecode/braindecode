@@ -24,7 +24,7 @@ from braindecode.preprocessing import create_fixed_length_windows
 # We'll set the logging level to 'ERROR' to avoid excessive messages when
 # extracting windows:
 
-mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
+mne.set_log_level('ERROR')  # avoid messages every time a window is extracted
 
 
 ###############################################################################

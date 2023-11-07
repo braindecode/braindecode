@@ -27,7 +27,7 @@ from braindecode.datasets import TUH
 from braindecode.preprocessing import (
     preprocess, Preprocessor, create_fixed_length_windows, scale as multiply)
 
-mne.set_log_level('ERROR')  # avoid messages everytime a window is extracted
+mne.set_log_level('ERROR')  # avoid messages every time a window is extracted
 
 ###############################################################################
 # Creating the dataset using TUHMock

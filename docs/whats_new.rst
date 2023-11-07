@@ -38,7 +38,7 @@ Enhancements
 - Improving the tutorial with a Data Augmentation Search (:gh:`495` by `Sylvain Chevallier`_)
 - Improving documentation for "Split Dataset" and "Process a big data EEG resource" examples (:gh:`494` by `Bruna Lopes`_)
 - Improving documentation for the Convolutional neural network regression model on fake data (:gh:`491` by `Sara Sedlar`_)
-- Enforcing the eval mode in the fuction predict trial. (:gh:`497` by `Bruno Aristimunha`_)
+- Enforcing the eval mode in the function predict trial. (:gh:`497` by `Bruno Aristimunha`_)
 - Adding extra requirements for pip install, update doc, removing conda env file (:gh:`505` by `Sylvain Chevallier`_)
 - Add models user-friendly representation with torchinfo tables to :class:`braindecode.models.base.EEGModuleMixin` (:gh:`488` by `Maciej Śliwowski`_)
 - Merged temporal and spatial convolutions for Deep4 and ShallowFBCSP (by `Daniel Wilson`_ and `Sara Sedlar`_)
@@ -58,6 +58,7 @@ Enhancements
 - Log validation accuracy in :class:`braindecode.EEGClassifier` (:gh:`541` by `Pierre Guetschel`_)
 - Better type hints in :mod:`braindecode.augmentation.base` (:gh:`551` by `Valentin Iovene`_)
 - Support for MOABB 1.0.0 and switch to pyproject.toml (:gh:`553` by `Sylvain Chevallier`_)
+- Adding pre-commit hooks (:gh:`556` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
@@ -106,7 +107,7 @@ Enhancements
 - Allowing target_names as list for BaseDataset (:gh:`371` by `Mohammad Javad D`_ and `Robin Tibor Schirrmeister`_)
 - Adding tutorial with GridSearchCV for data augmentation on the BCIC IV 2a with module `braindecode.augmentation` (:gh:`389` by `Bruno Aristimunha`_ and `Cedric Rommel`_)
 - Adding tutorial with GridSearchCV to exemplify how to tune hyperparameters, for instance with the learning rate (:gh:`349` by `Lukas Gemein`_ and by `Bruno Aristimunha`_)
-- Adding tutorial with a Unified Validation sheme (:gh:`378` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
+- Adding tutorial with a Unified Validation scheme (:gh:`378` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding `verbose` parameter to :func:`braindecode.preprocessing.create_windows_from_events`, :func:`braindecode.preprocessing.create_windows_from_target_channels`, and :func:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`391` by `Lukas Gemein`_)
 - Enable augmentation on GPU within :class:`AugmentedDataloader` via a new `device` parameter (:gh:`406` by `Martin Wimpff`_, `Bruno Aristimunha`_ and `Cedric Rommel`_)
 - Adding `randomize` parameter to :class:`braindecode.samplers.SequenceSampler` (:gh:`504` by `Théo Gnassounou`_.)

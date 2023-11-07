@@ -19,7 +19,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     input_window_seconds : float, optional
-        Time length of inputs, in secods. Defaults to 4.5 s, as in BCI-IV 2a
+        Time length of inputs, in seconds. Defaults to 4.5 s, as in BCI-IV 2a
         dataset.
     sfreq : int, optional
         Sampling frequency of the inputs, in Hz. Default to 250 Hz, as in

@@ -17,7 +17,7 @@ from .base import EEGModuleMixin, deprecated_args
 class EEGInception(EEGModuleMixin, nn.Sequential):
     """ EEG Inception for ERP-based classification
 
-    --> DEPERECATED <--
+    --> DEPRECATED <--
     THIS CLASS IS DEPRECATED AND WILL BE REMOVED IN THE RELEASE 0.9 OF
     BRAINDECODE. PLEASE USE braindecode.models.EEGInceptionERP INSTEAD IN THE
     FUTURE.
@@ -84,7 +84,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
        Y., Laskaris, N., Adamos, D.A., Zafeiriou, S., Duong, W.C., Gordon, S.M.,
        Lawhern, V.J., Śliwowski, M., Rouanne, V. &amp; Tempczyk, P.. (2022).
        2021 BEETL Competition: Advancing Transfer Learning for Subject Independence &amp;
-       Heterogenous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
+       Heterogeneous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
        Demonstrations Track</i>, in <i>Proceedings of Machine Learning Research</i>
        176:205-219 Available from https://proceedings.mlr.press/v176/wei22a.html.
 

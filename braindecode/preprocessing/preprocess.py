@@ -393,7 +393,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
     drop_original_signals: bool
         Whether to drop the original unfiltered signals
     order_by_frequency_band: bool
-        If True will return channels odered by frequency bands, so if there
+        If True will return channels ordered by frequency bands, so if there
         are channels Cz, O1 and filterbank ranges [(4,8), (8,13)], returned
         channels will be [Cz_4-8, O1_4-8, Cz_8-13, O1_8-13]. If False, order
         will be [Cz_4-8, Cz_8-13, O1_4-8, O1_8-13].
@@ -414,7 +414,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         filtered = raw.copy()
         filtered.filter(l_freq=l_freq, h_freq=h_freq, **mne_filter_kwargs)
         # mne automatically changes the highpass/lowpass info values
-        # when applying filters and channels cant be added if they have
+        # when applying filters and channels can't be added if they have
         # different such parameters. Not needed when making picks as
         # high pass is not modified by filter if pick is specified
 

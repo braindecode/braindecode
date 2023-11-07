@@ -18,9 +18,9 @@ from .functional import identity
 
 Batch = List[Tuple[torch.Tensor, int, Any]]
 Output = Union[
-    # just outputing X
+    # just outputting X
     torch.Tensor,
-    # outputing (X, y) where y can be a tensor or tuple of tensors
+    # outputting (X, y) where y can be a tensor or tuple of tensors
     Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]]
 ]
 # (X, y) -> (X', y') where y' can be a tensor or a tuple of tensors
@@ -46,7 +46,7 @@ class Transform(torch.nn.Module):
         Float between 0 and 1 defining the uniform probability of applying the
         operation. Set to 1.0 by default (e.g always apply the operation).
     random_state: int, optional
-        Seed to be used to instatiate numpy random number generator instance.
+        Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """

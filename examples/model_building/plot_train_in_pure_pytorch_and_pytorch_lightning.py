@@ -14,7 +14,7 @@ defining a model, and other details which are not exclusive to this page (compar
 `Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
-The goal of this tutorial is to present braindecode in the PyTorch perpective.
+The goal of this tutorial is to present braindecode in the PyTorch perceptive.
 
 .. contents:: This example covers:
    :local:
@@ -53,7 +53,7 @@ The goal of this tutorial is to present braindecode in the PyTorch perpective.
 # .. warning::
 #    You might recognize that the accuracy gets better throughout
 #    the experiments of this tutorial. The reason behind that is that
-#    we always use the same model with the same paramters in every
+#    we always use the same model with the same parameters in every
 #    segment to keep the tutorial short and readable. If you do your
 #    own experiments you always have to reinitialize the model before
 #    training.
@@ -68,7 +68,7 @@ The goal of this tutorial is to present braindecode in the PyTorch perpective.
 ######################################################################
 # Loading the Dataset Structure
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# Here, we have a data struture with equal behavior to the Pytorch Dataset.
+# Here, we have a data structure with equal behavior to the Pytorch Dataset.
 
 from braindecode.datasets import MOABBDataset
 
@@ -358,7 +358,7 @@ for epoch in range(1, n_epochs + 1):
 # Option 2: Train it with PyTorch Lightning
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # .. image:: https://upload.wikimedia.org/wikipedia/commons/e/e6/Lightning_Logo_v2.png
-#    :alt: Pytorch Ligthing logo
+#    :alt: Pytorch Lightning logo
 
 ######################################################################
 # Alternatively, lightning provides a nice interface around torch modules

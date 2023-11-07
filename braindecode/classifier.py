@@ -28,7 +28,7 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     module: str or torch Module (class or instance)
         Either the name of one of the braindecode models (see
         :obj:`braindecode.models.util.models_dict`) or directly a PyTorch module.
-        When passing directly a torch module, uninstantiated class should be prefered,
+        When passing directly a torch module, uninstantiated class should be preferred,
         although instantiated modules will also work.
 
     cropped: bool (default=False)

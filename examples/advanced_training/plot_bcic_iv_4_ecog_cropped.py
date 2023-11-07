@@ -349,10 +349,10 @@ preds_test, y_test = pad_and_select_predictions(preds_test, y_test)
 
 
 ######################################################################
-# We plot target and predicted finger flexion on training, validation, adn test sets.
+# We plot target and predicted finger flexion on training, validation, and test sets.
 #
 # .. note::
-#    The model is trained and validated on limited dataset (to decrease the time neded to run
+#    The model is trained and validated on limited dataset (to decrease the time needed to run
 #    this example) which does not contain diverse dataset in terms of fingers flexions and may
 #    cause overfitting. To obtain better results use whole dataset as well as improve the decoding
 #    pipeline which may be not optimal for ECoG.

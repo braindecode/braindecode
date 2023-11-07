@@ -39,7 +39,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
     Parameters
     ----------
     n_times : int, optional
-        Size of the input, in number of sampels. Set to 128 (1s) as in
+        Size of the input, in number of samples. Set to 128 (1s) as in
         [Santamaria2020]_.
     sfreq : float, optional
         EEG sampling frequency. Defaults to 128 as in [Santamaria2020]_.
@@ -87,7 +87,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
        Y., Laskaris, N., Adamos, D.A., Zafeiriou, S., Duong, W.C., Gordon, S.M.,
        Lawhern, V.J., Śliwowski, M., Rouanne, V. &amp; Tempczyk, P.. (2022).
        2021 BEETL Competition: Advancing Transfer Learning for Subject Independence &amp;
-       Heterogenous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
+       Heterogeneous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
        Demonstrations Track</i>, in <i>Proceedings of Machine Learning Research</i>
        176:205-219 Available from https://proceedings.mlr.press/v176/wei22a.html.
 

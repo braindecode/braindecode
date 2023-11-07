@@ -53,4 +53,3 @@ jobs:
         file: ./coverage.xml
         path_to_write_report: ./codecov_report.txt
         env_vars: OS,PYTHON
-

@@ -12,7 +12,7 @@ accessible Sleep Physionet dataset [2]_ [3]_.
     unlabelled data to train neural networks. First, neural networks are
     trained on a "pretext task" which uses unlabelled data only. The pretext
     task is designed based on a prior understanding of the data under study
-    (e.g., EEG has an underlying autocorrelation struture) and such that the
+    (e.g., EEG has an underlying autocorrelation structure) and such that the
     processing required to perform well on this pretext task is related to the
     processing required to perform well on another task of interest.
     Once trained, these neural networks can be reused as feature extractors or

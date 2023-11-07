@@ -10,7 +10,7 @@ from braindecode.visualization.gradients import compute_amplitude_gradients_for_
 
 
 def test_compute_amplitude_gradients_for_X():
-    # If the weights are initalized with a sine function
+    # If the weights are initialized with a sine function
     # gradient of amplitude should be only in one frequency bin
     set_random_seeds(948, False)
     model = nn.Conv1d(1, 1, 16)
@@ -23,7 +23,7 @@ def test_compute_amplitude_gradients_for_X():
 
 
 def test_compute_amplitude_gradients_for_X_two_filters():
-    # If the weights are initalized with a sine function
+    # If the weights are initialized with a sine function
     # gradient of amplitude should be only in one frequency bin
     set_random_seeds(948, False)
     model = nn.Conv1d(1, 2, 16)

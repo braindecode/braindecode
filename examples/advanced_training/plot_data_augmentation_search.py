@@ -44,7 +44,7 @@ the context of trialwise decoding with the BCI IV 2a dataset.
 # First, we load the data. In this tutorial, we use the functionality of braindecode
 # to load BCI IV competition dataset 1. The dataset is available on the BNCI website.
 # There is 9 subjects recorded with 22 electrodes while doing a motor imagery task,
-# with 144 trials per class. We will load this dataset through the MOABB librairy.
+# with 144 trials per class. We will load this dataset through the MOABB library.
 
 from skorch.callbacks import LRScheduler
 

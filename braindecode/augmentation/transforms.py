@@ -84,7 +84,7 @@ class FTSurrogate(Transform):
         Float setting the probability of applying the operation.
     phase_noise_magnitude : float | torch.Tensor, optional
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled:
+        perturbation is uniformly sampled:
         ``[0, phase_noise_magnitude * 2 * pi]``. Defaults to 1.
     channel_indep : bool, optional
         Whether to sample phase perturbations independently for each channel or
@@ -710,7 +710,7 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
     Parameters
     ----------
     raw_or_epoch : mne.io.Raw | mne.Epoch, optional
-        Example of raw or epoch to retrive ordered channels list from. Need to
+        Example of raw or epoch to retrieve ordered channels list from. Need to
         be named as in 10-20. By default None.
     ordered_ch_names : list, optional
         List of strings representing the channels of the montage considered.
