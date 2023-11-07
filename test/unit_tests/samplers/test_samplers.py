@@ -38,7 +38,6 @@ def windows_ds():
 
 @pytest.fixture(scope='module')
 def target_windows_ds():
-
     raws, description = fetch_data_with_moabb(
         dataset_name='BNCI2014001', subject_ids=4)
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
