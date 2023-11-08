@@ -30,6 +30,12 @@ from braindecode.training.scoring import (
 )
 from braindecode.util import set_random_seeds
 
+bnci_kwargs = {"n_sessions": 1, "n_runs": 1,
+               "n_subjects": 1, "paradigm": "imagery",
+               "duration": 386.9, "sfreq": 250,
+               "event_list": ("left", "right"),
+               "channels": ('C3', 'Cz', 'C1')}
+
 
 class MockSkorchNet:
     def __init__(self):
@@ -368,7 +374,8 @@ def test_three_windows_two_trials_no_overlap():
 
 
 def test_predict_trials():
-    ds = MOABBDataset('BNCI2014001', subject_ids=1)
+    ds = MOABBDataset("FakeDataset", subject_ids=1,
+                      dataset_kwargs=bnci_kwargs)
     ds1 = ds.split([0])['0']
 
     # determine original trial size
