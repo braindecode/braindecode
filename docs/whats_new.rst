@@ -17,11 +17,17 @@ whats_new page will have a link to the function/class documentation.
 - "API changes" for backward-incompatible changes
 
 .. _current:
+
 Current 0.8 (dev0)
---------------------
+----------------------
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
+- Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
+- Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_, `Bruno Aristimunha`_, `Robin Tibor Schirrmeister`_, `Lukas Gemein`_, `Denis A. Engemann`_ and `Oskar Størmer`_)
+- Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Theo Gnassounou`_)
+- Adding :class:`braindecode.models.EEGConformer` network (:gh:`454` by `Yonghao Song`_ and `Bruno Aristimunha`_)
 - Adding einops in the requirements (:gh:`466` by `Bruno Aristimunha`_)
 - Have moabb as an extra dependency (:gh:`467` by `Marco Zamboni`_)
 - Replacing the replacing Pytorch layers to Rearrange from einops #468  (:gh:`468` by `Bruno Aristimunha`_)
@@ -59,43 +65,24 @@ Enhancements
 - Better type hints in :mod:`braindecode.augmentation.base` (:gh:`551` by `Valentin Iovene`_)
 - Support for MOABB 1.0.0 and switch to pyproject.toml (:gh:`553` by `Sylvain Chevallier`_)
 - Adding pre-commit hooks (:gh:`556` by `Bruno Aristimunha`_)
-- Replacing the real dataset with a fake dataset in the test to not download the dataset (:gh:`557` by `Bruno Aristimunha`_)
-
-Bugs
-~~~~
-- Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
-- Fix skorch version issue (:gh:`465` by `Marco Zamboni`_)
-- Fix wrong `kernel_size` dtype when running torchinfo in :class:`braindecode.models.USleep` (:gh:`538` by `Maciej Śliwowski`_)
-- Fix bug when using GPU and channel shuffle transform (:gh:`546` by `Robin Tibor Schirrmeister`_)
-
-API changes
-~~~~~~~~~~~
-- Removing support for Python 3.7 (:gh:`397` by `Bruno Aristimunha`_)
-- Removing the LogSoftmax layer from the models and adding deprecated warnings and temporary flags (:gh:`513` by `Sara Sedlar`_)
-
-.. _changes_0_8_0:
-
-Current 0.8 ()
-----------------------
-
-Enhancements
-~~~~~~~~~~~~
-- Adding :class:`braindecode.models.EEGInceptionMI` network for motor imagery (:gh:`428` by `Cedric Rommel`_)
-- Adding :class:`braindecode.models.ATCNet` network for motor imagery (:gh:`429` by `Cedric Rommel`_)
-- Adding to :class:`braindecode.datasets.tuh.TUH` compatibility with version 3.0 of TUH dataset (:gh:`431` by `Mohammad Javad D`_, `Bruno Aristimunha`_, `Robin Tibor Schirrmeister`_, `Lukas Gemein`_, `Denis A. Engemann`_ and `Oskar Størmer`_)
-- Adding :class:`braindecode.models.DeepSleepNet` network for sleep staging (:gh:`417` by `Theo Gnassounou`_)
-- Adding :class:`braindecode.models.EEGConformer` network (:gh:`454` by `Yonghao Song`_ and `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
 - Fixing conda env in the CI (:gh:`461` by `Bruno Aristimunha`_)
 - Fixing E231 missing whitespace after ',' untraceable error in old flake8 (:gh:`460` by `Bruno Aristimunha`_)
 - Removing deprecation warning due to torch transposition in :func:`braindecode.augmentation.functional._frequency_shift` (:gh:`446` by `Matthieu Terris`_)
+- Fix padding's device in :class:`braindecode.models.EEGResNet` (:gh:`451` by `Pierre Guetschel`_)
+- Fix skorch version issue (:gh:`465` by `Marco Zamboni`_)
+- Fix wrong `kernel_size` dtype when running torchinfo in :class:`braindecode.models.USleep` (:gh:`538` by `Maciej Śliwowski`_)
+- Fix bug when using GPU and channel shuffle transform (:gh:`546` by `Robin Tibor Schirrmeister`_)
 
 
 API changes
 ~~~~~~~~~~~
 - Renaming the :class:`braindecode.models.EEGInception` network as :class:`braindecode.models.EEGInceptionERP` (:gh:`428` by `Cedric Rommel`_)
+- Removing support for Python 3.7 (:gh:`397` by `Bruno Aristimunha`_)
+- Removing the LogSoftmax layer from the models and adding deprecated warnings and temporary flags (:gh:`513` by `Sara Sedlar`_)
+
 .. _changes_0_7_0:
 
 Current 0.7 (10-2022)
