@@ -31,7 +31,7 @@ API changes
 ~~~~~~~~~~~
 
 .. _changes_0_8_0:
-Current 0.8 (dev0)
+Current 0.8 (11-2022)
 ----------------------
 
 Enhancements
