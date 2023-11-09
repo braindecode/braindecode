@@ -18,6 +18,19 @@ whats_new page will have a link to the function/class documentation.
 
 .. _current:
 
+Current 0.9 (dev0)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+
+Bugs
+~~~~
+
+API changes
+~~~~~~~~~~~
+
+.. _changes_0_8_0:
 Current 0.8 (dev0)
 ----------------------
 
