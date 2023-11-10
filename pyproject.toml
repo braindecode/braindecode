@@ -1,6 +1,6 @@
 [project]
 name = "braindecode"
-version = "0.7.0"
+version = "0.8"
 description = "Deep learning software to decode EEG, ECG or MEG signals"
 authors = [{name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com"}]
 maintainers = [
@@ -31,8 +31,11 @@ classifiers=[
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     'License :: OSI Approved :: BSD License',
     'Programming Language :: Python :: 3.8',
+	'Programming Language :: Python :: 3.9',
+	'Programming Language :: Python :: 3.10',
+	'Programming Language :: Python :: 3.11',
 ]
-
+readme = "README.rst"
 requires-python = ">=3.8"
 dependencies = [
 	'mne',
@@ -48,6 +51,10 @@ dependencies = [
 	'torchinfo',
 	'docstring_inheritance'
 ]
+[project.urls]
+homepage = "https://braindecode.org"
+repository = "https://github.com/braindecode/braindecode"
+documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb >= 1.0.0"]
