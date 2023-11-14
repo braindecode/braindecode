@@ -1,6 +1,6 @@
 [project]
 name = "braindecode"
-version = "0.8"
+version = "0.8.1"
 description = "Deep learning software to decode EEG, ECG or MEG signals"
 authors = [{name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com"}]
 maintainers = [
@@ -87,7 +87,7 @@ py-modules = []
 
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
-include = ["braindecode"]  # package names should match these glob patterns (["*"] by default)
+include = ["braindecode*"]  # package names should match these glob patterns (["*"] by default)
 exclude = []  # exclude packages matching these glob patterns (empty by default)
 namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
