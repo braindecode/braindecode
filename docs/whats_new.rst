@@ -26,6 +26,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
 
 API changes
 ~~~~~~~~~~~

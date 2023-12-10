@@ -35,10 +35,9 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
     for subj_id, subj_data in data.items():
         for sess_id, sess_data in subj_data.items():
             for run_id, raw in sess_data.items():
-                # set annotation if empty
-                if len(raw.annotations) == 0:
-                    annots = _annotations_from_moabb_stim_channel(raw, dataset)
-                    raw.set_annotations(annots)
+                annots = _annotations_from_moabb_stim_channel(raw, dataset)
+                raw.set_annotations(annots)
+                
                 raws.append(raw)
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
