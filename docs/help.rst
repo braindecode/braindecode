@@ -72,4 +72,3 @@ References
 
 .. _`the most current version`: https://github.com/mne-tools/mne-python/releases/latest
 .. _`minimal working example`: https://en.wikipedia.org/wiki/Minimal_Working_Example
-

@@ -6,6 +6,7 @@
 import numpy as np
 import torch
 from torch import nn
+from .base import EEGModuleMixin, deprecated_args
 
 
 def _crop_tensors_to_match(x1, x2, axis=-1):
@@ -25,6 +26,7 @@ def _crop_tensors_to_match(x1, x2, axis=-1):
 
 class _EncoderBlock(nn.Module):
     """Encoding block for a timeseries x of shape (B, C, T)."""
+
     def __init__(self,
                  in_channels=2,
                  out_channels=2,
@@ -60,6 +62,7 @@ class _EncoderBlock(nn.Module):
 
 class _DecoderBlock(nn.Module):
     """Decoding block for a timeseries x of shape (B, C, T)."""
+
     def __init__(self,
                  in_channels=2,
                  out_channels=2,
@@ -102,7 +105,7 @@ class _DecoderBlock(nn.Module):
         return x
 
 
-class USleep(nn.Module):
+class USleep(EEGModuleMixin, nn.Module):
     """Sleep staging architecture from Perslev et al 2021.
 
     U-Net (autoencoder with skip connections) feature-extractor for sleep
@@ -120,7 +123,7 @@ class USleep(nn.Module):
 
     Parameters
     ----------
-    in_chans : int
+    n_chans : int
         Number of EEG or EOG channels. Set to 2 in [1]_ (1 EEG, 1 EOG).
     sfreq : float
         EEG sampling frequency. Set to 128 in [1]_.
@@ -134,9 +137,9 @@ class USleep(nn.Module):
         Set to 2 in [1]_.
     with_skip_connection : bool
         If True, use skip connections in decoder blocks.
-    n_classes : int
-        Number of classes. Set to 5.
-    input_size_s : float
+    n_outputs : int
+        Number of outputs/classes. Set to 5.
+    input_window_seconds : float
         Size of the input, in seconds. Set to 30 in [1]_.
     time_conv_size_s : float
         Size of the temporal convolution kernel, in seconds. Set to 9 / 128 in
@@ -146,9 +149,12 @@ class USleep(nn.Module):
         will be added to it to ensure it is odd, so that the decoder blocks can
         work. This can ne useful when using different sampling rates from 128
         or 100 Hz.
-    apply_softmax : bool
-        If True, apply softmax on output (e.g. when using nn.NLLLoss). Use
-        False if using nn.CrossEntropyLoss.
+    in_chans : int
+        Alias for n_chans.
+    n_classes : int
+        Alias for n_outputs.
+    input_size_s : float
+        Alias for input_window_seconds.
 
     References
     ----------
@@ -156,36 +162,62 @@ class USleep(nn.Module):
            U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
            https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
-    def __init__(self,
-                 in_chans=2,
-                 sfreq=128,
-                 depth=12,
-                 n_time_filters=5,
-                 complexity_factor=1.67,
-                 with_skip_connection=True,
-                 n_classes=5,
-                 input_size_s=30,
-                 time_conv_size_s=9 / 128,
-                 ensure_odd_conv_size=False,
-                 apply_softmax=False
-                 ):
-        super().__init__()
 
-        self.in_chans = in_chans
+    def __init__(
+            self,
+            n_chans=2,
+            sfreq=128,
+            depth=12,
+            n_time_filters=5,
+            complexity_factor=1.67,
+            with_skip_connection=True,
+            n_outputs=5,
+            input_window_seconds=30,
+            time_conv_size_s=9 / 128,
+            ensure_odd_conv_size=False,
+            chs_info=None,
+            n_times=None,
+            in_chans=None,
+            n_classes=None,
+            input_size_s=None,
+            add_log_softmax=False,
+    ):
+        n_chans, n_outputs, input_window_seconds = deprecated_args(
+            self,
+            ("in_chans", "n_chans", in_chans, n_chans),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("input_size_s", "input_window_seconds", input_size_s, input_window_seconds),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del in_chans, n_classes, input_size_s
+
+        self.mapping = {
+            'clf.3.weight': 'final_layer.0.weight',
+            'clf.3.bias': 'final_layer.0.bias',
+            'clf.5.weight': 'final_layer.2.weight',
+            'clf.5.bias': 'final_layer.2.bias'
+        }
+
         max_pool_size = 2  # Hardcoded to avoid dimensional errors
-        time_conv_size = np.round(time_conv_size_s * sfreq).astype(int)
+        time_conv_size = int(np.round(time_conv_size_s * self.sfreq))
         if time_conv_size % 2 == 0:
             if ensure_odd_conv_size:
                 time_conv_size += 1
             else:
                 raise ValueError(
-                    'time_conv_size must be an odd number to accomodate the '
+                    'time_conv_size must be an odd number to accommodate the '
                     'upsampling step in the decoder blocks.')
 
-        # Convert between units: seconds to time-points (at sfreq)
-        input_size = np.ceil(input_size_s * sfreq).astype(int)
-
-        channels = [in_chans]
+        channels = [self.n_chans]
         n_filters = n_time_filters
         for _ in range(depth + 1):
             channels.append(int(n_filters * np.sqrt(complexity_factor)))
@@ -205,13 +237,13 @@ class USleep(nn.Module):
 
         # Instantiate bottom (channels increase, temporal dim stays the same)
         self.bottom = nn.Sequential(
-                    nn.Conv1d(in_channels=channels[-2],
-                              out_channels=channels[-1],
-                              kernel_size=time_conv_size,
-                              padding=(time_conv_size - 1) // 2),  # preserves dimension
-                    nn.ELU(),
-                    nn.BatchNorm1d(num_features=channels[-1]),
-                )
+            nn.Conv1d(in_channels=channels[-2],
+                      out_channels=channels[-1],
+                      kernel_size=time_conv_size,
+                      padding=(time_conv_size - 1) // 2),  # preserves dimension
+            nn.ELU(),
+            nn.BatchNorm1d(num_features=channels[-1]),
+        )
 
         # Instantiate decoder
         decoder = list()
@@ -229,6 +261,7 @@ class USleep(nn.Module):
         # The temporal dimension remains unchanged
         # (except through the AvgPooling which collapses it to 1)
         # The spatial dimension is preserved from the end of the UNet, and is mapped to n_classes
+
         self.clf = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],
@@ -236,25 +269,28 @@ class USleep(nn.Module):
                 kernel_size=1,
                 stride=1,
                 padding=0,
-            ),                         # output is (B, C, 1, S * T)
+            ),  # output is (B, C, 1, S * T)
             nn.Tanh(),
-            nn.AvgPool1d(input_size),  # output is (B, C, S)
+            nn.AvgPool1d(self.n_times),  # output is (B, C, S)
+        )
+
+        self.final_layer = nn.Sequential(
             nn.Conv1d(
                 in_channels=channels[1],
-                out_channels=n_classes,
+                out_channels=self.n_outputs,
                 kernel_size=1,
                 stride=1,
                 padding=0,
-            ),                         # output is (B, n_classes, S)
+            ),  # output is (B, n_classes, S)
             nn.ELU(),
             nn.Conv1d(
-                in_channels=n_classes,
-                out_channels=n_classes,
+                in_channels=self.n_outputs,
+                out_channels=self.n_outputs,
                 kernel_size=1,
                 stride=1,
                 padding=0,
             ),
-            nn.Softmax(dim=1) if apply_softmax else nn.Identity(),
+            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
             # output is (B, n_classes, S)
         )
 
@@ -282,7 +318,8 @@ class USleep(nn.Module):
             x = up(x, res)
 
         # classifier
-        y_pred = self.clf(x)        # (B, n_classes, seq_length)
+        x = self.clf(x)
+        y_pred = self.final_layer(x)  # (B, n_classes, seq_length)
 
         if y_pred.shape[-1] == 1:  # seq_length of 1
             y_pred = y_pred[:, :, 0]

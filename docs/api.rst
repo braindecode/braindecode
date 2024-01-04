@@ -47,6 +47,15 @@ Regressor
 Models
 ======
 
+:py:mod:`braindecode.models.base`:
+
+.. currentmodule:: braindecode.models
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGModuleMixin
+
 :py:mod:`braindecode.models`:
 
 .. currentmodule:: braindecode.models
@@ -57,6 +66,7 @@ Models
     ShallowFBCSPNet
     Deep4Net
     DeepSleepNet
+    EEGConformer
     EEGInception
     EEGInceptionERP
     EEGInceptionMI
@@ -138,6 +148,12 @@ Preprocessing
     filterbank
     preprocess
     Preprocessor
+    Resample
+    DropChannels
+    SetEEGReference
+    Filter
+    Pick
+    Crop
 
 Data Utils
 ==========
@@ -238,4 +254,3 @@ Visualization
 
     compute_amplitude_gradients
     plot_confusion_matrix
-

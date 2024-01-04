@@ -3,7 +3,7 @@ name: push-artifact-to-circle-ci
 # will be changed to on workflow_run
 on:
   workflow_run:
-    workflows: ["tests-and-docs"]
+    workflows: ["docs"]
     branches-ignore: ["master"]
     types:
       - completed
@@ -28,11 +28,14 @@ jobs:
         echo ${{ github.event.workflow_run.head_sha }}
         echo "github.event.workflow_run.head_repository.html_url"
         echo ${{ github.event.workflow_run.head_repository.html_url }}
+        echo "RUN_ID"
+        echo $RUN_ID
         # Acquire the Pull Request Number from Github API
         echo "automated curl"
         PR_NUMBER=$(curl -H "Accept: application/vnd.github.groot-preview+json"   https://api.github.com/repos/$REPO_NAME/commits/$COMMIT_SHA/pulls 2>/dev/null | jq '.[0].number')
+        echo "PR_NUMBER"
         echo $PR_NUMBER
-        
+
         # Use Pull Request Number to trigger pipeline on CircleCI which will just download artifact,
         # unzip it and make it available for browsing
         curl --request POST \

@@ -2,7 +2,7 @@
    :alt: Join the chat at https://gitter.im/braindecodechat/community
    :target: https://gitter.im/braindecodechat/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
 
-.. image:: https://github.com/braindecode/braindecode/workflows/tests-and-docs/badge.svg
+.. image:: https://github.com/braindecode/braindecode/workflows/docs/badge.svg
    :target: https://github.com/braindecode/braindecode/actions
 
 .. image:: https://circleci.com/gh/braindecode/braindecode.svg?style=svg
@@ -33,7 +33,7 @@ Installation Braindecode
 
 1. Install pytorch from http://pytorch.org/ (you don't need to install torchvision).
 
-2. Install `MOABB <https://github.com/NeuroTechX/moabb>`_ via pip (needed if you want to use MOABB datasets utilities):
+2. If you want to download EEG datasets from `MOABB <https://github.com/NeuroTechX/moabb>`_, install it:
 
 .. code-block:: bash
 
@@ -45,19 +45,7 @@ Installation Braindecode
 
   pip install braindecode
 
-alternatively, if you use conda, you could create a dedicated environment with the following:
-
-.. code-block:: bash
-
-  curl -O https://raw.githubusercontent.com/braindecode/braindecode/master/environment.yml
-  conda env create -f environment.yml
-  conda activate braindecode
-
-alternatively, install the latest version of braindecode via pip:
-
-.. code-block:: bash
-
-  pip install -U https://api.github.com/repos/braindecode/braindecode/zipball/master
+If you want to install the latest development version of braindecode, please refer to `contributing page <https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md>`__
 
 
 Documentation
@@ -156,4 +144,3 @@ Braindecode is **BSD-licenced** (BSD-3-Clause):
     (including negligence or otherwise) arising in any way out of the use
     of this software, even if advised of the possibility of such
     damage.**
-

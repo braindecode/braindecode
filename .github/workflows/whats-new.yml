@@ -1,0 +1,37 @@
+name: Check Whats News Changes
+
+on:
+  pull_request:
+    branches:
+      - '*' # all branches, including forks
+
+jobs:
+  check-whats-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check for file changes in PR
+        run: |
+          pr_number=${{ github.event.pull_request.number }}
+          response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${pr_number}/files")
+
+          file_changed=false
+          file_to_check="docs/whats_new.rst" # Specify the path to your file
+
+          for file in $(echo "${response}" | jq -r '.[] | .filename'); do
+            if [ "$file" == "$file_to_check" ]; then
+              file_changed=true
+              break
+            fi
+          done
+
+          if $file_changed; then
+            echo "File ${file_to_check} has been changed in the PR."
+          else
+            echo "File ${file_to_check} has not been changed in the PR."
+            echo "::error::File ${file_to_check} has not been changed in the PR."
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token

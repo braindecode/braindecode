@@ -5,19 +5,20 @@
 
 import os
 import copy
+import platform
 from glob import glob
 
 import mne
 import pandas as pd
 import pytest
 import numpy as np
+from numpy import multiply
 
 from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import (
     preprocess, Preprocessor, filterbank, exponential_moving_demean,
     exponential_moving_standardize, _replace_inplace,
     _set_preproc_kwargs)
-from braindecode.preprocessing.preprocess import scale as deprecated_scale
 from braindecode.preprocessing.windowers import create_fixed_length_windows
 from braindecode.datautil.serialization import load_concat_dataset
 
@@ -81,8 +82,12 @@ def test_preprocess_windows_str(windows_concat_ds):
     preprocessors = [
         Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
     preprocess(windows_concat_ds, preprocessors)
-    assert windows_concat_ds[0][0].shape[1] == 25
-    assert all([ds.window_preproc_kwargs == [
+    # assert windows_concat_ds[0][0].shape[1] == 25  no longer correct as raw preprocessed
+
+    # Since windowed datasets are not using mne epochs anymore,
+    # also for windows it is called raw_preproc_kwargs
+    # as underlying data is always raw
+    assert all([ds.raw_preproc_kwargs == [
         ('crop', {'tmin': 0, 'tmax': 0.1, 'include_tmax': False}),
     ] for ds in windows_concat_ds.datasets])
 
@@ -112,43 +117,36 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
                                rtol=1e-4, atol=1e-4)
 
 
-def test_scale_deprecated():
-    msg = 'Function scale is deprecated; will be removed in 0.8.0. ' \
-          'Use numpy.multiply inside a lambda function instead.'
-    with pytest.warns(FutureWarning, match=msg):
-        deprecated_scale(np.random.rand(2, 2), factor=2)
-
-
 def test_scale_continuous(base_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(deprecated_scale, factor=factor)
+        Preprocessor(lambda data: multiply(data, factor))
     ]
     raw_timepoint = base_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(base_concat_ds, preprocessors)
     np.testing.assert_allclose(base_concat_ds[0][0], raw_timepoint * factor,
                                rtol=1e-4, atol=1e-4)
-    assert all([ds.raw_preproc_kwargs == [
-        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
-        ('scale', {'factor': 1e6}),
-    ] for ds in base_concat_ds.datasets])
+
+    assert all([('pick_types', {'eeg': True, 'meg': False, 'stim': False}) in
+                ds.raw_preproc_kwargs
+                for ds in base_concat_ds.datasets])
 
 
 def test_scale_windows(windows_concat_ds):
     factor = 1e6
     preprocessors = [
         Preprocessor('pick_types', eeg=True, meg=False, stim=False),
-        Preprocessor(deprecated_scale, factor=factor)
+        Preprocessor(lambda data: multiply(data, factor))
     ]
     raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
     preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(windows_concat_ds[0][0], raw_window * factor,
                                rtol=1e-4, atol=1e-4)
-    assert all([ds.window_preproc_kwargs == [
-        ('pick_types', {'eeg': True, 'meg': False, 'stim': False}),
-        ('scale', {'factor': 1e6}),
-    ] for ds in windows_concat_ds.datasets])
+
+    assert all([('pick_types', {'eeg': True, 'meg': False, 'stim': False}) in
+                ds.raw_preproc_kwargs
+                for ds in windows_concat_ds.datasets])
 
 
 @pytest.fixture(scope='module')
@@ -279,8 +277,8 @@ def test_set_window_preproc_kwargs(windows_concat_ds):
     ds = windows_concat_ds.datasets[0]
     _set_preproc_kwargs(ds, preprocessors)
 
-    assert hasattr(ds, 'window_preproc_kwargs')
-    assert ds.window_preproc_kwargs == window_preproc_kwargs
+    assert hasattr(ds, 'raw_preproc_kwargs')
+    assert ds.raw_preproc_kwargs == window_preproc_kwargs
 
 
 def test_set_preproc_kwargs_wrong_type(base_concat_ds):
@@ -289,10 +287,13 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
         _set_preproc_kwargs(base_concat_ds, preprocessors)
 
 
+# Skip if OS is Windows
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows")  # TODO: Fix this
 @pytest.mark.parametrize('kind', ['raw', 'windows'])
 @pytest.mark.parametrize('save', [True, False])
 @pytest.mark.parametrize('overwrite', [True, False])
-@pytest.mark.parametrize('n_jobs', [1, 2, None])
+@pytest.mark.parametrize('n_jobs', [-1, 1, 2, None])
 def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
                              kind, save, overwrite, n_jobs):
     preproc_kwargs = [
@@ -301,12 +302,14 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
         Preprocessor('crop', tmin=0, tmax=0.1, include_tmax=False)]
 
     save_dir = str(tmp_path) if save else None
+    # Since windowed datasets are not using mne epochs anymore,
+    # also for windows it is called raw_preproc_kwargs
+    # as underlying data is always raw
+    preproc_kwargs_name = 'raw_preproc_kwargs'
     if kind == 'raw':
         concat_ds = base_concat_ds
-        preproc_kwargs_name = 'raw_preproc_kwargs'
     elif kind == 'windows':
         concat_ds = windows_concat_ds
-        preproc_kwargs_name = 'window_preproc_kwargs'
 
     concat_ds = preprocess(
         concat_ds, preprocessors, save_dir, overwrite=overwrite, n_jobs=n_jobs)
@@ -314,16 +317,16 @@ def test_preprocess_save_dir(base_concat_ds, windows_concat_ds, tmp_path,
     assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
     assert all([getattr(ds, preproc_kwargs_name) == preproc_kwargs
                 for ds in concat_ds.datasets])
-    assert all([len(getattr(ds, kind).times) == 25
+    assert all([len(ds.raw.times) == 25
                 for ds in concat_ds.datasets])
     if kind == 'raw':
         assert all([hasattr(ds, 'target_name') for ds in concat_ds.datasets])
 
     if save_dir is None:
-        assert all([getattr(ds, kind).preload
+        assert all([ds.raw.preload
                     for ds in concat_ds.datasets])
     else:
-        assert all([not getattr(ds, kind).preload
+        assert all([not ds.raw.preload
                     for ds in concat_ds.datasets])
         save_dirs = [os.path.join(save_dir, str(i))
                      for i in range(len(concat_ds.datasets))]

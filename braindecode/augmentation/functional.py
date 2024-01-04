@@ -125,7 +125,7 @@ def ft_surrogate(
         EEG labels for the example or batch.
     phase_noise_magnitude: float
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled:
+        perturbation is uniformly sampled:
         [0, `phase_noise_magnitude` * 2 * `pi`].
     channel_indep : bool
         Whether to sample phase perturbations independently for each channel or
@@ -152,7 +152,7 @@ def ft_surrogate(
         phase_noise_magnitude,
         (Real, torch.FloatTensor, torch.cuda.FloatTensor)
     ) and 0 <= phase_noise_magnitude <= 1, (
-        f"eps must be a float beween 0 and 1. Got {phase_noise_magnitude}.")
+        f"eps must be a float between 0 and 1. Got {phase_noise_magnitude}.")
 
     f = fft(X.double(), dim=-1)
     device = X.device
@@ -231,15 +231,12 @@ def _make_permutation_matrix(X, mask, random_state):
         batch_size, n_channels, n_channels, device=X.device
     )
     for b, mask in enumerate(hard_mask):
-        channels_to_shuffle = torch.arange(n_channels)
+        channels_to_shuffle = torch.arange(n_channels, device=X.device)
         channels_to_shuffle = channels_to_shuffle[mask.bool()]
-        channels_permutation = np.arange(n_channels)
-        channels_permutation[channels_to_shuffle] = rng.permutation(
-            channels_to_shuffle
-        )
-        channels_permutation = torch.as_tensor(
-            channels_permutation, dtype=torch.int64, device=X.device
-        )
+        reordered_channels = torch.tensor(
+            rng.permutation(channels_to_shuffle.cpu()), device=X.device)
+        channels_permutation = torch.arange(n_channels, device=X.device)
+        channels_permutation[channels_to_shuffle] = reordered_channels
         batch_permutations[b, ...] = one_hot(channels_permutation)
     return batch_permutations
 
@@ -501,8 +498,9 @@ def _frequency_shift(X, fs, f_shift):
     analytical = _analytic_transform(padded)
     if isinstance(f_shift, (float, int, np.ndarray, list)):
         f_shift = torch.as_tensor(f_shift).float()
-    reshaped_f_shift = f_shift.repeat(
-        N_padded, n_channels, 1).T
+    f_shift_stack = f_shift.repeat(N_padded, n_channels, 1)
+    reshaped_f_shift = f_shift_stack.permute(
+        *torch.arange(f_shift_stack.ndim - 1, -1, -1))
     shifted = analytical * torch.exp(2j * np.pi * reshaped_f_shift * t)
     return shifted[..., :N_orig].real.float()
 
@@ -718,9 +716,9 @@ def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
     Parameters
     ----------
     pos_from : np.ndarray of float, shape(n_good_sensors, 3)
-        The positions to interpoloate from.
+        The positions to interpolate from.
     pos_to : np.ndarray of float, shape(n_bad_sensors, 3)
-        The positions to interpoloate.
+        The positions to interpolate.
     alpha : float
         Regularization parameter. Defaults to 1e-5.
 

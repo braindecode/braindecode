@@ -9,22 +9,32 @@ import numpy as np
 import pytest
 import sklearn.datasets
 import torch
-from sklearn.metrics import f1_score, accuracy_score
+from sklearn.metrics import accuracy_score, f1_score
 from skorch import History
 from skorch.callbacks import Callback
 from skorch.utils import to_numpy, to_tensor
 from torch import optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
+
 from braindecode.classifier import EEGClassifier
-from braindecode.datasets.xy import create_from_X_y
-from braindecode.models import ShallowFBCSPNet, get_output_shape
-from braindecode.util import set_random_seeds
-from braindecode.training.scoring import (
-    CroppedTrialEpochScoring, PostEpochTrainScoring, trial_preds_from_window_preds,
-    predict_trials, CroppedTimeSeriesEpochScoring)
 from braindecode.datasets.moabb import MOABBDataset
-from braindecode.models.util import to_dense_prediction_model
+from braindecode.datasets.xy import create_from_X_y
+from braindecode.models import ShallowFBCSPNet
 from braindecode.preprocessing import create_windows_from_events
+from braindecode.training.scoring import (
+    CroppedTimeSeriesEpochScoring,
+    CroppedTrialEpochScoring,
+    PostEpochTrainScoring,
+    predict_trials,
+    trial_preds_from_window_preds,
+)
+from braindecode.util import set_random_seeds
+
+bnci_kwargs = {"n_sessions": 1, "n_runs": 1,
+               "n_subjects": 1, "paradigm": "imagery",
+               "duration": 386.9, "sfreq": 250,
+               "event_list": ("left", "right"),
+               "channels": ('C3', 'Cz', 'C1')}
 
 
 class MockSkorchNet:
@@ -236,6 +246,7 @@ def test_post_epoch_train_scoring():
     set_random_seeds(seed=20170629, cuda=cuda)
 
     n_classes = 2
+    classes = list(range(n_classes))
 
     class EEGDataSet(Dataset):
         def __init__(self, X, y):
@@ -314,6 +325,7 @@ def test_post_epoch_train_scoring():
             ),
             ("test_callback", TestCallback()),
         ],
+        classes=classes,
     )
 
     clf.fit(train_set, y=None, epochs=4)
@@ -362,7 +374,8 @@ def test_three_windows_two_trials_no_overlap():
 
 
 def test_predict_trials():
-    ds = MOABBDataset('BNCI2014001', subject_ids=1)
+    ds = MOABBDataset("FakeDataset", subject_ids=1,
+                      dataset_kwargs=bnci_kwargs)
     ds1 = ds.split([0])['0']
 
     # determine original trial size
@@ -386,10 +399,11 @@ def test_predict_trials():
     model = ShallowFBCSPNet(
         in_chans=in_chans,
         n_classes=n_classes,
+        n_times=window_size_samples,
     )
-    to_dense_prediction_model(model)
+    model.to_dense_prediction_model()
 
-    output_shape = get_output_shape(model, in_chans, window_size_samples)
+    output_shape = model.get_output_shape()
     # the number of samples required to get 1 output
     receptive_field_size = window_size_samples - output_shape[-1] + 1
 

@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 
+
 def ms_to_samples(ms, fs):
     """
     Compute milliseconds to number of samples.

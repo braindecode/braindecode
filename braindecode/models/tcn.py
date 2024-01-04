@@ -9,9 +9,10 @@ from torch.nn.utils import weight_norm
 
 from .modules import Ensure4d, Expression
 from .functions import squeeze_final_output
+from .base import EEGModuleMixin, deprecated_args
 
 
-class TCN(nn.Module):
+class TCN(EEGModuleMixin, nn.Module):
     """Temporal Convolutional Network (TCN) from Bai et al 2018.
 
     See [Bai2018]_ for details.
@@ -20,11 +21,6 @@ class TCN(nn.Module):
 
     Parameters
     ----------
-    n_in_chans: int
-        number of input EEG channels
-    n_outputs: int
-        number of outputs of the decoding task (for example number of classes in
-        classification)
     n_filters: int
         number of output filters of each convolution
     n_blocks: int
@@ -33,8 +29,8 @@ class TCN(nn.Module):
         kernel size of the convolutions
     drop_prob: float
         dropout probability
-    add_log_softmax: bool
-        whether to add a log softmax layer
+    n_in_chans: int
+        Alias for `n_chans`.
 
     References
     ----------
@@ -43,13 +39,46 @@ class TCN(nn.Module):
        for sequence modeling.
        arXiv preprint arXiv:1803.01271.
     """
-    def __init__(self, n_in_chans, n_outputs, n_blocks, n_filters, kernel_size,
-                 drop_prob, add_log_softmax):
-        super().__init__()
+
+    def __init__(
+            self,
+            n_chans=None,
+            n_outputs=None,
+            n_blocks=None,
+            n_filters=None,
+            kernel_size=None,
+            drop_prob=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+            n_in_chans=None,
+            add_log_softmax=False,
+    ):
+        n_chans, = deprecated_args(
+            self,
+            ("n_in_chans", "n_chans", n_in_chans, n_chans),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_in_chans
+
+        self.mapping = {
+            "fc.weight": "final_layer.fc.weight",
+            "fc.bias": "final_layer.fc.bias"
+        }
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
-            n_inputs = n_in_chans if i == 0 else n_filters
+            n_inputs = self.n_chans if i == 0 else n_filters
             dilation_size = 2 ** i
             t_blocks.add_module("temporal_block_{:d}".format(i), TemporalBlock(
                 n_inputs=n_inputs,
@@ -61,11 +90,10 @@ class TCN(nn.Module):
                 drop_prob=drop_prob
             ))
         self.temporal_blocks = t_blocks
-        self.fc = nn.Linear(in_features=n_filters, out_features=n_outputs)
-        if add_log_softmax:
-            self.log_softmax = nn.LogSoftmax(dim=1)
-        self.squeeze = Expression(squeeze_final_output)
 
+        # Here, change to final_layer
+        self.final_layer = _FinalLayer(in_features=n_filters, out_features=self.n_outputs,
+                                       add_log_softmax=add_log_softmax)
         self.min_len = 1
         for i in range(n_blocks):
             dilation = 2 ** i
@@ -92,12 +120,32 @@ class TCN(nn.Module):
         # Convert to: B x T x C
         x = x.transpose(1, 2).contiguous()
 
+        out = self.final_layer(x, batch_size, time_size, self.min_len)
+
+        return out
+
+
+class _FinalLayer(nn.Module):
+    def __init__(self, in_features, out_features, add_log_softmax=True):
+
+        super().__init__()
+
+        self.fc = nn.Linear(in_features=in_features, out_features=out_features)
+
+        if add_log_softmax:
+            self.out_fun = nn.LogSoftmax(dim=1)
+        else:
+            self.out_fun = nn.Identity()
+
+        self.squeeze = Expression(squeeze_final_output)
+
+    def forward(self, x, batch_size, time_size, min_len):
+
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
-        if hasattr(self, "log_softmax"):
-            fc_out = self.log_softmax(fc_out)
+        fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))
 
-        out_size = 1 + max(0, time_size - self.min_len)
+        out_size = 1 + max(0, time_size - min_len)
         out = fc_out[:, -out_size:, :].transpose(1, 2)
         # re-add 4th dimension for compatibility with braindecode
         return self.squeeze(out[:, :, :, None])

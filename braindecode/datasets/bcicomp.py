@@ -95,7 +95,7 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         # Check if the dataset already exists (unpacked). We have to do that manually
         # because we are removing .zip file from disk to save disk space.
 
-        from moabb.datasets.download import get_dataset_path  # keep soft depenency
+        from moabb.datasets.download import get_dataset_path  # keep soft dependency
         path = get_dataset_path(signature, path)
         key_dest = "MNE-{:s}-data".format(signature.lower())
         # We do not use mne _url_to_local_path due to ':' in the url that causes problems on Windows
@@ -164,7 +164,7 @@ def _data_dl(url, destination, force_update=False, verbose=None):
     # On Windows ':' is a forbidden in folder name
     # moabb/datasets/download.py
 
-    from pooch import file_hash, retrieve  # keep soft depenency
+    from pooch import file_hash, retrieve  # keep soft dependency
     if not osp.isfile(destination) or force_update:
         if osp.isfile(destination):
             os.remove(destination)

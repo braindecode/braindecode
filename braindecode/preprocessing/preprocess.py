@@ -16,10 +16,10 @@ from collections.abc import Iterable
 import numpy as np
 import pandas as pd
 from mne import create_info
-from sklearn.utils import deprecated
 from joblib import Parallel, delayed
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset, WindowsDataset
+from braindecode.datasets.base import (BaseConcatDataset, BaseDataset, WindowsDataset,
+                                       EEGWindowsDataset)
 from braindecode.datautil.serialization import (
     load_concat_dataset, _check_save_dir_empty)
 
@@ -105,7 +105,8 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         the corresponding subdirectories already exist, a ``FileExistsError``
         will be raised.
     n_jobs : int | None
-        Number of jobs for parallel execution.
+        Number of jobs for parallel execution. See `joblib.Parallel` for
+        a more detailed explanation.
 
     Returns
     -------
@@ -124,21 +125,26 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         assert hasattr(elem, 'apply'), (
             'Preprocessor object needs an `apply` method.')
 
+    parallel_processing = (n_jobs is not None) and (n_jobs != 1)
+
     list_of_ds = Parallel(n_jobs=n_jobs)(
-        delayed(_preprocess)(ds, i, preprocessors, save_dir, overwrite)
-        for i, ds in enumerate(concat_ds.datasets))
+        delayed(_preprocess)(
+            ds, i, preprocessors, save_dir, overwrite,
+            copy_data=(parallel_processing and (save_dir is None)))
+        for i, ds in enumerate(concat_ds.datasets)
+    )
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         concat_ds_reloaded = load_concat_dataset(
             save_dir, preload=False, target_name=None)
         _replace_inplace(concat_ds, concat_ds_reloaded)
     else:
-        if n_jobs is None or n_jobs == 1:  # joblib did not make copies, the
+        if parallel_processing:  # joblib made copies
+            _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
+        else:  # joblib did not make copies, the
             # preprocessing happened in-place
             # Recompute cumulative sizes as transforms might have changed them
             concat_ds.cumulative_sizes = concat_ds.cumsum(concat_ds.datasets)
-        else:  # joblib made copies
-            _replace_inplace(concat_ds, BaseConcatDataset(list_of_ds))
 
     return concat_ds
 
@@ -165,7 +171,7 @@ def _replace_inplace(concat_ds, new_concat_ds):
                 getattr(new_concat_ds, preproc_kwargs_attr))
 
 
-def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
+def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False, copy_data=False):
     """Apply preprocessor(s) to Raw or Epochs object.
 
     Parameters
@@ -182,9 +188,15 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False):
         specified directory.
     overwrite : bool
         If True, overwrite existing file with the same name.
+    copy_data : bool
+        First copy the data in case it is preloaded. Necessary for parallel processing to work.
     """
 
     def _preprocess_raw_or_epochs(raw_or_epochs, preprocessors):
+        # Copying the data necessary in some scenarios for parallel processing
+        # to work when data is in memory (else error about _data not being writeable)
+        if (raw_or_epochs.preload and copy_data):
+            raw_or_epochs._data = raw_or_epochs._data.copy()
         for preproc in preprocessors:
             preproc.apply(raw_or_epochs)
 
@@ -239,6 +251,8 @@ def _set_preproc_kwargs(ds, preprocessors):
     preproc_kwargs = _get_preproc_kwargs(preprocessors)
     if isinstance(ds, WindowsDataset):
         kind = 'window'
+    if isinstance(ds, EEGWindowsDataset):
+        kind = 'raw'
     elif isinstance(ds, BaseDataset):
         kind = 'raw'
     else:
@@ -332,36 +346,6 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     return demeaned.T
 
 
-@deprecated(extra='will be removed in 0.8.0. Use numpy.multiply inside a lambda function instead.')
-def scale(data, factor):
-    """Scale continuous or windowed data in-place
-
-    Parameters
-    ----------
-    data: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        continuous or windowed signal
-    factor: float
-        multiplication factor
-
-    Returns
-    -------
-    scaled: np.ndarray (n_channels x n_times) or (n_windows x n_channels x
-    n_times)
-        normalized continuous or windowed data
-
-    ..note:
-        If this function is supposed to preprocess continuous data, it should be
-        given to raw.apply_function().
-    """
-    scaled = np.multiply(data, factor)
-    # TODO: the overriding of protected '_data' should be implemented in the
-    # TODO: dataset when transforms are applied to windows
-    if hasattr(data, '_data'):
-        data._data = scaled
-    return scaled
-
-
 def filterbank(raw, frequency_bands, drop_original_signals=True,
                order_by_frequency_band=False, **mne_filter_kwargs):
     """Applies multiple bandpass filters to the signals in raw. The raw will be
@@ -378,7 +362,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
     drop_original_signals: bool
         Whether to drop the original unfiltered signals
     order_by_frequency_band: bool
-        If True will return channels odered by frequency bands, so if there
+        If True will return channels ordered by frequency bands, so if there
         are channels Cz, O1 and filterbank ranges [(4,8), (8,13)], returned
         channels will be [Cz_4-8, O1_4-8, Cz_8-13, O1_8-13]. If False, order
         will be [Cz_4-8, Cz_8-13, O1_4-8, O1_8-13].
@@ -399,7 +383,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         filtered = raw.copy()
         filtered.filter(l_freq=l_freq, h_freq=h_freq, **mne_filter_kwargs)
         # mne automatically changes the highpass/lowpass info values
-        # when applying filters and channels cant be added if they have
+        # when applying filters and channels can't be added if they have
         # different such parameters. Not needed when making picks as
         # high pass is not modified by filter if pick is specified
 

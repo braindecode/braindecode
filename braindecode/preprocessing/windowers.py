@@ -11,6 +11,7 @@
 #          Dan Wilson <dan.c.wil@gmail.com>
 #          Maciej Sliwowski <maciek.sliwowski@gmail.com>
 #          Mohammed Fattouh <mo.fattouh@gmail.com>
+#          Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -21,7 +22,7 @@ import mne
 import pandas as pd
 from joblib import Parallel, delayed
 
-from ..datasets.base import WindowsDataset, BaseConcatDataset
+from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
 
 
 # XXX it's called concat_ds...
@@ -29,7 +30,7 @@ def create_windows_from_events(
         concat_ds, trial_start_offset_samples=0, trial_stop_offset_samples=0,
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
-        drop_bad_windows=True, picks=None, reject=None, flat=None,
+        drop_bad_windows=None, picks=None, reject=None, flat=None,
         on_missing='error', accepted_bads_ratio=0.0, n_jobs=1, verbose='error'):
     """Create windows based on events in mne.Raw.
 
@@ -119,20 +120,33 @@ def create_windows_from_events(
     mapping = dict() if infer_mapping else mapping
     infer_window_size_stride = window_size_samples is None
 
+    if drop_bad_windows is not None:
+        warnings.warn('Drop bad windows only has an effect if mne epochs are created, '
+                      'and this argument may be removed in the future.')
+
+    use_mne_epochs = (reject is not None) or (picks is not None) or (flat is not None) or (
+        drop_bad_windows is True)
+    if use_mne_epochs:
+        warnings.warn('Using reject or picks or flat or dropping bad windows means '
+                      'mne Epochs are created, '
+                      'which will be substantially slower and may be deprecated in the future.')
+        if drop_bad_windows is None:
+            drop_bad_windows = True
+
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_events)(
             ds, infer_mapping, infer_window_size_stride,
             trial_start_offset_samples, trial_stop_offset_samples,
             window_size_samples, window_stride_samples, drop_last_window,
             mapping, preload, drop_bad_windows, picks, reject, flat,
-            on_missing, accepted_bads_ratio, verbose) for ds in concat_ds.datasets)
+            on_missing, accepted_bads_ratio, verbose, use_mne_epochs) for ds in concat_ds.datasets)
     return BaseConcatDataset(list_of_windows_ds)
 
 
 def create_fixed_length_windows(
         concat_ds, start_offset_samples=0, stop_offset_samples=None,
         window_size_samples=None, window_stride_samples=None, drop_last_window=None,
-        mapping=None, preload=False, drop_bad_windows=True, picks=None,
+        mapping=None, preload=False, picks=None,
         reject=None, flat=None, targets_from='metadata', last_target_only=True,
         on_missing='error', n_jobs=1, verbose='error'):
     """Windower that creates sliding windows.
@@ -160,11 +174,6 @@ def create_fixed_length_windows(
         Mapping from event description to target value.
     preload: bool
         If True, preload the data of the Epochs objects.
-    drop_bad_windows: bool
-        If True, call `.drop_bad()` on the resulting mne.Epochs object. This
-        step allows identifying e.g., windows that fall outside of the
-        continuous recording. It is suggested to run this step here as
-        otherwise the BaseConcatDataset has to be updated as well.
     picks: str | list | slice | None
         Channels to include. If None, all available channels are used. See
         mne.Epochs.
@@ -195,7 +204,7 @@ def create_fixed_length_windows(
     lengths = np.array([ds.raw.n_times for ds in concat_ds.datasets])
     if (np.diff(lengths) != 0).any() and window_size_samples is None:
         warnings.warn('Recordings have different lengths, they will not be batch-able!')
-    if any(window_size_samples > lengths):
+    if (window_size_samples is not None) and any(window_size_samples > lengths):
         raise ValueError(f'Window size {window_size_samples} exceeds trial '
                          f'duration {lengths.min()}.')
 
@@ -203,9 +212,8 @@ def create_fixed_length_windows(
         delayed(_create_fixed_length_windows)(
             ds, start_offset_samples, stop_offset_samples, window_size_samples,
             window_stride_samples, drop_last_window, mapping, preload,
-            drop_bad_windows, picks, reject, flat, targets_from, last_target_only,
+            picks, reject, flat, targets_from, last_target_only,
             on_missing, verbose) for ds in concat_ds.datasets)
-
     return BaseConcatDataset(list_of_windows_ds)
 
 
@@ -215,7 +223,8 @@ def _create_windows_from_events(
         window_size_samples=None, window_stride_samples=None,
         drop_last_window=False, mapping=None, preload=False,
         drop_bad_windows=True, picks=None, reject=None, flat=None,
-        on_missing='error', accepted_bads_ratio=0.0, verbose='error'):
+        on_missing='error', accepted_bads_ratio=0.0, verbose='error',
+        use_mne_epochs=False):
     """Create WindowsDataset from BaseDataset based on events.
 
     Parameters
@@ -233,7 +242,7 @@ def _create_windows_from_events(
 
     Returns
     -------
-    WindowsDataset :
+    EEGWindowsDataset :
         Windowed dataset.
     """
     # catch window_kwargs to store to dataset
@@ -244,18 +253,20 @@ def _create_windows_from_events(
         unique_events = np.unique(ds.raw.annotations.description)
         new_unique_events = [x for x in unique_events if x not in mapping]
         # mapping event descriptions to integers from 0 on
-        max_id_mapping = len(mapping)
-        mapping.update(
-            {v: k + max_id_mapping for k, v in enumerate(new_unique_events)}
-        )
+        max_id_existing_mapping = len(mapping)
+        mapping.update({
+                event_name: i_event_type + max_id_existing_mapping
+                for i_event_type, event_name in enumerate(new_unique_events)
+        })
 
     events, events_id = mne.events_from_annotations(ds.raw, mapping)
     onsets = events[:, 0]
     # Onsets are relative to the beginning of the recording
-    filtered_durations = np.array(
-        [a['duration'] for a in ds.raw.annotations
-            if a['description'] in events_id]
-    )
+    filtered_durations = np.array([
+        a['duration'] for a in ds.raw.annotations
+        if a['description'] in events_id
+    ])
+
     stops = onsets + (filtered_durations * ds.raw.info['sfreq']).astype(int)
     # XXX This could probably be simplified by using chunk_duration in
     #     `events_from_annotations`
@@ -287,17 +298,20 @@ def _create_windows_from_events(
 
     description = events[:, -1]
 
+    if not use_mne_epochs:
+        onsets = onsets - ds.raw.first_samp
+        stops = stops - ds.raw.first_samp
     i_trials, i_window_in_trials, starts, stops = _compute_window_inds(
         onsets, stops, trial_start_offset_samples,
         trial_stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window, accepted_bads_ratio)
 
+    if any(np.diff(starts) <= 0):
+        raise NotImplementedError('Trial overlap not implemented.')
+
     events = [[start, window_size_samples, description[i_trials[i_start]]]
               for i_start, start in enumerate(starts)]
     events = np.array(events)
-
-    if any(np.diff(events[:, 0]) <= 0):
-        raise NotImplementedError('Trial overlap not implemented.')
 
     description = events[:, -1]
 
@@ -305,19 +319,21 @@ def _create_windows_from_events(
         'i_window_in_trial': i_window_in_trials,
         'i_start_in_trial': starts,
         'i_stop_in_trial': stops,
-        'target': description})
-
-    # window size - 1, since tmax is inclusive
-    mne_epochs = mne.Epochs(
-        ds.raw, events, events_id, baseline=None, tmin=0,
-        tmax=(window_size_samples - 1) / ds.raw.info['sfreq'],
-        metadata=metadata, preload=preload, picks=picks, reject=reject,
-        flat=flat, on_missing=on_missing, verbose=verbose)
-
-    if drop_bad_windows:
-        mne_epochs.drop_bad()
-
-    windows_ds = WindowsDataset(mne_epochs, ds.description)
+        'target': description
+    })
+    if use_mne_epochs:
+        # window size - 1, since tmax is inclusive
+        mne_epochs = mne.Epochs(
+            ds.raw, events, events_id, baseline=None, tmin=0,
+            tmax=(window_size_samples - 1) / ds.raw.info['sfreq'],
+            metadata=metadata, preload=preload, picks=picks, reject=reject,
+            flat=flat, on_missing=on_missing, verbose=verbose)
+        if drop_bad_windows:
+            mne_epochs.drop_bad()
+        windows_ds = WindowsDataset(mne_epochs, ds.description,)
+    else:
+        windows_ds = EEGWindowsDataset(
+            ds.raw, metadata=metadata, description=ds.description,)
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, 'window_kwargs', window_kwargs)
     kwargs_name = 'raw_preproc_kwargs'
@@ -329,7 +345,7 @@ def _create_windows_from_events(
 def _create_fixed_length_windows(
         ds, start_offset_samples, stop_offset_samples, window_size_samples,
         window_stride_samples, drop_last_window, mapping=None, preload=False,
-        drop_bad_windows=True, picks=None, reject=None, flat=None, targets_from='metadata',
+        picks=None, reject=None, flat=None, targets_from='metadata',
         last_target_only=True, on_missing='error', verbose='error'):
     """Create WindowsDataset from BaseDataset with sliding windows.
 
@@ -349,7 +365,7 @@ def _create_fixed_length_windows(
     window_kwargs = [
         (create_fixed_length_windows.__name__, _get_windowing_kwargs(locals())),
     ]
-    stop = ds.raw.n_times \
+    stop = ds.raw.n_times\
         if stop_offset_samples is None else stop_offset_samples
 
     # assume window should be whole recording
@@ -358,16 +374,16 @@ def _create_fixed_length_windows(
     if window_stride_samples is None:
         window_stride_samples = window_size_samples
 
-    stop = stop - window_size_samples + ds.raw.first_samp
+    last_potential_start = stop - window_size_samples
     # already includes last incomplete window start
     starts = np.arange(
-        ds.raw.first_samp + start_offset_samples,
-        stop + 1,
+        start_offset_samples,
+        last_potential_start + 1,
         window_stride_samples)
 
-    if not drop_last_window and starts[-1] < stop:
+    if not drop_last_window and starts[-1] < last_potential_start:
         # if last window does not end at trial stop, make it stop there
-        starts = np.append(starts, stop)
+        starts = np.append(starts, last_potential_start)
 
     # get targets from dataset description if they exist
     target = -1 if ds.target_name is None else ds.description[ds.target_name]
@@ -379,30 +395,26 @@ def _create_fixed_length_windows(
         else:
             target = mapping[target]
 
-    fake_events = [[start, window_size_samples, -1] for start in starts]
     metadata = pd.DataFrame({
-        'i_window_in_trial': np.arange(len(fake_events)),
+        'i_window_in_trial': np.arange(len(starts)),
         'i_start_in_trial': starts,
         'i_stop_in_trial': starts + window_size_samples,
-        'target': len(fake_events) * [target]
+        'target': len(starts) * [target]
     })
 
-    # window size - 1, since tmax is inclusive
-    mne_epochs = mne.Epochs(
-        ds.raw, fake_events, baseline=None, tmin=0,
-        tmax=(window_size_samples - 1) / ds.raw.info['sfreq'],
-        metadata=metadata, preload=preload, picks=picks, reject=reject,
-        flat=flat, on_missing=on_missing, verbose=verbose)
-
-    if drop_bad_windows:
-        mne_epochs.drop_bad()
-
     window_kwargs.append(
-        (WindowsDataset.__name__, {'targets_from': targets_from,
-                                   'last_target_only': last_target_only})
+        (EEGWindowsDataset.__name__, {
+            'targets_from': targets_from,
+            'last_target_only': last_target_only
+        })
     )
-    windows_ds = WindowsDataset(mne_epochs, ds.description, targets_from=targets_from,
-                                last_target_only=last_target_only)
+    windows_ds = EEGWindowsDataset(
+        ds.raw,
+        metadata=metadata,
+        description=ds.description,
+        targets_from=targets_from,
+        last_target_only=last_target_only,
+    )
     # add window_kwargs and raw_preproc_kwargs to windows dataset
     setattr(windows_ds, 'window_kwargs', window_kwargs)
     kwargs_name = 'raw_preproc_kwargs'
@@ -412,18 +424,18 @@ def _create_fixed_length_windows(
 
 
 def create_windows_from_target_channels(
-        concat_ds, window_size_samples=None, preload=False, drop_bad_windows=True,
+        concat_ds, window_size_samples=None, preload=False,
         picks=None, reject=None, flat=None, n_jobs=1, last_target_only=True,
         verbose='error'):
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_target_channels)(
-            ds, window_size_samples, preload, drop_bad_windows, picks, reject,
+            ds, window_size_samples, preload, picks, reject,
             flat, last_target_only, 'error', verbose) for ds in concat_ds.datasets)
     return BaseConcatDataset(list_of_windows_ds)
 
 
 def _create_windows_from_target_channels(
-        ds, window_size_samples, preload=False, drop_bad_windows=True, picks=None,
+        ds, window_size_samples, preload=False, picks=None,
         reject=None, flat=None, last_target_only=True, on_missing='error',
         verbose='error'):
     """Create WindowsDataset from BaseDataset using targets `misc` channels from mne.Raw.
@@ -447,34 +459,30 @@ def _create_windows_from_target_channels(
 
     target = ds.raw.get_data(picks='misc')
     # TODO: handle multi targets present only for some events
-    stops = np.nonzero((~np.isnan(target[0, :])))[0]
+    stops = np.nonzero((~np.isnan(target[0, :])))[0] + 1
     stops = stops[(stops < stop) & (stops >= window_size_samples)]
     stops = stops.astype(int)
-    # TODO: Make sure that indices are correct
-    fake_events = [[stop, window_size_samples, -1] for stop in stops]
     metadata = pd.DataFrame({
-        'i_window_in_trial': np.arange(len(fake_events)),
+        'i_window_in_trial': np.arange(len(stops)),
         'i_start_in_trial': stops - window_size_samples,
         'i_stop_in_trial': stops,
-        'target': len(fake_events) * [target]
+        'target': len(stops) * [target]
     })
 
-    # window size - 1, since tmax is inclusive
-    mne_epochs = mne.Epochs(
-        ds.raw, fake_events, baseline=None,
-        tmin=-(window_size_samples - 1) / ds.raw.info['sfreq'],
-        tmax=0., metadata=metadata, preload=preload, picks=picks,
-        reject=reject, flat=flat, on_missing=on_missing, verbose=verbose)
-
-    if drop_bad_windows:
-        mne_epochs.drop_bad()
-
+    targets_from = 'channels'
     window_kwargs.append(
-        (WindowsDataset.__name__, {'targets_from': 'channels',
-                                   'last_target_only': last_target_only})
+        (EEGWindowsDataset.__name__, {
+            'targets_from': targets_from,
+            'last_target_only': last_target_only
+        })
     )
-    windows_ds = WindowsDataset(mne_epochs, ds.description, targets_from='channels',
-                                last_target_only=last_target_only)
+    windows_ds = EEGWindowsDataset(
+        ds.raw,
+        metadata=metadata,
+        description=ds.description,
+        targets_from=targets_from,
+        last_target_only=last_target_only,
+    )
     setattr(windows_ds, 'window_kwargs', window_kwargs)
     kwargs_name = 'raw_preproc_kwargs'
     if hasattr(ds, kwargs_name):

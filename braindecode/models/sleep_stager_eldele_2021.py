@@ -7,14 +7,13 @@ import copy
 from copy import deepcopy
 import warnings
 
-import numpy as np
-
 import torch
 from torch import nn
 import torch.nn.functional as F
+from .base import EEGModuleMixin, deprecated_args
 
 
-class SleepStagerEldele2021(nn.Module):
+class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
     """Sleep Staging Architecture from Eldele et al 2021.
 
     Attention based Neural Net for sleep staging as described in [Eldele2021]_.
@@ -31,8 +30,6 @@ class SleepStagerEldele2021(nn.Module):
 
     Parameters
     ----------
-    sfreq : float
-        EEG sampling frequency.
     n_tce : int
         Number of TCE clones.
     d_model : int
@@ -48,16 +45,16 @@ class SleepStagerEldele2021(nn.Module):
         Number of attention heads. It should be a factor of d_model
     dropout : float
         Dropout rate in the PositionWiseFeedforward layer and the TCE layers.
-    input_size_s : float
-        Size of the input, in seconds.
-    n_classes : int
-        Number of classes.
     after_reduced_cnn_size : int
         Number of output channels produced by the convolution in the AFR module.
     return_feats : bool
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
+    n_classes : int
+        Alias for `n_outputs`.
+    input_size_s : float
+        Alias for `input_window_seconds`.
 
     References
     ----------
@@ -70,14 +67,47 @@ class SleepStagerEldele2021(nn.Module):
     .. [2] https://sleepdata.org/datasets/shhs
     """
 
-    def __init__(self, sfreq, n_tce=2, d_model=80, d_ff=120, n_attn_heads=5, dropout=0.1,
-                 input_size_s=30, n_classes=5, after_reduced_cnn_size=30, return_feats=False):
-        super(SleepStagerEldele2021, self).__init__()
+    def __init__(
+            self,
+            sfreq=None,
+            n_tce=2,
+            d_model=80,
+            d_ff=120,
+            n_attn_heads=5,
+            dropout=0.1,
+            input_window_seconds=30,
+            n_outputs=5,
+            after_reduced_cnn_size=30,
+            return_feats=False,
+            chs_info=None,
+            n_chans=None,
+            n_times=None,
+            n_classes=None,
+            input_size_s=None,
+    ):
+        n_outputs, input_window_seconds, = deprecated_args(
+            self,
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("input_size_s", "input_window_seconds", input_size_s, input_window_seconds),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del n_classes, input_size_s
 
-        input_size = np.ceil(input_size_s * sfreq).astype(int)
+        self.mapping = {
+            "fc.weight": "final_layer.weight",
+            "fc.bias": "final_layer.bias"
+        }
 
-        if not ((input_size_s == 30 and sfreq == 100 and d_model == 80) or
-                (input_size_s == 30 and sfreq == 125 and d_model == 100)):
+        if not ((self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80) or
+                (self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100)):
             warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
                           "with d_model at 80 or at 125Hz, with d_model at 100, to use anything "
                           "other than this may cause errors or cause the model to perform in "
@@ -86,7 +116,7 @@ class SleepStagerEldele2021(nn.Module):
         # the usual kernel size for the mrcnn, for sfreq 100
         kernel_size = 7
 
-        if sfreq == 125:
+        if self.sfreq == 125:
             kernel_size = 6
 
         mrcnn = _MRCNN(after_reduced_cnn_size, kernel_size)
@@ -96,10 +126,14 @@ class SleepStagerEldele2021(nn.Module):
                                  dropout), n_tce)
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
-        self.len_last_layer = self._len_last_layer(input_size)
+        self.len_last_layer = self._len_last_layer(self.n_times)
         self.return_feats = return_feats
+
+        # TODO: Add new way to handle return features
+        """if return_feats:
+            raise ValueError("return_feat == True is not accepted anymore")"""
         if not return_feats:
-            self.fc = nn.Linear(d_model * after_reduced_cnn_size, n_classes)
+            self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
 
     def _len_last_layer(self, input_size):
         self.feature_extractor.eval()
@@ -124,7 +158,7 @@ class SleepStagerEldele2021(nn.Module):
         if self.return_feats:
             return encoded_features
         else:
-            final_output = self.fc(encoded_features)
+            final_output = self.final_layer(encoded_features)
             return final_output
 
 

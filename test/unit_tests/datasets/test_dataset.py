@@ -13,6 +13,15 @@ from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_windows_from_events, create_fixed_length_windows)
 
+bnci_kwargs = {"n_sessions": 2, "n_runs": 3,
+               "n_subjects": 9, "paradigm": "imagery",
+               "duration": 386.9, "sfreq": 250,
+               "event_list": ("left", "right"),
+               "channels": ('Fz', 'FC3', 'FC1', 'FCz', 'FC2', 'FC4',
+                            'C5', 'C3', 'C1', 'Cz', 'C2', 'C4', 'C6',
+                            'CP3', 'CP1', 'CPz', 'CP2', 'CP4',
+                            'P1', 'Pz', 'P2', 'POz')}
+
 
 # TODO: split file up into files with proper matching names
 @pytest.fixture(scope="module")
@@ -53,7 +62,9 @@ def set_up():
 @pytest.fixture(scope="module")
 def concat_ds_targets():
     raws, description = fetch_data_with_moabb(
-        dataset_name="BNCI2014001", subject_ids=4)
+        dataset_name="FakeDataset", subject_ids=1,
+        dataset_kwargs=bnci_kwargs)
+
     events, _ = mne.events_from_annotations(raws[0])
     targets = events[:, -1] - 1
     ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
@@ -202,8 +213,8 @@ def test_split_dataset(concat_ds_targets):
     splits = concat_ds.split(split_ids)
     assert len(splits) == len(split_ids)
     assert splits.keys() == split_ids.keys()
-    assert (splits["train"].description["run"] == "run_1").all()
-    assert (splits["test"].description["run"] == "run_2").all()
+    assert (splits["train"].description["run"] == "1").all()
+    assert (splits["test"].description["run"] == "2").all()
 
 
 def test_metadata(concat_windows_dataset):
@@ -282,7 +293,7 @@ def test_set_description_base_dataset(concat_ds_targets):
     assert 'test' in base_ds.description
     assert base_ds.description['test'] == 4
 
-    # overwrite singe entry in single base using a Series
+    # overwrite single entry in single base using a Series
     base_ds.set_description(pd.Series({'test': 0}), overwrite=True)
     assert base_ds.description['test'] == 0
 
@@ -409,6 +420,7 @@ def test_target_name_not_in_description(set_up):
     x, y = base_dataset[0]
 
 
-def test_windows_dataset_from_target_channels_raise_valuerror():
+def test_windows_dataset_from_target_channels_raise_valuerror(set_up):
+    _, _, epochs, _, _, _ = set_up
     with pytest.raises(ValueError):
-        WindowsDataset(None, None, targets_from='non-existing')
+        WindowsDataset(epochs, None, targets_from='non-existing')

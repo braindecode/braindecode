@@ -40,19 +40,19 @@ from braindecode.augmentation.transforms import _get_standard_10_20_positions
 @pytest.fixture
 def time_aranged_batch(batch_size=5):
     """Generates a batch of size 1, where the feature matrix has 64 repeated
-    rows of integers aranged between 0 and 49.
+    rows of integers arranged between 0 and 49.
     """
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     X = torch.stack(
         [torch.stack([torch.arange(50, device=device)] * 64)] * batch_size
     ).float()
-    return X, torch.zeros(batch_size)
+    return X, torch.zeros(batch_size, device=device)
 
 
 @pytest.fixture
 def ch_aranged_batch(time_aranged_batch):
     """Generates a batch of size 1, where the feature matrix has 50 repeated
-    columns of integers aranged between 0 and 63.
+    columns of integers arranged between 0 and 63.
     """
     X, y = time_aranged_batch
     return X.transpose(1, 2), y
@@ -150,7 +150,7 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
         X = torch.ones(batch_size, *shape, device=device)
     nb_zero_rows = int(round(X.shape[1] * zeros_ratio))
     X[:, :nb_zero_rows, :] *= 0
-    return X, torch.zeros(batch_size)
+    return X, torch.zeros(batch_size, device=device)
 
 
 @pytest.mark.parametrize("p_drop", [0.25, 0.5])

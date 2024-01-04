@@ -3,9 +3,11 @@
 #          Lukas Gemein
 #
 # License: BSD-3
+import sys
 
 import mne
 import numpy as np
+import pytest
 from mne.io import concatenate_raws
 from skorch.helper import predefined_split
 from torch import optim
@@ -13,11 +15,10 @@ from torch.nn.functional import nll_loss
 
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
-from braindecode.training.losses import CroppedLoss
 from braindecode.models import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
+from braindecode.training.losses import CroppedLoss
 from braindecode.training.scoring import CroppedTrialEpochScoring
-from braindecode.util import set_random_seeds, np_to_th
+from braindecode.util import np_to_th, set_random_seeds
 
 
 def assert_deep_allclose(expected, actual, *args, **kwargs):
@@ -70,6 +71,7 @@ def assert_deep_allclose(expected, actual, *args, **kwargs):
         raise exc
 
 
+@pytest.mark.skipif(sys.version_info != (3, 7), reason="Only for Python 3.7")
 def test_eeg_classifier():
     # 5,6,7,10,13,14 are codes for executed and imagined hands/feet
     subject_id = 1
@@ -134,7 +136,7 @@ def test_eeg_classifier():
         input_window_samples=input_window_samples,
         final_conv_length=12,
     )
-    to_dense_prediction_model(model)
+    model.to_dense_prediction_model()
 
     if cuda:
         model.cuda()
@@ -186,10 +188,10 @@ def test_eeg_classifier():
             ("train_trial_accuracy", cropped_cb_train),
             ("valid_trial_accuracy", cropped_cb_valid),
         ],
+        classes=[0, 1],
     )
 
     clf.fit(train_set, y=None, epochs=4)
-
     # Reproduce this exact output by using pprint(history_without_dur) and adjusting
     # indentation of all lines after first
     expectedh = [{'batches': [{'train_batch_size': 32, 'train_loss': 1.4175944328308105},

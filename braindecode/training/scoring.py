@@ -26,7 +26,7 @@ def trial_preds_from_window_preds(
 
     Parameters
     ----------
-    preds: list of ndarrays (atleast 2darrays)
+    preds: list of ndarrays (at least 2darrays)
         List of window predictions, in each window prediction
          time is in axis=1
     i_window_in_trials: list
@@ -428,6 +428,8 @@ def predict_trials(module, dataset, return_targets=True, batch_size=1, num_worke
             targets depends on the decoding paradigm and can be either a single
             value, multiple values, or a sequence.
     """
+    # Ensure the model is in evaluation mode
+    module.eval()
     # we have a cropped dataset if there exists at least one trial with more
     # than one compute window
     more_than_one_window = sum(dataset.get_metadata()['i_window_in_trial'] != 0) > 0

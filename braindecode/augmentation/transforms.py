@@ -42,11 +42,11 @@ class TimeReverse(Transform):
     def __init__(
         self,
         probability,
-        random_state=None
+        random_state=None,
     ):
         super().__init__(
             probability=probability,
-            random_state=random_state
+            random_state=random_state,
         )
 
 
@@ -84,7 +84,7 @@ class FTSurrogate(Transform):
         Float setting the probability of applying the operation.
     phase_noise_magnitude : float | torch.Tensor, optional
         Float between 0 and 1 setting the range over which the phase
-        pertubation is uniformly sampled:
+        perturbation is uniformly sampled:
         ``[0, phase_noise_magnitude * 2 * pi]``. Defaults to 1.
     channel_indep : bool, optional
         Whether to sample phase perturbations independently for each channel or
@@ -115,9 +115,9 @@ class FTSurrogate(Transform):
             probability=probability,
             random_state=random_state
         )
-        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)),\
+        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)), \
             "phase_noise_magnitude should be a float."
-        assert 0 <= phase_noise_magnitude <= 1,\
+        assert 0 <= phase_noise_magnitude <= 1, \
             "phase_noise_magnitude should be between 0 and 1."
         assert isinstance(channel_indep, bool), (
             "channel_indep is expected to be a boolean")
@@ -560,12 +560,12 @@ class BandstopFilter(Transform):
             probability=probability,
             random_state=random_state,
         )
-        assert isinstance(bandwidth, Real) and bandwidth >= 0,\
+        assert isinstance(bandwidth, Real) and bandwidth >= 0, \
             "bandwidth should be a non-negative float."
-        assert isinstance(sfreq, Real) and sfreq > 0,\
+        assert isinstance(sfreq, Real) and sfreq > 0, \
             "sfreq should be a positive float."
         if max_freq is not None:
-            assert isinstance(max_freq, Real) and max_freq > 0,\
+            assert isinstance(max_freq, Real) and max_freq > 0, \
                 "max_freq should be a positive float."
         nyq = sfreq / 2
         if max_freq is None or max_freq > nyq:
@@ -575,7 +575,7 @@ class BandstopFilter(Transform):
                 f" Nyquist frequency ({nyq} Hz)."
                 f" Falling back to max_freq = {nyq}."
             )
-        assert bandwidth < max_freq,\
+        assert bandwidth < max_freq, \
             f"`bandwidth` needs to be smaller than max_freq={max_freq}"
 
         # override bandwidth value when a magnitude is passed
@@ -659,7 +659,7 @@ class FrequencyShift(Transform):
             probability=probability,
             random_state=random_state,
         )
-        assert isinstance(sfreq, Real) and sfreq > 0,\
+        assert isinstance(sfreq, Real) and sfreq > 0, \
             "sfreq should be a positive float."
         self.sfreq = sfreq
 
@@ -710,7 +710,7 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
     Parameters
     ----------
     raw_or_epoch : mne.io.Raw | mne.Epoch, optional
-        Example of raw or epoch to retrive ordered channels list from. Need to
+        Example of raw or epoch to retrieve ordered channels list from. Need to
         be named as in 10-20. By default None.
     ordered_ch_names : list, optional
         List of strings representing the channels of the montage considered.
@@ -718,7 +718,7 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
         matrices that will be fed to `SensorsRotation` transform. By
         default None.
     """
-    assert raw_or_epoch is not None or ordered_ch_names is not None,\
+    assert raw_or_epoch is not None or ordered_ch_names is not None, \
         "At least one of raw_or_epoch and ordered_ch_names is needed."
     if ordered_ch_names is None:
         ordered_ch_names = raw_or_epoch.info['ch_names']
@@ -789,17 +789,17 @@ class SensorsRotation(Transform):
             sensors_positions_matrix = torch.as_tensor(
                 sensors_positions_matrix
             )
-        assert isinstance(sensors_positions_matrix, torch.Tensor),\
+        assert isinstance(sensors_positions_matrix, torch.Tensor), \
             "sensors_positions should be an Tensor"
         assert (
             isinstance(max_degrees, (Real, torch.Tensor)) and
             max_degrees >= 0
         ), "max_degrees should be non-negative float."
-        assert isinstance(axis, str) and axis in ['x', 'y', 'z'],\
+        assert isinstance(axis, str) and axis in ['x', 'y', 'z'], \
             "axis can be either x, y or z."
-        assert sensors_positions_matrix.shape[0] == 3,\
+        assert sensors_positions_matrix.shape[0] == 3, \
             "sensors_positions_matrix shape should be 3 x n_channels."
-        assert isinstance(spherical_splines, bool),\
+        assert isinstance(spherical_splines, bool), \
             "spherical_splines should be a boolean"
         self.sensors_positions_matrix = sensors_positions_matrix
         self.axis = axis

@@ -2,9 +2,10 @@
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #          Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
+#          Valentin Iovene <val@too.gy>
 # License: BSD (3-clause)
 
-from typing import List, Tuple, Any
+from typing import List, Tuple, Any, Optional, Union, Callable
 from numbers import Real
 
 from sklearn.utils import check_random_state
@@ -16,7 +17,20 @@ from torch.utils.data._utils.collate import default_collate
 from .functional import identity
 
 Batch = List[Tuple[torch.Tensor, int, Any]]
-Output = Tuple[torch.Tensor, torch.Tensor]
+Output = Union[
+    # just outputting X
+    torch.Tensor,
+    # outputting (X, y) where y can be a tensor or tuple of tensors
+    Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]]
+]
+# (X, y) -> (X', y') where y' can be a tensor or a tuple of tensors
+Operation = Callable[
+    [torch.Tensor, torch.Tensor],
+    Tuple[
+        torch.Tensor,
+        Union[torch.Tensor, Tuple[torch.Tensor, ...]]
+    ]
+]
 
 
 class Transform(torch.nn.Module):
@@ -32,17 +46,17 @@ class Transform(torch.nn.Module):
         Float between 0 and 1 defining the uniform probability of applying the
         operation. Set to 1.0 by default (e.g always apply the operation).
     random_state: int, optional
-        Seed to be used to instatiate numpy random number generator instance.
+        Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
-    operation = None
+    operation: Operation
 
     def __init__(self, probability=1.0, random_state=None):
         super().__init__()
         if self.forward.__func__ is Transform.forward:
-            assert callable(self.operation),\
-                "operation should be a ``callable``."
+            assert callable(self.operation), "operation should be a " \
+                                             "``callable``. "
 
         assert isinstance(probability, Real), (
             f"probability should be a ``real``. Got {type(probability)}.")
@@ -54,7 +68,7 @@ class Transform(torch.nn.Module):
     def get_augmentation_params(self, *batch):
         return dict()
 
-    def forward(self, X: Tensor, y: Tensor = None) -> Output:
+    def forward(self, X: Tensor, y: Optional[Tensor] = None) -> Output:
         """General forward pass for an augmentation transform.
 
         Parameters
@@ -72,16 +86,23 @@ class Transform(torch.nn.Module):
             Transformed labels. Only returned when y is not None.
         """
         X = torch.as_tensor(X).float()
+
         out_X = X.clone()
+        # check if input has a batch dimension
+        if len(out_X.shape) < 3:
+            out_X = out_X[None, ...]
+
         if y is not None:
-            y = torch.as_tensor(y)
+            y = torch.as_tensor(y).to(out_X.device)
             out_y = y.clone()
+            if len(out_y.shape) == 0:
+                out_y = out_y.reshape(1)
         else:
-            out_y = torch.zeros(X.shape[0])
+            out_y = torch.zeros(out_X.shape[0], device=out_X.device)
 
         # Samples a mask setting for each example whether they should stay
-        # inchanged or not
-        mask = self._get_mask(X.shape[0])
+        # unchanged or not
+        mask = self._get_mask(out_X.shape[0], out_X.device)
         num_valid = mask.sum().long()
 
         if num_valid > 0:
@@ -91,22 +112,24 @@ class Transform(torch.nn.Module):
                 **self.get_augmentation_params(out_X[mask, ...], out_y[mask])
             )
             # Apply the operation defining the Transform to the whole batch
-            if type(tr_y) is tuple:
+            if isinstance(tr_y, tuple):
                 out_y = tuple(tmp_y[mask] for tmp_y in tr_y)
             else:
                 out_y[mask] = tr_y
 
+        # potentially remove empty batch dimension again
+        out_X = out_X.reshape_as(X)
         if y is not None:
             return out_X, out_y
         else:
             return out_X
 
-    def _get_mask(self, batch_size=None) -> torch.Tensor:
+    def _get_mask(self, batch_size, device) -> torch.Tensor:
         """Samples whether to apply operation or not over the whole batch
         """
         return torch.as_tensor(
             self.probability > self.rng.uniform(size=batch_size)
-        )
+        ).to(device)
 
     @property
     def probability(self):
@@ -190,8 +213,10 @@ class AugmentedDataLoader(DataLoader):
         elif isinstance(transforms, list):
             self.collated_tr = _make_collateable(Compose(transforms), device=device)
         else:
-            raise TypeError("transforms can be either a Transform object" +
-                            " or a list of Transform objects.")
+            raise TypeError(
+                "transforms can be either a Transform object "
+                "or a list of Transform objects."
+            )
 
         super().__init__(
             dataset,

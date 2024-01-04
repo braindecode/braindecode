@@ -7,19 +7,17 @@ from warnings import warn
 from numpy import prod
 
 from torch import nn
-from .modules import Expression, Ensure4d
+from einops.layers.torch import Rearrange
+from .modules import Ensure4d
 from .eegnet import _glorot_weight_zero_bias
 from .eegitnet import _InceptionBlock, _DepthwiseConv2d
+from .base import EEGModuleMixin, deprecated_args
 
 
-def _transpose_to_b_1_c_0(x):
-    return x.permute(0, 3, 1, 2)
-
-
-class EEGInception(nn.Sequential):
+class EEGInception(EEGModuleMixin, nn.Sequential):
     """ EEG Inception for ERP-based classification
 
-    --> DEPERECATED <--
+    --> DEPRECATED <--
     THIS CLASS IS DEPRECATED AND WILL BE REMOVED IN THE RELEASE 0.9 OF
     BRAINDECODE. PLEASE USE braindecode.models.EEGInceptionERP INSTEAD IN THE
     FUTURE.
@@ -46,14 +44,6 @@ class EEGInception(nn.Sequential):
 
     Parameters
     ----------
-    in_channels : int
-        Number of EEG channels.
-    n_classes : int
-        Number of classes.
-    input_size_ms : int
-        Size of the input, in milliseconds. Set to 1000 in [Santamaria2020]_.
-    sfreq : float
-        EEG sampling frequency.
     drop_prob : float
         Dropout rate inside all the network.
     scales_time: list(int)
@@ -72,6 +62,12 @@ class EEGInception(nn.Sequential):
         Depth multiplier for the depthwise convolution.
     pooling_sizes: list(int)
         Pooling sizes for the inception block.
+    in_channels : int
+        Alias for n_chans.
+    n_classes : int
+        Alias for n_outputs.
+    input_window_samples : int
+        Alias for input_window_seconds.
 
     References
     ----------
@@ -88,7 +84,7 @@ class EEGInception(nn.Sequential):
        Y., Laskaris, N., Adamos, D.A., Zafeiriou, S., Duong, W.C., Gordon, S.M.,
        Lawhern, V.J., Śliwowski, M., Rouanne, V. &amp; Tempczyk, P.. (2022).
        2021 BEETL Competition: Advancing Transfer Learning for Subject Independence &amp;
-       Heterogenous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
+       Heterogeneous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
        Demonstrations Track</i>, in <i>Proceedings of Machine Learning Research</i>
        176:205-219 Available from https://proceedings.mlr.press/v176/wei22a.html.
 
@@ -96,9 +92,9 @@ class EEGInception(nn.Sequential):
 
     def __init__(
             self,
-            in_channels,
-            n_classes,
-            input_window_samples=1000,
+            n_chans=None,
+            n_outputs=None,
+            n_times=1000,
             sfreq=128,
             drop_prob=0.5,
             scales_samples_s=(0.5, 0.25, 0.125),
@@ -107,9 +103,30 @@ class EEGInception(nn.Sequential):
             batch_norm_alpha=0.01,
             depth_multiplier=2,
             pooling_sizes=(4, 2, 2, 2),
+            chs_info=None,
+            input_window_seconds=None,
+            in_channels=None,
+            n_classes=None,
+            input_window_samples=None,
+            add_log_softmax=True,
     ):
-        super().__init__()
-
+        n_chans, n_outputs, n_times, = deprecated_args(
+            self,
+            ('in_channels', 'n_chans', in_channels, n_chans),
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
+            ('input_window_samples', 'n_times', input_window_samples, n_times),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del in_channels, n_classes, input_window_samples
         warn(
             "The class EEGInception is deprecated and will be removed in the "
             "release 0.9 of braindecode. Please use "
@@ -117,11 +134,7 @@ class EEGInception(nn.Sequential):
             DeprecationWarning
         )
 
-        self.in_channels = in_channels
-        self.n_classes = n_classes
-        self.input_window_samples = input_window_samples
         self.drop_prob = drop_prob
-        self.sfreq = sfreq
         self.n_filters = n_filters
         self.scales_samples_s = scales_samples_s
         self.scales_samples = tuple(
@@ -131,13 +144,17 @@ class EEGInception(nn.Sequential):
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes
 
+        self.mapping = {
+            'classification.1.weight': 'final_layer.fc.weight',
+            'classification.1.bias': 'final_layer.fc.bias'}
+
         self.add_module("ensuredims", Ensure4d())
 
-        self.add_module("dimshuffle", Expression(_transpose_to_b_1_c_0))
+        self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 C T"))
 
         # ======== Inception branches ========================
         block11 = self._get_inception_branch_1(
-            in_channels=in_channels,
+            in_channels=self.n_chans,
             out_channels=self.n_filters,
             kernel_length=self.scales_samples[0],
             alpha_momentum=self.alpha_momentum,
@@ -146,7 +163,7 @@ class EEGInception(nn.Sequential):
             depth_multiplier=self.depth_multiplier,
         )
         block12 = self._get_inception_branch_1(
-            in_channels=in_channels,
+            in_channels=self.n_chans,
             out_channels=self.n_filters,
             kernel_length=self.scales_samples[1],
             alpha_momentum=self.alpha_momentum,
@@ -155,7 +172,7 @@ class EEGInception(nn.Sequential):
             depth_multiplier=self.depth_multiplier,
         )
         block13 = self._get_inception_branch_1(
-            in_channels=in_channels,
+            in_channels=self.n_chans,
             out_channels=self.n_filters,
             kernel_length=self.scales_samples[2],
             alpha_momentum=self.alpha_momentum,
@@ -230,17 +247,26 @@ class EEGInception(nn.Sequential):
         ))
 
         spatial_dim_last_layer = (
-            input_window_samples // prod(self.pooling_sizes))
+                self.n_times // prod(self.pooling_sizes))
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
-        self.add_module("classification", nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(
-                spatial_dim_last_layer * n_channels_last_layer,
-                self.n_classes
-            ),
-            nn.Softmax(1)
-        ))
+        self.add_module("flat", nn.Flatten())
+
+        module = nn.Sequential()
+
+        module.add_module("fc",
+                          nn.Linear(
+                              spatial_dim_last_layer * n_channels_last_layer,
+                              self.n_outputs
+                          ), )
+
+        if self.add_log_softmax:
+            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
+        else:
+            module.add_module("identity", nn.Identity())
+
+        # The conv_classifier will be the final_layer and the other ones will be incorporated
+        self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)
 

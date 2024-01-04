@@ -2,33 +2,26 @@
 #
 # License: BSD (3-clause)
 
-import numpy as np
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
 
-from .modules import Expression, AvgPool2dWithConv, Ensure4d
-from .functions import identity, transpose_time_to_spat, squeeze_final_output
-from ..util import np_to_th
+from .base import EEGModuleMixin, deprecated_args
+from .functions import identity, squeeze_final_output
+from .modules import AvgPool2dWithConv, CombinedConv, Ensure4d, Expression
 
 
-class Deep4Net(nn.Sequential):
+class Deep4Net(EEGModuleMixin, nn.Sequential):
     """Deep ConvNet model from Schirrmeister et al 2017.
 
     Model described in [Schirrmeister2017]_.
 
     Parameters
     ----------
-    in_chans : int
-     Number of EEG input channels.
-    n_classes: int
-        Number of classes to predict (number of output filters of last layer).
-    input_window_samples: int | None
-        Only used to determine the length of the last convolutional kernel if
-        final_conv_length is "auto".
     final_conv_length: int | str
         Length of the final convolution layer.
-        If set to "auto", input_window_samples must not be None.
+        If set to "auto", n_times must not be None. Default: "auto".
     n_filters_time: int
         Number of temporal filters.
     n_filters_spat: int
@@ -74,6 +67,13 @@ class Deep4Net(nn.Sequential):
         Momentum for BatchNorm2d.
     stride_before_pool: bool
         Stride before pooling.
+    in_chans :
+        Alias for n_chans.
+    n_classes:
+        Alias for n_outputs.
+    input_window_samples :
+        Alias for n_times.
+
 
     References
     ----------
@@ -87,40 +87,60 @@ class Deep4Net(nn.Sequential):
     """
 
     def __init__(
-        self,
-        in_chans,
-        n_classes,
-        input_window_samples,
-        final_conv_length,
-        n_filters_time=25,
-        n_filters_spat=25,
-        filter_time_length=10,
-        pool_time_length=3,
-        pool_time_stride=3,
-        n_filters_2=50,
-        filter_length_2=10,
-        n_filters_3=100,
-        filter_length_3=10,
-        n_filters_4=200,
-        filter_length_4=10,
-        first_conv_nonlin=elu,
-        first_pool_mode="max",
-        first_pool_nonlin=identity,
-        later_conv_nonlin=elu,
-        later_pool_mode="max",
-        later_pool_nonlin=identity,
-        drop_prob=0.5,
-        split_first_layer=True,
-        batch_norm=True,
-        batch_norm_alpha=0.1,
-        stride_before_pool=False,
+            self,
+            n_chans=None,
+            n_outputs=None,
+            n_times=None,
+            final_conv_length="auto",
+            n_filters_time=25,
+            n_filters_spat=25,
+            filter_time_length=10,
+            pool_time_length=3,
+            pool_time_stride=3,
+            n_filters_2=50,
+            filter_length_2=10,
+            n_filters_3=100,
+            filter_length_3=10,
+            n_filters_4=200,
+            filter_length_4=10,
+            first_conv_nonlin=elu,
+            first_pool_mode="max",
+            first_pool_nonlin=identity,
+            later_conv_nonlin=elu,
+            later_pool_mode="max",
+            later_pool_nonlin=identity,
+            drop_prob=0.5,
+            split_first_layer=True,
+            batch_norm=True,
+            batch_norm_alpha=0.1,
+            stride_before_pool=False,
+            chs_info=None,
+            input_window_seconds=None,
+            sfreq=None,
+            in_chans=None,
+            n_classes=None,
+            input_window_samples=None,
+            add_log_softmax=True,
     ):
-        super().__init__()
+        n_chans, n_outputs, n_times = deprecated_args(
+            self,
+            ('in_chans', 'n_chans', in_chans, n_chans),
+            ('n_classes', 'n_outputs', n_classes, n_outputs),
+            ('input_window_samples', 'n_times', input_window_samples, n_times),
+        )
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            add_log_softmax=add_log_softmax,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
-            assert input_window_samples is not None
-        self.in_chans = in_chans
-        self.n_classes = n_classes
-        self.input_window_samples = input_window_samples
+            assert self.n_times is not None
         self.final_conv_length = final_conv_length
         self.n_filters_time = n_filters_time
         self.n_filters_spat = n_filters_spat
@@ -145,6 +165,18 @@ class Deep4Net(nn.Sequential):
         self.batch_norm_alpha = batch_norm_alpha
         self.stride_before_pool = stride_before_pool
 
+        # For the load_state_dict
+        # When padronize all layers,
+        # add the old's parameters here
+        self.mapping = {
+            "conv_time.weight": "conv_time_spat.conv_time.weight",
+            "conv_spat.weight": "conv_time_spat.conv_spat.weight",
+            "conv_time.bias": "conv_time_spat.conv_time.bias",
+            "conv_spat.bias": "conv_time_spat.conv_spat.bias",
+            "conv_classifier.weight": "final_layer.conv_classifier.weight",
+            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+        }
+
         if self.stride_before_pool:
             conv_stride = self.pool_time_stride
             pool_stride = 1
@@ -156,24 +188,16 @@ class Deep4Net(nn.Sequential):
         first_pool_class = pool_class_dict[self.first_pool_mode]
         later_pool_class = pool_class_dict[self.later_pool_mode]
         if self.split_first_layer:
-            self.add_module("dimshuffle", Expression(transpose_time_to_spat))
+            self.add_module("dimshuffle", Rearrange("batch C T 1 -> batch 1 T C"))
             self.add_module(
-                "conv_time",
-                nn.Conv2d(
-                    1,
-                    self.n_filters_time,
-                    (self.filter_time_length, 1),
-                    stride=1,
-                ),
-            )
-            self.add_module(
-                "conv_spat",
-                nn.Conv2d(
-                    self.n_filters_time,
-                    self.n_filters_spat,
-                    (1, self.in_chans),
-                    stride=(conv_stride, 1),
-                    bias=not self.batch_norm,
+                "conv_time_spat",
+                CombinedConv(
+                    in_chans=self.n_chans,
+                    n_filters_time=self.n_filters_time,
+                    n_filters_spat=self.n_filters_spat,
+                    filter_time_length=filter_time_length,
+                    bias_time=True,
+                    bias_spat=not self.batch_norm,
                 ),
             )
             n_filters_conv = self.n_filters_spat
@@ -181,7 +205,7 @@ class Deep4Net(nn.Sequential):
             self.add_module(
                 "conv_time",
                 nn.Conv2d(
-                    self.in_chans,
+                    self.n_chans,
                     self.n_filters_time,
                     (self.filter_time_length, 1),
                     stride=(conv_stride, 1),
@@ -209,7 +233,7 @@ class Deep4Net(nn.Sequential):
         self.add_module("pool_nonlin", Expression(self.first_pool_nonlin))
 
         def add_conv_pool_block(
-            model, n_filters_before, n_filters, filter_length, block_nr
+                model, n_filters_before, n_filters, filter_length, block_nr
         ):
             suffix = "_{:d}".format(block_nr)
             self.add_module("drop" + suffix, nn.Dropout(p=self.drop_prob))
@@ -242,9 +266,7 @@ class Deep4Net(nn.Sequential):
                     stride=(pool_stride, 1),
                 ),
             )
-            self.add_module(
-                "pool_nonlin" + suffix, Expression(self.later_pool_nonlin)
-            )
+            self.add_module("pool_nonlin" + suffix, Expression(self.later_pool_nonlin))
 
         add_conv_pool_block(
             self, n_filters_conv, self.n_filters_2, self.filter_length_2, 2
@@ -259,36 +281,33 @@ class Deep4Net(nn.Sequential):
         # self.add_module('drop_classifier', nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":
-            out = self(
-                np_to_th(
-                    np.ones(
-                        (1, self.in_chans, self.input_window_samples, 1),
-                        dtype=np.float32,
-                    )
-                )
-            )
-            n_out_time = out.cpu().data.numpy().shape[2]
-            self.final_conv_length = n_out_time
-        self.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                self.n_filters_4,
-                self.n_classes,
-                (self.final_conv_length, 1),
-                bias=True,
-            ),
-        )
-        self.add_module("softmax", nn.LogSoftmax(dim=1))
-        self.add_module("squeeze", Expression(squeeze_final_output))
+            self.final_conv_length = self.get_output_shape()[2]
+
+        # Incorporating classification module and subsequent ones in one final layer
+        module = nn.Sequential()
+
+        module.add_module("conv_classifier",
+                          nn.Conv2d(
+                            self.n_filters_4,
+                            self.n_outputs,
+                            (self.final_conv_length, 1),
+                            bias=True, ))
+
+        if self.add_log_softmax:
+            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
+
+        module.add_module("squeeze", Expression(squeeze_final_output))
+
+        self.add_module("final_layer", module)
 
         # Initialization, xavier is same as in our paper...
         # was default from lasagne
-        init.xavier_uniform_(self.conv_time.weight, gain=1)
+        init.xavier_uniform_(self.conv_time_spat.conv_time.weight, gain=1)
         # maybe no bias in case of no split layer and batch norm
         if self.split_first_layer or (not self.batch_norm):
-            init.constant_(self.conv_time.bias, 0)
+            init.constant_(self.conv_time_spat.conv_time.bias, 0)
         if self.split_first_layer:
-            init.xavier_uniform_(self.conv_spat.weight, gain=1)
+            init.xavier_uniform_(self.conv_time_spat.conv_spat.weight, gain=1)
             if not self.batch_norm:
                 init.constant_(self.conv_spat.bias, 0)
         if self.batch_norm:
@@ -307,8 +326,8 @@ class Deep4Net(nn.Sequential):
                 init.constant_(bnorm_weight, 1)
                 init.constant_(bnorm_bias, 0)
 
-        init.xavier_uniform_(self.conv_classifier.weight, gain=1)
-        init.constant_(self.conv_classifier.bias, 0)
+        init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
+        init.constant_(self.final_layer.conv_classifier.bias, 0)
 
         # Start in eval mode
         self.eval()
