@@ -19,7 +19,6 @@ mne.set_log_level("ERROR")
 
 from braindecode.datasets.base import BaseDataset, BaseConcatDataset
 
-# %%
 class NMT(BaseConcatDataset):
     """The NMT Scalp EEG Dataset: An Open-Source Annotated Dataset of Healthy 
     and Pathological EEG Recordings for Predictive Modeling.
