@@ -23,6 +23,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `MohammadJavadD`_)
 
 Bugs
 ~~~~
