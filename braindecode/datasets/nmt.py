@@ -8,44 +8,27 @@ Dataset classes for the NMT EEG Corpus
 
 import os
 import glob
-import warnings
+
+import numpy as np
 import pandas as pd
-from .tuh import TUH, _read_date
+import matplotlib.pyplot as plt
+import seaborn as sns
+sns.set(color_codes=True)
+import mne
+mne.set_log_level("ERROR")
 
+from braindecode.datasets.base import BaseDataset, BaseConcatDataset
 
-def _create_description(file_paths):
-    descriptions = [_parse_description_from_file_path(f) for f in file_paths]
-    descriptions = pd.DataFrame(descriptions)
-    return descriptions.T
-def _parse_description_from_file_path(file_path):
-    # stackoverflow.com/questions/3167154/how-to-split-a-dos-path-into-its-components-in-python  # noqa
-    file_path = os.path.normpath(file_path)
-    tokens = file_path.split(os.sep)
-    # Extract info
-    if ('train' in tokens) or ('eval' in tokens):  # _eeg_abnormal
-        abnormal = True
-
-    else:  # tuh_eeg
-        abnormal = False
-
-    subject_id = tokens[-1].split('.')[0]
-    description = _read_date(file_path)
-    description.update({
-        'path': file_path,
-        'subject': subject_id,
-        # 'session': int(session[1:]),
-        # 'segment': int(segment[1:]),
-    })
-    if not abnormal:
-        year, month, day = tokens[-3].split('_')[1:]
-        description['year'] = int(year)
-        description['month'] = int(month)
-        description['day'] = int(day)
-    return description
-
-class NMT(TUH):
-    """ NMT EEG Corpus.
-    see https://dll.seecs.nust.edu.pk/downloads/
+# %%
+class NMT(BaseConcatDataset):
+    """The NMT Scalp EEG Dataset: An Open-Source Annotated Dataset of Healthy 
+    and Pathological EEG Recordings for Predictive Modeling.
+    National University of Sciences and Technology (NUST)
+    Pak Emirates Military Hospital (MH)
+    Technical University of Kaiserslautern (TUKL)
+    https://dll.seecs.nust.edu.pk/downloads/
+    or
+    https://drive.google.com/file/d/1jD_AcmfoaIfkOiO5lSU4J6IxHZtalnTk/view
 
     Parameters
     ----------
@@ -58,45 +41,50 @@ class NMT(TUH):
         later then the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
     target_name: str
-        Can be 'pathological', 'gender', or 'age'.
+        Can be 'gender', or 'age'.
     preload: bool
         If True, preload the data of the Raw objects.
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
+    n_jobs: int
+        Number of jobs to be used to read files in parallel.
     """
-    def __init__(self, path, recording_ids=None, target_name='pathological',
-                 preload=False, add_physician_reports=False, n_jobs=1):
-        # create an index of all files and gather easily accessible info
-        # without actually touching the files
-        file_paths = glob.glob(os.path.join(path, '**/*.edf'), recursive=True)
-        descriptions = _create_description(file_paths)
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=".*not in description. '__getitem__'")
-            super().__init__(path=path, recording_ids=recording_ids,
-                             preload=preload, target_name=target_name,
-                             add_physician_reports=add_physician_reports,
-                             n_jobs=n_jobs)
-        additional_descriptions = []
-        for file_path in self.description.path:
-            additional_description = (
-                self._parse_additional_description_from_file_path(file_path))
-            additional_descriptions.append(additional_description)
-        additional_descriptions = pd.DataFrame(additional_descriptions)
-        self.set_description(additional_descriptions, overwrite=True)
-
-    @staticmethod
-    def _parse_additional_description_from_file_path(file_path):
-        file_path = os.path.normpath(file_path)
-        tokens = file_path.split(os.sep)
-        # expect paths as /pathology status//data_split/file.edf
-        # e.g.            /normal/train/00001.edf
-        assert ('abnormal' in tokens or 'normal' in tokens), (
-            'No pathology labels found.')
-        assert ('train' in tokens or 'eval' in tokens), (
-            'No train or eval set information found.')
-        return {
-            'train': 'train' in tokens,
-            'pathological': 'abnormal' in tokens,
-        }
+    def __init__(self, path, target_name='pathological', recording_ids=None, 
+                 preload=False):
+        file_paths = glob.glob(
+            os.path.join(path, '**'+os.sep+'*.edf'), recursive=True)
+        # sort by subject id
+        file_paths = sorted(
+            file_paths, 
+            key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
+        )
+        if recording_ids is not None:
+            file_paths = [file_paths[rec_id] for rec_id in recording_ids]
+        
+        # read labels and rearrange them to match TUH Abnormal EEG Corpus
+        description = pd.read_csv(
+            os.path.join(path, 'Labels.csv'), index_col='recordname')
+        if recording_ids is not None:
+            description = description.iloc[recording_ids]
+        description.replace({
+            'not specified': 'X', 
+            'female': 'F',
+            'male': 'M',
+            'abnormal': True,
+            'normal': False,
+        }, inplace=True)
+        description.rename(columns={'label': 'pathological'}, inplace=True)
+        description.reset_index(drop=True, inplace=True)
+        description['path'] = file_paths
+        description = description[['path', 'pathological', 'age', 'gender']]
+        
+        base_datasets = []
+        for recording_id, d in description.iterrows():
+            raw = mne.io.read_raw_edf(d.path, preload=preload)
+            d['n_samples'] = raw.n_times
+            d['sfreq'] = raw.info['sfreq']
+            d['train'] = 'train' in d.path.split(os.sep)
+            base_dataset = BaseDataset(raw, d, target_name)
+            base_datasets.append(base_dataset)
+        super().__init__(base_datasets)
