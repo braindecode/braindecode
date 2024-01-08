@@ -14,7 +14,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import mne
-mne.set_log_level("ERROR")
 
 from braindecode.datasets.base import BaseDataset, BaseConcatDataset
 
