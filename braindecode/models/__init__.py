@@ -13,6 +13,7 @@ from .eegresnet import EEGResNet
 from .eeginception import EEGInception
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
+from .lmda import LMDA
 from .atcnet import ATCNet
 from .tcn import TCN
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
