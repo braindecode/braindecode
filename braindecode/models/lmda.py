@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+from braindecode.models.base import EEGModuleMixin
 
 class ChannelwiseAdaptiveFilter(nn.Module):
     """ChannelwiseAdaptiveFilter
@@ -44,22 +45,27 @@ class ChannelwiseAdaptiveFilter(nn.Module):
         return x_t * self.n_chans * x
 
 
-class LMDA(nn.Module):
+class LMDA(EEGModuleMixin, nn.Module):
     """
     LMDA-Net for the paper
     """
 
     def __init__(self, n_chans=22, n_times=1125, n_outputs=4,
                  depth=9, kernel=75, channel_depth1=24, channel_depth2=9,
-                 ave_depth=1, avepool=5, drop_prob=0.5):
+                 ave_depth=1, avepool=5, drop_prob=0.5,
+                 sfreq=None, chs_info=None):
 
-        super(LMDA, self).__init__()
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, sfreq
+
         self.ave_depth = ave_depth
-        self.n_chans = n_chans
-        self.n_times = n_times
-        self.n_outputs = n_outputs
-
-        self.channel_weight = nn.Parameter(torch.randn(depth, 1, n_chans),
+        self.channel_weight = nn.Parameter(torch.randn(depth, 1, self.n_chans),
                                            requires_grad=True)
         nn.init.xavier_uniform_(self.channel_weight.data)
 
@@ -79,7 +85,7 @@ class LMDA(nn.Module):
                       groups=1, bias=False),
             nn.BatchNorm2d(channel_depth2),
             nn.Conv2d(channel_depth2, channel_depth2,
-                      kernel_size=(n_chans, 1),
+                      kernel_size=(self.n_chans, 1),
                       groups=channel_depth2, bias=False),
             nn.BatchNorm2d(channel_depth2),
             nn.GELU(),
@@ -125,7 +131,7 @@ class LMDA(nn.Module):
         Dynamically initializes the ChannelwiseAdaptiveFilter and classifier
         based on simulated forward pass to infer output dimensions.
         """
-        with torch.no_grad():  # Ensure operations do not track gradients
+        with torch.no_grad():
             # Simulate input tensor
 
             out = torch.ones((1, 1, self.n_chans, self.n_times),
@@ -148,8 +154,3 @@ class LMDA(nn.Module):
             classifier_input_size = C * H * W
             self.classifier = nn.Linear(classifier_input_size,
                                         self.n_outputs)
-
-model = LMDA(n_outputs=2, n_chans=3, n_times=875, channel_depth1=24, channel_depth2=7)
-a = torch.randn(12, 1, 3, 875).float()
-l2 = model(a)
-print(l2.shape)
