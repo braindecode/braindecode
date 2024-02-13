@@ -4,7 +4,8 @@ import torch.nn as nn
 from braindecode.models.base import EEGModuleMixin
 
 class ChannelwiseAdaptiveFilter(nn.Module):
-    """ChannelwiseAdaptiveFilter
+    """
+    ChannelwiseAdaptiveFilter.
 
     This module applies an adaptive average pooling layer to the input tensor.
     Then, a 1D convolutional layer is applied to the pooled tensor.
@@ -22,7 +23,7 @@ class ChannelwiseAdaptiveFilter(nn.Module):
     """
 
     def __init__(self, n_times, n_chans, kernel_size=7):
-        super(ChannelwiseAdaptiveFilter, self).__init__()
+        super().__init__()
 
         self.adaptive_pool = nn.AdaptiveAvgPool2d((1, n_times))
         # Maybe we can replace this with conv1d, I tried but failed
@@ -35,6 +36,22 @@ class ChannelwiseAdaptiveFilter(nn.Module):
         self.n_chans = n_chans
 
     def forward(self, x):
+        """
+        Forward pass.
+
+        We first apply the adaptive average pooling layer to the input tensor.
+        Then, we apply the convolutional layer to the pooled tensor.
+        Finally, we apply the softmax function to the output of the convolutional
+        layer.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+
+        Returns
+        -------
+        torch.Tensor
+        """
         x_t = self.adaptive_pool(x)
 
         x_t = x_t.transpose(-2, -3)
@@ -47,7 +64,21 @@ class ChannelwiseAdaptiveFilter(nn.Module):
 
 class LMDA(EEGModuleMixin, nn.Module):
     """
-    LMDA-Net for the paper
+    LMDA-Net.
+
+    A lightweight multi-dimensional attention network for
+    general EEG-based brain-computer interface paradigms and
+    interpretability.
+
+    The paper with more details about the methodological
+    choices are available at the [Miao2023]_.
+
+    References
+    ----------
+    .. [Miao2023] Miao, Z., Zhao, M., Zhang, X. and Ming, D., 2023. LMDA-Net:
+        A lightweight multi-dimensional attention network for general
+        EEG-based brain-computer interfaces and interpretability.
+        NeuroImage, p.120209.
     """
 
     def __init__(self, n_chans=22, n_times=1125, n_outputs=4,
@@ -99,6 +130,17 @@ class LMDA(EEGModuleMixin, nn.Module):
         self._initialize_dynamic_layers()
 
     def forward(self, x):
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+
+        Returns
+        -------
+        torch.Tensor
+        """
         # Lead weight filtering
         x = torch.einsum('bdcw, hdc->bhcw', x, self.channel_weight)
 
@@ -113,6 +155,16 @@ class LMDA(EEGModuleMixin, nn.Module):
         return cls
 
     def _initialize_weights(self):
+        """
+        Util function to initialize the weights of the model.
+
+        If the layers is a Conv2d, we use xavier_uniform_ to initialize the
+        weights and zeros_ to initialize the bias. If the layer is a
+        BatchNorm2d, we use ones_ to initialize the weights and zeros_ to
+        initialize the bias. If the layer is a Linear, we use xavier_uniform_
+        to initialize the weights and zeros_ to initialize the bias.
+
+        """
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.xavier_uniform_(m.weight)
@@ -128,6 +180,8 @@ class LMDA(EEGModuleMixin, nn.Module):
 
     def _initialize_dynamic_layers(self):
         """
+        Util function to initialize the dynamic layers of the model.
+
         Dynamically initializes the ChannelwiseAdaptiveFilter and classifier
         based on simulated forward pass to infer output dimensions.
         """
