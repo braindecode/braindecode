@@ -5,8 +5,7 @@ on:
     branches:
       - main
 jobs:
-  Check-Changelog:
-    name: Check Changelog Action
+  check-whats-news:
     runs-on: ubuntu-20.04
     steps:
       - uses: tarides/changelog-check-action@v2
