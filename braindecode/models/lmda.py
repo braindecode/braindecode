@@ -2,38 +2,6 @@ import torch
 import torch.nn as nn
 
 
-class EEGDepthAttention_old(nn.Module):
-    """
-    Build EEG Depth Attention module.
-    :arg
-    C: num of channels
-    W: num of time samples
-    k: learnable kernel size
-    """
-
-    def __init__(self, W, C, k=7):
-        super(EEGDepthAttention_old, self).__init__()
-        self.C = C
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, W))
-        self.conv = nn.Conv2d(1, 1, kernel_size=(k, 1), padding=(k // 2, 0),
-                              bias=True)  # original kernel k
-        self.softmax = nn.Softmax(dim=-2)
-
-    def forward(self, x):
-        """
-        :arg
-        """
-        x_pool = self.adaptive_pool(x)
-        x_transpose = x_pool.transpose(-2, -3)
-        y = self.conv(x_transpose)
-        y = self.softmax(y)
-        y = y.transpose(-2, -3)
-
-        # print('查看参数是否变化:', conv.bias)
-
-        return y * self.C * x
-
-
 class ChannelwiseAdaptiveFilter(nn.Module):
     """ChannelwiseAdaptiveFilter
 
@@ -81,17 +49,21 @@ class LMDA(nn.Module):
     LMDA-Net for the paper
     """
 
-    def __init__(self, n_chans=22, n_times=1125, n_outputs=4, depth=9,
-                 kernel=75, channel_depth1=24, channel_depth2=9,
+    def __init__(self, n_chans=22, n_times=1125, n_outputs=4,
+                 depth=9, kernel=75, channel_depth1=24, channel_depth2=9,
                  ave_depth=1, avepool=5, drop_prob=0.5):
+
         super(LMDA, self).__init__()
         self.ave_depth = ave_depth
+        self.n_chans = n_chans
+        self.n_times = n_times
+        self.n_outputs = n_outputs
 
         self.channel_weight = nn.Parameter(torch.randn(depth, 1, n_chans),
                                            requires_grad=True)
         nn.init.xavier_uniform_(self.channel_weight.data)
 
-        self.time_conv = nn.Sequential(
+        self.temporal_conv = nn.Sequential(
             nn.Conv2d(depth, channel_depth1,
                       kernel_size=(1, 1),
                       groups=1, bias=False),
@@ -101,12 +73,13 @@ class LMDA(nn.Module):
             nn.BatchNorm2d(channel_depth1),
             nn.GELU(),
         )
-        self.chanel_conv = nn.Sequential(
+        self.channel_conv = nn.Sequential(
             nn.Conv2d(channel_depth1, channel_depth2,
                       kernel_size=(1, 1),
                       groups=1, bias=False),
             nn.BatchNorm2d(channel_depth2),
-            nn.Conv2d(channel_depth2, channel_depth2, kernel_size=(n_chans, 1),
+            nn.Conv2d(channel_depth2, channel_depth2,
+                      kernel_size=(n_chans, 1),
                       groups=channel_depth2, bias=False),
             nn.BatchNorm2d(channel_depth2),
             nn.GELU(),
@@ -117,33 +90,22 @@ class LMDA(nn.Module):
             nn.Dropout(p=drop_prob),
         )
 
-        out = torch.ones((1, 1, n_chans, n_times))
-        out = torch.einsum('bdcw, hdc->bhcw', out, self.channel_weight)
-        out = self.time_conv(out)
-        N, C, H, W = out.size()
-        self.depthAttention = ChannelwiseAdaptiveFilter(W, C, kernel_size=7)
-
-        out = self.chanel_conv(out)
-        out = self.norm(out)
-        n_out_time = out.cpu().data.numpy().shape
-        self.classifier = nn.Linear(
-            n_out_time[-1] * n_out_time[-2] * n_out_time[-3], n_outputs)
-
-        self._initialize_weights()
-
+        self._initialize_dynamic_layers()
 
     def forward(self, x):
-        x = torch.einsum('bdcw, hdc->bhcw', x, self.channel_weight)  # 导联权重筛选
+        # Lead weight filtering
+        x = torch.einsum('bdcw, hdc->bhcw', x, self.channel_weight)
 
-        x_time = self.time_conv(x)  # batch, depth1, channel, samples_
-        x_time = self.depthAttention(x_time)  # DA1
+        x_time = self.temporal_conv(x)
+        x_time = self.channel_adaptive(x_time)
 
-        x = self.chanel_conv(x_time)  # batch, depth2, 1, samples_
+        x = self.channel_conv(x_time)
         x = self.norm(x)
 
         features = torch.flatten(x, 1)
         cls = self.classifier(features)
         return cls
+
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -157,6 +119,35 @@ class LMDA(nn.Module):
                 nn.init.xavier_uniform_(m.weight)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
+
+    def _initialize_dynamic_layers(self):
+        """
+        Dynamically initializes the ChannelwiseAdaptiveFilter and classifier
+        based on simulated forward pass to infer output dimensions.
+        """
+        with torch.no_grad():  # Ensure operations do not track gradients
+            # Simulate input tensor
+
+            out = torch.ones((1, 1, self.n_chans, self.n_times),
+                             dtype=torch.float32, requires_grad=False)
+
+            out = torch.einsum('bdcw, hdc->bhcw', out,
+                               self.channel_weight)
+            out = self.temporal_conv(out)
+
+            # Initialize ChannelwiseAdaptiveFilter with dynamic dimensions
+            _, C, _, W = out.shape
+            self.channel_adaptive = ChannelwiseAdaptiveFilter(W, C, kernel_size=7)
+
+            # Continue through channel_conv and norm layers
+            out = self.channel_conv(out)
+            out = self.norm(out)
+
+            # Calculate the classifier's input size dynamically
+            _, C, H, W = out.shape  # Extract dynamic dimensions
+            classifier_input_size = C * H * W
+            self.classifier = nn.Linear(classifier_input_size,
+                                        self.n_outputs)
 
 model = LMDA(n_outputs=2, n_chans=3, n_times=875, channel_depth1=24, channel_depth2=7)
 a = torch.randn(12, 1, 3, 875).float()
