@@ -62,7 +62,7 @@ class ChannelwiseAdaptiveFilter(nn.Module):
         return x_t * self.n_chans * x
 
 
-class LMDA(EEGModuleMixin, nn.Module):
+class LDMNet(EEGModuleMixin, nn.Module):
     """
     LMDA-Net.
 
