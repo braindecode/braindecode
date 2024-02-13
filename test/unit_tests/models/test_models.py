@@ -33,6 +33,7 @@ from braindecode.models import (
     TIDNet,
     ATCNet,
     EEGConformer,
+    LDMNet,
 )
 
 from braindecode.util import set_random_seeds
