@@ -82,7 +82,7 @@ Models
     SleepStagerEldele2021
     USleep
     TIDNet
-    get_output_shape
+    LDMNet
     TimeDistributed
 
 
