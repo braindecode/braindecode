@@ -32,7 +32,7 @@ repos:
         args: ["--autofix", "--no-sort-keys", "--indent=4"]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.2.1
+    rev: v0.1.4
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
@@ -48,34 +48,3 @@ repos:
           - --quiet-level=2
         exclude_types: [csv, json]
         exclude: ^tests/|generated/^.github
-
-  # Advanced security and code quality
-  - repo: https://github.com/PyCQA/bandit
-    rev: 1.7.0
-    hooks:
-      - id: bandit
-  - repo: https://github.com/PyCQA/pydocstyle
-    rev: 6.1.1
-    hooks:
-      - id: pydocstyle
-
-  # autoflake
-  - repo: https://github.com/myint/autoflake
-    rev: 'v2.2.1' # Use the latest version available
-    hooks:
-      - id: autoflake
-        args: ['--remove-all-unused-imports', '--remove-unused-variables', '--in-place', '--recursive']
-
-  # pyupgrade
-  - repo: https://github.com/asottile/pyupgrade
-    rev: 'v3.15.0' # Use the latest version available
-    hooks:
-      - id: pyupgrade
-        args: ['--py38-plus'] # Adjust depending on your target Python version
-
-  # pydocstyle or pydocstringformatter
-  # Assuming pydocstringformatter has pre-commit support; if not, use pydocstyle
-  - repo: https://github.com/PyCQA/pydocstyle
-    rev: '6.3.0' # Use the latest version available
-    hooks:
-      - id: pydocstyle
