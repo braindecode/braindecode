@@ -1,165 +1,149 @@
-# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
-#
-# License: BSD (3-clause)
 import torch
-from torch import nn, Tensor
+import torch.nn as nn
 
 
-class EEGDepthAttention(nn.Module):
-    """Depth-wise Attention Mechanism for EEG Data.
+class EEGDepthAttention_old(nn.Module):
+    """
+    Build EEG Depth Attention module.
+    :arg
+    C: num of channels
+    W: num of time samples
+    k: learnable kernel size
+    """
 
-    This module implements a depth-wise attention mechanism where the attention
-    is applied across the depth (channel) dimension of EEG data. It uses an
-    adaptive average pooling to reduce the temporal dimension followed by a
-    depth-wise convolution to compute attention scores.
+    def __init__(self, W, C, k=7):
+        super(EEGDepthAttention_old, self).__init__()
+        self.C = C
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, W))
+        self.conv = nn.Conv2d(1, 1, kernel_size=(k, 1), padding=(k // 2, 0),
+                              bias=True)  # original kernel k
+        self.softmax = nn.Softmax(dim=-2)
+
+    def forward(self, x):
+        """
+        :arg
+        """
+        x_pool = self.adaptive_pool(x)
+        x_transpose = x_pool.transpose(-2, -3)
+        y = self.conv(x_transpose)
+        y = self.softmax(y)
+        y = y.transpose(-2, -3)
+
+        # print('查看参数是否变化:', conv.bias)
+
+        return y * self.C * x
+
+
+class ChannelwiseAdaptiveFilter(nn.Module):
+    """ChannelwiseAdaptiveFilter
+
+    This module applies an adaptive average pooling layer to the input tensor.
+    Then, a 1D convolutional layer is applied to the pooled tensor.
+    Finally, the softmax function is applied to the output of the convolutional
+    layer.
 
     Parameters
     ----------
-    input_width : int
-        The width of the input tensor.
-    channels : int
+    n_times : int
+        The number of time points in the input tensor.
+    n_chans : int
         The number of channels in the input tensor.
     kernel_size : int, default=7
         The size of the kernel to be used in the convolutional layer.
-
-    Attributes
-    ----------
-    adaptive_pool : nn.AdaptiveAvgPool2d
-        Adaptive average pooling layer to reduce temporal dimension.
-    conv : nn.Conv2d
-        Convolutional layer to compute attention scores.
-    softmax : nn.Softmax
-        Softmax layer to normalize attention scores.
     """
 
-    def __init__(self, input_width, channels, kernel_size=7):
-        super(EEGDepthAttention, self).__init__()
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, input_width))
+    def __init__(self, n_times, n_chans, kernel_size=7):
+        super(ChannelwiseAdaptiveFilter, self).__init__()
+
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, n_times))
+        # Maybe we can replace this with conv1d, I tried but failed
         self.conv = nn.Conv2d(1, 1,
                               kernel_size=(kernel_size, 1),
-                              padding=(kernel_size // 2, 0), bias=True)
-        self.softmax = nn.Softmax(dim=-2)
-        self.channels = channels
+                              padding=(kernel_size // 2, 0),
+                              bias=True)
 
-    def forward(self, x: Tensor) -> Tensor:
-        x_pooled = self.adaptive_pool(x)
-        x_transposed = x_pooled.transpose(-2, -3)
-        y = self.conv(x_transposed)
-        y = self.softmax(y)
-        y = y.transpose(-2, -3)
-        return y * self.channels * x
+        self.softmax = nn.Softmax(dim=-2)
+        self.n_chans = n_chans
+
+    def forward(self, x):
+        x_t = self.adaptive_pool(x)
+
+        x_t = x_t.transpose(-2, -3)
+        x_t = self.conv(x_t)
+        x_t = self.softmax(x_t)
+        x_t = x_t.transpose(-2, -3)
+
+        return x_t * self.n_chans * x
 
 
 class LMDA(nn.Module):
-    """ LMDA-Net
-
-    A lightweight multi-dimensional attention network for
-    general EEG-based brain-computer interface paradigms and
-    interpretability.
-
-    The paper with more details about the methodological
-    choices are available at the [Miao2023]_.
-
-
-    Parameters
-    ----------
-    channels : int
-        Number of EEG channels.
-    samples : int
-        Number of time samples in the EEG signal.
-    num_classes : int
-        Number of output classes for the classification task.
-    depth : int, default=9
-        Depth of the initial channel weighting.
-    kernel : int, default=75
-        Kernel size for temporal convolutions.
-    channel_depth1 : int, default=24
-        Number of channels after the first convolutional layer.
-    channel_depth2 : int, default=9
-        Number of channels after the second convolutional layer.
-    ave_depth : int, default=1
-        Depth for averaging in the pooling layers.
-    avepool : int, default=5
-        Pool size for the average pooling layer.
-    final_fc_length: int | str
-        The dimension of the fully connected layer.
-
-         References
-    ----------
-    .. [Miao2023] Miao, Z., Zhao, M., Zhang, X. and Ming, D., 2023. LMDA-Net:
-        A lightweight multi-dimensional attention network for general
-        EEG-based brain-computer interfaces and interpretability.
-        NeuroImage, p.120209.
+    """
+    LMDA-Net for the paper
     """
 
-
-
-    def __init__(self, channels=22, samples=1125, num_classes=4, depth=9,
+    def __init__(self, n_chans=22, n_times=1125, n_outputs=4, depth=9,
                  kernel=75, channel_depth1=24, channel_depth2=9,
-                 avepool=5, final_fc_length="auto"):
+                 ave_depth=1, avepool=5, drop_prob=0.5):
         super(LMDA, self).__init__()
-        self.channel_weight = nn.Parameter(torch.randn(depth, 1, channels),
+        self.ave_depth = ave_depth
+
+        self.channel_weight = nn.Parameter(torch.randn(depth, 1, n_chans),
                                            requires_grad=True)
         nn.init.xavier_uniform_(self.channel_weight.data)
 
         self.time_conv = nn.Sequential(
-            nn.Conv2d(depth, channel_depth1, kernel_size=(1, 1), groups=1,
-                      bias=False),
+            nn.Conv2d(depth, channel_depth1,
+                      kernel_size=(1, 1),
+                      groups=1, bias=False),
             nn.BatchNorm2d(channel_depth1),
             nn.Conv2d(channel_depth1, channel_depth1, kernel_size=(1, kernel),
                       groups=channel_depth1, bias=False),
             nn.BatchNorm2d(channel_depth1),
             nn.GELU(),
         )
-
-        self.channel_conv = nn.Sequential(
-            nn.Conv2d(channel_depth1, channel_depth2, kernel_size=(1, 1),
+        self.chanel_conv = nn.Sequential(
+            nn.Conv2d(channel_depth1, channel_depth2,
+                      kernel_size=(1, 1),
                       groups=1, bias=False),
             nn.BatchNorm2d(channel_depth2),
-            nn.Conv2d(channel_depth2, channel_depth2,
-                      kernel_size=(channels, 1), groups=channel_depth2,
-                      bias=False),
+            nn.Conv2d(channel_depth2, channel_depth2, kernel_size=(n_chans, 1),
+                      groups=channel_depth2, bias=False),
             nn.BatchNorm2d(channel_depth2),
             nn.GELU(),
         )
 
         self.norm = nn.Sequential(
             nn.AvgPool3d(kernel_size=(1, 1, avepool)),
-            nn.Dropout(p=0.65),
+            nn.Dropout(p=drop_prob),
         )
 
-        # Initialize depthAttention with dynamic width calculation
-        self.depthAttention = EEGDepthAttention(samples, channel_depth1, k=7)
+        out = torch.ones((1, 1, n_chans, n_times))
+        out = torch.einsum('bdcw, hdc->bhcw', out, self.channel_weight)
+        out = self.time_conv(out)
+        N, C, H, W = out.size()
+        self.depthAttention = ChannelwiseAdaptiveFilter(W, C, kernel_size=7)
 
-        if final_fc_length == "auto":
-            assert self.n_times is not None
-            final_fc_length = self.get_fc_size()
-
-        self.classifier = nn.Linear(final_fc_length, num_classes)
+        out = self.chanel_conv(out)
+        out = self.norm(out)
+        n_out_time = out.cpu().data.numpy().shape
+        self.classifier = nn.Linear(
+            n_out_time[-1] * n_out_time[-2] * n_out_time[-3], n_outputs)
 
         self._initialize_weights()
 
-    def get_fc_size(self):
 
-        out = self.patch_embedding(torch.ones((1, 1,
-                                               self.n_chans,
-                                               self.n_times)))
-        size_embedding_1 = out.cpu().data.numpy().shape[1]
-        size_embedding_2 = out.cpu().data.numpy().shape[2]
+    def forward(self, x):
+        x = torch.einsum('bdcw, hdc->bhcw', x, self.channel_weight)  # 导联权重筛选
 
-        return size_embedding_1 * size_embedding_2
+        x_time = self.time_conv(x)  # batch, depth1, channel, samples_
+        x_time = self.depthAttention(x_time)  # DA1
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = torch.einsum('bdcw, hdc->bhcw', x, self.channel_weight)
-        x_time = self.time_conv(x)
-        x_time = self.depthAttention(x_time)
-        x_channel = self.channel_conv(x_time)
-        x_norm = self.norm(x_channel)
-        features = torch.flatten(x_norm, 1)
-        output = self.classifier(features)
-        return output
+        x = self.chanel_conv(x_time)  # batch, depth2, 1, samples_
+        x = self.norm(x)
 
-
+        features = torch.flatten(x, 1)
+        cls = self.classifier(features)
+        return cls
     def _initialize_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -171,4 +155,10 @@ class LMDA(nn.Module):
                 nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
-                nn.init.zeros_(m.bias)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+model = LMDA(n_outputs=2, n_chans=3, n_times=875, channel_depth1=24, channel_depth2=7)
+a = torch.randn(12, 1, 3, 875).float()
+l2 = model(a)
+print(l2.shape)
