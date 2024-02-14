@@ -30,11 +30,10 @@ class CovLayer(nn.Module):
         torch.Tensor
             Batch of covariance matrices of shape (batch_size, n_channels, n_channels).
         """
-        n_batch, n_channels, _ = X.size()
-        torch_covs = torch.empty((n_batch, n_channels, n_channels)).to(X.device)
-        for i, batch in enumerate(X):
-            torch_covs[i] = batch.cov(correction=0)
-        return torch_covs
+        means = torch.mean(X, dim=2, keepdim=True)
+        X_centered = X - means
+        covariances = torch.einsum('bik,bjk->bij', X_centered, X_centered) / (X_centered.shape[2] - 0)
+        return covariances
 
 
 class BiMap(nn.Module):
@@ -162,14 +161,10 @@ class SPDNet(EEGModuleMixin, nn.Module):
         a covariance matrix is computed
         If "cov", the input is a batch of covariance matrices and
         the covariance matrix is used as input
-    n_chans : int
-        Number of channels
     subspacedim : int
         Subspace dimension
     threshold : float
         Threshold for the rectified linear unit
-    n_outputs : int
-        Output shape
     tril : bool
         If True, only the lower triangular part of the matrix is used
 
@@ -185,12 +180,11 @@ class SPDNet(EEGModuleMixin, nn.Module):
         n_chans,
         subspacedim,
         threshold=1e-4,
-        n_outputs=1,
+        n_outputs=None,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        add_log_softmax=False,
         tril=True,
     ):
         super().__init__(
@@ -200,22 +194,17 @@ class SPDNet(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         if input_type == "raw":
             self.cov = CovLayer()
         elif input_type == "cov":
             self.cov = nn.Identity()
-        self.bimap = BiMap(n_chans, subspacedim)
+        self.bimap = BiMap(self.n_chans, subspacedim)
         self.reeig = ReEig(threshold)
         self.logeig = LogEig(subspacedim, tril=tril)
         self.len_last_layer = subspacedim * (subspacedim + 1) // 2 if tril else subspacedim**2
-        self.classifier = torch.nn.Linear(self.len_last_layer, n_outputs)
+        self.classifier = torch.nn.Linear(self.len_last_layer, self.n_outputs)
 
-        if add_log_softmax:
-            self.logsoftmax = nn.LogSoftmax(dim=1)
-        else:
-            self.logsoftmax = nn.Identity()
 
     def forward(self, X):
         X = self.cov(X)
@@ -223,5 +212,5 @@ class SPDNet(EEGModuleMixin, nn.Module):
         X = self.reeig(X)
         X = self.logeig(X)
         X = self.classifier(X)
-        output = self.logsoftmax(X)
-        return output
+        
+        return X
