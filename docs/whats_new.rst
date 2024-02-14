@@ -23,6 +23,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
