@@ -103,8 +103,66 @@ class _ChannelAttentionBlock(nn.Module):
 
 
 class AttentionBaseNet(EEGModuleMixin, nn.Module):
-    """
-    TODO: Add docstring
+    """AttentionBaseNet.
+
+    Neural Network from the paper, EEG motor imagery decoding:
+    A framework for comparative analysis with channel attention
+    mechanisms
+
+    The paper and original code with more details about the methodological
+    choices are available at the [Martin2023]_ and [MartinCode]_.
+        x = self.input_block(x)
+        x = self.channel_expansion(x)
+        x = self.channel_attention_block(x)
+        x = self.classifier(x)
+    The AttentionBaseNet architecture is composed of four modules:
+        - Input Block that performa a temporal convolution and a spatial
+            convolution.
+        - Channel Expansion that increases the number of spatial information.
+        - An attention block that performs channel attention with several
+        options
+        - ClassificationHead
+
+    .. versionadded:: 0.9
+
+    Parameters
+    ----------
+    n_filters_time: int
+        Number of temporal filters, defines also embedding size.
+    filter_time_length: int
+        Length of the temporal filter.
+    pool_time_length: int
+        Length of temporal pooling filter.
+    pool_time_stride: int
+        Length of stride between temporal pooling filters.
+    drop_prob: float
+        Dropout rate of the convolutional layer.
+    att_depth: int
+        Number of self-attention layers.
+    att_heads: int
+        Number of attention heads.
+    att_drop_prob: float
+        Dropout rate of the self-attention layer.
+    final_fc_length: int | str
+        The dimension of the fully connected layer.
+    return_features: bool
+        If True, the forward method returns the features before the
+        last classification layer. Defaults to False.
+    n_classes :
+        Alias for n_outputs.
+    n_channels :
+        Alias for n_chans.
+    input_window_samples :
+        Alias for n_times.
+    References
+    ----------
+    .. [Song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+       conformer: Convolutional transformer for EEG decoding and visualization.
+       IEEE Transactions on Neural Systems and Rehabilitation Engineering,
+       31, pp.710-719. https://ieeexplore.ieee.org/document/9991178
+    .. [ConformerCode] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+       conformer: Convolutional transformer for EEG decoding and visualization.
+       https://github.com/eeyhsong/EEG-Conformer.
     """
     def __init__(
             self,
