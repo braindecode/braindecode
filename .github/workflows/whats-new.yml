@@ -3,7 +3,7 @@ on:
   pull_request:
     types: [ assigned, opened, synchronize, reopened, labeled, unlabeled ]
     branches:
-      - main
+      - '*'
 jobs:
   check-whats-news:
     runs-on: ubuntu-20.04
