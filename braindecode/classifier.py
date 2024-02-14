@@ -248,7 +248,11 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     # Only add the 'accuracy' callback if we are not in cropped mode.
     @property
     def _default_callbacks(self):
-        callbacks = list(super()._default_callbacks)
+        callbacks = super()._default_callbacks
+        if not isinstance(callbacks, list):
+            callbacks = list(super()._default_callbacks)
+        else:
+            callbacks = super()._default_callbacks
         if not self.cropped:
             callbacks.append((
                 'valid_acc',
