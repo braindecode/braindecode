@@ -172,7 +172,7 @@ class USleep(EEGModuleMixin, nn.Module):
             complexity_factor=1.67,
             with_skip_connection=True,
             n_outputs=5,
-            input_window_seconds=30,
+            input_window_seconds=None,
             time_conv_size_s=9 / 128,
             ensure_odd_conv_size=False,
             chs_info=None,
