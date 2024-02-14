@@ -5,8 +5,9 @@ import torch.nn as nn
 import numpy as np
 from linear_attention_transformer import LinearAttentionTransformer
 
+from braindecode.models.base import EEGModuleMixin
 
-class PatchFrequencyEmbedding(nn.Module):
+class _PatchFrequencyEmbedding(nn.Module):
     def __init__(self, emb_size=256, n_freq=101):
         super().__init__()
         self.projection = nn.Linear(n_freq, emb_size)
@@ -21,7 +22,7 @@ class PatchFrequencyEmbedding(nn.Module):
         return x
 
 
-class ClassificationHead(nn.Sequential):
+class _ClassificationHead(nn.Sequential):
     def __init__(self, emb_size, n_classes):
         super().__init__()
         self.clshead = nn.Sequential(
@@ -34,9 +35,9 @@ class ClassificationHead(nn.Sequential):
         return out
 
 
-class PositionalEncoding(nn.Module):
+class _PositionalEncoding(nn.Module):
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 1000):
-        super(PositionalEncoding, self).__init__()
+        super(_PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
         # Compute the positional encodings once in log space.
@@ -61,7 +62,14 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class BIOTEncoder(nn.Module):
+class _BIOTEncoder(nn.Module):
+    """
+    BIOT Encoder.
+
+
+
+    """
+
     def __init__(
         self,
         emb_size=256,
@@ -76,7 +84,7 @@ class BIOTEncoder(nn.Module):
         self.n_fft = n_fft
         self.hop_length = hop_length
 
-        self.patch_embedding = PatchFrequencyEmbedding(
+        self.patch_embedding = _PatchFrequencyEmbedding(
             emb_size=emb_size, n_freq=self.n_fft // 2 + 1
         )
         self.transformer = LinearAttentionTransformer(
@@ -87,7 +95,7 @@ class BIOTEncoder(nn.Module):
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
             attn_dropout=0.2,  # dropout post-attention
         )
-        self.positional_encoding = PositionalEncoding(emb_size)
+        self.positional_encoding = _PositionalEncoding(emb_size)
 
         # channel token, N_channels >= your actual channels
         self.channel_tokens = nn.Embedding(n_channels, 256)
@@ -141,85 +149,74 @@ class BIOTEncoder(nn.Module):
         return emb
 
 
-class BIOTClassifier(nn.Module):
+class BIOT(EEGModuleMixin, nn.Module):
     """BIOT: Cross-data Biosignal Learning in the Wild.
 
-        The paper and original code with more details about the methodological
-        choices are available at the [Song2022]_ and [ConformerCode]_.
+    BIOT is a large language model for biosignal classification. It is
+    a wrapper around the `BIOTEncoder` and `ClassificationHead` modules.
 
-    This neural network architecture receives a traditional braindecode input.
-    The input shape should be three-dimensional matrix representing the EEG
-    signals.
+    It is designed for N-Dimensional biosignal data such as EEG, ECG, etc.
+    The method was proposed by Yang et al. [Yang2023]_ and the code is
+    available at [BioTCode]_.
 
-         `(batch_size, n_channels, n_timesteps)`.
+    The model is trained with a contrastive loss on a large dataset of EEG
+    TUH Abnormal EEG Corpus with 400K samples and Sleep Heart Health Study
+    5M. Here, we only provide the model architecture, not the pre-trained
+    weights or the contrastive loss training.
 
-    The EEG Conformer architecture is composed of three modules:
-        - PatchEmbedding
-        - TransformerEncoder
-        - ClassificationHead
+    The architecture is based on the `LinearAttentionTransformer` and
+    `PatchFrequencyEmbedding` modules. The `BIOTEncoder` is a transformer
+    that takes the input data and outputs a fixed-size representation
+    of the input data. More details are present in the `BIOTEncoder` class.
 
-    Notes
-    -----
-    The authors recommend using data augmentation before using Conformer,
-    e.g. segmentation and recombination,
-    Please refer to the original paper and code for more details.
+    The `ClassificationHead` is an ELU activation layer, follow by a simple
+    linear layer that takes the output of the `BIOTEncoder` and outputs the
+    classification probabilities.
 
-    The model was initially tuned on 4 seconds of 250 Hz data.
-    Please adjust the scale of the temporal convolutional layer,
-    and the pooling layer for better performance.
-
-    .. versionadded:: 0.8
-
-    We aggregate the parameters based on the parts of the models, or
-    when the parameters were used first, e.g. n_filters_time.
+    .. versionadded:: 0.9
 
     Parameters
     ----------
-    n_filters_time: int
-        Number of temporal filters, defines also embedding size.
-    filter_time_length: int
-        Length of the temporal filter.
-    pool_time_length: int
-        Length of temporal pooling filter.
-    pool_time_stride: int
-        Length of stride between temporal pooling filters.
-    drop_prob: float
-        Dropout rate of the convolutional layer.
-    att_depth: int
-        Number of self-attention layers.
-    att_heads: int
-        Number of attention heads.
-    att_drop_prob: float
-        Dropout rate of the self-attention layer.
-    final_fc_length: int | str
-        The dimension of the fully connected layer.
-    return_features: bool
-        If True, the forward method returns the features before the
-        last classification layer. Defaults to False.
-    n_classes :
-        Alias for n_outputs.
-    n_channels :
-        Alias for n_chans.
-    input_window_samples :
-        Alias for n_times.
+    emb_size : int, optional
+        The size of the embedding layer, by default 256
+    att_num_heads : int, optional
+        The number of attention heads, by default 8
+    depth : int, optional
+        The number of transformer layers, by default 4
+
     References
     ----------
-    .. [Song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
-       conformer: Convolutional transformer for EEG decoding and visualization.
-       IEEE Transactions on Neural Systems and Rehabilitation Engineering,
-       31, pp.710-719. https://ieeexplore.ieee.org/document/9991178
-    .. [ConformerCode] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
-       conformer: Convolutional transformer for EEG decoding and visualization.
-       https://github.com/eeyhsong/EEG-Conformer.
+    .. [Yang2023] Yang, C., Westover, M.B. and Sun, J., 2023, November.
+    BIOT: Biosignal Transformer for Cross-data Learning in the Wild.
+    In Thirty-seventh Conference on Neural Information Processing Systems
+    NeurIPS.
+    .. [BioTCode] Yang, C., Westover, M.B. and Sun, J., 2023.
+    https://github.com/ycq091044/BIOT
     """
 
+    def __init__(self,
+                 emb_size=256,
+                 att_num_heads=8,
+                 depth=4,
+                 n_outputs=None,
+                 n_chans=None,
+                 chs_info=None,
+                 n_times=None,
+                 sfreq=None):
 
-    def __init__(self, emb_size=256, heads=8, depth=4, n_classes=6):
-        super().__init__()
-        self.biot = BIOTEncoder(emb_size=emb_size,
-                                heads=heads,
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, sfreq
+
+        self.biot = _BIOTEncoder(emb_size=emb_size,
+                                heads=att_num_heads,
                                 depth=depth)
-        self.classifier = ClassificationHead(emb_size, n_classes)
+        self.classifier = _ClassificationHead(emb_size, self.n_outputs)
 
     def forward(self, x):
         x = self.biot(x)
