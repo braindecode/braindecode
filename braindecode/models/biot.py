@@ -1,4 +1,5 @@
 import math
+from warnings import warn
 
 import torch
 import torch.nn as nn
@@ -159,7 +160,7 @@ class BIOT(EEGModuleMixin, nn.Module):
     The method was proposed by Yang et al. [Yang2023]_ and the code is
     available at [BioTCode]_.
 
-    The model is trained with a contrastive loss on a large dataset of EEG
+    The model is trained with a contrastive loss on large EEG datasets
     TUH Abnormal EEG Corpus with 400K samples and Sleep Heart Health Study
     5M. Here, we only provide the model architecture, not the pre-trained
     weights or the contrastive loss training.
@@ -212,6 +213,11 @@ class BIOT(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
+        if (self.sfreq != 200) & (self.sfreq is not None):
+            warn("This model has only been trained on dataset with 200 Hz. " +
+                 "no guarantee to generalize well with the default parameters",
+                 UserWarning)
+
 
         self.biot = _BIOTEncoder(emb_size=emb_size,
                                 heads=att_num_heads,
