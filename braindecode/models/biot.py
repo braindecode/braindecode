@@ -1,12 +1,13 @@
 import math
 from warnings import warn
 
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 from linear_attention_transformer import LinearAttentionTransformer
 
 from braindecode.models.base import EEGModuleMixin
+
 
 class _PatchFrequencyEmbedding(nn.Module):
     def __init__(self, emb_size=256, n_freq=101):
@@ -37,7 +38,8 @@ class _ClassificationHead(nn.Sequential):
 
 
 class _PositionalEncoding(nn.Module):
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 1000):
+    def __init__(self, d_model: int, dropout: float = 0.1,
+                 max_len: int = 1000):
         super(_PositionalEncoding, self).__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -45,7 +47,8 @@ class _PositionalEncoding(nn.Module):
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len).unsqueeze(1).float()
         div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * -(math.log(10000.0) / d_model)
+            torch.arange(0, d_model, 2).float() * -(
+                        math.log(10000.0) / d_model)
         )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -67,18 +70,42 @@ class _BIOTEncoder(nn.Module):
     """
     BIOT Encoder.
 
+    The BIOT encoder is a transformer that takes the time series input data and
+    return a fixed-size embedding representation of the input data.
+    The architecture is based on the `LinearAttentionTransformer` and
+    `PatchFrequencyEmbedding` modules.
 
+    The input data is transformed into a spectrogram and then embedded using a
+    patch embedding. The channel token is added to the patch embedding and then
+    positional encoding is applied (simples index positional).
+    The resulting embeddings are concatenated
+    and passed through a transformer layer. The mean across different channels
+    embeddings is returned.
 
+    Parameters
+    ----------
+    n_chans: int
+        The number of channels
+    emb_size: int
+        The size of the embedding layer
+    att_num_heads: int
+        The number of attention heads
+    depth: int
+        The number of transformer layers
+    n_fft: int
+        The number of Fourier transform points
+    hop_length: int (default 100)
+        The distance between neighboring sliding window frames
     """
 
     def __init__(
-        self,
-        emb_size=256,
-        heads=8,
-        depth=4,
-        n_channels=16,
-        n_fft=200,
-        hop_length=100,
+            self,
+            emb_size=256, # The size of the embedding layer
+            att_num_heads=8, # The number of attention heads
+            n_chans=16, # The number of channels
+            depth=4, # The number of transformer layers
+            n_fft=200, # Related with the frequency resolution
+            hop_length=100,
     ):
         super().__init__()
 
@@ -90,7 +117,7 @@ class _BIOTEncoder(nn.Module):
         )
         self.transformer = LinearAttentionTransformer(
             dim=emb_size,
-            heads=heads,
+            heads=att_num_heads,
             depth=depth,
             max_seq_len=1024,
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
@@ -99,30 +126,78 @@ class _BIOTEncoder(nn.Module):
         self.positional_encoding = _PositionalEncoding(emb_size)
 
         # channel token, N_channels >= your actual channels
-        self.channel_tokens = nn.Embedding(n_channels, 256)
+        self.channel_tokens = nn.Embedding(num_embeddings=n_chans,
+                                           embedding_dim=emb_size)
         self.index = nn.Parameter(
-            torch.LongTensor(range(n_channels)), requires_grad=False
+            torch.LongTensor(range(n_chans)), requires_grad=False
         )
 
     def stft(self, sample):
+        """
+        Short-time Fourier transform.
+        For more details see `torch.stft`.
+
+        The size of Fourier transform is get by `n_fft` and the distance
+        between neighboring sliding window frames `hop_length` define in
+        the __init__ functions.
+
+        Parameters
+        ----------
+        sample: Tensor
+            channel representation with size (batch_size, n_times)
+        Returns
+        -------
+        spectral: Tensor
+            Absolute value of the Fourier transform with size
+            (batch_size, n_fft // 2 + 1, n_times // hop_length + 1)
+        """
         spectral = torch.stft(
-            input = sample.squeeze(1),
-            n_fft = self.n_fft,
-            hop_length = self.hop_length,
-            center = False,
-            onesided = True,
-            return_complex = True,
+            input=sample.squeeze(1),
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            center=False,
+            onesided=True,
+            return_complex=True,
         )
         return torch.abs(spectral)
 
     def forward(self, x, n_channel_offset=0, perturb=False):
         """
-        x: [batch_size, channel, ts]
-        output: [batch_size, emb_size]
+        Forward pass of the BIOT encoder.
+
+        For each channel, the input is transformed into a spectrogram
+        and then embedded using a patch embedding. The channel token
+        is added to the patch embedding and then positional encoding
+        is applied. The resulting embeddings are concatenated and
+        passed through a transformer layer. The mean of the resulting
+        embeddings is returned.
+
+        For each channel in channels, the channels is transformed into a
+        spectrogram with STFT; Then the spectrogram is nn.Linear layers to
+        learn some representation over the frequency domain, the representation
+        is permuted to be used in the transformer layer.
+
+        The transformer layer
+         by an Linear
+
+        . The channel
+
+        Parameters
+        ----------
+        x: Tensor
+            (batch_size, n_channels, n_times)
+        n_channel_offset: int
+
+        perturb: bool
+
+        Returns
+        -------
+        emb: Tensor
+
         """
         emb_seq = []
         for i in range(x.shape[1]):
-            channel_spec_emb = self.stft(x[:, i : i + 1, :])
+            channel_spec_emb = self.stft(x[:, i: i + 1, :])
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
             batch_size, ts, _ = channel_spec_emb.shape
             # (batch_size, ts, emb)
@@ -133,13 +208,15 @@ class _BIOTEncoder(nn.Module):
                 .repeat(batch_size, ts, 1)
             )
             # (batch_size, ts, emb)
-            channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
+            channel_emb = self.positional_encoding(
+                channel_spec_emb + channel_token_emb)
 
             # perturb
             if perturb:
                 ts = channel_emb.shape[1]
                 ts_new = np.random.randint(ts // 2, ts)
-                selected_ts = np.random.choice(range(ts), ts_new, replace=False)
+                selected_ts = np.random.choice(range(ts), ts_new,
+                                               replace=False)
                 channel_emb = channel_emb[:, selected_ts]
             emb_seq.append(channel_emb)
 
@@ -203,8 +280,8 @@ class BIOT(EEGModuleMixin, nn.Module):
                  n_chans=None,
                  chs_info=None,
                  n_times=None,
-                 sfreq=None):
-
+                 sfreq=200,
+                 hop_length=100,):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -217,11 +294,15 @@ class BIOT(EEGModuleMixin, nn.Module):
             warn("This model has only been trained on dataset with 200 Hz. " +
                  "no guarantee to generalize well with the default parameters",
                  UserWarning)
-
-
+        if self.n_chans > emb_size:
+            warn("The number of channels is larger than the embedding size. " +
+                 "This may cause overfitting. Consider using a larger " +
+                 "embedding size or a smaller number of channels.",
+                 UserWarning)
         self.biot = _BIOTEncoder(emb_size=emb_size,
-                                heads=att_num_heads,
-                                depth=depth)
+                                 att_num_heads=att_num_heads,
+                                 depth=depth, n_chans=self.n_chans,
+                                 n_fft=self.sfreq, hop_length=hop_length)
         self.classifier = _ClassificationHead(emb_size, self.n_outputs)
 
     def forward(self, x):
