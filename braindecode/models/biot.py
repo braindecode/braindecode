@@ -10,6 +10,24 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class _PatchFrequencyEmbedding(nn.Module):
+    """
+    Patch Frequency Embedding.
+
+    Simple linear layer to learn some representation over the frequency domain.
+    with permuntation in the frequency axis.
+
+    Parameters
+    ----------
+    emb_size: int
+        The size of the embedding layer
+    n_freq: int
+        The number of frequency points after the Fourier transform
+
+    Returns
+    -------
+    out: Tensor
+        (batch, time, emb_size)
+    """
     def __init__(self, emb_size=256, n_freq=101):
         super().__init__()
         self.projection = nn.Linear(n_freq, emb_size)
@@ -36,6 +54,10 @@ class _ClassificationHead(nn.Sequential):
         The size of the embedding layer
     n_outputs: int
         The number of classes
+    Returns
+    -------
+    out: Tensor
+        (batch, n_outputs)
     """
     def __init__(self, emb_size, n_outputs):
         super().__init__()
@@ -50,10 +72,34 @@ class _ClassificationHead(nn.Sequential):
 
 
 class _PositionalEncoding(nn.Module):
+    """
+    Positional Encoding.
+
+    We first create a `pe` zero matrix of shape (max_len, d_model) where max_len is the
+    maximum length of the sequence and d_model is the size of the embedding.
+
+    Then we create a `position` tensor of shape (max_len, 1) with indice from 0 to max_len
+    and a `div_term` tensor of shape (d_model // 2) with the exponential of the
+    multiplication of the indices from 0 to d_model by -log(10000.0) / d_model.
+
+    For more details about the positional encoding see the `Attention is All You Need` paper.
+
+    Parameters
+    ----------
+    d_model: int
+        The size of the embedding layer
+    dropout: float
+        The dropout rate
+    max_len: int
+        The maximum length of the sequence
+    Returns
+    -------
+    out: Tensor
+        (batch, max_len, d_model)
+    """
     def __init__(self, d_model: int, dropout: float = 0.1,
                  max_len: int = 1000):
         super(_PositionalEncoding, self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
 
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, d_model)
@@ -66,6 +112,7 @@ class _PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
+        self.dropout = nn.Dropout(p=dropout)
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         """
@@ -186,9 +233,9 @@ class _BIOTEncoder(nn.Module):
         embeddings is returned.
 
         For each channel in channels, the channels is transformed into a
-        spectrogram with STFT; Then the spectrogram is nn.Linear layers to
-        learn some representation over the frequency domain, after the
-        representation is permuted.
+        spectrogram with STFT; The spectrogram representation is permuted
+        and passed through a linear layer to learn some representation over
+        the frequency domain.
 
         For each embedding in the sequence, the channel token is added to
         the patch embedding and then positional encoding is applied.
