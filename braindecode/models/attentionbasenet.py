@@ -6,13 +6,37 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions_attention import get_attention_block
 
 
-class _InputBlock(nn.Module):
+class _FeatureExtractor(nn.Module):
     """
-    TODO: Add docstring
+    A module for feature extraction of the data with temporal and spatial
+    transformations.
+
+    This module sequentially processes the input through a series of layers:
+    rearrangement, temporal convolution, batch normalization, spatial convolution,
+    another batch normalization, an ELU non-linearity, average pooling, and dropout.
+
+
+    Parameters
+    ----------
+    n_chans : int
+        The number of channels in the input data.
+    n_temporal_filters : int, optional
+        The number of filters to use in the temporal convolution layer. Default is 40.
+    temporal_filter_length : int, optional
+        The size of each filter in the temporal convolution layer. Default is 25.
+    spatial_expansion : int, optional
+        The expansion factor of the spatial convolution layer, determining the number
+        of output channels relative to the number of temporal filters. Default is 1.
+    pool_length : int, optional
+        The size of the window for the average pooling operation. Default is 75.
+    pool_stride : int, optional
+        The stride of the average pooling operation. Default is 15.
+    dropout : float, optional
+        The dropout rate for regularization. Default is 0.5.
     """
     def __init__(
             self,
-            n_channels: int,
+            n_chans: int,
             n_temporal_filters: int = 40,
             temporal_filter_length: int = 25,
             spatial_expansion: int = 1,
@@ -20,17 +44,17 @@ class _InputBlock(nn.Module):
             pool_stride: int = 15,
             dropout: float = 0.5
     ):
-        super(_InputBlock, self).__init__()
+        super(_FeatureExtractor, self).__init__()
+
         self.rearrange_input = Rearrange("b c t -> b 1 c t")
         self.temporal_conv = nn.Conv2d(1, n_temporal_filters,
                                        kernel_size=(1, temporal_filter_length),
-                                       padding=(
-                                       0, temporal_filter_length // 2),
+                                       padding=(0, temporal_filter_length // 2),
                                        bias=False)
         self.intermediate_bn = nn.BatchNorm2d(n_temporal_filters)
         self.spatial_conv = nn.Conv2d(n_temporal_filters,
                                       n_temporal_filters * spatial_expansion,
-                                      kernel_size=(n_channels, 1),
+                                      kernel_size=(n_chans, 1),
                                       groups=n_temporal_filters, bias=False)
         self.bn = nn.BatchNorm2d(n_temporal_filters * spatial_expansion)
         self.nonlinearity = nn.ELU()
@@ -52,7 +76,80 @@ class _InputBlock(nn.Module):
 
 class _ChannelAttentionBlock(nn.Module):
     """
-    TODO: Add docstring
+    A neural network module implementing channel-wise attention mechanisms to enhance
+    feature representations by selectively emphasizing important channels and suppressing
+    less useful ones. This block integrates convolutional layers, pooling, dropout, and
+    an optional attention mechanism that can be customized based on the given mode.
+
+    Parameters
+    ----------
+    attention_mode : str, optional
+        The type of attention mechanism to apply. If `None`, no attention is applied.
+        - "se" for Squeeze-and-excitation network
+        - "gsop" for Global Second-Order Pooling
+        - "fca" for Frequency Channel Attention Network
+        - "encnet" for encoder block (?)
+        - "eca" for Efficient channel attention for deep convolutional neural networks
+        - "ge" for Gather-Excite
+        - "gct" for Gated Channel Transformation
+        - "srm" for Style-based Recalibration Module
+        - "cbam" for Convolutional Block Attention Module
+        - "cat" for Learning to collaborate channel and spatial attention
+        from multi-information fusion
+        - "catlite" for Learning to collaborate channel and spatial attention
+        from multi-information fusion (lite version)
+
+    in_channels : int, default=16
+        The number of input channels to the block.
+    temp_filter_length : int, default=15
+        The length of the temporal filters in the convolutional layers.
+    pool_length : int, default=8
+        The length of the window for the average pooling operation.
+    pool_stride : int, default=8
+        The stride of the average pooling operation.
+    dropout : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+    reduction_rate : int, default=4
+        The reduction rate used in the attention mechanism to reduce dimensionality
+        and computational complexity.
+    use_mlp : bool, default=False
+        Flag to indicate whether an MLP (Multi-Layer Perceptron) should be used within
+        the attention mechanism for further processing.
+    seq_len : int, default=62
+        The sequence length, used in certain types of attention mechanisms to process
+        temporal dimensions.
+    freq_idx : int, default=0
+        An index used in attention mechanisms that process frequency dimensions.
+    n_codewords : int, default=4
+        The number of codewords (clusters) used in attention mechanisms that employ
+        quantization or clustering strategies.
+    kernel_size : int, default=9
+        The kernel size used in certain types of attention mechanisms for convolution
+        operations.
+    extra_params : bool, default=False
+        Flag to indicate whether additional, custom parameters should be passed to
+        the attention mechanism.
+
+    Attributes
+    ----------
+    conv : torch.nn.Sequential
+        Sequential model of convolutional layers, batch normalization, and ELU
+        activation, designed to process input features.
+    pool : torch.nn.AvgPool2d
+        Average pooling layer to reduce the dimensionality of the feature maps.
+    dropout : torch.nn.Dropout
+        Dropout layer for regularization.
+    attention_block : torch.nn.Module or None
+        The attention mechanism applied to the output of the convolutional layers,
+        if `attention_mode` is not None. Otherwise, it's set to None.
+
+    Examples
+    --------
+    >>> channel_attention_block = _ChannelAttentionBlock(attention_mode='cbam', in_channels=16)
+    >>> x = torch.randn(1, 16, 64, 64)  # Example input tensor
+    >>> output = channel_attention_block(x)
+    The output tensor then can be further processed or used as input to another block.
+
     """
     def __init__(
             self,
@@ -170,8 +267,8 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
 
-        self.input_block = _InputBlock(
-            n_channels=self.n_chans, n_temporal_filters=n_temporal_filters,
+        self.input_block = _FeatureExtractor(
+            n_chans=self.n_chans, n_temporal_filters=n_temporal_filters,
             temporal_filter_length=temp_filter_length_inp,
             spatial_expansion=spatial_expansion,
             pool_length=pool_length_inp, pool_stride=pool_stride_inp,
