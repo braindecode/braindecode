@@ -3,7 +3,7 @@
 #          Robin Tibor Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD-3
-
+import sys
 
 import numpy as np
 import pytest
@@ -240,7 +240,7 @@ def test_cropped_time_series_trial_epoch_scoring():
             mock_skorch_net.history[0]["accuracy"], accuracy
         )
 
-
+@pytest.mark.skipif(sys.version_info != (3, 8), reason="Only for Python 3.8")
 def test_post_epoch_train_scoring():
     cuda = False
     set_random_seeds(seed=20170629, cuda=cuda)
