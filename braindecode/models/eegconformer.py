@@ -97,7 +97,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             att_depth=6,
             att_heads=10,
             att_drop_prob=0.5,
-            final_fc_length=2440,
+            final_fc_length="auto",
             return_features=False,
             n_times=None,
             chs_info=None,
