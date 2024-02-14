@@ -7,6 +7,9 @@ from braindecode.models.functions_attention import get_attention_block
 
 
 class _InputBlock(nn.Module):
+    """
+    TODO: Add docstring
+    """
     def __init__(
             self,
             n_channels: int,
@@ -48,6 +51,9 @@ class _InputBlock(nn.Module):
 
 
 class _ChannelAttentionBlock(nn.Module):
+    """
+    TODO: Add docstring
+    """
     def __init__(
             self,
             attention_mode: str = None,
@@ -96,7 +102,10 @@ class _ChannelAttentionBlock(nn.Module):
         return out
 
 
-class BaseNet(EEGModuleMixin, nn.Module):
+class AttentionBaseNet(EEGModuleMixin, nn.Module):
+    """
+    TODO: Add docstring
+    """
     def __init__(
             self,
             n_times: int,
@@ -123,7 +132,7 @@ class BaseNet(EEGModuleMixin, nn.Module):
             chs_info=None,
             sfreq=None,  # Check if we can replace freq_idx with this
     ):
-        super(BaseNet, self).__init__()
+        super(AttentionBaseNet, self).__init__()
 
         super().__init__(
             n_outputs=n_outputs,

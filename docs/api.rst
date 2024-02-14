@@ -70,6 +70,7 @@ Models
     EEGInception
     EEGInceptionERP
     EEGInceptionMI
+    BaseNet
     ATCNet
     EEGITNet
     EEGNetv1
