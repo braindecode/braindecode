@@ -23,6 +23,8 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`509` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
+
 
 Bugs
 ~~~~
