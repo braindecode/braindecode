@@ -20,7 +20,7 @@ from braindecode.preprocessing.windowers import (
 # Temporary fix for the issue with this models
 from braindecode.models import TCN, HybridNet, EEGResNet, SleepStagerEldele2021
 
-models_not_working = {"TCN": TCN, "Hybrid": HybridNet,
+models_not_working = {"TCN": TCN, "HybridNet": HybridNet,
                       "SleepStagerEldele2021": SleepStagerEldele2021,
                       "EEGResNet": EEGResNet}
 
