@@ -69,7 +69,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
 
     def __init__(
             self,
-            sfreq=250,
+            sfreq=100,
             n_tce=2,
             d_model=80,
             d_ff=120,
