@@ -25,11 +25,23 @@ class _PatchFrequencyEmbedding(nn.Module):
 
 
 class _ClassificationHead(nn.Sequential):
-    def __init__(self, emb_size, n_classes):
+    """
+    Classification head for the BIOT model.
+
+    Simple linear layer with ELU activation function.
+
+    Parameters
+    ----------
+    emb_size: int
+        The size of the embedding layer
+    n_outputs: int
+        The number of classes
+    """
+    def __init__(self, emb_size, n_outputs):
         super().__init__()
         self.clshead = nn.Sequential(
             nn.ELU(),
-            nn.Linear(emb_size, n_classes),
+            nn.Linear(emb_size, n_outputs),
         )
 
     def forward(self, x):
@@ -76,7 +88,8 @@ class _BIOTEncoder(nn.Module):
     `PatchFrequencyEmbedding` modules.
 
     The input data is transformed into a spectrogram and then embedded using a
-    patch embedding. The channel token is added to the patch embedding and then
+    "patch" embedding.
+    The channel token is added to the patch embedding and then
     positional encoding is applied (simples index positional).
     The resulting embeddings are concatenated
     and passed through a transformer layer. The mean across different channels
@@ -174,33 +187,50 @@ class _BIOTEncoder(nn.Module):
 
         For each channel in channels, the channels is transformed into a
         spectrogram with STFT; Then the spectrogram is nn.Linear layers to
-        learn some representation over the frequency domain, the representation
-        is permuted to be used in the transformer layer.
+        learn some representation over the frequency domain, after the
+        representation is permuted.
 
-        The transformer layer
-         by an Linear
+        For each embedding in the sequence, the channel token is added to
+        the patch embedding and then positional encoding is applied.
 
-        . The channel
+        The resulting embeddings are concatenated and passed through a
+        transformer layer. The mean of the resulting embeddings is returned.
 
         Parameters
         ----------
         x: Tensor
             (batch_size, n_channels, n_times)
-        n_channel_offset: int
-
-        perturb: bool
+        n_channel_offset: int (default 0)
+            The offset term to be added in the channel tokens
+        perturb: bool (default False)
+            Randomly select a number of time steps and reduce the
+            channel embedding to those time steps.
 
         Returns
         -------
         emb: Tensor
-
+            (batch_size, emb_size)
         """
         emb_seq = []
         for i in range(x.shape[1]):
+            # Getting the spectrogram
             channel_spec_emb = self.stft(x[:, i: i + 1, :])
+            # Linear layer to learn some representation over the frequency domain
+            # with permuntation
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
             batch_size, ts, _ = channel_spec_emb.shape
             # (batch_size, ts, emb)
+            # Step by step the follow lines do the following operations:
+            #    - self.channel_tokens(self.index[i + n_channel_offset]):
+            #    Fetches the embedding for a channel specified by i + n_channel_offset,
+            #    where i is the current index and n_channel_offset adjusts
+            #    which channel's embedding is retrieved.
+            #    - .unsqueeze(0).unsqueeze(0):
+            #    Adds two singleton dimensions to the embedding tensor.
+            #    [emb_size] to [1, 1, emb_size] .
+            #    - Repeat(batch_size, ts, 1):
+            #    Replicates the embedding tensor to match the batch size and
+            #    time steps (ts),
             channel_token_emb = (
                 self.channel_tokens(self.index[i + n_channel_offset])
                 .unsqueeze(0)
@@ -208,10 +238,13 @@ class _BIOTEncoder(nn.Module):
                 .repeat(batch_size, ts, 1)
             )
             # (batch_size, ts, emb)
+            # The positional embedding is explain with more
+            # detail in the _PositionalEncoding class.
             channel_emb = self.positional_encoding(
                 channel_spec_emb + channel_token_emb)
-
-            # perturb
+            # In case of perturb, the time steps are randomly selected
+            # and the channel embedding is reduced to a random number
+            # of time steps.
             if perturb:
                 ts = channel_emb.shape[1]
                 ts_new = np.random.randint(ts // 2, ts)
@@ -220,6 +253,7 @@ class _BIOTEncoder(nn.Module):
                 channel_emb = channel_emb[:, selected_ts]
             emb_seq.append(channel_emb)
 
+        # Concat and transformer
         # (batch_size, 16 * ts, emb)
         emb = torch.cat(emb_seq, dim=1)
         # (batch_size, emb)
@@ -299,11 +333,14 @@ class BIOT(EEGModuleMixin, nn.Module):
                  "This may cause overfitting. Consider using a larger " +
                  "embedding size or a smaller number of channels.",
                  UserWarning)
+
         self.biot = _BIOTEncoder(emb_size=emb_size,
                                  att_num_heads=att_num_heads,
                                  depth=depth, n_chans=self.n_chans,
                                  n_fft=self.sfreq, hop_length=hop_length)
-        self.classifier = _ClassificationHead(emb_size, self.n_outputs)
+
+        self.classifier = _ClassificationHead(emb_size=emb_size,
+                                              n_outputs=self.n_outputs)
 
     def forward(self, x):
         x = self.biot(x)
