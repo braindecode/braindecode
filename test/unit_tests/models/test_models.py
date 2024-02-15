@@ -9,7 +9,6 @@
 
 
 from collections import OrderedDict
-from numpy.random import choice
 from sklearn.utils import check_random_state
 
 import numpy as np
@@ -743,3 +742,25 @@ def test_biot(n_chans, n_outputs, input_size_s):
 
     y_pred1 = model(X)  # 3D inputs
     assert y_pred1.shape == (n_examples, n_outputs)
+    assert isinstance(y_pred1, torch.Tensor)
+
+
+@pytest.fixture
+def default_biot_params():
+    return {
+        'emb_size': 256,
+        'att_num_heads': 8,
+        'n_layers': 4,
+        'sfreq': 200,
+        'hop_length': 50,
+        'n_outputs': 2,
+        'n_chans': 64,
+    }
+
+def test_initialization_default_parameters(default_biot_params):
+    """Test BIOT initialization with default parameters."""
+    biot = BIOT(**default_biot_params)
+
+    assert biot.emb_size == 256
+    assert biot.att_num_heads == 8
+    assert biot.n_layers == 4
