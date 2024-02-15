@@ -391,6 +391,10 @@ class BIOT(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
+        self.emb_size = emb_size
+        self.hop_length = hop_length
+        self.att_num_heads = att_num_heads
+        self.n_layers = n_layers
         if (self.sfreq != 200) & (self.sfreq is not None):
             warn("This model has only been trained on a dataset with 200 Hz. " +
                  "no guarantee to generalize well with the default parameters",
