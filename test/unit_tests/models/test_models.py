@@ -9,6 +9,8 @@
 
 
 from collections import OrderedDict
+from numpy.random import choice
+from sklearn.utils import check_random_state
 
 import numpy as np
 import torch
@@ -477,7 +479,7 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     # (100, 5, 30, 80) - Physionet Sleep
     # (125, 4, 30, 100) - SHHS
     rng = np.random.RandomState(42)
-    n_channels = 1
+    n_channels = 10
     n_examples = 10
 
     model = SleepStagerEldele2021(
@@ -718,10 +720,26 @@ def test_model_trainable_parameters(model):
     assert trainable_classification_params == 633120
     assert trainable_final_layer_parameters == 66
 
-def test_biot(input_sizes):
-    model = BIOT(n_outputs=input_sizes['n_classes'],
-                 n_chans=input_sizes['n_channels'],
-                 n_times=input_sizes['n_in_times'])
+@pytest.mark.parametrize("n_chans", (2 ** np.arange(8)).tolist())
+@pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
+@pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
+def test_biot(n_chans, n_outputs, input_size_s):
+
+    rng = check_random_state(42)
+    sfreq = 200
+    n_examples = 3
+    n_times = np.ceil(input_size_s * sfreq).astype(int)
+
+    model = BIOT(n_outputs=n_outputs,
+                 n_chans=n_chans,
+                 n_times=n_times,
+                 sfreq=sfreq,
+                 hop_length=50,
+                 )
     model.eval()
 
-    check_forward_pass(model, input_sizes)
+    X = rng.randn(n_examples, n_chans, n_times)
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred1 = model(X)  # 3D inputs
+    assert y_pred1.shape == (n_examples, n_outputs)
