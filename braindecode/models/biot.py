@@ -27,7 +27,9 @@ class _PatchFrequencyEmbedding(nn.Module):
     out: Tensor
         (batch, time, emb_size)
     """
-    def __init__(self, emb_size=256, n_freq=101):
+    def __init__(self,
+                 emb_size: int = 256,
+                 n_freq: int = 101):
         super().__init__()
         self.projection = nn.Linear(n_freq, emb_size)
 
@@ -66,7 +68,9 @@ class _ClassificationHead(nn.Sequential):
     out: Tensor
         (batch, n_outputs)
     """
-    def __init__(self, emb_size, n_outputs):
+    def __init__(self,
+                 emb_size: int,
+                 n_outputs: int):
         super().__init__()
         self.classification_head = nn.Sequential(
             nn.ELU(),
@@ -104,7 +108,9 @@ class _PositionalEncoding(nn.Module):
     out: Tensor
         (batch, max_len, d_model)
     """
-    def __init__(self, emb_size: int, dropout: float = 0.1,
+    def __init__(self,
+                 emb_size: int,
+                 dropout: float = 0.1,
                  max_len: int = 1000):
         super(_PositionalEncoding, self).__init__()
 
