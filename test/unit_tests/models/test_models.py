@@ -3,6 +3,7 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Daniel Wilson <dan.c.wil@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com
 #
 # License: BSD-3
 
@@ -33,6 +34,7 @@ from braindecode.models import (
     TIDNet,
     ATCNet,
     EEGConformer,
+    BIOT,
 )
 
 from braindecode.util import set_random_seeds
@@ -715,3 +717,11 @@ def test_model_trainable_parameters(model):
     assert trainable_transformer_params == 118320
     assert trainable_classification_params == 633120
     assert trainable_final_layer_parameters == 66
+
+def test_biot(input_sizes):
+    model = BIOT(n_outputs=input_sizes['n_classes'],
+                 n_chans=input_sizes['n_channels'],
+                 n_times=input_sizes['n_in_times'])
+    model.eval()
+
+    check_forward_pass(model, input_sizes)
