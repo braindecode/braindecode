@@ -330,29 +330,25 @@ class BIOT(EEGModuleMixin, nn.Module):
     """BIOT: Cross-data Biosignal Learning in the Wild.
 
     BIOT is a large language model for biosignal classification. It is
-    a wrapper around the :class:`braindecode.models.biot._BIOTEncoder`
-    and :class:`braindecode.models.biot._ClassificationHead` modules.
+    a wrapper around the `BIOTEncoder` and `ClassificationHead` modules.
 
     It is designed for N-dimensional biosignal data such as EEG, ECG, etc.
     The method was proposed by Yang et al. [Yang2023]_ and the code is
-    available at [YangCode]_.
+    available at [YangCode2023]_.
 
     The model is trained with a contrastive loss on large EEG datasets
     TUH Abnormal EEG Corpus with 400K samples and Sleep Heart Health Study
     5M. Here, we only provide the model architecture, not the pre-trained
     weights or contrastive loss training.
 
-    The architecture is based on the `LinearAttentionTransformer
-    <https://github.com/lucidrains/linear-attention-transformer>` and
-    :class:`braindecode.models.biot._PatchFrequencyEmbedding` modules.
-    The :class:`braindecode.models.biot._BIOTEncoder` is a transformer
-    that takes the input data and outputs a fixed-size representation
-    of the input data. More details are present in the
-    :class:`braindecode.models.biot._BIOTEncoder` class.
+    The architecture is based on the `LinearAttentionTransformer` and
+    `PatchFrequencyEmbedding` modules.
+    The `BIOTEncoder` is a transformer that takes the input data and outputs
+    a fixed-size representation of the input data. More details are
+    present in the `BIOTEncoder` class.
 
-    The :class:`braindecode.models.biot._ClassificationHead` is an ELU
-    activation layer, followed by a simple linear layer that takes the
-    output of the :class:`braindecode.models.biot._BIOTEncoder` and outputs
+    The `ClassificationHead` is an ELU activation layer, followed by a simple
+    linear layer that takes the output of the `BIOTEncoder` and outputs
     the classification probabilities.
 
     .. versionadded:: 0.9
@@ -369,12 +365,12 @@ class BIOT(EEGModuleMixin, nn.Module):
     References
     ----------
     .. [Yang2023] Yang, C., Westover, M.B. and Sun, J., 2023, November.
-    BIOT: Biosignal Transformer for Cross-data Learning in the Wild.
-    In Thirty-seventh Conference on Neural Information Processing Systems
-    NeurIPS.
+       BIOT: Biosignal Transformer for Cross-data Learning in the Wild.
+       In Thirty-seventh Conference on Neural Information Processing Systems
+       NeurIPS.
     .. [YangCode] Yang, C., Westover, M.B. and Sun, J., 2023. BIOT.
-    Biosignal Transformer for Cross-data Learning in the Wild.
-    GitHub: https://github.com/ycq091044/BIOT (accessed 2024-02-13)
+       Biosignal Transformer for Cross-data Learning in the Wild.
+       GitHub: https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
 
     def __init__(self,
