@@ -232,15 +232,15 @@ class GatherExcite(nn.Module):
         else:
             self.gather = nn.AdaptiveAvgPool2d(1)
 
+
         if use_mlp:
-            if use_mlp:
-                self.mlp = nn.Sequential(
-                    nn.Conv2d(in_channels, int(in_channels // reduction_rate), 1,
-                              bias=False),
-                    nn.ReLU(),
-                    nn.Conv2d(int(in_channels // reduction_rate), in_channels, 1,
-                              bias=False),
-                )
+            self.mlp = nn.Sequential(
+                nn.Conv2d(in_channels, int(in_channels // reduction_rate), 1,
+                          bias=False),
+                nn.ReLU(),
+                nn.Conv2d(int(in_channels // reduction_rate), in_channels, 1,
+                          bias=False),
+            )
         else:
             self.mlp = nn.Identity()
 
