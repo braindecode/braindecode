@@ -12,8 +12,7 @@ class _PatchFrequencyEmbedding(nn.Module):
     """
     Patch Frequency Embedding.
 
-    A simple linear layer is used to learn some representation
-    over the frequency domain with permutation in the frequency axis.
+    A simple linear layer is used to learn some representation over the frequency domain with permutation in the frequency axis.
 
     Parameters
     ----------
@@ -87,15 +86,15 @@ class _PositionalEncoding(nn.Module):
     """
     Positional Encoding.
 
-    We first create a `pe` zero matrix of shape (max_len, d_model) where max_len is
+    We first create a `pe` zero matrix of shape (max_len, d_model) where max_len is the
     the maximum length of the sequence, and emb_size is the size of the embedding.
 
-    Then we create a `position` tensor of shape (max_len, 1) with indices from 0
-    to max_len and a `div_term` tensor of shape (d_model // 2) with the exponential of the
+    Then we create a `position` tensor of shape (max_len, 1) with indices from 0 to max_len
+    and a `div_term` tensor of shape (d_model // 2) with the exponential of the
     multiplication of the indices from 0 to d_model by -log(10000.0) / d_model.
 
-    For more details about the positional encoding, see the `Attention is All You Need`
-    paper.
+    For more details about the positional encoding, see the `Attention is All You Need` paper.
+
     Parameters
     ----------
     emb_size: int
@@ -134,7 +133,7 @@ class _PositionalEncoding(nn.Module):
         Parameters
         ----------
         x: FloatTensor
-            `embeddings`, shape (batch, max_len, d_model)
+            `embeddings,` shape (batch, max_len, d_model)
 
         Returns
         -------
@@ -247,18 +246,18 @@ class _BIOTEncoder(nn.Module):
 
         For each channel, the input is transformed into a spectrogram
         and then embedded using a patch embedding. The channel token
-        is added to the patch embedding and then positional encoding
+        is added to the patch embedding, and then positional encoding
         is applied. The resulting embeddings are concatenated and
         passed through a transformer layer. The mean of the resulting
         embeddings is returned.
 
-        For each channel in channels, the channel is transformed into a
+        For each channel in channels, the channels are transformed into a
         spectrogram with STFT; The spectrogram representation is permuted
         and passed through a linear layer to learn some representation over
         the frequency domain.
 
         For each embedding in the sequence, the channel token is added to
-        the patch embedding and then positional encoding is applied.
+        the patch embedding, and then positional encoding is applied.
 
         The resulting embeddings are concatenated and passed through a
         transformer layer. The mean of the resulting embeddings is returned.
@@ -268,7 +267,7 @@ class _BIOTEncoder(nn.Module):
         x: Tensor
             (batch_size, n_channels, n_times)
         n_channel_offset: int (default 0)
-            The offset term to be added in the channel tokens
+            The offset term to be added to the channel tokens
         perturb: bool (default False)
             Randomly select a number of time steps and reduce the
             channel embedding to those time steps.
@@ -283,11 +282,11 @@ class _BIOTEncoder(nn.Module):
             # Getting the spectrogram
             channel_spec_emb = self.stft(x[:, i: i + 1, :])
             # Linear layer to learn some representation over the frequency domain
-            # with permuntation
+            # with permutation
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
             batch_size, ts, _ = channel_spec_emb.shape
             # (batch_size, ts, emb)
-            # Step by step the follow lines do the following operations:
+            # Step by step the following lines do the following operations:
             #    - self.channel_tokens(self.index[i + n_channel_offset]):
             #    Fetches the embedding for a channel specified by i + n_channel_offset,
             #    where i is the current index and n_channel_offset adjusts
@@ -305,7 +304,7 @@ class _BIOTEncoder(nn.Module):
                 .repeat(batch_size, ts, 1)
             )
             # (batch_size, ts, emb)
-            # The positional embedding is explain with more
+            # The positional embedding is explaining with more
             # detail in the _PositionalEncoding class.
             channel_emb = self.positional_encoding(
                 channel_spec_emb + channel_token_emb)
@@ -331,25 +330,30 @@ class BIOT(EEGModuleMixin, nn.Module):
     """BIOT: Cross-data Biosignal Learning in the Wild.
 
     BIOT is a large language model for biosignal classification. It is
-    a wrapper around the `BIOTEncoder` and `ClassificationHead` modules.
+    a wrapper around the :class:`braindecode.models.biot._BIOTEncoder`
+    and :class:`braindecode.models.biot._ClassificationHead` modules.
 
-    It is designed for N-Dimensional biosignal data such as EEG, ECG, etc.
+    It is designed for N-dimensional biosignal data such as EEG, ECG, etc.
     The method was proposed by Yang et al. [Yang2023]_ and the code is
-    available at [BioTCode]_.
+    available at [YangCode]_.
 
     The model is trained with a contrastive loss on large EEG datasets
     TUH Abnormal EEG Corpus with 400K samples and Sleep Heart Health Study
     5M. Here, we only provide the model architecture, not the pre-trained
-    weights or the contrastive loss training.
+    weights or contrastive loss training.
 
-    The architecture is based on the `LinearAttentionTransformer` and
-    `PatchFrequencyEmbedding` modules. The `BIOTEncoder` is a transformer
+    The architecture is based on the `LinearAttentionTransformer
+    <https://github.com/lucidrains/linear-attention-transformer>` and
+    :class:`braindecode.models.biot._PatchFrequencyEmbedding` modules.
+    The :class:`braindecode.models.biot._BIOTEncoder` is a transformer
     that takes the input data and outputs a fixed-size representation
-    of the input data. More details are present in the `BIOTEncoder` class.
+    of the input data. More details are present in the
+    :class:`braindecode.models.biot._BIOTEncoder` class.
 
-    The `ClassificationHead` is an ELU activation layer, follow by a simple
-    linear layer that takes the output of the `BIOTEncoder` and outputs the
-    classification probabilities.
+    The :class:`braindecode.models.biot._ClassificationHead` is an ELU
+    activation layer, followed by a simple linear layer that takes the
+    output of the :class:`braindecode.models.biot._BIOTEncoder` and outputs
+    the classification probabilities.
 
     .. versionadded:: 0.9
 
@@ -368,8 +372,9 @@ class BIOT(EEGModuleMixin, nn.Module):
     BIOT: Biosignal Transformer for Cross-data Learning in the Wild.
     In Thirty-seventh Conference on Neural Information Processing Systems
     NeurIPS.
-    .. [BioTCode] Yang, C., Westover, M.B. and Sun, J., 2023.
-    https://github.com/ycq091044/BIOT
+    .. [YangCode] Yang, C., Westover, M.B. and Sun, J., 2023. BIOT.
+    Biosignal Transformer for Cross-data Learning in the Wild.
+    GitHub: https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
 
     def __init__(self,
@@ -392,7 +397,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
         if (self.sfreq != 200) & (self.sfreq is not None):
-            warn("This model has only been trained on dataset with 200 Hz. " +
+            warn("This model has only been trained on a dataset with 200 Hz. " +
                  "no guarantee to generalize well with the default parameters",
                  UserWarning)
         if self.n_chans > emb_size:
