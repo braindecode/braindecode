@@ -1,7 +1,6 @@
 import math
 from warnings import warn
 
-import numpy as np
 import torch
 import torch.nn as nn
 from linear_attention_transformer import LinearAttentionTransformer
@@ -84,7 +83,7 @@ class _PositionalEncoding(nn.Module):
     Positional Encoding.
 
     We first create a `pe` zero matrix of shape (max_len, d_model) where max_len is the
-    maximum length of the sequence and d_model is the size of the embedding.
+    maximum length of the sequence and emb_size is the size of the embedding.
 
     Then we create a `position` tensor of shape (max_len, 1) with indice from 0 to max_len
     and a `div_term` tensor of shape (d_model // 2) with the exponential of the
@@ -94,7 +93,7 @@ class _PositionalEncoding(nn.Module):
 
     Parameters
     ----------
-    d_model: int
+    emb_size: int
         The size of the embedding layer
     dropout: float
         The dropout rate
@@ -105,16 +104,16 @@ class _PositionalEncoding(nn.Module):
     out: Tensor
         (batch, max_len, d_model)
     """
-    def __init__(self, d_model: int, dropout: float = 0.1,
+    def __init__(self, emb_size: int, dropout: float = 0.1,
                  max_len: int = 1000):
         super(_PositionalEncoding, self).__init__()
 
         # Compute the positional encodings once in log space.
-        pe = torch.zeros(max_len, d_model)
+        pe = torch.zeros(max_len, emb_size)
         position = torch.arange(0, max_len).unsqueeze(1).float()
         div_term = torch.exp(
-            torch.arange(0, d_model, 2).float() * -(
-                        math.log(10000.0) / d_model)
+            torch.arange(0, emb_size, 2).float() * -(
+                        math.log(10000.0) / emb_size)
         )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -369,12 +368,13 @@ class BIOT(EEGModuleMixin, nn.Module):
                  emb_size=256,
                  att_num_heads=8,
                  n_layers=4,
+                 sfreq=200,
+                 hop_length=100,
                  n_outputs=None,
                  n_chans=None,
                  chs_info=None,
                  n_times=None,
-                 sfreq=200,
-                 hop_length=100,):
+):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
