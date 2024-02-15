@@ -12,8 +12,8 @@ class _PatchFrequencyEmbedding(nn.Module):
     """
     Patch Frequency Embedding.
 
-    Simple linear layer to learn some representation over the frequency domain.
-    with permuntation in the frequency axis.
+    A simple linear layer is used to learn some representation
+    over the frequency domain with permutation in the frequency axis.
 
     Parameters
     ----------
@@ -87,15 +87,15 @@ class _PositionalEncoding(nn.Module):
     """
     Positional Encoding.
 
-    We first create a `pe` zero matrix of shape (max_len, d_model) where max_len is the
-    maximum length of the sequence and emb_size is the size of the embedding.
+    We first create a `pe` zero matrix of shape (max_len, d_model) where max_len is
+    the maximum length of the sequence, and emb_size is the size of the embedding.
 
-    Then we create a `position` tensor of shape (max_len, 1) with indice from 0 to max_len
-    and a `div_term` tensor of shape (d_model // 2) with the exponential of the
+    Then we create a `position` tensor of shape (max_len, 1) with indices from 0
+    to max_len and a `div_term` tensor of shape (d_model // 2) with the exponential of the
     multiplication of the indices from 0 to d_model by -log(10000.0) / d_model.
 
-    For more details about the positional encoding see the `Attention is All You Need` paper.
-
+    For more details about the positional encoding, see the `Attention is All You Need`
+    paper.
     Parameters
     ----------
     emb_size: int
@@ -156,7 +156,7 @@ class _BIOTEncoder(nn.Module):
 
     The input data is transformed into a spectrogram and then embedded using a
     "patch" embedding.
-    The channel token is added to the patch embedding and then
+    The channel token is added to the patch embedding, and then
     positional encoding is applied (simple index positional).
     The resulting embeddings are concatenated
     and passed through a transformer layer. The mean across different channels
@@ -215,10 +215,10 @@ class _BIOTEncoder(nn.Module):
     def stft(self, sample):
         """
         Short-time Fourier transform.
-        For more details see `torch.stft`.
+        For more details, see `torch.stft`.
 
-        The size of Fourier transform is get by `n_fft` and the distance
-        between neighboring sliding window frames `hop_length` define in
+        The size of the Fourier transform is obtained by `n_fft`, and the distance
+        between neighboring sliding window frames `hop_length` defined in
         the __init__ functions.
 
         Parameters
@@ -252,7 +252,7 @@ class _BIOTEncoder(nn.Module):
         passed through a transformer layer. The mean of the resulting
         embeddings is returned.
 
-        For each channel in channels, the channels is transformed into a
+        For each channel in channels, the channel is transformed into a
         spectrogram with STFT; The spectrogram representation is permuted
         and passed through a linear layer to learn some representation over
         the frequency domain.
