@@ -34,8 +34,16 @@ class _PatchFrequencyEmbedding(nn.Module):
 
     def forward(self, x):
         """
-        x: (batch, freq, time)
-        out: (batch, time, emb_size)
+        Parameters
+        ----------
+        x: Tensor
+            (batch, time, n_freq)
+
+        Returns
+        -------
+        out: Tensor
+            (batch, time, emb_size)
+
         """
         x = x.permute(0, 2, 1)
         x = self.projection(x)
@@ -61,13 +69,13 @@ class _ClassificationHead(nn.Sequential):
     """
     def __init__(self, emb_size, n_outputs):
         super().__init__()
-        self.clshead = nn.Sequential(
+        self.classification_head = nn.Sequential(
             nn.ELU(),
             nn.Linear(emb_size, n_outputs),
         )
 
     def forward(self, x):
-        out = self.clshead(x)
+        out = self.classification_head(x)
         return out
 
 
@@ -116,9 +124,14 @@ class _PositionalEncoding(nn.Module):
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         """
-        Args:
-            x: `embeddings`, shape (batch, max_len, d_model)
-        Returns:
+        Parameters
+        ----------
+        x: FloatTensor
+            `embeddings`, shape (batch, max_len, d_model)
+
+        Returns
+        -------
+        Tensor
             `encoder input`, shape (batch, max_len, d_model)
         """
         x = x + self.pe[:, : x.size(1)]
@@ -137,7 +150,7 @@ class _BIOTEncoder(nn.Module):
     The input data is transformed into a spectrogram and then embedded using a
     "patch" embedding.
     The channel token is added to the patch embedding and then
-    positional encoding is applied (simples index positional).
+    positional encoding is applied (simple index positional).
     The resulting embeddings are concatenated
     and passed through a transformer layer. The mean across different channels
     embeddings is returned.
@@ -150,7 +163,7 @@ class _BIOTEncoder(nn.Module):
         The size of the embedding layer
     att_num_heads: int
         The number of attention heads
-    depth: int
+    n_layers: int
         The number of transformer layers
     n_fft: int
         The number of Fourier transform points
@@ -163,7 +176,7 @@ class _BIOTEncoder(nn.Module):
             emb_size=256, # The size of the embedding layer
             att_num_heads=8, # The number of attention heads
             n_chans=16, # The number of channels
-            depth=4, # The number of transformer layers
+            n_layers=4, # The number of transformer layers
             n_fft=200, # Related with the frequency resolution
             hop_length=100,
     ):
@@ -178,7 +191,7 @@ class _BIOTEncoder(nn.Module):
         self.transformer = LinearAttentionTransformer(
             dim=emb_size,
             heads=att_num_heads,
-            depth=depth,
+            depth=n_layers,
             max_seq_len=1024,
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
             attn_dropout=0.2,  # dropout post-attention
@@ -294,9 +307,8 @@ class _BIOTEncoder(nn.Module):
             # of time steps.
             if perturb:
                 ts = channel_emb.shape[1]
-                ts_new = np.random.randint(ts // 2, ts)
-                selected_ts = np.random.choice(range(ts), ts_new,
-                                               replace=False)
+                ts_new = torch.randint(low=ts // 2, high=ts, size=(1,)).item()
+                selected_ts = torch.randperm(ts)[:ts_new]
                 channel_emb = channel_emb[:, selected_ts]
             emb_seq.append(channel_emb)
 
@@ -340,7 +352,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         The size of the embedding layer, by default 256
     att_num_heads : int, optional
         The number of attention heads, by default 8
-    depth : int, optional
+    n_layers : int, optional
         The number of transformer layers, by default 4
 
     References
@@ -356,7 +368,7 @@ class BIOT(EEGModuleMixin, nn.Module):
     def __init__(self,
                  emb_size=256,
                  att_num_heads=8,
-                 depth=4,
+                 n_layers=4,
                  n_outputs=None,
                  n_chans=None,
                  chs_info=None,
@@ -383,7 +395,7 @@ class BIOT(EEGModuleMixin, nn.Module):
 
         self.biot = _BIOTEncoder(emb_size=emb_size,
                                  att_num_heads=att_num_heads,
-                                 depth=depth, n_chans=self.n_chans,
+                                 n_layers=n_layers, n_chans=self.n_chans,
                                  n_fft=self.sfreq, hop_length=hop_length)
 
         self.classifier = _ClassificationHead(emb_size=emb_size,
