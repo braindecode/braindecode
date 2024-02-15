@@ -764,3 +764,19 @@ def test_initialization_default_parameters(default_biot_params):
     assert biot.emb_size == 256
     assert biot.att_num_heads == 8
     assert biot.n_layers == 4
+
+
+def test_model_trainable_parameters_biot(default_biot_params):
+
+    biot = BIOT(**default_biot_params)
+
+    biot_encoder = biot.biot.parameters()
+    biot_classifier = biot.classifier.parameters()
+
+    trainable_params_bio = sum(p.numel()
+                               for p in biot_encoder if p.requires_grad)
+    trainable_params_clf = sum(p.numel()
+                               for p in biot_classifier if p.requires_grad)
+
+    assert trainable_params_bio == 3198464 # ~ 3.2 M according with Labram paper
+    assert trainable_params_clf == 514
