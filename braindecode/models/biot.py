@@ -327,14 +327,14 @@ class _BIOTEncoder(nn.Module):
 
 
 class BIOT(EEGModuleMixin, nn.Module):
-    """BIOT: Cross-data Biosignal Learning in the Wild.
+    """BIOT: Cross-data Biosignal Learning in the Wild from [Yang2023]_
 
     BIOT is a large language model for biosignal classification. It is
     a wrapper around the `BIOTEncoder` and `ClassificationHead` modules.
 
     It is designed for N-dimensional biosignal data such as EEG, ECG, etc.
     The method was proposed by Yang et al. [Yang2023]_ and the code is
-    available at [YangCode2023]_.
+    available at [Code2023]_
 
     The model is trained with a contrastive loss on large EEG datasets
     TUH Abnormal EEG Corpus with 400K samples and Sleep Heart Health Study
@@ -367,9 +367,9 @@ class BIOT(EEGModuleMixin, nn.Module):
     .. [Yang2023] Yang, C., Westover, M.B. and Sun, J., 2023, November. BIOT:
        Biosignal Transformer for Cross-data Learning in the Wild. In Thirty-seventh
        Conference on Neural Information Processing Systems, NeurIPS.
-    .. [YangCode] Yang, C., Westover, M.B. and Sun, J., 2023. BIOT.
+    .. [Code2023] Yang, C., Westover, M.B. and Sun, J., 2023. BIOT
        Biosignal Transformer for Cross-data Learning in the Wild.
-       GitHub: https://github.com/ycq091044/BIOT (accessed 2024-02-13)
+       GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
 
     def __init__(self,
