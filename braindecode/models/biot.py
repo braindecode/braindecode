@@ -364,10 +364,9 @@ class BIOT(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [Yang2023] Yang, C., Westover, M.B. and Sun, J., 2023, November.
-       BIOT: Biosignal Transformer for Cross-data Learning in the Wild.
-       In Thirty-seventh Conference on Neural Information Processing Systems
-       NeurIPS.
+    .. [Yang2023] Yang, C., Westover, M.B. and Sun, J., 2023, November. BIOT:
+       Biosignal Transformer for Cross-data Learning in the Wild. In Thirty-seventh
+       Conference on Neural Information Processing Systems, NeurIPS.
     .. [YangCode] Yang, C., Westover, M.B. and Sun, J., 2023. BIOT.
        Biosignal Transformer for Cross-data Learning in the Wild.
        GitHub: https://github.com/ycq091044/BIOT (accessed 2024-02-13)
