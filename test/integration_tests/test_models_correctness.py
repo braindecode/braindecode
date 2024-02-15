@@ -66,6 +66,7 @@ def real_data():
     X = (epoched.get_data() * 1e6).astype(np.float32)
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
     return X, y
+
 def test_correctness_biot(real_data):
     seed = 20200220
     set_random_seeds(seed=seed, cuda=False)
