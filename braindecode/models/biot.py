@@ -63,6 +63,7 @@ class _ClassificationHead(nn.Sequential):
         The size of the embedding layer
     n_outputs: int
         The number of classes
+
     Returns
     -------
     out: Tensor
@@ -103,6 +104,7 @@ class _PositionalEncoding(nn.Module):
         The dropout rate
     max_len: int
         The maximum length of the sequence
+
     Returns
     -------
     out: Tensor
