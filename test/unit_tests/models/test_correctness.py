@@ -67,6 +67,7 @@ def real_data():
     y = (epoched.events[:, 2] - 2).astype(np.int64)  # 2,3 -> 0,1
     return X, y
 
+# TODO: adding this test for all the models when the issue #571 is closed
 def test_correctness_biot(real_data):
     seed = 20200220
     set_random_seeds(seed=seed, cuda=False)
