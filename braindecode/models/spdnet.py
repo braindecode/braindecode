@@ -46,9 +46,9 @@ class BiMap(nn.Module):
     Parameters
     ----------
     input_shape : int
-        Input shape
+        (batch_size, n_channels, n_channels)
     output_shape : int
-        Output shape
+        (batch_size, n_channels, n_channels)
 
     References
     ----------
@@ -56,15 +56,31 @@ class BiMap(nn.Module):
            A Riemannian Network for SPD Matrix Learning
            AAAI
     """
-    def __init__(self, input_shape, output_shape, threshold=1e-4):
+
+    def __init__(self, in_shape, out_shape, threshold=1e-4):
+        """
+        Parameters
+        ----------
+        in_shape : int
+            Dimensional of the input manifold space to be BiMapped. As the input
+            is a symmetric matrix (same dimension for rows and columns),
+            in_shape is n_channels from covariance layer.
+        out_shape : int
+            Dimensional of the output manifold space to be BiMapped.
+        threshold : float
+            Threshold for the rectified linear unit
+
+        """
         super(BiMap, self).__init__()
-        self.input_shape_ = input_shape
-        self.output_shape_ = output_shape
+        self.in_shape_ = in_shape
+        self.out_shape_ = out_shape
         self.threshold_ = threshold
         self.manifold_ = Stiefel()
-        assert input_shape >= output_shape
+
+        assert in_shape >= out_shape
         self.W = ManifoldParameter(
-            torch.empty([1, input_shape, output_shape]), manifold=self.manifold_
+            torch.empty([1, self.in_shape_, self.self.out_shape_]),
+            manifold=self.manifold_
         )
         self.reset_parameters()
 
