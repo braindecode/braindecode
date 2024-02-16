@@ -12,7 +12,8 @@ class _PatchFrequencyEmbedding(nn.Module):
     """
     Patch Frequency Embedding.
 
-    A simple linear layer is used to learn some representation over the frequency domain with permutation in the frequency axis.
+    A simple linear layer is used to learn some representation over the
+    frequency domain with permutation in the frequency axis.
 
     Parameters
     ----------
@@ -26,9 +27,8 @@ class _PatchFrequencyEmbedding(nn.Module):
     out: Tensor
         (batch, time, emb_size)
     """
-    def __init__(self,
-                 emb_size: int = 256,
-                 n_freq: int = 101):
+
+    def __init__(self, emb_size: int = 256, n_freq: int = 101):
         super().__init__()
         self.projection = nn.Linear(n_freq, emb_size)
 
@@ -68,9 +68,8 @@ class _ClassificationHead(nn.Sequential):
     out: Tensor
         (batch, n_outputs)
     """
-    def __init__(self,
-                 emb_size: int,
-                 n_outputs: int):
+
+    def __init__(self, emb_size: int, n_outputs: int):
         super().__init__()
         self.classification_head = nn.Sequential(
             nn.ELU(),
@@ -109,18 +108,15 @@ class _PositionalEncoding(nn.Module):
     out: Tensor
         (batch, max_len, d_model)
     """
-    def __init__(self,
-                 emb_size: int,
-                 dropout: float = 0.1,
-                 max_len: int = 1000):
+
+    def __init__(self, emb_size: int, dropout: float = 0.1, max_len: int = 1000):
         super(_PositionalEncoding, self).__init__()
 
         # Compute the positional encodings once in log space.
         pe = torch.zeros(max_len, emb_size)
         position = torch.arange(0, max_len).unsqueeze(1).float()
         div_term = torch.exp(
-            torch.arange(0, emb_size, 2).float() * -(
-                        math.log(10000.0) / emb_size)
+            torch.arange(0, emb_size, 2).float() * -(math.log(10000.0) / emb_size)
         )
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
@@ -178,13 +174,13 @@ class _BIOTEncoder(nn.Module):
     """
 
     def __init__(
-            self,
-            emb_size=256, # The size of the embedding layer
-            att_num_heads=8, # The number of attention heads
-            n_chans=16, # The number of channels
-            n_layers=4, # The number of transformer layers
-            n_fft=200, # Related with the frequency resolution
-            hop_length=100,
+        self,
+        emb_size=256,  # The size of the embedding layer
+        att_num_heads=8,  # The number of attention heads
+        n_chans=16,  # The number of channels
+        n_layers=4,  # The number of transformer layers
+        n_fft=200,  # Related with the frequency resolution
+        hop_length=100,
     ):
         super().__init__()
 
@@ -205,11 +201,10 @@ class _BIOTEncoder(nn.Module):
         self.positional_encoding = _PositionalEncoding(emb_size)
 
         # channel token, N_channels >= your actual channels
-        self.channel_tokens = nn.Embedding(num_embeddings=n_chans,
-                                           embedding_dim=emb_size)
-        self.index = nn.Parameter(
-            torch.LongTensor(range(n_chans)), requires_grad=False
+        self.channel_tokens = nn.Embedding(
+            num_embeddings=n_chans, embedding_dim=emb_size
         )
+        self.index = nn.Parameter(torch.LongTensor(range(n_chans)), requires_grad=False)
 
     def stft(self, sample):
         """
@@ -280,7 +275,7 @@ class _BIOTEncoder(nn.Module):
         emb_seq = []
         for i in range(x.shape[1]):
             # Getting the spectrogram
-            channel_spec_emb = self.stft(x[:, i: i + 1, :])
+            channel_spec_emb = self.stft(x[:, i : i + 1, :])
             # Linear layer to learn some representation over the frequency domain
             # with permutation
             channel_spec_emb = self.patch_embedding(channel_spec_emb)
@@ -306,8 +301,7 @@ class _BIOTEncoder(nn.Module):
             # (batch_size, ts, emb)
             # The positional embedding is explaining with more
             # detail in the _PositionalEncoding class.
-            channel_emb = self.positional_encoding(
-                channel_spec_emb + channel_token_emb)
+            channel_emb = self.positional_encoding(channel_spec_emb + channel_token_emb)
             # In case of perturb, the time steps are randomly selected
             # and the channel embedding is reduced to a random number
             # of time steps.
@@ -372,17 +366,19 @@ class BIOT(EEGModuleMixin, nn.Module):
        GitHub https://github.com/ycq091044/BIOT (accessed 2024-02-13)
     """
 
-    def __init__(self,
-                 emb_size=256,
-                 att_num_heads=8,
-                 n_layers=4,
-                 sfreq=200,
-                 hop_length=100,
-                 n_outputs=None,
-                 n_chans=None,
-                 chs_info=None,
-                 n_times=None,
-):
+    def __init__(
+        self,
+        emb_size=256,
+        att_num_heads=8,
+        n_layers=4,
+        sfreq=200,
+        hop_length=100,
+        return_feature=False,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+    ):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -396,24 +392,53 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.att_num_heads = att_num_heads
         self.n_layers = n_layers
         if (self.sfreq != 200) & (self.sfreq is not None):
-            warn("This model has only been trained on a dataset with 200 Hz. " +
-                 "no guarantee to generalize well with the default parameters",
-                 UserWarning)
+            warn(
+                "This model has only been trained on a dataset with 200 Hz. "
+                + "no guarantee to generalize well with the default parameters",
+                UserWarning,
+            )
         if self.n_chans > emb_size:
-            warn("The number of channels is larger than the embedding size. " +
-                 "This may cause overfitting. Consider using a larger " +
-                 "embedding size or a smaller number of channels.",
-                 UserWarning)
+            warn(
+                "The number of channels is larger than the embedding size. "
+                + "This may cause overfitting. Consider using a larger "
+                + "embedding size or a smaller number of channels.",
+                UserWarning,
+            )
 
-        self.biot = _BIOTEncoder(emb_size=emb_size,
-                                 att_num_heads=att_num_heads,
-                                 n_layers=n_layers, n_chans=self.n_chans,
-                                 n_fft=self.sfreq, hop_length=hop_length)
+        self.encoder = _BIOTEncoder(
+            emb_size=emb_size,
+            att_num_heads=att_num_heads,
+            n_layers=n_layers,
+            n_chans=self.n_chans,
+            n_fft=self.sfreq,
+            hop_length=hop_length,
+        )
 
-        self.classifier = _ClassificationHead(emb_size=emb_size,
-                                              n_outputs=self.n_outputs)
+        self.classifier = _ClassificationHead(
+            emb_size=emb_size, n_outputs=self.n_outputs
+        )
 
     def forward(self, x):
-        x = self.biot(x)
-        x = self.classifier(x)
-        return x
+        """
+        Pass the input through the BIOT encoder, and then through the
+        classification head.
+
+        Parameters
+        ----------
+        x: Tensor
+            (batch_size, n_channels, n_times)
+
+        Returns
+        -------
+        out: Tensor
+            (batch_size, n_outputs)
+        (out, emb): tuple Tensor
+            (batch_size, n_outputs), (batch_size, emb_size)
+        """
+        emb = self.encoder(x)
+        x = self.classifier(emb)
+
+        if self.return_feature:
+            return x, emb
+        else:
+            return x
