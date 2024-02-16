@@ -88,16 +88,16 @@ class _ChannelAttentionBlock(nn.Module):
         - "se" for Squeeze-and-excitation network
         - "gsop" for Global Second-Order Pooling
         - "fca" for Frequency Channel Attention Network
-        - "encnet" for encoder block (?)
+        - "encnet" for context encoding module 
         - "eca" for Efficient channel attention for deep convolutional neural networks
         - "ge" for Gather-Excite
         - "gct" for Gated Channel Transformation
         - "srm" for Style-based Recalibration Module
         - "cbam" for Convolutional Block Attention Module
-        - "cat" for Learning to collaborate channel and spatial attention
+        - "cat" for Learning to collaborate channel and temporal attention
         from multi-information fusion
-        - "catlite" for Learning to collaborate channel and spatial attention
-        from multi-information fusion (lite version)
+        - "catlite" for Learning to collaborate channel attention
+        from multi-information fusion (lite version, cat w/o temporal attention)
 
     in_channels : int, default=16
         The number of input channels to the block.
@@ -119,7 +119,7 @@ class _ChannelAttentionBlock(nn.Module):
         The sequence length, used in certain types of attention mechanisms to process
         temporal dimensions.
     freq_idx : int, default=0
-        An index used in attention mechanisms that process frequency dimensions.
+        DCT index used in fca attention mechanism.
     n_codewords : int, default=4
         The number of codewords (clusters) used in attention mechanisms that employ
         quantization or clustering strategies.
@@ -145,7 +145,7 @@ class _ChannelAttentionBlock(nn.Module):
 
     Examples
     --------
-    >>> channel_attention_block = _ChannelAttentionBlock(attention_mode='cbam', in_channels=16)
+    >>> channel_attention_block = _ChannelAttentionBlock(attention_mode='cbam', in_channels=16, reduction_rate=4, kernel_size=7)
     >>> x = torch.randn(1, 16, 64, 64)  # Example input tensor
     >>> output = channel_attention_block(x)
     The output tensor then can be further processed or used as input to another block.
@@ -210,9 +210,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     choices are available at the [Martin2023]_ and [MartinCode]_.
 
     The AttentionBaseNet architecture is composed of four modules:
-        - Input Block that performa a temporal convolution and a spatial
+        - Input Block that performs a temporal convolution and a spatial
         convolution.
-        - Channel Expansion that increases the number of spatial information.
+        - Channel Expansion that modifies the number of channels.
         - An attention block that performs channel attention with several
         options
         - ClassificationHead
@@ -254,7 +254,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             kernel_size: int = 9,
             extra_params: bool = False,
             chs_info=None,
-            sfreq=None,  # Check if we can replace freq_idx with this
+            sfreq=None,
     ):
         super(AttentionBaseNet, self).__init__()
 
