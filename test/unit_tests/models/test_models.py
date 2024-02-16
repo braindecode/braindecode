@@ -770,7 +770,7 @@ def test_model_trainable_parameters_biot(default_biot_params):
 
     biot = BIOT(**default_biot_params)
 
-    biot_encoder = biot.biot.parameters()
+    biot_encoder = biot.encoder.parameters()
     biot_classifier = biot.classifier.parameters()
 
     trainable_params_bio = sum(p.numel()
