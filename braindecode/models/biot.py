@@ -391,6 +391,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         self.hop_length = hop_length
         self.att_num_heads = att_num_heads
         self.n_layers = n_layers
+        self.return_feature = return_feature
         if (self.sfreq != 200) & (self.sfreq is not None):
             warn(
                 "This model has only been trained on a dataset with 200 Hz. "
