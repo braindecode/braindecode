@@ -145,7 +145,7 @@ class logm(torch.autograd.Function):
     """Matrix logarithm of a symmetric matrix.
 
     This class computes the matrix logarithm of a symmetric matrix X.
-    It also adapt the backpropagation according to the chain rule [1]_.
+    It also adapts the backpropagation according to the chain rule [1]_.
 
     Parameters
     ----------
@@ -177,7 +177,9 @@ class logm(torch.autograd.Function):
 
 
 class regm(torch.autograd.Function):
-    """Regularized matrix logarithm of a symmetric matrix.
+    """Rank deficient matrix logarithm of a symmetric matrix.
+
+    Also, known as Regulation in the SPD space.
 
     This class computes the regularized matrix logarithm of a symmetric matrix X.
     It also adapt the backpropagation according to the chain rule [1]_.
@@ -190,7 +192,7 @@ class regm(torch.autograd.Function):
     Returns
     -------
     torch.Tensor
-        Regularized matrix logarithm of X
+        Rank deficient matrix logarithm of X
 
     References
     ----------
@@ -221,6 +223,17 @@ def _modify_eig_forward(X, function_applied):
 
 
 def _modify_eig_backward(grad_output, s, U, s_modified, derivative, threshold=1e-4):
+    """
+    Backward pass of modified eigenvalue of symmetric matrix X.
+
+    Parameters
+    ----------
+    grad_output : torch.Tensor
+        Gradient of the loss with respect to the output of the forward pass
+    s: torch.Tensor
+
+    """
+
     """Backward pass of modified eigenvalue of symmetric matrix X."""
     # compute Loewner matrix
     denominator = s.unsqueeze(-1) - s.unsqueeze(-1).transpose(-1, -2)
