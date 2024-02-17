@@ -188,7 +188,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         )
 
         self.F2 = int(conv_block_depth_mult * conv_block_n_filters)
-        self.Tc = int(self.input_window_seconds * self.sfreq / (
+        self.Tc = int(self.n_times / (
                 conv_block_pool_size_1 * conv_block_pool_size_2))
         self.Tw = self.Tc - self.n_windows + 1
 

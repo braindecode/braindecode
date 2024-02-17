@@ -46,7 +46,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             n_chans=None,
             n_outputs=None,
             n_times=None,
-            final_pool_length=40,
+            final_pool_length='auto',
             n_first_filters=20,
             n_layers_per_block=2,
             first_filter_length=3,
