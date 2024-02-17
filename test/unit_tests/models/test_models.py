@@ -667,7 +667,7 @@ def sample_input():
 
 @pytest.fixture
 def model():
-    return EEGConformer(n_classes=2, n_channels=12)
+    return EEGConformer(n_classes=2, n_channels=12, n_times=1000)
 
 
 def test_model_creation(model):
@@ -678,7 +678,10 @@ def test_conformer_forward_pass(sample_input, model):
     output = model(sample_input)
     assert isinstance(output, torch.Tensor)
 
-    model_with_feature = EEGConformer(n_classes=2, n_channels=12, return_features=True)
+    model_with_feature = EEGConformer(n_outputs=2,
+                                      n_chans=12,
+                                      n_times=1000,
+                                      return_features=True)
     output = model_with_feature(sample_input)
 
     assert isinstance(output, tuple) and len(output) == 2
