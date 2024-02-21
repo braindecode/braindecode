@@ -180,7 +180,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         # get kwargs from signal:
         signal_kwargs = dict()
         # Using shape to work both with torch.tensor and numpy.array:
-        if isinstance(X, mne.BaseEpochs) or hasattr(X, 'shape'):
+        if isinstance(X, mne.BaseEpochs) or (hasattr(X, 'shape') and len(X.shape)>=2):
             if y is None:
                 raise ValueError("y must be specified if X is array-like.")
             signal_kwargs['n_outputs'] = self._get_n_outputs(y, classes)
