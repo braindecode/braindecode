@@ -179,9 +179,10 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             return
         # get kwargs from signal:
         signal_kwargs = dict()
-        if isinstance(X, mne.BaseEpochs) or isinstance(X, np.ndarray):
+        # Using shape to work both with torch.tensor and numpy.array:
+        if isinstance(X, mne.BaseEpochs) or (hasattr(X, 'shape') and len(X.shape)>=2):
             if y is None:
-                raise ValueError("y must be specified if X is a numpy array.")
+                raise ValueError("y must be specified if X is array-like.")
             signal_kwargs['n_outputs'] = self._get_n_outputs(y, classes)
             if isinstance(X, mne.BaseEpochs):
                 self.log.info("Using mne.Epochs to find signal-related parameters.")
@@ -189,7 +190,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 signal_kwargs["sfreq"] = X.info['sfreq']
                 signal_kwargs["chs_info"] = X.info['chs']
             else:
-                self.log.info("Using numpy array to find signal-related parameters.")
+                self.log.info("Using array-like to find signal-related parameters.")
                 signal_kwargs["n_times"] = X.shape[-1]
                 signal_kwargs["n_chans"] = X.shape[-2]
         elif is_dataset(X):
@@ -212,7 +213,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 signal_kwargs['n_outputs'] = self._get_n_outputs(y_target, classes)
         else:
             self.log.warning(
-                "Can only infer signal shape of numpy arrays or and Datasets, "
+                "Can only infer signal shape of array-like and Datasets, "
                 f"got {type(X)!r}."
             )
             return
@@ -291,7 +292,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
 
           * mne.Epochs: ``n_times``, ``n_chans``, ``n_outputs``, ``chs_info``,
             ``sfreq``, ``input_window_seconds``
-          * numpy array: ``n_times``, ``n_chans``, ``n_outputs``
+          * array-like: ``n_times``, ``n_chans``, ``n_outputs``
           * WindowsDataset with ``targets_from='metadata'``
             (or BaseConcatDataset of such datasets): ``n_times``, ``n_chans``, ``n_outputs``
           * other Dataset: ``n_times``, ``n_chans``
@@ -345,7 +346,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
 
           * mne.Epochs: ``n_times``, ``n_chans``, ``n_outputs``, ``chs_info``,
             ``sfreq``, ``input_window_seconds``
-          * numpy array: ``n_times``, ``n_chans``, ``n_outputs``
+          * array-like: ``n_times``, ``n_chans``, ``n_outputs``
           * WindowsDataset with ``targets_from='metadata'``
             (or BaseConcatDataset of such datasets): ``n_times``, ``n_chans``, ``n_outputs``
           * other Dataset: ``n_times``, ``n_chans``
