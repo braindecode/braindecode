@@ -86,6 +86,8 @@ def test_model_integration(model_name, required_params, signal_params):
     """
     Verifies that all models can be initialized with all their parameters at
     default, except eventually the signal-related parameters.
+
+    This lightly tests if the models will be compatible with the skorch wrappers.
     """
     # Verify that the parameters are correct:
     model_class = models_dict[model_name]
@@ -237,7 +239,11 @@ def concat_windows_dataset(concat_ds_targets):
 
 
 @pytest.mark.parametrize("model_name", models_dict.keys())
-def test_model_list(model_name, concat_windows_dataset):
+def test_integration_full(model_name, concat_windows_dataset):
+    '''
+    Full test of the models compatibility with the skorch wrappers.
+    In particular, it tests if the wrappers can set the signal-related parameters.
+    '''
     model_class = models_dict[model_name]
 
     LEARNING_RATE = 0.0625 * 0.01
