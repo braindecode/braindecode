@@ -18,80 +18,6 @@ from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import create_windows_from_events
 
-bnci_kwargs = {
-    "n_sessions": 2,
-    "n_runs": 3,
-    "n_subjects": 9,
-    "paradigm": "imagery",
-    "duration": 3869,
-    "sfreq": 250,
-    "event_list": ("left", "right"),
-    "channels": ("C5", "C3", "C1"),
-}
-# Generating the channel info
-chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
-# Generating the signal parameters
-default_signal_params = dict(
-    n_times=1000,
-    sfreq=250,
-    n_outputs=2,
-    chs_info=chs_info,
-)
-
-
-@pytest.fixture(scope="module")
-def concat_ds_targets():
-    raws, description = fetch_data_with_moabb(
-        dataset_name="FakeDataset", subject_ids=1, dataset_kwargs=bnci_kwargs
-    )
-
-    events, _ = mne.events_from_annotations(raws[0])
-    targets = events[:, -1] - 1
-    ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
-    concat_ds = BaseConcatDataset(ds)
-    return concat_ds, targets
-
-
-@pytest.fixture(scope="module")
-def concat_windows_dataset(concat_ds_targets):
-    concat_ds, targets = concat_ds_targets
-    windows_ds = create_windows_from_events(
-        concat_ds=concat_ds,
-        trial_start_offset_samples=0,
-        trial_stop_offset_samples=0,
-        window_size_samples=750,
-        window_stride_samples=100,
-        drop_last_window=False,
-    )
-
-    return windows_ds
-
-
-@pytest.mark.parametrize("model_name", models_dict.keys())
-def test_model_list(model_name, concat_windows_dataset):
-
-    model_class = models_dict[model_name]
-
-    LEARNING_RATE = 0.0625 * 0.01
-    BATCH_SIZE = 2
-    EPOCH = 1
-    seed = 2409
-    valid_split = 0.2
-
-    clf = EEGClassifier(
-        module=model_class,
-        optimizer=torch.optim.Adam,
-        optimizer__lr=LEARNING_RATE,
-        batch_size=BATCH_SIZE,
-        max_epochs=EPOCH,
-        classes=[0, 1],
-        train_split=ValidSplit(valid_split, random_state=seed),
-        verbose=0,
-    )
-
-    clf.fit(X=concat_windows_dataset)
-
-
 ################################################################
 # Test cases for models
 #
@@ -149,7 +75,7 @@ def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_test_cases)
     all_models = set(models_dict.keys())
     assert (
-        all_models == models_tested
+            all_models == models_tested
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
@@ -228,8 +154,8 @@ def test_model_integration(model_name, required_params, signal_params):
             )
         )
     if (
-        "n_times" not in required_params
-        and "input_window_seconds" not in required_params
+            "n_times" not in required_params
+            and "input_window_seconds" not in required_params
     ):
         time_kwargs.append(
             dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
@@ -239,9 +165,9 @@ def test_model_integration(model_name, required_params, signal_params):
             dict(n_times=sp["n_times"], sfreq=None, input_window_seconds=None)
         )
     if (
-        "n_times" not in required_params
-        and "sfreq" not in required_params
-        and "input_window_seconds" not in required_params
+            "n_times" not in required_params
+            and "sfreq" not in required_params
+            and "input_window_seconds" not in required_params
     ):
         time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
     model_kwargs_list = [
@@ -259,3 +185,76 @@ def test_model_integration(model_name, required_params, signal_params):
         # test output shape
         assert out.shape[:2] == (batch_size, sp["n_outputs"])
         # We add a "[:2]" because some models return a 3D tensor.
+
+
+bnci_kwargs = {
+    "n_sessions": 2,
+    "n_runs": 3,
+    "n_subjects": 9,
+    "paradigm": "imagery",
+    "duration": 3869,
+    "sfreq": 250,
+    "event_list": ("left", "right"),
+    "channels": ("C5", "C3", "C1"),
+}
+# Generating the channel info
+chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
+# Generating the signal parameters
+default_signal_params = dict(
+    n_times=1000,
+    sfreq=250,
+    n_outputs=2,
+    chs_info=chs_info,
+)
+
+
+@pytest.fixture(scope="module")
+def concat_ds_targets():
+    raws, description = fetch_data_with_moabb(
+        dataset_name="FakeDataset", subject_ids=1, dataset_kwargs=bnci_kwargs
+    )
+
+    events, _ = mne.events_from_annotations(raws[0])
+    targets = events[:, -1] - 1
+    ds = [BaseDataset(raws[i], description.iloc[i]) for i in range(3)]
+    concat_ds = BaseConcatDataset(ds)
+    return concat_ds, targets
+
+
+@pytest.fixture(scope="module")
+def concat_windows_dataset(concat_ds_targets):
+    concat_ds, targets = concat_ds_targets
+    windows_ds = create_windows_from_events(
+        concat_ds=concat_ds,
+        trial_start_offset_samples=0,
+        trial_stop_offset_samples=0,
+        window_size_samples=750,
+        window_stride_samples=100,
+        drop_last_window=False,
+    )
+
+    return windows_ds
+
+
+@pytest.mark.parametrize("model_name", models_dict.keys())
+def test_model_list(model_name, concat_windows_dataset):
+    model_class = models_dict[model_name]
+
+    LEARNING_RATE = 0.0625 * 0.01
+    BATCH_SIZE = 2
+    EPOCH = 1
+    seed = 2409
+    valid_split = 0.2
+
+    clf = EEGClassifier(
+        module=model_class,
+        optimizer=torch.optim.Adam,
+        optimizer__lr=LEARNING_RATE,
+        batch_size=BATCH_SIZE,
+        max_epochs=EPOCH,
+        classes=[0, 1],
+        train_split=ValidSplit(valid_split, random_state=seed),
+        verbose=0,
+    )
+
+    clf.fit(X=concat_windows_dataset)
