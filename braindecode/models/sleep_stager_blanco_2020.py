@@ -52,7 +52,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             n_chans=None,
             sfreq=None,
             n_conv_chans=20,
-            input_window_seconds=30,
+            input_window_seconds=None,
             n_outputs=5,
             n_groups=2,
             max_pool_size=2,
