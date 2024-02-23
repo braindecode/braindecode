@@ -8,6 +8,7 @@ from copy import deepcopy
 
 import mne
 import torch
+import numpy as np
 import pytest
 
 from skorch.dataset import ValidSplit
@@ -81,6 +82,24 @@ default_signal_params = dict(
 )
 
 
+def get_epochs_y(signal_params=None, n_epochs=10) -> tuple[mne.Epochs, np.ndarray]:
+    """
+    Generate a random dataset with the given signal parameters.
+    """
+    sp = deepcopy(default_signal_params)
+    if signal_params is not None:
+        sp.update(signal_params)
+    X = np.random.randn(n_epochs, len(sp["chs_info"]), sp["n_times"])
+    y = np.random.randint(sp['n_outputs'], size=n_epochs)
+    info = mne.create_info(
+        ch_names=[c['ch_name'] for c in sp["chs_info"]],
+        sfreq=sp["sfreq"],
+        ch_types=["eeg"] * len(sp["chs_info"]),
+    )
+    epo = mne.EpochsArray(X, info)
+    return epo, y
+
+
 def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_test_cases)
     all_models = set(models_dict.keys())
@@ -122,11 +141,8 @@ def test_model_integration(model_name, required_params, signal_params):
 
     # create input data
     batch_size = 5
-    X = torch.randn(
-        batch_size,
-        len(sp["chs_info"]),
-        sp["n_times"],
-    )
+    epo, _ = get_epochs_y(sp, n_epochs=batch_size)
+    X = torch.tensor(epo.get_data(), dtype=torch.float32)
 
     # List possible model kwargs:
     output_kwargs = []
