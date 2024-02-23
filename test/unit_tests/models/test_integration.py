@@ -137,7 +137,7 @@ models_test_cases = [
     (
         "SleepStagerEldele2021",
         ["n_outputs", "n_times", "sfreq"],
-        dict(sfreq=100, n_times=3000, chs_info=[dict(ch_name="C1}", kind="eeg")]),
+        dict(sfreq=100, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
     ),  # 1 channel
     ("TCN", ["n_chans", "n_outputs"], None),
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
