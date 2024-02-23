@@ -70,6 +70,16 @@ models_test_cases = [
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
 ]
 
+# Generating the channel info
+chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
+# Generating the signal parameters
+default_signal_params = dict(
+    n_times=1000,
+    sfreq=250,
+    n_outputs=2,
+    chs_info=chs_info,
+)
+
 
 def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_test_cases)
@@ -199,15 +209,6 @@ bnci_kwargs = {
     "event_list": ("left", "right"),
     "channels": ("C5", "C3", "C1"),
 }
-# Generating the channel info
-chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
-# Generating the signal parameters
-default_signal_params = dict(
-    n_times=1000,
-    sfreq=250,
-    n_outputs=2,
-    chs_info=chs_info,
-)
 
 
 @pytest.fixture(scope="module")
