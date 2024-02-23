@@ -255,13 +255,16 @@ def concat_windows_dataset(concat_ds_targets):
     return windows_ds
 
 
-@pytest.mark.parametrize("model_name", models_dict.keys())
-def test_integration_full(model_name, concat_windows_dataset):
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", models_test_cases
+)
+def test_model_integration_full(model_name, required_params, signal_params):
     '''
     Full test of the models compatibility with the skorch wrappers.
-    In particular, it tests if the wrappers can set the signal-related parameters.
+    In particular, it tests if the wrappers can set the signal-related parameters
+    and if the model can be found by name.
     '''
-    model_class = models_dict[model_name]
+    epo, y = get_epochs_y(signal_params, n_epochs=10)
 
     LEARNING_RATE = 0.0625 * 0.01
     BATCH_SIZE = 2
@@ -270,14 +273,14 @@ def test_integration_full(model_name, concat_windows_dataset):
     valid_split = 0.2
 
     clf = EEGClassifier(
-        module=model_class,
+        module=model_name,
         optimizer=torch.optim.Adam,
         optimizer__lr=LEARNING_RATE,
         batch_size=BATCH_SIZE,
         max_epochs=EPOCH,
-        classes=[0, 1],
+        # classes=[0, 1],
         train_split=ValidSplit(valid_split, random_state=seed),
         verbose=0,
     )
 
-    clf.fit(X=concat_windows_dataset)
+    clf.fit(X=epo, y=y)
