@@ -204,7 +204,6 @@ def concat_windows_dataset(concat_ds_targets):
 
     return windows_ds
 
-
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
 )
@@ -213,7 +212,24 @@ def test_model_integration_full(model_name, required_params, signal_params):
     Full test of the models compatibility with the skorch wrappers.
     In particular, it tests if the wrappers can set the signal-related parameters
     and if the model can be found by name.
+
+    Parameters
+    ----------
+    model_name : str
+        The name of the model to test.
+    required_params : list[str]
+        The signal-related parameters that are needed to initialize the model.
+    signal_params : dict | None
+        The characteristics of the signal that should be passed to the model tested
+        in case the default_signal_params are not compatible with this model.
+        The keys of this dictionary can only be among those of default_signal_params.
+
     """
+    model_cropped_only = ["TCN", "HybridNet"]
+
+    if model_name in model_cropped_only:
+        pytest.skip(f"Skipping {model_name} as it only supports cropped datasets")
+
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
     LEARNING_RATE = 0.0625 * 0.01
