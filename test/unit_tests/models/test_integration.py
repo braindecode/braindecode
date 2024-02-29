@@ -30,7 +30,7 @@ default_signal_params = dict(
 )
 
 
-def get_epochs_y(signal_params=None, n_epochs=10) -> tuple[mne.Epochs, np.ndarray]:
+def get_epochs_y(signal_params=None, n_epochs=10):
     """
     Generate a random dataset with the given signal parameters.
     """
