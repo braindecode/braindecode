@@ -19,7 +19,6 @@ from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import create_windows_from_events
 
-
 # Generating the channel info
 chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
 # Generating the signal parameters
@@ -39,9 +38,9 @@ def get_epochs_y(signal_params=None, n_epochs=10) -> tuple[mne.Epochs, np.ndarra
     if signal_params is not None:
         sp.update(signal_params)
     X = np.random.randn(n_epochs, len(sp["chs_info"]), sp["n_times"])
-    y = np.random.randint(sp['n_outputs'], size=n_epochs)
+    y = np.random.randint(sp["n_outputs"], size=n_epochs)
     info = mne.create_info(
-        ch_names=[c['ch_name'] for c in sp["chs_info"]],
+        ch_names=[c["ch_name"] for c in sp["chs_info"]],
         sfreq=sp["sfreq"],
         ch_types=["eeg"] * len(sp["chs_info"]),
     )
@@ -53,7 +52,7 @@ def test_completeness__models_test_cases():
     models_tested = set(x[0] for x in models_mandatory_parameters)
     all_models = set(models_dict.keys())
     assert (
-            all_models == models_tested
+        all_models == models_tested
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
@@ -89,15 +88,17 @@ def test_model_integration(model_name, required_params, signal_params):
     sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
 
     # create input data
-    batch_size = 5
+    batch_size = 3
     epo, _ = get_epochs_y(sp, n_epochs=batch_size)
     X = torch.tensor(epo.get_data(), dtype=torch.float32)
 
     # List possible model kwargs:
     output_kwargs = []
     output_kwargs.append(dict(n_outputs=sp["n_outputs"]))
+
     if "n_outputs" not in required_params:
         output_kwargs.append(dict(n_outputs=None))
+
     channel_kwargs = []
     channel_kwargs.append(dict(chs_info=sp["chs_info"], n_chans=None))
     if "chs_info" not in required_params:
@@ -131,8 +132,8 @@ def test_model_integration(model_name, required_params, signal_params):
             )
         )
     if (
-            "n_times" not in required_params
-            and "input_window_seconds" not in required_params
+        "n_times" not in required_params
+        and "input_window_seconds" not in required_params
     ):
         time_kwargs.append(
             dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
@@ -142,9 +143,9 @@ def test_model_integration(model_name, required_params, signal_params):
             dict(n_times=sp["n_times"], sfreq=None, input_window_seconds=None)
         )
     if (
-            "n_times" not in required_params
-            and "sfreq" not in required_params
-            and "input_window_seconds" not in required_params
+        "n_times" not in required_params
+        and "sfreq" not in required_params
+        and "input_window_seconds" not in required_params
     ):
         time_kwargs.append(dict(n_times=None, sfreq=None, input_window_seconds=None))
     model_kwargs_list = [
@@ -208,11 +209,11 @@ def concat_windows_dataset(concat_ds_targets):
     "model_name, required_params, signal_params", models_mandatory_parameters
 )
 def test_model_integration_full(model_name, required_params, signal_params):
-    '''
+    """
     Full test of the models compatibility with the skorch wrappers.
     In particular, it tests if the wrappers can set the signal-related parameters
     and if the model can be found by name.
-    '''
+    """
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
     LEARNING_RATE = 0.0625 * 0.01
@@ -227,7 +228,7 @@ def test_model_integration_full(model_name, required_params, signal_params):
         optimizer__lr=LEARNING_RATE,
         batch_size=BATCH_SIZE,
         max_epochs=EPOCH,
-        # classes=[0, 1],
+        classes=[0, 1],
         train_split=ValidSplit(valid_split, random_state=seed),
         verbose=0,
     )
