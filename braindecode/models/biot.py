@@ -378,6 +378,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         n_chans=None,
         chs_info=None,
         n_times=None,
+        input_window_seconds=None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -385,6 +386,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             chs_info=chs_info,
             n_times=n_times,
             sfreq=sfreq,
+            input_window_seconds=input_window_seconds,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
         self.emb_size = emb_size
