@@ -13,63 +13,12 @@ import pytest
 
 from skorch.dataset import ValidSplit
 
-from braindecode.models.util import models_dict
+from braindecode.models.util import models_dict, models_mandatory_parameters
 from braindecode import EEGClassifier
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import create_windows_from_events
 
-################################################################
-# Test cases for models
-#
-# This list should be updated whenever a new model is added to
-# braindecode (otherwise `test_completeness__models_test_cases`
-# will fail).
-# Each element in the list should be a tuple with structure
-# (model_class, required_params, signal_params), such that:
-#
-# model_name: str
-#   The name of the class of the model to be tested.
-# required_params: list[str]
-#   The signal-related parameters that are needed to initialize
-#   the model.
-# signal_params: dict | None
-#   The characteristics of the signal that should be passed to
-#   the model tested in case the default_signal_params are not
-#   compatible with this model.
-#   The keys of this dictionary can only be among those of
-#   default_signal_params.
-################################################################
-models_test_cases = [
-    ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
-    ("DeepSleepNet", ["n_outputs"], None),
-    ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGInception", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
-    ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
-    ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
-    ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGNetv1", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGNetv4", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("HybridNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
-    (
-        "SleepStagerBlanco2020",
-        ["n_chans", "n_outputs", "n_times"],
-        # n_chans dividable by n_groups=2:
-        dict(chs_info=[dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 5)]),
-    ),
-    ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
-    (
-        "SleepStagerEldele2021",
-        ["n_outputs", "n_times", "sfreq"],
-        dict(sfreq=100, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
-    ),  # 1 channel
-    ("TCN", ["n_chans", "n_outputs"], None),
-    ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
-]
 
 # Generating the channel info
 chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
@@ -101,7 +50,7 @@ def get_epochs_y(signal_params=None, n_epochs=10) -> tuple[mne.Epochs, np.ndarra
 
 
 def test_completeness__models_test_cases():
-    models_tested = set(x[0] for x in models_test_cases)
+    models_tested = set(x[0] for x in models_mandatory_parameters)
     all_models = set(models_dict.keys())
     assert (
             all_models == models_tested
@@ -109,7 +58,7 @@ def test_completeness__models_test_cases():
 
 
 @pytest.mark.parametrize(
-    "model_name, required_params, signal_params", models_test_cases
+    "model_name, required_params, signal_params", models_mandatory_parameters
 )
 def test_model_integration(model_name, required_params, signal_params):
     """
@@ -256,7 +205,7 @@ def concat_windows_dataset(concat_ds_targets):
 
 
 @pytest.mark.parametrize(
-    "model_name, required_params, signal_params", models_test_cases
+    "model_name, required_params, signal_params", models_mandatory_parameters
 )
 def test_model_integration_full(model_name, required_params, signal_params):
     '''
