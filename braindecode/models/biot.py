@@ -188,7 +188,7 @@ class _BIOTEncoder(nn.Module):
         self.hop_length = hop_length
 
         self.patch_embedding = _PatchFrequencyEmbedding(
-            emb_size=emb_size, n_freq=self.n_fft // 2 + 1
+            emb_size=emb_size, n_freq=int(self.n_fft // 2 + 1)
         )
         self.transformer = LinearAttentionTransformer(
             dim=emb_size,
