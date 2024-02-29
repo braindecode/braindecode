@@ -23,7 +23,11 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+
+- Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
+
 - Adding :class:`braindecode.models.BIOT` (:gh:`428` by `Bruno Aristimunha`_)
+
 
 Bugs
 ~~~~

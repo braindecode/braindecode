@@ -184,11 +184,11 @@ class _BIOTEncoder(nn.Module):
     ):
         super().__init__()
 
-        self.n_fft = n_fft
+        self.n_fft = int(n_fft)
         self.hop_length = hop_length
 
         self.patch_embedding = _PatchFrequencyEmbedding(
-            emb_size=emb_size, n_freq=self.n_fft // 2 + 1
+            emb_size=emb_size, n_freq=int(self.n_fft // 2 + 1)
         )
         self.transformer = LinearAttentionTransformer(
             dim=emb_size,
@@ -227,7 +227,7 @@ class _BIOTEncoder(nn.Module):
         """
         spectral = torch.stft(
             input=sample.squeeze(1),
-            n_fft=self.n_fft,
+            n_fft=int(self.n_fft),
             hop_length=self.hop_length,
             center=False,
             onesided=True,
@@ -378,12 +378,14 @@ class BIOT(EEGModuleMixin, nn.Module):
         n_chans=None,
         chs_info=None,
         n_times=None,
+        input_window_seconds=None,
     ):
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
             chs_info=chs_info,
             n_times=n_times,
+            input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
@@ -405,7 +407,14 @@ class BIOT(EEGModuleMixin, nn.Module):
                 + "embedding size or a smaller number of channels.",
                 UserWarning,
             )
-
+        if self.hop_length > self.sfreq:
+            warn(
+                "The hop length is larger than the sampling frequency. "
+                + "This may cause aliasing. Consider using a smaller "
+                  "hop length.",
+                UserWarning,
+            )
+            hop_length = self.sfreq // 2
         self.encoder = _BIOTEncoder(
             emb_size=emb_size,
             att_num_heads=att_num_heads,
