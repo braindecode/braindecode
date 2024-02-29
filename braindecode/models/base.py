@@ -166,7 +166,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                 self._input_window_seconds is not None and
                 self._n_times is not None
         ):
-            return self._n_times / self._input_window_seconds
+            return self._n_times // self._input_window_seconds
         elif self._sfreq is None:
             raise ValueError(
                 'sfreq could not be inferred. '
