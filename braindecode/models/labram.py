@@ -23,34 +23,33 @@ class Labram(EEGModuleMixin, nn.Module):
     Large Brain Model for Learning Generic Representations with Tremendous
     EEG Data in BCI from [Jiang2024]_
 
-    Labram is a large language model for biosignal classification. This an
-    adaptation of the code [Code2024]_ from the Labram model.
+    This an **adaptation** of the code [Code2024]_ from the Labram model.
 
+    The model is transformer architecture with **strong** inspiration from
+    BEiTv2 [BeiTv2]_.
 
-    The model is
-    a wrapper around the
+    The models can be used in two modes:
+    - Neural Tokenizor: The model will be used to extract the embedding
+    representations that can be used in VQSNP model.
+    - Neural Decoder: The model will be used to extract the ampliture and
+    phase outputs, to be trained in a VQVAE model.
 
+    The braindecode's modification is to allow the model to be used in
+    with an input shape of (batch, n_chans, n_times), if neural tokenizer
+    equals True. The original implementation uses (batch, n_chans, n_patches,
+    patch_size) as input with static segmentation of the input data.
 
-    `BIOTEncoder` and `ClassificationHead` modules.
-
-    It is designed for N-dimensional biosignal data such as EEG, ECG, etc.
-    The method was proposed by Yang et al. [Yang2023]_ and the code is
-    available at [Code2023]_
-
-    The model is trained with a contrastive loss on large EEG datasets
-    TUH Abnormal EEG Corpus with 400K samples and Sleep Heart Health Study
-    5M. Here, we only provide the model architecture, not the pre-trained
-    weights or contrastive loss training.
-
-    The architecture is based on the `LinearAttentionTransformer` and
-    `PatchFrequencyEmbedding` modules.
-    The `BIOTEncoder` is a transformer that takes the input data and outputs
-    a fixed-size representation of the input data. More details are
-    present in the `BIOTEncoder` class.
-
-    The `ClassificationHead` is an ELU activation layer, followed by a simple
-    linear layer that takes the output of the `BIOTEncoder` and outputs
-    the classification probabilities.
+    The models have the following sequence of steps:
+    if neural tokenizer:
+        - SegmentPatch: Segment the input data in patches;
+        - TemporalConv: Apply a temporal convolution to the segmented data;
+    else:
+        - PatchEmbed: Apply a patch embedding to the input data;
+    - Residual adding cls, temporal and position embeddings (optional) on the
+    data;
+    - WindowsAttentionBlock: Apply a windows attention block to the data;
+    - LayerNorm: Apply layer normalization to the data;
+    - Linear: An head linear layer to transformer the data into classes.
 
     .. versionadded:: 0.9
 
@@ -82,6 +81,9 @@ class Labram(EEGModuleMixin, nn.Module):
        Large Brain Model for Learning Generic Representations with Tremendous
        EEG Data in BCI. GitHub https://github.com/935963004/LaBraM
        (accessed 2024-03-02)
+    .. [BeiTv2] Zhiliang Peng, Li Dong, Hangbo Bao, Qixiang Ye, Furu Wei. 2024.
+       BEiT v2: Masked Image Modeling with Vector-Quantized Visual Tokenizers.
+       arXiv:2208.06366 [cs.CV]
     """
 
     def __init__(
