@@ -215,5 +215,6 @@ models_mandatory_parameters = [
     ("TCN", ["n_chans", "n_outputs"], None),
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
-    ("BIOT", ["n_chans", "n_outputs", "sfreq"], None)
+    ("BIOT", ["n_chans", "n_outputs", "sfreq"], None),
+    ("Labram", ["n_chans", "n_outputs", "n_times"], None),
 ]
