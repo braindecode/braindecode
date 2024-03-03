@@ -88,9 +88,12 @@ class Labram(EEGModuleMixin, nn.Module):
 
     def __init__(
             self,
-            n_times=1600,
-            n_chans=64,
-            n_outputs=2,
+            n_times=None,
+            n_outputs=None,
+            chs_info=None,
+            n_chans=None,
+            sfreq=None,
+            input_window_seconds=None,
             patch_size=200,
             embed_dim=200,
             in_channels=1,
@@ -111,9 +114,6 @@ class Labram(EEGModuleMixin, nn.Module):
             init_scale=0.001,
             neural_tokenizer=True,
             attn_head_dim=None,
-            chs_info=None,
-            sfreq=None,
-            input_window_seconds=None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -125,7 +125,6 @@ class Labram(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        super().__init__()
         self.patch_size = patch_size
         self.n_path = self.n_times // patch_size
         self.num_features = self.embed_dim = embed_dim
