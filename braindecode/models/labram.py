@@ -30,10 +30,8 @@ class Labram(EEGModuleMixin, nn.Module):
     BEiTv2 [BeiTv2]_.
 
     The models can be used in two modes:
-    - Neural Tokenizor: The model will be used to extract the embedding
-    representations that can be used in VQSNP model.
-    - Neural Decoder: The model will be used to extract the ampliture and
-    phase outputs, to be trained in a VQVAE model.
+        - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
+        - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
 
     The braindecode's modification is to allow the model to be used in
     with an input shape of (batch, n_chans, n_times), if neural tokenizer
@@ -44,13 +42,16 @@ class Labram(EEGModuleMixin, nn.Module):
     if neural tokenizer:
         - SegmentPatch: Segment the input data in patches;
         - TemporalConv: Apply a temporal convolution to the segmented data;
+        - Residual adding cls, temporal and position embeddings (optional);
+        - WindowsAttentionBlock: Apply a windows attention block to the data;
+        - LayerNorm: Apply layer normalization to the data;
+        - Linear: An head linear layer to transformer the data into classes.
     else:
         - PatchEmbed: Apply a patch embedding to the input data;
-    - Residual adding cls, temporal and position embeddings (optional) on the
-    data;
-    - WindowsAttentionBlock: Apply a windows attention block to the data;
-    - LayerNorm: Apply layer normalization to the data;
-    - Linear: An head linear layer to transformer the data into classes.
+        - Residual adding cls, temporal and position embeddings (optional);
+        - WindowsAttentionBlock: Apply a windows attention block to the data;
+        - LayerNorm: Apply layer normalization to the data;
+        - Linear: An head linear layer to transformer the data into classes.
 
     .. versionadded:: 0.9
 
