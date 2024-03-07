@@ -489,7 +489,7 @@ class TemporalConv(nn.Module):
         self.act_layer_3 = act_layer()
 
         self.transpose_temporal_channel = Rearrange(
-            "Batch C NA T -> Batch NA (T C)")
+            "Batch Ch NumSeq patchSize -> Batch NumSeq (patchSize Ch)")
 
     def forward(self, x):
         """
