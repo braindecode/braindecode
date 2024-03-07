@@ -56,12 +56,6 @@ class Labram(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_times : int
-        The number of time points in the input data.
-    n_chans : int
-        The number of channels in the input data.
-    n_outputs : int
-        The number of classes for the classification head.
     patch_size : int
         The size of the patch to be used in the patch embedding.
     embed_dim : int
@@ -70,8 +64,41 @@ class Labram(EEGModuleMixin, nn.Module):
         The number of convolutional input channels.
     out_channels : int
         The number of convolutional output channels.
-
-
+    depth :  int (default=12)
+        The number of attention layers of the model.
+    num_heads : int (default=10)
+        The number of attention heads.
+    mlp_ratio : float (default=4.0)
+        The expansion ratio of the mlp layer
+    qkv_bias :  bool (default=False)
+        If True, add a learnable bias to the query, key, and value tensors.
+    qk_norm : Pytorch Normalize layer (default=None)
+        If not None, apply LayerNorm to the query and key tensors
+    qk_scale : float (default=None)
+        If not None, use this value as the scale factor. If None,
+        use head_dim**-0.5, where head_dim = dim // num_heads.
+    drop_rate : float (default=0.0)
+        Dropout rate for the attention weights.
+    attn_drop_rate : float (default=0.0)
+        Dropout rate for the attention weights.
+    drop_path_rate : float (default=0.0)
+        Dropout rate for the attention weights used on DropPath.
+    norm_layer : Pytorch Normalize layer (default=nn.LayerNorm)
+        The normalization layer to be used.
+    init_values : float (default=None)
+        If not None, use this value to initialize the gamma_1 and gamma_2
+        parameters.
+    use_abs_pos_emb : bool (default=True)
+        If True, use absolute position embedding.
+    use_mean_pooling : bool (default=True)
+        If True, use mean pooling.
+    init_scale : float (default=0.001)
+        The initial scale to be used in the parameters of the model.
+    neural_tokenizer : bool (default=True)
+        The model can be used in two modes: Neural Tokenizor or Neural Decoder.
+    attn_head_dim : bool (default=None)
+        The head dimension to be used in the attention layer, to be used only
+        during pre-training.
     References
     ----------
     .. [Jiang2024] Wei-Bang Jiang, Li-Ming Zhao, Bao-Liang Lu. 2024, May.
