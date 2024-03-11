@@ -6,15 +6,26 @@ import torch
 
 
 def rescale_parameter(param, layer_id):
-    """
+    """ Recaling the l-th transformer layer.
+
     Rescales the parameter tensor by the inverse square root of the layer id.
-    Made inplace.
+    Made inplace. :math:`\frac{1}{\sqrt{2 \cdot \text{layer\_id}}}` [Beit2022]
+
+    In the labram, this is used to rescale the output matrices
+    (i.e., the last linear projection within each sub-layer) of the
+    self-attention module.
 
     Parameters
     ----------
-    param: torch.Tensor
+    param: :class:`torch.Tensor`
+        tensor to be rescaled
     layer_id: int
+        layer id in the neural network
 
+    References
+    ----------
+    [Beit2022] Hangbo Bao, Li Dong, Songhao Piao, Furu We (2022). BEIT: BERT
+    Pre-Training of Image Transformers.
     """
     param.div_(math.sqrt(2.0 * layer_id))
 
