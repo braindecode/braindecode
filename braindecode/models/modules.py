@@ -359,8 +359,7 @@ class CombinedConv(nn.Module):
             x, weight=combined_weight, bias=bias, stride=(1, 1)
         )
 
-
-class MLP(nn.Module):
+class MLP(nn.Sequential):
     """ Multilayer Perceptron (MLP) with GELU activation and optional dropout.
 
     Also known as fully connected feedforward network, an MLP is a sequence of
@@ -377,8 +376,11 @@ class MLP(nn.Module):
     -----------
     in_features: int
         Number of input features.
-    hidden_features: int (default=None)
+    hidden_features: Sequential[int] (default=None)
         Number of hidden features, if None, set to in_features.
+        You can increase the size of MLP just passing more int in the
+        hidden features vector. The model size increase follow the
+        rule 2n (hidden layers)+2 (in and out layers)
     out_features: int (default=None)
         Number of output features, if None, set to in_features.
     act_layer: nn.GELU (default)
@@ -401,9 +403,12 @@ class MLP(nn.Module):
     ):
 
         self.normalization = nn.LayerNorm if normalize else lambda: None
-        self.in_feature = in_features
+        self.in_features = in_features
         self.out_features = out_features or self.in_features
-        self.hidden_features = hidden_features or self.in_features
+        if hidden_features:
+            self.hidden_features = hidden_features
+        else:
+            self.hidden_features = (self.in_features, self.in_features)
         self.activation = activation
 
         layers = []
@@ -413,7 +418,7 @@ class MLP(nn.Module):
             (*self.hidden_features, self.out_features),
         ):
             layers.extend([
-                nn.Linear(before, after),
+                nn.Linear(in_features=before, out_features=after),
                 self.activation(),
                 self.normalization(),
             ])
