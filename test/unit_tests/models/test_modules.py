@@ -9,8 +9,7 @@ from torch import nn
 
 from braindecode.models import TimeDistributed
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv
-
+from braindecode.models.modules import CombinedConv, MLP
 
 def test_time_distributed():
     n_channels = 4
@@ -111,3 +110,17 @@ def test_combined_conv(bias_time, bias_spat):
     diff = combined_out - sequential_out
     assert ((diff**2).mean().sqrt() / sequential_out.std()) < 1e-5
     assert (diff.abs().median() / sequential_out.abs().median()) < 1e-5
+
+
+@pytest.mark.parametrize(
+    "hidden_features", [None, (10, 10), (50, 50, 50), [10,10,10]]
+)
+def test_mlp_increase(hidden_features):
+
+    model = MLP(in_features=40, hidden_features=hidden_features)
+    if hidden_features is None:
+        assert len(model) == 6
+    else:
+        # For each layer that we add, the model
+        # increase with 2 layers + 2 initial layers (input, output layer)
+        assert len(model) == 2*(len(hidden_features)) + 2
