@@ -361,8 +361,17 @@ class CombinedConv(nn.Module):
 
 
 class MLP(nn.Module):
-    """
-    Multilayer Perceptron (MLP) with GELU activation and optional dropout.
+    """ Multilayer Perceptron (MLP) with GELU activation and optional dropout.
+
+    Also known as fully connected feedforward network, an MLP is a sequence of
+    non-linear parametric functions
+
+    .. math:: h_{i + 1} = a_{i + 1}(h_i W_{i + 1}^T + b_{i + 1}),
+
+    over feature vectors :math:`h_i`, with the input and output feature vectors
+    :math:`x = h_0` and :math:`y = h_L`, respectively. The non-linear functions
+    :math:`a_i` are called activation functions. The trainable parameters of an
+    MLP are its weights and biases :math:`\phi = \{W_i, b_i | i = 1, \dots, L\}`.
 
     Parameters:
     -----------
@@ -373,9 +382,12 @@ class MLP(nn.Module):
     out_features: int (default=None)
         Number of output features, if None, set to in_features.
     act_layer: nn.GELU (default)
-        Activation function.
+        The activation function constructor. If :py:`None`, use
+        :class:`torch.nn.GELU` instead.
     drop: float (default=0.0)
         Dropout rate.
+    normalize: bool (default=False)
+        Whether to apply layer normalization.
     """
 
     def __init__(
@@ -383,24 +395,36 @@ class MLP(nn.Module):
             in_features: int,
             hidden_features=None,
             out_features=None,
-            act_layer=nn.GELU,
+            activation=nn.GELU,
             drop=0.0,
+            normalize=False
     ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(p=drop)
 
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
+        self.normalization = nn.LayerNorm if normalize else lambda: None
+        self.in_feature = in_features
+        self.out_features = out_features or self.in_features
+        self.hidden_features = hidden_features or self.in_features
+        self.activation = activation
 
+        layers = []
+
+        for before, after in zip(
+            (self.in_features, *self.hidden_features),
+            (*self.hidden_features, self.out_features),
+        ):
+            layers.extend([
+                nn.Linear(before, after),
+                self.activation(),
+                self.normalization(),
+            ])
+
+        layers = layers[:-2]
+        layers.append(nn.Dropout(p=drop))
+
+        # Cleaning if we are not using the normalization layer
+        layers = filter(lambda layer: layer is not None, layers)
+
+        super().__init__(*layers)
 
 class DropPath(nn.Module):
     """Drop paths, also known as Stochastic Depth, per sample.
