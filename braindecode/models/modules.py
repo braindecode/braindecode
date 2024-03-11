@@ -359,6 +359,7 @@ class CombinedConv(nn.Module):
             x, weight=combined_weight, bias=bias, stride=(1, 1)
         )
 
+
 class MLP(nn.Sequential):
     """ Multilayer Perceptron (MLP) with GELU activation and optional dropout.
 
