@@ -1049,8 +1049,8 @@ class _WindowsAttentionBlock(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(
             in_features=dim,
-            hidden_features=mlp_hidden_dim,
-            act_layer=act_layer,
+            hidden_features=[mlp_hidden_dim],
+            activation=act_layer,
             drop=drop,
         )
 
