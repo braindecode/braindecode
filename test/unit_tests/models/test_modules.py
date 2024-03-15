@@ -7,9 +7,9 @@ import pytest
 import torch
 from torch import nn
 
-from braindecode.models import TimeDistributed
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv, MLP
+from braindecode.models.modules import CombinedConv, MLP, TimeDistributed
+from braindecode.models.labram import _SegmentPatch
 
 def test_time_distributed():
     n_channels = 4
@@ -124,3 +124,36 @@ def test_mlp_increase(hidden_features):
         # For each layer that we add, the model
         # increase with 2 layers + 2 initial layers (input, output layer)
         assert len(model) == 2*(len(hidden_features)) + 2
+
+
+def test_segm_trials_not_learning():
+    n_chans = 64
+    patch_size = 200
+    embed_dim = 200
+    n_segments = 5
+    X = []
+    for i in range(n_segments):
+        if i % 2 == 0:
+            X.append(torch.zeros((n_chans, patch_size)))
+        else:
+            X.append(torch.ones((n_chans, patch_size)))
+
+    n_times = patch_size*n_segments
+    X = torch.concat(X, dim=1)
+
+    assert n_times == X.shape[-1]
+
+    module = _SegmentPatch(n_times=n_times, n_chans=n_chans,
+                           patch_size=patch_size, embed_dim=embed_dim,
+                           learned_patcher=False)
+
+    with torch.no_grad():
+        # Adding batch dimension
+        X_split = module(X.unsqueeze(0))
+
+        assert X_split.shape[1] == n_chans
+        assert X_split.shape[2] == n_times // patch_size
+        assert X_split.shape[3] == embed_dim
+
+        assert torch.allclose(X_split[0, 0, 0].sum(), torch.zeros(1))
+        assert torch.equal(X_split[0, 0, 1].unique(), torch.ones(1))
