@@ -126,7 +126,7 @@ def test_mlp_increase(hidden_features):
         assert len(model) == 2*(len(hidden_features)) + 2
 
 
-def test_segm_trials_not_learning():
+def test_segm_patch_not_learning():
     n_chans = 64
     patch_size = 200
     embed_dim = 200
@@ -157,3 +157,22 @@ def test_segm_trials_not_learning():
 
         assert torch.allclose(X_split[0, 0, 0].sum(), torch.zeros(1))
         assert torch.equal(X_split[0, 0, 1].unique(), torch.ones(1))
+
+
+def test_segm_patch():
+    batch_size = 2
+    n_chans = 64
+    patch_size = 200
+    n_segments = 5
+    n_times = patch_size*n_segments
+    X = torch.zeros((batch_size, n_chans, n_times))
+
+    module = _SegmentPatch(n_times=n_times, n_chans=n_chans,
+                           patch_size=patch_size, embed_dim=patch_size,)
+
+    with torch.no_grad():
+        # Adding batch dimension
+        X_split = module(X)
+        assert X_split.shape[1] == n_chans
+        assert X_split.shape[2] == n_times // patch_size
+        assert X_split.shape[3] == patch_size
