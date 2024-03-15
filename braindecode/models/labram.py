@@ -643,7 +643,8 @@ class _SegmentPatch(nn.Module):
         Output tensor of shape (batch, n_chans, num_patches, embed_dim).
     """
 
-    def __init__(self, n_times=2000, patch_size=200, n_chans=1, embed_dim=200):
+    def __init__(self, n_times=2000, patch_size=200, n_chans=1, embed_dim=200,
+                 learned_patcher=True):
         super().__init__()
 
         self.n_times = n_times
@@ -651,6 +652,7 @@ class _SegmentPatch(nn.Module):
         self.n_patchs = n_times // patch_size
         self.embed_dim = embed_dim
         self.n_chans = n_chans
+        self.learned_patcher = learned_patcher
 
         self.patcher = nn.Conv1d(
             in_channels=1,
@@ -658,6 +660,7 @@ class _SegmentPatch(nn.Module):
             kernel_size=self.patch_size,
             stride=self.patch_size,
         )
+
         self.adding_extra_dim = Rearrange(
             pattern="batch nchans temporal -> (batch nchans) 1 temporal"
         )
@@ -682,25 +685,29 @@ class _SegmentPatch(nn.Module):
         # First, rearrange input to treat the channel dimension 'n_chs' as
         # separate 'dimension' in batch for Conv1d
         # This requires reshaping x to have a height of 1 for each EEG sample.
+        if self.learned_patcher:
 
-        x = self.adding_extra_dim(x)
+            x = self.adding_extra_dim(x)
 
-        # Apply the convolution along the temporal dimension
-        # Conv2d output shape: [(batch*n_chs), embed_dim, n_patches]
-        x = self.patcher(x)
+            # Apply the convolution along the temporal dimension
+            # Conv2d output shape: [(batch*n_chs), embed_dim, n_patches]
+            x = self.patcher(x)
 
-        # Now, rearrange output to get back to a batch-first format,
-        # combining embedded patches with channel information
-        # Assuming you want [batch, n_chs, n_patches, embed_dim]
-        # as output, which keeps channel information
-        # This treats each patch embedding as a feature alongside channels
-        x = rearrange(
-            x,
-            pattern="(batch nchans) embed npatchs -> " "batch nchans npatchs embed",
-            batch=batch_size,
-            nchans=self.n_chans,
-        )
-
+            # Now, rearrange output to get back to a batch-first format,
+            # combining embedded patches with channel information
+            # Assuming you want [batch, n_chs, n_patches, embed_dim]
+            # as output, which keeps channel information
+            # This treats each patch embedding as a feature alongside channels
+            x = rearrange(
+                x,
+                pattern="(batch nchans) embed npatchs -> " "batch nchans npatchs embed",
+                batch=batch_size,
+                nchans=self.n_chans,
+            )
+        else:
+            x = x.view(batch_size, self.n_chans,
+                       self.n_times//self.patch_size,
+                       self.patch_size)
         return x
 
 
