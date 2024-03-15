@@ -265,7 +265,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         for layer_id, layer in enumerate(self.blocks):
             rescale_parameter(layer.attn.proj.weight.data, layer_id + 1)
-            rescale_parameter(layer.mlp.fc2.weight.data, layer_id + 1)
+            rescale_parameter(layer.mlp[-2].weight.data, layer_id + 1)
 
         if isinstance(self.head, nn.Linear):
             self.head.weight.data.mul_(self.init_scale)
