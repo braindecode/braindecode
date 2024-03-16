@@ -173,6 +173,7 @@ def test_segm_patch():
     with torch.no_grad():
         # Adding batch dimension
         X_split = module(X)
+        assert X_split.shape[0] == batch_size
         assert X_split.shape[1] == n_chans
         assert X_split.shape[2] == n_times // patch_size
         assert X_split.shape[3] == patch_size
