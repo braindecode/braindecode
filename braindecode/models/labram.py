@@ -433,100 +433,6 @@ class Labram(EEGModuleMixin, nn.Module):
         x = self.head(x)
         return x
 
-    def forward_intermediate(self, x, layer_id=12, norm_output=False):
-        """
-        Forward the input data through the intermediate layers.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            The input data.
-        layer_id : int or list
-            The index of the layer to be returned.
-        norm_output : bool
-            Whether to return the output after the layer normalization.
-        """
-        x = self.patch_embed(x)
-        batch_size, _, _ = x.size()
-
-        # add the [CLS] token to the embedded patch tokens
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-        if self.position_embedding is not None:
-            pos_embed = self._adj_position_embedding(self.pos_embed,
-                                                     batch_size)
-            x = x + pos_embed
-
-        time_embed = self._adj_temporal_embedding(self.n_chans, batch_size)
-        x[:, 1:, :] += time_embed
-        x = self.pos_drop(x)
-
-        if isinstance(layer_id, list):
-            output_list = []
-            for layer_idx, blk in enumerate(self.blocks):
-                x = blk(x)
-                # use last norm for all intermediate layers
-                if layer_idx in layer_id:
-                    if norm_output:
-                        x_norm = self.fc_norm(self.norm(x[:, 1:]))
-                        output_list.append(x_norm)
-                    else:
-                        output_list.append(x[:, 1:])
-            return output_list
-        elif isinstance(layer_id, int):
-            for layer_idx, blk in enumerate(self.blocks):
-                if layer_idx < layer_id:
-                    x = blk(x)
-                elif layer_idx == layer_id:
-                    x = blk.norm1(x)
-                else:
-                    break
-            return x[:, 1:]
-        raise NotImplementedError(f"Not support for layer id is {layer_id}!")
-
-    def get_intermediate_layers(self, x, use_last_norm=False):
-        """
-        Get the intermediate layers of the model.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            The input data.
-        use_last_norm : bool
-            Whether to use the last layer normalization.
-
-        Returns
-        -------
-        feature
-            The list of the intermediate layers.
-        """
-        x = self.patch_embed(x)
-        batch_size, _, _ = x.size()
-
-        cls_tokens = self.cls_token.expand(
-            batch_size, -1, -1
-        )  # stole cls_tokens impl from Phil Wang, thanks
-        x = torch.cat((cls_tokens, x), dim=1)
-        if self.position_embedding is not None:
-            pos_embed = self._adj_position_embedding(self.pos_embed,
-                                                     batch_size)
-            x = x + pos_embed
-
-        temporal_embedding = self._adj_temporal_embedding(self.n_chans,
-                                                          batch_size)
-        x[:, 1:, :] += temporal_embedding
-        x = self.pos_drop(x)
-
-        features = []
-        for blk in self.blocks:
-            x = blk(x)
-            if use_last_norm:
-                features.append(self.norm(x))
-            else:
-                features.append(x)
-
-        return features
-
     def get_classifier(self):
         """
         Get the classifier of the model.
@@ -718,7 +624,7 @@ class _SegmentPatch(nn.Module):
             # This treats each patch embedding as a feature alongside channels
             x = rearrange(
                 x,
-                pattern="(batch nchans) embed npatchs -> " "batch nchans npatchs embed",
+                pattern="(batch nchans) embed npatchs -> batch nchans npatchs embed",
                 batch=batch_size,
                 nchans=self.n_chans,
             )
