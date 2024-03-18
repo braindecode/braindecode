@@ -61,17 +61,6 @@ def squeeze_final_output(x):
     return x
 
 
-def transpose_time_to_spat(x):
-    """Swap time and spatial dimensions.
-
-    Returns
-    -------
-    x: torch.Tensor
-        tensor in which last and first dimensions are swapped
-    """
-    return x.permute(0, 3, 2, 1)
-
-
 def drop_path(x,
               drop_prob: float = 0.0,
               training: bool = False,
