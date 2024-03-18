@@ -4,7 +4,7 @@ Authors: Wei-Bang Jiang
          Bruno Aristimunha <b.aristimunha@gmail.com>
 License: BSD 3 clause
 """
-
+from warnings import warn
 from collections import OrderedDict
 
 import torch
@@ -116,33 +116,33 @@ class Labram(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-        self,
-        n_times=None,
-        n_outputs=None,
-        chs_info=None,
-        n_chans=None,
-        sfreq=None,
-        input_window_seconds=None,
-        patch_size=200,
-        emb_size=200,
-        in_channels=1,
-        out_channels=8,
-        n_layers=12,
-        att_num_heads=10,
-        mlp_ratio=4.0,
-        qkv_bias=False,
-        qk_norm=None,
-        qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.0,
-        norm_layer=nn.LayerNorm,
-        init_values=None,
-        use_abs_pos_emb=True,
-        use_mean_pooling=True,
-        init_scale=0.001,
-        neural_tokenizer=True,
-        attn_head_dim=None,
+            self,
+            n_times=None,
+            n_outputs=None,
+            chs_info=None,
+            n_chans=None,
+            sfreq=None,
+            input_window_seconds=None,
+            patch_size=200,
+            emb_size=200,
+            in_channels=1,
+            out_channels=8,
+            n_layers=12,
+            att_num_heads=10,
+            mlp_ratio=4.0,
+            qkv_bias=False,
+            qk_norm=None,
+            qk_scale=None,
+            drop_rate=0.0,
+            attn_drop_rate=0.0,
+            drop_path_rate=0.0,
+            norm_layer=nn.LayerNorm,
+            init_values=None,
+            use_abs_pos_emb=True,
+            use_mean_pooling=True,
+            init_scale=0.001,
+            neural_tokenizer=True,
+            attn_head_dim=None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -160,7 +160,15 @@ class Labram(EEGModuleMixin, nn.Module):
         self.neural_tokenizer = neural_tokenizer
         self.init_scale = init_scale
 
-        # If you can use the model in Neural Tokenizer mode,
+        if neural_tokenizer and in_channels != 1:
+            warn("The model is in Neural Tokenizer mode, but the variable "+
+                 "`in_channels` is different from the default values."+
+                 "`in_channels` is only needed for the Neural Decoder mode."+
+                 "in_channels is not used in the Neural Tokenizer mode.",
+                 UserWarning,
+                 )
+            in_channels = 1
+            # If you can use the model in Neural Tokenizer mode,
         # temporal conv layer will be use over the patched dataset
         if neural_tokenizer:
             self.patch_embed = nn.Sequential(
@@ -239,7 +247,8 @@ class Labram(EEGModuleMixin, nn.Module):
                 for i in range(n_layers)
             ]
         )
-        self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.emb_size)
+        self.norm = nn.Identity() if use_mean_pooling else norm_layer(
+            self.emb_size)
         self.fc_norm = norm_layer(self.emb_size) if use_mean_pooling else None
         self.head = (
             nn.Linear(self.emb_size, self.n_outputs)
@@ -308,11 +317,11 @@ class Labram(EEGModuleMixin, nn.Module):
         return len(self.blocks)
 
     def forward_features(
-        self,
-        x,
-        input_chans=None,
-        return_patch_tokens=False,
-        return_all_tokens=False,
+            self,
+            x,
+            input_chans=None,
+            return_patch_tokens=False,
+            return_all_tokens=False,
     ):
         """
         Forward the features of the model.
@@ -335,7 +344,8 @@ class Labram(EEGModuleMixin, nn.Module):
             The output of the model.
         """
         if self.neural_tokenizer:
-            batch_size, nch, n_patch, temporal = self.patch_embed.segment_patch(x).shape
+            batch_size, nch, n_patch, temporal = self.patch_embed.segment_patch(
+                x).shape
         else:
             batch_size, nch, n_patch = self.patch_embed(x).shape
         x = self.patch_embed(x)
@@ -386,11 +396,11 @@ class Labram(EEGModuleMixin, nn.Module):
             return x[:, 0]
 
     def forward(
-        self,
-        x,
-        input_chans=None,
-        return_patch_tokens=False,
-        return_all_tokens=False,
+            self,
+            x,
+            input_chans=None,
+            return_patch_tokens=False,
+            return_all_tokens=False,
     ):
         """
         Forward the input EEG data through the model.
@@ -441,7 +451,8 @@ class Labram(EEGModuleMixin, nn.Module):
         cls_tokens = self.cls_token.expand(batch_size, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
         if self.position_embedding is not None:
-            pos_embed = self._adj_position_embedding(self.pos_embed, batch_size)
+            pos_embed = self._adj_position_embedding(self.pos_embed,
+                                                     batch_size)
             x = x + pos_embed
 
         time_embed = self._adj_temporal_embedding(self.n_chans, batch_size)
@@ -495,10 +506,12 @@ class Labram(EEGModuleMixin, nn.Module):
         )  # stole cls_tokens impl from Phil Wang, thanks
         x = torch.cat((cls_tokens, x), dim=1)
         if self.position_embedding is not None:
-            pos_embed = self._adj_position_embedding(self.pos_embed, batch_size)
+            pos_embed = self._adj_position_embedding(self.pos_embed,
+                                                     batch_size)
             x = x + pos_embed
 
-        temporal_embedding = self._adj_temporal_embedding(self.n_chans, batch_size)
+        temporal_embedding = self._adj_temporal_embedding(self.n_chans,
+                                                          batch_size)
         x[:, 1:, :] += temporal_embedding
         x = self.pos_drop(x)
 
@@ -568,7 +581,8 @@ class Labram(EEGModuleMixin, nn.Module):
         temporal_embedding = temporal_embedding.unsqueeze(1)
         # Expand the time embedding to match the number of channels
         # or number of patches from
-        temporal_embedding = temporal_embedding.expand(batch_size, num_ch, -1, -1)
+        temporal_embedding = temporal_embedding.expand(batch_size, num_ch, -1,
+                                                       -1)
         # Flatten the intermediate dimensions
         temporal_embedding = temporal_embedding.flatten(1, 2)
         return temporal_embedding
@@ -596,7 +610,8 @@ class Labram(EEGModuleMixin, nn.Module):
         pos_embed = pos_embed.unsqueeze(2)
         # Need to expand the position embedding to match the number of
         # n_patches
-        pos_embed = pos_embed.expand(batch_size, -1, self.patch_embed[0].n_patchs, -1)
+        pos_embed = pos_embed.expand(batch_size, -1,
+                                     self.patch_embed[0].n_patchs, -1)
         # Flatten the intermediate dimensions,
         # such as the number of patches and the "channels" dim
         pos_embed = pos_embed.flatten(1, 2)
@@ -707,7 +722,7 @@ class _SegmentPatch(nn.Module):
             )
         else:
             x = x.view(batch_size, self.n_chans,
-                       self.n_times//self.patch_size,
+                       self.n_times // self.patch_size,
                        self.patch_size)
         return x
 
@@ -735,7 +750,8 @@ class _PatchEmbed(nn.Module):
     """
 
     def __init__(
-        self, n_times=2000, patch_size=200, in_channels=1, emb_dim=200, n_codebooks=62
+            self, n_times=2000, patch_size=200, in_channels=1, emb_dim=200,
+            n_codebooks=62
     ):
         super().__init__()
         num_patches = n_codebooks * (n_times // patch_size)
@@ -815,16 +831,16 @@ class _Attention(nn.Module):
     """
 
     def __init__(
-        self,
-        dim,
-        num_heads=8,
-        qkv_bias=False,
-        qk_norm=None,
-        qk_scale=None,
-        attn_drop=0.0,
-        proj_drop=0.0,
-        window_size=None,
-        attn_head_dim=None,
+            self,
+            dim,
+            num_heads=8,
+            qkv_bias=False,
+            qk_norm=None,
+            qk_scale=None,
+            attn_drop=0.0,
+            proj_drop=0.0,
+            window_size=None,
+            attn_head_dim=None,
     ):
         super().__init__()
         self.num_heads = num_heads
@@ -832,7 +848,7 @@ class _Attention(nn.Module):
         if attn_head_dim is not None:
             head_dim = attn_head_dim
         all_head_dim = head_dim * self.num_heads
-        self.scale = qk_scale or head_dim**-0.5
+        self.scale = qk_scale or head_dim ** -0.5
 
         self.qkv = nn.Linear(dim, all_head_dim * 3, bias=False)
         if qkv_bias:
@@ -852,7 +868,7 @@ class _Attention(nn.Module):
         if window_size:
             self.window_size = window_size
             self.num_relative_distance = (2 * window_size[0] - 1) * (
-                2 * window_size[1] - 1
+                    2 * window_size[1] - 1
             ) + 3
             self.relative_position_bias_table = nn.Parameter(
                 torch.zeros(self.num_relative_distance, num_heads)
@@ -862,9 +878,11 @@ class _Attention(nn.Module):
             # get pair-wise relative position index for each token inside the window
             coords_h = torch.arange(window_size[0])
             coords_w = torch.arange(window_size[1])
-            coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
+            coords = torch.stack(
+                torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
             coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
-            relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
+            relative_coords = coords_flatten[:, :, None] - coords_flatten[:,
+                                                           None, :]
             # 2, Wh*Ww, Wh*Ww
             relative_coords = relative_coords.permute(
                 1, 2, 0
@@ -877,12 +895,14 @@ class _Attention(nn.Module):
                 size=(window_size[0] * window_size[1] + 1,) * 2,
                 dtype=relative_coords.dtype,
             )
-            relative_position_index[1:, 1:] = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
+            relative_position_index[1:, 1:] = relative_coords.sum(
+                -1)  # Wh*Ww, Wh*Ww
             relative_position_index[0, 0:] = self.num_relative_distance - 3
             relative_position_index[0:, 0] = self.num_relative_distance - 2
             relative_position_index[0, 0] = self.num_relative_distance - 1
 
-            self.register_buffer("relative_position_index", relative_position_index)
+            self.register_buffer("relative_position_index",
+                                 relative_position_index)
         else:
             self.window_size = None
             self.relative_position_bias_table = None
@@ -893,10 +913,10 @@ class _Attention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(
-        self,
-        x: torch.Tensor,
-        return_attention=False,
-        return_qkv=False,
+            self,
+            x: torch.Tensor,
+            return_attention=False,
+            return_qkv=False,
     ):
         """
         Apply the attention mechanism to the input tensor.
@@ -928,7 +948,8 @@ class _Attention(nn.Module):
                     self.v_bias,
                 )
             )
-        qkv = nn.functional.linear(input=x, weight=self.qkv.weight, bias=qkv_bias)
+        qkv = nn.functional.linear(input=x, weight=self.qkv.weight,
+                                   bias=qkv_bias)
         qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
         q, k, v = (
             qkv[0],
@@ -1022,21 +1043,21 @@ class _WindowsAttentionBlock(nn.Module):
     """
 
     def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        mlp_ratio=4.0,
-        qkv_bias=False,
-        qk_norm=None,
-        qk_scale=None,
-        drop=0.0,
-        attn_drop=0.0,
-        drop_path=0.0,
-        init_values=None,
-        act_layer=nn.GELU,
-        norm_layer=nn.LayerNorm,
-        window_size=None,
-        attn_head_dim=None,
+            self,
+            dim: int,
+            num_heads: int,
+            mlp_ratio=4.0,
+            qkv_bias=False,
+            qk_norm=None,
+            qk_scale=None,
+            drop=0.0,
+            attn_drop=0.0,
+            drop_path=0.0,
+            init_values=None,
+            act_layer=nn.GELU,
+            norm_layer=nn.LayerNorm,
+            window_size=None,
+            attn_head_dim=None,
     ):
         super().__init__()
         self.norm1 = norm_layer(dim)
@@ -1052,7 +1073,8 @@ class _WindowsAttentionBlock(nn.Module):
             attn_head_dim=attn_head_dim,
         )
 
-        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
+        self.drop_path = DropPath(
+            drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MLP(
@@ -1143,16 +1165,16 @@ class _TemporalConv(nn.Module):
     """
 
     def __init__(
-        self,
-        in_channels=1,
-        out_channels=8,
-        num_groups=4,
-        kernel_size_1=(1, 15),
-        stride_1=(1, 8),
-        padding_1=(0, 7),
-        kernel_size_2=(1, 3),
-        padding_2=(0, 1),
-        act_layer=nn.GELU,
+            self,
+            in_channels=1,
+            out_channels=8,
+            num_groups=4,
+            kernel_size_1=(1, 15),
+            stride_1=(1, 8),
+            padding_1=(0, 7),
+            kernel_size_2=(1, 3),
+            padding_2=(0, 1),
+            act_layer=nn.GELU,
     ):
         super().__init__()
 
@@ -1170,7 +1192,8 @@ class _TemporalConv(nn.Module):
             padding=padding_1,
         )
         self.act_layer_1 = act_layer()
-        self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
+        self.norm1 = nn.GroupNorm(num_groups=num_groups,
+                                  num_channels=out_channels)
 
         self.conv2 = nn.Conv2d(
             in_channels=out_channels,
@@ -1179,7 +1202,8 @@ class _TemporalConv(nn.Module):
             padding=padding_2,
         )
         self.act_layer_2 = act_layer()
-        self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
+        self.norm2 = nn.GroupNorm(num_groups=num_groups,
+                                  num_channels=out_channels)
 
         self.conv3 = nn.Conv2d(
             in_channels=out_channels,
@@ -1187,10 +1211,12 @@ class _TemporalConv(nn.Module):
             kernel_size=kernel_size_2,
             padding=padding_2,
         )
-        self.norm3 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
+        self.norm3 = nn.GroupNorm(num_groups=num_groups,
+                                  num_channels=out_channels)
         self.act_layer_3 = act_layer()
 
-        self.transpose_temporal_channel = Rearrange("Batch C NA T -> Batch NA (T C)")
+        self.transpose_temporal_channel = Rearrange(
+            "Batch C NA T -> Batch NA (T C)")
 
     def forward(self, x):
         """
