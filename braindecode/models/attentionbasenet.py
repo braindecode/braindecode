@@ -34,32 +34,38 @@ class _FeatureExtractor(nn.Module):
     dropout : float, optional
         The dropout rate for regularization. Default is 0.5.
     """
+
     def __init__(
-            self,
-            n_chans: int,
-            n_temporal_filters: int = 40,
-            temporal_filter_length: int = 25,
-            spatial_expansion: int = 1,
-            pool_length: int = 75,
-            pool_stride: int = 15,
-            dropout: float = 0.5
+        self,
+        n_chans: int,
+        n_temporal_filters: int = 40,
+        temporal_filter_length: int = 25,
+        spatial_expansion: int = 1,
+        pool_length: int = 75,
+        pool_stride: int = 15,
+        dropout: float = 0.5,
     ):
         super(_FeatureExtractor, self).__init__()
 
         self.rearrange_input = Rearrange("b c t -> b 1 c t")
-        self.temporal_conv = nn.Conv2d(1, n_temporal_filters,
-                                       kernel_size=(1, temporal_filter_length),
-                                       padding=(0, temporal_filter_length // 2),
-                                       bias=False)
+        self.temporal_conv = nn.Conv2d(
+            1,
+            n_temporal_filters,
+            kernel_size=(1, temporal_filter_length),
+            padding=(0, temporal_filter_length // 2),
+            bias=False,
+        )
         self.intermediate_bn = nn.BatchNorm2d(n_temporal_filters)
-        self.spatial_conv = nn.Conv2d(n_temporal_filters,
-                                      n_temporal_filters * spatial_expansion,
-                                      kernel_size=(n_chans, 1),
-                                      groups=n_temporal_filters, bias=False)
+        self.spatial_conv = nn.Conv2d(
+            n_temporal_filters,
+            n_temporal_filters * spatial_expansion,
+            kernel_size=(n_chans, 1),
+            groups=n_temporal_filters,
+            bias=False,
+        )
         self.bn = nn.BatchNorm2d(n_temporal_filters * spatial_expansion)
         self.nonlinearity = nn.ELU()
-        self.pool = nn.AvgPool2d((1, pool_length),
-                                 stride=(1, pool_stride))
+        self.pool = nn.AvgPool2d((1, pool_length), stride=(1, pool_stride))
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
@@ -151,42 +157,53 @@ class _ChannelAttentionBlock(nn.Module):
     The output tensor then can be further processed or used as input to another block.
 
     """
+
     def __init__(
-            self,
-            attention_mode: str = "catlite",
-            in_channels: int = 16,
-            temp_filter_length: int = 15,
-            pool_length: int = 8,
-            pool_stride: int = 8,
-            dropout: float = 0.5,
-            reduction_rate: int = 4,
-            use_mlp: bool = False,
-            seq_len: int = 62,
-            freq_idx: int = 0,
-            n_codewords: int = 4,
-            kernel_size: int = 9,
-            extra_params: bool = False
+        self,
+        attention_mode: str = "catlite",
+        in_channels: int = 16,
+        temp_filter_length: int = 15,
+        pool_length: int = 8,
+        pool_stride: int = 8,
+        dropout: float = 0.5,
+        reduction_rate: int = 4,
+        use_mlp: bool = False,
+        seq_len: int = 62,
+        freq_idx: int = 0,
+        n_codewords: int = 4,
+        kernel_size: int = 9,
+        extra_params: bool = False,
     ):
         super(_ChannelAttentionBlock, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, (1, temp_filter_length),
-                      padding=(0, temp_filter_length // 2),
-                      bias=False, groups=in_channels),
+            nn.Conv2d(
+                in_channels,
+                in_channels,
+                (1, temp_filter_length),
+                padding=(0, temp_filter_length // 2),
+                bias=False,
+                groups=in_channels,
+            ),
             nn.Conv2d(in_channels, in_channels, (1, 1), bias=False),
             nn.BatchNorm2d(in_channels),
-            nn.ELU())
+            nn.ELU(),
+        )
 
-        self.pool = nn.AvgPool2d((1, pool_length),
-                                 stride=(1, pool_stride))
+        self.pool = nn.AvgPool2d((1, pool_length), stride=(1, pool_stride))
         self.dropout = nn.Dropout(dropout)
 
         if attention_mode is not None:
             self.attention_block = get_attention_block(
-                attention_mode, ch_dim=in_channels,
+                attention_mode,
+                ch_dim=in_channels,
                 reduction_rate=reduction_rate,
-                use_mlp=use_mlp, seq_len=seq_len, freq_idx=freq_idx,
-                n_codewords=n_codewords, kernel_size=kernel_size,
-                extra_params=extra_params)
+                use_mlp=use_mlp,
+                seq_len=seq_len,
+                freq_idx=freq_idx,
+                n_codewords=n_codewords,
+                kernel_size=kernel_size,
+                extra_params=extra_params,
+            )
         else:
             self.attention_block = None
 
@@ -230,31 +247,32 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     .. [MartinCode] Wimpff, M., Gizzi, L., Zerfowski, J. and Yang, B.
     https://github.com/martinwimpff/channel-attention
     """
+
     def __init__(
-            self,
-            n_times: int,
-            n_chans: int,
-            n_outputs: int,
-            n_temporal_filters: int = 40,
-            temp_filter_length_inp: int = 25,
-            spatial_expansion: int = 1,
-            pool_length_inp: int = 75,
-            pool_stride_inp: int = 15,
-            dropout_inp: int = 0.5,
-            ch_dim: int = 16,
-            temp_filter_length: int = 15,
-            pool_length: int = 8,
-            pool_stride: int = 8,
-            dropout: float = 0.5,
-            attention_mode: str = None,
-            reduction_rate: int = 4,
-            use_mlp: bool = False,
-            freq_idx: int = 0,
-            n_codewords: int = 4,
-            kernel_size: int = 9,
-            extra_params: bool = False,
-            chs_info=None,
-            sfreq=None,
+        self,
+        n_times: int,
+        n_chans: int,
+        n_outputs: int,
+        n_temporal_filters: int = 40,
+        temp_filter_length_inp: int = 25,
+        spatial_expansion: int = 1,
+        pool_length_inp: int = 75,
+        pool_stride_inp: int = 15,
+        dropout_inp: int = 0.5,
+        ch_dim: int = 16,
+        temp_filter_length: int = 15,
+        pool_length: int = 8,
+        pool_stride: int = 8,
+        dropout: float = 0.5,
+        attention_mode: str = None,
+        reduction_rate: int = 4,
+        use_mlp: bool = False,
+        freq_idx: int = 0,
+        n_codewords: int = 4,
+        kernel_size: int = 9,
+        extra_params: bool = False,
+        chs_info=None,
+        sfreq=None,
     ):
         super(AttentionBaseNet, self).__init__()
 
@@ -268,36 +286,49 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, sfreq
 
         self.input_block = _FeatureExtractor(
-            n_chans=self.n_chans, n_temporal_filters=n_temporal_filters,
+            n_chans=self.n_chans,
+            n_temporal_filters=n_temporal_filters,
             temporal_filter_length=temp_filter_length_inp,
             spatial_expansion=spatial_expansion,
-            pool_length=pool_length_inp, pool_stride=pool_stride_inp,
-            dropout=dropout_inp)
+            pool_length=pool_length_inp,
+            pool_stride=pool_stride_inp,
+            dropout=dropout_inp,
+        )
 
         self.channel_expansion = nn.Sequential(
             nn.Conv2d(
-                n_temporal_filters * spatial_expansion, ch_dim,
-                (1, 1), bias=False),
+                n_temporal_filters * spatial_expansion, ch_dim, (1, 1), bias=False
+            ),
             nn.BatchNorm2d(ch_dim),
-            nn.ELU())
+            nn.ELU(),
+        )
 
         seq_lengths = self._calculate_sequence_lengths(
             self.n_times,
             [temp_filter_length_inp, temp_filter_length],
             [pool_length_inp, pool_length],
-            [pool_stride_inp, pool_stride])
+            [pool_stride_inp, pool_stride],
+        )
 
         self.channel_attention_block = _ChannelAttentionBlock(
-            attention_mode=attention_mode, in_channels=ch_dim,
-            temp_filter_length=temp_filter_length, pool_length=pool_length,
-            pool_stride=pool_stride, dropout=dropout,
+            attention_mode=attention_mode,
+            in_channels=ch_dim,
+            temp_filter_length=temp_filter_length,
+            pool_length=pool_length,
+            pool_stride=pool_stride,
+            dropout=dropout,
             reduction_rate=reduction_rate,
-            use_mlp=use_mlp, seq_len=seq_lengths[0], freq_idx=freq_idx,
-            n_codewords=n_codewords, kernel_size=kernel_size,
-            extra_params=extra_params)
+            use_mlp=use_mlp,
+            seq_len=seq_lengths[0],
+            freq_idx=freq_idx,
+            n_codewords=n_codewords,
+            kernel_size=kernel_size,
+            extra_params=extra_params,
+        )
 
         self.classifier = nn.Sequential(
-            nn.Flatten(), nn.Linear(seq_lengths[-1] * ch_dim, self.n_outputs))
+            nn.Flatten(), nn.Linear(seq_lengths[-1] * ch_dim, self.n_outputs)
+        )
 
     def forward(self, x):
         x = self.input_block(x)
@@ -307,12 +338,15 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         return x
 
     @staticmethod
-    def _calculate_sequence_lengths(input_window_samples: int,
-                                    kernel_lengths: list,
-                                    pool_lengths: list, pool_strides: list):
+    def _calculate_sequence_lengths(
+        input_window_samples: int,
+        kernel_lengths: list,
+        pool_lengths: list,
+        pool_strides: list,
+    ):
         seq_lengths = []
         out = input_window_samples
-        for (k, pl, ps) in zip(kernel_lengths, pool_lengths, pool_strides):
+        for k, pl, ps in zip(kernel_lengths, pool_lengths, pool_strides):
             out = np.floor(out + 2 * (k // 2) - k + 1)
             out = np.floor((out - pl) / ps + 1)
             seq_lengths.append(int(out))
