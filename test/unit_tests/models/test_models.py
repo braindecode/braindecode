@@ -806,13 +806,12 @@ def default_labram_params():
 
 def test_model_trainable_parameters_labra(default_labram_params):
     """
-    Test the number of trainable parameters in Labram model
+    Test the number of trainable parameters in Labram model based on the
+    paper values.
+
     Parameters
     ----------
-    default_labram_params
-
-    Returns
-    -------
+    default_labram_params: dict with default parameters for Labram model
 
     """
     labram_base = Labram(n_layers=12, att_num_heads=12,
@@ -821,6 +820,8 @@ def test_model_trainable_parameters_labra(default_labram_params):
     labram_base_parameters = (labram_base.get_torchinfo_statistics()
                               .trainable_params)
 
+    # We added some parameters layers in the segmentation step to match the
+    # braindecode convention.
     assert labram_base_parameters == 5990344  # ~ 5.8 M matching the paper
 
     labram_large = Labram(n_layers=24, att_num_heads=16, out_channels=16,
