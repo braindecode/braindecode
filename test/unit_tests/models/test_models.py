@@ -3,11 +3,13 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #          Robin Schirrmeister <robintibor@gmail.com>
 #          Daniel Wilson <dan.c.wil@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com
 #
 # License: BSD-3
 
 
 from collections import OrderedDict
+from sklearn.utils import check_random_state
 
 import numpy as np
 import torch
@@ -33,6 +35,7 @@ from braindecode.models import (
     TIDNet,
     ATCNet,
     EEGConformer,
+    BIOT,
 )
 
 from braindecode.util import set_random_seeds
@@ -667,7 +670,7 @@ def sample_input():
 
 @pytest.fixture
 def model():
-    return EEGConformer(n_classes=2, n_channels=12)
+    return EEGConformer(n_classes=2, n_channels=12, n_times=1000)
 
 
 def test_model_creation(model):
@@ -678,7 +681,10 @@ def test_conformer_forward_pass(sample_input, model):
     output = model(sample_input)
     assert isinstance(output, torch.Tensor)
 
-    model_with_feature = EEGConformer(n_classes=2, n_channels=12, return_features=True)
+    model_with_feature = EEGConformer(n_outputs=2,
+                                      n_chans=12,
+                                      n_times=1000,
+                                      return_features=True)
     output = model_with_feature(sample_input)
 
     assert isinstance(output, tuple) and len(output) == 2
@@ -715,3 +721,65 @@ def test_model_trainable_parameters(model):
     assert trainable_transformer_params == 118320
     assert trainable_classification_params == 633120
     assert trainable_final_layer_parameters == 66
+
+@pytest.mark.parametrize("n_chans", (2 ** np.arange(8)).tolist())
+@pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
+@pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
+def test_biot(n_chans, n_outputs, input_size_s):
+
+    rng = check_random_state(42)
+    sfreq = 200
+    n_examples = 3
+    n_times = np.ceil(input_size_s * sfreq).astype(int)
+
+    model = BIOT(n_outputs=n_outputs,
+                 n_chans=n_chans,
+                 n_times=n_times,
+                 sfreq=sfreq,
+                 hop_length=50,
+                 )
+    model.eval()
+
+    X = rng.randn(n_examples, n_chans, n_times)
+    X = torch.from_numpy(X.astype(np.float32))
+
+    y_pred1 = model(X)  # 3D inputs
+    assert y_pred1.shape == (n_examples, n_outputs)
+    assert isinstance(y_pred1, torch.Tensor)
+
+
+@pytest.fixture
+def default_biot_params():
+    return {
+        'emb_size': 256,
+        'att_num_heads': 8,
+        'n_layers': 4,
+        'sfreq': 200,
+        'hop_length': 50,
+        'n_outputs': 2,
+        'n_chans': 64,
+    }
+
+def test_initialization_default_parameters(default_biot_params):
+    """Test BIOT initialization with default parameters."""
+    biot = BIOT(**default_biot_params)
+
+    assert biot.emb_size == 256
+    assert biot.att_num_heads == 8
+    assert biot.n_layers == 4
+
+
+def test_model_trainable_parameters_biot(default_biot_params):
+
+    biot = BIOT(**default_biot_params)
+
+    biot_encoder = biot.encoder.parameters()
+    biot_classifier = biot.classifier.parameters()
+
+    trainable_params_bio = sum(p.numel()
+                               for p in biot_encoder if p.requires_grad)
+    trainable_params_clf = sum(p.numel()
+                               for p in biot_classifier if p.requires_grad)
+
+    assert trainable_params_bio == 3198464 # ~ 3.2 M according with Labram paper
+    assert trainable_params_clf == 514

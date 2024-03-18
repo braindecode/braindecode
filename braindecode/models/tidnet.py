@@ -217,6 +217,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
 
     def __init__(self, n_chans=None, n_outputs=None, n_times=None,
                  in_chans=None, n_classes=None, input_window_samples=None,
+                 input_window_seconds=None, sfreq=None, chs_info=None,
                  s_growth=24, t_filters=32, drop_prob=0.4, pooling=15,
                  temp_layers=2, spat_layers=2, temp_span=0.05,
                  bottleneck=3, summary=-1, add_log_softmax=True):
@@ -230,9 +231,12 @@ class TIDNet(EEGModuleMixin, nn.Module):
             n_outputs=n_outputs,
             n_chans=n_chans,
             n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            chs_info=chs_info,
             add_log_softmax=add_log_softmax,
         )
-        del n_outputs, n_chans, n_times
+        del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
         del in_chans, n_classes, input_window_samples
 
         self.mapping = {

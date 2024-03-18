@@ -74,7 +74,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             n_filters_spat=40,
             pool_time_length=75,
             pool_time_stride=15,
-            final_conv_length=30,
+            final_conv_length="auto",
             conv_nonlin=square,
             pool_mode="mean",
             pool_nonlin=safe_log,

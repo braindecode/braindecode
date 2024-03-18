@@ -163,3 +163,57 @@ def _init_models_dict():
         if (issubclass(m[1], models.base.EEGModuleMixin)
                 and m[1] != models.base.EEGModuleMixin):
             models_dict[m[0]] = m[1]
+
+
+################################################################
+# Test cases for models
+#
+# This list should be updated whenever a new model is added to
+# braindecode (otherwise `test_completeness__models_test_cases`
+# will fail).
+# Each element in the list should be a tuple with structure
+# (model_class, required_params, signal_params), such that:
+#
+# model_name: str
+#   The name of the class of the model to be tested.
+# required_params: list[str]
+#   The signal-related parameters that are needed to initialize
+#   the model.
+# signal_params: dict | None
+#   The characteristics of the signal that should be passed to
+#   the model tested in case the default_signal_params are not
+#   compatible with this model.
+#   The keys of this dictionary can only be among those of
+#   default_signal_params.
+################################################################
+models_mandatory_parameters = [
+    ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
+    ("DeepSleepNet", ["n_outputs"], None),
+    ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGInception", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGNetv1", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGNetv4", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("HybridNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "SleepStagerBlanco2020",
+        ["n_chans", "n_outputs", "n_times"],
+        # n_chans dividable by n_groups=2:
+        dict(chs_info=[dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 5)]),
+    ),
+    ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    (
+        "SleepStagerEldele2021",
+        ["n_outputs", "n_times", "sfreq"],
+        dict(sfreq=100, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
+    ),  # 1 channel
+    ("TCN", ["n_chans", "n_outputs"], None),
+    ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
+    ("BIOT", ["n_chans", "n_outputs", "sfreq"], None)
+]
