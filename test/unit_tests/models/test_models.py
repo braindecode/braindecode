@@ -838,3 +838,35 @@ def test_model_trainable_parameters_labra(default_labram_params):
                               .trainable_params)
 
     assert labram_huge_parameters == 369940912  # 369M
+
+
+def test_labram_returns(default_labram_params):
+    """
+    Testing if the model is returning the correct shapes for the different
+    return options.
+
+    Parameters
+    ----------
+    default_labram_params: dict with default parameters for Labram model
+
+    """
+    labram_base = Labram(n_layers=12, att_num_heads=12,
+                         **default_labram_params)
+
+    # Defining a patched data
+    X = torch.rand(1, 32, 1000)
+
+    with torch.no_grad():
+        out = labram_base(X, return_all_tokens=False,
+                          return_patch_tokens=False)
+
+        assert out.shape == torch.Size([1, 200])
+
+        out_patches = labram_base(X, return_all_tokens=False,
+                                  return_patch_tokens=True)
+
+        assert out_patches.shape == torch.Size([1, 160, 200])
+
+        out_all_tokens = labram_base(X, return_all_tokens=True,
+                                     return_patch_tokens=False)
+        assert out_all_tokens.shape == torch.Size([1, 161, 200])
