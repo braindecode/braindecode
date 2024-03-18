@@ -88,7 +88,7 @@ class _ChannelAttentionBlock(nn.Module):
         - "se" for Squeeze-and-excitation network
         - "gsop" for Global Second-Order Pooling
         - "fca" for Frequency Channel Attention Network
-        - "encnet" for context encoding module 
+        - "encnet" for context encoding module
         - "eca" for Efficient channel attention for deep convolutional neural networks
         - "ge" for Gather-Excite
         - "gct" for Gated Channel Transformation
@@ -153,7 +153,7 @@ class _ChannelAttentionBlock(nn.Module):
     """
     def __init__(
             self,
-            attention_mode: str = None,
+            attention_mode: str = "catlite",
             in_channels: int = 16,
             temp_filter_length: int = 15,
             pool_length: int = 8,
@@ -210,12 +210,12 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     choices are available at the [Martin2023]_ and [MartinCode]_.
 
     The AttentionBaseNet architecture is composed of four modules:
-        - Input Block that performs a temporal convolution and a spatial
-        convolution.
-        - Channel Expansion that modifies the number of channels.
-        - An attention block that performs channel attention with several
-        options
-        - ClassificationHead
+    - Input Block that performs a temporal convolution and a spatial
+    convolution.
+    - Channel Expansion that modifies the number of channels.
+    - An attention block that performs channel attention with several
+    options
+    - ClassificationHead
 
     .. versionadded:: 0.9
 
