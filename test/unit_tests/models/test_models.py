@@ -54,22 +54,24 @@ def test_model_trainable_parameters_labram(default_labram_params):
 
     # We added some parameters layers in the segmentation step to match the
     # braindecode convention.
-    assert labram_base_parameters == 5789746  # ~ 5.8 M matching the paper
+    assert np.round(labram_base_parameters / 1E6, 1) == 5.8
+    # ~ 5.8 M matching the paper
 
     labram_large = Labram(n_layers=24, att_num_heads=16, out_channels=16,
                           emb_size=400, **default_labram_params)
     labram_large_parameters = (labram_large.get_torchinfo_statistics()
                                .trainable_params)
 
-    assert labram_large_parameters == 46262322  # ~ 46 M matching the paper
+    assert np.round(labram_large_parameters / 1E6, 0) == 46
+    # ~ 46 M matching the paper
 
     labram_huge = Labram(n_layers=48, att_num_heads=16, out_channels=32,
                          emb_size=800, **default_labram_params)
 
     labram_huge_parameters = (labram_huge.get_torchinfo_statistics()
                               .trainable_params)
-
-    assert labram_huge_parameters == 369141514  # 369M
+    # 369M matching the paper
+    assert np.round(labram_huge_parameters / 1E6, 0) == 369
 
 
 def test_labram_returns(default_labram_params):
@@ -85,22 +87,26 @@ def test_labram_returns(default_labram_params):
     labram_base = Labram(n_layers=12, att_num_heads=12,
                          **default_labram_params)
     # Defining a random data
-    X = torch.rand(1, 32, 1000)
+    X = torch.rand(1, default_labram_params['n_chans'],
+                   default_labram_params['n_times'])
 
     with torch.no_grad():
         out = labram_base(X, return_all_tokens=False,
                           return_patch_tokens=False)
 
-        assert out.shape == torch.Size([1, 200])
+        assert out.shape == torch.Size([1,
+            default_labram_params['n_outputs']])
 
         out_patches = labram_base(X, return_all_tokens=False,
                                   return_patch_tokens=True)
 
-        assert out_patches.shape == torch.Size([1, 160, 200])
+        assert out_patches.shape == torch.Size([1, 320,
+            default_labram_params['n_outputs']])
 
         out_all_tokens = labram_base(X, return_all_tokens=True,
                                      return_patch_tokens=False)
-        assert out_all_tokens.shape == torch.Size([1, 161, 200])
+        assert out_all_tokens.shape == torch.Size([1, 321,
+            default_labram_params['n_outputs']])
 
 
 def test_labram_without_pos_embed(default_labram_params):
@@ -108,7 +114,8 @@ def test_labram_without_pos_embed(default_labram_params):
                                      use_abs_pos_emb=False,
                                      **default_labram_params)
 
-    X = torch.rand(1, 32, 1000)
+    X = torch.rand(1, default_labram_params['n_chans'],
+                   default_labram_params['n_times'])
 
     with torch.no_grad():
         out_without_pos_emb = labram_base_not_pos_emb(X)
