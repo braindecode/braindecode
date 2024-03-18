@@ -192,7 +192,7 @@ def test_segm_patch(x_metainfo):
         assert X_split.shape[3] == x_metainfo["patch_size"]
 
 
-def test_drop_path(x_metainfo):
+def test_drop_path_prob_1(x_metainfo):
     """
     Test that the DropPath module sets the input tensor to zero.
     """
@@ -203,3 +203,27 @@ def test_drop_path(x_metainfo):
         # Adding batch dimension
         X_zeros = module(x_metainfo["X"])
         assert torch.allclose(X_zeros, torch.zeros_like(x_metainfo["X"]))
+
+
+def test_drop_path_prob_0(x_metainfo):
+    """
+    Test that the DropPath module using prob equal 0
+    """
+
+    module = DropPath(drop_prob=0)
+
+    with torch.no_grad():
+        # Adding batch dimension
+        X_original = module(x_metainfo["X"])
+        assert torch.allclose(X_original, x_metainfo["X"])
+
+
+def test_drop_path_representation():
+    drop_prob = 0.5
+    module = DropPath(drop_prob=0.5)
+    expected_repr = f"p={drop_prob}"
+
+    # Get the actual repr string
+    actual_repr = repr(module)
+
+    assert expected_repr in actual_repr
