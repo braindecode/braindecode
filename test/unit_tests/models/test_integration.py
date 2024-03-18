@@ -204,6 +204,7 @@ def concat_windows_dataset(concat_ds_targets):
 
     return windows_ds
 
+
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
 )

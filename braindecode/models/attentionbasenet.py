@@ -250,9 +250,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_times: int,
-        n_chans: int,
-        n_outputs: int,
+        n_times = None,
+        n_chans = None,
+        n_outputs = None,
         n_temporal_filters: int = 40,
         temp_filter_length_inp: int = 25,
         spatial_expansion: int = 1,
@@ -273,6 +273,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         extra_params: bool = False,
         chs_info=None,
         sfreq=None,
+        input_window_seconds=None,
     ):
         super(AttentionBaseNet, self).__init__()
 
@@ -282,8 +283,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             chs_info=chs_info,
             n_times=n_times,
             sfreq=sfreq,
+            input_window_seconds=input_window_seconds,
         )
-        del n_outputs, n_chans, chs_info, n_times, sfreq
+        del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
         self.input_block = _FeatureExtractor(
             n_chans=self.n_chans,
