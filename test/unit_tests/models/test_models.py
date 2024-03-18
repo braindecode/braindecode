@@ -869,3 +869,15 @@ def test_labram_returns(default_labram_params):
         out_all_tokens = labram_base(X, return_all_tokens=True,
                                      return_patch_tokens=False)
         assert out_all_tokens.shape == torch.Size([1, 161, 200])
+
+
+def test_labram_without_pos_embed(default_labram_params):
+    labram_base_not_pos_emb = Labram(n_layers=12, att_num_heads=12,
+                                     use_abs_pos_emb=False,
+                                     **default_labram_params)
+
+    X = torch.rand(1, 32, 1000)
+
+    with torch.no_grad():
+        out_without_pos_emb = labram_base_not_pos_emb(X)
+        assert out_without_pos_emb.shape == torch.Size([1, 2])
