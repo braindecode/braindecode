@@ -7,9 +7,11 @@
 #
 # License: BSD-3
 
+from functools import partial
 
 from collections import OrderedDict
 from sklearn.utils import check_random_state
+from torch import nn
 
 import numpy as np
 import torch
@@ -36,6 +38,7 @@ from braindecode.models import (
     ATCNet,
     EEGConformer,
     BIOT,
+    Labram,
 )
 
 from braindecode.util import set_random_seeds
@@ -101,7 +104,8 @@ def test_shallow_fbcsp_net_load_state_dict(input_sizes):
     state_dict = OrderedDict()
     state_dict["conv_time.weight"] = torch.rand([40, 1, 25, 1])
     state_dict["conv_time.bias"] = torch.rand([40])
-    state_dict["conv_spat.weight"] = torch.rand([40, 40, 1, input_sizes["n_channels"]])
+    state_dict["conv_spat.weight"] = torch.rand(
+        [40, 40, 1, input_sizes["n_channels"]])
     state_dict["bnorm.weight"] = torch.rand([40])
     state_dict["bnorm.bias"] = torch.rand([40])
     state_dict["bnorm.running_mean"] = torch.rand([40])
@@ -134,7 +138,8 @@ def test_deep4net_load_state_dict(input_sizes):
     state_dict = OrderedDict()
     state_dict["conv_time.weight"] = torch.rand([25, 1, 10, 1])
     state_dict["conv_time.bias"] = torch.rand([25])
-    state_dict["conv_spat.weight"] = torch.rand([25, 25, 1, input_sizes["n_channels"]])
+    state_dict["conv_spat.weight"] = torch.rand(
+        [25, 25, 1, input_sizes["n_channels"]])
     state_dict["bnorm.weight"] = torch.rand([25])
     state_dict["bnorm.bias"] = torch.rand([25])
     state_dict["bnorm.running_mean"] = torch.rand([25])
@@ -472,7 +477,8 @@ def test_tidnet(input_sizes):
 
 
 @pytest.mark.parametrize(
-    "sfreq,n_classes,input_size_s,d_model", [(100, 5, 30, 80), (125, 4, 30, 100)]
+    "sfreq,n_classes,input_size_s,d_model",
+    [(100, 5, 30, 80), (125, 4, 30, 100)]
 )
 def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     # (100, 5, 30, 80) - Physionet Sleep
@@ -722,11 +728,11 @@ def test_model_trainable_parameters(model):
     assert trainable_classification_params == 633120
     assert trainable_final_layer_parameters == 66
 
+
 @pytest.mark.parametrize("n_chans", (2 ** np.arange(8)).tolist())
 @pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
 @pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
 def test_biot(n_chans, n_outputs, input_size_s):
-
     rng = check_random_state(42)
     sfreq = 200
     n_examples = 3
@@ -760,6 +766,7 @@ def default_biot_params():
         'n_chans': 64,
     }
 
+
 def test_initialization_default_parameters(default_biot_params):
     """Test BIOT initialization with default parameters."""
     biot = BIOT(**default_biot_params)
@@ -770,7 +777,6 @@ def test_initialization_default_parameters(default_biot_params):
 
 
 def test_model_trainable_parameters_biot(default_biot_params):
-
     biot = BIOT(**default_biot_params)
 
     biot_encoder = biot.encoder.parameters()
@@ -781,5 +787,53 @@ def test_model_trainable_parameters_biot(default_biot_params):
     trainable_params_clf = sum(p.numel()
                                for p in biot_classifier if p.requires_grad)
 
-    assert trainable_params_bio == 3198464 # ~ 3.2 M according with Labram paper
+    assert trainable_params_bio == 3198464  # ~ 3.2 M according with Labram paper
     assert trainable_params_clf == 514
+
+
+@pytest.fixture
+def default_labram_params():
+    return {
+        'n_times': 1000,
+        'n_chans': 64,
+        'patch_size': 200,
+        'sfreq': 200,
+        'qk_norm': partial(nn.LayerNorm, eps=1e-6),
+        'norm_layer': partial(nn.LayerNorm, eps=1e-6),
+        'mlp_ratio': 4,
+    }
+
+
+def test_model_trainable_parameters_labra(default_labram_params):
+    """
+    Test the number of trainable parameters in Labram model
+    Parameters
+    ----------
+    default_labram_params
+
+    Returns
+    -------
+
+    """
+    labram_base = Labram(n_layers=12, att_num_heads=12,
+                         **default_labram_params)
+
+    labram_base_parameters = (labram_base.get_torchinfo_statistics()
+                              .trainable_params)
+
+    assert labram_base_parameters == 5990344  # ~ 5.8 M matching the paper
+
+    labram_large = Labram(n_layers=24, att_num_heads=16, out_channels=16,
+                          emb_size=400, **default_labram_params)
+    labram_large_parameters = (labram_large.get_torchinfo_statistics()
+                               .trainable_params)
+
+    assert labram_large_parameters == 46662520  # ~ 46 M matching the paper
+
+    labram_huge = Labram(n_layers=48, att_num_heads=16, out_channels=32,
+                         emb_size=800, **default_labram_params)
+
+    labram_huge_parameters = (labram_huge.get_torchinfo_statistics()
+                              .trainable_params)
+
+    assert labram_huge_parameters == 369940912  # 369M
