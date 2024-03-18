@@ -8,7 +8,8 @@ import torch
 from torch import nn
 
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv, MLP, TimeDistributed
+from braindecode.models.modules import (CombinedConv, MLP,
+                                        TimeDistributed, DropPath)
 from braindecode.models.labram import _SegmentPatch
 
 def test_time_distributed():
@@ -177,3 +178,19 @@ def test_segm_patch():
         assert X_split.shape[1] == n_chans
         assert X_split.shape[2] == n_times // patch_size
         assert X_split.shape[3] == patch_size
+
+
+def test_drop_path():
+    batch_size = 2
+    n_chans = 64
+    patch_size = 200
+    n_segments = 5
+    n_times = patch_size*n_segments
+    X = torch.zeros((batch_size, n_chans, n_times))
+
+    module = DropPath(drop_prob=1)
+
+    with torch.no_grad():
+        # Adding batch dimension
+        X_split = module(X)
+        assert torch.allclose(X_split, torch.zeros_like(X))
