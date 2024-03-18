@@ -59,15 +59,15 @@ class Labram(EEGModuleMixin, nn.Module):
     ----------
     patch_size : int
         The size of the patch to be used in the patch embedding.
-    embed_dim : int
+    emb_size : int
         The dimension of the embedding.
     in_channels : int
         The number of convolutional input channels.
     out_channels : int
         The number of convolutional output channels.
-    depth :  int (default=12)
+    n_layers :  int (default=12)
         The number of attention layers of the model.
-    num_heads : int (default=10)
+    att_num_heads : int (default=10)
         The number of attention heads.
     mlp_ratio : float (default=4.0)
         The expansion ratio of the mlp layer
@@ -124,11 +124,11 @@ class Labram(EEGModuleMixin, nn.Module):
         sfreq=None,
         input_window_seconds=None,
         patch_size=200,
-        embed_dim=200,
+        emb_size=200,
         in_channels=1,
         out_channels=8,
-        depth=12,
-        num_heads=10,
+        n_layers=12,
+        att_num_heads=10,
         mlp_ratio=4.0,
         qkv_bias=False,
         qk_norm=None,
@@ -156,7 +156,7 @@ class Labram(EEGModuleMixin, nn.Module):
 
         self.patch_size = patch_size
         self.n_path = self.n_times // patch_size
-        self.num_features = self.embed_dim = embed_dim
+        self.num_features = self.emb_size = emb_size
         self.neural_tokenizer = neural_tokenizer
         self.init_scale = init_scale
 
@@ -172,10 +172,11 @@ class Labram(EEGModuleMixin, nn.Module):
                                 n_times=self.n_times,
                                 patch_size=self.patch_size,
                                 n_chans=self.n_chans,
-                                embed_dim=self.patch_size,
+                                emb_dim=self.patch_size,
                             ),
                         ),
-                        ("temporal_conv", _TemporalConv(out_channels=out_channels)),
+                        ("temporal_conv",
+                         _TemporalConv(out_channels=out_channels)),
                     ]
                 )
             )
@@ -187,12 +188,12 @@ class Labram(EEGModuleMixin, nn.Module):
                 n_times=self.n_times,
                 patch_size=patch_size,
                 in_channels=in_channels,
-                embed_dim=embed_dim,
+                emb_dim=self.emb_size,
             )
 
         # Defining the parameters
         # Creating a parameter list with cls token
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, self.emb_size))
         # Positional embedding and time embedding are complementary
         # one is for the spatial information and the other is for the temporal
         # information.
@@ -201,26 +202,26 @@ class Labram(EEGModuleMixin, nn.Module):
         # information.
         if use_abs_pos_emb:
             self.position_embedding = nn.Parameter(
-                torch.zeros(1, self.n_chans + 1, embed_dim),
+                torch.zeros(1, self.n_chans + 1, self.emb_size),
                 requires_grad=True,
             )
         else:
             self.position_embedding = None
 
         self.temporal_embedding = nn.Parameter(
-            torch.zeros(1, self.patch_embed[0].n_patchs + 1, embed_dim),
+            torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.emb_size),
             requires_grad=True,
         )
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         dpr = [
-            x.item() for x in torch.linspace(0, drop_path_rate, depth)
+            x.item() for x in torch.linspace(0, drop_path_rate, n_layers)
         ]  # stochastic depth decay rule
         self.blocks = nn.ModuleList(
             [
                 _WindowsAttentionBlock(
-                    dim=embed_dim,
-                    num_heads=num_heads,
+                    dim=self.emb_size,
+                    num_heads=att_num_heads,
                     mlp_ratio=mlp_ratio,
                     qkv_bias=qkv_bias,
                     qk_norm=qk_norm,
@@ -235,13 +236,13 @@ class Labram(EEGModuleMixin, nn.Module):
                     ),
                     attn_head_dim=attn_head_dim,
                 )
-                for i in range(depth)
+                for i in range(n_layers)
             ]
         )
-        self.norm = nn.Identity() if use_mean_pooling else norm_layer(embed_dim)
-        self.fc_norm = norm_layer(embed_dim) if use_mean_pooling else None
+        self.norm = nn.Identity() if use_mean_pooling else norm_layer(self.emb_size)
+        self.fc_norm = norm_layer(self.emb_size) if use_mean_pooling else None
         self.head = (
-            nn.Linear(embed_dim, self.n_outputs)
+            nn.Linear(self.emb_size, self.n_outputs)
             if self.n_outputs > 0
             else nn.Identity()
         )
@@ -533,7 +534,7 @@ class Labram(EEGModuleMixin, nn.Module):
         """
         self.n_outputs = n_outputs
         self.head = (
-            nn.Linear(self.embed_dim, self.n_outputs)
+            nn.Linear(self.emb_dim, self.n_outputs)
             if self.n_outputs > 0
             else nn.Identity()
         )
@@ -632,7 +633,7 @@ class _SegmentPatch(nn.Module):
         Number of temporal components of the input tensor.
     in_chans: int (default=1)
         number of electrods from the EEG signal
-    embed_dim: int (default=200)
+    emb_dim: int (default=200)
         Number of n_output to be used in the convolution, here,
         we used the same as patch_size.
     patch_size: int (default=200)
@@ -640,23 +641,23 @@ class _SegmentPatch(nn.Module):
     Returns:
     --------
     x_patched: torch.Tensor
-        Output tensor of shape (batch, n_chans, num_patches, embed_dim).
+        Output tensor of shape (batch, n_chans, num_patches, emb_dim).
     """
 
-    def __init__(self, n_times=2000, patch_size=200, n_chans=1, embed_dim=200,
+    def __init__(self, n_times=2000, patch_size=200, n_chans=1, emb_dim=200,
                  learned_patcher=True):
         super().__init__()
 
         self.n_times = n_times
         self.patch_size = patch_size
         self.n_patchs = n_times // patch_size
-        self.embed_dim = embed_dim
+        self.emb_dim = emb_dim
         self.n_chans = n_chans
         self.learned_patcher = learned_patcher
 
         self.patcher = nn.Conv1d(
             in_channels=1,
-            out_channels=embed_dim,
+            out_channels=self.emb_dim,
             kernel_size=self.patch_size,
             stride=self.patch_size,
         )
@@ -690,12 +691,12 @@ class _SegmentPatch(nn.Module):
             x = self.adding_extra_dim(x)
 
             # Apply the convolution along the temporal dimension
-            # Conv2d output shape: [(batch*n_chs), embed_dim, n_patches]
+            # Conv2d output shape: [(batch*n_chs), emb_dim, n_patches]
             x = self.patcher(x)
 
             # Now, rearrange output to get back to a batch-first format,
             # combining embedded patches with channel information
-            # Assuming you want [batch, n_chs, n_patches, embed_dim]
+            # Assuming you want [batch, n_chs, n_patches, emb_dim]
             # as output, which keeps channel information
             # This treats each patch embedding as a feature alongside channels
             x = rearrange(
@@ -725,7 +726,7 @@ class _PatchEmbed(nn.Module):
         Size of the patch, default is 1-seconds with 200Hz.
     in_channels: int (default=1)
         Number of input channels for to be used in the convolution.
-    embed_dim: int (default=200)
+    emb_dim: int (default=200)
         Number of out_channes to be used in the convolution, here,
         we used the same as patch_size.
     n_codebooks: int (default=62)
@@ -734,7 +735,7 @@ class _PatchEmbed(nn.Module):
     """
 
     def __init__(
-        self, n_times=2000, patch_size=200, in_channels=1, embed_dim=200, n_codebooks=62
+        self, n_times=2000, patch_size=200, in_channels=1, emb_dim=200, n_codebooks=62
     ):
         super().__init__()
         num_patches = n_codebooks * (n_times // patch_size)
@@ -745,7 +746,7 @@ class _PatchEmbed(nn.Module):
 
         self.proj = nn.Conv2d(
             in_channels=in_channels,
-            out_channels=embed_dim,
+            out_channels=emb_dim,
             kernel_size=(1, patch_size),
             stride=(1, patch_size),
         )
