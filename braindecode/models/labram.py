@@ -192,13 +192,14 @@ class Labram(EEGModuleMixin, nn.Module):
             # If not, the model will be used as Neural Decoder mode
             # So the input here will be after the VQVAE encoder
             # To be used to extract the ampliture and phase outputs.
-            self.patch_embed = _PatchEmbed(
-                n_times=self.n_times,
-                patch_size=patch_size,
-                in_channels=in_channels,
-                emb_dim=self.emb_size,
-            )
-
+            # Adding inside a Sequential to use the same convention as the
+            # Neural Tokenizer mode.
+            self.patch_embed = nn.Sequential()
+            self.patch_embed.add_module("segment_patch",
+                                        _PatchEmbed(n_times=self.n_times,
+                                                    patch_size=patch_size,
+                                                    in_channels=in_channels,
+                                                    emb_dim=self.emb_size))
         # Defining the parameters
         # Creating a parameter list with cls token
         self.cls_token = nn.Parameter(torch.zeros(1, 1, self.emb_size))
@@ -240,7 +241,7 @@ class Labram(EEGModuleMixin, nn.Module):
                     norm_layer=norm_layer,
                     init_values=init_values,
                     window_size=(
-                        self.patch_embed.patch_shape if not neural_tokenizer else None
+                        self.patch_embed[0].patch_shape if not neural_tokenizer else None
                     ),
                     attn_head_dim=attn_head_dim,
                 )
@@ -250,11 +251,11 @@ class Labram(EEGModuleMixin, nn.Module):
         self.norm = nn.Identity() if use_mean_pooling else norm_layer(
             self.emb_size)
         self.fc_norm = norm_layer(self.emb_size) if use_mean_pooling else None
-        self.head = (
-            nn.Linear(self.emb_size, self.n_outputs)
-            if self.n_outputs > 0
-            else nn.Identity()
-        )
+
+        if self.n_outputs > 0:
+            self.head = nn.Linear(self.emb_size, self.n_outputs)
+        else:
+            self.head = nn.Identity()
 
         self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
@@ -343,6 +344,7 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
+
         if self.neural_tokenizer:
             batch_size, nch, n_patch, temporal = self.patch_embed.segment_patch(
                 x).shape
@@ -754,21 +756,22 @@ class _PatchEmbed(nn.Module):
             n_codebooks=62
     ):
         super().__init__()
-        num_patches = n_codebooks * (n_times // patch_size)
-        self.patch_shape = (1, n_times // patch_size)
         self.n_times = n_times
         self.patch_size = patch_size
-        self.num_patches = num_patches
+        self.patch_shape = (1, self.n_times // self.patch_size)
+        n_patchs = n_codebooks * (self.n_times // self.patch_size)
+
+        self.n_patchs = n_patchs
 
         self.proj = nn.Conv2d(
             in_channels=in_channels,
             out_channels=emb_dim,
-            kernel_size=(1, patch_size),
-            stride=(1, patch_size),
+            kernel_size=(1, self.patch_size),
+            stride=(1, self.patch_size),
         )
 
         self.merge_transpose = Rearrange(
-            "Batch ch (patch spatch) -> Batch (patch spatch) ch"
+            "Batch ch patch spatch -> Batch patch spatch ch",
         )
 
     def forward(self, x):
