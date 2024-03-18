@@ -852,8 +852,7 @@ def test_labram_returns(default_labram_params):
     """
     labram_base = Labram(n_layers=12, att_num_heads=12,
                          **default_labram_params)
-
-    # Defining a patched data
+    # Defining a random data
     X = torch.rand(1, 32, 1000)
 
     with torch.no_grad():
