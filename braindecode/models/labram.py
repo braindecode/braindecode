@@ -161,9 +161,9 @@ class Labram(EEGModuleMixin, nn.Module):
         self.init_scale = init_scale
 
         if neural_tokenizer and in_channels != 1:
-            warn("The model is in Neural Tokenizer mode, but the variable "+
-                 "`in_channels` is different from the default values."+
-                 "`in_channels` is only needed for the Neural Decoder mode."+
+            warn("The model is in Neural Tokenizer mode, but the variable " +
+                 "`in_channels` is different from the default values." +
+                 "`in_channels` is only needed for the Neural Decoder mode." +
                  "in_channels is not used in the Neural Tokenizer mode.",
                  UserWarning,
                  )
@@ -241,7 +241,8 @@ class Labram(EEGModuleMixin, nn.Module):
                     norm_layer=norm_layer,
                     init_values=init_values,
                     window_size=(
-                        self.patch_embed[0].patch_shape if not neural_tokenizer else None
+                        self.patch_embed[
+                            0].patch_shape if not neural_tokenizer else None
                     ),
                     attn_head_dim=attn_head_dim,
                 )
@@ -361,6 +362,7 @@ class Labram(EEGModuleMixin, nn.Module):
             pos_embed_used = self.position_embedding[:, input_chans]
         else:
             pos_embed_used = self.position_embedding
+
         if self.position_embedding is not None:
             pos_embed = self._adj_position_embedding(
                 pos_embed_used=pos_embed_used, batch_size=batch_size
