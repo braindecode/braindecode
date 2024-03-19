@@ -839,8 +839,13 @@ def test_model_trainable_parameters_labram(default_labram_params):
     # 369M matching the paper
     assert np.round(labram_huge_parameters / 1E6, 0) == 369
 
+    assert labram_base.get_num_layers() == 12
+    assert labram_large.get_num_layers() == 24
+    assert labram_huge.get_num_layers() == 48
 
-def test_labram_returns(default_labram_params):
+
+@pytest.mark.parametrize("use_mean_pooling", [True, False])
+def test_labram_returns(default_labram_params, use_mean_pooling):
     """
     Testing if the model is returning the correct shapes for the different
     return options.
@@ -851,7 +856,8 @@ def test_labram_returns(default_labram_params):
 
     """
     labram_base = Labram(n_layers=12, att_num_heads=12,
-                         **default_labram_params)
+                         use_mean_pooling=use_mean_pooling,
+                         **default_labram_params, )
     # Defining a random data
     X = torch.rand(1, default_labram_params['n_chans'],
                    default_labram_params['n_times'])
@@ -886,3 +892,26 @@ def test_labram_without_pos_embed(default_labram_params):
     with torch.no_grad():
         out_without_pos_emb = labram_base_not_pos_emb(X)
         assert out_without_pos_emb.shape == torch.Size([1, 2])
+
+
+def test_labram_n_outputs_0(default_labram_params):
+    """
+    Testing if the model is returning the correct shapes for the different
+    return options.
+
+    Parameters
+    ----------
+    default_labram_params: dict with default parameters for Labram model
+
+    """
+    default_labram_params['n_outputs'] = 0
+    labram_base = Labram(n_layers=12, att_num_heads=12,
+                         **default_labram_params)
+    # Defining a random data
+    X = torch.rand(1, default_labram_params['n_chans'],
+                   default_labram_params['n_times'])
+
+    with torch.no_grad():
+        out = labram_base(X)
+        assert out.shape[-1] == default_labram_params['patch_size']
+        assert isinstance(labram_base.head, nn.Identity)
