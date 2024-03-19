@@ -8,9 +8,10 @@ import torch
 from torch import nn
 
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import (CombinedConv, MLP,
-                                        TimeDistributed, DropPath)
+from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath
 from braindecode.models.labram import _SegmentPatch
+
+from braindecode.models.functions import drop_path
 
 
 def test_time_distributed():
@@ -66,8 +67,7 @@ def test_dense_spatial_filter_forward_collapse_true():
     collapse = True
 
     dense_spatial_filter = _DenseSpatialFilter(
-        in_chans, growth, depth, in_ch, bottleneck, drop_prob, activation,
-        collapse
+        in_chans, growth, depth, in_ch, bottleneck, drop_prob, activation, collapse
     )
 
     x = torch.rand(5, 3, 10)  # 3-dimensional input
@@ -86,8 +86,7 @@ def test_dense_spatial_filter_forward_collapse_false():
     collapse = False
 
     dense_spatial_filter = _DenseSpatialFilter(
-        in_chans, growth, depth, in_ch, bottleneck, drop_prob, activation,
-        collapse
+        in_chans, growth, depth, in_ch, bottleneck, drop_prob, activation, collapse
     )
 
     x = torch.rand(5, 3, 10)  # 3-dimensional input
@@ -96,8 +95,7 @@ def test_dense_spatial_filter_forward_collapse_false():
 
 
 @pytest.mark.parametrize(
-    "bias_time,bias_spat",
-    [(False, False), (False, True), (True, False), (True, True)]
+    "bias_time,bias_spat", [(False, False), (False, True), (True, False), (True, True)]
 )
 def test_combined_conv(bias_time, bias_spat):
     batch_size = 64
@@ -105,8 +103,7 @@ def test_combined_conv(bias_time, bias_spat):
     timepoints = 1000
 
     data = torch.rand([batch_size, 1, timepoints, in_chans])
-    conv = CombinedConv(in_chans=in_chans, bias_spat=bias_spat,
-                        bias_time=bias_time)
+    conv = CombinedConv(in_chans=in_chans, bias_spat=bias_spat, bias_time=bias_time)
 
     combined_out = conv(data)
     sequential_out = conv.conv_spat(conv.conv_time(data))
@@ -114,7 +111,7 @@ def test_combined_conv(bias_time, bias_spat):
     assert torch.isclose(combined_out, sequential_out, atol=1e-6).all()
 
     diff = combined_out - sequential_out
-    assert ((diff ** 2).mean().sqrt() / sequential_out.std()) < 1e-5
+    assert ((diff**2).mean().sqrt() / sequential_out.std()) < 1e-5
     assert (diff.abs().median() / sequential_out.abs().median()) < 1e-5
 
 
@@ -148,9 +145,13 @@ def test_segm_patch_not_learning():
 
     assert n_times == X.shape[-1]
 
-    module = _SegmentPatch(n_times=n_times, n_chans=n_chans,
-                           patch_size=patch_size, emb_dim=embed_dim,
-                           learned_patcher=False)
+    module = _SegmentPatch(
+        n_times=n_times,
+        n_chans=n_chans,
+        patch_size=patch_size,
+        emb_dim=embed_dim,
+        learned_patcher=False,
+    )
 
     with torch.no_grad():
         # Adding batch dimension
@@ -172,16 +173,18 @@ def x_metainfo():
         "patch_size": 200,
         "n_segments": 5,
         "n_times": 1000,
-        "X": torch.zeros((2, 64, 1000))
+        "X": torch.zeros((2, 64, 1000)),
     }
 
 
 def test_segm_patch(x_metainfo):
 
-    module = _SegmentPatch(n_times=x_metainfo["n_times"],
-                           n_chans=x_metainfo["n_chans"],
-                           patch_size=x_metainfo["patch_size"],
-                           emb_dim=x_metainfo["patch_size"])
+    module = _SegmentPatch(
+        n_times=x_metainfo["n_times"],
+        n_chans=x_metainfo["n_chans"],
+        patch_size=x_metainfo["patch_size"],
+        emb_dim=x_metainfo["patch_size"],
+    )
 
     with torch.no_grad():
         # Adding batch dimension
@@ -227,3 +230,44 @@ def test_drop_path_representation():
     actual_repr = repr(module)
 
     assert expected_repr in actual_repr
+
+
+def test_drop_path_no_drop():
+    x = torch.rand(3, 3)  # Example input tensor
+    output = drop_path(x, drop_prob=0.0, training=False)
+    assert torch.equal(
+        output, x
+    ), "Output should be equal to input when drop_prob is 0.0 or training is False."
+
+
+def test_drop_path_with_dropout_shape():
+    x = torch.rand(5, 4)  # Example input tensor
+    output = drop_path(x, drop_prob=0.5, training=True)
+    assert (
+        output.shape == x.shape
+    ), "Output tensor must have the same shape as the input tensor."
+
+
+def test_drop_path_scale_by_keep():
+    torch.manual_seed(0)
+    x = torch.rand(1, 10)  # Single-dimension tensor for simplicity
+    drop_prob = 0.2
+    scaled_output = drop_path(x, drop_prob=drop_prob, training=True, scale_by_keep=True)
+    unscaled_output = drop_path(
+        x, drop_prob=drop_prob, training=True, scale_by_keep=False
+    )
+    # This test relies on statistical expectation and may need multiple runs or adjustments
+    scale_factor = 1 / (1 - drop_prob)
+    assert torch.allclose(
+        scaled_output.mean(), unscaled_output.mean() * scale_factor, atol=0.1
+    ), "Scaled output does not match expected scaling."
+
+
+def test_drop_path_different_dimensions():
+    x_2d = torch.rand(2, 2)  # 2D tensor
+    x_3d = torch.rand(2, 2, 2)  # 3D tensor
+    output_2d = drop_path(x_2d, drop_prob=0.5, training=True)
+    output_3d = drop_path(x_3d, drop_prob=0.5, training=True)
+    assert (
+        output_2d.shape == x_2d.shape and output_3d.shape == x_3d.shape
+    ), "Output tensor must maintain input shape across different dimensions."
