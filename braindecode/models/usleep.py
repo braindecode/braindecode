@@ -165,14 +165,14 @@ class USleep(EEGModuleMixin, nn.Module):
 
     def __init__(
             self,
-            n_chans=2,
-            sfreq=128,
+            n_chans=None,
+            sfreq=None,
             depth=12,
             n_time_filters=5,
             complexity_factor=1.67,
             with_skip_connection=True,
             n_outputs=5,
-            input_window_seconds=30,
+            input_window_seconds=None,
             time_conv_size_s=9 / 128,
             ensure_odd_conv_size=False,
             chs_info=None,

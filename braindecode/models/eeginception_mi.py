@@ -65,7 +65,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             self,
             n_chans=None,
             n_outputs=None,
-            input_window_seconds=4.5,
+            input_window_seconds=None,
             sfreq=250,
             n_convs=5,
             n_filters=48,
