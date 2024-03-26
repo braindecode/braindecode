@@ -195,7 +195,15 @@ class FCA(torch.nn.Module):
 
 class EncNet(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    n_codewords : int, number of codewords
+    
+    References
+    ----------
+    .. [Zhang2018] Zhang, H. et al. 2018.
+    Context Encoding for Semantic Segmentation. CVPR 2018.
     """
     def __init__(self, in_channels: int, n_codewords: int):
         super(EncNet, self).__init__()
