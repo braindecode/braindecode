@@ -74,7 +74,16 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float, dtype: torch.dtype,
 
 class SqueezeAndExcitation(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    reduction_rate : int, reduction ratio of the fully-connected layers
+    bias: bool, default=False
+    
+    References
+    ----------
+    .. [Hu2018] Hu, J., Albanie, S., Sun, G., Wu, E., 2018.
+    Squeeze-and-Excitation Networks. CVPR 2018.
     """
 
     def __init__(self, in_channels: int, reduction_rate: int, bias: int = False):
