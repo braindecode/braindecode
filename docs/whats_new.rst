@@ -25,9 +25,15 @@ Enhancements
 ~~~~~~~~~~~~
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `MohammadJavadD`_)
 
+- Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
+
+
 Bugs
 ~~~~
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
+- Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~

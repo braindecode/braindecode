@@ -84,6 +84,8 @@ Models
     TIDNet
     get_output_shape
     TimeDistributed
+    BIOT
+    Labram
 
 
 Training

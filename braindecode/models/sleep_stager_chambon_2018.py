@@ -59,7 +59,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             time_conv_size_s=0.5,
             max_pool_size_s=0.125,
             pad_size_s=0.25,
-            input_window_seconds=30,
+            input_window_seconds=None,
             n_outputs=5,
             dropout=0.25,
             apply_batch_norm=False,

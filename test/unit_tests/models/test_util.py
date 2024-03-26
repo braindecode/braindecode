@@ -65,7 +65,7 @@ def test_aggregate_probas(n_sequences, n_classes, n_windows, stride):
     # given class and zeros elsewhere
     n_outputs = (n_sequences - 1) * stride + n_windows
     y_true = np.arange(n_outputs) % n_classes  # fake target for each window
-    logits = OneHotEncoder(sparse=False).fit_transform(y_true.reshape(-1, 1))
+    logits = OneHotEncoder(sparse_output=False).fit_transform(y_true.reshape(-1, 1))
     logits = np.lib.stride_tricks.sliding_window_view(  # extract sequences
         logits, n_windows, axis=0)[::stride]
 

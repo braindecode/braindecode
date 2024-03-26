@@ -30,7 +30,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
 
     def __init__(self, n_chans=None, n_outputs=None, n_times=None,
                  in_chans=None, n_classes=None, input_window_samples=None,
-                 add_log_softmax=True):
+                 add_log_softmax=True, input_window_seconds=None, sfreq=None, chs_info=None):
 
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -42,6 +42,9 @@ class HybridNet(EEGModuleMixin, nn.Module):
             n_outputs=n_outputs,
             n_chans=n_chans,
             n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            chs_info=chs_info,
             add_log_softmax=add_log_softmax,
         )
         self.mapping = {
@@ -58,19 +61,24 @@ class HybridNet(EEGModuleMixin, nn.Module):
             n_filters_3=50,
             n_filters_4=60,
             n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            chs_info=chs_info,
             final_conv_length=2,
         )
         shallow_model = ShallowFBCSPNet(
             n_chans=n_chans,
             n_outputs=n_outputs,
             n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            chs_info=chs_info,
             n_filters_time=30,
             n_filters_spat=40,
             filter_time_length=28,
             final_conv_length=29,
         )
-
-        del n_outputs, n_chans, n_times
+        del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
         del in_chans, n_classes, input_window_samples
 
         reduced_deep_model = nn.Sequential()

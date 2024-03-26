@@ -17,9 +17,9 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
-    """Residual Network for EEG.
+    """Residual Network for EEG  from Schirrmeister et al 2017.
 
-    XXX missing reference
+    Model described in [Schirrmeister2017]_.
 
     Parameters
     ----------
@@ -30,6 +30,15 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
      input_window_samples :
         Alias for `n_times`.
 
+    References
+    ----------
+    .. [Schirrmeister2017] Schirrmeister, R. T., Springenberg, J. T., Fiederer,
+       L. D. J., Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F.
+       & Ball, T. (2017).
+       Deep learning with convolutional neural networks for EEG decoding and
+       visualization.
+       Human Brain Mapping , Aug. 2017.
+       Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
     def __init__(
@@ -37,8 +46,8 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             n_chans=None,
             n_outputs=None,
             n_times=None,
-            final_pool_length=None,
-            n_first_filters=None,
+            final_pool_length='auto',
+            n_first_filters=20,
             n_layers_per_block=2,
             first_filter_length=3,
             nonlinearity=elu,
@@ -48,7 +57,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             conv_weight_init_fn=lambda w: init.kaiming_normal_(w, a=0),
             chs_info=None,
             input_window_seconds=None,
-            sfreq=None,
+            sfreq=250,
             in_chans=None,
             n_classes=None,
             input_window_samples=None,
