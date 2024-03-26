@@ -261,7 +261,18 @@ class ECA(nn.Module):
 
 class GatherExcite(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    seq_len : int, sequence length along temporal dimension, default=62
+    extra_params : bool, whether to use a convolutional layer as a gather module, default=False
+    use_mlp : bool, whether to use an excite block, default=False
+    reduction_rate : int, reduction ratio of the excite block (if used), default=4
+    
+    References
+    ----------
+    .. [Hu2018b] Hu, J., Albanie, S., Sun, G., Vedaldi, A., 2018.
+    Gather-Excite: Exploiting Feature Context in Convolutional Neural Networks. NeurIPS 2018.
     """
     def __init__(self, in_channels: int, seq_len: int = 62, extra_params: bool = False,
                  use_mlp: bool = False, reduction_rate: int = 4):
