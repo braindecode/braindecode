@@ -112,7 +112,16 @@ class SqueezeAndExcitation(nn.Module):
 
 class GSoP(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    reduction_rate : int, reduction ratio of the fully-connected layers
+    bias: bool, default=False
+    
+    References
+    ----------
+    .. [Gao2018] Gao, Z., Jiangtao, X., Wang, Q., Li, P., 2018.
+    Global Second-order Pooling Convolutional Networks. CVPR 2018.
     """
     def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
         super(GSoP, self).__init__()
