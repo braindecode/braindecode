@@ -146,7 +146,16 @@ class GSoP(nn.Module):
 
 class FCA(torch.nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    seq_len : int, sequence length along temporal dimension, default=62
+    reduction_rate : int, reduction ratio of the fully-connected layers, default=4
+    
+    References
+    ----------
+    .. [Qin2021] Qin, Z., Zhang, P., Wu, F., Li, X., 2021.
+    FcaNet: Frequency Channel Attention Networks. ICCV 2021.
     """
     def __init__(self, in_channels, seq_len: int = 62, reduction_rate: int = 4,
                  freq_idx: int = 0):
