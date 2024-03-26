@@ -27,8 +27,8 @@ Enhancements
 
 
 - Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
-
-- Adding :class:`braindecode.models.BIOT` (:gh:`428` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
 
 
 Bugs

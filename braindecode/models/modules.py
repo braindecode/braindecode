@@ -8,6 +8,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+
+from .functions import drop_path
 from ..util import np_to_th
 
 
@@ -356,3 +358,113 @@ class CombinedConv(nn.Module):
         return F.conv2d(
             x, weight=combined_weight, bias=bias, stride=(1, 1)
         )
+
+
+class MLP(nn.Sequential):
+    """ Multilayer Perceptron (MLP) with GELU activation and optional dropout.
+
+    Also known as fully connected feedforward network, an MLP is a sequence of
+    non-linear parametric functions
+
+    .. math:: h_{i + 1} = a_{i + 1}(h_i W_{i + 1}^T + b_{i + 1}),
+
+    over feature vectors :math:`h_i`, with the input and output feature vectors
+    :math:`x = h_0` and :math:`y = h_L`, respectively. The non-linear functions
+    :math:`a_i` are called activation functions. The trainable parameters of an
+    MLP are its weights and biases :math:`\phi = \{W_i, b_i | i = 1, \dots, L\}`.
+
+    Parameters:
+    -----------
+    in_features: int
+        Number of input features.
+    hidden_features: Sequential[int] (default=None)
+        Number of hidden features, if None, set to in_features.
+        You can increase the size of MLP just passing more int in the
+        hidden features vector. The model size increase follow the
+        rule 2n (hidden layers)+2 (in and out layers)
+    out_features: int (default=None)
+        Number of output features, if None, set to in_features.
+    act_layer: nn.GELU (default)
+        The activation function constructor. If :py:`None`, use
+        :class:`torch.nn.GELU` instead.
+    drop: float (default=0.0)
+        Dropout rate.
+    normalize: bool (default=False)
+        Whether to apply layer normalization.
+    """
+
+    def __init__(
+            self,
+            in_features: int,
+            hidden_features=None,
+            out_features=None,
+            activation=nn.GELU,
+            drop=0.0,
+            normalize=False
+    ):
+
+        self.normalization = nn.LayerNorm if normalize else lambda: None
+        self.in_features = in_features
+        self.out_features = out_features or self.in_features
+        if hidden_features:
+            self.hidden_features = hidden_features
+        else:
+            self.hidden_features = (self.in_features, self.in_features)
+        self.activation = activation
+
+        layers = []
+
+        for before, after in zip(
+            (self.in_features, *self.hidden_features),
+            (*self.hidden_features, self.out_features),
+        ):
+            layers.extend([
+                nn.Linear(in_features=before, out_features=after),
+                self.activation(),
+                self.normalization(),
+            ])
+
+        layers = layers[:-2]
+        layers.append(nn.Dropout(p=drop))
+
+        # Cleaning if we are not using the normalization layer
+        layers = filter(lambda layer: layer is not None, layers)
+
+        super().__init__(*layers)
+
+
+class DropPath(nn.Module):
+    """Drop paths, also known as Stochastic Depth, per sample.
+
+    When applied in main path of residual blocks.
+
+    Parameters:
+    -----------
+    drop_prob: float (default=None)
+        Drop path probability (should be in range 0-1).
+
+    Notes
+    -----
+    Code copied and modified from VISSL facebookresearch:
+https://github.com/facebookresearch/vissl/blob/0b5d6a94437bc00baed112ca90c9d78c6ccfbafb/vissl/models/model_helpers.py#L676
+    All rights reserved.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+    """
+
+    def __init__(self, drop_prob=None):
+        super(DropPath, self).__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, x):
+        return drop_path(x, self.drop_prob, self.training)
+
+    # Utility function to print DropPath module
+    def extra_repr(self) -> str:
+        return f"p={self.drop_prob}"
