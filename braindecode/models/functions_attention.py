@@ -319,7 +319,16 @@ class GCT(nn.Module):
 
 class SRM(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    use_mlp : bool, whether to use fully-connected layers instead of a convolutional layer, default=False
+    reduction_rate : int, reduction ratio of the fully-connected layers (if used), default=4
+    
+    References
+    ----------
+    .. [Lee2019] Lee, H., Kim, H., Nam, H., 2019.
+    SRM : A Style-based Recalibration Module for Convolutional Neural Networks. ICCV 2019.
     """
     def __init__(self, in_channels: int, use_mlp: bool = False, reduction_rate: int = 4,
                  bias: bool = False):
