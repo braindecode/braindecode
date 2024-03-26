@@ -234,7 +234,15 @@ class EncNet(nn.Module):
 
 class ECA(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    kernel_size : int, kernel size of convolutional layer, determines degree of channel interaction, must be odd
+    
+    References
+    ----------
+    .. [Wang2021] Wang, Q. et al., 2021.
+    ECA-Net: Efficient Channel Attention for Deep Convolutional Neural Networks. CVPR 2021.
     """
     def __init__(self, in_channels: int, kernel_size: int):
         super(ECA, self).__init__()
