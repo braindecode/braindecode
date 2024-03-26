@@ -12,5 +12,5 @@ from .bcicomp import BCICompetitionIVDataset4
 __all__ = ["WindowsDataset", "BaseDataset", "BaseConcatDataset",
            "MOABBDataset", "HGD", "BNCI2014001",
             "create_from_mne_raw", "create_from_mne_epochs",
-            "TUH", "TUHAbnormal", "SleepPhysionet", "create_from_X_y",
+            "TUH", "TUHAbnormal", "NMT", "SleepPhysionet", "create_from_X_y",
             "BCICompetitionIVDataset4"]
