@@ -18,114 +18,158 @@ n_jobs = 1
 # %% [markdown]
 # ## Loading and preprocessing the dataset
 # 
-# ### Loading the raw recordings
+# ### Load  and save the raw recordings
 # 
-# First, we load a few recordings from the Sleep Physionet dataset. Running
+# Here we assume you already load and preprocess the raw recordings for both TUAB and NMT datasetsand saved the file in `TUAB_path' and 'NMT_path' respectively. To read more see this notebook [here](https://braindecode.org/stable/auto_examples/applied_examples/plot_tuh_eeg_corpus.html) 
+# 
+# ### Load the preprocessed data
+# 
+# Now, we load a few recordings from the TUAB dataset. Running
 # this example with more recordings should yield better representations and
 # downstream classification performance.
-# 
-# 
 
 # %%
+TUAB_path = 'PATH_TO_TUAB_DATASET'
+NMT_path = 'PATH_TO_NMT_DATASET'
 
+from braindecode.datautil.serialization import  load_concat_dataset
 
-# %% [markdown]
-# ### Preprocessing
-# 
-# Next, we preprocess the raw data. We convert the data to microvolts and apply
-# a lowpass filter. Since the Sleep Physionet data is already sampled at 100 Hz
-# we don't need to apply resampling.
-# 
-# 
-
-# %%
-
-
-# %% [markdown]
-# ### Extracting windows
-# 
-# We extract 30-s windows to be used in both the pretext and downstream tasks.
-# As RP (and SSL in general) don't require labelled data, the pretext task
-# could be performed using unlabelled windows extracted with
-# :func:`braindecode.datautil.windower.create_fixed_length_window`.
-# Here however, purely for convenience, we directly extract labelled windows so
-# that we can reuse them in the sleep staging downstream task later.
-# 
-# 
+TUAB_ds = load_concat_dataset(TUAB_path, preload=False,
+                            target_name=['pathological','age','gender'] ,#)
+                            ids_to_load=range(20)
+                            )
 
 # %%
-
-
-# %% [markdown]
-# ### Preprocessing windows
-# 
-# We also preprocess the windows by applying channel-wise z-score normalization.
-# 
-# 
-
-# %%
-
+import pandas as pd
+print("target is being set to pathological clf")
+target = TUAB_ds.description['pathological'].astype(int)
+for d, y in zip(TUAB_ds.datasets, target):
+    d.description['pathological'] = y
+    d.target_name = 'pathological'
+    d.target = d.description[d.target_name]
+TUAB_ds.set_description(pd.DataFrame([d.description for d in TUAB_ds.datasets]), overwrite=True)
 
 # %% [markdown]
 # ### Splitting dataset into train, valid and test sets
 # 
-# We randomly split the recordings by subject into train, validation and
-# testing sets. We further define a new Dataset class which can receive a pair
-# of indices and return the corresponding windows. This will be needed when
-# training and evaluating on the pretext task.
-# 
+# We split the recordings by subject into train, validation and
+# testing sets.
 # 
 
 # %%
-
-
-# %% [markdown]
-# ### Creating samplers
-# 
-# Next, we need to create samplers. These samplers will be used to randomly
-# sample pairs of examples to train and validate our model with
-# self-supervision.
-# 
-# The RP samplers have two main hyperparameters. `tau_pos` and `tau_neg`
-# control the size of the "positive" and "negative" contexts, respectively.
-# Pairs of windows that are separated by less than `tau_pos` samples will be
-# given a label of `1`, while pairs of windows that are separated by more than
-# `tau_neg` samples will be given a label of `0`. Here, we use the same values
-# as in [1]_, i.e., `tau_pos`= 1 min and `tau_neg`= 15 mins.
-# 
-# The samplers also control the number of pairs to be sampled (defined with
-# `n_examples`). This number can be large to help regularize the pretext task
-# training, for instance 2,000 pairs per recording as in [1]_. Here, we use a
-# lower number of 250 pairs per recording to reduce training time.
-# 
-# 
-
-# %%
-
+# split based on train split from dataset
+train_set = TUAB_ds.split('train')['True']
+test_set = TUAB_ds.split('train')['False']
 
 # %% [markdown]
 # ## Creating the model
 # 
-# We can now create the deep learning model. In this tutorial, we use a
-# modified version of the sleep staging architecture introduced in [4]_ -
-# a four-layer convolutional neural network - as our embedder.
-# We change the dimensionality of the last layer to obtain a 100-dimension
-# embedding, use 16 convolutional channels instead of 8, and add batch
-# normalization after both temporal convolution layers.
+# We can now create the deep learning model. In this tutorial, we use DeepNet introduced in [4].
+
+# %%
+from braindecode.models import Deep4Net
+
+n_chans = 21
+n_classes = 2
+input_window_samples = 6000
+drop_prob = 0.5
+cuda = True # Set to False if you don't have a GPU
+n_start_chans = 25
+final_conv_length = 1
+n_chan_factor = 2
+stride_before_pool = True
+# input_window_samples =6000
+model = Deep4Net(
+            n_chans, n_classes,
+            n_filters_time=n_start_chans,
+            n_filters_spat=n_start_chans,
+            input_window_samples=input_window_samples,
+            n_filters_2=int(n_start_chans * n_chan_factor),
+            n_filters_3=int(n_start_chans * (n_chan_factor ** 2.0)),
+            n_filters_4=int(n_start_chans * (n_chan_factor ** 3.0)),
+            final_conv_length=final_conv_length,
+            stride_before_pool=stride_before_pool,
+            drop_prob=drop_prob)
+            # Send model to GPU
+if cuda:
+    model.cuda()
+
+from braindecode.models.util import to_dense_prediction_model, get_output_shape
+
+to_dense_prediction_model(model)
+
+n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
+
+# %% [markdown]
+# ### Extracting windows
 # 
-# We further wrap the model into a siamese architecture using the
-# # :class:`ContrastiveNet` class defined below. This allows us to train the
-# feature extractor end-to-end.
-# 
+# We extract 60-s windows to be used in both datasets. We use a window size of 6000 samples.
 # 
 
 # %%
+from IPython.utils import io
+from braindecode.datautil.windowers import create_fixed_length_windows
+
+with io.capture_output() as captured:
+        window_train_set = create_fixed_length_windows(train_set, 
+                                                    start_offset_samples=0,
+                                                    stop_offset_samples=None,
+                                                    preload=True,
+                                                    window_size_samples=input_window_samples,
+                                                    window_stride_samples=n_preds_per_input,
+                                                    drop_last_window=True,)
+        
+with io.capture_output() as captured:
+        window_test_set = create_fixed_length_windows(test_set,
+                                                    start_offset_samples=0,
+                                                    stop_offset_samples=None,preload=False,
+                                                    window_size_samples=input_window_samples,
+                                                    window_stride_samples=n_preds_per_input,
+                                                    drop_last_window=False,)
+
+# %% [markdown]
+# ## defining the classifier
+# 
+
+# %%
+from braindecode import EEGClassifier
+from braindecode.training.losses import CroppedLoss
+import torch
+from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
+
+weight_decay = 0.5 * 0.001
+lr = 0.0625 * 0.01
+n_epochs = 10
+batch_size = 64
+
+clf = EEGClassifier(
+                model,
+                cropped=True,
+                classes=[0, 1],
+                criterion=CroppedLoss,
+                criterion__loss_function=torch.nn.functional.nll_loss,
+                optimizer=torch.optim.AdamW,
+                train_split=predefined_split(window_test_set), 
+                optimizer__lr=lr,
+                optimizer__weight_decay=weight_decay,
+                iterator_train__shuffle=True,
+                batch_size=batch_size,
+                callbacks=[
+                    "accuracy", "balanced_accuracy","f1",("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+                    ],
+                device='cuda' if cuda else 'cpu',
+                )
+
+clf.initialize() # This is important!
+print('classifier initialized')
+print("Number of parameters = ", sum(p.numel() for p in model.parameters() if p.requires_grad))
 
 
 # %% [markdown]
 # ## Training
 # 
-# We can now train our network on the pretext task. We use similar
+# We can now train our network on the TUAB. We use similar
 # hyperparameters as in [1]_, but reduce the number of epochs and
 # increase the learning rate to account for the smaller setting of
 # this example.
@@ -133,73 +177,134 @@ n_jobs = 1
 # 
 
 # %%
-
+clf.fit(window_train_set, y=None, epochs=n_epochs)
 
 # %% [markdown]
-# ## Visualizing the results
-# 
-# ### Inspecting pretext task performance
-# 
-# We plot the loss and pretext task performance for the training and validation
-# sets.
-# 
-# 
+# ## saving the model
 
 # %%
+result_path = 'PATH_TO_SAVE_THE_MODEL'
+path = result_path + "model_{}.pt".format(random_state)
+torch.save(clf.module, path)
+path = result_path + "state_dict_{}.pt".format(random_state)
+torch.save(clf.module.state_dict(), path)
 
+clf.save_params(f_params=result_path +'model.pkl', f_optimizer= result_path +'opt.pkl', f_history=result_path +'history.json')
 
 # %% [markdown]
-# We also display the confusion matrix and classification report for the
-# pretext task:
-# 
-# 
+# ## Load NMT dataset
 
 # %%
+import mne
+mne.set_log_level('ERROR')
 
-
-# %% [markdown]
-# ### Using the learned representation for sleep staging
-# 
-# We can now use the trained convolutional neural network as a feature
-# extractor. We perform sleep stage classification from the learned feature
-# representation using a linear logistic regression classifier.
-# 
-# 
+NMT_ds = load_concat_dataset(NMT_path, preload=False,
+                            target_name=['pathological','age','gender'] ,#)
+                            ids_to_load=range(200)
+                            )
 
 # %%
-
-
-# %% [markdown]
-# The balanced accuracy is much higher than chance-level (i.e., 20% for our
-# 5-class classification problem). Finally, we perform a quick 2D visualization
-# of the feature space using a PCA:
-# 
-# 
+# split based on train split from dataset
+train_set = NMT_ds.split('train')['True']
+test_set = NMT_ds.split('train')['False']
 
 # %%
-
+import pandas as pd
+print("target is being set to pathological clf")
+target = NMT_ds.description['pathological'].astype(int)
+for d, y in zip(NMT_ds.datasets, target):
+    d.description['pathological'] = y
+    d.target_name = 'pathological'
+    d.target = d.description[d.target_name]
+NMT_ds.set_description(pd.DataFrame([d.description for d in NMT_ds.datasets]), overwrite=True)
 
 # %% [markdown]
-# We see that there is sleep stage-related structure in the embedding. A
-# nonlinear projection method (e.g., tSNE, UMAP) might yield more insightful
-# visualizations. Using a similar approach, the embedding space could also be
-# explored with respect to subject-level features, e.g., age and sex.
-# 
+# ### extracting windows
+
+# %%
+from IPython.utils import io
+from braindecode.datautil.windowers import create_fixed_length_windows
+
+with io.capture_output() as captured:
+        window_train_set = create_fixed_length_windows(train_set, 
+                                                    start_offset_samples=0,
+                                                    stop_offset_samples=None,
+                                                    preload=True,
+                                                    window_size_samples=input_window_samples,
+                                                    window_stride_samples=n_preds_per_input,
+                                                    drop_last_window=True,)
+with io.capture_output() as captured:
+        window_test_set = create_fixed_length_windows(test_set,
+                                                    start_offset_samples=0,
+                                                    stop_offset_samples=None,preload=False,
+                                                    window_size_samples=input_window_samples,
+                                                    window_stride_samples=n_preds_per_input,
+                                                    drop_last_window=False,)
+
+# %% [markdown]
+# ## loading the pre trained model
+
+# %%
+load_path = result_path + 'state_dict_2024.pt'
+state_dicts = torch.load(load_path) 
+model.load_state_dict(state_dicts, strict= False)
+print('pre-trained model loaded using pytorch')
+
+## freeze layers ##
+freez = False
+if freez:
+    for ii, (name, param) in enumerate(model.named_parameters()):
+        # if 'temporal_block_0' in name or 'temporal_block_1' in name or 'temporal_block_2' in name or 'temporal_block_3' in name: # or 'temporal_block_5' in name or 'conv_classifier' in name:
+        if not 'conv_classifier' in name:
+            param.requires_grad = False
+            print('param:', name, param.requires_grad)
+
+# %% [markdown]
+# ## fine tuning the model on NMT dataset
+
+# %%
+from braindecode import EEGClassifier
+from braindecode.training.losses import CroppedLoss
+import torch
+from skorch.callbacks import LRScheduler
+from skorch.helper import predefined_split
+
+weight_decay = 0.5 * 0.001
+lr = 0.0625 * 0.01
+n_epochs = 10
+batch_size = 64
+
+clf = EEGClassifier(
+                model,
+                cropped=True,
+                classes=[0, 1],
+                criterion=CroppedLoss,
+                criterion__loss_function=torch.nn.functional.nll_loss,
+                optimizer=torch.optim.AdamW,
+                train_split=predefined_split(window_test_set), 
+                optimizer__lr=lr,
+                optimizer__weight_decay=weight_decay,
+                iterator_train__shuffle=True,
+                batch_size=batch_size,
+                callbacks=[
+                    "accuracy", "balanced_accuracy","f1",("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+                    ],
+                device='cuda' if cuda else 'cpu',
+                )
+
+clf.initialize() # This is important!
+print('classifier initialized')
+print("Number of parameters = ", sum(p.numel() for p in model.parameters() if p.requires_grad))
+
+
+# %%
+clf.fit(window_train_set, y=None, epochs=n_epochs)
+
+# %% [markdown]
 # ## Conclusion
 # 
-# In this example, we used self-supervised learning (SSL) as a way to learn
-# representations from unlabelled raw EEG data. Specifically, we used the
-# relative positioning (RP) pretext task to train a feature extractor on a
-# subset of the Sleep Physionet dataset. We then reused these features in a
-# downstream sleep staging task. We achieved reasonable downstream performance
-# and further showed with a 2D projection that the learned embedding space
-# contained sleep-related structure.
-# 
-# Many avenues could be taken to improve on these results. For instance, using
-# the entire Sleep Physionet dataset or training on larger datasets should help
-# the feature extractor learn better representations during the pretext task.
-# Other SSL tasks such as those described in [1]_ could further help discover
-# more powerful features.
+# In this example, we used transfer learning (TL) as a way to learn
+# representations from a large EEG data and transfer to a smaller dataset. 
 # 
 # 
 # ## References
