@@ -360,7 +360,16 @@ class SRM(nn.Module):
 
 class CBAM(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    reduction_rate : int, reduction ratio of the fully-connected layers
+    kernel_size : int kernel size of the convolutional layer
+    
+    References
+    ----------
+    .. [Woo2018] Woo, S., Park, J., Lee, J., Kweon, I., 2018.
+    CBAM: Convolutional Block Attention Module. ECCV 2018.
     """
     def __init__(self, in_channels: int, reduction_rate: int, kernel_size: int):
         super(CBAM, self).__init__()
