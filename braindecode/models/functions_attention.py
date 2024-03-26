@@ -295,7 +295,14 @@ class GatherExcite(nn.Module):
 
 class GCT(nn.Module):
     """
-    XXX. TODO: Add description.
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    
+    References
+    ----------
+    .. [Yang2020] Yang, Z. Linchao, Z., Wu, Y., Yang, Y., 2020.
+    Gated Channel Transformation for Visual Recognition. CVPR 2020.
     """
     def __init__(self, in_channels: int):
         super(GCT, self).__init__()
