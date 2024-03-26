@@ -160,7 +160,7 @@ class _ChannelAttentionBlock(nn.Module):
 
     def __init__(
         self,
-        attention_mode: str = "catlite",
+        attention_mode: str = None,
         in_channels: int = 16,
         temp_filter_length: int = 15,
         pool_length: int = 8,
