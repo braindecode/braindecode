@@ -468,7 +468,18 @@ class CAT(nn.Module):
 
 class CATLite(nn.Module):
     """
-    XXX. TODO: Add description.
+    Modification of CAT without the convolutional layer.
+    
+    Parameters
+    ----------
+    in_channels : int, number of input feature channels
+    reduction_rate : int, reduction ratio of the fully-connected layers
+    bias : bool, default=True
+    
+    References
+    ----------
+    .. [Wu2023] Wu, Z. et al., 2023
+    CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
     """
     def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
         super(CATLite, self).__init__()
