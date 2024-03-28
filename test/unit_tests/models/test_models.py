@@ -38,7 +38,8 @@ from braindecode.models import (
     ATCNet,
     EEGConformer,
     BIOT,
-    Labram
+    Labram,
+    AttentionBaseNet
 )
 
 from braindecode.util import set_random_seeds
@@ -915,3 +916,38 @@ def test_labram_n_outputs_0(default_labram_params):
         out = labram_base(X)
         assert out.shape[-1] == default_labram_params['patch_size']
         assert isinstance(labram_base.head, nn.Identity)
+
+
+@pytest.fixture
+def default_attentionbasenet_params():
+    return {
+        'n_times': 1000,
+        'n_chans': 22,
+        'n_outputs': 4,
+    }
+
+
+@pytest.mark.parametrize("attention_mode", [
+    None,
+    "se",
+    "gsop",
+    "fca",
+    "encnet",
+    "eca",
+    "ge",
+    "gct",
+    "srm",
+    "cbam",
+    "cat",
+    "catlite"
+])
+def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
+    model = AttentionBaseNet(**default_attentionbasenet_params,
+                             attention_mode=attention_mode)
+    input_sizes = dict(
+        n_samples=7,
+        n_channels=default_attentionbasenet_params.get("n_chans"),
+        n_in_times=default_attentionbasenet_params.get("n_times"),
+        n_classes=default_attentionbasenet_params.get("n_outputs")
+    )
+    check_forward_pass(model, input_sizes)
