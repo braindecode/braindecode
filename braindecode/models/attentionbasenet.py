@@ -3,8 +3,20 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions_attention import get_attention_block
 from braindecode.models.modules import Ensure4d
+from braindecode.models.modules_attention import (
+    GSoP,
+    SqueezeAndExcitation,
+    FCA,
+    EncNet,
+    ECA,
+    GatherExcite,
+    GCT,
+    SRM,
+    CBAM,
+    CAT,
+    CATLite,
+)
 
 
 class _FeatureExtractor(nn.Module):
@@ -253,9 +265,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_times = None,
-        n_chans = None,
-        n_outputs = None,
+        n_times=None,
+        n_chans=None,
+        n_outputs=None,
         n_temporal_filters: int = 40,
         temp_filter_length_inp: int = 25,
         spatial_expansion: int = 1,
@@ -356,3 +368,97 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             out = np.floor((out - pl) / ps + 1)
             seq_lengths.append(int(out))
         return seq_lengths
+
+
+def get_attention_block(
+    attention_mode: str,
+    ch_dim: int = 16,
+    reduction_rate: int = 4,
+    use_mlp: bool = False,
+    seq_len: int = None,
+    freq_idx: int = 0,
+    n_codewords: int = 4,
+    kernel_size: int = 9,
+    extra_params: bool = False,
+):
+    """
+    Util function to the attention block based on the attention mode.
+
+    Parameters
+    ----------
+    attention_mode: str
+        The type of attention mechanism to apply.
+    ch_dim: int
+        The number of input channels to the block.
+    reduction_rate: int
+        The reduction rate used in the attention mechanism to reduce
+        dimensionality and computational complexity.
+        Used in all the methods, except for the
+        encnet and eca.
+    use_mlp: bool
+        Flag to indicate whether an MLP (Multi-Layer Perceptron) should be used
+        within the attention mechanism for further processing. Used in the ge
+        and srm attention mechanism.
+    seq_len: int
+        The sequence length, used in certain types of attention mechanisms to
+        process temporal dimensions. Used in the ge or fca attention mechanism.
+    freq_idx: int
+        DCT index used in fca attention mechanism.
+    n_codewords: int
+        The number of codewords (clusters) used in attention mechanisms
+        that employ quantization or clustering strategies, encnet.
+    kernel_size: int
+        The kernel size used in certain types of attention mechanisms for convolution
+        operations, used in the cbam, eca, and cat attention mechanisms.
+    extra_params: bool
+        Parameter to pass additional parameters to the GatherExcite mechanism.
+
+    Returns
+    -------
+    nn.Module
+        The attention block based on the attention mode.
+    """
+    if attention_mode == "se":
+        return SqueezeAndExcitation(in_channels=ch_dim,
+                                    reduction_rate=reduction_rate)
+    # improving the squeeze module
+    elif attention_mode == "gsop":
+        return GSoP(in_channels=ch_dim,
+                    reduction_rate=reduction_rate)
+    elif attention_mode == "fca":
+        assert seq_len is not None
+        return FCA(in_channels=ch_dim, seq_len=seq_len,
+                   reduction_rate=reduction_rate, freq_idx=freq_idx)
+    elif attention_mode == "encnet":
+        return EncNet(in_channels=ch_dim, n_codewords=n_codewords)
+    # improving the excitation module
+    elif attention_mode == "eca":
+        return ECA(in_channels=ch_dim, kernel_size=kernel_size)
+    # improving the squeeze and the excitation module
+    elif attention_mode == "ge":
+        return GatherExcite(
+            in_channels=ch_dim,
+            seq_len=seq_len,
+            extra_params=extra_params,
+            use_mlp=use_mlp,
+            reduction_rate=reduction_rate,
+        )
+    elif attention_mode == "gct":
+        return GCT(in_channels=ch_dim)
+    elif attention_mode == "srm":
+        return SRM(in_channels=ch_dim,
+                   use_mlp=use_mlp,
+                   reduction_rate=reduction_rate)
+    # temporal and channel attention
+    elif attention_mode == "cbam":
+        return CBAM(in_channels=ch_dim,
+                    reduction_rate=reduction_rate,
+                    kernel_size=kernel_size)
+    elif attention_mode == "cat":
+        return CAT(in_channels=ch_dim,
+                   reduction_rate=reduction_rate,
+                   kernel_size=kernel_size)
+    elif attention_mode == "catlite":
+        return CATLite(ch_dim, reduction_rate=reduction_rate)
+    else:
+        raise NotImplementedError
