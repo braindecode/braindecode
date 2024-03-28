@@ -79,14 +79,17 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
+
         self.rs = (
-            Resample(orig_freq=sfreq, new_freq=resampling)
-            if sfreq != resampling
+            Resample(orig_freq=self.sfreq, new_freq=resampling)
+            if self.sfreq != resampling
             else torch.nn.Identity()
         )
 
         self.conv = torch.nn.Conv1d(
-            n_chans, fm, kernel_size=kernel_size, padding=kernel_size // 2, bias=False
+            self.n_chans, fm, kernel_size=kernel_size,
+            padding=kernel_size // 2, bias=False
         )
         self.bn = torch.nn.BatchNorm1d(fm)
         self.blocks = []
@@ -124,7 +127,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             )
             oldfm = newfm
         self.blocks = torch.nn.ModuleList(self.blocks)
-        self.final_layer = torch.nn.Linear(oldfm, n_outputs)
+        self.final_layer = torch.nn.Linear(oldfm, self.n_outputs)
 
     def forward(self, x):
         """
