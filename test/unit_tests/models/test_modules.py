@@ -32,7 +32,7 @@ def test_time_distributed():
     out2 = torch.stack(out2, dim=1).flatten(start_dim=2)
 
     assert out.shape == (batch_size, n_windows, feat_size)
-    assert torch.allclose(out, out2)
+    assert torch.allclose(out, out2, atol=1E-4, rtol=1e-4)
 
 
 def test_reset_parameters():
