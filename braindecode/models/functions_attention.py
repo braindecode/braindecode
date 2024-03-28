@@ -79,7 +79,7 @@ class SqueezeAndExcitation(nn.Module):
     in_channels : int, number of input feature channels
     reduction_rate : int, reduction ratio of the fully-connected layers
     bias: bool, default=False
-    
+
     References
     ----------
     .. [Hu2018] Hu, J., Albanie, S., Sun, G., Wu, E., 2018.
@@ -117,7 +117,7 @@ class GSoP(nn.Module):
     in_channels : int, number of input feature channels
     reduction_rate : int, reduction ratio of the fully-connected layers
     bias: bool, default=False
-    
+
     References
     ----------
     .. [Gao2018] Gao, Z., Jiangtao, X., Wang, Q., Li, P., 2018.
@@ -151,7 +151,7 @@ class FCA(torch.nn.Module):
     in_channels : int, number of input feature channels
     seq_len : int, sequence length along temporal dimension, default=62
     reduction_rate : int, reduction ratio of the fully-connected layers, default=4
-    
+
     References
     ----------
     .. [Qin2021] Qin, Z., Zhang, P., Wu, F., Li, X., 2021.
@@ -199,7 +199,7 @@ class EncNet(nn.Module):
     ----------
     in_channels : int, number of input feature channels
     n_codewords : int, number of codewords
-    
+
     References
     ----------
     .. [Zhang2018] Zhang, H. et al. 2018.
@@ -238,7 +238,7 @@ class ECA(nn.Module):
     ----------
     in_channels : int, number of input feature channels
     kernel_size : int, kernel size of convolutional layer, determines degree of channel interaction, must be odd
-    
+
     References
     ----------
     .. [Wang2021] Wang, Q. et al., 2021.
@@ -268,7 +268,7 @@ class GatherExcite(nn.Module):
     extra_params : bool, whether to use a convolutional layer as a gather module, default=False
     use_mlp : bool, whether to use an excite block, default=False
     reduction_rate : int, reduction ratio of the excite block (if used), default=4
-    
+
     References
     ----------
     .. [Hu2018b] Hu, J., Albanie, S., Sun, G., Vedaldi, A., 2018.
@@ -309,7 +309,7 @@ class GCT(nn.Module):
     Parameters
     ----------
     in_channels : int, number of input feature channels
-    
+
     References
     ----------
     .. [Yang2020] Yang, Z. Linchao, Z., Wu, Y., Yang, Y., 2020.
@@ -335,7 +335,7 @@ class SRM(nn.Module):
     in_channels : int, number of input feature channels
     use_mlp : bool, whether to use fully-connected layers instead of a convolutional layer, default=False
     reduction_rate : int, reduction ratio of the fully-connected layers (if used), default=4
-    
+
     References
     ----------
     .. [Lee2019] Lee, H., Kim, H., Nam, H., 2019.
@@ -376,7 +376,7 @@ class CBAM(nn.Module):
     in_channels : int, number of input feature channels
     reduction_rate : int, reduction ratio of the fully-connected layers
     kernel_size : int kernel size of the convolutional layer
-    
+
     References
     ----------
     .. [Woo2018] Woo, S., Park, J., Lee, J., Kweon, I., 2018.
@@ -414,7 +414,7 @@ class CAT(nn.Module):
     reduction_rate : int, reduction ratio of the fully-connected layers
     kernel_size : int kernel size of the convolutional layer
     bias : bool, default=False
-    
+
     References
     ----------
     .. [Wu2023] Wu, Z. et al., 2023
@@ -480,13 +480,13 @@ class CAT(nn.Module):
 class CATLite(nn.Module):
     """
     Modification of CAT without the convolutional layer.
-    
+
     Parameters
     ----------
     in_channels : int, number of input feature channels
     reduction_rate : int, reduction ratio of the fully-connected layers
     bias : bool, default=True
-    
+
     References
     ----------
     .. [Wu2023] Wu, Z. et al., 2023
