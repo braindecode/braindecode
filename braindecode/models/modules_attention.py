@@ -1,3 +1,10 @@
+"""
+Attention modules used in the AttentionBaseNet from Martin Wimpff (2023).
+
+Here, we implement some popular attention modules that can be used in the
+AttentionBaseNet class.
+"""
+
 # Authors: Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
 #          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
@@ -10,73 +17,20 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
-
-def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
-    """
-    Generates a 1-dimensional Gaussian kernel based on the specified kernel
-    size and standard deviation (sigma).
-
-    This kernel is useful for Gaussian smoothing or filtering operations in
-    image processing. The function calculates a range limit to ensure the kernel
-    effectively covers the Gaussian distribution. It generates a tensor of
-    specified size and type, filled with values distributed according to a
-    Gaussian curve, normalized using a softmax function
-    to ensure all weights sum to 1.
-
-    Parameters
-    ----------
-    kernel_size: int
-    sigma: float
-
-    Returns
-    -------
-    kernel1d: torch.Tensor
-
-    Notes
-    -----
-    Code copied and modified from TorchVision:
-    https://github.com/pytorch/vision/blob/main/torchvision/transforms/_functional_tensor.py#L725-L732
-    All rights reserved.
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions are
-    met:
-        * Redistributions of source code must retain the above copyright
-        notice, this list of conditions and the following disclaimer.
-        * Redistributions in binary form must reproduce the above
-        copyright notice, this list of conditions and the following
-        disclaimer in the documentation and/or other materials provided
-        with the distribution.
-        * Neither the name of the Pytorch Developers nor the names of any
-        contributors may be used to endorse or promote products derived
-        from this software without specific prior written permission.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-    A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-    OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-    SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-    LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-    DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-    THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-    OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-    """
-    ksize_half = (kernel_size - 1) * 0.5
-    x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size)
-    pdf = torch.exp(-0.5 * (x / sigma).pow(2))
-    kernel1d = pdf / pdf.sum()
-    return kernel1d
+from functions import _get_gaussian_kernel1d
 
 
 class SqueezeAndExcitation(nn.Module):
-    """
+    """Squeeze-and-Excitation Networks from [Hu2018]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    reduction_rate : int, reduction ratio of the fully-connected layers
+    in_channels : int,
+        number of input feature channels.
+    reduction_rate : int,
+        reduction ratio of the fully-connected layers.
     bias: bool, default=False
+        if True, adds a learnable bias will be used in the convolution.
 
     References
     ----------
@@ -84,7 +38,8 @@ class SqueezeAndExcitation(nn.Module):
     Squeeze-and-Excitation Networks. CVPR 2018.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int, bias: int = False):
+    def __init__(self, in_channels: int, reduction_rate: int,
+                 bias: bool = False):
         super(SqueezeAndExcitation, self).__init__()
         sq_channels = int(in_channels // reduction_rate)
         self.gap = nn.AdaptiveAvgPool2d(1)
@@ -102,6 +57,17 @@ class SqueezeAndExcitation(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
+        """
+        Apply the Squeeze-and-Excitation block to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        scale*x: Pytorch.Tensor
+        """
         scale = self.gap(x)
         scale = self.fc1(scale)
         scale = self.nonlinearity(scale)
@@ -112,11 +78,16 @@ class SqueezeAndExcitation(nn.Module):
 
 class GSoP(nn.Module):
     """
+    Global Second-order Pooling Convolutional Networks from [Gao2018]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    reduction_rate : int, reduction ratio of the fully-connected layers
+    in_channels : int,
+        number of input feature channels
+    reduction_rate : int,
+        reduction ratio of the fully-connected layers
     bias: bool, default=False
+        if True, adds a learnable bias will be used in the convolution.
 
     References
     ----------
@@ -124,10 +95,12 @@ class GSoP(nn.Module):
     Global Second-order Pooling Convolutional Networks. CVPR 2018.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
+    def __init__(self, in_channels: int, reduction_rate: int,
+                 bias: bool = True):
         super(GSoP, self).__init__()
         sq_channels = int(in_channels // reduction_rate)
-        self.pw_conv1 = nn.Conv2d(in_channels, sq_channels, 1, bias=bias)
+        self.pw_conv1 = nn.Conv2d(in_channels, sq_channels,
+                                  1, bias=bias)
         self.bn = nn.BatchNorm2d(sq_channels)
         self.rw_conv = nn.Conv2d(
             sq_channels,
@@ -136,13 +109,26 @@ class GSoP(nn.Module):
             groups=sq_channels,
             bias=bias,
         )
-        self.pw_conv2 = nn.Conv2d(sq_channels * 4, in_channels, 1, bias=bias)
+        self.pw_conv2 = nn.Conv2d(sq_channels * 4, in_channels,
+                                  1, bias=bias)
 
     def forward(self, x):
+        """
+        Apply the Global Second-order Pooling Convolutional Networks block.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         scale = self.pw_conv1(x).squeeze(-2)  # b x c x t
         scale_zero_mean = scale - scale.mean(-1, keepdim=True)
         t = scale_zero_mean.shape[-1]
-        cov = torch.bmm(scale_zero_mean, scale_zero_mean.transpose(1, 2)) / (t - 1)
+        cov = torch.bmm(scale_zero_mean,
+                        scale_zero_mean.transpose(1, 2)) / (t - 1)
         cov = cov.unsqueeze(-1)  # b x c x c x 1
         cov = self.bn(cov)
         scale = self.rw_conv(cov)  # b x c x 1 x 1
@@ -152,11 +138,16 @@ class GSoP(nn.Module):
 
 class FCA(torch.nn.Module):
     """
+    Frequency Channel Attention Networks from [Qin2021]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    seq_len : int, sequence length along temporal dimension, default=62
-    reduction_rate : int, reduction ratio of the fully-connected layers, default=4
+    in_channels : int
+        Number of input feature channels
+    seq_len : int
+        Sequence length along temporal dimension, default=62
+    reduction_rate : int, default=4
+        Reduction ratio of the fully-connected layers.
 
     References
     ----------
@@ -184,6 +175,17 @@ class FCA(torch.nn.Module):
         )
 
     def forward(self, x):
+        """
+        Apply the Frequency Channel Attention Networks block to the input.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         scale = x.squeeze(-2) * self.weight
         scale = torch.sum(scale, dim=-1)
         scale = rearrange(self.fc(scale), "b c -> b c 1 1")
@@ -191,13 +193,30 @@ class FCA(torch.nn.Module):
 
     @staticmethod
     def get_dct_filter(seq_len: int, mapper_y: list, in_channels: int):
+        """
+        Util function to get the DCT filter.
+
+        Parameters
+        ----------
+        seq_len: int
+            Size of the sequence
+        mapper_y:
+            List of frequencies
+        in_channels:
+            Number of input channels.
+
+        Returns
+        -------
+        torch.Tensor
+        """
         dct_filter = torch.zeros(in_channels, seq_len)
 
         c_part = in_channels // len(mapper_y)
 
         for i, v_y in enumerate(mapper_y):
             for t_y in range(seq_len):
-                filter = math.cos(math.pi * v_y * (t_y + 0.5) / seq_len) / math.sqrt(
+                filter = math.cos(
+                    math.pi * v_y * (t_y + 0.5) / seq_len) / math.sqrt(
                     seq_len
                 )
                 filter = filter * math.sqrt(2) if v_y != 0 else filter
@@ -207,10 +226,14 @@ class FCA(torch.nn.Module):
 
 class EncNet(nn.Module):
     """
+    Context Encoding for Semantic Segmentation from [Zhang2018]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    n_codewords : int, number of codewords
+    in_channels : int
+        number of input feature channels
+    n_codewords : int
+        number of codewords
 
     References
     ----------
@@ -230,9 +253,21 @@ class EncNet(nn.Module):
         self.fc = nn.Linear(in_channels, in_channels)
 
     def forward(self, x):
+        """
+        Apply attention from the Context Encoding for Semantic Segmentation.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         b, c, _, seq = x.shape
         # b x c x 1 x t -> b x t x k x c
-        x_ = rearrange(x, "b c 1 seq -> b seq 1 c").expand(b, seq, self.n_codewords, c)
+        x_ = rearrange(x, pattern="b c 1 seq -> b seq 1 c")
+        x_ = x_.expand(b, seq, self.n_codewords, c)
         cw_ = self.codewords.unsqueeze(0).unsqueeze(0)  # 1 x 1 x k x c
         a = self.smoothing.unsqueeze(0).unsqueeze(0) * (x_ - cw_).pow(2).sum(3)
         a = torch.softmax(a, dim=2)  # b x t x k
@@ -247,15 +282,20 @@ class EncNet(nn.Module):
 
 class ECA(nn.Module):
     """
+    Efficient Channel Attention [Wang2021]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    kernel_size : int, kernel size of convolutional layer, determines degree of channel interaction, must be odd
+    in_channels : int
+        number of input feature channels
+    kernel_size : int
+        kernel size of convolutional layer, determines degree of channel
+        interaction, must be odd.
 
     References
     ----------
-    .. [Wang2021] Wang, Q. et al., 2021.
-    ECA-Net: Efficient Channel Attention for Deep Convolutional Neural Networks. CVPR 2021.
+    .. [Wang2021] Wang, Q. et al., 2021. ECA-Net: Efficient Channel Attention
+    for Deep Convolutional Neural Networks. CVPR 2021.
     """
 
     def __init__(self, in_channels: int, kernel_size: int):
@@ -263,10 +303,22 @@ class ECA(nn.Module):
         self.gap = nn.AdaptiveAvgPool2d(1)
         assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
         self.conv = nn.Conv1d(
-            1, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False
+            1, 1,
+            kernel_size=kernel_size, padding=kernel_size // 2, bias=False
         )
 
     def forward(self, x):
+        """
+        Apply the Efficient Channel Attention block to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         scale = self.gap(x)
         scale = rearrange(scale, "b c 1 1 -> b 1 c")
         scale = self.conv(scale)
@@ -276,18 +328,26 @@ class ECA(nn.Module):
 
 class GatherExcite(nn.Module):
     """
+    Gather-Excite Networks from [Hu2018b]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    seq_len : int, sequence length along temporal dimension, default=62
-    extra_params : bool, whether to use a convolutional layer as a gather module, default=False
-    use_mlp : bool, whether to use an excite block, default=False
-    reduction_rate : int, reduction ratio of the excite block (if used), default=4
+    in_channels : int
+        number of input feature channels
+    seq_len : int, default=62
+        sequence length along temporal dimension
+    extra_params : bool, default=False
+        whether to use a convolutional layer as a gather module
+    use_mlp : bool, default=False
+        whether to use an excite block with fully-connected layers
+    reduction_rate : int, default=4
+        reduction ratio of the excite block (if used)
 
     References
     ----------
     .. [Hu2018b] Hu, J., Albanie, S., Sun, G., Vedaldi, A., 2018.
-    Gather-Excite: Exploiting Feature Context in Convolutional Neural Networks. NeurIPS 2018.
+    Gather-Excite: Exploiting Feature Context in Convolutional Neural Networks.
+    NeurIPS 2018.
     """
 
     def __init__(
@@ -329,6 +389,17 @@ class GatherExcite(nn.Module):
             self.mlp = nn.Identity()
 
     def forward(self, x):
+        """
+        Apply the Gather-Excite Networks block to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         scale = self.gather(x)
         scale = torch.sigmoid(self.mlp(scale))
         return scale * x
@@ -336,9 +407,12 @@ class GatherExcite(nn.Module):
 
 class GCT(nn.Module):
     """
+    Gated Channel Transformation from [Yang2020]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
+    in_channels : int
+        number of input feature channels
 
     References
     ----------
@@ -353,24 +427,44 @@ class GCT(nn.Module):
         self.gamma = nn.Parameter(torch.zeros(1, in_channels, 1, 1))
 
     def forward(self, x, eps: float = 1e-5):
-        embedding = (x.pow(2).sum((2, 3), keepdim=True) + eps).pow(0.5) * self.alpha
-        norm = self.gamma / (embedding.pow(2).mean(dim=1, keepdim=True) + eps).pow(0.5)
+        """
+        Apply the Gated Channel Transformation block to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+        eps: float, default=1e-5
+
+        Returns
+        -------
+        Pytorch.Tensor
+            the original tensor x multiplied by the gate.
+        """
+        embedding = (x.pow(2).sum((2, 3), keepdim=True) + eps).pow(
+            0.5) * self.alpha
+        norm = self.gamma / (
+                embedding.pow(2).mean(dim=1, keepdim=True) + eps).pow(0.5)
         gate = 1.0 + torch.tanh(embedding * norm + self.beta)
         return x * gate
 
 
 class SRM(nn.Module):
     """
+    Attention module from [Lee2019]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    use_mlp : bool, whether to use fully-connected layers instead of a convolutional layer, default=False
-    reduction_rate : int, reduction ratio of the fully-connected layers (if used), default=4
+    in_channels : int
+        number of input feature channels
+    use_mlp : bool, default=False
+        whether to use fully-connected layers instead of a convolutional layer,
+    reduction_rate : int, default=4
+        reduction ratio of the fully-connected layers (if used),
 
     References
     ----------
-    .. [Lee2019] Lee, H., Kim, H., Nam, H., 2019.
-    SRM : A Style-based Recalibration Module for Convolutional Neural Networks. ICCV 2019.
+    .. [Lee2019] Lee, H., Kim, H., Nam, H., 2019. SRM: A Style-based
+    Recalibration Module for Convolutional Neural Networks. ICCV 2019.
     """
 
     def __init__(
@@ -390,7 +484,8 @@ class SRM(nn.Module):
                     bias=bias
                 ),
                 nn.ReLU(),
-                nn.Linear(in_channels * 2 // reduction_rate, in_channels, bias=bias),
+                nn.Linear(in_channels * 2 // reduction_rate, in_channels,
+                          bias=bias),
                 Rearrange("b c -> b c 1"),
             )
         else:
@@ -400,6 +495,17 @@ class SRM(nn.Module):
         self.bn = nn.BatchNorm1d(in_channels)
 
     def forward(self, x):
+        """
+        Apply the Style-based Recalibration Module to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         mu = self.gap(x).squeeze(-1)  # b x c x 1
         std = x.std(dim=(-2, -1), keepdim=True).squeeze(-1)  # b x c x 1
         t = torch.cat([mu, std], dim=2)  # b x c x 2
@@ -411,11 +517,16 @@ class SRM(nn.Module):
 
 class CBAM(nn.Module):
     """
+    Convolutional Block Attention Module from [Woo2018]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    reduction_rate : int, reduction ratio of the fully-connected layers
-    kernel_size : int kernel size of the convolutional layer
+    in_channels : int
+        number of input feature channels
+    reduction_rate : int
+        reduction ratio of the fully-connected layers
+    kernel_size : int
+        kernel size of the convolutional layer
 
     References
     ----------
@@ -423,12 +534,14 @@ class CBAM(nn.Module):
     CBAM: Convolutional Block Attention Module. ECCV 2018.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int, kernel_size: int):
+    def __init__(self, in_channels: int, reduction_rate: int,
+                 kernel_size: int):
         super(CBAM, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.fc = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels // reduction_rate, 1, bias=False),
+            nn.Conv2d(in_channels, in_channels // reduction_rate, 1,
+                      bias=False),
             nn.ReLU(),
             nn.Conv2d(in_channels // reduction_rate, in_channels, 1,
                       bias=False),
@@ -438,6 +551,17 @@ class CBAM(nn.Module):
                               padding=(0, kernel_size // 2))
 
     def forward(self, x):
+        """
+        Apply the Convolutional Block Attention Module to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         channel_attention = torch.sigmoid(
             self.fc(self.avg_pool(x)) + self.fc(self.max_pool(x))
         )
@@ -453,12 +577,18 @@ class CBAM(nn.Module):
 
 class CAT(nn.Module):
     """
+    Attention Mechanism from [Wu2023]_.
+
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    reduction_rate : int, reduction ratio of the fully-connected layers
-    kernel_size : int kernel size of the convolutional layer
+    in_channels : int
+        number of input feature channels
+    reduction_rate : int
+        reduction ratio of the fully-connected layers
+    kernel_size : int
+        kernel size of the convolutional layer
     bias : bool, default=False
+        if True, adds a learnable bias will be used in the convolution,
 
     References
     ----------
@@ -477,7 +607,8 @@ class CAT(nn.Module):
             requires_grad=False
         )
         self.mlp = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels // reduction_rate, 1, bias=bias),
+            nn.Conv2d(in_channels, in_channels // reduction_rate, 1,
+                      bias=bias),
             nn.ReLU(),
             nn.Conv2d(in_channels // reduction_rate, in_channels, 1,
                       bias=bias),
@@ -500,6 +631,17 @@ class CAT(nn.Module):
         self.s_w = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
+        """
+        Apply the CAT block to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         b, c, h, w = x.shape
         x_blurred = self.gauss_filter(x.transpose(1, 2)).transpose(1, 2)
 
@@ -525,7 +667,8 @@ class CAT(nn.Module):
         spatial_score = (
                 -s_gap * self.s_alpha + s_gmp * self.s_beta + s_gep * self.s_gamma
         )
-        spatial_score = torch.sigmoid(self.conv(spatial_score)).expand(b, c, h, w)
+        spatial_score = torch.sigmoid(self.conv(spatial_score)).expand(b, c, h,
+                                                                       w)
 
         c_w = torch.exp(self.c_w) / (torch.exp(self.c_w) + torch.exp(self.s_w))
         s_w = torch.exp(self.s_w) / (torch.exp(self.c_w) + torch.exp(self.s_w))
@@ -550,7 +693,8 @@ class CATLite(nn.Module):
     CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
+    def __init__(self, in_channels: int, reduction_rate: int,
+                 bias: bool = True):
         super(CATLite, self).__init__()
         self.gauss_filter = nn.Conv2d(1, 1, (1, 5), padding=(0, 2), bias=False)
         self.gauss_filter.weight = nn.Parameter(
@@ -570,6 +714,17 @@ class CATLite(nn.Module):
         self.c_gamma = nn.Parameter(torch.zeros(1))
 
     def forward(self, x):
+        """
+        Apply the CATLite block to the input tensor.
+
+        Parameters
+        ----------
+        x: Pytorch.Tensor
+
+        Returns
+        -------
+        Pytorch.Tensor
+        """
         b, c, h, w = x.shape
         x_blurred = self.gauss_filter(x.transpose(1, 2)).transpose(1, 2)
 
@@ -586,51 +741,3 @@ class CATLite(nn.Module):
         channel_score = channel_score.expand(b, c, h, w)
 
         return channel_score * x
-
-
-def get_attention_block(
-        attention_mode: str,
-        ch_dim: int = 16,
-        reduction_rate: int = 4,
-        use_mlp: bool = False,
-        seq_len: int = None,
-        freq_idx: int = 0,
-        n_codewords: int = 4,
-        kernel_size: int = 9,
-        extra_params: bool = False,
-):
-    if attention_mode == "se":
-        return SqueezeAndExcitation(ch_dim, reduction_rate)
-    # improving the squeeze module
-    elif attention_mode == "gsop":
-        return GSoP(ch_dim, reduction_rate)
-    elif attention_mode == "fca":
-        assert seq_len is not None
-        return FCA(ch_dim, seq_len, reduction_rate, freq_idx=freq_idx)
-    elif attention_mode == "encnet":
-        return EncNet(ch_dim, n_codewords=n_codewords)
-    # improving the excitation module
-    elif attention_mode == "eca":
-        return ECA(ch_dim, kernel_size=kernel_size)
-    # improving the squeeze and the excitation module
-    elif attention_mode == "ge":
-        return GatherExcite(
-            ch_dim,
-            seq_len=seq_len,
-            extra_params=extra_params,
-            use_mlp=use_mlp,
-            reduction_rate=reduction_rate,
-        )
-    elif attention_mode == "gct":
-        return GCT(ch_dim)
-    elif attention_mode == "srm":
-        return SRM(ch_dim, use_mlp=use_mlp, reduction_rate=reduction_rate)
-    # temporal and channel attention
-    elif attention_mode == "cbam":
-        return CBAM(ch_dim, reduction_rate, kernel_size=kernel_size)
-    elif attention_mode == "cat":
-        return CAT(ch_dim, reduction_rate, kernel_size)
-    elif attention_mode == "catlite":
-        return CATLite(ch_dim, reduction_rate=reduction_rate)
-    else:
-        raise NotImplementedError
