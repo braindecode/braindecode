@@ -10,7 +10,7 @@ Each EEG channels is convoled individually.
 
 import torch
 
-from . import Resample
+from .modules import Resample
 from .base import EEGModuleMixin
 
 
