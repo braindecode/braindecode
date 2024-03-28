@@ -268,6 +268,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         n_times=None,
         n_chans=None,
         n_outputs=None,
+        chs_info=None,
+        sfreq=None,
+        input_window_seconds=None,
         n_temporal_filters: int = 40,
         temp_filter_length_inp: int = 25,
         spatial_expansion: int = 1,
@@ -286,9 +289,6 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         n_codewords: int = 4,
         kernel_size: int = 9,
         extra_params: bool = False,
-        chs_info=None,
-        sfreq=None,
-        input_window_seconds=None,
     ):
         super(AttentionBaseNet, self).__init__()
 
