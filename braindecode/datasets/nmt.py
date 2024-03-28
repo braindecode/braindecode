@@ -1,8 +1,14 @@
 """
-Dataset classes for the NMT EEG Corpus
+Dataset classes for the NMT EEG Corpus dataset.
+
+The NMT Scalp EEG Dataset is an open-source annotated dataset of healthy and
+pathological EEG recordings for predictive modeling. This dataset contains
+2,417 recordings from unique participants spanning almost 625 h.
+
 """
 
 # Authors: Mohammad Bayazi <mj.darvishi92@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -16,14 +22,18 @@ from braindecode.datasets.base import BaseConcatDataset, BaseDataset
 
 
 class NMT(BaseConcatDataset):
-    """The NMT Scalp EEG Dataset: An Open-Source Annotated Dataset of Healthy
-    and Pathological EEG Recordings for Predictive Modeling.
-    National University of Sciences and Technology (NUST)
-    Pak Emirates Military Hospital (MH)
-    Technical University of Kaiserslautern (TUKL)
-    https://dll.seecs.nust.edu.pk/downloads/
-    or
-    https://drive.google.com/file/d/1jD_AcmfoaIfkOiO5lSU4J6IxHZtalnTk/view
+    """The NMT Scalp EEG Dataset.
+
+    An Open-Source Annotated Dataset of Healthy and Pathological EEG
+    Recordings for Predictive Modeling.
+
+    This dataset contains 2,417 recordings from unique participants spanning
+    almost 625 h.
+
+    Here, the dataset can be used for three tasks, brain-age, gender prediction,
+    abnormality detection.
+
+    The dataset is described in [Khan2022]_.
 
     Parameters
     ----------
@@ -39,6 +49,13 @@ class NMT(BaseConcatDataset):
         Can be 'gender', or 'age'.
     preload: bool
         If True, preload the data of the Raw objects.
+
+    References
+    ----------
+    .. [Khan2022] Khan, H.A.,Ul Ain, R., Kamboh, A.M., Butt, H.T.,Shafait,S.,
+    Alamgir, W., Stricker, D. and Shafait, F., 2022. The NMT scalp EEG dataset:
+    an open-source annotated dataset of healthy and pathological EEG recordings
+    for predictive modeling. Frontiers in neuroscience, 15, p.755817.
     """
 
     def __init__(
