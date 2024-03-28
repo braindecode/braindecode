@@ -23,6 +23,8 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`509` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
+
 
 - Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
