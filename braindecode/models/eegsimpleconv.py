@@ -1,7 +1,11 @@
+# Authors: Yassine El Ouahidi <eloua.yas@gmail.com>
+#
+# License: BSD-3
+
 import torch
 from torch import nn
-from utils_eegsimpleconv import Resample
-from braindecode.model.base import EEGModuleMixin
+from . import Resample
+from .base import EEGModuleMixin
 
 
 
@@ -38,6 +42,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             sfreq=sfreq,
         )
         self.rs = Resample(orig_freq=sfreq,new_freq=resampling) if sfreq!=resampling else torch.nn.Identity()
+
         self.conv = torch.nn.Conv1d(n_chans, fm, kernel_size = kernel_size, padding = kernel_size // 2, bias = False)
         self.bn = torch.nn.BatchNorm1d(fm)
         self.blocks = []
