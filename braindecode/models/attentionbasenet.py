@@ -245,10 +245,10 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     References
     ----------
     .. [Martin2023] Wimpff, M., Gizzi, L., Zerfowski, J. and Yang, B., 2023.
-    EEG motor imagery decoding: A framework for comparative analysis with
-    channel attention mechanisms. arXiv preprint arXiv:2310.11198.
+        EEG motor imagery decoding: A framework for comparative analysis with
+        channel attention mechanisms. arXiv preprint arXiv:2310.11198.
     .. [MartinCode] Wimpff, M., Gizzi, L., Zerfowski, J. and Yang, B.
-    https://github.com/martinwimpff/channel-attention
+        GitHub https://github.com/martinwimpff/channel-attention (accessed 2024-03-28)
     """
 
     def __init__(
