@@ -17,7 +17,7 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn
 
-from functions import _get_gaussian_kernel1d
+from .functions import _get_gaussian_kernel1d
 
 
 class SqueezeAndExcitation(nn.Module):
