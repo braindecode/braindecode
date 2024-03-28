@@ -11,8 +11,7 @@ import torch
 from torch import nn
 
 
-def _get_gaussian_kernel1d(kernel_size: int, sigma: float, dtype: torch.dtype,
-                           device: torch.device) -> torch.Tensor:
+def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     """
     Generates a 1-dimensional Gaussian kernel based on the specified kernel
     size and standard deviation (sigma).
@@ -28,8 +27,6 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float, dtype: torch.dtype,
     ----------
     kernel_size: int
     sigma: float
-    dtype: torch.dtype
-    device: torch.device
 
     Returns
     -------
@@ -38,7 +35,7 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float, dtype: torch.dtype,
     Notes
     -----
     Code copied and modified from TorchVision:
-    https://github.com/pytorch/vision/blob/f21c6bd8ca5cd057fc3d1e0dc5ea8f6403dc144f/torchvision/transforms/v2/functional/_misc.py#L84-L88
+    https://github.com/pytorch/vision/blob/main/torchvision/transforms/_functional_tensor.py#L725-L732
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -66,9 +63,10 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float, dtype: torch.dtype,
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
     """
-    lim = (kernel_size - 1) / (2.0 * math.sqrt(2.0) * sigma)
-    x = torch.linspace(-lim, lim, steps=kernel_size, dtype=dtype, device=device)
-    kernel1d = torch.softmax(x.pow_(2).neg_(), dim=0)
+    ksize_half = (kernel_size - 1) * 0.5
+    x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size)
+    pdf = torch.exp(-0.5 * (x / sigma).pow(2))
+    kernel1d = pdf / pdf.sum()
     return kernel1d
 
 
@@ -96,7 +94,7 @@ class SqueezeAndExcitation(nn.Module):
                              bias=bias)
         self.nonlinearity = nn.ReLU()
         self.fc2 = nn.Conv2d(in_channels=reduction_rate,
-                             out_channels=sq_channels,
+                             out_channels=in_channels,
                              kernel_size=1,
                              bias=bias)
         self.sigmoid = nn.Sigmoid()

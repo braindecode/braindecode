@@ -4,6 +4,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions_attention import get_attention_block
+from braindecode.models.modules import Ensure4d
 
 
 class _FeatureExtractor(nn.Module):
@@ -47,7 +48,8 @@ class _FeatureExtractor(nn.Module):
     ):
         super(_FeatureExtractor, self).__init__()
 
-        self.rearrange_input = Rearrange("b c t -> b 1 c t")
+        self.ensure4d = Ensure4d()
+        self.rearrange_input = Rearrange("b c t 1 -> b 1 c t")
         self.temporal_conv = nn.Conv2d(
             1,
             n_temporal_filters,
@@ -69,6 +71,7 @@ class _FeatureExtractor(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
+        x = self.ensure4d(x)
         x = self.rearrange_input(x)
         x = self.temporal_conv(x)
         x = self.intermediate_bn(x)
