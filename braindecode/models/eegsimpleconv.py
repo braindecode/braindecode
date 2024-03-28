@@ -1,9 +1,8 @@
 """
 EEG-SimpleConv is a 1D Convolutional Neural Network from Yassine El Ouahidi et al. (2023).
 Originally designed for Motor Imagery decoding, from EEG signals.
-The model is composed of a first 1D convolutional layer followed by a series of blocks of two 1D convolutional layers.
-
-Each block is followed by a max pooling layer and a ReLU activation function.
+The model offers competitive performances, with a low latency and ismainly composed of
+1D convolutional layers.
 
 """
 # Authors: Yassine El Ouahidi <eloua.yas@gmail.com>
@@ -128,7 +127,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         oldfm = fm
         for i in range(n_convs):
             if i > 0:
-                newfm = int(1.414 * newfm) # 1.414 = sqrt(2) in order to maitain the flops constant with the deacreasing depth
+                newfm = int(1.414 * newfm) # 1.414 = sqrt(2) allow constant flops.
             self.blocks.append(
                 torch.nn.Sequential(
                     (
