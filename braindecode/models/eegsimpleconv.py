@@ -22,7 +22,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     for decoding motor imagery from EEG signals. The model aims to have a
     very simple and straightforward architecture that allows a low latency,
     while still achieving very competitive performance.
-    
+    w
     EEG-SimpleConv starts with a 1D convolutional layer, where each EEG channel
     enters a separate 1D convolutional channel. This is followed by a series of
     blocks of two 1D convolutional layers. Between the two convolutional layers
@@ -51,7 +51,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     
     |    Parameter    | Within-Subject | Cross-Subject |
     |-----------------|----------------|---------------|
-    | fm              | [64-144]       |   [64-144]    |
+    | feature_maps              | [64-144]       |   [64-144]    |
     | n_convs         |    1           |   [2-4]       |
     | resampling_freq | [70-100]       |   [50-80]     |
     | kernel_size     | [12-17]        |   [5-8]       |
@@ -64,7 +64,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
 
     Parameters
     ----------
-    fm: int
+    feature_maps: int
         Number of Feature Maps at the first Convolution, width of the model.
     n_convs: int
         Number of blocks of convolutions (2 convolutions per block), depth of the model.
@@ -92,7 +92,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         n_chans=None,
         sfreq=None,
         # Model specific arguments
-        fm=128,
+        feature_maps=128,
         n_convs=2,
         resampling_freq=80,
         kernel_size=8,
@@ -111,53 +111,53 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
-        self.rs = (
+        self.resample = (
             Resample(orig_freq=self.sfreq, new_freq=resampling_freq)
             if self.sfreq != resampling_freq
             else torch.nn.Identity()
         )
 
         self.conv = torch.nn.Conv1d(
-            self.n_chans, fm, kernel_size=kernel_size,
+            self.n_chans, feature_maps, kernel_size=kernel_size,
             padding=kernel_size // 2, bias=False
         )
-        self.bn = torch.nn.BatchNorm1d(fm)
+        self.bn = torch.nn.BatchNorm1d(feature_maps)
         self.blocks = []
-        newfm = fm
-        oldfm = fm
+        new_feature_maps = feature_maps
+        old_feature_maps = feature_maps
         for i in range(n_convs):
             if i > 0:
-                newfm = int(1.414 * newfm) # 1.414 = sqrt(2) allow constant flops.
+                new_feature_maps = int(1.414 * new_feature_maps) # 1.414 = sqrt(2) allow constant flops.
             self.blocks.append(
                 torch.nn.Sequential(
                     (
                         torch.nn.Conv1d(
-                            oldfm,
-                            newfm,
+                            old_feature_maps,
+                            new_feature_maps,
                             kernel_size=kernel_size,
                             padding=kernel_size // 2,
                             bias=False,
                         )
                     ),
-                    (torch.nn.BatchNorm1d(newfm)),
+                    (torch.nn.BatchNorm1d(new_feature_maps)),
                     (torch.nn.MaxPool1d(2) if i > 0 - 1 else torch.nn.MaxPool1d(1)),
                     (torch.nn.ReLU()),
                     (
                         torch.nn.Conv1d(
-                            newfm,
-                            newfm,
+                            new_feature_maps,
+                            new_feature_maps,
                             kernel_size=kernel_size,
                             padding=kernel_size // 2,
                             bias=False,
                         )
                     ),
-                    (torch.nn.BatchNorm1d(newfm)),
+                    (torch.nn.BatchNorm1d(new_feature_maps)),
                     (torch.nn.ReLU()),
                 )
             )
-            oldfm = newfm
+            old_feature_maps = new_feature_maps
         self.blocks = torch.nn.ModuleList(self.blocks)
-        self.final_layer = torch.nn.Linear(oldfm, self.n_outputs)
+        self.final_layer = torch.nn.Linear(old_feature_maps, self.n_outputs)
 
     def forward(self, x,return_feature=False):
         """
@@ -175,9 +175,9 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         PyTorch Tensor
             Output tensor of shape (batch_size, n_outputs)
         """
-        x_rs = self.rs(x.contiguous())
+        x_rs = self.resample(x.contiguous())
         feat = torch.relu(self.bn(self.conv(x_rs)))
         for seq in self.blocks:
             feat = seq(feat)
         feat = feat.mean(dim=2)
-        return self.final_layer(feat) if not return_feature else feat
+        return self.final_layer(feat) if not return_feature else (self.final_layer(feat) ,feat)
