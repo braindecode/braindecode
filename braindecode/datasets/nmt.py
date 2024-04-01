@@ -12,13 +12,18 @@ pathological EEG recordings for predictive modeling. This dataset contains
 #
 # License: BSD (3-clause)
 
-import glob
 import os
+import glob
+import warnings
 
-import mne
+import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import mne
+mne.set_log_level("ERROR")
 
-from braindecode.datasets.base import BaseConcatDataset, BaseDataset
+from braindecode.datasets.base import BaseDataset, BaseConcatDataset
+from unittest import mock
 
 
 class NMT(BaseConcatDataset):
@@ -58,9 +63,8 @@ class NMT(BaseConcatDataset):
     for predictive modeling. Frontiers in neuroscience, 15, p.755817.
     """
 
-    def __init__(
-        self, path, target_name="pathological", recording_ids=None, preload=False
-    ):
+    def __init__(self, path, target_name='pathological', recording_ids=None, 
+                 preload=False, n_jobs=1):
         file_paths = glob.glob(
             os.path.join(path, '**'+os.sep+'*.edf'), recursive=True)
         # sort by subject id
