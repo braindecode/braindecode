@@ -131,10 +131,7 @@ def test_model_integration(model_name, required_params, signal_params):
                 input_window_seconds=sp["input_window_seconds"],
             )
         )
-    if (
-        "n_times" not in required_params
-        and "input_window_seconds" not in required_params
-    ):
+    if "n_times" not in required_params and "input_window_seconds" not in required_params:
         time_kwargs.append(
             dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
         )

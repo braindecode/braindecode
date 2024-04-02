@@ -615,9 +615,7 @@ class _MHA(nn.Module):
         # dropout
         self.dropout = nn.Dropout(dropout)
 
-    def forward(
-        self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.Tensor:
         """Compute MHA(Q, K, V)
 
         Parameters

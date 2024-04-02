@@ -187,9 +187,7 @@ def test_split_dataset_failure(concat_ds_targets):
     with pytest.raises(IndexError):
         concat_ds.split([])
 
-    with pytest.raises(
-        AssertionError, match="datasets should not be an empty iterable"
-    ):
+    with pytest.raises(AssertionError, match="datasets should not be an empty iterable"):
         concat_ds.split([[]])
 
     with pytest.raises(TypeError):
@@ -312,8 +310,7 @@ def test_set_description_base_dataset(concat_ds_targets):
     # try to set existing description without overwriting
     with pytest.raises(
         AssertionError,
-        match="'how' already in description. Please rename or set overwrite to"
-        " True.",
+        match="'how' already in description. Please rename or set overwrite to" " True.",
     ):
         concat_ds.set_description(
             {
@@ -378,8 +375,7 @@ def test_set_description_windows_dataset(concat_windows_dataset):
     # try to set existing description without overwriting using Series
     with pytest.raises(
         AssertionError,
-        match="'wow' already in description. Please rename or set overwrite to"
-        " True.",
+        match="'wow' already in description. Please rename or set overwrite to" " True.",
     ):
         window_ds.set_description(pd.Series({"wow": "error"}), overwrite=False)
 

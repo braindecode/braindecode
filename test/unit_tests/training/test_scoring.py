@@ -116,9 +116,7 @@ def test_cropped_trial_epoch_scoring():
         )
 
         mock_skorch_net = MockSkorchNet()
-        cropped_trial_epoch_scoring = CroppedTrialEpochScoring(
-            "accuracy", on_train=False
-        )
+        cropped_trial_epoch_scoring = CroppedTrialEpochScoring("accuracy", on_train=False)
         mock_skorch_net.callbacks_ = [("", cropped_trial_epoch_scoring)]
         cropped_trial_epoch_scoring.initialize()
         cropped_trial_epoch_scoring.y_preds_ = [

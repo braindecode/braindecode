@@ -246,9 +246,7 @@ class Labram(EEGModuleMixin, nn.Module):
                     norm_layer=norm_layer,
                     init_values=init_values,
                     window_size=(
-                        self.patch_embed[0].patch_shape
-                        if not neural_tokenizer
-                        else None
+                        self.patch_embed[0].patch_shape if not neural_tokenizer else None
                     ),
                     attn_head_dim=attn_head_dim,
                 )

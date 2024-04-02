@@ -226,9 +226,7 @@ class _PatchEmbedding(nn.Module):
             nn.Conv2d(n_filters_time, n_filters_time, (n_channels, 1), (1, 1)),
             nn.BatchNorm2d(num_features=n_filters_time),
             nn.ELU(),
-            nn.AvgPool2d(
-                kernel_size=(1, pool_time_length), stride=(1, stride_avg_pool)
-            ),
+            nn.AvgPool2d(kernel_size=(1, pool_time_length), stride=(1, stride_avg_pool)),
             # pooling acts as slicing to obtain 'patch' along the
             # time dimension as in ViT
             nn.Dropout(p=drop_prob),

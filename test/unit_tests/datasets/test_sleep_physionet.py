@@ -50,6 +50,4 @@ def test_ch_names_orig_units_match():
     sp = SleepPhysionet(
         subject_ids=[0], recording_ids=[1], preload=True, load_eeg_only=True
     )
-    assert all(
-        [ds.raw._orig_units.keys() == set(ds.raw.ch_names) for ds in sp.datasets]
-    )
+    assert all([ds.raw._orig_units.keys() == set(ds.raw.ch_names) for ds in sp.datasets])

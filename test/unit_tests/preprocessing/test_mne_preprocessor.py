@@ -266,10 +266,7 @@ def test_preprocess_save_dir(
 
     assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
     assert all(
-        [
-            getattr(ds, preproc_kwargs_name) == preproc_kwargs
-            for ds in concat_ds.datasets
-        ]
+        [getattr(ds, preproc_kwargs_name) == preproc_kwargs for ds in concat_ds.datasets]
     )
     assert all([len(ds.raw.times) == 25 for ds in concat_ds.datasets])
     if kind == "raw":

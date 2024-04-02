@@ -163,9 +163,7 @@ def test_trialwise_predict_and_predict_proba(eegneuralnet_cls):
         batch_size=32,
     )
     eegneuralnet.initialize()
-    target_predict = (
-        preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
-    )
+    target_predict = preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
     preds = preds if isinstance(eegneuralnet, EEGRegressor) else softmax(preds, axis=1)
     np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
     np.testing.assert_allclose(preds, eegneuralnet.predict_proba(MockDataset()))
@@ -215,9 +213,7 @@ def test_cropped_predict_and_predict_proba_not_aggregate_predictions(
         aggregate_predictions=False,
     )
     eegneuralnet.initialize()
-    target_predict = (
-        preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
-    )
+    target_predict = preds if isinstance(eegneuralnet, EEGRegressor) else preds.argmax(1)
     np.testing.assert_array_equal(target_predict, eegneuralnet.predict(MockDataset()))
     np.testing.assert_array_equal(preds, eegneuralnet.predict_proba(MockDataset()))
 

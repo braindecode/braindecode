@@ -169,9 +169,7 @@ def test_channels_dropout_transform(rng_seed, p_drop, diff):
     transform = ChannelsDropout(1, p_drop=p_drop, random_state=rng_seed)
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(
-        ones_batch, new_batch, diff_param=p_drop if diff else None
-    )
+    common_tranform_assertions(ones_batch, new_batch, diff_param=p_drop if diff else None)
     zeros_mask = np.all(tr_X.detach().cpu().numpy() <= 1e-3, axis=-1)
     average_nb_of_zero_rows = np.mean(np.sum(zeros_mask.astype(int), axis=-1))
     proportion_of_zeros = transform.p_drop
@@ -181,9 +179,7 @@ def test_channels_dropout_transform(rng_seed, p_drop, diff):
     # test that the expected number of channels was set to zero
     assert np.abs(average_nb_of_zero_rows - expected_nb_zero_rows) <= 1
     # test that channels are conserved (same across it)
-    assert all(
-        [torch.equal(tr_X[0, :, 0], tr_X[0, :, i]) for i in range(tr_X.shape[2])]
-    )
+    assert all([torch.equal(tr_X[0, :, 0], tr_X[0, :, i]) for i in range(tr_X.shape[2])])
 
 
 @pytest.mark.parametrize("p_shuffle", [0.25, 0.5])
@@ -194,9 +190,7 @@ def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
     tr_X, _ = new_batch
     common_tranform_assertions(ch_aranged_batch, new_batch)
     # test that rows (channels) are conserved
-    assert all(
-        [torch.equal(tr_X[0, :, 0], tr_X[0, :, i]) for i in range(tr_X.shape[2])]
-    )
+    assert all([torch.equal(tr_X[0, :, 0], tr_X[0, :, i]) for i in range(tr_X.shape[2])])
     # test that rows (channels) have been shuffled
     assert not torch.equal(tr_X[0, :, :], X)
     # test that number of shuffled channels is correct
@@ -234,12 +228,10 @@ def test_gaussian_noise_transform(rng_seed, probability, diff):
         # unchanged (within Gaussian confidence interval)
         assert not torch.equal(tr_X, X)
         assert (
-            torch.mean((torch.abs(torch.mean(tr_X, 1) - 1.0) < 1.96 * std).float())
-            > 0.95
+            torch.mean((torch.abs(torch.mean(tr_X, 1) - 1.0) < 1.96 * std).float()) > 0.95
         )
         assert (
-            torch.mean((torch.abs(torch.mean(tr_X, 2) - 1.0) < 1.96 * std).float())
-            > 0.95
+            torch.mean((torch.abs(torch.mean(tr_X, 2) - 1.0) < 1.96 * std).float()) > 0.95
         )
 
 
@@ -304,9 +296,7 @@ def test_channels_symmetry_transform(probability):
 
     ordered_batch = (X, torch.zeros(batch_size))
 
-    common_tranform_assertions(
-        ordered_batch, transform(*ordered_batch), expected_tensor
-    )
+    common_tranform_assertions(ordered_batch, transform(*ordered_batch), expected_tensor)
 
 
 @pytest.mark.parametrize(
@@ -591,9 +581,7 @@ def test_sensors_rotation_transforms(
     "alpha,beta_per_sample", [(0.5, False), (0.5, True), (-0.1, True)]
 )
 def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
-    transform = Mixup(
-        alpha=alpha, beta_per_sample=beta_per_sample, random_state=rng_seed
-    )
+    transform = Mixup(alpha=alpha, beta_per_sample=beta_per_sample, random_state=rng_seed)
     batch_size = random_batch[0].shape[0]
     random_batch = (random_batch[0], torch.arange(batch_size))
     X, y = random_batch

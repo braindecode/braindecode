@@ -219,9 +219,7 @@ class CroppedTrialEpochScoring(EpochScoring):
 
         dataset = dataset_train if self.on_train else dataset_valid
 
-        with _cache_net_forward_iter(
-            net, self.use_caching, self.y_preds_
-        ) as cached_net:
+        with _cache_net_forward_iter(net, self.use_caching, self.y_preds_) as cached_net:
             current_score = self._scoring(cached_net, dataset, self.y_trues_)
         self._record_score(net.history, current_score)
 
@@ -309,9 +307,7 @@ class CroppedTimeSeriesEpochScoring(CroppedTrialEpochScoring):
 
         dataset = dataset_train if self.on_train else dataset_valid
 
-        with _cache_net_forward_iter(
-            net, self.use_caching, self.y_preds_
-        ) as cached_net:
+        with _cache_net_forward_iter(net, self.use_caching, self.y_preds_) as cached_net:
             current_score = self._scoring(cached_net, dataset, self.y_trues_)
         self._record_score(net.history, current_score)
 
@@ -389,9 +385,7 @@ class PostEpochTrainScoring(EpochScoring):
             # (They will be reinitialized to empty lists by skorch
             # each epoch)
             cbs = net.callbacks_
-            epoch_cbs = [
-                cb for name, cb in cbs if isinstance(cb, PostEpochTrainScoring)
-            ]
+            epoch_cbs = [cb for name, cb in cbs if isinstance(cb, PostEpochTrainScoring)]
             for cb in epoch_cbs:
                 cb.y_preds_ = y_preds
                 cb.y_trues_ = y_test

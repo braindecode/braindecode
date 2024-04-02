@@ -116,9 +116,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
 
         if not (
             (self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80)
-            or (
-                self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100
-            )
+            or (self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100)
         ):
             warnings.warn(
                 "This model was designed originally for input windows of 30sec at 100Hz, "
@@ -152,9 +150,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         """if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")"""
         if not return_feats:
-            self.final_layer = nn.Linear(
-                d_model * after_reduced_cnn_size, self.n_outputs
-            )
+            self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
 
     def _len_last_layer(self, input_size):
         self.feature_extractor.eval()
@@ -271,14 +267,10 @@ class _MRCNN(nn.Module):
             self.GELU,
             nn.MaxPool1d(kernel_size=4, stride=2, padding=2),
             nn.Dropout(drate),
-            nn.Conv1d(
-                64, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3
-            ),
+            nn.Conv1d(64, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3),
             nn.BatchNorm1d(128),
             self.GELU,
-            nn.Conv1d(
-                128, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3
-            ),
+            nn.Conv1d(128, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3),
             nn.BatchNorm1d(128),
             self.GELU,
             nn.MaxPool1d(kernel_size=2, stride=2, padding=1),
@@ -388,9 +380,7 @@ class _MultiHeadedAttention(nn.Module):
 
         query = query.view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
         key = (
-            self.convs[1](key)
-            .view(nbatches, -1, self.h, self.d_per_head)
-            .transpose(1, 2)
+            self.convs[1](key).view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
         )
         value = (
             self.convs[2](value)

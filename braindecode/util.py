@@ -385,9 +385,7 @@ def update_estimator_docstring(base_class, docstring):
     splitted = docstring.split("Parameters\n    ----------\n    ")
     out_docstring = (
         splitted[0]
-        + filtered_doc[
-            filtered_doc.find("Parameters") : filtered_doc.find("Attributes")
-        ]
+        + filtered_doc[filtered_doc.find("Parameters") : filtered_doc.find("Attributes")]
         + splitted[1]
         + filtered_doc[filtered_doc.find("Attributes") :]
     )

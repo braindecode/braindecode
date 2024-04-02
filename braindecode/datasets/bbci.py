@@ -67,9 +67,7 @@ class BBCIDataset(object):
             warnings.warn("Setting to misc channel type as channel type not known")
             # Assume we can't know channel type here automatically
             ch_types = ["misc"] * len(wanted_chan_inds)
-        info = mne.create_info(
-            ch_names=wanted_sensor_names, sfreq=fs, ch_types=ch_types
-        )
+        info = mne.create_info(ch_names=wanted_sensor_names, sfreq=fs, ch_types=ch_types)
 
         cnt = mne.io.RawArray(continuous_signal.T, info)
         return cnt
@@ -80,9 +78,7 @@ class BBCIDataset(object):
 
             # if no sensor names given, take all EEG-chans
             eeg_sensor_names = all_sensor_names
-            eeg_sensor_names = filter(
-                lambda s: not s.startswith("BIP"), eeg_sensor_names
-            )
+            eeg_sensor_names = filter(lambda s: not s.startswith("BIP"), eeg_sensor_names)
             eeg_sensor_names = filter(lambda s: not s.startswith("E"), eeg_sensor_names)
             eeg_sensor_names = filter(
                 lambda s: not s.startswith("Microphone"), eeg_sensor_names
@@ -90,9 +86,7 @@ class BBCIDataset(object):
             eeg_sensor_names = filter(
                 lambda s: not s.startswith("Breath"), eeg_sensor_names
             )
-            eeg_sensor_names = filter(
-                lambda s: not s.startswith("GSR"), eeg_sensor_names
-            )
+            eeg_sensor_names = filter(lambda s: not s.startswith("GSR"), eeg_sensor_names)
             eeg_sensor_names = list(eeg_sensor_names)
             assert (
                 len(eeg_sensor_names) == 128
@@ -306,9 +300,7 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         event_classes[rest_mask] = 3
         event_classes[feet_mask] = 4
         log.warn(
-            "Swapped  class names {:s}... might cause problems...".format(
-                all_class_names
-            )
+            "Swapped  class names {:s}... might cause problems...".format(all_class_names)
         )
     elif all_class_names == [
         "Right Hand Start",

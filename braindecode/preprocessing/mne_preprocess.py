@@ -66,9 +66,7 @@ for function in mne_functions:
 
 # Define __all__ based on the generated class names
 __all__ = [
-    class_obj.__name__
-    for class_obj in globals().values()
-    if isinstance(class_obj, type)
+    class_obj.__name__ for class_obj in globals().values() if isinstance(class_obj, type)
 ]
 
 # Clean up unnecessary variables

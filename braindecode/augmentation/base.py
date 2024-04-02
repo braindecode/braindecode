@@ -204,9 +204,7 @@ class AugmentedDataLoader(DataLoader):
                 "collate_fn cannot be used in this context because it is used "
                 "to pass transform"
             )
-        if transforms is None or (
-            isinstance(transforms, list) and len(transforms) == 0
-        ):
+        if transforms is None or (isinstance(transforms, list) and len(transforms) == 0):
             self.collated_tr = _make_collateable(IdentityTransform(), device=device)
         elif isinstance(transforms, (Transform, nn.Module)):
             self.collated_tr = _make_collateable(transforms, device=device)

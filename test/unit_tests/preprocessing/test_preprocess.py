@@ -278,9 +278,7 @@ def test_exponential_running_init_block_size(mock_data):
     )
 
     # mean over time axis (1!) should give 0 per channel
-    demeaned_data = exponential_moving_demean(
-        mock_input, init_block_size=init_block_size
-    )
+    demeaned_data = exponential_moving_demean(mock_input, init_block_size=init_block_size)
     np.testing.assert_allclose(
         demeaned_data[:, :init_block_size].mean(axis=1), 0, rtol=1e-4, atol=1e-4
     )
@@ -437,10 +435,7 @@ def test_preprocess_save_dir(
 
     assert all([hasattr(ds, preproc_kwargs_name) for ds in concat_ds.datasets])
     assert all(
-        [
-            getattr(ds, preproc_kwargs_name) == preproc_kwargs
-            for ds in concat_ds.datasets
-        ]
+        [getattr(ds, preproc_kwargs_name) == preproc_kwargs for ds in concat_ds.datasets]
     )
     assert all([len(ds.raw.times) == 25 for ds in concat_ds.datasets])
     if kind == "raw":

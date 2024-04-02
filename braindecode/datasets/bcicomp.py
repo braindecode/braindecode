@@ -134,9 +134,7 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
         original_target_sfreq = 25
         targets_stride = int(signal_sfreq / original_target_sfreq)
 
-        original_targets = self._prepare_targets(
-            upsampled_train_targets, targets_stride
-        )
+        original_targets = self._prepare_targets(upsampled_train_targets, targets_stride)
         original_test_targets = self._prepare_targets(
             upsampled_test_targets, targets_stride
         )

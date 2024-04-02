@@ -896,9 +896,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
         **default_labram_params,
     )
     # Defining a random data
-    X = torch.rand(
-        1, default_labram_params["n_chans"], default_labram_params["n_times"]
-    )
+    X = torch.rand(1, default_labram_params["n_chans"], default_labram_params["n_times"])
 
     with torch.no_grad():
         out = labram_base(X, return_all_tokens=False, return_patch_tokens=False)
@@ -911,9 +909,7 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
             [1, 320, default_labram_params["n_outputs"]]
         )
 
-        out_all_tokens = labram_base(
-            X, return_all_tokens=True, return_patch_tokens=False
-        )
+        out_all_tokens = labram_base(X, return_all_tokens=True, return_patch_tokens=False)
         assert out_all_tokens.shape == torch.Size(
             [1, 321, default_labram_params["n_outputs"]]
         )
@@ -924,9 +920,7 @@ def test_labram_without_pos_embed(default_labram_params):
         n_layers=12, att_num_heads=12, use_abs_pos_emb=False, **default_labram_params
     )
 
-    X = torch.rand(
-        1, default_labram_params["n_chans"], default_labram_params["n_times"]
-    )
+    X = torch.rand(1, default_labram_params["n_chans"], default_labram_params["n_times"])
 
     with torch.no_grad():
         out_without_pos_emb = labram_base_not_pos_emb(X)
@@ -946,9 +940,7 @@ def test_labram_n_outputs_0(default_labram_params):
     default_labram_params["n_outputs"] = 0
     labram_base = Labram(n_layers=12, att_num_heads=12, **default_labram_params)
     # Defining a random data
-    X = torch.rand(
-        1, default_labram_params["n_chans"], default_labram_params["n_times"]
-    )
+    X = torch.rand(1, default_labram_params["n_chans"], default_labram_params["n_times"])
 
     with torch.no_grad():
         out = labram_base(X)
