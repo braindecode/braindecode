@@ -12,16 +12,30 @@ pathological EEG recordings for predictive modeling. This dataset contains
 #
 # License: BSD (3-clause)
 
-import os
 import glob
+import os
 import warnings
-
-import numpy as np
-import pandas as pd
-import mne
 from unittest import mock
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset
+import mne
+import numpy as np
+import pandas as pd
+from joblib import delayed, Parallel
+from mne.datasets._fetch import fetch_dataset
+
+from braindecode.datasets.base import BaseConcatDataset, BaseDataset
+
+NMT_URL = "https://zenodo.org/record/10909103/files/NMT.zip"
+NMT_folder_name = "NMT_scalp_EEG_dataset"
+NMT_archive_name = "NMT.zip"
+
+NMT_dataset_params = {
+    "dataset_name": "LFP_data",
+    "url": NMT_URL,
+    "archive_name": NMT_archive_name,
+    "folder_name": NMT_folder_name,
+    "hash": "77b3ce12bcaf6c6cce4e6690ea89cb22bed55af10c525077b430f6e1d2e3c6bf",
+}
 
 
 class NMT(BaseConcatDataset):
@@ -62,12 +76,21 @@ class NMT(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            path,
-            target_name="pathological",
-            recording_ids=None,
-            preload=False,
+        self,
+        path=None,
+        target_name="pathological",
+        recording_ids=None,
+        preload=False,
+        n_jobs=1,
     ):
+        # If the path is not informed, we fetch the dataset from zenodo.
+        if path is None:
+            path = fetch_dataset(
+                dataset_params=NMT_dataset_params,
+                processor="unzip",
+                force_update=False,
+            )
+
         file_paths = glob.glob(
             os.path.join(path, "**" + os.sep + "*.edf"), recursive=True
         )
@@ -81,8 +104,7 @@ class NMT(BaseConcatDataset):
 
         # sort by subject id
         file_paths = sorted(
-            file_paths,
-            key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
+            file_paths, key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
         )
         if recording_ids is not None:
             file_paths = [file_paths[rec_id] for rec_id in recording_ids]
@@ -108,22 +130,32 @@ class NMT(BaseConcatDataset):
         description["path"] = file_paths
         description = description[["path", "pathological", "age", "gender"]]
 
-        base_datasets = []
-        for recording_id, d in description.iterrows():
-            raw = mne.io.read_raw_edf(d.path, preload=preload)
-            d["n_samples"] = raw.n_times
-            d["sfreq"] = raw.info["sfreq"]
-            d["train"] = "train" in d.path.split(os.sep)
-            base_dataset = BaseDataset(raw, d, target_name)
-            base_datasets.append(base_dataset)
+        if n_jobs == 1:
+            base_datasets = [
+                self._create_dataset(d, target_name, preload)
+                for recording_id, d in description.iterrows()
+            ]
+        else:
+            base_datasets = Parallel(n_jobs)(
+                delayed(
+                    self._create_dataset(d, target_name, preload)
+                    for recording_id, d in description.iterrows()
+                )
+            )
+
         super().__init__(base_datasets)
 
-    def _fetch_dataset(self):
-        """Fetch the NMT EEG Corpus dataset."""
-        pass
+    @staticmethod
+    def _create_dataset(d, target_name, preload):
+        raw = mne.io.read_raw_edf(d.path, preload=preload)
+        d["n_samples"] = raw.n_times
+        d["sfreq"] = raw.info["sfreq"]
+        d["train"] = "train" in d.path.split(os.sep)
+        base_dataset = BaseDataset(raw, d, target_name)
+        return base_dataset
 
 
-def _get_header(*args, **kwargs):
+def _get_header(*args):
     all_paths = {**_NMT_PATHS}
     return all_paths[args[0]]
 
@@ -141,8 +173,7 @@ def _fake_pd_read_csv():
     ]
 
     # Create the DataFrame, specifying column names
-    df = pd.DataFrame(data,
-                      columns=["recordname", "label", "age", "gender", "loc"])
+    df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
 
     return df
 
@@ -208,15 +239,14 @@ class _NMTMock(NMT):
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     @mock.patch(
-        "braindecode.datasets.tuh._read_physician_report",
-        return_value="simple_test"
+        "braindecode.datasets.tuh._read_physician_report", return_value="simple_test"
     )
     def __init__(
-            self,
-            path,
-            recording_ids=None,
-            target_name="pathological",
-            preload=False,
+        self,
+        path,
+        recording_ids=None,
+        target_name="pathological",
+        preload=False,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
