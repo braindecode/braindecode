@@ -933,12 +933,12 @@ def test_eeg_simpleconv():
                         resampling_freq=80,
                         kernel_size=8
                         )
-    output = model(input)    
+    output = model(input)
     assert isinstance(output, torch.Tensor)
     assert output.shape[0] == batch_size and output.shape[1] == n_classes
     output,feat = model(input, return_feature=True)
     assert isinstance(output, torch.Tensor) and isinstance(feat, torch.Tensor)
-    
+
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(n_params)
     assert n_params==21250
