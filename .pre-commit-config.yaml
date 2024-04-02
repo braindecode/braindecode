@@ -32,7 +32,7 @@ repos:
         args: ["--autofix", "--no-sort-keys", "--indent=4"]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.1.4
+    rev: v0.3.5
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
@@ -48,3 +48,17 @@ repos:
           - --quiet-level=2
         exclude_types: [csv, json]
         exclude: ^tests/|generated/^.github
+
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+        language_version: python3.8
+        args: [ --line-length=90, --target-version=py38 ]
+        exclude: ^examples/|^tests/|^docs/|^\.github/
+
+  -   repo: https://github.com/asottile/blacken-docs
+      rev: 1.16.0
+      hooks:
+      - id: blacken-docs
+        exclude: ^.github|CONTRIBUTING.md
