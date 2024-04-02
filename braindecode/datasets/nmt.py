@@ -63,13 +63,13 @@ class NMT(BaseConcatDataset):
     for predictive modeling. Frontiers in neuroscience, 15, p.755817.
     """
 
-    def __init__(self, path, target_name="pathological", recording_ids=None, 
+    def __init__(self, path, target_name="pathological", recording_ids=None,
                  preload=False, n_jobs=1
                  ):
         file_paths = glob.glob(
             os.path.join(path, "**"+os.sep+"*.edf"), recursive=True
             )
-        
+
         # sort by subject id
         file_paths = [file_path for file_path in file_paths if os.path.splitext(file_path)[1] == ".edf"]
 
@@ -111,9 +111,11 @@ class NMT(BaseConcatDataset):
             base_datasets.append(base_dataset)
         super().__init__(base_datasets)
 
+
 def _get_header(*args, **kwargs):
     all_paths = {**_NMT_PATHS}
     return all_paths[args[0]]
+
 
 def _fake_pd_read_csv(*args, **kwargs):
     # Create a list of lists to hold the data
@@ -134,6 +136,7 @@ def _fake_pd_read_csv(*args, **kwargs):
     # print(df)
     return df
 
+
 def _fake_raw(*args, **kwargs):
     sfreq = 10
     ch_names = [
@@ -147,6 +150,7 @@ def _fake_raw(*args, **kwargs):
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types="eeg")
     raw = mne.io.RawArray(data=data, info=info)
     return raw
+
 
 _NMT_PATHS = {
     # these are actual file paths and edf headers from NMT EEG Corpus
@@ -166,6 +170,7 @@ _NMT_PATHS = {
     # "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",  # noqa E501
 }
 
+
 class _NMTMock(NMT):
     """Mocked class for testing and examples."""
     @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
@@ -184,6 +189,3 @@ class _NMTMock(NMT):
             super().__init__(path=path, recording_ids=recording_ids,
                              target_name=target_name, preload=preload,
                              n_jobs=n_jobs)
-
-            
-

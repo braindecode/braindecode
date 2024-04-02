@@ -27,9 +27,9 @@ def test_nmt():
     assert nmt.description.train.to_list() == [True, False, False, True, False, False, True]
     x, y = nmt[0]
     assert x.shape == (21, 1)
-    assert y==False
+    assert y is False
     x, y = nmt[-1]
-    assert y==False
+    assert y is False
 
     # for ds, (_, desc) in zip(nmt.datasets, nmt.description.iterrows()):
     #     assert isinstance(ds.raw.info['meas_date'], datetime)
