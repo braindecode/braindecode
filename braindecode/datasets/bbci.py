@@ -33,9 +33,7 @@ class BBCIDataset(object):
         Translational NeuroTechnology Lab, AG Ball, Freiburg, Germany.
     """
 
-    def __init__(
-        self, filename, load_sensor_names=None, check_class_names=False
-    ):
+    def __init__(self, filename, load_sensor_names=None, check_class_names=False):
         self.__dict__.update(locals())
         del self.self
 
@@ -50,9 +48,7 @@ class BBCIDataset(object):
         with h5py.File(self.filename, "r") as h5file:
             samples = int(h5file["nfo"]["T"][0, 0])
             cnt_signal_shape = (samples, len(wanted_chan_inds))
-            continuous_signal = (
-                np.ones(cnt_signal_shape, dtype=np.float32) * np.nan
-            )
+            continuous_signal = np.ones(cnt_signal_shape, dtype=np.float32) * np.nan
             for chan_ind_arr, chan_ind_set in enumerate(wanted_chan_inds):
                 # + 1 because matlab/this hdf5-naming logic
                 # has 1-based indexing
@@ -63,9 +59,7 @@ class BBCIDataset(object):
                     :
                 ].squeeze()  # already load into memory
                 continuous_signal[:, chan_ind_arr] = chan_signal
-            assert not np.any(
-                np.isnan(continuous_signal)
-            ), "No NaNs expected in signal"
+            assert not np.any(np.isnan(continuous_signal)), "No NaNs expected in signal"
 
         if self.load_sensor_names is None:
             ch_types = ["eeg"] * len(wanted_chan_inds)
@@ -89,9 +83,7 @@ class BBCIDataset(object):
             eeg_sensor_names = filter(
                 lambda s: not s.startswith("BIP"), eeg_sensor_names
             )
-            eeg_sensor_names = filter(
-                lambda s: not s.startswith("E"), eeg_sensor_names
-            )
+            eeg_sensor_names = filter(lambda s: not s.startswith("E"), eeg_sensor_names)
             eeg_sensor_names = filter(
                 lambda s: not s.startswith("Microphone"), eeg_sensor_names
             )
@@ -103,17 +95,15 @@ class BBCIDataset(object):
             )
             eeg_sensor_names = list(eeg_sensor_names)
             assert (
-                len(eeg_sensor_names) == 128 or
-                len(eeg_sensor_names) == 64 or
-                len(eeg_sensor_names) == 32 or
-                len(eeg_sensor_names) == 16
+                len(eeg_sensor_names) == 128
+                or len(eeg_sensor_names) == 64
+                or len(eeg_sensor_names) == 32
+                or len(eeg_sensor_names) == 16
             ), "Recheck this code if you have different sensors..."
             wanted_sensor_names = eeg_sensor_names
         else:
             wanted_sensor_names = self.load_sensor_names
-        chan_inds = self._determine_chan_inds(
-            all_sensor_names, wanted_sensor_names
-        )
+        chan_inds = self._determine_chan_inds(all_sensor_names, wanted_sensor_names)
         return chan_inds, wanted_sensor_names
 
     def _determine_samplingrate(self):
@@ -127,12 +117,8 @@ class BBCIDataset(object):
     def _determine_chan_inds(all_sensor_names, sensor_names):
         assert sensor_names is not None
         chan_inds = [all_sensor_names.index(s) for s in sensor_names]
-        assert len(chan_inds) == len(sensor_names), (
-            "All" "sensors should be there."
-        )
-        assert len(set(chan_inds)) == len(chan_inds), (
-            "No duplicated sensors wanted."
-        )
+        assert len(chan_inds) == len(sensor_names), "All" "sensors should be there."
+        assert len(set(chan_inds)) == len(chan_inds), "No duplicated sensors wanted."
         return chan_inds
 
     @staticmethod
@@ -165,9 +151,7 @@ class BBCIDataset(object):
     def _add_markers(self, cnt):
         with h5py.File(self.filename, "r") as h5file:
             event_times_in_ms = h5file["mrk"]["time"][:].squeeze()
-            event_classes = (
-                h5file["mrk"]["event"]["desc"][:].squeeze().astype(np.int64)
-            )
+            event_classes = h5file["mrk"]["event"]["desc"][:].squeeze().astype(np.int64)
 
             # Check whether class names known and correct order
             class_name_set = h5file["nfo"]["className"][:].squeeze()
@@ -177,9 +161,7 @@ class BBCIDataset(object):
             ]
 
             if self.check_class_names:
-                _check_class_names(
-                    all_class_names, event_times_in_ms, event_classes
-                )
+                _check_class_names(all_class_names, event_times_in_ms, event_classes)
 
         event_times_in_samples = event_times_in_ms * cnt.info["sfreq"] / 1000.0
         event_times_in_samples = np.uint32(np.round(event_times_in_samples))
@@ -196,8 +178,8 @@ class BBCIDataset(object):
                         i_sample,
                         event_classes[i_event - 1],
                         event_classes[i_event],
-                    ) +
-                    "Marker codes will be summed."
+                    )
+                    + "Marker codes will be summed."
                 )
             previous_i_sample = i_sample
 
@@ -222,7 +204,7 @@ class BBCIDataset(object):
         # Hacky way to try to find out class names for each event
         # h5file['mrk']['y'] y contains one-hot label for event name
         with h5py.File(self.filename, "r") as h5file:
-            y = h5file['mrk']['y'][:]
+            y = h5file["mrk"]["y"][:]
             # seems that there are cases where for last class
             # y is just all zero for some reason?
             # and seems then it is last of the class names
@@ -233,7 +215,7 @@ class BBCIDataset(object):
             event_i_classes = np.argmax(y, axis=1)
 
         # 4 second trials for High-Gamma dataset, otherwise how to know?
-        if all_class_names == ['Right Hand', 'Left Hand', 'Rest', 'Feet']:
+        if all_class_names == ["Right Hand", "Left Hand", "Rest", "Feet"]:
             durations = np.full(event_times_in_ms.shape, 4)
         else:
             warnings.warn("Unknown event durations set to 0")
@@ -265,8 +247,8 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         pass
     elif (
         (
-            all_class_names ==
-            [
+            all_class_names
+            == [
                 "1",
                 "10",
                 "11",
@@ -285,9 +267,10 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
                 "44",
                 "99",
             ]
-        ) or (
-            all_class_names ==
-            [
+        )
+        or (
+            all_class_names
+            == [
                 "1",
                 "10",
                 "11",
@@ -305,8 +288,8 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
                 "44",
                 "99",
             ]
-        ) or (
-            all_class_names == ["1", "2", "3", "4"])
+        )
+        or (all_class_names == ["1", "2", "3", "4"])
     ):
         pass  # Semantic classes
     elif all_class_names == ["Rest", "Feet", "Left Hand", "Right Hand"]:

@@ -19,6 +19,7 @@ from braindecode.util import _update_moabb_docstring
 def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
     # soft dependency on moabb
     from moabb.datasets.utils import dataset_list
+
     for dataset in dataset_list:
         if dataset_name == dataset.__name__:
             # return an instance of the found dataset class
@@ -41,11 +42,9 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids):
                 subject_ids.append(subj_id)
                 session_ids.append(sess_id)
                 run_ids.append(run_id)
-    description = pd.DataFrame({
-        'subject': subject_ids,
-        'session': session_ids,
-        'run': run_ids
-    })
+    description = pd.DataFrame(
+        {"subject": subject_ids, "session": session_ids, "run": run_ids}
+    )
     return raws, description
 
 
@@ -55,7 +54,7 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
 
     # get annotations from events
     event_desc = {k: v for v, k in dataset.event_id.items()}
-    annots = mne.annotations_from_events(events, raw.info['sfreq'], event_desc)
+    annots = mne.annotations_from_events(events, raw.info["sfreq"], event_desc)
 
     # set trial on and offset given by moabb
     onset, offset = dataset.interval
@@ -102,10 +101,14 @@ class MOABBDataset(BaseConcatDataset):
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
     """
+
     def __init__(self, dataset_name, subject_ids, dataset_kwargs=None):
-        raws, description = fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs)
-        all_base_ds = [BaseDataset(raw, row)
-                       for raw, (_, row) in zip(raws, description.iterrows())]
+        raws, description = fetch_data_with_moabb(
+            dataset_name, subject_ids, dataset_kwargs
+        )
+        all_base_ds = [
+            BaseDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
+        ]
         super().__init__(all_base_ds)
 
 
@@ -120,6 +123,7 @@ class BNCI2014001(MOABBDataset):
     """
     try:
         from moabb.datasets import BNCI2014001
+
         __doc__ = _update_moabb_docstring(BNCI2014001, doc)
     except ModuleNotFoundError:
         pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py
@@ -139,6 +143,7 @@ class HGD(MOABBDataset):
     """
     try:
         from moabb.datasets import Schirrmeister2017
+
         __doc__ = _update_moabb_docstring(Schirrmeister2017, doc)
     except ModuleNotFoundError:
         pass  # keep moabb soft dependency, otherwise crash on loading of datasets.__init__.py

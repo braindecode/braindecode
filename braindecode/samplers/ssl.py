@@ -45,8 +45,17 @@ class RelativePositioningSampler(RecordingSampler):
            signals with self-supervised learning.
            arXiv preprint arXiv:2007.16104.
     """
-    def __init__(self, metadata, tau_pos, tau_neg, n_examples, tau_max=None,
-                 same_rec_neg=True, random_state=None):
+
+    def __init__(
+        self,
+        metadata,
+        tau_pos,
+        tau_neg,
+        n_examples,
+        tau_max=None,
+        same_rec_neg=True,
+        random_state=None,
+    ):
         super().__init__(metadata, random_state=random_state)
 
         self.tau_pos = tau_pos
@@ -56,25 +65,25 @@ class RelativePositioningSampler(RecordingSampler):
         self.same_rec_neg = same_rec_neg
 
         if not same_rec_neg and self.n_recordings < 2:
-            raise ValueError('More than one recording must be available when '
-                             'using across-recording negative sampling.')
+            raise ValueError(
+                "More than one recording must be available when "
+                "using across-recording negative sampling."
+            )
 
     def _sample_pair(self):
-        """Sample a pair of two windows.
-        """
+        """Sample a pair of two windows."""
         # Sample first window
         win_ind1, rec_ind1 = self.sample_window()
-        ts1 = self.metadata.iloc[win_ind1]['i_start_in_trial']
-        ts = self.info.iloc[rec_ind1]['i_start_in_trial']
+        ts1 = self.metadata.iloc[win_ind1]["i_start_in_trial"]
+        ts = self.info.iloc[rec_ind1]["i_start_in_trial"]
 
         # Decide whether the pair will be positive or negative
         pair_type = self.rng.binomial(1, 0.5)
         win_ind2 = None
         if pair_type == 0:  # Negative example
             if self.same_rec_neg:
-                mask = (
-                    ((ts <= ts1 - self.tau_neg) & (ts >= ts1 - self.tau_max)) |
-                    ((ts >= ts1 + self.tau_neg) & (ts <= ts1 + self.tau_max))
+                mask = ((ts <= ts1 - self.tau_neg) & (ts >= ts1 - self.tau_max)) | (
+                    (ts >= ts1 + self.tau_neg) & (ts <= ts1 + self.tau_max)
                 )
             else:
                 rec_ind2 = rec_ind1
@@ -87,7 +96,7 @@ class RelativePositioningSampler(RecordingSampler):
             mask[ts == ts1] = False  # same window cannot be sampled twice
             if sum(mask) == 0:
                 raise NotImplementedError
-            win_ind2 = self.rng.choice(self.info.iloc[rec_ind1]['index'][mask])
+            win_ind2 = self.rng.choice(self.info.iloc[rec_ind1]["index"][mask])
 
         return win_ind1, win_ind2, float(pair_type)
 
@@ -109,7 +118,7 @@ class RelativePositioningSampler(RecordingSampler):
             (float): 0 for negative pair, 1 for positive pair.
         """
         for i in range(self.n_examples):
-            if hasattr(self, 'examples'):
+            if hasattr(self, "examples"):
                 yield self.examples[i]
             else:
                 yield self._sample_pair()

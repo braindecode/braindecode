@@ -42,6 +42,7 @@ class RecordingSampler(Sampler):
     n_recordings : int
         Number of recordings available.
     """
+
     def __init__(self, metadata, random_state=None):
         self.metadata = metadata
         self.info = self._init_info(metadata)
@@ -60,42 +61,40 @@ class RecordingSampler(Sampler):
         -------
             See class attributes.
         """
-        keys = [k for k in ['subject', 'session', 'run']
-                if k in self.metadata.columns]
+        keys = [k for k in ["subject", "session", "run"] if k in self.metadata.columns]
         if not keys:
             raise ValueError(
-                'metadata must contain at least one of the following columns: '
-                'subject, session or run.')
+                "metadata must contain at least one of the following columns: "
+                "subject, session or run."
+            )
 
         if required_keys is not None:
-            missing_keys = [
-                k for k in required_keys if k not in self.metadata.columns]
+            missing_keys = [k for k in required_keys if k not in self.metadata.columns]
             if len(missing_keys) > 0:
-                raise ValueError(
-                    f'Columns {missing_keys} were not found in metadata.')
+                raise ValueError(f"Columns {missing_keys} were not found in metadata.")
             keys += required_keys
 
-        metadata = metadata.reset_index().rename(
-            columns={'index': 'window_index'})
-        info = metadata.reset_index().groupby(keys)[
-            ['index', 'i_start_in_trial']].agg(['unique'])
+        metadata = metadata.reset_index().rename(columns={"index": "window_index"})
+        info = (
+            metadata.reset_index()
+            .groupby(keys)[["index", "i_start_in_trial"]]
+            .agg(["unique"])
+        )
         info.columns = info.columns.get_level_values(0)
 
         return info
 
     def sample_recording(self):
-        """Return a random recording index.
-        """
+        """Return a random recording index."""
         # XXX docstring missing
         return self.rng.choice(self.n_recordings)
 
     def sample_window(self, rec_ind=None):
-        """Return a specific window.
-        """
+        """Return a specific window."""
         # XXX docstring missing
         if rec_ind is None:
             rec_ind = self.sample_recording()
-        win_ind = self.rng.choice(self.info.iloc[rec_ind]['index'])
+        win_ind = self.rng.choice(self.info.iloc[rec_ind]["index"])
         return win_ind, rec_ind
 
     def __iter__(self):
@@ -131,8 +130,10 @@ class SequenceSampler(RecordingSampler):
         Array of shape (n_sequences,) that indicates from which file each
         sequence comes from. Useful e.g. to do self-ensembling.
     """
-    def __init__(self, metadata, n_windows, n_windows_stride, randomize=False,
-                 random_state=None):
+
+    def __init__(
+        self, metadata, n_windows, n_windows_stride, randomize=False, random_state=None
+    ):
         super().__init__(metadata, random_state=random_state)
         self.randomize = randomize
         self.n_windows = n_windows
@@ -152,8 +153,11 @@ class SequenceSampler(RecordingSampler):
             each sequence. Useful e.g. to do self-ensembling.
         """
         end_offset = 1 - self.n_windows if self.n_windows > 1 else None
-        start_inds = self.info['index'].apply(
-            lambda x: x[:end_offset:self.n_windows_stride]).values
+        start_inds = (
+            self.info["index"]
+            .apply(lambda x: x[: end_offset : self.n_windows_stride])
+            .values
+        )
         file_ids = [[i] * len(inds) for i, inds in enumerate(start_inds)]
         return np.concatenate(start_inds), np.concatenate(file_ids)
 
@@ -200,12 +204,13 @@ class BalancedSequenceSampler(RecordingSampler):
            Med. 4, 72 (2021).
            https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
+
     def __init__(self, metadata, n_windows, n_sequences=10, random_state=None):
         super().__init__(metadata, random_state=random_state)
 
         self.n_windows = n_windows
         self.n_sequences = n_sequences
-        self.info_class = self._init_info(metadata, required_keys=['target'])
+        self.info_class = self._init_info(metadata, required_keys=["target"])
 
     def sample_class(self, rec_ind=None):
         """Return a random class.
@@ -225,8 +230,7 @@ class BalancedSequenceSampler(RecordingSampler):
         """
         if rec_ind is None:
             rec_ind = self.sample_recording()
-        available_classes = self.info_class.loc[
-            self.info.iloc[rec_ind].name].index
+        available_classes = self.info_class.loc[self.info.iloc[rec_ind].name].index
         return self.rng.choice(available_classes), rec_ind
 
     def _sample_seq_start_ind(self, rec_ind=None, class_ind=None):
@@ -257,15 +261,14 @@ class BalancedSequenceSampler(RecordingSampler):
         if class_ind is None:
             class_ind, rec_ind = self.sample_class(rec_ind)
 
-        rec_inds = self.info.iloc[rec_ind]['index']
+        rec_inds = self.info.iloc[rec_ind]["index"]
         len_rec_inds = len(rec_inds)
 
         row = self.info.iloc[rec_ind].name
         if not isinstance(row, tuple):
             # Theres's only one category, e.g. "subject"
             row = tuple([row])
-        available_indices = self.info_class.loc[
-            row + tuple([class_ind]), 'index']
+        available_indices = self.info_class.loc[row + tuple([class_ind]), "index"]
         win_ind = self.rng.choice(available_indices)
         win_ind_in_rec = np.where(rec_inds == win_ind)[0][0]
 

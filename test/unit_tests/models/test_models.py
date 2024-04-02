@@ -38,7 +38,7 @@ from braindecode.models import (
     ATCNet,
     EEGConformer,
     BIOT,
-    Labram
+    Labram,
 )
 
 from braindecode.util import set_random_seeds
@@ -235,9 +235,9 @@ def test_tcn(input_sizes):
 
 def test_eegitnet(input_sizes):
     model = EEGITNet(
-        n_outputs=input_sizes['n_classes'],
-        n_chans=input_sizes['n_channels'],
-        n_times=input_sizes['n_in_times'],
+        n_outputs=input_sizes["n_classes"],
+        n_chans=input_sizes["n_channels"],
+        n_times=input_sizes["n_in_times"],
     )
 
     check_forward_pass(
@@ -249,9 +249,9 @@ def test_eegitnet(input_sizes):
 @pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
 def test_eeginception_erp(input_sizes, model_cls):
     model = model_cls(
-        n_outputs=input_sizes['n_classes'],
-        n_chans=input_sizes['n_channels'],
-        n_times=input_sizes['n_in_times'],
+        n_outputs=input_sizes["n_classes"],
+        n_chans=input_sizes["n_channels"],
+        n_times=input_sizes["n_in_times"],
     )
 
     check_forward_pass(
@@ -283,13 +283,16 @@ def test_eeginception_erp_n_params(model_cls):
 def test_eeginception_mi(input_sizes):
     sfreq = 250
     model = EEGInceptionMI(
-        n_outputs=input_sizes['n_classes'],
-        n_chans=input_sizes['n_channels'],
-        input_window_seconds=input_sizes['n_in_times'] / sfreq,
+        n_outputs=input_sizes["n_classes"],
+        n_chans=input_sizes["n_channels"],
+        input_window_seconds=input_sizes["n_in_times"] / sfreq,
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(
+        model,
+        input_sizes,
+    )
 
 
 @pytest.mark.parametrize(
@@ -309,7 +312,7 @@ def test_eeginception_mi_binary_n_params(n_filter, reported):
     model = EEGInceptionMI(
         n_chans=3,
         n_outputs=2,
-        input_window_seconds=3.,  # input_time
+        input_window_seconds=3.0,  # input_time
         sfreq=250,
         n_convs=3,
         n_filters=n_filter,
@@ -325,13 +328,16 @@ def test_atcnet(input_sizes):
     sfreq = 250
     input_sizes["n_in_times"] = 1125
     model = ATCNet(
-        n_chans=input_sizes['n_channels'],
-        n_outputs=input_sizes['n_classes'],
-        input_window_seconds=input_sizes['n_in_times'] / sfreq,
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
+        input_window_seconds=input_sizes["n_in_times"] / sfreq,
         sfreq=sfreq,
     )
 
-    check_forward_pass(model, input_sizes, )
+    check_forward_pass(
+        model,
+        input_sizes,
+    )
 
 
 def test_atcnet_n_params():
@@ -438,9 +444,16 @@ def test_usleep_n_params():
     using the same architecture hyperparameters.
     """
     model = USleep(
-        n_chans=2, sfreq=128, depth=12, n_time_filters=5,
-        complexity_factor=1.67, with_skip_connection=True, n_outputs=5,
-        input_window_seconds=30, time_conv_size_s=9 / 128)
+        n_chans=2,
+        sfreq=128,
+        depth=12,
+        n_time_filters=5,
+        complexity_factor=1.67,
+        with_skip_connection=True,
+        n_outputs=5,
+        input_window_seconds=30,
+        time_conv_size_s=9 / 128,
+    )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     assert n_params == 3114337  # From paper's supplementary materials, Table 2
@@ -453,8 +466,13 @@ def test_sleep_stager_return_feats():
     n_classes = 3
 
     model = SleepStagerChambon2018(
-        n_channels, sfreq, n_conv_chs=8, input_window_seconds=input_size_s,
-        n_outputs=n_classes, return_feats=True)
+        n_channels,
+        sfreq,
+        n_conv_chs=8,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
+        return_feats=True,
+    )
     model.eval()
 
     rng = np.random.RandomState(42)
@@ -485,9 +503,11 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_examples = 10
 
     model = SleepStagerEldele2021(
-        sfreq=sfreq, n_outputs=n_classes,
+        sfreq=sfreq,
+        n_outputs=n_classes,
         input_window_seconds=input_size_s,
-        d_model=d_model, return_feats=False,
+        d_model=d_model,
+        return_feats=False,
     )
     model.eval()
 
@@ -506,8 +526,10 @@ def test_eldele_2021_feats():
     n_examples = 10
 
     model = SleepStagerEldele2021(
-      sfreq, input_window_seconds=input_size_s, n_outputs=n_classes,
-      return_feats=True,
+        sfreq,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
+        return_feats=True,
     )
     model.eval()
 
@@ -528,8 +550,11 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     n_examples = 10
 
     model = SleepStagerBlanco2020(
-        n_chans=n_channels, sfreq=sfreq, n_groups=n_groups,
-        input_window_seconds=input_size_s, n_outputs=n_classes,
+        n_chans=n_channels,
+        sfreq=sfreq,
+        n_groups=n_groups,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
         return_feats=False,
     )
     model.eval()
@@ -554,8 +579,11 @@ def test_blanco_2020_feats():
     n_examples = 10
 
     model = SleepStagerBlanco2020(
-      n_channels, sfreq, input_window_seconds=input_size_s,
-      n_outputs=n_classes, return_feats=True,
+        n_channels,
+        sfreq,
+        input_window_seconds=input_size_s,
+        n_outputs=n_classes,
+        return_feats=True,
     )
     model.eval()
 
@@ -684,10 +712,9 @@ def test_conformer_forward_pass(sample_input, model):
     output = model(sample_input)
     assert isinstance(output, torch.Tensor)
 
-    model_with_feature = EEGConformer(n_outputs=2,
-                                      n_chans=12,
-                                      n_times=1000,
-                                      return_features=True)
+    model_with_feature = EEGConformer(
+        n_outputs=2, n_chans=12, n_times=1000, return_features=True
+    )
     output = model_with_feature(sample_input)
 
     assert isinstance(output, tuple) and len(output) == 2
@@ -725,6 +752,7 @@ def test_model_trainable_parameters(model):
     assert trainable_classification_params == 633120
     assert trainable_final_layer_parameters == 66
 
+
 @pytest.mark.parametrize("n_chans", (2 ** np.arange(8)).tolist())
 @pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
 @pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
@@ -735,12 +763,13 @@ def test_biot(n_chans, n_outputs, input_size_s):
     n_examples = 3
     n_times = np.ceil(input_size_s * sfreq).astype(int)
 
-    model = BIOT(n_outputs=n_outputs,
-                 n_chans=n_chans,
-                 n_times=n_times,
-                 sfreq=sfreq,
-                 hop_length=50,
-                 )
+    model = BIOT(
+        n_outputs=n_outputs,
+        n_chans=n_chans,
+        n_times=n_times,
+        sfreq=sfreq,
+        hop_length=50,
+    )
     model.eval()
 
     X = rng.randn(n_examples, n_chans, n_times)
@@ -754,14 +783,15 @@ def test_biot(n_chans, n_outputs, input_size_s):
 @pytest.fixture
 def default_biot_params():
     return {
-        'emb_size': 256,
-        'att_num_heads': 8,
-        'n_layers': 4,
-        'sfreq': 200,
-        'hop_length': 50,
-        'n_outputs': 2,
-        'n_chans': 64,
+        "emb_size": 256,
+        "att_num_heads": 8,
+        "n_layers": 4,
+        "sfreq": 200,
+        "hop_length": 50,
+        "n_outputs": 2,
+        "n_chans": 64,
     }
+
 
 def test_initialization_default_parameters(default_biot_params):
     """Test BIOT initialization with default parameters."""
@@ -779,26 +809,24 @@ def test_model_trainable_parameters_biot(default_biot_params):
     biot_encoder = biot.encoder.parameters()
     biot_classifier = biot.classifier.parameters()
 
-    trainable_params_bio = sum(p.numel()
-                               for p in biot_encoder if p.requires_grad)
-    trainable_params_clf = sum(p.numel()
-                               for p in biot_classifier if p.requires_grad)
+    trainable_params_bio = sum(p.numel() for p in biot_encoder if p.requires_grad)
+    trainable_params_clf = sum(p.numel() for p in biot_classifier if p.requires_grad)
 
-    assert trainable_params_bio == 3198464 # ~ 3.2 M according with Labram paper
+    assert trainable_params_bio == 3198464  # ~ 3.2 M according with Labram paper
     assert trainable_params_clf == 514
 
 
 @pytest.fixture
 def default_labram_params():
     return {
-        'n_times': 1000,
-        'n_chans': 64,
-        'patch_size': 200,
-        'sfreq': 200,
-        'qk_norm': partial(nn.LayerNorm, eps=1e-6),
-        'norm_layer': partial(nn.LayerNorm, eps=1e-6),
-        'mlp_ratio': 4,
-        'n_outputs': 2,
+        "n_times": 1000,
+        "n_chans": 64,
+        "patch_size": 200,
+        "sfreq": 200,
+        "qk_norm": partial(nn.LayerNorm, eps=1e-6),
+        "norm_layer": partial(nn.LayerNorm, eps=1e-6),
+        "mlp_ratio": 4,
+        "n_outputs": 2,
     }
 
 
@@ -812,32 +840,38 @@ def test_model_trainable_parameters_labram(default_labram_params):
     default_labram_params: dict with default parameters for Labram model
 
     """
-    labram_base = Labram(n_layers=12, att_num_heads=12,
-                         **default_labram_params)
+    labram_base = Labram(n_layers=12, att_num_heads=12, **default_labram_params)
 
-    labram_base_parameters = (labram_base.get_torchinfo_statistics()
-                              .trainable_params)
+    labram_base_parameters = labram_base.get_torchinfo_statistics().trainable_params
 
     # We added some parameters layers in the segmentation step to match the
     # braindecode convention.
-    assert np.round(labram_base_parameters / 1E6, 1) == 5.8
+    assert np.round(labram_base_parameters / 1e6, 1) == 5.8
     # ~ 5.8 M matching the paper
 
-    labram_large = Labram(n_layers=24, att_num_heads=16, out_channels=16,
-                          emb_size=400, **default_labram_params)
-    labram_large_parameters = (labram_large.get_torchinfo_statistics()
-                               .trainable_params)
+    labram_large = Labram(
+        n_layers=24,
+        att_num_heads=16,
+        out_channels=16,
+        emb_size=400,
+        **default_labram_params,
+    )
+    labram_large_parameters = labram_large.get_torchinfo_statistics().trainable_params
 
-    assert np.round(labram_large_parameters / 1E6, 0) == 46
+    assert np.round(labram_large_parameters / 1e6, 0) == 46
     # ~ 46 M matching the paper
 
-    labram_huge = Labram(n_layers=48, att_num_heads=16, out_channels=32,
-                         emb_size=800, **default_labram_params)
+    labram_huge = Labram(
+        n_layers=48,
+        att_num_heads=16,
+        out_channels=32,
+        emb_size=800,
+        **default_labram_params,
+    )
 
-    labram_huge_parameters = (labram_huge.get_torchinfo_statistics()
-                              .trainable_params)
+    labram_huge_parameters = labram_huge.get_torchinfo_statistics().trainable_params
     # 369M matching the paper
-    assert np.round(labram_huge_parameters / 1E6, 0) == 369
+    assert np.round(labram_huge_parameters / 1e6, 0) == 369
 
     assert labram_base.get_num_layers() == 12
     assert labram_large.get_num_layers() == 24
@@ -855,39 +889,44 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
     default_labram_params: dict with default parameters for Labram model
 
     """
-    labram_base = Labram(n_layers=12, att_num_heads=12,
-                         use_mean_pooling=use_mean_pooling,
-                         **default_labram_params, )
+    labram_base = Labram(
+        n_layers=12,
+        att_num_heads=12,
+        use_mean_pooling=use_mean_pooling,
+        **default_labram_params,
+    )
     # Defining a random data
-    X = torch.rand(1, default_labram_params['n_chans'],
-                   default_labram_params['n_times'])
+    X = torch.rand(
+        1, default_labram_params["n_chans"], default_labram_params["n_times"]
+    )
 
     with torch.no_grad():
-        out = labram_base(X, return_all_tokens=False,
-                          return_patch_tokens=False)
+        out = labram_base(X, return_all_tokens=False, return_patch_tokens=False)
 
-        assert out.shape == torch.Size([1,
-            default_labram_params['n_outputs']])
+        assert out.shape == torch.Size([1, default_labram_params["n_outputs"]])
 
-        out_patches = labram_base(X, return_all_tokens=False,
-                                  return_patch_tokens=True)
+        out_patches = labram_base(X, return_all_tokens=False, return_patch_tokens=True)
 
-        assert out_patches.shape == torch.Size([1, 320,
-            default_labram_params['n_outputs']])
+        assert out_patches.shape == torch.Size(
+            [1, 320, default_labram_params["n_outputs"]]
+        )
 
-        out_all_tokens = labram_base(X, return_all_tokens=True,
-                                     return_patch_tokens=False)
-        assert out_all_tokens.shape == torch.Size([1, 321,
-            default_labram_params['n_outputs']])
+        out_all_tokens = labram_base(
+            X, return_all_tokens=True, return_patch_tokens=False
+        )
+        assert out_all_tokens.shape == torch.Size(
+            [1, 321, default_labram_params["n_outputs"]]
+        )
 
 
 def test_labram_without_pos_embed(default_labram_params):
-    labram_base_not_pos_emb = Labram(n_layers=12, att_num_heads=12,
-                                     use_abs_pos_emb=False,
-                                     **default_labram_params)
+    labram_base_not_pos_emb = Labram(
+        n_layers=12, att_num_heads=12, use_abs_pos_emb=False, **default_labram_params
+    )
 
-    X = torch.rand(1, default_labram_params['n_chans'],
-                   default_labram_params['n_times'])
+    X = torch.rand(
+        1, default_labram_params["n_chans"], default_labram_params["n_times"]
+    )
 
     with torch.no_grad():
         out_without_pos_emb = labram_base_not_pos_emb(X)
@@ -904,14 +943,14 @@ def test_labram_n_outputs_0(default_labram_params):
     default_labram_params: dict with default parameters for Labram model
 
     """
-    default_labram_params['n_outputs'] = 0
-    labram_base = Labram(n_layers=12, att_num_heads=12,
-                         **default_labram_params)
+    default_labram_params["n_outputs"] = 0
+    labram_base = Labram(n_layers=12, att_num_heads=12, **default_labram_params)
     # Defining a random data
-    X = torch.rand(1, default_labram_params['n_chans'],
-                   default_labram_params['n_times'])
+    X = torch.rand(
+        1, default_labram_params["n_chans"], default_labram_params["n_times"]
+    )
 
     with torch.no_grad():
         out = labram_base(X)
-        assert out.shape[-1] == default_labram_params['patch_size']
+        assert out.shape[-1] == default_labram_params["patch_size"]
         assert isinstance(labram_base.head, nn.Identity)

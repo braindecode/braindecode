@@ -28,15 +28,25 @@ class HybridNet(EEGModuleMixin, nn.Module):
        Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
-    def __init__(self, n_chans=None, n_outputs=None, n_times=None,
-                 in_chans=None, n_classes=None, input_window_samples=None,
-                 add_log_softmax=True, input_window_seconds=None, sfreq=None, chs_info=None):
+    def __init__(
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        in_chans=None,
+        n_classes=None,
+        input_window_samples=None,
+        add_log_softmax=True,
+        input_window_seconds=None,
+        sfreq=None,
+        chs_info=None,
+    ):
 
         n_chans, n_outputs, n_times = deprecated_args(
             self,
-            ('in_chans', 'n_chans', in_chans, n_chans),
-            ('n_classes', 'n_outputs', n_classes, n_outputs),
-            ('input_window_samples', 'n_times', input_window_samples, n_times),
+            ("in_chans", "n_chans", in_chans, n_chans),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            ("input_window_samples", "n_times", input_window_samples, n_times),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -48,8 +58,8 @@ class HybridNet(EEGModuleMixin, nn.Module):
             add_log_softmax=add_log_softmax,
         )
         self.mapping = {
-            'final_conv.weight': 'final_layer.weight',
-            'final_conv.bias': 'final_layer.bias'
+            "final_conv.weight": "final_layer.weight",
+            "final_conv.bias": "final_layer.bias",
         }
 
         deep_model = Deep4Net(
@@ -103,9 +113,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
                     kernel_size=module.conv_classifier.kernel_size,
                     stride=module.conv_classifier.stride,
                 )
-                reduced_shallow_model.add_module(
-                    "shallow_final_conv", new_conv_layer
-                )
+                reduced_shallow_model.add_module("shallow_final_conv", new_conv_layer)
                 break
             reduced_shallow_model.add_module(name, module)
 
@@ -115,12 +123,9 @@ class HybridNet(EEGModuleMixin, nn.Module):
         self.reduced_shallow_model = reduced_shallow_model
 
         self.final_layer = nn.Sequential(
-            nn.Conv2d(
-                100,
-                self.n_outputs,
-                kernel_size=(1, 1),
-                stride=1),
-            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity())
+            nn.Conv2d(100, self.n_outputs, kernel_size=(1, 1), stride=1),
+            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
+        )
 
     def forward(self, x):
         """Forward pass.
@@ -136,13 +141,9 @@ class HybridNet(EEGModuleMixin, nn.Module):
         n_diff_deep_shallow = deep_out.size()[2] - shallow_out.size()[2]
 
         if n_diff_deep_shallow < 0:
-            deep_out = ConstantPad2d((0, 0, -n_diff_deep_shallow, 0), 0)(
-                deep_out
-            )
+            deep_out = ConstantPad2d((0, 0, -n_diff_deep_shallow, 0), 0)(deep_out)
         elif n_diff_deep_shallow > 0:
-            shallow_out = ConstantPad2d((0, 0, n_diff_deep_shallow, 0), 0)(
-                shallow_out
-            )
+            shallow_out = ConstantPad2d((0, 0, n_diff_deep_shallow, 0), 0)(shallow_out)
 
         merged_out = torch.cat((deep_out, shallow_out), dim=1)
 

@@ -51,7 +51,9 @@ def set_random_seeds(seed, cuda, cudnn_benchmark=None):
                 warn(
                     "torch.backends.cudnn.benchmark was set to True which may results in lack of "
                     "reproducibility. In some cases to ensure reproducibility you may need to "
-                    "set torch.backends.cudnn.benchmark to False.", UserWarning)
+                    "set torch.backends.cudnn.benchmark to False.",
+                    UserWarning,
+                )
         else:
             raise ValueError(
                 f"cudnn_benchmark expected to be bool or None, got '{cudnn_benchmark}'"
@@ -60,19 +62,18 @@ def set_random_seeds(seed, cuda, cudnn_benchmark=None):
     np.random.seed(seed)
 
 
-def np_to_var(
-    X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs
-):
+def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
     warn("np_to_var has been renamed np_to_th, please use np_to_th instead")
     return np_to_th(
-        X, requires_grad=requires_grad, dtype=dtype, pin_memory=pin_memory,
-        **tensor_kwargs
+        X,
+        requires_grad=requires_grad,
+        dtype=dtype,
+        pin_memory=pin_memory,
+        **tensor_kwargs,
     )
 
 
-def np_to_th(
-    X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs
-):
+def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
     """
     Convenience function to transform numpy array to `torch.Tensor`.
 
@@ -209,15 +210,11 @@ def wrap_reshape_apply_fn(stat_fn, a, b, axis_a, axis_b):
     )
     assert np.array_equal(n_stat_axis_a, n_stat_axis_b)
     stat_result = stat_fn(flat_topo_a, flat_topo_b)
-    topo_result = stat_result.reshape(
-        tuple(n_other_axis_a) + tuple(n_other_axis_b)
-    )
+    topo_result = stat_result.reshape(tuple(n_other_axis_a) + tuple(n_other_axis_b))
     return topo_result
 
 
-def get_balanced_batches(
-    n_trials, rng, shuffle, n_batches=None, batch_size=None
-):
+def get_balanced_batches(n_trials, rng, shuffle, n_batches=None, batch_size=None):
     """Create indices for batches balanced in size
     (batches will have maximum size difference of 1).
     Supply either batch size or number of batches. Resulting batches
@@ -268,9 +265,17 @@ def get_balanced_batches(
     return batches
 
 
-def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
-                         description=None, savedir=None, save_format='fif',
-                         overwrite=True, random_state=None):
+def create_mne_dummy_raw(
+    n_channels,
+    n_times,
+    sfreq,
+    include_anns=True,
+    description=None,
+    savedir=None,
+    save_format="fif",
+    overwrite=True,
+    random_state=None,
+):
     """Create an mne.io.RawArray with fake data, and optionally save it.
 
     This will overwrite already existing files.
@@ -305,20 +310,21 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
     """
     random_state = check_random_state(random_state)
     data = random_state.rand(n_channels, n_times)
-    ch_names = [f'ch{i}' for i in range(n_channels)]
-    ch_types = ['eeg'] * n_channels
+    ch_names = [f"ch{i}" for i in range(n_channels)]
+    ch_types = ["eeg"] * n_channels
     info = mne.create_info(ch_names=ch_names, sfreq=sfreq, ch_types=ch_types)
 
     raw = mne.io.RawArray(data, info)
 
     if include_anns:
         n_anns = 10
-        inds = np.linspace(
-            int(sfreq * 2), int(n_times - sfreq * 2), num=n_anns).astype(int)
+        inds = np.linspace(int(sfreq * 2), int(n_times - sfreq * 2), num=n_anns).astype(
+            int
+        )
         onset = raw.times[inds]
         duration = [1] * n_anns
         if description is None:
-            description = ['test'] * n_anns
+            description = ["test"] * n_anns
         anns = mne.Annotations(onset, duration, description)
         raw = raw.set_annotations(anns)
 
@@ -326,18 +332,17 @@ def create_mne_dummy_raw(n_channels, n_times, sfreq, include_anns=True,
     if savedir is not None:
         if not isinstance(save_format, list):
             save_format = [save_format]
-        fname = os.path.join(savedir, 'fake_eeg_raw')
+        fname = os.path.join(savedir, "fake_eeg_raw")
 
-        if 'fif' in save_format:
-            fif_fname = fname + '.fif'
+        if "fif" in save_format:
+            fif_fname = fname + ".fif"
             raw.save(fif_fname, overwrite=overwrite)
-            save_fname['fif'] = fif_fname
-        if 'hdf5' in save_format:
-            h5_fname = fname + '.h5'
-            with h5py.File(h5_fname, 'w') as f:
-                f.create_dataset(
-                    'fake_raw', dtype='f8', data=raw.get_data())
-            save_fname['hdf5'] = h5_fname
+            save_fname["fif"] = fif_fname
+        if "hdf5" in save_format:
+            h5_fname = fname + ".h5"
+            with h5py.File(h5_fname, "w") as f:
+                f.create_dataset("fake_raw", dtype="f8", data=raw.get_data())
+            save_fname["hdf5"] = h5_fname
 
     return raw, save_fname
 
@@ -349,7 +354,9 @@ class ThrowAwayIndexLoader(object):
         self.last_i = None
         self.is_regression = is_regression
 
-    def __iter__(self, ):
+    def __iter__(
+        self,
+    ):
         normal_iter = self.loader.__iter__()
         for batch in normal_iter:
             if len(batch) == 3:
@@ -360,7 +367,7 @@ class ThrowAwayIndexLoader(object):
                 x, y = batch
 
             # TODO: should be on dataset side
-            if hasattr(x, 'type'):
+            if hasattr(x, "type"):
                 x = x.type(torch.float32)
                 if self.is_regression:
                     y = y.type(torch.float32)
@@ -370,23 +377,26 @@ class ThrowAwayIndexLoader(object):
 
 
 def update_estimator_docstring(base_class, docstring):
-    base_doc = base_class.__doc__.replace(' : ', ': ')
-    idx = base_doc.find('callbacks:')
-    idx_end = idx + base_doc[idx:].find('\n\n')
+    base_doc = base_class.__doc__.replace(" : ", ": ")
+    idx = base_doc.find("callbacks:")
+    idx_end = idx + base_doc[idx:].find("\n\n")
     # remove callback descripiton already included in braindecode docstring
-    filtered_doc = base_doc[:idx] + base_doc[idx_end + 6:]
-    splitted = docstring.split('Parameters\n    ----------\n    ')
+    filtered_doc = base_doc[:idx] + base_doc[idx_end + 6 :]
+    splitted = docstring.split("Parameters\n    ----------\n    ")
     out_docstring = (
-        splitted[0] +
-        filtered_doc[filtered_doc.find('Parameters'):filtered_doc.find('Attributes')] +
-        splitted[1] +
-        filtered_doc[filtered_doc.find('Attributes'):])
+        splitted[0]
+        + filtered_doc[
+            filtered_doc.find("Parameters") : filtered_doc.find("Attributes")
+        ]
+        + splitted[1]
+        + filtered_doc[filtered_doc.find("Attributes") :]
+    )
     return out_docstring
 
 
 def _update_moabb_docstring(base_class, docstring):
     base_doc = base_class.__doc__
-    out_docstring = base_doc + f'\n\n{docstring}'
+    out_docstring = base_doc + f"\n\n{docstring}"
     return out_docstring
 
 
@@ -406,8 +416,9 @@ def read_all_file_names(directory, extension):
     file_paths: list(str)
         List of all files found in (sub)directories of path.
     """
-    assert extension.startswith('.')
-    file_paths = glob.glob(directory + '**/*' + extension, recursive=True)
-    assert len(file_paths) > 0, (
-        f'something went wrong. Found no {extension} files in {directory}')
+    assert extension.startswith(".")
+    file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
+    assert (
+        len(file_paths) > 0
+    ), f"something went wrong. Found no {extension} files in {directory}"
     return file_paths

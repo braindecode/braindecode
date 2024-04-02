@@ -6,7 +6,7 @@ import torch
 
 
 def rescale_parameter(param, layer_id):
-    """ Recaling the l-th transformer layer.
+    """Recaling the l-th transformer layer.
 
     Rescales the parameter tensor by the inverse square root of the layer id.
     Made inplace. :math:`\frac{1}{\sqrt{2 \cdot \text{layer\_id}}}` [Beit2022]
@@ -61,10 +61,9 @@ def squeeze_final_output(x):
     return x
 
 
-def drop_path(x,
-              drop_prob: float = 0.0,
-              training: bool = False,
-              scale_by_keep: bool = True):
+def drop_path(
+    x, drop_prob: float = 0.0, training: bool = False, scale_by_keep: bool = True
+):
     """Drop paths (Stochastic Depth) per sample.
 
 
@@ -104,7 +103,8 @@ def drop_path(x,
         return x
     keep_prob = 1 - drop_prob
     shape = (x.shape[0],) + (1,) * (
-            x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
+        x.ndim - 1
+    )  # work with diff dim tensors, not just 2D ConvNets
     random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
     if keep_prob > 0.0 and scale_by_keep:
         random_tensor.div_(keep_prob)
