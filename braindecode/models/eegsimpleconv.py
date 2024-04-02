@@ -1,10 +1,12 @@
 """
 EEG-SimpleConv is a 1D Convolutional Neural Network from Yassine El Ouahidi et al. (2023).
+
 Originally designed for Motor Imagery decoding, from EEG signals.
 The model offers competitive performances, with a low latency and ismainly composed of
 1D convolutional layers.
 
 """
+
 # Authors: Yassine El Ouahidi <eloua.yas@gmail.com>
 #
 # License: BSD-3
@@ -22,7 +24,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     for decoding motor imagery from EEG signals. The model aims to have a
     very simple and straightforward architecture that allows a low latency,
     while still achieving very competitive performance.
-    w
+
     EEG-SimpleConv starts with a 1D convolutional layer, where each EEG channel
     enters a separate 1D convolutional channel. This is followed by a series of
     blocks of two 1D convolutional layers. Between the two convolutional layers
@@ -31,11 +33,11 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     activation function. Finally, a global average pooling (in the time domain)
     is performed to obtain a single value per feature map, which is then fed
     into a linear layer to obtain the final classification prediction output.
-    
+
 
     The paper and original code with more details about the methodological
     choices are available at the [Yassine2023]_ and [Yassine2023Code]_.
-    
+
     The input shape should be three-dimensional matrix representing the EEG
     signals.
 
@@ -45,13 +47,13 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     -----
     The authors recommend using the default parameters for MI decoding.
     Please refer to the original paper and code for more details.
-    
+
     Recommended range for the choice of the hyperparameters, regarding the
-    evaluation paradigm. 
-    
+    evaluation paradigm.
+
     |    Parameter    | Within-Subject | Cross-Subject |
     |-----------------|----------------|---------------|
-    | feature_maps              | [64-144]       |   [64-144]    |
+    | feature_maps    | [64-144]       |   [64-144]    |
     | n_convs         |    1           |   [2-4]       |
     | resampling_freq | [70-100]       |   [50-80]     |
     | kernel_size     | [12-17]        |   [5-8]       |
@@ -96,6 +98,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         n_convs=2,
         resampling_freq=80,
         kernel_size=8,
+        return_feature=False,
         # Other ways to initialize the model
         chs_info=None,
         n_times=None,
@@ -111,6 +114,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
+        self.return_feature = return_feature
         self.resample = (
             Resample(orig_freq=self.sfreq, new_freq=resampling_freq)
             if self.sfreq != resampling_freq
@@ -118,8 +122,11 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
 
         self.conv = torch.nn.Conv1d(
-            self.n_chans, feature_maps, kernel_size=kernel_size,
-            padding=kernel_size // 2, bias=False
+            self.n_chans,
+            feature_maps,
+            kernel_size=kernel_size,
+            padding=kernel_size // 2,
+            bias=False,
         )
         self.bn = torch.nn.BatchNorm1d(feature_maps)
         self.blocks = []
@@ -127,7 +134,8 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         old_feature_maps = feature_maps
         for i in range(n_convs):
             if i > 0:
-                new_feature_maps = int(1.414 * new_feature_maps) # 1.414 = sqrt(2) allow constant flops.
+                # 1.414 = sqrt(2) allow constant flops.
+                new_feature_maps = int(1.414 * new_feature_maps)
             self.blocks.append(
                 torch.nn.Sequential(
                     (
@@ -159,7 +167,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         self.blocks = torch.nn.ModuleList(self.blocks)
         self.final_layer = torch.nn.Linear(old_feature_maps, self.n_outputs)
 
-    def forward(self, x,return_feature=False):
+    def forward(self, x):
         """
         Forward pass of the model.
 
@@ -167,12 +175,10 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         ----------
         x: PyTorch Tensor
             Input tensor of shape (batch_size, n_channels, n_times)
-        return_feature: bool
-            If True, the model returns the features before the final layer
 
         Returns
         -------
-        PyTorch Tensor
+        PyTorch Tensor (optional)
             Output tensor of shape (batch_size, n_outputs)
         """
         x_rs = self.resample(x.contiguous())
@@ -180,4 +186,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         for seq in self.blocks:
             feat = seq(feat)
         feat = feat.mean(dim=2)
-        return self.final_layer(feat) if not return_feature else (self.final_layer(feat) ,feat)
+        if self.return_feature:
+            return self.final_layer(feat), feat
+        else:
+            return self.final_layer(feat)
