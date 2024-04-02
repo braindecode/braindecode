@@ -62,11 +62,11 @@ class NMT(BaseConcatDataset):
     """
 
     def __init__(
-        self,
-        path,
-        target_name="pathological",
-        recording_ids=None,
-        preload=False,
+            self,
+            path,
+            target_name="pathological",
+            recording_ids=None,
+            preload=False,
     ):
         file_paths = glob.glob(
             os.path.join(path, "**" + os.sep + "*.edf"), recursive=True
@@ -81,7 +81,8 @@ class NMT(BaseConcatDataset):
 
         # sort by subject id
         file_paths = sorted(
-            file_paths, key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
+            file_paths,
+            key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
         )
         if recording_ids is not None:
             file_paths = [file_paths[rec_id] for rec_id in recording_ids]
@@ -117,6 +118,10 @@ class NMT(BaseConcatDataset):
             base_datasets.append(base_dataset)
         super().__init__(base_datasets)
 
+    def _fetch_dataset(self):
+        """Fetch the NMT EEG Corpus dataset."""
+        pass
+
 
 def _get_header(*args, **kwargs):
     all_paths = {**_NMT_PATHS}
@@ -136,8 +141,8 @@ def _fake_pd_read_csv():
     ]
 
     # Create the DataFrame, specifying column names
-    df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
-
+    df = pd.DataFrame(data,
+                      columns=["recordname", "label", "age", "gender", "loc"])
 
     return df
 
@@ -176,14 +181,22 @@ def _fake_raw(*args, **kwargs):
 
 _NMT_PATHS = {
     # these are actual file paths and edf headers from NMT EEG Corpus
-    "nmt_scalp_eeg_dataset/abnormal/train/0000036.edf": b"0       0000036  M 13-May-1951 0000036  Age:32                                          ",  # noqa E501
-    "nmt_scalp_eeg_dataset/abnormal/eval/0000037.edf": b"0       0000037  M 13-May-1951 0000037  Age:32                                          ",  # noqa E501
-    "nmt_scalp_eeg_dataset/abnormal/eval/0000038.edf": b"0       0000038  M 13-May-1951 0000038  Age:32                                          ",  # noqa E501
-    "nmt_scalp_eeg_dataset/normal/train/0000039.edf": b"0       0000039  M 13-May-1951 0000039  Age:32                                          ",  # noqa E501
-    "nmt_scalp_eeg_dataset/normal/eval/0000040.edf": b"0       0000040  M 13-May-1951 0000040  Age:32                                          ",  # noqa E501
-    "nmt_scalp_eeg_dataset/normal/eval/0000041.edf": b"0       0000041  M 13-May-1951 0000041  Age:32                                          ",  # noqa E501
-    "nmt_scalp_eeg_dataset/abnormal/train/0000042.edf": b"0       0000042  M 13-May-1951 0000042  Age:32                                          ",  # noqa E501
-    "Labels.csv": b"0       recordname,label,age,gender,loc       1 0000001.edf,normal,22,not specified,train                                                                      ",  # noqa E501
+    "nmt_scalp_eeg_dataset/abnormal/train/0000036.edf": b"0       0000036  M 13-May-1951 0000036  Age:32                                          ",
+    # noqa E501
+    "nmt_scalp_eeg_dataset/abnormal/eval/0000037.edf": b"0       0000037  M 13-May-1951 0000037  Age:32                                          ",
+    # noqa E501
+    "nmt_scalp_eeg_dataset/abnormal/eval/0000038.edf": b"0       0000038  M 13-May-1951 0000038  Age:32                                          ",
+    # noqa E501
+    "nmt_scalp_eeg_dataset/normal/train/0000039.edf": b"0       0000039  M 13-May-1951 0000039  Age:32                                          ",
+    # noqa E501
+    "nmt_scalp_eeg_dataset/normal/eval/0000040.edf": b"0       0000040  M 13-May-1951 0000040  Age:32                                          ",
+    # noqa E501
+    "nmt_scalp_eeg_dataset/normal/eval/0000041.edf": b"0       0000041  M 13-May-1951 0000041  Age:32                                          ",
+    # noqa E501
+    "nmt_scalp_eeg_dataset/abnormal/train/0000042.edf": b"0       0000042  M 13-May-1951 0000042  Age:32                                          ",
+    # noqa E501
+    "Labels.csv": b"0       recordname,label,age,gender,loc       1 0000001.edf,normal,22,not specified,train                                                                      ",
+    # noqa E501
 }
 
 
@@ -195,14 +208,15 @@ class _NMTMock(NMT):
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     @mock.patch(
-        "braindecode.datasets.tuh._read_physician_report", return_value="simple_test"
+        "braindecode.datasets.tuh._read_physician_report",
+        return_value="simple_test"
     )
     def __init__(
-        self,
-        path,
-        recording_ids=None,
-        target_name="pathological",
-        preload=False,
+            self,
+            path,
+            recording_ids=None,
+            target_name="pathological",
+            preload=False,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
