@@ -20,6 +20,12 @@ import pandas as pd
 
 from braindecode.datasets.base import BaseConcatDataset, BaseDataset
 
+from mne.datasets import fetch_dataset
+
+NMT_BASE_URL = (
+
+)
+
 
 class NMT(BaseConcatDataset):
     """The NMT Scalp EEG Dataset.
@@ -46,7 +52,7 @@ class NMT(BaseConcatDataset):
         later than the second recording. Provide recording_ids in ascending
         order to preserve chronological order.).
     target_name: str
-        Can be 'gender', or 'age'.
+        Can be 'pathological', 'gender', or 'age'.
     preload: bool
         If True, preload the data of the Raw objects.
 
@@ -59,14 +65,40 @@ class NMT(BaseConcatDataset):
     """
 
     def __init__(
-        self, path, target_name="pathological", recording_ids=None, preload=False
+            self, path, target_name="pathological",
+            recording_ids=None, preload=False
     ):
+        description = self.prepare_metada(path=path,
+                                          recording_ids=recording_ids)
+
+        base_datasets = []
+        for recording_id, d in description.iterrows():
+            raw = mne.io.read_raw_edf(d.path, preload=preload)
+            d["n_samples"] = raw.n_times
+            d["sfreq"] = raw.info["sfreq"]
+            d["train"] = "train" in d.path.split(os.sep)
+            base_dataset = BaseDataset(raw, d, target_name)
+            base_datasets.append(base_dataset)
+        super().__init__(base_datasets)
+
+    @staticmethod
+    def _fetch_data(subjects, path=None,
+                    force_update=False, base_url=NMT_BASE_URL,
+                    on_missing="raise", verbose=None):
+        print("oi")
+        return fetch_dataset(data_path=path, url=base_url,
+                             force_update=force_update,
+                             on_missing=on_missing, verbose=verbose)
+
+    @staticmethod
+    def prepare_metada(path: str, recording_ids: list = None) -> pd.DataFrame:
         file_paths = glob.glob(
             os.path.join(path, "**" + os.sep + "*.edf"), recursive=True
         )
         # sort by subject id
         file_paths = sorted(
-            file_paths, key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
+            file_paths,
+            key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
         )
         if recording_ids is not None:
             file_paths = [file_paths[rec_id] for rec_id in recording_ids]
@@ -90,14 +122,6 @@ class NMT(BaseConcatDataset):
         description.rename(columns={"label": "pathological"}, inplace=True)
         description.reset_index(drop=True, inplace=True)
         description["path"] = file_paths
-        description = description[["path", "pathological", "age", "gender"]]
-
-        base_datasets = []
-        for recording_id, d in description.iterrows():
-            raw = mne.io.read_raw_edf(d.path, preload=preload)
-            d["n_samples"] = raw.n_times
-            d["sfreq"] = raw.info["sfreq"]
-            d["train"] = "train" in d.path.split(os.sep)
-            base_dataset = BaseDataset(raw, d, target_name)
-            base_datasets.append(base_dataset)
-        super().__init__(base_datasets)
+        description = description[
+            ["path", "pathological", "age", "gender"]]
+        return description
