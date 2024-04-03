@@ -103,8 +103,8 @@ class NMT(BaseConcatDataset):
                 if (Path(path).parent / unzip_file_name).exists():
                     try:
                         os.rename(
-                        src=Path(path).parent / unzip_file_name,
-                        dst=Path(path),
+                            src=Path(path).parent / unzip_file_name,
+                            dst=Path(path),
                         )
                     except PermissionError:
                         raise PermissionError(
@@ -112,10 +112,9 @@ class NMT(BaseConcatDataset):
                             + f"manually to {path} and try again."
                         )
 
+            # Get all file paths
+            path = os.path.join(path, "nmt_scalp_eeg_dataset")
 
-
-        # Get all file paths
-        path = os.path.join(path, "nmt_scalp_eeg_dataset")
         file_paths = glob.glob(
             os.path.join(path, "**" + os.sep + "*.edf"), recursive=True
         )
@@ -262,7 +261,6 @@ class _NMTMock(NMT):
     @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
-
     def __init__(
         self,
         mock_glob,
