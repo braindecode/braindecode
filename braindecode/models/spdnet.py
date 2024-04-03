@@ -1,7 +1,11 @@
 # Authors: Théo Gnassounou <theo.gnassounou@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
+#
 # Code inspired from https://github.com/rkobler/TSMNet.git
 #
 # License: BSD (3-clause)
+from warnings import warn
+
 from geoopt.tensor import ManifoldParameter
 from geoopt.manifolds import Stiefel
 import torch
@@ -81,7 +85,7 @@ class BiMap(nn.Module):
 
         assert in_shape >= out_shape
         self.W = ManifoldParameter(
-            torch.empty([1, self.in_shape_, self.self.out_shape_]),
+            torch.empty([1, self.in_shape_, self.out_shape_]),
             manifold=self.manifold_
         )
         self.reset_parameters()
@@ -197,16 +201,19 @@ class SPDNet(EEGModuleMixin, nn.Module):
 
     def __init__(
             self,
-            input_type,
-            n_chans,
-            subspacedim,
+            # Models specific parameters
+            subspacedim=2,
+            input_type="cov",
             threshold=1e-4,
+            tril=True,
+            # Braindecode standard parameters
+            n_chans=None,
             n_outputs=None,
             chs_info=None,
             n_times=None,
             input_window_seconds=None,
             sfreq=None,
-            tril=True,
+
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -218,11 +225,23 @@ class SPDNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq
 
+        if subspacedim is None:
+            warn(
+                "subspacedim is None, using the default value of "
+                "the number of channels",
+                UserWarning
+            )
+
+            if self.n_chans is not None and self.n_chans > 1:
+                subspacedim = self.n_chans
+        else:
+            subspacedim = subspacedim
 
         if input_type == "raw":
             self.cov = CovLayer()
         elif input_type == "cov":
             self.cov = nn.Identity()
+
         self.bimap = BiMap(self.n_chans, subspacedim)
         self.reeig = ReEig(threshold)
         self.logeig = LogEig(subspacedim, tril=tril)
