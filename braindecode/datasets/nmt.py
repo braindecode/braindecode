@@ -15,26 +15,30 @@ pathological EEG recordings for predictive modeling. This dataset contains
 import glob
 import os
 import warnings
-from unittest import mock
 
-import mne
 import numpy as np
 import pandas as pd
+import mne
+
+from unittest import mock
+from pathlib import Path
 from joblib import delayed, Parallel
-from mne.datasets._fetch import fetch_dataset
+from mne.datasets import fetch_dataset
 
 from braindecode.datasets.base import BaseConcatDataset, BaseDataset
 
 NMT_URL = "https://zenodo.org/record/10909103/files/NMT.zip"
-NMT_folder_name = "NMT_scalp_EEG_dataset"
 NMT_archive_name = "NMT.zip"
+NMT_folder_name = "MNE-NMT-eeg-dataset"
+NMT_dataset_name = "NMT-EEG-Corpus"
 
 NMT_dataset_params = {
-    "dataset_name": "LFP_data",
+    "dataset_name": NMT_dataset_name,
     "url": NMT_URL,
     "archive_name": NMT_archive_name,
     "folder_name": NMT_folder_name,
     "hash": "77b3ce12bcaf6c6cce4e6690ea89cb22bed55af10c525077b430f6e1d2e3c6bf",
+    "config_key": NMT_dataset_name,
 }
 
 
@@ -51,6 +55,8 @@ class NMT(BaseConcatDataset):
     abnormality detection.
 
     The dataset is described in [Khan2022]_.
+
+    .. versionadded:: 0.9
 
     Parameters
     ----------
@@ -88,9 +94,27 @@ class NMT(BaseConcatDataset):
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
                 processor="unzip",
-                force_update=False,
+                force_update=True,
             )
+            # First time we fetch the dataset, we need to move the files to the
+            # correct directory.
+            if not Path(path).exists():
+                unzip_file_name = f"{NMT_archive_name}.unzip"
+                if (Path(path).parent / unzip_file_name).exists():
+                    try:
+                        os.remove(Path(path).parent / unzip_file_name)
+                    except PermissionError:
+                        raise PermissionError(
+                            f"Please rename {Path(path).parent / unzip_file_name}"
+                            + f"manually to {path} and try again."
+                        )
 
+                os.rename(
+                    src=Path(path).parent / unzip_file_name,
+                    dst=Path(path),
+                )
+
+        # Get all file paths
         file_paths = glob.glob(
             os.path.join(path, "**" + os.sep + "*.edf"), recursive=True
         )
