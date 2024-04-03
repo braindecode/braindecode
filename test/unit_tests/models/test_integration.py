@@ -211,7 +211,7 @@ def test_model_integration_full(model_name, required_params, signal_params):
     """
     Full test of the models compatibility with the skorch wrappers.
     In particular, it tests if the wrappers can set the signal-related parameters
-    and if the model can be found by name.
+    and if name can find the model.
 
     Parameters
     ----------
