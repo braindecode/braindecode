@@ -23,8 +23,8 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
-
-- Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
+- Adding an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.EEGSimpleConv` (:gh:`581` by `Yassine El Ouahidi`_ and `Bruno Aristimunha`_)

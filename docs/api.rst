@@ -86,6 +86,7 @@ Models
     TimeDistributed
     BIOT
     Labram
+    EEGSimpleConv
 
 
 Training
@@ -125,6 +126,7 @@ Datasets
     BNCI2014001
     TUH
     TUHAbnormal
+    NMT
     SleepPhysionet
     BCICompetitionIVDataset4
     create_from_X_y
