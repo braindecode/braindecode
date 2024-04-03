@@ -1,7 +1,7 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-
+import math
 import torch
 
 
@@ -313,86 +313,3 @@ def _modify_eig_backward(grad_output, s, U, s_modified, derivative,
     grad_input = U @ (L * (U.transpose(-1, -2) @ grad_output @ U)) @ U.transpose(-1, -2)
 
     return grad_input
-
-
-class logm(torch.autograd.Function):
-    """Matrix logarithm of a symmetric matrix.
-
-    This class computes the matrix logarithm of a symmetric matrix X.
-    It also adapt the backpropagation according to the chain rule [1]_.
-
-    Parameters
-    ----------
-    X : torch.Tensor
-        Symmetric matrix
-
-    Returns
-    -------
-    torch.Tensor
-        Matrix logarithm of X
-
-    References
-    ----------
-    .. [1] Brooks et al. 2019, Riemannian batch normalization
-            for SPD neural networks, NeurIPS
-    """
-
-    @staticmethod
-    def forward(ctx, X):
-        def function_applied(s):
-            return s.log()
-
-        output, s, U, s_modified = _modify_eig_forward(X, function_applied)
-        ctx.save_for_backward(s, U, s_modified)
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        s, U, s_modified = ctx.saved_tensors
-
-        def derivative(s):
-            return s.reciprocal()
-
-        return _modify_eig_backward(grad_output, s, U, s_modified, derivative)
-
-
-class regm(torch.autograd.Function):
-    """Regularized matrix logarithm of a symmetric matrix.
-
-    This class computes the regularized matrix logarithm of a symmetric matrix X.
-    It also adapt the backpropagation according to the chain rule [1]_.
-
-    Parameters
-    ----------
-    X : torch.Tensor
-        Symmetric matrix
-
-    Returns
-    -------
-    torch.Tensor
-        Regularized matrix logarithm of X
-
-    References
-    ----------
-    .. [1] Brooks et al. 2019, Riemannian batch normalization
-            for SPD neural networks, NeurIPS
-    """
-
-    @staticmethod
-    def forward(ctx, X, threshold):
-        def function_applied(s):
-            return s.clamp(min=threshold)
-
-        output, s, U, s_modified = _modify_eig_forward(X, function_applied)
-        ctx.save_for_backward(s, U, s_modified)
-        ctx.threshold_ = threshold
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        s, U, s_modified = ctx.saved_tensors
-
-        def derivative(s):
-            return s > ctx.threshold_
-
-        return _modify_eig_backward(grad_output, s, U, s_modified, derivative), None
