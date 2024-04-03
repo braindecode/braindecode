@@ -83,7 +83,7 @@ class NMT(BaseConcatDataset):
 
     def __init__(
         self,
-        path=None,
+        path,
         target_name="pathological",
         recording_ids=None,
         preload=False,
@@ -94,7 +94,7 @@ class NMT(BaseConcatDataset):
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
                 processor="unzip",
-                force_update=True,
+                force_update=False,
             )
             # First time we fetch the dataset, we need to move the files to the
             # correct directory.
@@ -102,19 +102,20 @@ class NMT(BaseConcatDataset):
                 unzip_file_name = f"{NMT_archive_name}.unzip"
                 if (Path(path).parent / unzip_file_name).exists():
                     try:
-                        os.remove(Path(path).parent / unzip_file_name)
+                        os.rename(
+                        src=Path(path).parent / unzip_file_name,
+                        dst=Path(path),
+                        )
                     except PermissionError:
                         raise PermissionError(
                             f"Please rename {Path(path).parent / unzip_file_name}"
                             + f"manually to {path} and try again."
                         )
 
-                os.rename(
-                    src=Path(path).parent / unzip_file_name,
-                    dst=Path(path),
-                )
+
 
         # Get all file paths
+        path = os.path.join(path, "nmt_scalp_eeg_dataset")
         file_paths = glob.glob(
             os.path.join(path, "**" + os.sep + "*.edf"), recursive=True
         )
@@ -184,7 +185,7 @@ def _get_header(*args):
     return all_paths[args[0]]
 
 
-def _fake_pd_read_csv():
+def _fake_pd_read_csv(*args, **kwargs):
     # Create a list of lists to hold the data
     data = [
         ["0000001.edf", "normal", 35, "male", "train"],
@@ -261,16 +262,15 @@ class _NMTMock(NMT):
     @mock.patch("glob.glob", return_value=_NMT_PATHS.keys())
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
-    @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
-    @mock.patch(
-        "braindecode.datasets.tuh._read_physician_report", return_value="simple_test"
-    )
+
     def __init__(
         self,
+        mock_glob,
         path,
         recording_ids=None,
         target_name="pathological",
         preload=False,
+        n_jobs=1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
@@ -279,4 +279,5 @@ class _NMTMock(NMT):
                 recording_ids=recording_ids,
                 target_name=target_name,
                 preload=preload,
+                n_jobs=n_jobs,
             )
