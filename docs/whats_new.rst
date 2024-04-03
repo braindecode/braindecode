@@ -27,6 +27,7 @@ Enhancements
 - Add an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.EEGSimpleConv` (:gh:`581` by `Yassine El Ouahidi`_ and `Bruno Aristimunha`_)
 
 
 Bugs
@@ -250,3 +251,4 @@ Authors
 .. _Sylvain Chevallier: https://github.com/sylvchev
 .. _Remi Delbouys: https://github.com/remidbs
 .. _Valentin Iovene: https://github.com/tgy
+.. _Yassine El Ouahidi: https://github.com/elouayas
