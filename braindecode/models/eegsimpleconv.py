@@ -2,7 +2,7 @@
 EEG-SimpleConv is a 1D Convolutional Neural Network from Yassine El Ouahidi et al. (2023).
 
 Originally designed for Motor Imagery decoding, from EEG signals.
-The model offers competitive performances, with a low latency and ismainly composed of
+The model offers competitive performances, with a low latency and is mainly composed of
 1D convolutional layers.
 
 """
