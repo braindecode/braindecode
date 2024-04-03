@@ -16,6 +16,7 @@ class CovLayer(nn.Module):
     This class computes the covariance of a batch of
     symmetric matrices.
     """
+
     def forward(self, X):
         """
         Forward pass.
@@ -32,7 +33,8 @@ class CovLayer(nn.Module):
         """
         means = torch.mean(X, dim=2, keepdim=True)
         X_centered = X - means
-        covariances = torch.einsum('bik,bjk->bij', X_centered, X_centered) / (X_centered.shape[2] - 0)
+        covariances = torch.einsum('bik,bjk->bij', X_centered, X_centered) / (
+                    X_centered.shape[2] - 0)
         return covariances
 
 
@@ -115,6 +117,7 @@ class ReEig(nn.Module):
            A Riemannian Network for SPD Matrix Learning
            AAAI
     """
+
     def __init__(self, threshold=1e-4):
         super(ReEig, self).__init__()
         self.register_buffer("threshold_", torch.tensor(threshold))
@@ -150,7 +153,8 @@ class LogEig(nn.Module):
         if self.tril:
             idx_lower = torch.tril_indices(dim, dim, offset=-1)
             idx_diag = torch.arange(start=0, end=dim, dtype=torch.long)
-            self.idx = torch.cat((idx_diag[None, :].tile((2, 1)), idx_lower), dim=1)
+            self.idx = torch.cat((idx_diag[None, :].tile((2, 1)), idx_lower),
+                                 dim=1)
         self.dim = dim
 
     def forward(self, X):
@@ -190,18 +194,19 @@ class SPDNet(EEGModuleMixin, nn.Module):
            A Riemannian Network for SPD Matrix Learning
            AAAI
     """
+
     def __init__(
-        self,
-        input_type,
-        n_chans,
-        subspacedim,
-        threshold=1e-4,
-        n_outputs=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        tril=True,
+            self,
+            input_type,
+            n_chans,
+            subspacedim,
+            threshold=1e-4,
+            n_outputs=None,
+            chs_info=None,
+            n_times=None,
+            input_window_seconds=None,
+            sfreq=None,
+            tril=True,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -211,6 +216,9 @@ class SPDNet(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        del n_outputs, n_chans, chs_info, n_times, sfreq
+
+
         if input_type == "raw":
             self.cov = CovLayer()
         elif input_type == "cov":
@@ -218,9 +226,9 @@ class SPDNet(EEGModuleMixin, nn.Module):
         self.bimap = BiMap(self.n_chans, subspacedim)
         self.reeig = ReEig(threshold)
         self.logeig = LogEig(subspacedim, tril=tril)
-        self.len_last_layer = subspacedim * (subspacedim + 1) // 2 if tril else subspacedim**2
+        self.len_last_layer = subspacedim * (
+                    subspacedim + 1) // 2 if tril else subspacedim ** 2
         self.classifier = torch.nn.Linear(self.len_last_layer, self.n_outputs)
-
 
     def forward(self, X):
         X = self.cov(X)
