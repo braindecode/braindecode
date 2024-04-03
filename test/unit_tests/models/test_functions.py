@@ -75,7 +75,7 @@ def test_modify_eig_backward(setup_test_case):
     # Verify the shape of the output tensor
     assert grad_input.shape == grad_output.shape
 
-    # Thiking about another test case to check the correctness of the function
+    # Thinking about another test case to check the correctness of the function
     # I am not sure how to do it
 
 
@@ -142,4 +142,3 @@ def finite_difference_grad(X, eps=1e-6):
                 finite_diff_grad[j, i] = finite_diff_grad[i, j]  # Symmetry
 
     return finite_diff_grad
-
