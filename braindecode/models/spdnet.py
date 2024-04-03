@@ -13,7 +13,7 @@ from .base import EEGModuleMixin
 class CovLayer(nn.Module):
     """Covariance layer.
 
-    This class compute the covariance of a batch of
+    This class computes the covariance of a batch of
     symmetric matrices.
     """
     def forward(self, X):
@@ -23,12 +23,12 @@ class CovLayer(nn.Module):
         Parameters
         ----------
         X: torch.Tensor
-            Batch of EEG windows of shape (batch_size, n_channels, n_times).
+            EEG windows of shape (batch_size, n_channels, n_times).
 
         Returns
         -------
         torch.Tensor
-            Batch of covariance matrices of shape (batch_size, n_channels, n_channels).
+            Covariance matrices of shape (batch_size, n_channels, n_channels).
         """
         means = torch.mean(X, dim=2, keepdim=True)
         X_centered = X - means
@@ -52,7 +52,7 @@ class BiMap(nn.Module):
 
     References
     ----------
-    .. [1] Zhiwu Huang and Luc Van Gool, 2016,
+    .. [1] Zhiwu Huang and Luc Van G, 2016,
            A Riemannian Network for SPD Matrix Learning
            AAAI
     """
@@ -99,7 +99,7 @@ class BiMap(nn.Module):
 class ReEig(nn.Module):
     """ReEig layer from [1]_.
 
-    This class add non-linearity to the network by
+    This class added non-linearity to the network by
     applying a rectified linear unit to the eigenvalues
     of a symmetric matrix. If threshold > 0, the matrix
     is non-negative and positive.
@@ -111,7 +111,7 @@ class ReEig(nn.Module):
 
     References
     ----------
-    .. [1] Zhiwu Huang and Luc Van Gool, 2016,
+    . [1] Zhiwu Huang and Luc Van G, 2016,
            A Riemannian Network for SPD Matrix Learning
            AAAI
     """
@@ -126,7 +126,7 @@ class ReEig(nn.Module):
 class LogEig(nn.Module):
     """LogEig layer from [1]_.
 
-    This class perform Riemannian projection into a flat space
+    This class performs Riemannian projection into a flat space
     by applying the logarithm to the eigenvalues of a symmetric matrix.
     The output is flattened to obtain a vector representation of the matrix.
 
@@ -139,7 +139,7 @@ class LogEig(nn.Module):
 
     References
     ----------
-    .. [1] Zhiwu Huang and Luc Van Gool, 2016,
+    .. [1] Zhiwu Huang and Luc Van G, 2016,
            A Riemannian Network for SPD Matrix Learning
            AAAI
     """
@@ -186,7 +186,7 @@ class SPDNet(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [1] Zhiwu Huang and Luc Van Gool, 2016,
+    .. [1] Zhiwu Huang and Luc Van G, 2016,
            A Riemannian Network for SPD Matrix Learning
            AAAI
     """
@@ -228,5 +228,5 @@ class SPDNet(EEGModuleMixin, nn.Module):
         X = self.reeig(X)
         X = self.logeig(X)
         X = self.classifier(X)
-        
+
         return X
