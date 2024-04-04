@@ -39,8 +39,8 @@ from braindecode.models import (
     EEGConformer,
     BIOT,
     Labram,
-    AttentionBaseNet,
     EEGSimpleConv,
+    AttentionBaseNet,
 )
 
 from braindecode.util import set_random_seeds
@@ -953,7 +953,7 @@ def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
     )
     check_forward_pass(model, input_sizes)
 
-
+@pytest.fixture(scope="module")
 def param_eegsimple():
     return {
         "n_times": 1000,
