@@ -35,19 +35,19 @@ repos:
     rev: v0.3.5
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
+        args: ["--fix"] #, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
       - id: ruff
         name: ruff lint braindecode preview
         args: ["--fix", "--preview", "--select=NPY201"]
         files: ^braindecode/
       - id: ruff
-        name: ruff lint docs, tutorials, and examples
+        name: ruff lint docs, and examples
         # D103: missing docstring in public function
         # D400: docstring first line must end with period
         args: ["--ignore=D103,D400", "--fix"]
-        files: ^docs/|^tutorials/|^examples/
+        files: ^docs/|^examples/
       - id: ruff-format
-        files: ^braindecode/|^docs/|^tutorials/|^examples/
+        files: ^braindecode/|^docs/|^examples/
 
 
   - repo: https://github.com/codespell-project/codespell
