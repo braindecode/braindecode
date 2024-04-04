@@ -36,6 +36,18 @@ repos:
     hooks:
       - id: ruff
         args: [--fix, --exit-non-zero-on-fix, --ignore, E402, --ignore, E501, --ignore, F401]
+      - id: ruff
+        name: ruff lint braindecode preview
+        args: ["--fix", "--preview", "--select=NPY201"]
+        files: ^braindecode/
+      - id: ruff
+        name: ruff lint docs, tutorials, and examples
+        # D103: missing docstring in public function
+        # D400: docstring first line must end with period
+        args: ["--ignore=D103,D400", "--fix"]
+        files: ^docs/|^tutorials/|^examples/
+      - id: ruff-format
+        files: ^braindecode/|^docs/|^tutorials/|^examples/
 
 
   - repo: https://github.com/codespell-project/codespell
@@ -48,13 +60,6 @@ repos:
           - --quiet-level=2
         exclude_types: [csv, json]
         exclude: ^tests/|generated/^.github
-
-  - repo: https://github.com/psf/black
-    rev: 24.3.0
-    hooks:
-      - id: black
-        args: [ --line-length=90, --target-version=py38 ]
-        exclude: ^examples/|^tests/|^docs/|^\.github/
 
   -   repo: https://github.com/asottile/blacken-docs
       rev: 1.16.0
