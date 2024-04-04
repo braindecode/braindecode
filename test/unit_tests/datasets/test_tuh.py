@@ -163,22 +163,22 @@ def test_tuh_abnormal():
         add_physician_reports=True,
         n_jobs=1,  # required for test to work. mocking seems to fail otherwise
     )
-    assert len(tuh_ab.datasets) == 5
-    assert tuh_ab.description.shape == (5, 13)
+    assert len(tuh_ab.datasets) == 6
+    assert tuh_ab.description.shape == (6, 13)
     assert tuh_ab.description.version.to_list() == [
-        'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0']
+        'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0']
     assert tuh_ab.description.pathological.to_list() == [True, False, True,
-                                                         False, True]
+                                                         False, True, False]
     assert tuh_ab.description.train.to_list() == [True, True, True, True,
-                                                  False]
+                                                  False, False]
     assert tuh_ab.description.report.to_list() == [
         'simple_test', 'simple_test', 'simple_test', 'simple_test',
-        'simple_test']
+        'simple_test', 'simple_test']
     x, y = tuh_ab[0]
     assert x.shape == (21, 1)
     assert y
     x, y = tuh_ab[-1]
-    assert y
+    assert y is False
 
     for ds, (_, desc) in zip(tuh_ab.datasets, tuh_ab.description.iterrows()):
         assert isinstance(ds.raw.info['meas_date'], datetime)
@@ -192,7 +192,7 @@ def test_tuh_abnormal():
         n_jobs=1,
     )
     x, y = tuh_ab[-1]
-    assert y == 50
+    assert y == 43
     for ds in tuh_ab.datasets:
         ds.target_name = 'gender'
     x, y = tuh_ab[0]
