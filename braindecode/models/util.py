@@ -218,4 +218,5 @@ models_mandatory_parameters = [
     ("BIOT", ["n_chans", "n_outputs", "sfreq"], None),
     ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     ("Labram", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
 ]

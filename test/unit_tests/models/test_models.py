@@ -40,6 +40,7 @@ from braindecode.models import (
     BIOT,
     Labram,
     AttentionBaseNet
+    EEGSimpleConv
 )
 
 from braindecode.util import set_random_seeds
@@ -951,3 +952,69 @@ def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
         n_classes=default_attentionbasenet_params.get("n_outputs")
     )
     check_forward_pass(model, input_sizes)
+
+    
+def param_eegsimple():
+    return {
+        "n_times": 1000,
+        "n_chans": 18,
+        "patch_size": 200,
+        "n_classes": 2,
+        "sfreq": 100
+    }
+
+
+def test_eeg_simpleconv(param_eegsimple):
+    batch_size = 16
+
+    input = torch.rand(batch_size,
+                       param_eegsimple['n_chans'],
+                       param_eegsimple['n_times'])
+
+    model = EEGSimpleConv(
+        n_outputs=param_eegsimple['n_classes'],
+        n_chans=param_eegsimple['n_chans'],
+        sfreq=param_eegsimple['sfreq'],
+        feature_maps=32,
+        n_convs=1,
+        resampling_freq=80,
+        kernel_size=8,
+    )
+    output = model(input)
+    assert isinstance(output, torch.Tensor)
+    assert (output.shape[0] == batch_size and
+            output.shape[1] == param_eegsimple['n_classes'])
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    assert n_params == 21250
+
+
+def test_eeg_simpleconv_features(param_eegsimple):
+    batch_size = 16
+
+    input = torch.rand(batch_size,
+                       param_eegsimple['n_chans'],
+                       param_eegsimple['n_times'])
+
+    model = EEGSimpleConv(
+        n_outputs=param_eegsimple['n_classes'],
+        n_chans=param_eegsimple['n_chans'],
+        sfreq=param_eegsimple['sfreq'],
+        feature_maps=32,
+        n_convs=1,
+        resampling_freq=80,
+        kernel_size=8,
+        return_feature=True
+    )
+
+    output = model(input)
+    assert isinstance(output, tuple)
+    assert len(output) == 2
+
+    pred, feature = output
+
+    assert (pred.shape[0] == batch_size and
+            pred.shape[1] == param_eegsimple['n_classes'])
+
+    assert (feature.shape[0] == batch_size and
+            feature.shape[1] == 32)
