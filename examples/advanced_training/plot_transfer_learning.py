@@ -1,10 +1,10 @@
 # %% [markdown]
-# 
+#
 # # Transfer learning for EEG
-# 
+#
 # This example shows how to train a neural network with supervision on TUH [2]
 # EEG data and transfer the model to NMT [3] EEG dataset. We follow the approach of [1]
-# 
+#
 
 # %%
 # Authors: MJ Bayazi <mj.darvishi92@gmail.com>
@@ -17,13 +17,13 @@ n_jobs = 1
 
 # %% [markdown]
 # ## Loading and preprocessing the dataset
-# 
+#
 # ### Load  and save the raw recordings
-# 
-# Here we assume you already load and preprocess the raw recordings for both TUAB and NMT datasetsand saved the file in `TUAB_path' and 'NMT_path' respectively. To read more see this notebook [here](https://braindecode.org/stable/auto_examples/applied_examples/plot_tuh_eeg_corpus.html) 
-# 
+#
+# Here we assume you already load and preprocess the raw recordings for both TUAB and NMT datasetsand saved the file in `TUAB_path' and 'NMT_path' respectively. To read more see this notebook [here](https://braindecode.org/stable/auto_examples/applied_examples/plot_tuh_eeg_corpus.html)
+#
 # ### Load the preprocessed data
-# 
+#
 # Now, we load a few recordings from the TUAB dataset. Running
 # this example with more recordings should yield better representations and
 # downstream classification performance.
@@ -51,10 +51,10 @@ TUAB_ds.set_description(pd.DataFrame([d.description for d in TUAB_ds.datasets]),
 
 # %% [markdown]
 # ### Splitting dataset into train, valid and test sets
-# 
+#
 # We split the recordings by subject into train, validation and
 # testing sets.
-# 
+#
 
 # %%
 # split based on train split from dataset
@@ -63,7 +63,7 @@ test_set = TUAB_ds.split('train')['False']
 
 # %% [markdown]
 # ## Creating the model
-# 
+#
 # We can now create the deep learning model. In this tutorial, we use DeepNet introduced in [4].
 
 # %%
@@ -102,23 +102,23 @@ n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
 
 # %% [markdown]
 # ### Extracting windows
-# 
+#
 # We extract 60-s windows to be used in both datasets. We use a window size of 6000 samples.
-# 
+#
 
 # %%
 from IPython.utils import io
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 with io.capture_output() as captured:
-        window_train_set = create_fixed_length_windows(train_set, 
+        window_train_set = create_fixed_length_windows(train_set,
                                                     start_offset_samples=0,
                                                     stop_offset_samples=None,
                                                     preload=True,
                                                     window_size_samples=input_window_samples,
                                                     window_stride_samples=n_preds_per_input,
                                                     drop_last_window=True,)
-        
+
 with io.capture_output() as captured:
         window_test_set = create_fixed_length_windows(test_set,
                                                     start_offset_samples=0,
@@ -129,7 +129,7 @@ with io.capture_output() as captured:
 
 # %% [markdown]
 # ## defining the classifier
-# 
+#
 
 # %%
 from braindecode import EEGClassifier
@@ -150,7 +150,7 @@ clf = EEGClassifier(
                 criterion=CroppedLoss,
                 criterion__loss_function=torch.nn.functional.nll_loss,
                 optimizer=torch.optim.AdamW,
-                train_split=predefined_split(window_test_set), 
+                train_split=predefined_split(window_test_set),
                 optimizer__lr=lr,
                 optimizer__weight_decay=weight_decay,
                 iterator_train__shuffle=True,
@@ -168,13 +168,13 @@ print("Number of parameters = ", sum(p.numel() for p in model.parameters() if p.
 
 # %% [markdown]
 # ## Training
-# 
+#
 # We can now train our network on the TUAB. We use similar
 # hyperparameters as in [1]_, but reduce the number of epochs and
 # increase the learning rate to account for the smaller setting of
 # this example.
-# 
-# 
+#
+#
 
 # %%
 clf.fit(window_train_set, y=None, epochs=n_epochs)
@@ -226,7 +226,7 @@ from IPython.utils import io
 from braindecode.datautil.windowers import create_fixed_length_windows
 
 with io.capture_output() as captured:
-        window_train_set = create_fixed_length_windows(train_set, 
+        window_train_set = create_fixed_length_windows(train_set,
                                                     start_offset_samples=0,
                                                     stop_offset_samples=None,
                                                     preload=True,
@@ -246,7 +246,7 @@ with io.capture_output() as captured:
 
 # %%
 load_path = result_path + 'state_dict_2024.pt'
-state_dicts = torch.load(load_path) 
+state_dicts = torch.load(load_path)
 model.load_state_dict(state_dicts, strict= False)
 print('pre-trained model loaded using pytorch')
 
@@ -281,7 +281,7 @@ clf = EEGClassifier(
                 criterion=CroppedLoss,
                 criterion__loss_function=torch.nn.functional.nll_loss,
                 optimizer=torch.optim.AdamW,
-                train_split=predefined_split(window_test_set), 
+                train_split=predefined_split(window_test_set),
                 optimizer__lr=lr,
                 optimizer__weight_decay=weight_decay,
                 iterator_train__shuffle=True,
@@ -302,20 +302,20 @@ clf.fit(window_train_set, y=None, epochs=n_epochs)
 
 # %% [markdown]
 # ## Conclusion
-# 
+#
 # In this example, we used transfer learning (TL) as a way to learn
-# representations from a large EEG data and transfer to a smaller dataset. 
-# 
-# 
+# representations from a large EEG data and transfer to a smaller dataset.
+#
+#
 # ## References
-# 
+#
 # .. [1] Darvishi-Bayazi, M. J., Ghaemi, M. S., Lesort, T., Arefin, M. R., Faubert, J., & Rish, I. (2024). Amplifying pathological detection in EEG signaling pathways through cross-dataset transfer learning. Computers in Biology and Medicine, 169, 107893.
-# 
+#
 # .. [2] Shawki, N., Shadin, M. G., Elseify, T., Jakielaszek, L., Farkas, T., Persidsky, Y., ... & Picone, J. (2022). Correction to: The temple university hospital digital pathology corpus. In Signal Processing in Medicine and Biology: Emerging Trends in Research and Applications (pp. C1-C1). Cham: Springer International Publishing..
-# 
+#
 # .. [3] Khan, H. A., Ul Ain, R., Kamboh, A. M., & Butt, H. T. (2022). The NMT scalp EEG dataset: an open-source annotated dataset of healthy and pathological EEG recordings for predictive modeling. Frontiers in neuroscience, 15, 755817.
-# 
-# 
-# 
+#
+#
+#
 
 
