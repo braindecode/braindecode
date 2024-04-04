@@ -39,11 +39,14 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #
 
 from braindecode.preprocessing import (
-    exponential_moving_standardize, preprocess, Preprocessor)
+    exponential_moving_standardize,
+    preprocess,
+    Preprocessor,
+)
 from numpy import multiply
 
-low_cut_hz = 4.  # low cut frequency for filtering
-high_cut_hz = 38.  # high cut frequency for filtering
+low_cut_hz = 4.0  # low cut frequency for filtering
+high_cut_hz = 38.0  # high cut frequency for filtering
 # Parameters for exponential moving standardization
 factor_new = 1e-3
 init_block_size = 1000
@@ -51,11 +54,14 @@ init_block_size = 1000
 factor = 1e6
 
 preprocessors = [
-    Preprocessor('pick_types', eeg=True, meg=False, stim=False),  # Keep EEG sensors
+    Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
     Preprocessor(lambda data: multiply(data, factor)),  # Convert from V to uV
-    Preprocessor('filter', l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
-    Preprocessor(exponential_moving_standardize,  # Exponential moving standardization
-                 factor_new=factor_new, init_block_size=init_block_size)
+    Preprocessor("filter", l_freq=low_cut_hz, h_freq=high_cut_hz),  # Bandpass filter
+    Preprocessor(
+        exponential_moving_standardize,  # Exponential moving standardization
+        factor_new=factor_new,
+        init_block_size=init_block_size,
+    ),
 ]
 
 preprocess(dataset, preprocessors, n_jobs=-1)
@@ -69,8 +75,8 @@ from braindecode.preprocessing import create_windows_from_events
 
 trial_start_offset_seconds = -0.5
 # Extract sampling frequency, check that they are same in all datasets
-sfreq = dataset.datasets[0].raw.info['sfreq']
-assert all([ds.raw.info['sfreq'] == sfreq for ds in dataset.datasets])
+sfreq = dataset.datasets[0].raw.info["sfreq"]
+assert all([ds.raw.info["sfreq"] == sfreq for ds in dataset.datasets])
 # Calculate the trial start offset in samples.
 trial_start_offset_samples = int(trial_start_offset_seconds * sfreq)
 
@@ -88,9 +94,9 @@ windows_dataset = create_windows_from_events(
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 
-splitted = windows_dataset.split('session')
-train_set = splitted['0train']  # Session train
-valid_set = splitted['1test']  # Session evaluation
+splitted = windows_dataset.split("session")
+train_set = splitted["0train"]  # Session train
+valid_set = splitted["1test"]  # Session evaluation
 ######################################################################
 # Defining a Transform
 # --------------------
@@ -105,9 +111,9 @@ valid_set = splitted['1test']  # Session evaluation
 from braindecode.augmentation import FrequencyShift
 
 transform = FrequencyShift(
-    probability=1.,  # defines the probability of actually modifying the input
+    probability=1.0,  # defines the probability of actually modifying the input
     sfreq=sfreq,
-    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
+    max_delta_freq=2.0,  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
 ######################################################################
@@ -124,7 +130,7 @@ import numpy as np
 X = np.stack([X for X, y, i in train_set.datasets[0]])
 # This allows to apply the transform with a fixed shift (10 Hz) for
 # visualization instead of sampling the shift randomly between -2 and 2 Hz
-X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10., sfreq)
+X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10.0, sfreq)
 
 ######################################################################
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
@@ -135,19 +141,23 @@ import matplotlib.pyplot as plt
 
 
 def plot_psd(data, axis, label, color):
-    psds, freqs = mne.time_frequency.psd_array_multitaper(data, sfreq=sfreq,
-                                                          fmin=0.1, fmax=100)
-    psds = 10. * np.log10(psds)
+    psds, freqs = mne.time_frequency.psd_array_multitaper(
+        data, sfreq=sfreq, fmin=0.1, fmax=100
+    )
+    psds = 10.0 * np.log10(psds)
     psds_mean = psds.mean(0).mean(0)
     axis.plot(freqs, psds_mean, color=color, label=label)
 
 
 _, ax = plt.subplots()
-plot_psd(X, ax, 'original', 'k')
-plot_psd(X_tr.numpy(), ax, 'shifted', 'r')
+plot_psd(X, ax, "original", "k")
+plot_psd(X_tr.numpy(), ax, "shifted", "r")
 
-ax.set(title='Multitaper PSD (gradiometers)', xlabel='Frequency (Hz)',
-       ylabel='Power Spectral Density (dB)')
+ax.set(
+    title="Multitaper PSD (gradiometers)",
+    xlabel="Frequency (Hz)",
+    ylabel="Power Spectral Density (dB)",
+)
 ax.legend()
 plt.show()
 
@@ -168,7 +178,7 @@ from braindecode.util import set_random_seeds
 from braindecode.models import ShallowFBCSPNet
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
-device = 'cuda' if cuda else 'cpu'
+device = "cuda" if cuda else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 
@@ -192,7 +202,7 @@ model = ShallowFBCSPNet(
     n_channels,
     n_classes,
     input_window_samples=input_window_samples,
-    final_conv_length='auto',
+    final_conv_length="auto",
 )
 
 ######################################################################
@@ -206,17 +216,14 @@ model = ShallowFBCSPNet(
 from braindecode.augmentation import AugmentedDataLoader, SignFlip
 
 freq_shift = FrequencyShift(
-    probability=.5,
+    probability=0.5,
     sfreq=sfreq,
-    max_delta_freq=2.  # the frequency shifts are sampled now between -2 and 2 Hz
+    max_delta_freq=2.0,  # the frequency shifts are sampled now between -2 and 2 Hz
 )
 
-sign_flip = SignFlip(probability=.1)
+sign_flip = SignFlip(probability=0.1)
 
-transforms = [
-    freq_shift,
-    sign_flip
-]
+transforms = [freq_shift, sign_flip]
 
 # Send model to GPU
 if cuda:
@@ -245,7 +252,7 @@ clf = EEGClassifier(
     batch_size=batch_size,
     callbacks=[
         "accuracy",
-        ("lr_scheduler", LRScheduler('CosineAnnealingLR', T_max=n_epochs - 1)),
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
     ],
     device=device,
     classes=classes,

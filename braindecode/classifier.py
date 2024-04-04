@@ -63,16 +63,16 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     __doc__ = update_estimator_docstring(NeuralNetClassifier, doc)
 
     def __init__(
-            self,
-            module,
-            *args,
-            criterion=CrossEntropyLoss,
-            cropped=False,
-            callbacks=None,
-            iterator_train__shuffle=True,
-            iterator_train__drop_last=True,
-            aggregate_predictions=True,
-            **kwargs
+        self,
+        module,
+        *args,
+        criterion=CrossEntropyLoss,
+        cropped=False,
+        callbacks=None,
+        iterator_train__shuffle=True,
+        iterator_train__drop_last=True,
+        aggregate_predictions=True,
+        **kwargs,
     ):
         self.cropped = cropped
         self.aggregate_predictions = aggregate_predictions
@@ -133,8 +133,7 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
         # Predictions may be already averaged in CroppedTrialEpochScoring (y_pred.shape==2).
         # However, when predictions are computed outside of CroppedTrialEpochScoring
         # we have to average predictions, hence the check if len(y_pred.shape) == 3
-        if self.cropped and self.aggregate_predictions and len(
-                y_pred.shape) == 3:
+        if self.cropped and self.aggregate_predictions and len(y_pred.shape) == 3:
             return y_pred.mean(axis=-1)
         else:
             return y_pred
@@ -223,18 +222,19 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
             warnings.warn(
                 "This method was designed to predict trials in cropped mode. "
                 "Calling it when cropped is False will give the same result as "
-                "'.predict'.", UserWarning)
+                "'.predict'.",
+                UserWarning,
+            )
             preds = self.predict(X)
             if return_targets:
-                return preds, X.get_metadata()['target'].to_numpy()
+                return preds, X.get_metadata()["target"].to_numpy()
             return preds
         return predict_trials(
             module=self.module,
             dataset=X,
             return_targets=return_targets,
             batch_size=self.batch_size,
-            num_workers=self.get_iterator(X,
-                                          training=False).loader.num_workers,
+            num_workers=self.get_iterator(X, training=False).loader.num_workers,
         )
 
     def _get_n_outputs(self, y, classes):
@@ -250,12 +250,14 @@ class EEGClassifier(_EEGNeuralNet, NeuralNetClassifier):
     def _default_callbacks(self):
         callbacks = list(super()._default_callbacks)
         if not self.cropped:
-            callbacks.append((
-                'valid_acc',
-                EpochScoring(
-                    'accuracy',
-                    name='valid_acc',
-                    lower_is_better=False,
+            callbacks.append(
+                (
+                    "valid_acc",
+                    EpochScoring(
+                        "accuracy",
+                        name="valid_acc",
+                        lower_is_better=False,
+                    ),
                 )
-            ))
+            )
         return callbacks

@@ -118,9 +118,7 @@ def test_combined_conv(bias_time, bias_spat):
     assert (diff.abs().median() / sequential_out.abs().median()) < 1e-5
 
 
-@pytest.mark.parametrize(
-    "hidden_features", [None, (10, 10), (50, 50, 50), [10, 10, 10]]
-)
+@pytest.mark.parametrize("hidden_features", [None, (10, 10), (50, 50, 50), [10, 10, 10]])
 def test_mlp_increase(hidden_features):
     model = MLP(in_features=40, hidden_features=hidden_features)
     if hidden_features is None:

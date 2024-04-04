@@ -1,6 +1,7 @@
 """
 Some predefined network architectures for EEG decoding.
 """
+
 from .base import EEGModuleMixin
 from .biot import BIOT
 from .eegconformer import EEGConformer
@@ -26,6 +27,7 @@ from .modules import TimeDistributed
 from .util import _init_models_dict, models_mandatory_parameters
 from .labram import Labram
 from .eegsimpleconv import EEGSimpleConv
+
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
 _init_models_dict()

@@ -7,17 +7,22 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 
 
-def plot_confusion_matrix(confusion_mat,
-                          class_names=None, figsize=None,
-                          colormap=cm.bwr,
-                          textcolor='black', vmin=None, vmax=None,
-                          fontweight='normal',
-                          rotate_row_labels=90,
-                          rotate_col_labels=0,
-                          with_f1_score=False,
-                          norm_axes=(0, 1),
-                          rotate_precision=False,
-                          class_names_fontsize=12):
+def plot_confusion_matrix(
+    confusion_mat,
+    class_names=None,
+    figsize=None,
+    colormap=cm.bwr,
+    textcolor="black",
+    vmin=None,
+    vmax=None,
+    fontweight="normal",
+    rotate_row_labels=90,
+    rotate_col_labels=0,
+    with_f1_score=False,
+    norm_axes=(0, 1),
+    rotate_precision=False,
+    class_names_fontsize=12,
+):
     """
 
     Generates a confusion matrix with additional precision and sensitivity metrics as in [1]_.
@@ -68,8 +73,9 @@ def plot_confusion_matrix(confusion_mat,
         class_names = [str(i_class + 1) for i_class in range(n_classes)]
 
     # norm by all targets
-    normed_conf_mat = confusion_mat / np.float32(np.sum(confusion_mat,
-                                                        axis=norm_axes, keepdims=True))
+    normed_conf_mat = confusion_mat / np.float32(
+        np.sum(confusion_mat, axis=norm_axes, keepdims=True)
+    )
 
     fig = plt.figure(figsize=figsize)
     plt.clf()
@@ -83,13 +89,20 @@ def plot_confusion_matrix(confusion_mat,
     # see http://stackoverflow.com/a/31397438/1469195
     # brighten so that black text remains readable
     # used alpha=0.6 before
-    def _brighten(x, ):
+    def _brighten(
+        x,
+    ):
         brightened_x = 1 - ((1 - np.array(x)) * 0.4)
         return brightened_x
 
     brightened_cmap = _cmap_map(_brighten, colormap)  # colormap #
-    ax.imshow(np.array(normed_conf_mat), cmap=brightened_cmap,
-              interpolation='nearest', vmin=vmin, vmax=vmax)
+    ax.imshow(
+        np.array(normed_conf_mat),
+        cmap=brightened_cmap,
+        interpolation="nearest",
+        vmin=vmin,
+        vmax=vmax,
+    )
 
     # make space for precision and sensitivity
     plt.xlim(-0.5, normed_conf_mat.shape[0] + 0.5)
@@ -99,42 +112,48 @@ def plot_confusion_matrix(confusion_mat,
     for x in range(width):
         for y in range(height):
             if x == y:
-                this_font_weight = 'bold'
+                this_font_weight = "bold"
             else:
                 this_font_weight = fontweight
             annotate_str = "{:d}".format(confusion_mat[x][y])
             annotate_str += "\n"
-            ax.annotate(annotate_str.format(confusion_mat[x][y]),
-                        xy=(y, x),
-                        horizontalalignment='center',
-                        verticalalignment='center', fontsize=12,
-                        color=textcolor,
-                        fontweight=this_font_weight)
+            ax.annotate(
+                annotate_str.format(confusion_mat[x][y]),
+                xy=(y, x),
+                horizontalalignment="center",
+                verticalalignment="center",
+                fontsize=12,
+                color=textcolor,
+                fontweight=this_font_weight,
+            )
             if x != y or (not with_f1_score):
                 ax.annotate(
-                    "\n\n{:4.1f}%".format(
-                        normed_conf_mat[x][y] * 100),
+                    "\n\n{:4.1f}%".format(normed_conf_mat[x][y] * 100),
                     xy=(y, x),
-                    horizontalalignment='center',
-                    verticalalignment='center', fontsize=10,
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                    fontsize=10,
                     color=textcolor,
-                    fontweight=this_font_weight)
+                    fontweight=this_font_weight,
+                )
             else:
                 assert x == y
-                precision = confusion_mat[x][x] / float(np.sum(
-                    confusion_mat[x, :]))
-                sensitivity = confusion_mat[x][x] / float(np.sum(
-                    confusion_mat[:, y]))
+                precision = confusion_mat[x][x] / float(np.sum(confusion_mat[x, :]))
+                sensitivity = confusion_mat[x][x] / float(np.sum(confusion_mat[:, y]))
                 f1_score = 2 * precision * sensitivity / (precision + sensitivity)
 
-                ax.annotate("\n{:4.1f}%\n{:4.1f}% (F)".format(
-                    (confusion_mat[x][y] / float(np.sum(confusion_mat))) * 100,
-                    f1_score * 100),
+                ax.annotate(
+                    "\n{:4.1f}%\n{:4.1f}% (F)".format(
+                        (confusion_mat[x][y] / float(np.sum(confusion_mat))) * 100,
+                        f1_score * 100,
+                    ),
                     xy=(y, x + 0.1),
-                    horizontalalignment='center',
-                    verticalalignment='center', fontsize=10,
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                    fontsize=10,
                     color=textcolor,
-                    fontweight=this_font_weight)
+                    fontweight=this_font_weight,
+                )
 
     # Add values for target correctness etc.
     for x in range(width):
@@ -145,10 +164,13 @@ def plot_confusion_matrix(confusion_mat,
             correctness = confusion_mat[x][x] / float(np.sum(confusion_mat[x, :]))
             annotate_str = ""
             annotate_str += "\n{:5.2f}%".format(correctness * 100)
-        ax.annotate(annotate_str,
-                    xy=(y, x),
-                    horizontalalignment='center',
-                    verticalalignment='center', fontsize=12)
+        ax.annotate(
+            annotate_str,
+            xy=(y, x),
+            horizontalalignment="center",
+            verticalalignment="center",
+            fontsize=12,
+        )
 
     for y in range(height):
         x = len(confusion_mat)
@@ -158,47 +180,68 @@ def plot_confusion_matrix(confusion_mat,
             correctness = confusion_mat[y][y] / float(np.sum(confusion_mat[:, y]))
             annotate_str = ""
             annotate_str += "\n{:5.2f}%".format(correctness * 100)
-        ax.annotate(annotate_str,
-                    xy=(y, x),
-                    horizontalalignment='center',
-                    verticalalignment='center', fontsize=12)
+        ax.annotate(
+            annotate_str,
+            xy=(y, x),
+            horizontalalignment="center",
+            verticalalignment="center",
+            fontsize=12,
+        )
 
-    overall_correctness = np.sum(np.diag(confusion_mat)) / np.sum(confusion_mat).astype(float)
-    ax.annotate("{:5.2f}%".format(overall_correctness * 100),
-                xy=(len(confusion_mat), len(confusion_mat)),
-                horizontalalignment='center',
-                verticalalignment='center', fontsize=12,
-                fontweight='bold')
+    overall_correctness = np.sum(np.diag(confusion_mat)) / np.sum(confusion_mat).astype(
+        float
+    )
+    ax.annotate(
+        "{:5.2f}%".format(overall_correctness * 100),
+        xy=(len(confusion_mat), len(confusion_mat)),
+        horizontalalignment="center",
+        verticalalignment="center",
+        fontsize=12,
+        fontweight="bold",
+    )
 
-    plt.xticks(range(width), class_names, fontsize=class_names_fontsize,
-               rotation=rotate_col_labels)
-    plt.yticks(np.arange(0, height), class_names,
-               va='center',
-               fontsize=class_names_fontsize, rotation=rotate_row_labels)
+    plt.xticks(
+        range(width),
+        class_names,
+        fontsize=class_names_fontsize,
+        rotation=rotate_col_labels,
+    )
+    plt.yticks(
+        np.arange(0, height),
+        class_names,
+        va="center",
+        fontsize=class_names_fontsize,
+        rotation=rotate_row_labels,
+    )
     plt.grid(False)
-    plt.ylabel('Predictions', fontsize=15)
-    plt.xlabel('Targets', fontsize=15)
+    plt.ylabel("Predictions", fontsize=15)
+    plt.xlabel("Targets", fontsize=15)
 
     # n classes is also shape of matrix/size
-    ax.text(-1.2, n_classes + 0.2, "Recall", ha='center', va='center',
-            fontsize=13)
+    ax.text(-1.2, n_classes + 0.2, "Recall", ha="center", va="center", fontsize=13)
     if rotate_precision:
         rotation = 90
         x_pos = -1.1
-        va = 'center'
+        va = "center"
     else:
         rotation = 0
         x_pos = -0.8
-        va = 'top'
-    ax.text(n_classes, x_pos, "Precision", ha='center', va=va,
-            rotation=rotation,  # 270,
-            fontsize=13)
+        va = "top"
+    ax.text(
+        n_classes,
+        x_pos,
+        "Precision",
+        ha="center",
+        va=va,
+        rotation=rotation,  # 270,
+        fontsize=13,
+    )
 
     return fig
 
 
 # see http://stackoverflow.com/a/31397438/1469195
-def _cmap_map(function, cmap, name='colormap_mod', N=None, gamma=None):
+def _cmap_map(function, cmap, name="colormap_mod", N=None, gamma=None):
     """
     Modify a colormap using `function` which must operate on 3-element
     arrays of [r, g, b] values.
@@ -211,6 +254,7 @@ def _cmap_map(function, cmap, name='colormap_mod', N=None, gamma=None):
     loaded using plt.get_cmap(name).
     """
     from matplotlib.colors import LinearSegmentedColormap as lsc
+
     if N is None:
         N = cmap.N
     if gamma is None:
@@ -225,7 +269,7 @@ def _cmap_map(function, cmap, name='colormap_mod', N=None, gamma=None):
     y0 = cmap(step_list)[:, :3]
     y1 = y0.copy()[:, :3]
     # Go back to catch the discontinuities, and place them into y0, y1
-    for iclr, key in enumerate(['red', 'green', 'blue']):
+    for iclr, key in enumerate(["red", "green", "blue"]):
         for istp, step in enumerate(step_list):
             try:
                 ind = step_dict[key].index(step)
@@ -238,8 +282,8 @@ def _cmap_map(function, cmap, name='colormap_mod', N=None, gamma=None):
     y0 = np.array(list(map(function, y0)))
     y1 = np.array(list(map(function, y1)))
     # Build the new colormap (overwriting step_dict):
-    for iclr, clr in enumerate(['red', 'green', 'blue']):
+    for iclr, clr in enumerate(["red", "green", "blue"]):
         step_dict[clr] = np.vstack((step_list, y0[:, iclr], y1[:, iclr])).T
     # Remove alpha, otherwise crashes...
-    step_dict.pop('alpha', None)
+    step_dict.pop("alpha", None)
     return lsc(name, step_dict, N=N, gamma=gamma)

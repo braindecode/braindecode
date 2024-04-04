@@ -89,7 +89,8 @@ splits["test"].description
 # Similarly, we can split datasets after creating windows using the same methods.
 
 windows = create_windows_from_events(
-    dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0)
+    dataset, trial_start_offset_samples=0, trial_stop_offset_samples=0
+)
 
 ###############################################################################
 

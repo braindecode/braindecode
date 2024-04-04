@@ -82,12 +82,12 @@ class NMT(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            path,
-            target_name="pathological",
-            recording_ids=None,
-            preload=False,
-            n_jobs=1,
+        self,
+        path,
+        target_name="pathological",
+        recording_ids=None,
+        preload=False,
+        n_jobs=1,
     ):
         # If the path is not informed, we fetch the dataset from zenodo.
         if path is None:
@@ -114,8 +114,7 @@ class NMT(BaseConcatDataset):
 
         # sort by subject id
         file_paths = sorted(
-            file_paths,
-            key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
+            file_paths, key=lambda p: int(os.path.splitext(p)[0].split(os.sep)[-1])
         )
         if recording_ids is not None:
             file_paths = [file_paths[rec_id] for rec_id in recording_ids]
@@ -217,8 +216,7 @@ def _fake_pd_read_csv(*args, **kwargs):
     ]
 
     # Create the DataFrame, specifying column names
-    df = pd.DataFrame(data,
-                      columns=["recordname", "label", "age", "gender", "loc"])
+    df = pd.DataFrame(data, columns=["recordname", "label", "age", "gender", "loc"])
 
     return df
 
@@ -283,13 +281,13 @@ class _NMTMock(NMT):
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
     def __init__(
-            self,
-            mock_glob,
-            path,
-            recording_ids=None,
-            target_name="pathological",
-            preload=False,
-            n_jobs=1,
+        self,
+        mock_glob,
+        path,
+        recording_ids=None,
+        target_name="pathological",
+        preload=False,
+        n_jobs=1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")

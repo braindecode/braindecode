@@ -65,30 +65,30 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            n_times=None,
-            n_filters_time=40,
-            filter_time_length=25,
-            n_filters_spat=40,
-            pool_time_length=75,
-            pool_time_stride=15,
-            final_conv_length="auto",
-            conv_nonlin=square,
-            pool_mode="mean",
-            pool_nonlin=safe_log,
-            split_first_layer=True,
-            batch_norm=True,
-            batch_norm_alpha=0.1,
-            drop_prob=0.5,
-            chs_info=None,
-            input_window_seconds=None,
-            sfreq=None,
-            in_chans=None,
-            n_classes=None,
-            input_window_samples=None,
-            add_log_softmax=True,
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        n_filters_time=40,
+        filter_time_length=25,
+        n_filters_spat=40,
+        pool_time_length=75,
+        pool_time_stride=15,
+        final_conv_length="auto",
+        conv_nonlin=square,
+        pool_mode="mean",
+        pool_nonlin=safe_log,
+        split_first_layer=True,
+        batch_norm=True,
+        batch_norm_alpha=0.1,
+        drop_prob=0.5,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+        in_chans=None,
+        n_classes=None,
+        input_window_samples=None,
+        add_log_softmax=True,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -129,7 +129,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             "conv_time.bias": "conv_time_spat.conv_time.bias",
             "conv_spat.bias": "conv_time_spat.conv_spat.bias",
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+            "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
 
         self.add_module("ensuredims", Ensure4d())
@@ -184,12 +184,15 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
-        module.add_module("conv_classifier",
-                          nn.Conv2d(
-                            n_filters_conv,
-                            self.n_outputs,
-                            (self.final_conv_length, 1),
-                            bias=True, ))
+        module.add_module(
+            "conv_classifier",
+            nn.Conv2d(
+                n_filters_conv,
+                self.n_outputs,
+                (self.final_conv_length, 1),
+                bias=True,
+            ),
+        )
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
