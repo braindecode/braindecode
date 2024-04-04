@@ -9,7 +9,7 @@ from typing import Optional
 
 
 def rescale_parameter(param, layer_id):
-    """Recaling the l-th transformer layer.
+    """ Recaling the l-th transformer layer.
 
     Rescales the parameter tensor by the inverse square root of the layer id.
     Made inplace. :math:`\frac{1}{\sqrt{2 \cdot \text{layer\_id}}}` [Beit2022]
@@ -254,6 +254,7 @@ def resample(
     return resampled
 
 
+
 def _get_sinc_resample_kernel(
     orig_freq: int,
     new_freq: int,
@@ -389,8 +390,7 @@ def _get_sinc_resample_kernel(
         if beta is None:
             beta = 14.769656459379492
         beta_tensor = torch.tensor(float(beta))
-        window = torch.i0(beta_tensor * torch.sqrt(
-            1 - (t / lowpass_filter_width) ** 2)) / torch.i0(beta_tensor)
+        window = torch.i0(beta_tensor * torch.sqrt(1 - (t / lowpass_filter_width) ** 2)) / torch.i0(beta_tensor)
 
     t *= math.pi
 
@@ -460,6 +460,7 @@ def _apply_sinc_resample_kernel(
     """
     if not waveform.is_floating_point():
         raise TypeError(f"Expected floating point type for waveform tensor, but received {waveform.dtype}.")
+
     orig_freq = int(orig_freq) // gcd
     new_freq = int(new_freq) // gcd
 
