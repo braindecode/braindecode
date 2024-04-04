@@ -23,6 +23,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding :tutorial:`examples/advanced_training/plot_transfer_learning.py` (:gh:`580` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
 - Adding an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
