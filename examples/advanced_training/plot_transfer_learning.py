@@ -251,11 +251,11 @@ model.load_state_dict(state_dicts, strict= False)
 print('pre-trained model loaded using pytorch')
 
 ## freeze layers ##
-freez = False
-if freez:
+freeze = False
+if freeze:
     for ii, (name, param) in enumerate(model.named_parameters()):
         # if 'temporal_block_0' in name or 'temporal_block_1' in name or 'temporal_block_2' in name or 'temporal_block_3' in name: # or 'temporal_block_5' in name or 'conv_classifier' in name:
-        if not 'conv_classifier' in name:
+        if 'conv_classifier' not in name:
             param.requires_grad = False
             print('param:', name, param.requires_grad)
 
@@ -315,7 +315,3 @@ clf.fit(window_train_set, y=None, epochs=n_epochs)
 #
 # .. [3] Khan, H. A., Ul Ain, R., Kamboh, A. M., & Butt, H. T. (2022). The NMT scalp EEG dataset: an open-source annotated dataset of healthy and pathological EEG recordings for predictive modeling. Frontiers in neuroscience, 15, 755817.
 #
-#
-#
-
-
