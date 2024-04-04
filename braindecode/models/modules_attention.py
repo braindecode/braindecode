@@ -38,14 +38,12 @@ class SqueezeAndExcitation(nn.Module):
     Squeeze-and-Excitation Networks. CVPR 2018.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int,
-                 bias: bool = False):
+    def __init__(self, in_channels: int, reduction_rate: int, bias: bool = False):
         super(SqueezeAndExcitation, self).__init__()
         sq_channels = int(in_channels // reduction_rate)
         self.gap = nn.AdaptiveAvgPool2d(1)
         self.fc1 = nn.Conv2d(
-            in_channels=in_channels, out_channels=sq_channels, kernel_size=1,
-            bias=bias
+            in_channels=in_channels, out_channels=sq_channels, kernel_size=1, bias=bias
         )
         self.nonlinearity = nn.ReLU()
         self.fc2 = nn.Conv2d(
@@ -95,12 +93,10 @@ class GSoP(nn.Module):
     Global Second-order Pooling Convolutional Networks. CVPR 2018.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int,
-                 bias: bool = True):
+    def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
         super(GSoP, self).__init__()
         sq_channels = int(in_channels // reduction_rate)
-        self.pw_conv1 = nn.Conv2d(in_channels, sq_channels,
-                                  1, bias=bias)
+        self.pw_conv1 = nn.Conv2d(in_channels, sq_channels, 1, bias=bias)
         self.bn = nn.BatchNorm2d(sq_channels)
         self.rw_conv = nn.Conv2d(
             sq_channels,
@@ -109,8 +105,7 @@ class GSoP(nn.Module):
             groups=sq_channels,
             bias=bias,
         )
-        self.pw_conv2 = nn.Conv2d(sq_channels * 4, in_channels,
-                                  1, bias=bias)
+        self.pw_conv2 = nn.Conv2d(sq_channels * 4, in_channels, 1, bias=bias)
 
     def forward(self, x):
         """
@@ -127,8 +122,7 @@ class GSoP(nn.Module):
         scale = self.pw_conv1(x).squeeze(-2)  # b x c x t
         scale_zero_mean = scale - scale.mean(-1, keepdim=True)
         t = scale_zero_mean.shape[-1]
-        cov = torch.bmm(scale_zero_mean,
-                        scale_zero_mean.transpose(1, 2)) / (t - 1)
+        cov = torch.bmm(scale_zero_mean, scale_zero_mean.transpose(1, 2)) / (t - 1)
         cov = cov.unsqueeze(-1)  # b x c x c x 1
         cov = self.bn(cov)
         scale = self.rw_conv(cov)  # b x c x 1 x 1
@@ -156,16 +150,14 @@ class FCA(torch.nn.Module):
     """
 
     def __init__(
-            self, in_channels, seq_len: int = 62, reduction_rate: int = 4,
-            freq_idx: int = 0
+        self, in_channels, seq_len: int = 62, reduction_rate: int = 4, freq_idx: int = 0
     ):
         super(FCA, self).__init__()
         mapper_y = [freq_idx]
         assert in_channels % len(mapper_y) == 0
 
         self.weight = nn.Parameter(
-            self.get_dct_filter(seq_len, mapper_y, in_channels),
-            requires_grad=False
+            self.get_dct_filter(seq_len, mapper_y, in_channels), requires_grad=False
         )
         self.fc = nn.Sequential(
             nn.Linear(in_channels, in_channels // reduction_rate, bias=False),
@@ -215,12 +207,11 @@ class FCA(torch.nn.Module):
 
         for i, v_y in enumerate(mapper_y):
             for t_y in range(seq_len):
-                filter = math.cos(
-                    math.pi * v_y * (t_y + 0.5) / seq_len) / math.sqrt(
+                filter = math.cos(math.pi * v_y * (t_y + 0.5) / seq_len) / math.sqrt(
                     seq_len
                 )
                 filter = filter * math.sqrt(2) if v_y != 0 else filter
-                dct_filter[i * c_part: (i + 1) * c_part, t_y] = filter
+                dct_filter[i * c_part : (i + 1) * c_part, t_y] = filter
         return dct_filter
 
 
@@ -303,8 +294,7 @@ class ECA(nn.Module):
         self.gap = nn.AdaptiveAvgPool2d(1)
         assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
         self.conv = nn.Conv1d(
-            1, 1,
-            kernel_size=kernel_size, padding=kernel_size // 2, bias=False
+            1, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False
         )
 
     def forward(self, x):
@@ -351,12 +341,12 @@ class GatherExcite(nn.Module):
     """
 
     def __init__(
-            self,
-            in_channels: int,
-            seq_len: int = 62,
-            extra_params: bool = False,
-            use_mlp: bool = False,
-            reduction_rate: int = 4,
+        self,
+        in_channels: int,
+        seq_len: int = 62,
+        extra_params: bool = False,
+        use_mlp: bool = False,
+        reduction_rate: int = 4,
     ):
         super(GatherExcite, self).__init__()
         if extra_params:
@@ -376,13 +366,11 @@ class GatherExcite(nn.Module):
         if use_mlp:
             self.mlp = nn.Sequential(
                 nn.Conv2d(
-                    in_channels, int(in_channels // reduction_rate), 1,
-                    bias=False
+                    in_channels, int(in_channels // reduction_rate), 1, bias=False
                 ),
                 nn.ReLU(),
                 nn.Conv2d(
-                    int(in_channels // reduction_rate), in_channels, 1,
-                    bias=False
+                    int(in_channels // reduction_rate), in_channels, 1, bias=False
                 ),
             )
         else:
@@ -440,10 +428,8 @@ class GCT(nn.Module):
         Pytorch.Tensor
             the original tensor x multiplied by the gate.
         """
-        embedding = (x.pow(2).sum((2, 3), keepdim=True) + eps).pow(
-            0.5) * self.alpha
-        norm = self.gamma / (
-                embedding.pow(2).mean(dim=1, keepdim=True) + eps).pow(0.5)
+        embedding = (x.pow(2).sum((2, 3), keepdim=True) + eps).pow(0.5) * self.alpha
+        norm = self.gamma / (embedding.pow(2).mean(dim=1, keepdim=True) + eps).pow(0.5)
         gate = 1.0 + torch.tanh(embedding * norm + self.beta)
         return x * gate
 
@@ -468,11 +454,11 @@ class SRM(nn.Module):
     """
 
     def __init__(
-            self,
-            in_channels: int,
-            use_mlp: bool = False,
-            reduction_rate: int = 4,
-            bias: bool = False,
+        self,
+        in_channels: int,
+        use_mlp: bool = False,
+        reduction_rate: int = 4,
+        bias: bool = False,
     ):
         super(SRM, self).__init__()
         self.gap = nn.AdaptiveAvgPool2d(1)
@@ -480,12 +466,10 @@ class SRM(nn.Module):
             self.style_integration = nn.Sequential(
                 Rearrange("b c n_metrics -> b (c n_metrics)"),
                 nn.Linear(
-                    in_channels * 2, in_channels * 2 // reduction_rate,
-                    bias=bias
+                    in_channels * 2, in_channels * 2 // reduction_rate, bias=bias
                 ),
                 nn.ReLU(),
-                nn.Linear(in_channels * 2 // reduction_rate, in_channels,
-                          bias=bias),
+                nn.Linear(in_channels * 2 // reduction_rate, in_channels, bias=bias),
                 Rearrange("b c -> b c 1"),
             )
         else:
@@ -534,21 +518,17 @@ class CBAM(nn.Module):
     CBAM: Convolutional Block Attention Module. ECCV 2018.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int,
-                 kernel_size: int):
+    def __init__(self, in_channels: int, reduction_rate: int, kernel_size: int):
         super(CBAM, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
         self.fc = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels // reduction_rate, 1,
-                      bias=False),
+            nn.Conv2d(in_channels, in_channels // reduction_rate, 1, bias=False),
             nn.ReLU(),
-            nn.Conv2d(in_channels // reduction_rate, in_channels, 1,
-                      bias=False),
+            nn.Conv2d(in_channels // reduction_rate, in_channels, 1, bias=False),
         )
         assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
-        self.conv = nn.Conv2d(2, 1, (1, kernel_size),
-                              padding=(0, kernel_size // 2))
+        self.conv = nn.Conv2d(2, 1, (1, kernel_size), padding=(0, kernel_size // 2))
 
     def forward(self, x):
         """
@@ -567,8 +547,7 @@ class CBAM(nn.Module):
         )
         x = x * channel_attention
         spat_input = torch.cat(
-            [torch.mean(x, dim=1, keepdim=True),
-             torch.max(x, dim=1, keepdim=True)[0]],
+            [torch.mean(x, dim=1, keepdim=True), torch.max(x, dim=1, keepdim=True)[0]],
             dim=1,
         )
         spatial_attention = torch.sigmoid(self.conv(spat_input))
@@ -597,21 +576,17 @@ class CAT(nn.Module):
     """
 
     def __init__(
-            self, in_channels: int, reduction_rate: int, kernel_size: int,
-            bias=False
+        self, in_channels: int, reduction_rate: int, kernel_size: int, bias=False
     ):
         super(CAT, self).__init__()
         self.gauss_filter = nn.Conv2d(1, 1, (1, 5), padding=(0, 2), bias=False)
         self.gauss_filter.weight = nn.Parameter(
-            _get_gaussian_kernel1d(5, 1.0)[None, None, None, :],
-            requires_grad=False
+            _get_gaussian_kernel1d(5, 1.0)[None, None, None, :], requires_grad=False
         )
         self.mlp = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels // reduction_rate, 1,
-                      bias=bias),
+            nn.Conv2d(in_channels, in_channels // reduction_rate, 1, bias=bias),
             nn.ReLU(),
-            nn.Conv2d(in_channels // reduction_rate, in_channels, 1,
-                      bias=bias),
+            nn.Conv2d(in_channels // reduction_rate, in_channels, 1, bias=bias),
         )
         self.conv = nn.Conv2d(
             in_channels,
@@ -665,10 +640,9 @@ class CAT(nn.Module):
         s_gep_max = torch.amax(s_gep, dim=(-2, -1), keepdim=True)
         s_gep = (s_gep - s_gep_min) / (s_gep_max - s_gep_min)
         spatial_score = (
-                -s_gap * self.s_alpha + s_gmp * self.s_beta + s_gep * self.s_gamma
+            -s_gap * self.s_alpha + s_gmp * self.s_beta + s_gep * self.s_gamma
         )
-        spatial_score = torch.sigmoid(self.conv(spatial_score)).expand(b, c, h,
-                                                                       w)
+        spatial_score = torch.sigmoid(self.conv(spatial_score)).expand(b, c, h, w)
 
         c_w = torch.exp(self.c_w) / (torch.exp(self.c_w) + torch.exp(self.s_w))
         s_w = torch.exp(self.s_w) / (torch.exp(self.c_w) + torch.exp(self.s_w))
@@ -693,20 +667,16 @@ class CATLite(nn.Module):
     CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
     """
 
-    def __init__(self, in_channels: int, reduction_rate: int,
-                 bias: bool = True):
+    def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
         super(CATLite, self).__init__()
         self.gauss_filter = nn.Conv2d(1, 1, (1, 5), padding=(0, 2), bias=False)
         self.gauss_filter.weight = nn.Parameter(
-            _get_gaussian_kernel1d(5, 1.0)[None, None, None, :],
-            requires_grad=False
+            _get_gaussian_kernel1d(5, 1.0)[None, None, None, :], requires_grad=False
         )
         self.mlp = nn.Sequential(
-            nn.Conv2d(in_channels, int(in_channels // reduction_rate), 1,
-                      bias=bias),
+            nn.Conv2d(in_channels, int(in_channels // reduction_rate), 1, bias=bias),
             nn.ReLU(),
-            nn.Conv2d(int(in_channels // reduction_rate), in_channels, 1,
-                      bias=bias),
+            nn.Conv2d(int(in_channels // reduction_rate), in_channels, 1, bias=bias),
         )
 
         self.c_alpha = nn.Parameter(torch.zeros(1))
