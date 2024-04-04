@@ -9,7 +9,7 @@ from typing import Optional
 
 
 def rescale_parameter(param, layer_id):
-    """ Recaling the l-th transformer layer.
+    """Recaling the l-th transformer layer.
 
     Rescales the parameter tensor by the inverse square root of the layer id.
     Made inplace. :math:`\frac{1}{\sqrt{2 \cdot \text{layer\_id}}}` [Beit2022]
@@ -64,10 +64,9 @@ def squeeze_final_output(x):
     return x
 
 
-def drop_path(x,
-              drop_prob: float = 0.0,
-              training: bool = False,
-              scale_by_keep: bool = True):
+def drop_path(
+    x, drop_prob: float = 0.0, training: bool = False, scale_by_keep: bool = True
+):
     """Drop paths (Stochastic Depth) per sample.
 
 
@@ -107,13 +106,12 @@ def drop_path(x,
         return x
     keep_prob = 1 - drop_prob
     shape = (x.shape[0],) + (1,) * (
-            x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
+        x.ndim - 1
+    )  # work with diff dim tensors, not just 2D ConvNets
     random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
     if keep_prob > 0.0 and scale_by_keep:
         random_tensor.div_(keep_prob)
     return x * random_tensor
-
-
 
 
 def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
@@ -166,7 +164,7 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     x = torch.linspace(-ksize_half, ksize_half, steps=kernel_size)
     pdf = torch.exp(-0.5 * (x / sigma).pow(2))
     kernel1d = pdf / pdf.sum()
-    return kernel1d  
+    return kernel1d
 
 
 def resample(
@@ -252,9 +250,10 @@ def resample(
         waveform.device,
         waveform.dtype,
     )
-    resampled = _apply_sinc_resample_kernel(waveform, orig_freq, new_freq, gcd, kernel, width)
+    resampled = _apply_sinc_resample_kernel(
+        waveform, orig_freq, new_freq, gcd, kernel, width
+    )
     return resampled
-
 
 
 def _get_sinc_resample_kernel(
@@ -377,9 +376,18 @@ def _get_sinc_resample_kernel(
     # future work.
     idx_dtype = dtype if dtype is not None else torch.float64
 
-    idx = torch.arange(-width, width + orig_freq, dtype=idx_dtype, device=device)[None, None] / orig_freq
+    idx = (
+        torch.arange(-width, width + orig_freq, dtype=idx_dtype, device=device)[
+            None, None
+        ]
+        / orig_freq
+    )
 
-    t = torch.arange(0, -new_freq, -1, dtype=dtype, device=device)[:, None, None] / new_freq + idx
+    t = (
+        torch.arange(0, -new_freq, -1, dtype=dtype, device=device)[:, None, None]
+        / new_freq
+        + idx
+    )
     t *= base_freq
     t = t.clamp_(-lowpass_filter_width, lowpass_filter_width)
 
@@ -392,7 +400,9 @@ def _get_sinc_resample_kernel(
         if beta is None:
             beta = 14.769656459379492
         beta_tensor = torch.tensor(float(beta))
-        window = torch.i0(beta_tensor * torch.sqrt(1 - (t / lowpass_filter_width) ** 2)) / torch.i0(beta_tensor)
+        window = torch.i0(
+            beta_tensor * torch.sqrt(1 - (t / lowpass_filter_width) ** 2)
+        ) / torch.i0(beta_tensor)
 
     t *= math.pi
 
@@ -462,7 +472,9 @@ def _apply_sinc_resample_kernel(
     Tensor
     """
     if not waveform.is_floating_point():
-        raise TypeError(f"Expected floating point type for waveform tensor, but received {waveform.dtype}.")
+        raise TypeError(
+            f"Expected floating point type for waveform tensor, but received {waveform.dtype}."
+        )
 
     orig_freq = int(orig_freq) // gcd
     new_freq = int(new_freq) // gcd
