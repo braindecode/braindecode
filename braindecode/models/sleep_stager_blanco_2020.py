@@ -105,27 +105,39 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 7), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 7), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),

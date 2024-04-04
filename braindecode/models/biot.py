@@ -201,7 +201,9 @@ class _BIOTEncoder(nn.Module):
         self.positional_encoding = _PositionalEncoding(emb_size)
 
         # channel token, N_channels >= your actual channels
-        self.channel_tokens = nn.Embedding(num_embeddings=n_chans, embedding_dim=emb_size)
+        self.channel_tokens = nn.Embedding(
+            num_embeddings=n_chans, embedding_dim=emb_size
+        )
         self.index = nn.Parameter(torch.LongTensor(range(n_chans)), requires_grad=False)
 
     def stft(self, sample):
@@ -422,7 +424,9 @@ class BIOT(EEGModuleMixin, nn.Module):
             hop_length=hop_length,
         )
 
-        self.classifier = _ClassificationHead(emb_size=emb_size, n_outputs=self.n_outputs)
+        self.classifier = _ClassificationHead(
+            emb_size=emb_size, n_outputs=self.n_outputs
+        )
 
     def forward(self, x):
         """

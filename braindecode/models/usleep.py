@@ -86,7 +86,9 @@ class _DecoderBlock(nn.Module):
         )
         self.block_postskip = nn.Sequential(
             nn.Conv1d(
-                in_channels=(2 * out_channels if with_skip_connection else out_channels),
+                in_channels=(
+                    2 * out_channels if with_skip_connection else out_channels
+                ),
                 out_channels=out_channels,
                 kernel_size=kernel_size,
                 padding="same",

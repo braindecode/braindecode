@@ -115,7 +115,9 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             batch_norm(n_conv_chs),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chs, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
+            nn.Conv2d(
+                n_conv_chs, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)
+            ),
             batch_norm(n_conv_chs),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),

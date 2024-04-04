@@ -330,7 +330,9 @@ def _check_save_dir_empty(save_dir):
     FileExistsError
         If ``save_dir`` is not a valid directory for saving.
     """
-    sub_dirs = [os.path.basename(s).isdigit() for s in glob(os.path.join(save_dir, "*"))]
+    sub_dirs = [
+        os.path.basename(s).isdigit() for s in glob(os.path.join(save_dir, "*"))
+    ]
     if any(sub_dirs):
         raise FileExistsError(
             f"Directory {save_dir} already contains subdirectories. Please "

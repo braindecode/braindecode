@@ -133,7 +133,6 @@ class TCN(EEGModuleMixin, nn.Module):
 
 class _FinalLayer(nn.Module):
     def __init__(self, in_features, out_features, add_log_softmax=True):
-
         super().__init__()
 
         self.fc = nn.Linear(in_features=in_features, out_features=out_features)
@@ -146,7 +145,6 @@ class _FinalLayer(nn.Module):
         self.squeeze = Expression(squeeze_final_output)
 
     def forward(self, x, batch_size, time_size, min_len):
-
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))

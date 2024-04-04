@@ -58,7 +58,9 @@ class _ConvBlock2D(nn.Module):
         self.batch_norm = (
             _BatchNormZG(out_filters)
             if residual
-            else nn.BatchNorm2d(out_filters) if batch_norm else lambda x: x
+            else nn.BatchNorm2d(out_filters)
+            if batch_norm
+            else lambda x: x
         )
 
     def forward(self, input):

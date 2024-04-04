@@ -183,7 +183,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             depth_multiplier=self.depth_multiplier,
         )
 
-        self.add_module("inception_block_1", _InceptionBlock((block11, block12, block13)))
+        self.add_module(
+            "inception_block_1", _InceptionBlock((block11, block12, block13))
+        )
 
         self.add_module("avg_pool_1", nn.AvgPool2d((1, self.pooling_sizes[0])))
 
@@ -215,7 +217,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             drop_prob=self.drop_prob,
         )
 
-        self.add_module("inception_block_2", _InceptionBlock((block21, block22, block23)))
+        self.add_module(
+            "inception_block_2", _InceptionBlock((block21, block22, block23))
+        )
 
         self.add_module("avg_pool_2", nn.AvgPool2d((1, self.pooling_sizes[1])))
 

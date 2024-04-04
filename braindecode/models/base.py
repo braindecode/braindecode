@@ -222,7 +222,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     mapping = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-
         mapping = self.mapping if self.mapping else {}
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():

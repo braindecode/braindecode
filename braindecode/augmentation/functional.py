@@ -225,7 +225,9 @@ def _make_permutation_matrix(X, mask, random_state):
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
     hard_mask = mask.round()
-    batch_permutations = torch.empty(batch_size, n_channels, n_channels, device=X.device)
+    batch_permutations = torch.empty(
+        batch_size, n_channels, n_channels, device=X.device
+    )
     for b, mask in enumerate(hard_mask):
         channels_to_shuffle = torch.arange(n_channels, device=X.device)
         channels_to_shuffle = channels_to_shuffle[mask.bool()]

@@ -28,9 +28,14 @@ from braindecode.util import create_mne_dummy_raw
 
 ###################################################################################################
 # Function for generating fake regression data
-def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq,
-                            fake_duration, n_fake_targets,
-                            fake_data_split=[0.6, 0.2, 0.2]):
+def fake_regression_dataset(
+    n_fake_recs,
+    n_fake_chs,
+    fake_sfreq,
+    fake_duration,
+    n_fake_targets,
+    fake_data_split=[0.6, 0.2, 0.2],
+):
     """Generate a fake regression dataset.
 
     Parameters
@@ -62,9 +67,9 @@ def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq,
             target_subset = "valid"
         else:
             target_subset = "test"
-        raw, _ = create_mne_dummy_raw(n_channels=n_fake_chs,
-                                      n_times=fake_duration * fake_sfreq,
-                                      sfreq=fake_sfreq)
+        raw, _ = create_mne_dummy_raw(
+            n_channels=n_fake_chs, n_times=fake_duration * fake_sfreq, sfreq=fake_sfreq
+        )
 
         target = np.random.randint(0, 10, n_fake_targets)
         for j in range(n_fake_targets):
@@ -73,10 +78,10 @@ def fake_regression_dataset(n_fake_recs, n_fake_chs, fake_sfreq,
 
         if n_fake_targets == 1:
             target = target[0]
-        fake_description = pd.Series(data=[target, target_subset],
-                                     index=["target", "session"])
-        datasets.append(
-            BaseDataset(raw, fake_description, target_name="target"))
+        fake_description = pd.Series(
+            data=[target, target_subset], index=["target", "session"]
+        )
+        datasets.append(BaseDataset(raw, fake_description, target_name="target"))
 
     return BaseConcatDataset(datasets)
 
@@ -91,11 +96,13 @@ n_fake_chans = 21
 fake_sfreq = 100
 fake_duration = 30
 n_fake_targets = 1
-dataset = fake_regression_dataset(n_fake_recs=n_fake_rec,
-                                  n_fake_chs=n_fake_chans,
-                                  fake_sfreq=fake_sfreq,
-                                  fake_duration=fake_duration,
-                                  n_fake_targets=n_fake_targets)
+dataset = fake_regression_dataset(
+    n_fake_recs=n_fake_rec,
+    n_fake_chs=n_fake_chans,
+    fake_sfreq=fake_sfreq,
+    fake_duration=fake_duration,
+    n_fake_targets=n_fake_targets,
+)
 
 ###################################################################################################
 # Defining a CNN regression model
@@ -113,31 +120,38 @@ model_name = "shallow"  # 'shallow' or 'deep'
 
 # Defining a CNN model
 if model_name in ["shallow", "Shallow", "ShallowConvNet"]:
-    model = ShallowFBCSPNet(in_chans=n_fake_chans,
-                            n_classes=n_fake_targets,
-                            input_window_samples=fake_sfreq * fake_duration,
-                            n_filters_time=40, n_filters_spat=40,
-                            final_conv_length=35,
-                            add_log_softmax=False,)
+    model = ShallowFBCSPNet(
+        in_chans=n_fake_chans,
+        n_classes=n_fake_targets,
+        input_window_samples=fake_sfreq * fake_duration,
+        n_filters_time=40,
+        n_filters_spat=40,
+        final_conv_length=35,
+        add_log_softmax=False,
+    )
 elif model_name in ["deep", "Deep", "DeepConvNet"]:
-    model = Deep4Net(in_chans=n_fake_chans, n_classes=n_fake_targets,
-                     input_window_samples=fake_sfreq * fake_duration,
-                     n_filters_time=25, n_filters_spat=25,
-                     stride_before_pool=True,
-                     n_filters_2=n_fake_chans * 2,
-                     n_filters_3=n_fake_chans * 4,
-                     n_filters_4=n_fake_chans * 8,
-                     final_conv_length=1,
-                     add_log_softmax=False, )
+    model = Deep4Net(
+        in_chans=n_fake_chans,
+        n_classes=n_fake_targets,
+        input_window_samples=fake_sfreq * fake_duration,
+        n_filters_time=25,
+        n_filters_spat=25,
+        stride_before_pool=True,
+        n_filters_2=n_fake_chans * 2,
+        n_filters_3=n_fake_chans * 4,
+        n_filters_4=n_fake_chans * 8,
+        final_conv_length=1,
+        add_log_softmax=False,
+    )
 else:
-    raise ValueError(f'{model_name} unknown')
+    raise ValueError(f"{model_name} unknown")
 
 ###################################################################################################
 # Choosing between GPU and CPU processors
 # ---------------------------------------
 # By default, model's training and evaluation take place at GPU if it exists, otherwise on CPU.
 cuda = torch.cuda.is_available()
-device = 'cuda' if cuda else 'cpu'
+device = "cuda" if cuda else "cpu"
 if cuda:
     torch.backends.cudnn.benchmark = True
 
@@ -156,15 +170,16 @@ from braindecode.preprocessing import create_fixed_length_windows
 
 window_size_samples = fake_sfreq * fake_duration // 3
 to_dense_prediction_model(model)
-n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[
-    2]
-windows_dataset = create_fixed_length_windows(dataset,
-                                              start_offset_samples=0,
-                                              stop_offset_samples=0,
-                                              window_size_samples=window_size_samples,
-                                              window_stride_samples=n_preds_per_input,
-                                              drop_last_window=False,
-                                              preload=True)
+n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[2]
+windows_dataset = create_fixed_length_windows(
+    dataset,
+    start_offset_samples=0,
+    stop_offset_samples=0,
+    window_size_samples=window_size_samples,
+    window_stride_samples=n_preds_per_input,
+    drop_last_window=False,
+    preload=True,
+)
 
 # Splitting windowed data into train, valid and test subsets.
 splits = windows_dataset.split("session")
@@ -187,20 +202,23 @@ batch_size = 4
 n_epochs = 3
 optimizer_lr = 0.001
 optimizer_weight_decay = 0.0
-regressor = EEGRegressor(model, cropped=True,
-                         criterion=CroppedLoss,
-                         criterion__loss_function=torch.nn.functional.mse_loss,
-                         optimizer=torch.optim.AdamW,
-                         optimizer__lr=optimizer_lr,
-                         optimizer__weight_decay=optimizer_weight_decay,
-                         train_split=predefined_split(valid_set),
-                         iterator_train__shuffle=True,
-                         batch_size=batch_size,
-                         callbacks=["neg_root_mean_squared_error",
-                                    ("lr_scheduler",
-                                     LRScheduler('CosineAnnealingLR',
-                                                 T_max=n_epochs - 1))],
-                         device=device, )
+regressor = EEGRegressor(
+    model,
+    cropped=True,
+    criterion=CroppedLoss,
+    criterion__loss_function=torch.nn.functional.mse_loss,
+    optimizer=torch.optim.AdamW,
+    optimizer__lr=optimizer_lr,
+    optimizer__weight_decay=optimizer_weight_decay,
+    train_split=predefined_split(valid_set),
+    iterator_train__shuffle=True,
+    batch_size=batch_size,
+    callbacks=[
+        "neg_root_mean_squared_error",
+        ("lr_scheduler", LRScheduler("CosineAnnealingLR", T_max=n_epochs - 1)),
+    ],
+    device=device,
+)
 regressor.fit(train_set, y=None, epochs=n_epochs)
 
 ###################################################################################################

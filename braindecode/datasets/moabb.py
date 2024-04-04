@@ -1,5 +1,4 @@
-"""Dataset objects for some public datasets.
-"""
+"""Dataset objects for some public datasets."""
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>

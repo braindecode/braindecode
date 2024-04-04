@@ -73,7 +73,9 @@ def create_from_mne_raw(
                 f"length of 'raws' ({len(raws)}) and 'description' "
                 f"({len(descriptions)}) has to match"
             )
-        base_datasets = [BaseDataset(raw, desc) for raw, desc in zip(raws, descriptions)]
+        base_datasets = [
+            BaseDataset(raw, desc) for raw, desc in zip(raws, descriptions)
+        ]
     else:
         base_datasets = [BaseDataset(raw) for raw in raws]
 

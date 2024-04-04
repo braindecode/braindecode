@@ -175,7 +175,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         return x
 
     def get_fc_size(self):
-
         out = self.patch_embedding(torch.ones((1, 1, self.n_chans, self.n_times)))
         size_embedding_1 = out.cpu().data.numpy().shape[1]
         size_embedding_2 = out.cpu().data.numpy().shape[2]
@@ -226,7 +225,9 @@ class _PatchEmbedding(nn.Module):
             nn.Conv2d(n_filters_time, n_filters_time, (n_channels, 1), (1, 1)),
             nn.BatchNorm2d(num_features=n_filters_time),
             nn.ELU(),
-            nn.AvgPool2d(kernel_size=(1, pool_time_length), stride=(1, stride_avg_pool)),
+            nn.AvgPool2d(
+                kernel_size=(1, pool_time_length), stride=(1, stride_avg_pool)
+            ),
             # pooling acts as slicing to obtain 'patch' along the
             # time dimension as in ViT
             nn.Dropout(p=drop_prob),

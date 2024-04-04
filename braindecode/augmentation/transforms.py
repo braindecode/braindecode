@@ -522,7 +522,9 @@ class BandstopFilter(Transform):
 
     operation = staticmethod(bandstop_filter)
 
-    def __init__(self, probability, sfreq, bandwidth=1, max_freq=None, random_state=None):
+    def __init__(
+        self, probability, sfreq, bandwidth=1, max_freq=None, random_state=None
+    ):
         super().__init__(
             probability=probability,
             random_state=random_state,
@@ -530,7 +532,9 @@ class BandstopFilter(Transform):
         assert (
             isinstance(bandwidth, Real) and bandwidth >= 0
         ), "bandwidth should be a non-negative float."
-        assert isinstance(sfreq, Real) and sfreq > 0, "sfreq should be a positive float."
+        assert (
+            isinstance(sfreq, Real) and sfreq > 0
+        ), "sfreq should be a positive float."
         if max_freq is not None:
             assert (
                 isinstance(max_freq, Real) and max_freq > 0
@@ -623,7 +627,9 @@ class FrequencyShift(Transform):
             probability=probability,
             random_state=random_state,
         )
-        assert isinstance(sfreq, Real) and sfreq > 0, "sfreq should be a positive float."
+        assert (
+            isinstance(sfreq, Real) and sfreq > 0
+        ), "sfreq should be a positive float."
         self.sfreq = sfreq
 
         self.max_delta_freq = max_delta_freq

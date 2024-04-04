@@ -41,7 +41,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
         sfreq=None,
         chs_info=None,
     ):
-
         n_chans, n_outputs, n_times = deprecated_args(
             self,
             ("in_chans", "n_chans", in_chans, n_chans),

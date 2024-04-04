@@ -1,5 +1,4 @@
-"""Get epochs from mne.Raw
-"""
+"""Get epochs from mne.Raw"""
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
@@ -247,12 +246,14 @@ def create_fixed_length_windows(
     windows_datasets: BaseConcatDataset
         Concatenated datasets of WindowsDataset containing the extracted windows.
     """
-    stop_offset_samples, drop_last_window = _check_and_set_fixed_length_window_arguments(
-        start_offset_samples,
-        stop_offset_samples,
-        window_size_samples,
-        window_stride_samples,
-        drop_last_window,
+    stop_offset_samples, drop_last_window = (
+        _check_and_set_fixed_length_window_arguments(
+            start_offset_samples,
+            stop_offset_samples,
+            window_size_samples,
+            window_stride_samples,
+            drop_last_window,
+        )
     )
 
     # check if recordings are of different lengths

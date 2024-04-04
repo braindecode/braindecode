@@ -1,5 +1,4 @@
-"""Preprocessors that work on Raw or Epochs objects.
-"""
+"""Preprocessors that work on Raw or Epochs objects."""
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>

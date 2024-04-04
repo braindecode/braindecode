@@ -615,7 +615,9 @@ class _MHA(nn.Module):
         # dropout
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, Q: torch.Tensor, K: torch.Tensor, V: torch.Tensor
+    ) -> torch.Tensor:
         """Compute MHA(Q, K, V)
 
         Parameters
@@ -648,7 +650,8 @@ class _MHA(nn.Module):
         # Attention weights of size (num_heads * batch_size, n, m):
         # measures how similar each pair of Q and K is.
         W = torch.softmax(
-            Q_.bmm(K_.transpose(-2, -1)) / np.sqrt(self.head_dim), -1  # (B', D', S)
+            Q_.bmm(K_.transpose(-2, -1)) / np.sqrt(self.head_dim),
+            -1,  # (B', D', S)
         )  # (B', N, M)
 
         # Multihead output (batch_size, seq_len, dim):

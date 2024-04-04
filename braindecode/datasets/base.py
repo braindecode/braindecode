@@ -527,7 +527,10 @@ class BaseConcatDataset(ConcatDataset):
             for each window.
         """
         if not all(
-            [isinstance(ds, (WindowsDataset, EEGWindowsDataset)) for ds in self.datasets]
+            [
+                isinstance(ds, (WindowsDataset, EEGWindowsDataset))
+                for ds in self.datasets
+            ]
         ):
             raise TypeError(
                 "Metadata dataframe can only be computed when all "
@@ -591,7 +594,9 @@ class BaseConcatDataset(ConcatDataset):
             )
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
-        if not (hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")):
+        if not (
+            hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
+        ):
             raise ValueError("dataset should have either raw or windows " "attribute")
         file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, "description.json")
@@ -704,7 +709,9 @@ class BaseConcatDataset(ConcatDataset):
         """
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
-        if not (hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")):
+        if not (
+            hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
+        ):
             raise ValueError("dataset should have either raw or windows " "attribute")
         path_contents = os.listdir(path)
         n_sub_dirs = len([os.path.isdir(e) for e in path_contents])

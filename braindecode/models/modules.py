@@ -41,7 +41,9 @@ class Expression(nn.Module):
         return self.expression_fn(*x)
 
     def __repr__(self):
-        if hasattr(self.expression_fn, "func") and hasattr(self.expression_fn, "kwargs"):
+        if hasattr(self.expression_fn, "func") and hasattr(
+            self.expression_fn, "kwargs"
+        ):
             expression_str = "{:s} {:s}".format(
                 self.expression_fn.func.__name__, str(self.expression_fn.kwargs)
             )
@@ -401,7 +403,6 @@ class MLP(nn.Sequential):
         drop=0.0,
         normalize=False,
     ):
-
         self.normalization = nn.LayerNorm if normalize else lambda: None
         self.in_features = in_features
         self.out_features = out_features or self.in_features
@@ -567,4 +568,6 @@ class Resample(torch.nn.Module):
         """
         if self.orig_freq == self.new_freq:
             return waveform
-        return _apply_sinc_resample_kernel(waveform, self.orig_freq, self.new_freq, self.gcd, self.kernel, self.width)
+        return _apply_sinc_resample_kernel(
+            waveform, self.orig_freq, self.new_freq, self.gcd, self.kernel, self.width
+        )

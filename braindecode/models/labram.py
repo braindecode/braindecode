@@ -246,7 +246,9 @@ class Labram(EEGModuleMixin, nn.Module):
                     norm_layer=norm_layer,
                     init_values=init_values,
                     window_size=(
-                        self.patch_embed[0].patch_shape if not neural_tokenizer else None
+                        self.patch_embed[0].patch_shape
+                        if not neural_tokenizer
+                        else None
                     ),
                     attn_head_dim=attn_head_dim,
                 )
@@ -613,7 +615,6 @@ class _SegmentPatch(nn.Module):
         # separate 'dimension' in batch for Conv1d
         # This requires reshaping x to have a height of 1 for each EEG sample.
         if self.learned_patcher:
-
             x = self.adding_extra_dim(x)
 
             # Apply the convolution along the temporal dimension
