@@ -29,8 +29,12 @@ def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
     raise ValueError(f"{dataset_name} not found in moabb datasets")
 
 
-def _fetch_and_unpack_moabb_data(dataset, subject_ids):
-    data = dataset.get_data(subject_ids)
+def _fetch_and_unpack_moabb_data(dataset, subject_ids, dataset_load_kwargs=None):
+    if dataset_load_kwargs is None:
+        data = dataset.get_data(subject_ids)
+    else:
+        data = dataset.get_data(subjects=subject_ids, **dataset_load_kwargs)
+
     raws, subject_ids, session_ids, run_ids = [], [], [], []
     for subj_id, subj_data in data.items():
         for sess_id, sess_data in subj_data.items():
@@ -62,7 +66,9 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
     return annots
 
 
-def fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs=None):
+def fetch_data_with_moabb(
+    dataset_name, subject_ids, dataset_kwargs=None, dataset_load_kwargs=None
+):
     # ToDo: update path to where moabb downloads / looks for the data
     """Fetch data using moabb.
 
@@ -75,15 +81,29 @@ def fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs=None):
     dataset_kwargs: dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
+    data_load_kwargs: dict, optional
+        optional dictionary containing keyword arguments
+        to pass to the moabb dataset when loading the data.
+        Allows using the moabb cache_config=None and
+        process_pipeline=None.
 
     Returns
     -------
     raws: mne.Raw
     info: pandas.DataFrame
     """
-    dataset = _find_dataset_in_moabb(dataset_name, dataset_kwargs)
+    if isinstance(dataset_name, str):
+        dataset = _find_dataset_in_moabb(dataset_name, dataset_kwargs)
+    else:
+        from moabb.datasets.base import BaseDataset
+
+        if isinstance(dataset_name, BaseDataset):
+            dataset = dataset_name
+
     subject_id = [subject_ids] if isinstance(subject_ids, int) else subject_ids
-    return _fetch_and_unpack_moabb_data(dataset, subject_id)
+    return _fetch_and_unpack_moabb_data(
+        dataset, subject_id, dataset_load_kwargs=dataset_load_kwargs
+    )
 
 
 class MOABBDataset(BaseConcatDataset):
