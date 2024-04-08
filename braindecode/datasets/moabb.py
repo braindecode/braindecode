@@ -74,7 +74,7 @@ def fetch_data_with_moabb(
 
     Parameters
     ----------
-    dataset_name: str
+    dataset_name: str | moabb.datasets.base.BaseDataset
         the name of a dataset included in moabb
     subject_ids: list(int) | int
         (list of) int of subject(s) to be fetched
@@ -119,11 +119,21 @@ class MOABBDataset(BaseConcatDataset):
     dataset_kwargs: dict, optional
         optional dictionary containing keyword arguments
         to pass to the moabb dataset when instantiating it.
+    dataset_load_kwargs: dict, optional
+        optional dictionary containing keyword arguments
+        to pass to the moabb dataset when loading the data.
+        Allows using the moabb cache_config=None and
+        process_pipeline=None.
     """
 
-    def __init__(self, dataset_name, subject_ids, dataset_kwargs=None):
+    def __init__(
+        self, dataset_name, subject_ids, dataset_kwargs=None, dataset_load_kwargs=None
+    ):
         raws, description = fetch_data_with_moabb(
-            dataset_name, subject_ids, dataset_kwargs
+            dataset_name,
+            subject_ids,
+            dataset_kwargs,
+            dataset_load_kwargs=dataset_load_kwargs,
         )
         all_base_ds = [
             BaseDataset(raw, row) for raw, (_, row) in zip(raws, description.iterrows())
