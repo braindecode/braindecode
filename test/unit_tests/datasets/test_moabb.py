@@ -7,6 +7,7 @@ import pytest
 from moabb.datasets import FakeDataset
 from braindecode.datasets import MOABBDataset
 
+
 @pytest.fixture(scope="module")
 def moabb_dataset():
     return FakeDataset(n_subjects=1,
