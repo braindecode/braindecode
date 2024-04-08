@@ -1,12 +1,8 @@
-# Authors: Maciej Sliwowski <maciek.sliwowski@gmail.com>
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
 #
 # License: BSD (3-clause)
 
-from functools import partial
-from pathlib import Path
-import tempfile
 
-import numpy as np
 import pytest
 from moabb.datasets import FakeDataset
 from braindecode.datasets import MOABBDataset
