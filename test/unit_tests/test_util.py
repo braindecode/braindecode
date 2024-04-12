@@ -13,7 +13,8 @@ import torch
 
 from numpy.testing import assert_array_equal
 
-from braindecode.util import _cov_and_var_to_corr, create_mne_dummy_raw, \
+from braindecode.util import _cov_and_var_to_corr, _cov_to_corr, \
+    create_mne_dummy_raw, \
     set_random_seeds, th_to_np, cov, np_to_th
 
 
@@ -178,3 +179,29 @@ def test_cov_and_var_to_corr_single_element():
     expected_corr = np.array([[1]])
     calculated_corr = _cov_and_var_to_corr(this_cov, var_a, var_b)
     assert_array_equal(calculated_corr, expected_corr)
+
+
+
+def test_cov_to_corr_unbiased():
+    # Create datasets a and b with known covariance and variance characteristics
+    a = np.array([[1, 2, 3, 4],
+                  [2, 3, 4, 5]])
+    b = np.array([[1, 3, 5, 7],
+                  [5, 6, 7, 8]])
+    # Covariance between the features of a and b
+    # Calculating covariance manually for known values
+    demeaned_a = a - np.mean(a, axis=1, keepdims=True)
+    demeaned_b = b - np.mean(b, axis=1, keepdims=True)
+    this_cov = np.dot(demeaned_a, demeaned_b.T) / (b.shape[1] - 1)
+
+    # Compute expected correlation using standard formulas for correlation
+    var_a = np.var(a, axis=1, ddof=1)
+    var_b = np.var(b, axis=1, ddof=1)
+    expected_divisor = np.outer(np.sqrt(var_a), np.sqrt(var_b))
+    expected_corr = this_cov / expected_divisor
+
+    # Compute correlation using the function
+    calculated_corr = _cov_to_corr(this_cov, a, b)
+
+    # Assert that the calculated correlation matches the expected correlation
+    np.testing.assert_allclose(calculated_corr, expected_corr, rtol=1e-5)
