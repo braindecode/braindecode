@@ -204,7 +204,7 @@ def test_cov_to_corr_unbiased():
     calculated_corr = _cov_to_corr(this_cov, a, b)
 
     # Assert that the calculated correlation matches the expected correlation
-    np.testing.assert_allclose(calculated_corr, expected_corr, rtol=1e-5)
+    assert assert_allclose(calculated_corr, expected_corr, rtol=1e-5)
 
 
 def test_balanced_batches_basic():
