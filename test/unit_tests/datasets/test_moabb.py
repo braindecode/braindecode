@@ -8,17 +8,18 @@ from pandas import DataFrame
 
 from moabb.datasets import FakeDataset
 from braindecode.datasets import MOABBDataset
-from braindecode.datasets.moabb import (_fetch_and_unpack_moabb_data, _find_dataset_in_moabb,
-                                        BNCI2014001)
+from braindecode.datasets.moabb import (
+    _fetch_and_unpack_moabb_data,
+    _find_dataset_in_moabb,
+    BNCI2014001,
+)
 
 
 @pytest.fixture(scope="module")
 def moabb_dataset():
-    return FakeDataset(n_subjects=1,
-                       n_sessions=1,
-                       n_runs=1,
-                       stim=True,
-                       annotations=True)
+    return FakeDataset(
+        n_subjects=1, n_sessions=1, n_runs=1, stim=True, annotations=True
+    )
 
 
 def test_moabb_with_raw_moabb(moabb_dataset):
@@ -51,16 +52,17 @@ def test_fetch_and_unpack_moabb_data_with_dataset_load(moabb_dataset):
         path=None,
     )
     dataset_load_kwargs = {
-        'cache_config': cache_config,
+        "cache_config": cache_config,
     }
-    raw, description = _fetch_and_unpack_moabb_data(moabb_dataset,
-                                                  subject_id,
-                                                  dataset_load_kwargs)
+    raw, description = _fetch_and_unpack_moabb_data(
+        moabb_dataset, subject_id, dataset_load_kwargs
+    )
 
     assert len(raw) == 1
     assert len(description) == 1
     assert isinstance(raw[0], mne.io.BaseRaw)
     assert isinstance(description, DataFrame)
+
 
 def test_find_dataset_in_moabb(moabb_dataset):
     found_dataset = _find_dataset_in_moabb(moabb_dataset.__class__.__name__)
