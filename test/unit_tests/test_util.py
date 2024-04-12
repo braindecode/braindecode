@@ -11,7 +11,7 @@ import h5py
 import pytest
 import torch
 from sklearn.utils import check_random_state
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_array_equal, assert_allclose
 
 from braindecode.util import _cov_and_var_to_corr, _cov_to_corr, \
     create_mne_dummy_raw, \
