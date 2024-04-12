@@ -100,7 +100,7 @@ def test_cov_basic():
     b = np.array([[1, 2, 3], [4, 5, 6]])
     expected_cov = np.array([[1, 1], [1, 1]])  # Calculated expected covariance
     computed_cov = cov(a, b)
-    np.testing.assert_allclose(computed_cov, expected_cov, rtol=1e-5)
+    assert assert_allclose(computed_cov, expected_cov, rtol=1e-5)
 
 
 def test_cov_dimension_mismatch():
