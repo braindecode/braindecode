@@ -46,7 +46,7 @@ jobs:
     - name: Run Tests # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
       run: pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
     - name: Upload Coverage to Codecov
-      uses: codecov/codecov-action@v3
+      uses: codecov/codecov-action@v4
       if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8'}}
       with:
         fail_ci_if_error: true
