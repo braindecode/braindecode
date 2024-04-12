@@ -10,12 +10,12 @@ import numpy as np
 import h5py
 import pytest
 import torch
-
+from sklearn.utils import check_random_state
 from numpy.testing import assert_array_equal
 
 from braindecode.util import _cov_and_var_to_corr, _cov_to_corr, \
     create_mne_dummy_raw, \
-    set_random_seeds, th_to_np, cov, np_to_th
+    set_random_seeds, th_to_np, cov, np_to_th, get_balanced_batches
 
 
 def test_create_mne_dummy_raw(tmp_path):
@@ -205,3 +205,57 @@ def test_cov_to_corr_unbiased():
 
     # Assert that the calculated correlation matches the expected correlation
     np.testing.assert_allclose(calculated_corr, expected_corr, rtol=1e-5)
+
+
+def test_balanced_batches_basic():
+    n_trials = 100
+    seed = 42
+    rng = check_random_state(seed)
+    n_batches = 10
+    batches = get_balanced_batches(n_trials, rng, shuffle=False,
+                                   n_batches=n_batches)
+
+    # Check correct number of batches
+    assert len(batches) == n_batches
+
+    # Check balanced batch sizes
+    all_batch_sizes = [len(batch) for batch in batches]
+    max_size = max(all_batch_sizes)
+    min_size = min(all_batch_sizes)
+    assert max_size - min_size <= 1
+
+    # Check if all indices are unique and accounted for
+    all_indices = np.concatenate(batches)
+    assert np.array_equal(np.sort(all_indices), np.arange(n_trials))
+
+
+def test_balanced_batches_with_batch_size():
+    n_trials = 105
+    seed = 42
+    rng = check_random_state(seed)
+    batch_size = 20
+    batches = get_balanced_batches(n_trials, rng, shuffle=False,
+                                   batch_size=batch_size)
+
+    # Check the modified batch size condition
+    expected_n_batches = int(np.round(n_trials / float(batch_size)))
+    assert len(batches) == expected_n_batches
+
+    # Checking the total number of indices
+    all_indices = np.concatenate(batches)
+    assert len(all_indices) == n_trials
+
+
+def test_balanced_batches_shuffle():
+    n_trials = 50
+    seed = 42
+    rng = check_random_state(seed)
+    batches_no_shuffle = get_balanced_batches(n_trials, rng, shuffle=False,
+                                              batch_size=10)
+    rng = check_random_state(seed)
+    batches_with_shuffle = get_balanced_batches(n_trials, rng, shuffle=True,
+                                                batch_size=10)
+
+    # Check that shuffling changes the order of indices
+    assert not np.array_equal(np.concatenate(batches_no_shuffle),
+                              np.concatenate(batches_with_shuffle))
