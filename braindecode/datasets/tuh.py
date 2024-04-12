@@ -44,19 +44,27 @@ class TUH(BaseConcatDataset):
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
+    rename_channels: bool
+        If True, rename the EEG channels to the standard 10-05 system.
+    set_montage: bool
+        If True, set the montage to the standard 10-05 system.
     n_jobs: int
         Number of jobs to be used to read files in parallel.
     """
 
     def __init__(
-        self,
-        path,
-        recording_ids=None,
-        target_name=None,
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+            self,
+            path,
+            recording_ids=None,
+            target_name=None,
+            preload=False,
+            add_physician_reports=False,
+            rename_channels: bool = True,
+            set_montage: bool = True,
+            n_jobs=1,
     ):
+        if set_montage:
+            assert rename_channels, "If set_montage is True, rename_channels must be True."
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, "**/*.edf"), recursive=True)
@@ -77,26 +85,49 @@ class TUH(BaseConcatDataset):
         if n_jobs == 1:
             base_datasets = [
                 self._create_dataset(
-                    descriptions[i], target_name, preload, add_physician_reports
+                    descriptions[i], target_name, preload, add_physician_reports,
+                    rename_channels, set_montage,
+
                 )
                 for i in descriptions.columns
             ]
         else:
             base_datasets = Parallel(n_jobs)(
                 delayed(self._create_dataset)(
-                    descriptions[i], target_name, preload, add_physician_reports
+                    descriptions[i], target_name, preload, add_physician_reports,
+                    rename_channels, set_montage,
                 )
                 for i in descriptions.columns
             )
         super().__init__(base_datasets)
 
     @staticmethod
-    def _create_dataset(description, target_name, preload, add_physician_reports):
+    def _rename_channels(raw):
+        '''Renames the EEG channels and sets their type to 'eeg'.'''
+        montage1005 = mne.channels.make_standard_montage("standard_1005")
+        mapping = {c.upper(): c for c in montage1005.ch_names}
+        mapping.update({f'EEG {c.upper()}': f'EEG {c}' for c in montage1005.ch_names})
+        mapping.update({f'EEG {c.upper()}-REF': f'EEG {c}-REF' for c in montage1005.ch_names})
+        raw.set_channel_types({c: "eeg" for c in mapping.keys()}, on_unit_change='ignore')
+        raw.rename_channels(mapping)
+
+    @staticmethod
+    def _set_montage(raw):
+        montage = mne.channels.make_standard_montage("standard_1005")
+        raw.set_montage(montage, on_missing='ignore')
+
+    @staticmethod
+    def _create_dataset(
+            description, target_name, preload, add_physician_reports, rename_channels, set_montage):
         file_path = description.loc["path"]
 
         # parse age and gender information from EDF header
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
         raw = mne.io.read_raw_edf(file_path, preload=preload)
+        if rename_channels:
+            TUH._rename_channels(raw)
+        if set_montage:
+            TUH._set_montage(raw)
 
         meas_date = (
             datetime(1, 1, 1, tzinfo=timezone.utc)
@@ -314,13 +345,13 @@ class TUHAbnormal(TUH):
     """
 
     def __init__(
-        self,
-        path,
-        recording_ids=None,
-        target_name="pathological",
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+            self,
+            path,
+            recording_ids=None,
+            target_name="pathological",
+            preload=False,
+            add_physician_reports=False,
+            n_jobs=1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -353,7 +384,7 @@ class TUHAbnormal(TUH):
         #                     s004_2013_08_15/00000021_s004_t000.edf
         assert "abnormal" in tokens or "normal" in tokens, "No pathology labels found."
         assert (
-            "train" in tokens or "eval" in tokens
+                "train" in tokens or "eval" in tokens
         ), "No train or eval set information found."
         return {
             "version": tokens[-9],
@@ -401,19 +432,29 @@ def _get_header(*args, **kwargs):
 
 _TUH_EEG_PATHS = {
     # These are actual file paths and edf headers from the TUH EEG Corpus (v1.1.0 and v1.2.0)
-    "tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf": b"0       00000000 M 01-JAN-1978 00000000 Age:37                                          ",  # noqa E501
-    "tuh_eeg/v1.1.0/edf/01_tcp_ar/099/00009932/s004_2014_09_30/00009932_s004_t013.edf": b"0       00009932 F 01-JAN-1961 00009932 Age:53                                          ",  # noqa E501
-    "tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf": b"0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ",  # noqa E501
-    "tuh_eeg/v1.1.0/edf/03_tcp_ar_a/123/00012331/s003_2014_12_14/00012331_s003_t002.edf": b"0       00012331 M 01-JAN-1975 00012331 Age:39                                          ",  # noqa E501
-    "tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf": b"0       00014928 F 01-JAN-1933 00014928 Age:83                                          ",  # noqa E501
+    "tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf": b"0       00000000 M 01-JAN-1978 00000000 Age:37                                          ",
+    # noqa E501
+    "tuh_eeg/v1.1.0/edf/01_tcp_ar/099/00009932/s004_2014_09_30/00009932_s004_t013.edf": b"0       00009932 F 01-JAN-1961 00009932 Age:53                                          ",
+    # noqa E501
+    "tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf": b"0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ",
+    # noqa E501
+    "tuh_eeg/v1.1.0/edf/03_tcp_ar_a/123/00012331/s003_2014_12_14/00012331_s003_t002.edf": b"0       00012331 M 01-JAN-1975 00012331 Age:39                                          ",
+    # noqa E501
+    "tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf": b"0       00014928 F 01-JAN-1933 00014928 Age:83                                          ",
+    # noqa E501
 }
 _TUH_EEG_ABNORMAL_PATHS = {
     # these are actual file paths and edf headers from TUH Abnormal EEG Corpus (v2.0.0)
-    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf": b"0       00007871 F 01-JAN-1988 00007871 Age:23                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf": b"0       00009777 M 01-JAN-1986 00009777 Age:26                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf": b"0       00008393 M 01-JAN-1960 00008393 Age:52                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf": b"0       00001200 M 01-JAN-1963 00001200 Age:47                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",  # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf": b"0       00007871 F 01-JAN-1988 00007871 Age:23                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf": b"0       00009777 M 01-JAN-1986 00009777 Age:26                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf": b"0       00008393 M 01-JAN-1960 00008393 Age:52                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf": b"0       00001200 M 01-JAN-1963 00001200 Age:47                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",
+    # noqa E501
 }
 
 
@@ -424,14 +465,14 @@ class _TUHMock(TUH):
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     def __init__(
-        self,
-        mock_glob,
-        path,
-        recording_ids=None,
-        target_name=None,
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+            self,
+            mock_glob,
+            path,
+            recording_ids=None,
+            target_name=None,
+            preload=False,
+            add_physician_reports=False,
+            n_jobs=1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
@@ -455,15 +496,15 @@ class _TUHAbnormalMock(TUHAbnormal):
         "braindecode.datasets.tuh._read_physician_report", return_value="simple_test"
     )
     def __init__(
-        self,
-        mock_glob,
-        mock_report,
-        path,
-        recording_ids=None,
-        target_name="pathological",
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+            self,
+            mock_glob,
+            mock_report,
+            path,
+            recording_ids=None,
+            target_name="pathological",
+            preload=False,
+            add_physician_reports=False,
+            n_jobs=1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
