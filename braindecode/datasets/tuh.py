@@ -103,11 +103,16 @@ class TUH(BaseConcatDataset):
 
     @staticmethod
     def _rename_channels(raw):
-        '''Renames the EEG channels and sets their type to 'eeg'.'''
+        '''
+        Renames the EEG channels and sets their type to 'eeg'.
+
+        See https://isip.piconepress.com/publications/reports/2020/tuh_eeg/electrodes/
+        '''
         montage1005 = mne.channels.make_standard_montage("standard_1005")
         mapping = {c.upper(): c for c in montage1005.ch_names}
-        mapping.update({f'EEG {c.upper()}': f'EEG {c}' for c in montage1005.ch_names})
-        mapping.update({f'EEG {c.upper()}-REF': f'EEG {c}-REF' for c in montage1005.ch_names})
+        mapping.update({f'EEG {c.upper()}': c for c in montage1005.ch_names})
+        mapping.update({f'EEG {c.upper()}-REF': c for c in montage1005.ch_names})
+        mapping.update({f'EEG {c.upper()}-LE': c for c in montage1005.ch_names})
         raw.set_channel_types({c: "eeg" for c in mapping.keys()}, on_unit_change='ignore')
         raw.rename_channels(mapping)
 
@@ -123,7 +128,7 @@ class TUH(BaseConcatDataset):
 
         # parse age and gender information from EDF header
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
-        raw = mne.io.read_raw_edf(file_path, preload=preload)
+        raw = mne.io.read_raw_edf(file_path, preload=preload, infer_types=True)
         if rename_channels:
             TUH._rename_channels(raw)
         if set_montage:
