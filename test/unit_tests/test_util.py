@@ -80,7 +80,7 @@ def test_th_to_np_data_preservation():
         np_array = th_to_np(tensor)
         assert np_array.dtype == tensor.numpy().dtype
         # Corrected attribute access
-        np.testing.assert_array_equal(np_array, tensor.numpy())
+        assert assert_array_equal(np_array, tensor.numpy())
 
 
 def test_th_to_np_on_cpu():
