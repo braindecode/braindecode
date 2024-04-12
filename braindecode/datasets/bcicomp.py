@@ -3,6 +3,7 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import glob
 import os
 import os.path as osp
@@ -49,7 +50,7 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
 
     possible_subjects = [1, 2, 3]
 
-    def __init__(self, subject_ids=None):
+    def __init__(self, subject_ids: list[int] | int | None = None):
         data_path = self.download()
         if isinstance(subject_ids, int):
             subject_ids = [subject_ids]

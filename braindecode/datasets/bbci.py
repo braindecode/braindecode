@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import logging
 import os.path
 import re
@@ -33,11 +34,16 @@ class BBCIDataset(object):
         Translational NeuroTechnology Lab, AG Ball, Freiburg, Germany.
     """
 
-    def __init__(self, filename, load_sensor_names=None, check_class_names=False):
+    def __init__(
+        self,
+        filename: str,
+        load_sensor_names: list[str] | None = None,
+        check_class_names: bool = False,
+    ):
         self.__dict__.update(locals())
         del self.self
 
-    def load(self):
+    def load(self) -> mne.io.RawArray:
         cnt = self._load_continuous_signal()
         cnt = self._add_markers(cnt)
         return cnt
@@ -121,7 +127,7 @@ class BBCIDataset(object):
         return chan_inds
 
     @staticmethod
-    def get_all_sensors(filename, pattern=None):
+    def get_all_sensors(filename: str, pattern: str | None = None) -> list[str]:
         """
         Get all sensors that exist in the given file.
 
@@ -650,7 +656,9 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         log.warn("Unknown class names {:s}".format(all_class_names))
 
 
-def load_bbci_sets_from_folder(folder, runs="all"):
+def load_bbci_sets_from_folder(
+    folder: str, runs: list[int] | str = "all"
+) -> list[mne.io.RawArray]:
     """
     Load bbci datasets from files in given folder.
 
