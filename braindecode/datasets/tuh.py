@@ -7,6 +7,7 @@ TUH Abnormal EEG Corpus.
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import re
 import os
 import glob
@@ -50,12 +51,12 @@ class TUH(BaseConcatDataset):
 
     def __init__(
         self,
-        path,
-        recording_ids=None,
-        target_name=None,
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
@@ -315,12 +316,12 @@ class TUHAbnormal(TUH):
 
     def __init__(
         self,
-        path,
-        recording_ids=None,
-        target_name="pathological",
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -401,19 +402,29 @@ def _get_header(*args, **kwargs):
 
 _TUH_EEG_PATHS = {
     # These are actual file paths and edf headers from the TUH EEG Corpus (v1.1.0 and v1.2.0)
-    "tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf": b"0       00000000 M 01-JAN-1978 00000000 Age:37                                          ",  # noqa E501
-    "tuh_eeg/v1.1.0/edf/01_tcp_ar/099/00009932/s004_2014_09_30/00009932_s004_t013.edf": b"0       00009932 F 01-JAN-1961 00009932 Age:53                                          ",  # noqa E501
-    "tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf": b"0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ",  # noqa E501
-    "tuh_eeg/v1.1.0/edf/03_tcp_ar_a/123/00012331/s003_2014_12_14/00012331_s003_t002.edf": b"0       00012331 M 01-JAN-1975 00012331 Age:39                                          ",  # noqa E501
-    "tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf": b"0       00014928 F 01-JAN-1933 00014928 Age:83                                          ",  # noqa E501
+    "tuh_eeg/v1.1.0/edf/01_tcp_ar/000/00000000/s001_2015_12_30/00000000_s001_t000.edf": b"0       00000000 M 01-JAN-1978 00000000 Age:37                                          ",
+    # noqa E501
+    "tuh_eeg/v1.1.0/edf/01_tcp_ar/099/00009932/s004_2014_09_30/00009932_s004_t013.edf": b"0       00009932 F 01-JAN-1961 00009932 Age:53                                          ",
+    # noqa E501
+    "tuh_eeg/v1.1.0/edf/02_tcp_le/000/00000058/s001_2003_02_05/00000058_s001_t000.edf": b"0       00000058 M 01-JAN-2003 00000058 Age:0.0109                                      ",
+    # noqa E501
+    "tuh_eeg/v1.1.0/edf/03_tcp_ar_a/123/00012331/s003_2014_12_14/00012331_s003_t002.edf": b"0       00012331 M 01-JAN-1975 00012331 Age:39                                          ",
+    # noqa E501
+    "tuh_eeg/v1.2.0/edf/03_tcp_ar_a/149/00014928/s004_2016_01_15/00014928_s004_t007.edf": b"0       00014928 F 01-JAN-1933 00014928 Age:83                                          ",
+    # noqa E501
 }
 _TUH_EEG_ABNORMAL_PATHS = {
     # these are actual file paths and edf headers from TUH Abnormal EEG Corpus (v2.0.0)
-    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf": b"0       00007871 F 01-JAN-1988 00007871 Age:23                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf": b"0       00009777 M 01-JAN-1986 00009777 Age:26                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf": b"0       00008393 M 01-JAN-1960 00008393 Age:52                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf": b"0       00001200 M 01-JAN-1963 00001200 Age:47                                          ",  # noqa E501
-    "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",  # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/078/00007871/s001_2011_07_05/00007871_s001_t001.edf": b"0       00007871 F 01-JAN-1988 00007871 Age:23                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/normal/01_tcp_ar/097/00009777/s001_2012_09_17/00009777_s001_t000.edf": b"0       00009777 M 01-JAN-1986 00009777 Age:26                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/083/00008393/s002_2012_02_21/00008393_s002_t000.edf": b"0       00008393 M 01-JAN-1960 00008393 Age:52                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/train/abnormal/01_tcp_ar/012/00001200/s003_2010_12_06/00001200_s003_t000.edf": b"0       00001200 M 01-JAN-1963 00001200 Age:47                                          ",
+    # noqa E501
+    "tuh_abnormal_eeg/v2.0.0/edf/eval/abnormal/01_tcp_ar/059/00005932/s004_2013_03_14/00005932_s004_t000.edf": b"0       00005932 M 01-JAN-1963 00005932 Age:50                                          ",
+    # noqa E501
 }
 
 
@@ -426,12 +437,12 @@ class _TUHMock(TUH):
     def __init__(
         self,
         mock_glob,
-        path,
-        recording_ids=None,
-        target_name=None,
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
@@ -458,12 +469,12 @@ class _TUHAbnormalMock(TUHAbnormal):
         self,
         mock_glob,
         mock_report,
-        path,
-        recording_ids=None,
-        target_name="pathological",
-        preload=False,
-        add_physician_reports=False,
-        n_jobs=1,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
