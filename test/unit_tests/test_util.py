@@ -168,7 +168,7 @@ def test_cov_and_var_to_corr_zero_variance():
     # Expected correlation matrix
     expected_corr = np.array([[np.inf, np.nan],
                                [0, np.inf]])
-    assert_array_equal(calculated_corr, expected_corr)
+    assert assert_array_equal(calculated_corr, expected_corr)
 
 
 def test_cov_and_var_to_corr_single_element():
