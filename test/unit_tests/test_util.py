@@ -178,7 +178,7 @@ def test_cov_and_var_to_corr_single_element():
     var_b = np.array([1])
     expected_corr = np.array([[1]])
     calculated_corr = _cov_and_var_to_corr(this_cov, var_a, var_b)
-    assert_array_equal(calculated_corr, expected_corr)
+    assert assert_array_equal(calculated_corr, expected_corr)
 
 
 
