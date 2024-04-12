@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 
+from __future__ import annotations
 import os
 
 import numpy as np
@@ -44,13 +45,13 @@ class SleepPhysionet(BaseConcatDataset):
     """
 
     def __init__(
-        self,
-        subject_ids=None,
-        recording_ids=None,
-        preload=False,
-        load_eeg_only=True,
-        crop_wake_mins=30,
-        crop=None,
+            self,
+            subject_ids: list[int] | int | None = None,
+            recording_ids: list[int] | None = None,
+            preload=False,
+            load_eeg_only=True,
+            crop_wake_mins=30,
+            crop=None,
     ):
         if subject_ids is None:
             subject_ids = range(83)
@@ -75,12 +76,12 @@ class SleepPhysionet(BaseConcatDataset):
 
     @staticmethod
     def _load_raw(
-        raw_fname,
-        ann_fname,
-        preload,
-        load_eeg_only=True,
-        crop_wake_mins=False,
-        crop=None,
+            raw_fname,
+            ann_fname,
+            preload,
+            load_eeg_only=True,
+            crop_wake_mins=False,
+            crop=None,
     ):
         ch_mapping = {
             "EOG horizontal": "eog",

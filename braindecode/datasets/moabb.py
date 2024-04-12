@@ -8,6 +8,7 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import pandas as pd
 import mne
 
@@ -62,7 +63,11 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
     return annots
 
 
-def fetch_data_with_moabb(dataset_name, subject_ids, dataset_kwargs=None):
+def fetch_data_with_moabb(
+        dataset_name: str,
+        subject_ids: list[int] | int,
+        dataset_kwargs: dict[str, []] | None = None,
+) -> tuple[list[mne.io.Raw], pd.DataFrame]:
     # ToDo: update path to where moabb downloads / looks for the data
     """Fetch data using moabb.
 
@@ -101,7 +106,12 @@ class MOABBDataset(BaseConcatDataset):
         to pass to the moabb dataset when instantiating it.
     """
 
-    def __init__(self, dataset_name, subject_ids, dataset_kwargs=None):
+    def __init__(
+            self,
+            dataset_name: str,
+            subject_ids: list[int] | int | None,
+            dataset_kwargs: dict[str, []] | None = None,
+    ):
         raws, description = fetch_data_with_moabb(
             dataset_name, subject_ids, dataset_kwargs
         )
