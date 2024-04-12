@@ -257,5 +257,5 @@ def test_balanced_batches_shuffle():
                                                 batch_size=10)
 
     # Check that shuffling changes the order of indices
-    assert not np.array_equal(np.concatenate(batches_no_shuffle),
+    assert not array_equal(np.concatenate(batches_no_shuffle),
                               np.concatenate(batches_with_shuffle))
