@@ -116,7 +116,7 @@ def test_np_to_th_basic_conversion():
     data = [1, 2, 3]
     tensor = np_to_th(data)
     assert torch.is_tensor(tensor)
-    np.testing.assert_array_equal(tensor.numpy(), np.array(data))
+    assert assert_array_equal(tensor.numpy(), np.array(data))
 
 
 def test_np_to_th_dtype_conversion():
