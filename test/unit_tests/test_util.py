@@ -226,7 +226,7 @@ def test_balanced_batches_basic():
 
     # Check if all indices are unique and accounted for
     all_indices = np.concatenate(batches)
-    assert np.array_equal(np.sort(all_indices), np.arange(n_trials))
+    assert array_equal(np.sort(all_indices), np.arange(n_trials))
 
 
 def test_balanced_batches_with_batch_size():
