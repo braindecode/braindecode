@@ -27,7 +27,7 @@ from .datasets.base import BaseConcatDataset, WindowsDataset
 log = logging.getLogger(__name__)
 
 
-def _get_model(model):
+def _get_model(model: str):
     """Returns the corresponding class in case the model passed is a string."""
     if isinstance(model, str):
         if model in models_dict:

@@ -10,6 +10,8 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
+from collections.abc import Callable
 import os
 import json
 import shutil
@@ -17,12 +19,13 @@ from typing import Iterable
 import warnings
 from glob import glob
 
+import mne.io
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, ConcatDataset
 
 
-def _create_description(description):
+def _create_description(description) -> pd.Series:
     if description is not None:
         if not isinstance(description, pd.Series) and not isinstance(description, dict):
             raise ValueError(
@@ -53,7 +56,13 @@ class BaseDataset(Dataset):
         On-the-fly transform applied to the example before it is returned.
     """
 
-    def __init__(self, raw, description=None, target_name=None, transform=None):
+    def __init__(
+        self,
+        raw: mne.io.BaseRaw,
+        description: dict | pd.Series | None = None,
+        target_name: str | tuple[str] | None = None,
+        transform: Callable | None = None,
+    ):
         self.raw = raw
         self._description = _create_description(description)
         self.transform = transform
@@ -86,10 +95,10 @@ class BaseDataset(Dataset):
         self._transform = value
 
     @property
-    def description(self):
+    def description(self) -> pd.Series:
         return self._description
 
-    def set_description(self, description, overwrite=False):
+    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -175,12 +184,12 @@ class EEGWindowsDataset(BaseDataset):
 
     def __init__(
         self,
-        raw,
-        metadata,
-        description=None,
-        transform=None,
-        targets_from="metadata",
-        last_target_only=True,
+        raw: mne.io.BaseRaw | mne.BaseEpochs,
+        metadata: pd.DataFrame,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+        targets_from: str = "metadata",
+        last_target_only: bool = True,
     ):
         self.raw = raw
         self.metadata = metadata
@@ -197,7 +206,7 @@ class EEGWindowsDataset(BaseDataset):
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         """Get a window and its target.
 
         Parameters
@@ -256,10 +265,10 @@ class EEGWindowsDataset(BaseDataset):
         self._transform = value
 
     @property
-    def description(self):
+    def description(self) -> pd.Series:
         return self._description
 
-    def set_description(self, description, overwrite=False):
+    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -311,11 +320,11 @@ class WindowsDataset(BaseDataset):
 
     def __init__(
         self,
-        windows,
-        description=None,
-        transform=None,
-        targets_from="metadata",
-        last_target_only=True,
+        windows: mne.BaseEpochs,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+        targets_from: str = "metadata",
+        last_target_only: bool = True,
     ):
         self.windows = windows
         self._description = _create_description(description)
@@ -331,7 +340,7 @@ class WindowsDataset(BaseDataset):
         if self.targets_from == "metadata":
             self.y = self.windows.metadata.loc[:, "target"].to_list()
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         """Get a window and its target.
 
         Parameters
@@ -366,7 +375,7 @@ class WindowsDataset(BaseDataset):
         crop_inds = self.crop_inds[index].tolist()
         return X, y, crop_inds
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.windows.events)
 
     @property
@@ -380,10 +389,10 @@ class WindowsDataset(BaseDataset):
         self._transform = value
 
     @property
-    def description(self):
+    def description(self) -> pd.Series:
         return self._description
 
-    def set_description(self, description, overwrite=False):
+    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -419,7 +428,11 @@ class BaseConcatDataset(ConcatDataset):
         Optional function to call on targets before returning them.
     """
 
-    def __init__(self, list_of_ds, target_transform=None):
+    def __init__(
+        self,
+        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset] = None,
+        target_transform: Callable | None = None,
+    ):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
@@ -439,7 +452,7 @@ class BaseConcatDataset(ConcatDataset):
 
         return X, y
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int | list):
         """
         Parameters
         ----------
@@ -457,7 +470,12 @@ class BaseConcatDataset(ConcatDataset):
             item = item[:1] + (self.target_transform(item[1]),) + item[2:]
         return item
 
-    def split(self, by=None, property=None, split_ids=None):
+    def split(
+        self,
+        by: str | list[int] | list[list[int]] | dict[str, list[int]] | None = None,
+        property: str | None = None,
+        split_ids: list[int] | list[list[int]] | dict[str, list[int]] | None = None,
+    ) -> dict[str, BaseConcatDataset]:
         """Split the dataset based on information listed in its description
         DataFrame or based on indices.
 
@@ -473,7 +491,7 @@ class BaseConcatDataset(ConcatDataset):
             splits dict and each value should be a list of int.
         property : str
             Some property which is listed in info DataFrame.
-        split_ids : list | dict
+        split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
 
@@ -516,7 +534,7 @@ class BaseConcatDataset(ConcatDataset):
             for split_name, ds_inds in split_ids.items()
         }
 
-    def get_metadata(self):
+    def get_metadata(self) -> pd.DataFrame:
         """Concatenate the metadata and description of the wrapped Epochs.
 
         Returns
@@ -653,12 +671,14 @@ class BaseConcatDataset(ConcatDataset):
                     json.dump(kwargs, open(kwargs_path, "w"))
 
     @property
-    def description(self):
+    def description(self) -> pd.DataFrame:
         df = pd.DataFrame([ds.description for ds in self.datasets])
         df.reset_index(inplace=True, drop=True)
         return df
 
-    def set_description(self, description, overwrite=False):
+    def set_description(
+        self, description: dict | pd.DataFrame, overwrite: bool = False
+    ):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -675,7 +695,7 @@ class BaseConcatDataset(ConcatDataset):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
-    def save(self, path, overwrite=False, offset=0):
+    def save(self, path: str, overwrite: bool = False, offset: int = 0):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
             0/
@@ -749,7 +769,7 @@ class BaseConcatDataset(ConcatDataset):
             # stored in parallel with braindecode.preprocessing.preprocess
             if i_ds + 1 + offset < n_sub_dirs:
                 warnings.warn(
-                    f"The number of saved datasets ({i_ds+1+offset}) "
+                    f"The number of saved datasets ({i_ds + 1 + offset}) "
                     f"does not match the number of existing "
                     f"subdirectories ({n_sub_dirs}). You may now "
                     f"encounter a mix of differently preprocessed "
