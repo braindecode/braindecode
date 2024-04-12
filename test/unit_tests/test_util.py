@@ -91,7 +91,7 @@ def test_th_to_np_on_cpu():
     assert isinstance(np_array, np.ndarray)
     assert np_array.dtype == cpu_tensor.numpy().dtype
     # Correct way to check dtype
-    np.testing.assert_array_equal(np_array, cpu_tensor.numpy())
+    assert assert_array_equal(np_array, cpu_tensor.numpy())
 
 
 def test_cov_basic():
