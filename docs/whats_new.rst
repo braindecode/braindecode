@@ -29,7 +29,7 @@ Enhancements
 - Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
 - Applying black to the codebase (:gh:`579` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.EEGSimpleConv` (:gh:`581` by `Yassine El Ouahidi`_ and `Bruno Aristimunha`_)
-
+- Increasing the coverage of the tests (:gh:`592` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
