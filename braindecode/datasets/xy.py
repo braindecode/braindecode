@@ -17,13 +17,13 @@ log = logging.getLogger(__name__)
 
 
 def create_from_X_y(
-        X: NDArray,
-        y: ArrayLike,
-        drop_last_window: bool,
-        sfreq: float,
-        ch_names: ArrayLike = None,
-        window_size_samples: int | None = None,
-        window_stride_samples: int | None = None,
+    X: NDArray,
+    y: ArrayLike,
+    drop_last_window: bool,
+    sfreq: float,
+    ch_names: ArrayLike = None,
+    window_size_samples: int | None = None,
+    window_stride_samples: int | None = None,
 ) -> BaseConcatDataset:
     """Create a BaseConcatDataset of WindowsDatasets from X and y to be used for
     decoding with skorch and braindecode, where X is a list of pre-cut trials

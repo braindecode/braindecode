@@ -50,13 +50,13 @@ class TUH(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = None,
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            n_jobs: int = 1,
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         # create an index of all files and gather easily accessible info
         # without actually touching the files
@@ -315,13 +315,13 @@ class TUHAbnormal(TUH):
     """
 
     def __init__(
-            self,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = "pathological",
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            n_jobs: int = 1,
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -354,7 +354,7 @@ class TUHAbnormal(TUH):
         #                     s004_2013_08_15/00000021_s004_t000.edf
         assert "abnormal" in tokens or "normal" in tokens, "No pathology labels found."
         assert (
-                "train" in tokens or "eval" in tokens
+            "train" in tokens or "eval" in tokens
         ), "No train or eval set information found."
         return {
             "version": tokens[-9],
@@ -435,14 +435,14 @@ class _TUHMock(TUH):
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     def __init__(
-            self,
-            mock_glob,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = None,
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            n_jobs: int = 1,
+        self,
+        mock_glob,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
@@ -466,15 +466,15 @@ class _TUHAbnormalMock(TUHAbnormal):
         "braindecode.datasets.tuh._read_physician_report", return_value="simple_test"
     )
     def __init__(
-            self,
-            mock_glob,
-            mock_report,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = "pathological",
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            n_jobs: int = 1,
+        self,
+        mock_glob,
+        mock_report,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")

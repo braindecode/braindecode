@@ -68,10 +68,10 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
 
 
 def fetch_data_with_moabb(
-        dataset_name: str,
-        subject_ids: list[int] | int,
-        dataset_kwargs: dict[str, []] | None = None,
-        dataset_load_kwargs: dict[str, []] | None = None
+    dataset_name: str,
+    subject_ids: list[int] | int,
+    dataset_kwargs: dict[str, []] | None = None,
+    dataset_load_kwargs: dict[str, []] | None = None,
 ) -> tuple[list[mne.io.Raw], pd.DataFrame]:
     # ToDo: update path to where moabb downloads / looks for the data
     """Fetch data using moabb.
@@ -131,11 +131,11 @@ class MOABBDataset(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            dataset_name: str,
-            subject_ids: list[int] | int | None,
-            dataset_kwargs: dict[str, []] | None = None,
-            dataset_load_kwargs: dict[str, []] | None = None
+        self,
+        dataset_name: str,
+        subject_ids: list[int] | int | None,
+        dataset_kwargs: dict[str, []] | None = None,
+        dataset_load_kwargs: dict[str, []] | None = None,
     ):
         raws, description = fetch_data_with_moabb(
             dataset_name,

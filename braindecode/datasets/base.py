@@ -57,11 +57,11 @@ class BaseDataset(Dataset):
     """
 
     def __init__(
-            self,
-            raw: mne.io.BaseRaw,
-            description: dict | pd.Series | None = None,
-            target_name: str | tuple[str] | None = None,
-            transform: Callable | None = None
+        self,
+        raw: mne.io.BaseRaw,
+        description: dict | pd.Series | None = None,
+        target_name: str | tuple[str] | None = None,
+        transform: Callable | None = None,
     ):
         self.raw = raw
         self._description = _create_description(description)
@@ -183,13 +183,13 @@ class EEGWindowsDataset(BaseDataset):
     """
 
     def __init__(
-            self,
-            raw: mne.io.BaseRaw | mne.BaseEpochs,
-            metadata: pd.DataFrame,
-            description: dict | pd.Series | None = None,
-            transform: Callable | None = None,
-            targets_from: str = "metadata",
-            last_target_only: bool = True,
+        self,
+        raw: mne.io.BaseRaw | mne.BaseEpochs,
+        metadata: pd.DataFrame,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+        targets_from: str = "metadata",
+        last_target_only: bool = True,
     ):
         self.raw = raw
         self.metadata = metadata
@@ -201,8 +201,8 @@ class EEGWindowsDataset(BaseDataset):
             raise ValueError("Wrong value for parameter `targets_from`.")
         self.targets_from = targets_from
         self.crop_inds = metadata.loc[
-                         :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
-                         ].to_numpy()
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
         if self.targets_from == "metadata":
             self.y = metadata.loc[:, "target"].to_list()
 
@@ -319,12 +319,12 @@ class WindowsDataset(BaseDataset):
     """
 
     def __init__(
-            self,
-            windows: mne.BaseEpochs,
-            description: dict | pd.Series | None = None,
-            transform: Callable | None = None,
-            targets_from: str = "metadata",
-            last_target_only: bool = True,
+        self,
+        windows: mne.BaseEpochs,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+        targets_from: str = "metadata",
+        last_target_only: bool = True,
     ):
         self.windows = windows
         self._description = _create_description(description)
@@ -335,8 +335,8 @@ class WindowsDataset(BaseDataset):
         self.targets_from = targets_from
 
         self.crop_inds = self.windows.metadata.loc[
-                         :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
-                         ].to_numpy()
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
         if self.targets_from == "metadata":
             self.y = self.windows.metadata.loc[:, "target"].to_list()
 
@@ -429,9 +429,9 @@ class BaseConcatDataset(ConcatDataset):
     """
 
     def __init__(
-            self,
-            list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset] = None,
-            target_transform: Callable | None = None
+        self,
+        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset] = None,
+        target_transform: Callable | None = None,
     ):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
@@ -471,10 +471,10 @@ class BaseConcatDataset(ConcatDataset):
         return item
 
     def split(
-            self,
-            by: str | list[int] | list[list[int]] | dict[str, list[int]] | None = None,
-            property: str | None = None,
-            split_ids: list[int] | list[list[int]] | dict[str, list[int]] | None = None,
+        self,
+        by: str | list[int] | list[list[int]] | dict[str, list[int]] | None = None,
+        property: str | None = None,
+        split_ids: list[int] | list[list[int]] | dict[str, list[int]] | None = None,
     ) -> dict[str, BaseConcatDataset]:
         """Split the dataset based on information listed in its description
         DataFrame or based on indices.
@@ -545,10 +545,10 @@ class BaseConcatDataset(ConcatDataset):
             for each window.
         """
         if not all(
-                [
-                    isinstance(ds, (WindowsDataset, EEGWindowsDataset))
-                    for ds in self.datasets
-                ]
+            [
+                isinstance(ds, (WindowsDataset, EEGWindowsDataset))
+                for ds in self.datasets
+            ]
         ):
             raise TypeError(
                 "Metadata dataframe can only be computed when all "
@@ -613,7 +613,7 @@ class BaseConcatDataset(ConcatDataset):
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
         if not (
-                hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
+            hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
             raise ValueError("dataset should have either raw or windows " "attribute")
         file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
@@ -676,7 +676,9 @@ class BaseConcatDataset(ConcatDataset):
         df.reset_index(inplace=True, drop=True)
         return df
 
-    def set_description(self, description: dict | pd.DataFrame, overwrite: bool = False):
+    def set_description(
+        self, description: dict | pd.DataFrame, overwrite: bool = False
+    ):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -728,7 +730,7 @@ class BaseConcatDataset(ConcatDataset):
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
         if not (
-                hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
+            hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
             raise ValueError("dataset should have either raw or windows " "attribute")
         path_contents = os.listdir(path)

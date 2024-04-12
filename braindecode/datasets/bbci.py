@@ -35,10 +35,10 @@ class BBCIDataset(object):
     """
 
     def __init__(
-            self,
-            filename: str,
-            load_sensor_names: list[str] | None = None,
-            check_class_names: bool = False,
+        self,
+        filename: str,
+        load_sensor_names: list[str] | None = None,
+        check_class_names: bool = False,
     ):
         self.__dict__.update(locals())
         del self.self
@@ -62,8 +62,8 @@ class BBCIDataset(object):
                 chan_set_name = "ch" + str(chan_ind_set + 1)
                 # first 0 to unpack into vector, before it is 1xN matrix
                 chan_signal = h5file[chan_set_name][
-                              :
-                              ].squeeze()  # already load into memory
+                    :
+                ].squeeze()  # already load into memory
                 continuous_signal[:, chan_ind_arr] = chan_signal
             assert not np.any(np.isnan(continuous_signal)), "No NaNs expected in signal"
 
@@ -100,10 +100,10 @@ class BBCIDataset(object):
             )
             eeg_sensor_names = list(eeg_sensor_names)
             assert (
-                    len(eeg_sensor_names) == 128
-                    or len(eeg_sensor_names) == 64
-                    or len(eeg_sensor_names) == 32
-                    or len(eeg_sensor_names) == 16
+                len(eeg_sensor_names) == 128
+                or len(eeg_sensor_names) == 64
+                or len(eeg_sensor_names) == 32
+                or len(eeg_sensor_names) == 16
             ), "Recheck this code if you have different sensors..."
             wanted_sensor_names = eeg_sensor_names
         else:
@@ -174,7 +174,7 @@ class BBCIDataset(object):
         # Check if there are markers at the same time
         previous_i_sample = -1
         for i_event, (i_sample, id_class) in enumerate(
-                zip(event_times_in_samples, event_classes)
+            zip(event_times_in_samples, event_classes)
         ):
             if i_sample == previous_i_sample:
                 log.warning(
@@ -251,50 +251,50 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
     if all_class_names == ["Right Hand", "Left Hand", "Rest", "Feet"]:
         pass
     elif (
-            (
-                    all_class_names
-                    == [
-                        "1",
-                        "10",
-                        "11",
-                        "111",
-                        "12",
-                        "13",
-                        "150",
-                        "2",
-                        "20",
-                        "22",
-                        "3",
-                        "30",
-                        "33",
-                        "4",
-                        "40",
-                        "44",
-                        "99",
-                    ]
-            )
-            or (
-                    all_class_names
-                    == [
-                        "1",
-                        "10",
-                        "11",
-                        "12",
-                        "13",
-                        "150",
-                        "2",
-                        "20",
-                        "22",
-                        "3",
-                        "30",
-                        "33",
-                        "4",
-                        "40",
-                        "44",
-                        "99",
-                    ]
-            )
-            or (all_class_names == ["1", "2", "3", "4"])
+        (
+            all_class_names
+            == [
+                "1",
+                "10",
+                "11",
+                "111",
+                "12",
+                "13",
+                "150",
+                "2",
+                "20",
+                "22",
+                "3",
+                "30",
+                "33",
+                "4",
+                "40",
+                "44",
+                "99",
+            ]
+        )
+        or (
+            all_class_names
+            == [
+                "1",
+                "10",
+                "11",
+                "12",
+                "13",
+                "150",
+                "2",
+                "20",
+                "22",
+                "3",
+                "30",
+                "33",
+                "4",
+                "40",
+                "44",
+                "99",
+            ]
+        )
+        or (all_class_names == ["1", "2", "3", "4"])
     ):
         pass  # Semantic classes
     elif all_class_names == ["Rest", "Feet", "Left Hand", "Right Hand"]:
@@ -656,7 +656,9 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         log.warn("Unknown class names {:s}".format(all_class_names))
 
 
-def load_bbci_sets_from_folder(folder: str, runs: list[int] | str = "all") -> list[mne.io.RawArray]:
+def load_bbci_sets_from_folder(
+    folder: str, runs: list[int] | str = "all"
+) -> list[mne.io.RawArray]:
     """
     Load bbci datasets from files in given folder.
 

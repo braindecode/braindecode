@@ -13,17 +13,17 @@ from .base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def create_from_mne_raw(
-        raws: list[mne.io.BaseRaw],
-        trial_start_offset_samples: int,
-        trial_stop_offset_samples: int,
-        window_size_samples: int,
-        window_stride_samples: int,
-        drop_last_window: bool,
-        descriptions: list[dict | pd.Series] | None = None,
-        mapping: dict[str, int] = None,
-        preload: bool = False,
-        drop_bad_windows: bool = True,
-        accepted_bads_ratio: float = 0.0,
+    raws: list[mne.io.BaseRaw],
+    trial_start_offset_samples: int,
+    trial_stop_offset_samples: int,
+    window_size_samples: int,
+    window_stride_samples: int,
+    drop_last_window: bool,
+    descriptions: list[dict | pd.Series] | None = None,
+    mapping: dict[str, int] = None,
+    preload: bool = False,
+    drop_bad_windows: bool = True,
+    accepted_bads_ratio: float = 0.0,
 ) -> BaseConcatDataset:
     """Create WindowsDatasets from mne.RawArrays
 
@@ -98,10 +98,10 @@ def create_from_mne_raw(
 
 
 def create_from_mne_epochs(
-        list_of_epochs: list[mne.BaseEpochs],
-        window_size_samples: int,
-        window_stride_samples: int,
-        drop_last_window: bool,
+    list_of_epochs: list[mne.BaseEpochs],
+    window_size_samples: int,
+    window_stride_samples: int,
+    drop_last_window: bool,
 ) -> BaseConcatDataset:
     """Create WindowsDatasets from mne.Epochs
 
@@ -149,8 +149,8 @@ def create_from_mne_epochs(
                     "i_window_in_trial": np.arange(len(fake_events)),
                     "i_start_in_trial": starts + original_trial_starts[trial_i],
                     "i_stop_in_trial": starts
-                                       + original_trial_starts[trial_i]
-                                       + window_size_samples,
+                    + original_trial_starts[trial_i]
+                    + window_size_samples,
                     "target": len(fake_events) * [event_descriptions[trial_i]],
                 }
             )

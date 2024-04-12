@@ -83,12 +83,12 @@ class NMT(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            path: str,
-            target_name: str = "pathological",
-            recording_ids: list[int] | None = None,
-            preload: bool = False,
-            n_jobs: int = 1,
+        self,
+        path: str,
+        target_name: str = "pathological",
+        recording_ids: list[int] | None = None,
+        preload: bool = False,
+        n_jobs: int = 1,
     ):
         # If the path is not informed, we fetch the dataset from zenodo.
         if path is None:
@@ -282,13 +282,13 @@ class _NMTMock(NMT):
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("pandas.read_csv", new=_fake_pd_read_csv)
     def __init__(
-            self,
-            mock_glob,
-            path,
-            recording_ids=None,
-            target_name="pathological",
-            preload=False,
-            n_jobs=1,
+        self,
+        mock_glob,
+        path,
+        recording_ids=None,
+        target_name="pathological",
+        preload=False,
+        n_jobs=1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
