@@ -27,7 +27,6 @@ def __getattr__(name):
         mne = importlib.import_module("..datasets.mne", __package__)
         return mne.__dict__[name]
     if name in [
-        "zscore",
         "scale",
         "exponential_moving_demean",
         "exponential_moving_standardize",
