@@ -22,7 +22,7 @@ from braindecode.models.base import EEGModuleMixin
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.training import CroppedLoss
-
+from braindecode.eegneuralnet import _EEGNeuralNet
 
 class MockDataset(torch.utils.data.Dataset):
     def __len__(self):
@@ -478,6 +478,7 @@ def test_EEGRegressor_get_n_outputs(preds):
         [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]]),
         classes=None) == 5
 
+
 def test_EEGRegressor_predict_trials(Xy, preds):
     X, y = Xy
     # Initialize EEGRegressor
@@ -498,3 +499,31 @@ def test_EEGRegressor_predict_trials(Xy, preds):
     assert preds.shape[0] == len(X)
     assert np.array_equal(targets, np.concatenate([X[i][1]
                                                   for i in range(len(X))]))
+from braindecode.eegneuralnet import CroppedTrialEpochScoring
+
+class ConcreteEEGNeuralNet(_EEGNeuralNet):
+    def _get_n_outputs(self, y, classes):
+        # provide your implementation here
+        pass
+
+@pytest.fixture()
+def net():
+    net = ConcreteEEGNeuralNet(module="EEGNetv4", criterion=CroppedTrialEpochScoring,
+                               cropped=False, max_epochs=1, train_split=None,
+                               n_times=5)
+    return net
+
+
+def test_cropped_trial_epoch_scoring(net):
+    train_scoring = net._parse_str_callback('accuracy')[0][1]
+    valid_scoring = net._parse_str_callback('accuracy')[1][1]
+
+    assert train_scoring.on_train is True
+    assert train_scoring.name == 'train_accuracy'
+
+    assert valid_scoring.on_train is False
+    assert valid_scoring.name == 'valid_accuracy'
+
+def test_get_n_outputs():
+    with pytest.raises(TypeError):
+        _EEGNeuralNet()._get_n_outputs(None, None)
