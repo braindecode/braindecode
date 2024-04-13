@@ -10,13 +10,16 @@ import numpy as np
 import h5py
 import pytest
 import torch
+import tempfile
+
 from sklearn.utils import check_random_state
 from numpy.testing import assert_array_equal, assert_allclose
 
 
 from braindecode.util import _cov_and_var_to_corr, _cov_to_corr, \
-    create_mne_dummy_raw, \
-    set_random_seeds, th_to_np, cov, np_to_th, get_balanced_batches
+    corr, create_mne_dummy_raw, \
+    read_all_file_names, set_random_seeds, th_to_np, cov, np_to_th, \
+    get_balanced_batches
 
 
 def test_create_mne_dummy_raw(tmp_path):
@@ -275,3 +278,92 @@ def test_balanced_batches_shuffle():
     # Check that shuffling changes the order of indices
     assert not np.array_equal(np.concatenate(batches_no_shuffle),
                               np.concatenate(batches_with_shuffle))
+
+
+def test_corr_correlation_computation():
+    # Create two 2D arrays with known correlation
+    a = np.array([[1, 2, 3], [4, 5, 6]])
+    b = np.array([[1, 2, 3], [4, 5, 6]])
+
+    # Call the corr function
+    corr_result = corr(a, b)
+
+    # Compute the known correlation
+    known_corr = np.array([np.corrcoef(a[i], b[i]) for i in range(a.shape[0])])
+
+    # Extract the correlation computation from the corr function
+    computed_corr = _cov_to_corr(cov(a, b), a, b)
+
+    # Assert that the computed correlation matches the known correlation
+    assert np.allclose(computed_corr, known_corr)
+    assert np.allclose(corr_result, computed_corr)
+
+
+def test_get_balanced_batches_zero_batches():
+    # Create a scenario where n_batches is 0
+    n_trials = 10
+    rng = check_random_state(0)
+    shuffle = False
+    n_batches = 0
+    batch_size = None
+
+    # Call the get_balanced_batches function
+    batches = get_balanced_batches(n_trials, rng, shuffle, n_batches, batch_size)
+
+    # Check if the function returns a single batch with all trials
+    assert len(batches) == 1
+    assert len(batches[0]) == n_trials
+
+
+def test_get_balanced_batches_i_batch_less_than_n_batches_with_extra_trial():
+    # Create a scenario where i_batch < n_batches_with_extra_trial
+    n_trials = 10
+    rng = check_random_state(0)
+    shuffle = False
+    n_batches = 6
+    batch_size = None
+
+    # Call the get_balanced_batches function
+    batches = get_balanced_batches(n_trials, rng, shuffle, n_batches, batch_size)
+
+    # Check if the first batch has one more trial than the last batch
+    assert len(batches[0]) > len(batches[-1])
+
+
+def test_read_all_file_names():
+    # Create a temporary directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        temp_files = []
+        try:
+            # Create some temporary files with .txt extension
+            for i in range(5):
+                temp_file = os.path.join(tmpdir, f'temp{i}.txt')
+                with open(temp_file, 'w') as f:
+                    f.write('This is a temporary file.')
+                temp_files.append(temp_file)
+
+            # Call the read_all_file_names function
+            file_paths = read_all_file_names(tmpdir, '.txt')
+
+            # Check if the function found all the temporary files
+            assert len(file_paths) == 5
+
+            # Check if the paths returned by the function are correct
+            for i in range(5):
+                assert os.path.join(tmpdir, f'temp{i}.txt') in file_paths
+        finally:
+            # Delete the temporary files
+            for temp_file in temp_files:
+                os.remove(temp_file)
+
+
+def test_read_all_file_names_error():
+    with pytest.raises(AssertionError):
+        # Call the read_all_file_names function with a non-existent directory
+        read_all_file_names('non_existent_dir', '.txt')
+
+
+def test_read_all_files_not_extension():
+    with pytest.raises(AssertionError):
+        # Call the read_all_file_names function with a non-existent directory
+        read_all_file_names('non_existent_dir', 'txt')

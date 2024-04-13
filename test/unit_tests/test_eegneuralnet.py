@@ -4,11 +4,11 @@
 # License: BSD-3
 import logging
 
+import mne
+import numpy as np
 import pandas as pd
 import pytest
-import numpy as np
 import torch
-import mne
 from scipy.special import softmax
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
@@ -17,12 +17,11 @@ from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode import EEGClassifier, EEGRegressor
-from braindecode.training import CroppedLoss
+from braindecode.datasets import BaseConcatDataset, WindowsDataset
 from braindecode.models.base import EEGModuleMixin
-from braindecode.datasets import WindowsDataset, BaseConcatDataset
-
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.training import CroppedLoss
 
 
 class MockDataset(torch.utils.data.Dataset):
@@ -436,3 +435,67 @@ def test_unknown_module_name(eegneuralnet_cls):
     with pytest.raises(ValueError) as excinfo:
         net.initialize()
     assert "Unknown model name" in str(excinfo.value)
+
+
+def test_EEGRegressor_drop_index(Xy):
+    # Initialize EEGRegressor with drop_index=False
+    X, y = Xy
+
+    net = EEGRegressor(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+
+    # Test if the iterator is returned when drop_index is False
+    iterator = net.get_iterator(X, training=False, drop_index=False)
+    assert isinstance(iterator, torch.utils.data.DataLoader)
+
+
+def test_EEGRegressor_get_n_outputs(preds):
+    # Initialize EEGRegressor
+
+    eeg_regressor = EEGRegressor(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=2,
+        train_split=None,
+        max_epochs=1,
+    )
+
+    # Test _get_n_outputs method
+    assert eeg_regressor._get_n_outputs(y=None,
+                                        classes=None) is None
+    assert eeg_regressor._get_n_outputs(y=np.array([0, 1, 2, 3, 4]),
+                                        classes=None) == 1
+    assert eeg_regressor._get_n_outputs(y=np.array(
+        [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]]),
+        classes=None) == 5
+
+
+def test_EEGRegressor_predict_trials(Xy, preds):
+    X, y = Xy
+    # Initialize EEGRegressor
+    eeg_regressor = EEGRegressor(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=2,
+        train_split=None,
+        max_epochs=1,
+    )
+
+    eeg_regressor.fit(X, y=y)
+
+    preds, targets = eeg_regressor.predict_trials(X,
+                                                  return_targets=True)
+    assert preds.shape[0] == len(X)
+    assert np.array_equal(targets, np.concatenate([X[i][1]
+                                                  for i in range(len(X))]))
