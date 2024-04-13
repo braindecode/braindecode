@@ -54,18 +54,20 @@ class TUH(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = None,
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            rename_channels: bool = True,
-            set_montage: bool = True,
-            n_jobs: int = 1,
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        rename_channels: bool = True,
+        set_montage: bool = True,
+        n_jobs: int = 1,
     ):
         if set_montage:
-            assert rename_channels, "If set_montage is True, rename_channels must be True."
+            assert (
+                rename_channels
+            ), "If set_montage is True, rename_channels must be True."
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, "**/*.edf"), recursive=True)
@@ -86,17 +88,24 @@ class TUH(BaseConcatDataset):
         if n_jobs == 1:
             base_datasets = [
                 self._create_dataset(
-                    descriptions[i], target_name, preload, add_physician_reports,
-                    rename_channels, set_montage,
-
+                    descriptions[i],
+                    target_name,
+                    preload,
+                    add_physician_reports,
+                    rename_channels,
+                    set_montage,
                 )
                 for i in descriptions.columns
             ]
         else:
             base_datasets = Parallel(n_jobs)(
                 delayed(self._create_dataset)(
-                    descriptions[i], target_name, preload, add_physician_reports,
-                    rename_channels, set_montage,
+                    descriptions[i],
+                    target_name,
+                    preload,
+                    add_physician_reports,
+                    rename_channels,
+                    set_montage,
                 )
                 for i in descriptions.columns
             )
@@ -104,27 +113,33 @@ class TUH(BaseConcatDataset):
 
     @staticmethod
     def _rename_channels(raw):
-        '''
+        """
         Renames the EEG channels using mne conventions and sets their type to 'eeg'.
 
         See https://isip.piconepress.com/publications/reports/2020/tuh_eeg/electrodes/
-        '''
+        """
         # remove ref suffix and prefix:
         # TODO: replace with removesuffix and removeprefix when 3.8 is dropped
-        mapping_strip = {c: c.replace('-REF', '').replace('-LE', '').replace('EEG ', '')
-                         for c in raw.ch_names}
+        mapping_strip = {
+            c: c.replace("-REF", "").replace("-LE", "").replace("EEG ", "")
+            for c in raw.ch_names
+        }
         raw.rename_channels(mapping_strip)
 
         montage1005 = mne.channels.make_standard_montage("standard_1005")
-        mapping = {c.upper(): c for c in montage1005.ch_names if c.upper() in raw.ch_names}
+        mapping = {
+            c.upper(): c for c in montage1005.ch_names if c.upper() in raw.ch_names
+        }
 
         # Set channels whose type could not be inferred (defaulted to "eeg") to "misc":
         non_eeg_chs = [c for c in raw.ch_names if c not in mapping]
         non_eeg_types = raw.get_channel_types(picks=non_eeg_chs)
-        raw.set_channel_types({c: 'misc' for c, t in zip(non_eeg_chs, non_eeg_types) if t == 'eeg'})
+        raw.set_channel_types(
+            {c: "misc" for c, t in zip(non_eeg_chs, non_eeg_types) if t == "eeg"}
+        )
 
         # Set 1005 channels type to "eeg":
-        raw.set_channel_types({c: 'eeg' for c in mapping}, on_unit_change='ignore')
+        raw.set_channel_types({c: "eeg" for c in mapping}, on_unit_change="ignore")
 
         # Fix capitalized EEG channel names:
         raw.rename_channels({k: v for k, v in mapping.items() if k in raw.ch_names})
@@ -132,16 +147,24 @@ class TUH(BaseConcatDataset):
     @staticmethod
     def _set_montage(raw):
         montage = mne.channels.make_standard_montage("standard_1005")
-        raw.set_montage(montage, on_missing='ignore')
+        raw.set_montage(montage, on_missing="ignore")
 
     @staticmethod
     def _create_dataset(
-            description, target_name, preload, add_physician_reports, rename_channels, set_montage):
+        description,
+        target_name,
+        preload,
+        add_physician_reports,
+        rename_channels,
+        set_montage,
+    ):
         file_path = description.loc["path"]
 
         # parse age and gender information from EDF header
         age, gender = _parse_age_and_gender_from_edf_header(file_path)
-        raw = mne.io.read_raw_edf(file_path, preload=preload, infer_types=True, verbose="error")
+        raw = mne.io.read_raw_edf(
+            file_path, preload=preload, infer_types=True, verbose="error"
+        )
         if rename_channels:
             TUH._rename_channels(raw)
         if set_montage:
@@ -363,15 +386,15 @@ class TUHAbnormal(TUH):
     """
 
     def __init__(
-            self,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = "pathological",
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            rename_channels: bool = True,
-            set_montage: bool = True,
-            n_jobs: int = 1,
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        rename_channels: bool = True,
+        set_montage: bool = True,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -406,7 +429,7 @@ class TUHAbnormal(TUH):
         #                     s004_2013_08_15/00000021_s004_t000.edf
         assert "abnormal" in tokens or "normal" in tokens, "No pathology labels found."
         assert (
-                "train" in tokens or "eval" in tokens
+            "train" in tokens or "eval" in tokens
         ), "No train or eval set information found."
         return {
             "version": tokens[-9],
@@ -487,16 +510,16 @@ class _TUHMock(TUH):
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     def __init__(
-            self,
-            mock_glob,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = None,
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            rename_channels: bool = True,
-            set_montage: bool = True,
-            n_jobs: int = 1,
+        self,
+        mock_glob,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        rename_channels: bool = True,
+        set_montage: bool = True,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
@@ -522,17 +545,17 @@ class _TUHAbnormalMock(TUHAbnormal):
         "braindecode.datasets.tuh._read_physician_report", return_value="simple_test"
     )
     def __init__(
-            self,
-            mock_glob,
-            mock_report,
-            path: str,
-            recording_ids: list[int] | None = None,
-            target_name: str | None = "pathological",
-            preload: bool = False,
-            add_physician_reports: bool = False,
-            rename_channels: bool = True,
-            set_montage: bool = True,
-            n_jobs: int = 1,
+        self,
+        mock_glob,
+        mock_report,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        rename_channels: bool = True,
+        set_montage: bool = True,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
