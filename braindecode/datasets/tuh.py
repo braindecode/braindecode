@@ -383,6 +383,12 @@ class TUHAbnormal(TUH):
     add_physician_reports: bool
         If True, the physician reports will be read from disk and added to the
         description.
+    rename_channels: bool
+        If True, rename the EEG channels to the standard 10-05 system.
+    set_montage: bool
+        If True, set the montage to the standard 10-05 system.
+    n_jobs: int
+        Number of jobs to be used to read files in parallel.
     """
 
     def __init__(
