@@ -134,6 +134,21 @@ def test_np_to_th_requires_grad():
     assert tensor.requires_grad is True
 
 
+@pytest.mark.skipif(not torch.cuda.is_available(),
+                    reason="Requires CUDA support")
+def test_np_to_th_pin_memory():
+    # Create a numpy array
+    data = np.array([1, 2, 3])
+
+    # Convert the numpy array to a tensor with pin_memory=True
+    tensor = np_to_th(data, pin_memory=True)
+    # Check if the tensor is pinned in memory
+    assert tensor.is_pinned() is True
+    # Convert the numpy array to a tensor with pin_memory=False
+    tensor = np_to_th(data, pin_memory=False)
+    # Check if the tensor is not pinned in memory
+    assert tensor.is_pinned() is False
+
 def test_np_to_th_requires_grad_unsupported_dtype():
     # Attempt to set requires_grad on an unsupported dtype (integers)
     data = np.array([1, 2, 3])
