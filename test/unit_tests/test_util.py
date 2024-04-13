@@ -1,5 +1,5 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
-#
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 # License: BSD-3
 
 import os
@@ -12,6 +12,7 @@ import pytest
 import torch
 from sklearn.utils import check_random_state
 from numpy.testing import assert_array_equal, assert_allclose
+
 
 from braindecode.util import _cov_and_var_to_corr, _cov_to_corr, \
     create_mne_dummy_raw, \
@@ -32,7 +33,7 @@ def test_create_mne_dummy_raw(tmp_path):
     assert os.path.isfile(fnames["fif"])
     assert os.path.isfile(fnames["hdf5"])
 
-    raw = mne.io.read_raw_fif(fnames["fif"], preload=False, verbose=None)
+    _ = mne.io.read_raw_fif(fnames["fif"], preload=False, verbose=None)
     with h5py.File(fnames["hdf5"], "r") as hf:
         _ = np.array(hf["fake_raw"])
 
@@ -80,7 +81,7 @@ def test_th_to_np_data_preservation():
         np_array = th_to_np(tensor)
         assert np_array.dtype == tensor.numpy().dtype
         # Corrected attribute access
-        assert assert_array_equal(np_array, tensor.numpy())
+        assert_array_equal(np_array, tensor.numpy())
 
 
 def test_th_to_np_on_cpu():
@@ -91,7 +92,7 @@ def test_th_to_np_on_cpu():
     assert isinstance(np_array, np.ndarray)
     assert np_array.dtype == cpu_tensor.numpy().dtype
     # Correct way to check dtype
-    assert assert_array_equal(np_array, cpu_tensor.numpy())
+    assert_array_equal(np_array, cpu_tensor.numpy())
 
 
 def test_cov_basic():
@@ -100,7 +101,7 @@ def test_cov_basic():
     b = np.array([[1, 2, 3], [4, 5, 6]])
     expected_cov = np.array([[1, 1], [1, 1]])  # Calculated expected covariance
     computed_cov = cov(a, b)
-    assert assert_allclose(computed_cov, expected_cov, rtol=1e-5)
+    assert_allclose(computed_cov, expected_cov, rtol=1e-5)
 
 
 def test_cov_dimension_mismatch():
@@ -116,7 +117,7 @@ def test_np_to_th_basic_conversion():
     data = [1, 2, 3]
     tensor = np_to_th(data)
     assert torch.is_tensor(tensor)
-    assert assert_array_equal(tensor.numpy(), np.array(data))
+    assert_array_equal(tensor.numpy(), np.array(data))
 
 
 def test_np_to_th_dtype_conversion():
@@ -168,7 +169,7 @@ def test_cov_and_var_to_corr_zero_variance():
     # Expected correlation matrix
     expected_corr = np.array([[np.inf, np.nan],
                                [0, np.inf]])
-    assert assert_array_equal(calculated_corr, expected_corr)
+    assert_array_equal(calculated_corr, expected_corr)
 
 
 def test_cov_and_var_to_corr_single_element():
@@ -178,7 +179,7 @@ def test_cov_and_var_to_corr_single_element():
     var_b = np.array([1])
     expected_corr = np.array([[1]])
     calculated_corr = _cov_and_var_to_corr(this_cov, var_a, var_b)
-    assert assert_array_equal(calculated_corr, expected_corr)
+    assert_array_equal(calculated_corr, expected_corr)
 
 
 
@@ -204,7 +205,7 @@ def test_cov_to_corr_unbiased():
     calculated_corr = _cov_to_corr(this_cov, a, b)
 
     # Assert that the calculated correlation matches the expected correlation
-    assert assert_allclose(calculated_corr, expected_corr, rtol=1e-5)
+    assert_allclose(calculated_corr, expected_corr, rtol=1e-5)
 
 
 def test_balanced_batches_basic():
@@ -226,7 +227,7 @@ def test_balanced_batches_basic():
 
     # Check if all indices are unique and accounted for
     all_indices = np.concatenate(batches)
-    assert array_equal(np.sort(all_indices), np.arange(n_trials))
+    assert np.array_equal(np.sort(all_indices), np.arange(n_trials))
 
 
 def test_balanced_batches_with_batch_size():
@@ -257,5 +258,5 @@ def test_balanced_batches_shuffle():
                                                 batch_size=10)
 
     # Check that shuffling changes the order of indices
-    assert not array_equal(np.concatenate(batches_no_shuffle),
+    assert not np.array_equal(np.concatenate(batches_no_shuffle),
                               np.concatenate(batches_with_shuffle))
