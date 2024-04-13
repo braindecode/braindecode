@@ -478,7 +478,6 @@ def test_EEGRegressor_get_n_outputs(preds):
         [[0, 1, 2, 3, 4], [0, 1, 2, 3, 4]]),
         classes=None) == 5
 
-
 def test_EEGRegressor_predict_trials(Xy, preds):
     X, y = Xy
     # Initialize EEGRegressor
