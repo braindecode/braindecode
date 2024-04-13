@@ -12,6 +12,7 @@ pathological EEG recordings for predictive modeling. This dataset contains
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import glob
 import os
 import warnings
@@ -83,11 +84,11 @@ class NMT(BaseConcatDataset):
 
     def __init__(
         self,
-        path,
-        target_name="pathological",
-        recording_ids=None,
-        preload=False,
-        n_jobs=1,
+        path: str,
+        target_name: str = "pathological",
+        recording_ids: list[int] | None = None,
+        preload: bool = False,
+        n_jobs: int = 1,
     ):
         # If the path is not informed, we fetch the dataset from zenodo.
         if path is None:

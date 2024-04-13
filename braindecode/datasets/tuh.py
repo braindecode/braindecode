@@ -7,6 +7,7 @@ TUH Abnormal EEG Corpus.
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import re
 import os
 import glob
@@ -53,15 +54,15 @@ class TUH(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            path,
-            recording_ids=None,
-            target_name=None,
-            preload=False,
-            add_physician_reports=False,
-            rename_channels: bool = True,
-            set_montage: bool = True,
-            n_jobs=1,
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        rename_channels: bool = True,
+        set_montage: bool = True,
+        n_jobs: int = 1,
     ):
         if set_montage:
             assert rename_channels, "If set_montage is True, rename_channels must be True."
@@ -362,13 +363,13 @@ class TUHAbnormal(TUH):
     """
 
     def __init__(
-            self,
-            path,
-            recording_ids=None,
-            target_name="pathological",
-            preload=False,
-            add_physician_reports=False,
-            n_jobs=1,
+        self,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings(
@@ -482,14 +483,14 @@ class _TUHMock(TUH):
     @mock.patch("mne.io.read_raw_edf", new=_fake_raw)
     @mock.patch("braindecode.datasets.tuh._read_edf_header", new=_get_header)
     def __init__(
-            self,
-            mock_glob,
-            path,
-            recording_ids=None,
-            target_name=None,
-            preload=False,
-            add_physician_reports=False,
-            n_jobs=1,
+        self,
+        mock_glob,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = None,
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
@@ -513,15 +514,15 @@ class _TUHAbnormalMock(TUHAbnormal):
         "braindecode.datasets.tuh._read_physician_report", return_value="simple_test"
     )
     def __init__(
-            self,
-            mock_glob,
-            mock_report,
-            path,
-            recording_ids=None,
-            target_name="pathological",
-            preload=False,
-            add_physician_reports=False,
-            n_jobs=1,
+        self,
+        mock_glob,
+        mock_report,
+        path: str,
+        recording_ids: list[int] | None = None,
+        target_name: str | None = "pathological",
+        preload: bool = False,
+        add_physician_reports: bool = False,
+        n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot save date file")
