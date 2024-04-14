@@ -7,54 +7,69 @@ import pytest
 from datetime import datetime
 
 from braindecode.datasets.tuh import (
-    _parse_description_from_file_path, _create_description,
-    _sort_chronologically, TUHAbnormal, _TUHMock, _TUHAbnormalMock)
+    _parse_description_from_file_path,
+    _create_description,
+    _sort_chronologically,
+    TUHAbnormal,
+    _TUHMock,
+    _TUHAbnormalMock,
+)
 
 
 # Skip if OS is Windows
-@pytest.mark.skipif(platform.system() == 'Windows',
-                    reason="Not supported on Windows")  # TODO: Fix this
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Not supported on Windows"
+)  # TODO: Fix this
 def test_parse_from_tuh_file_path():
-    file_path = ("v1.2.0/edf/01_tcp_ar/000/00000021/"
-                 "s004_2013_08_15/00000021_s004_t000.edf")
+    file_path = (
+        "v1.2.0/edf/01_tcp_ar/000/00000021/" "s004_2013_08_15/00000021_s004_t000.edf"
+    )
     description = _parse_description_from_file_path(file_path)
     assert len(description) == 8
-    assert description['path'] == file_path
-    assert description['year'] == 2013
-    assert description['month'] == 8
-    assert description['day'] == 15
-    assert description['subject'] == 21
-    assert description['session'] == 4
-    assert description['segment'] == 0
-    assert description['version'] == 'v1.2.0'
+    assert description["path"] == file_path
+    assert description["year"] == 2013
+    assert description["month"] == 8
+    assert description["day"] == 15
+    assert description["subject"] == 21
+    assert description["session"] == 4
+    assert description["segment"] == 0
+    assert description["version"] == "v1.2.0"
 
 
 # Skip if OS is Windows
-@pytest.mark.skipif(platform.system() == 'Windows',
-                    reason="Not supported on Windows")  # TODO: Fix this
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Not supported on Windows"
+)  # TODO: Fix this
 def test_parse_from_tuh_abnormal_file_path():
-    file_path = ("v2.0.0/edf/eval/abnormal/01_tcp_ar/107/00010782/"
-                 "s002_2013_10_05/00010782_s002_t001.edf")
-    additional_description = (
-        TUHAbnormal._parse_additional_description_from_file_path(file_path))
+    file_path = (
+        "v2.0.0/edf/eval/abnormal/01_tcp_ar/107/00010782/"
+        "s002_2013_10_05/00010782_s002_t001.edf"
+    )
+    additional_description = TUHAbnormal._parse_additional_description_from_file_path(
+        file_path
+    )
     assert len(additional_description) == 3
-    assert additional_description['pathological']
-    assert not additional_description['train']
-    assert additional_description['version'] == 'v2.0.0'
+    assert additional_description["pathological"]
+    assert not additional_description["train"]
+    assert additional_description["version"] == "v2.0.0"
 
-    file_path = ("v2.0.0/edf/train/normal/01_tcp_ar/107/00010782/"
-                 "s002_2013_10_05/00010782_s002_t001.edf")
-    additional_description = (
-        TUHAbnormal._parse_additional_description_from_file_path(file_path))
+    file_path = (
+        "v2.0.0/edf/train/normal/01_tcp_ar/107/00010782/"
+        "s002_2013_10_05/00010782_s002_t001.edf"
+    )
+    additional_description = TUHAbnormal._parse_additional_description_from_file_path(
+        file_path
+    )
     assert len(additional_description) == 3
-    assert not additional_description['pathological']
-    assert additional_description['train']
-    assert additional_description['version'] == 'v2.0.0'
+    assert not additional_description["pathological"]
+    assert additional_description["train"]
+    assert additional_description["version"] == "v2.0.0"
 
 
 # Skip if OS is Windows
-@pytest.mark.skipif(platform.system() == 'Windows',
-                    reason="Not supported on Windows")  # TODO: Fix this
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Not supported on Windows"
+)  # TODO: Fix this
 def test_sort_chronologically():
     file_paths = [
         "v2.0.0/edf/train/normal/01_tcp_ar/108/00010832/s001_2013_10_03/"
@@ -111,20 +126,26 @@ def test_sort_chronologically():
 
 
 # Skip if OS is Windows
-@pytest.mark.skipif(platform.system() == 'Windows',
-                    reason="Not supported on Windows")  # TODO: Fix this
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Not supported on Windows"
+)  # TODO: Fix this
 def test_tuh():
     tuh = _TUHMock(
-        path='',
+        path="",
         n_jobs=1,  # required for test to work. mocking seems to fail otherwise
     )
     assert len(tuh.datasets) == 5
     assert tuh.description.shape == (5, 10)
     assert len(tuh) == 18000
     assert tuh.description.age.to_list() == [0, 53, 39, 37, 83]
-    assert tuh.description.gender.to_list() == ['M', 'F', 'M', 'M', 'F']
-    assert tuh.description.version.to_list() == ['v1.1.0', 'v1.1.0', 'v1.1.0',
-                                                 'v1.1.0', 'v1.2.0']
+    assert tuh.description.gender.to_list() == ["M", "F", "M", "M", "F"]
+    assert tuh.description.version.to_list() == [
+        "v1.1.0",
+        "v1.1.0",
+        "v1.1.0",
+        "v1.1.0",
+        "v1.2.0",
+    ]
     assert tuh.description.year.to_list() == [2003, 2014, 2014, 2015, 2016]
     assert tuh.description.month.to_list() == [2, 9, 12, 12, 1]
     assert tuh.description.day.to_list() == [5, 30, 14, 30, 15]
@@ -136,44 +157,52 @@ def test_tuh():
     assert y is None
 
     for ds, (_, desc) in zip(tuh.datasets, tuh.description.iterrows()):
-        assert isinstance(ds.raw.info['meas_date'], datetime)
-        assert ds.raw.info['meas_date'].year == desc['year']
-        assert ds.raw.info['meas_date'].month == desc['month']
-        assert ds.raw.info['meas_date'].day == desc['day']
+        assert isinstance(ds.raw.info["meas_date"], datetime)
+        assert ds.raw.info["meas_date"].year == desc["year"]
+        assert ds.raw.info["meas_date"].month == desc["month"]
+        assert ds.raw.info["meas_date"].day == desc["day"]
 
     tuh = _TUHMock(
-        path='',
-        target_name='gender',
+        path="",
+        target_name="gender",
         recording_ids=[1, 4],
         n_jobs=1,
     )
     assert len(tuh.datasets) == 2
     x, y = tuh[0]
-    assert y == 'F'
+    assert y == "F"
     x, y = tuh[-1]
-    assert y == 'F'
+    assert y == "F"
 
 
 # Skip if OS is Windows
-@pytest.mark.skipif(platform.system() == 'Windows',
-                    reason="Not supported on Windows")  # TODO: Fix this
+@pytest.mark.skipif(
+    platform.system() == "Windows", reason="Not supported on Windows"
+)  # TODO: Fix this
 def test_tuh_abnormal():
     tuh_ab = _TUHAbnormalMock(
-        path='',
+        path="",
         add_physician_reports=True,
         n_jobs=1,  # required for test to work. mocking seems to fail otherwise
     )
     assert len(tuh_ab.datasets) == 6
     assert tuh_ab.description.shape == (6, 13)
     assert tuh_ab.description.version.to_list() == [
-        'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0', 'v2.0.0']
-    assert tuh_ab.description.pathological.to_list() == [True, False, True,
-                                                         False, True, False]
-    assert tuh_ab.description.train.to_list() == [True, True, True, True,
-                                                  False, False]
+        "v2.0.0",
+        "v2.0.0",
+        "v2.0.0",
+        "v2.0.0",
+        "v2.0.0",
+    ]
+    assert tuh_ab.description.pathological.to_list() == [True, False, True, False, True]
+    assert tuh_ab.description.train.to_list() == [True, True, True, True, False]
     assert tuh_ab.description.report.to_list() == [
-        'simple_test', 'simple_test', 'simple_test', 'simple_test',
-        'simple_test', 'simple_test']
+        "simple_test",
+        "simple_test",
+        "simple_test",
+        "simple_test",
+        "simple_test",
+    ]
     x, y = tuh_ab[0]
     assert x.shape == (21, 1)
     assert y
@@ -181,19 +210,19 @@ def test_tuh_abnormal():
     assert y is False
 
     for ds, (_, desc) in zip(tuh_ab.datasets, tuh_ab.description.iterrows()):
-        assert isinstance(ds.raw.info['meas_date'], datetime)
-        assert ds.raw.info['meas_date'].year == desc['year']
-        assert ds.raw.info['meas_date'].month == desc['month']
-        assert ds.raw.info['meas_date'].day == desc['day']
+        assert isinstance(ds.raw.info["meas_date"], datetime)
+        assert ds.raw.info["meas_date"].year == desc["year"]
+        assert ds.raw.info["meas_date"].month == desc["month"]
+        assert ds.raw.info["meas_date"].day == desc["day"]
 
     tuh_ab = _TUHAbnormalMock(
-        path='',
-        target_name='age',
+        path="",
+        target_name="age",
         n_jobs=1,
     )
     x, y = tuh_ab[-1]
     assert y == 43
     for ds in tuh_ab.datasets:
-        ds.target_name = 'gender'
+        ds.target_name = "gender"
     x, y = tuh_ab[0]
-    assert y == 'M'
+    assert y == "M"

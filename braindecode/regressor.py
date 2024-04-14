@@ -58,19 +58,28 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
     """  # noqa: E501
     __doc__ = update_estimator_docstring(NeuralNetRegressor, doc)
 
-    def __init__(self, module, *args, cropped=False, callbacks=None,
-                 iterator_train__shuffle=True,
-                 iterator_train__drop_last=True,
-                 aggregate_predictions=True, **kwargs):
+    def __init__(
+        self,
+        module,
+        *args,
+        cropped=False,
+        callbacks=None,
+        iterator_train__shuffle=True,
+        iterator_train__drop_last=True,
+        aggregate_predictions=True,
+        **kwargs,
+    ):
         self.cropped = cropped
         self.aggregate_predictions = aggregate_predictions
         self._last_window_inds_ = None
-        super().__init__(module,
-                         *args,
-                         callbacks=callbacks,
-                         iterator_train__shuffle=iterator_train__shuffle,
-                         iterator_train__drop_last=iterator_train__drop_last,
-                         **kwargs)
+        super().__init__(
+            module,
+            *args,
+            callbacks=callbacks,
+            iterator_train__shuffle=iterator_train__shuffle,
+            iterator_train__drop_last=iterator_train__drop_last,
+            **kwargs,
+        )
 
     def get_iterator(self, dataset, training=False, drop_index=True):
         iterator = super().get_iterator(dataset, training=training)
@@ -155,7 +164,9 @@ class EEGRegressor(_EEGNeuralNet, NeuralNetRegressor):
             warnings.warn(
                 "This method was designed to predict trials in cropped mode. "
                 "Calling it when cropped is False will give the same result as "
-                "'.predict'.", UserWarning)
+                "'.predict'.",
+                UserWarning,
+            )
             preds = self.predict(X)
             if return_targets:
                 return preds, np.concatenate([X[i][1] for i in range(len(X))])

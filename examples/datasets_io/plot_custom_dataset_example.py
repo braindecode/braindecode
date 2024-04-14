@@ -25,11 +25,14 @@ event_codes = [5, 6, 9, 10, 13, 14]
 # This will download the files if you don't have them yet,
 # and then return the paths to the files.
 physionet_paths = mne.datasets.eegbci.load_data(
-    subject_id, event_codes, update_path=False)
+    subject_id, event_codes, update_path=False
+)
 
 # Load each of the files
-parts = [mne.io.read_raw_edf(path, preload=True, stim_channel='auto')
-         for path in physionet_paths]
+parts = [
+    mne.io.read_raw_edf(path, preload=True, stim_channel="auto")
+    for path in physionet_paths
+]
 
 ###############################################################################
 # We take the required data, targets and additional information sampling
@@ -43,7 +46,11 @@ ch_names = parts[0].info["ch_names"]
 ###############################################################################
 # Convert to data format compatible with skorch and braindecode:
 windows_dataset = create_from_X_y(
-    X, y, drop_last_window=False, sfreq=sfreq, ch_names=ch_names,
+    X,
+    y,
+    drop_last_window=False,
+    sfreq=sfreq,
+    ch_names=ch_names,
     window_stride_samples=500,
     window_size_samples=500,
 )

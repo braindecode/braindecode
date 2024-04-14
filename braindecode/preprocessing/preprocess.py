@@ -1,5 +1,4 @@
-"""Preprocessors that work on Raw or Epochs objects.
-"""
+"""Preprocessors that work on Raw or Epochs objects."""
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Lukas Gemein <l.gemein@gmail.com>
@@ -18,10 +17,16 @@ import pandas as pd
 from mne import create_info
 from joblib import Parallel, delayed
 
-from braindecode.datasets.base import (BaseConcatDataset, BaseDataset, WindowsDataset,
-                                       EEGWindowsDataset)
+from braindecode.datasets.base import (
+    BaseConcatDataset,
+    BaseDataset,
+    WindowsDataset,
+    EEGWindowsDataset,
+)
 from braindecode.datautil.serialization import (
-    load_concat_dataset, _check_save_dir_empty)
+    load_concat_dataset,
+    _check_save_dir_empty,
+)
 
 
 class Preprocessor(object):
@@ -51,15 +56,19 @@ class Preprocessor(object):
     """
 
     def __init__(self, fn, *, apply_on_array=True, **kwargs):
-        if hasattr(fn, '__name__') and fn.__name__ == '<lambda>':
-            warn('Preprocessing choices with lambda functions cannot be saved.')
+        if hasattr(fn, "__name__") and fn.__name__ == "<lambda>":
+            warn("Preprocessing choices with lambda functions cannot be saved.")
         if callable(fn) and apply_on_array:
-            channel_wise = kwargs.pop('channel_wise', False)
-            picks = kwargs.pop('picks', None)
-            n_jobs = kwargs.pop('n_jobs', 1)
-            kwargs = dict(fun=partial(fn, **kwargs), channel_wise=channel_wise,
-                          picks=picks, n_jobs=n_jobs)
-            fn = 'apply_function'
+            channel_wise = kwargs.pop("channel_wise", False)
+            picks = kwargs.pop("picks", None)
+            n_jobs = kwargs.pop("n_jobs", 1)
+            kwargs = dict(
+                fun=partial(fn, **kwargs),
+                channel_wise=channel_wise,
+                picks=picks,
+                n_jobs=n_jobs,
+            )
+            fn = "apply_function"
         self.fn = fn
         self.kwargs = kwargs
 
@@ -80,13 +89,11 @@ class Preprocessor(object):
             self.fn(raw_or_epochs, **self.kwargs)
         else:
             if not hasattr(raw_or_epochs, self.fn):
-                raise AttributeError(
-                    f'MNE object does not have a {self.fn} method.')
+                raise AttributeError(f"MNE object does not have a {self.fn} method.")
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
-def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
-               n_jobs=None):
+def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=None):
     """Apply preprocessors to a concat dataset.
 
     Parameters
@@ -119,24 +126,28 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False,
         _check_save_dir_empty(save_dir)
 
     if not isinstance(preprocessors, Iterable):
-        raise ValueError(
-            'preprocessors must be a list of Preprocessor objects.')
+        raise ValueError("preprocessors must be a list of Preprocessor objects.")
     for elem in preprocessors:
-        assert hasattr(elem, 'apply'), (
-            'Preprocessor object needs an `apply` method.')
+        assert hasattr(elem, "apply"), "Preprocessor object needs an `apply` method."
 
     parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
     list_of_ds = Parallel(n_jobs=n_jobs)(
         delayed(_preprocess)(
-            ds, i, preprocessors, save_dir, overwrite,
-            copy_data=(parallel_processing and (save_dir is None)))
+            ds,
+            i,
+            preprocessors,
+            save_dir,
+            overwrite,
+            copy_data=(parallel_processing and (save_dir is None)),
+        )
         for i, ds in enumerate(concat_ds.datasets)
     )
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
         concat_ds_reloaded = load_concat_dataset(
-            save_dir, preload=False, target_name=None)
+            save_dir, preload=False, target_name=None
+        )
         _replace_inplace(concat_ds, concat_ds_reloaded)
     else:
         if parallel_processing:  # joblib made copies
@@ -160,18 +171,21 @@ def _replace_inplace(concat_ds, new_concat_ds):
         Dataset to use to modify ``concat_ds``.
     """
     if len(concat_ds.datasets) != len(new_concat_ds.datasets):
-        raise ValueError('Both inputs must have the same length.')
+        raise ValueError("Both inputs must have the same length.")
     for i in range(len(new_concat_ds.datasets)):
         concat_ds.datasets[i] = new_concat_ds.datasets[i]
 
-    concat_kind = 'raw' if hasattr(concat_ds.datasets[0], 'raw') else 'window'
-    preproc_kwargs_attr = concat_kind + '_preproc_kwargs'
+    concat_kind = "raw" if hasattr(concat_ds.datasets[0], "raw") else "window"
+    preproc_kwargs_attr = concat_kind + "_preproc_kwargs"
     if hasattr(new_concat_ds, preproc_kwargs_attr):
-        setattr(concat_ds, preproc_kwargs_attr,
-                getattr(new_concat_ds, preproc_kwargs_attr))
+        setattr(
+            concat_ds, preproc_kwargs_attr, getattr(new_concat_ds, preproc_kwargs_attr)
+        )
 
 
-def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False, copy_data=False):
+def _preprocess(
+    ds, ds_index, preprocessors, save_dir=None, overwrite=False, copy_data=False
+):
     """Apply preprocessor(s) to Raw or Epochs object.
 
     Parameters
@@ -195,19 +209,20 @@ def _preprocess(ds, ds_index, preprocessors, save_dir=None, overwrite=False, cop
     def _preprocess_raw_or_epochs(raw_or_epochs, preprocessors):
         # Copying the data necessary in some scenarios for parallel processing
         # to work when data is in memory (else error about _data not being writeable)
-        if (raw_or_epochs.preload and copy_data):
+        if raw_or_epochs.preload and copy_data:
             raw_or_epochs._data = raw_or_epochs._data.copy()
         for preproc in preprocessors:
             preproc.apply(raw_or_epochs)
 
-    if hasattr(ds, 'raw'):
+    if hasattr(ds, "raw"):
         _preprocess_raw_or_epochs(ds.raw, preprocessors)
-    elif hasattr(ds, 'windows'):
+    elif hasattr(ds, "windows"):
         _preprocess_raw_or_epochs(ds.windows, preprocessors)
     else:
         raise ValueError(
-            'Can only preprocess concatenation of BaseDataset or '
-            'WindowsDataset, with either a `raw` or `windows` attribute.')
+            "Can only preprocess concatenation of BaseDataset or "
+            "WindowsDataset, with either a `raw` or `windows` attribute."
+        )
 
     # Store preprocessing keyword arguments in the dataset
     _set_preproc_kwargs(ds, preprocessors)
@@ -231,9 +246,9 @@ def _get_preproc_kwargs(preprocessors):
             func_name = p.fn.__name__
         # if apply_on_array=True
         else:
-            if 'fun' in p.fn:
-                func_name = p.kwargs['fun'].func.__name__
-                func_kwargs = p.kwargs['fun'].keywords
+            if "fun" in p.fn:
+                func_name = p.kwargs["fun"].func.__name__
+                func_kwargs = p.kwargs["fun"].keywords
         preproc_kwargs.append((func_name, func_kwargs))
     return preproc_kwargs
 
@@ -250,19 +265,18 @@ def _set_preproc_kwargs(ds, preprocessors):
     """
     preproc_kwargs = _get_preproc_kwargs(preprocessors)
     if isinstance(ds, WindowsDataset):
-        kind = 'window'
+        kind = "window"
     if isinstance(ds, EEGWindowsDataset):
-        kind = 'raw'
+        kind = "raw"
     elif isinstance(ds, BaseDataset):
-        kind = 'raw'
+        kind = "raw"
     else:
-        raise TypeError(
-            f'ds must be a BaseDataset or a WindowsDataset, got {type(ds)}')
-    setattr(ds, kind + '_preproc_kwargs', preproc_kwargs)
+        raise TypeError(f"ds must be a BaseDataset or a WindowsDataset, got {type(ds)}")
+    setattr(ds, kind + "_preproc_kwargs", preproc_kwargs)
 
 
 def exponential_moving_standardize(
-        data, factor_new=0.001, init_block_size=None, eps=1e-4
+    data, factor_new=0.001, init_block_size=None, eps=1e-4
 ):
     r"""Perform exponential moving standardization.
 
@@ -300,13 +314,11 @@ def exponential_moving_standardize(
     standardized = np.array(standardized)
     if init_block_size is not None:
         i_time_axis = 0
-        init_mean = np.mean(
-            data[0:init_block_size], axis=i_time_axis, keepdims=True
+        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
+        init_std = np.std(data[0:init_block_size], axis=i_time_axis, keepdims=True)
+        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(
+            eps, init_std
         )
-        init_std = np.std(
-            data[0:init_block_size], axis=i_time_axis, keepdims=True
-        )
-        init_block_standardized = (data[0:init_block_size] - init_mean) / np.maximum(eps, init_std)
         standardized[0:init_block_size] = init_block_standardized
     return standardized.T
 
@@ -339,15 +351,18 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
     demeaned = np.array(demeaned)
     if init_block_size is not None:
         i_time_axis = 0
-        init_mean = np.mean(
-            data[0:init_block_size], axis=i_time_axis, keepdims=True
-        )
+        init_mean = np.mean(data[0:init_block_size], axis=i_time_axis, keepdims=True)
         demeaned[0:init_block_size] = data[0:init_block_size] - init_mean
     return demeaned.T
 
 
-def filterbank(raw, frequency_bands, drop_original_signals=True,
-               order_by_frequency_band=False, **mne_filter_kwargs):
+def filterbank(
+    raw,
+    frequency_bands,
+    drop_original_signals=True,
+    order_by_frequency_band=False,
+    **mne_filter_kwargs,
+):
     """Applies multiple bandpass filters to the signals in raw. The raw will be
     modified in-place and number of channels in raw will be updated to
     len(frequency_bands) * len(raw.ch_names) (-len(raw.ch_names) if
@@ -371,15 +386,18 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         Please refer to mne for a detailed explanation.
     """
     if not frequency_bands:
-        raise ValueError(f"Expected at least one frequency band, got"
-                         f" {frequency_bands}")
+        raise ValueError(
+            f"Expected at least one frequency band, got" f" {frequency_bands}"
+        )
     if not all([len(ch_name) < 8 for ch_name in raw.ch_names]):
-        warn("Try to use shorter channel names, since frequency band "
-             "annotation requires an estimated 4-8 chars depending on the "
-             "frequency ranges. Will truncate to 15 chars (mne max).")
+        warn(
+            "Try to use shorter channel names, since frequency band "
+            "annotation requires an estimated 4-8 chars depending on the "
+            "frequency ranges. Will truncate to 15 chars (mne max)."
+        )
     original_ch_names = raw.ch_names
     all_filtered = []
-    for (l_freq, h_freq) in frequency_bands:
+    for l_freq, h_freq in frequency_bands:
         filtered = raw.copy()
         filtered.filter(l_freq=l_freq, h_freq=h_freq, **mne_filter_kwargs)
         # mne automatically changes the highpass/lowpass info values
@@ -389,7 +407,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
 
         ch_names = filtered.info.ch_names
         ch_types = filtered.info.get_channel_types()
-        sampling_freq = filtered.info['sfreq']
+        sampling_freq = filtered.info["sfreq"]
 
         info = create_info(ch_names=ch_names, ch_types=ch_types, sfreq=sampling_freq)
 
@@ -397,9 +415,12 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
 
         # add frequency band annotation to channel names
         # truncate to a max of 15 characters, since mne does not allow for more
-        filtered.rename_channels({
-            old_name: (old_name + f"_{l_freq}-{h_freq}")[-15:]
-            for old_name in filtered.ch_names})
+        filtered.rename_channels(
+            {
+                old_name: (old_name + f"_{l_freq}-{h_freq}")[-15:]
+                for old_name in filtered.ch_names
+            }
+        )
         all_filtered.append(filtered)
     raw.add_channels(all_filtered)
     if not order_by_frequency_band:
@@ -408,7 +429,7 @@ def filterbank(raw, frequency_bands, drop_original_signals=True,
         # the original channels
         chs_by_freq_band = []
         for i in range(len(original_ch_names)):
-            chs_by_freq_band.extend(raw.ch_names[i::len(original_ch_names)])
+            chs_by_freq_band.extend(raw.ch_names[i :: len(original_ch_names)])
         raw.reorder_channels(chs_by_freq_band)
     if drop_original_signals:
         raw.drop_channels(original_ch_names)
