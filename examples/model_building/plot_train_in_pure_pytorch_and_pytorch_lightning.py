@@ -196,8 +196,8 @@ if cuda:
 #
 
 splitted = windows_dataset.split("session")
-train_set = splitted['0train']  # Session train
-test_set = splitted['1test']  # Session evaluation
+train_set = splitted["0train"]  # Session train
+test_set = splitted["1test"]  # Session evaluation
 
 ######################################################################
 # Option 1: Pure PyTorch training loop
@@ -246,14 +246,21 @@ from tqdm import tqdm
 
 
 def train_one_epoch(
-        dataloader: DataLoader, model: Module, loss_fn, optimizer,
-        scheduler: LRScheduler, epoch: int, device, print_batch_stats=True
+    dataloader: DataLoader,
+    model: Module,
+    loss_fn,
+    optimizer,
+    scheduler: LRScheduler,
+    epoch: int,
+    device,
+    print_batch_stats=True,
 ):
     model.train()  # Set the model to training mode
     train_loss, correct = 0, 0
 
-    progress_bar = tqdm(enumerate(dataloader), total=len(dataloader),
-                        disable=not print_batch_stats)
+    progress_bar = tqdm(
+        enumerate(dataloader), total=len(dataloader), disable=not print_batch_stats
+    )
 
     for batch_idx, (X, y, _) in progress_bar:
         X, y = X.to(device), y.to(device)
@@ -280,15 +287,14 @@ def train_one_epoch(
     correct /= len(dataloader.dataset)
     return train_loss / len(dataloader), correct
 
+
 ######################################################################
 # Very similarly, the evaluation function loops over the entire dataloader
 # and accumulate the metrics, but doesn't update the model weights.
 
 
 @torch.no_grad()
-def test_model(
-    dataloader: DataLoader, model: Module, loss_fn, print_batch_stats=True
-):
+def test_model(dataloader: DataLoader, model: Module, loss_fn, print_batch_stats=True):
     size = len(dataloader.dataset)
     n_batches = len(dataloader)
     model.eval()  # Switch to evaluation mode
@@ -309,24 +315,19 @@ def test_model(
 
         if print_batch_stats:
             progress_bar.set_description(
-                f"Batch {batch_idx + 1}/{len(dataloader)}, "
-                f"Loss: {batch_loss:.6f}"
+                f"Batch {batch_idx + 1}/{len(dataloader)}, " f"Loss: {batch_loss:.6f}"
             )
 
     test_loss /= n_batches
     correct /= size
 
-    print(
-        f"Test Accuracy: {100 * correct:.1f}%, Test Loss: {test_loss:.6f}\n"
-    )
+    print(f"Test Accuracy: {100 * correct:.1f}%, Test Loss: {test_loss:.6f}\n")
     return test_loss, correct
 
 
 # Define the optimization
-optimizer = torch.optim.AdamW(model.parameters(),
-                              lr=lr, weight_decay=weight_decay)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
-                                                       T_max=n_epochs - 1)
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs - 1)
 # Define the loss function
 # We used the NNLoss function, which expects log probabilities as input
 # (which is the case for our model output)
@@ -341,7 +342,13 @@ for epoch in range(1, n_epochs + 1):
     print(f"Epoch {epoch}/{n_epochs}: ", end="")
 
     train_loss, train_accuracy = train_one_epoch(
-        train_loader, model, loss_fn, optimizer, scheduler, epoch, device,
+        train_loader,
+        model,
+        loss_fn,
+        optimizer,
+        scheduler,
+        epoch,
+        device,
     )
 
     test_loss, test_accuracy = test_model(test_loader, model, loss_fn)
@@ -392,10 +399,12 @@ class LitModule(L.LightningModule):
         return metrics
 
     def configure_optimizers(self):
-        optimizer = torch.optim.AdamW(model.parameters(), lr=lr,
-                                      weight_decay=weight_decay)
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
-                                                               T_max=n_epochs - 1)
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=lr, weight_decay=weight_decay
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=n_epochs - 1
+        )
         return [optimizer], [scheduler]
 
 

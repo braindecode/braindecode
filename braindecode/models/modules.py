@@ -358,13 +358,11 @@ class CombinedConv(nn.Module):
             if self.bias_spat:
                 bias += self.conv_spat.bias
 
-        return F.conv2d(
-            x, weight=combined_weight, bias=bias, stride=(1, 1)
-        )
+        return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
 
 
 class MLP(nn.Sequential):
-    """ Multilayer Perceptron (MLP) with GELU activation and optional dropout.
+    """Multilayer Perceptron (MLP) with GELU activation and optional dropout.
 
     Also known as fully connected feedforward network, an MLP is a sequence of
     non-linear parametric functions
@@ -397,15 +395,14 @@ class MLP(nn.Sequential):
     """
 
     def __init__(
-            self,
-            in_features: int,
-            hidden_features=None,
-            out_features=None,
-            activation=nn.GELU,
-            drop=0.0,
-            normalize=False
+        self,
+        in_features: int,
+        hidden_features=None,
+        out_features=None,
+        activation=nn.GELU,
+        drop=0.0,
+        normalize=False,
     ):
-
         self.normalization = nn.LayerNorm if normalize else lambda: None
         self.in_features = in_features
         self.out_features = out_features or self.in_features
@@ -421,11 +418,13 @@ class MLP(nn.Sequential):
             (self.in_features, *self.hidden_features),
             (*self.hidden_features, self.out_features),
         ):
-            layers.extend([
-                nn.Linear(in_features=before, out_features=after),
-                self.activation(),
-                self.normalization(),
-            ])
+            layers.extend(
+                [
+                    nn.Linear(in_features=before, out_features=after),
+                    self.activation(),
+                    self.normalization(),
+                ]
+            )
 
         layers = layers[:-2]
         layers.append(nn.Dropout(p=drop))
@@ -439,26 +438,26 @@ class MLP(nn.Sequential):
 class DropPath(nn.Module):
     """Drop paths, also known as Stochastic Depth, per sample.
 
-    When applied in main path of residual blocks.
+        When applied in main path of residual blocks.
 
-    Parameters:
-    -----------
-    drop_prob: float (default=None)
-        Drop path probability (should be in range 0-1).
+        Parameters:
+        -----------
+        drop_prob: float (default=None)
+            Drop path probability (should be in range 0-1).
 
-    Notes
-    -----
-    Code copied and modified from VISSL facebookresearch:
-https://github.com/facebookresearch/vissl/blob/0b5d6a94437bc00baed112ca90c9d78c6ccfbafb/vissl/models/model_helpers.py#L676
-    All rights reserved.
+        Notes
+        -----
+        Code copied and modified from VISSL facebookresearch:
+    https://github.com/facebookresearch/vissl/blob/0b5d6a94437bc00baed112ca90c9d78c6ccfbafb/vissl/models/model_helpers.py#L676
+        All rights reserved.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
     """
 
     def __init__(self, drop_prob=None):
@@ -569,4 +568,6 @@ class Resample(torch.nn.Module):
         """
         if self.orig_freq == self.new_freq:
             return waveform
-        return _apply_sinc_resample_kernel(waveform, self.orig_freq, self.new_freq, self.gcd, self.kernel, self.width)
+        return _apply_sinc_resample_kernel(
+            waveform, self.orig_freq, self.new_freq, self.gcd, self.kernel, self.width
+        )

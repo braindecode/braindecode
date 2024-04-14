@@ -192,8 +192,8 @@ windows_dataset = create_windows_from_events(
 #
 
 splitted = windows_dataset.split("session")
-train_set = splitted['0train']  # Session train
-test_set = splitted['1test']  # Session evaluation
+train_set = splitted["0train"]  # Session train
+test_set = splitted["1test"]  # Session evaluation
 
 
 ######################################################################
@@ -312,24 +312,32 @@ def plot_simple_train_test(ax, all_dataset, train_set, test_set):
     """Create a sample plot for training-testing split."""
     bd_cmap = ["#3A6190", "#683E00", "#DDF2FF", "#2196F3"]
 
-    ax.barh("Original\ndataset", len(all_dataset), left=0,
-            height=0.5, color=bd_cmap[0])
-    ax.barh("Train-Test\nsplit", len(train_set), left=0,
-            height=0.5, color=bd_cmap[1])
-    ax.barh("Train-Test\nsplit", len(test_set), left=len(train_set),
-            height=0.5, color=bd_cmap[2])
+    ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
+    ax.barh("Train-Test\nsplit", len(train_set), left=0, height=0.5, color=bd_cmap[1])
+    ax.barh(
+        "Train-Test\nsplit",
+        len(test_set),
+        left=len(train_set),
+        height=0.5,
+        color=bd_cmap[2],
+    )
 
     ax.invert_yaxis()
     ax.set(xlabel="Number of samples.", title="Train-Test split")
-    ax.legend(["Original set", "Training set", "Testing set"], loc='lower center',
-              ncols=4, bbox_to_anchor=(0.5, 0.5))
+    ax.legend(
+        ["Original set", "Training set", "Testing set"],
+        loc="lower center",
+        ncols=4,
+        bbox_to_anchor=(0.5, 0.5),
+    )
     ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
     return ax
 
 
 fig, ax = plt.subplots(figsize=(12, 8))
-plot_simple_train_test(ax=ax, all_dataset=windows_dataset,
-                       train_set=train_set, test_set=test_set)
+plot_simple_train_test(
+    ax=ax, all_dataset=windows_dataset, train_set=train_set, test_set=test_set
+)
 
 ######################################################################
 # Option 2: Train-Val-Test Split
@@ -412,25 +420,47 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
     """Create a sample plot for training, validation, testing."""
 
-    bd_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF", ]
+    bd_cmap = [
+        "#3A6190",
+        "#683E00",
+        "#2196F3",
+        "#DDF2FF",
+    ]
 
     n_train, n_val, n_test = len(train_subset), len(val_subset), len(test_set)
     ax.barh("Original\ndataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
     ax.barh("Train-Test-Valid\nsplit", n_train, left=0, height=0.5, color=bd_cmap[1])
-    ax.barh("Train-Test-Valid\nsplit", n_val, left=n_train, height=0.5, color=bd_cmap[2])
-    ax.barh("Train-Test-Valid\nsplit", n_test, left=n_train + n_val, height=0.5, color=bd_cmap[3])
+    ax.barh(
+        "Train-Test-Valid\nsplit", n_val, left=n_train, height=0.5, color=bd_cmap[2]
+    )
+    ax.barh(
+        "Train-Test-Valid\nsplit",
+        n_test,
+        left=n_train + n_val,
+        height=0.5,
+        color=bd_cmap[3],
+    )
 
     ax.invert_yaxis()
     ax.set(xlabel="Number of samples.", title="Train-Test-Valid split")
-    ax.legend(["Original set", "Training set", "Validation set", "Testing set"],
-              loc="lower center", ncols=2, bbox_to_anchor=(0.5, 0.4))
+    ax.legend(
+        ["Original set", "Training set", "Validation set", "Testing set"],
+        loc="lower center",
+        ncols=2,
+        bbox_to_anchor=(0.5, 0.4),
+    )
     ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
     return ax
 
 
 fig, ax = plt.subplots(figsize=(12, 5))
-plot_train_valid_test(ax=ax, all_dataset=windows_dataset,
-                      train_subset=train_subset, val_subset=val_subset, test_set=test_set,)
+plot_train_valid_test(
+    ax=ax,
+    all_dataset=windows_dataset,
+    train_subset=train_subset,
+    val_subset=val_subset,
+    test_set=test_set,
+)
 
 ######################################################################
 # Option 3: k-Fold Cross Validation
@@ -508,7 +538,12 @@ print(
 def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
     """Create a sample plot for training, validation, testing."""
 
-    bd_cmap = ["#3A6190", "#683E00", "#2196F3", "#DDF2FF", ]
+    bd_cmap = [
+        "#3A6190",
+        "#683E00",
+        "#2196F3",
+        "#DDF2FF",
+    ]
 
     ax.barh("Original\nDataset", len(all_dataset), left=0, height=0.5, color=bd_cmap[0])
 
@@ -517,24 +552,54 @@ def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
         n_train, n_val, n_test = len(tr_idx), len(val_idx), len(test_set)
         n_train2 = n_train + n_val - max(val_idx) - 1
         ax.barh("cv" + str(ii + 1), min(val_idx), left=0, height=0.5, color=bd_cmap[1])
-        ax.barh("cv" + str(ii + 1), n_val, left=min(val_idx), height=0.5, color=bd_cmap[2])
-        ax.barh("cv" + str(ii + 1), n_train2, left=max(val_idx) + 1, height=0.5, color=bd_cmap[1])
-        ax.barh("cv" + str(ii + 1), n_test, left=n_train + n_val, height=0.5, color=bd_cmap[3])
+        ax.barh(
+            "cv" + str(ii + 1), n_val, left=min(val_idx), height=0.5, color=bd_cmap[2]
+        )
+        ax.barh(
+            "cv" + str(ii + 1),
+            n_train2,
+            left=max(val_idx) + 1,
+            height=0.5,
+            color=bd_cmap[1],
+        )
+        ax.barh(
+            "cv" + str(ii + 1),
+            n_test,
+            left=n_train + n_val,
+            height=0.5,
+            color=bd_cmap[3],
+        )
 
     ax.invert_yaxis()
     ax.set_xlim([-int(0.1 * len(all_dataset)), int(1.1 * len(all_dataset))])
     ax.set(xlabel="Number of samples.", title="KFold Train-Test-Valid split")
-    ax.legend([Patch(color=bd_cmap[i]) for i in range(4)],
-              ["Original set", "Training set", "Validation set", "Testing set"],
-              loc="lower center", ncols=2)
-    ax.text(-0.07, 0.45, 'Train-Valid-Test split', rotation=90,
-            verticalalignment='center', horizontalalignment='left', transform=ax.transAxes)
+    ax.legend(
+        [Patch(color=bd_cmap[i]) for i in range(4)],
+        ["Original set", "Training set", "Validation set", "Testing set"],
+        loc="lower center",
+        ncols=2,
+    )
+    ax.text(
+        -0.07,
+        0.45,
+        "Train-Valid-Test split",
+        rotation=90,
+        verticalalignment="center",
+        horizontalalignment="left",
+        transform=ax.transAxes,
+    )
     return ax
 
 
 fig, ax = plt.subplots(figsize=(15, 7))
-plot_k_fold(ax, cv=train_val_split, all_dataset=windows_dataset,
-            X_train=X_train, y_train=y_train, test_set=test_set,)
+plot_k_fold(
+    ax,
+    cv=train_val_split,
+    all_dataset=windows_dataset,
+    X_train=X_train,
+    y_train=y_train,
+    test_set=test_set,
+)
 
 
 ######################################################################
