@@ -3,6 +3,7 @@ Attention modules used in the AttentionBaseNet from Martin Wimpff (2023).
 
 Here, we implement some popular attention modules that can be used in the
 AttentionBaseNet class.
+
 """
 
 # Authors: Martin Wimpff <martin.wimpff@iss.uni-stuttgart.de>
