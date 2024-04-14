@@ -127,22 +127,27 @@ class TUH(BaseConcatDataset):
         raw.rename_channels(mapping_strip)
 
         montage1005 = mne.channels.make_standard_montage("standard_1005")
-        mapping = {
+        mapping_eeg_names = {
             c.upper(): c for c in montage1005.ch_names if c.upper() in raw.ch_names
         }
 
         # Set channels whose type could not be inferred (defaulted to "eeg") to "misc":
-        non_eeg_chs = [c for c in raw.ch_names if c not in mapping]
-        non_eeg_types = raw.get_channel_types(picks=non_eeg_chs)
-        raw.set_channel_types(
-            {c: "misc" for c, t in zip(non_eeg_chs, non_eeg_types) if t == "eeg"}
-        )
+        non_eeg_names = [c for c in raw.ch_names if c not in mapping_eeg_names]
+        if non_eeg_names:
+            non_eeg_types = raw.get_channel_types(picks=non_eeg_names)
+            mapping_non_eeg_types = {
+                c: "misc" for c, t in zip(non_eeg_names, non_eeg_types) if t == "eeg"
+            }
+            if mapping_non_eeg_types:
+                raw.set_channel_types(mapping_non_eeg_types)
 
-        # Set 1005 channels type to "eeg":
-        raw.set_channel_types({c: "eeg" for c in mapping}, on_unit_change="ignore")
-
-        # Fix capitalized EEG channel names:
-        raw.rename_channels({k: v for k, v in mapping.items() if k in raw.ch_names})
+        if mapping_eeg_names:
+            # Set 1005 channels type to "eeg":
+            raw.set_channel_types(
+                {c: "eeg" for c in mapping_eeg_names}, on_unit_change="ignore"
+            )
+            # Fix capitalized EEG channel names:
+            raw.rename_channels(mapping_eeg_names)
 
     @staticmethod
     def _set_montage(raw):
