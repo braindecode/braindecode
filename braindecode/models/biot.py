@@ -411,7 +411,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             warn(
                 "The hop length is larger than the sampling frequency. "
                 + "This may cause aliasing. Consider using a smaller "
-                  "hop length.",
+                "hop length.",
                 UserWarning,
             )
             hop_length = self.sfreq // 2

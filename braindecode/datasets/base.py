@@ -10,6 +10,8 @@ Dataset classes.
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
+from collections.abc import Callable
 import os
 import json
 import shutil
@@ -17,17 +19,18 @@ from typing import Iterable
 import warnings
 from glob import glob
 
+import mne.io
 import numpy as np
 import pandas as pd
 from torch.utils.data import Dataset, ConcatDataset
 
 
-def _create_description(description):
+def _create_description(description) -> pd.Series:
     if description is not None:
-        if (not isinstance(description, pd.Series) and
-                not isinstance(description, dict)):
-            raise ValueError(f"'{description}' has to be either a "
-                             f"pandas.Series or a dict.")
+        if not isinstance(description, pd.Series) and not isinstance(description, dict):
+            raise ValueError(
+                f"'{description}' has to be either a " f"pandas.Series or a dict."
+            )
         if isinstance(description, dict):
             description = pd.Series(description)
     return description
@@ -52,8 +55,14 @@ class BaseDataset(Dataset):
     transform : callable | None
         On-the-fly transform applied to the example before it is returned.
     """
-    def __init__(self, raw, description=None, target_name=None,
-                 transform=None):
+
+    def __init__(
+        self,
+        raw: mne.io.BaseRaw,
+        description: dict | pd.Series | None = None,
+        target_name: str | tuple[str] | None = None,
+        transform: Callable | None = None,
+    ):
         self.raw = raw
         self._description = _create_description(description)
         self.transform = transform
@@ -82,14 +91,14 @@ class BaseDataset(Dataset):
     @transform.setter
     def transform(self, value):
         if value is not None and not callable(value):
-            raise ValueError('Transform needs to be a callable.')
+            raise ValueError("Transform needs to be a callable.")
         self._transform = value
 
     @property
-    def description(self):
+    def description(self) -> pd.Series:
         return self._description
 
-    def set_description(self, description, overwrite=False):
+    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -104,8 +113,10 @@ class BaseDataset(Dataset):
         for key, value in description.items():
             # if the key is already in the existing description, drop it
             if self._description is not None and key in self._description:
-                assert overwrite, (f"'{key}' already in description. Please "
-                                   f"rename or set overwrite to True.")
+                assert overwrite, (
+                    f"'{key}' already in description. Please "
+                    f"rename or set overwrite to True."
+                )
                 self._description.pop(key)
         if self._description is None:
             self._description = description
@@ -114,7 +125,7 @@ class BaseDataset(Dataset):
 
     def _target_name(self, target_name):
         if target_name is not None and not isinstance(target_name, (str, tuple, list)):
-            raise ValueError('target_name has to be None, str, tuple or list')
+            raise ValueError("target_name has to be None, str, tuple or list")
         if target_name is None:
             return target_name
         else:
@@ -128,9 +139,12 @@ class BaseDataset(Dataset):
             # check if target name(s) can be read from description
             for name in target_name:
                 if self.description is None or name not in self.description:
-                    warnings.warn(f"'{name}' not in description. '__getitem__'"
-                                  f"will fail unless an appropriate target is"
-                                  f" added to description.", UserWarning)
+                    warnings.warn(
+                        f"'{name}' not in description. '__getitem__'"
+                        f"will fail unless an appropriate target is"
+                        f" added to description.",
+                        UserWarning,
+                    )
         # return a list of str if there are multiple targets and a str otherwise
         return target_name if len(target_name) > 1 else target_name[0]
 
@@ -168,24 +182,31 @@ class EEGWindowsDataset(BaseDataset):
         as well as `targets`.
     """
 
-    def __init__(self, raw, metadata, description=None, transform=None, targets_from='metadata',
-                 last_target_only=True, ):
+    def __init__(
+        self,
+        raw: mne.io.BaseRaw | mne.BaseEpochs,
+        metadata: pd.DataFrame,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+        targets_from: str = "metadata",
+        last_target_only: bool = True,
+    ):
         self.raw = raw
         self.metadata = metadata
         self._description = _create_description(description)
 
         self.transform = transform
         self.last_target_only = last_target_only
-        if targets_from not in ('metadata', 'channels'):
-            raise ValueError('Wrong value for parameter `targets_from`.')
+        if targets_from not in ("metadata", "channels"):
+            raise ValueError("Wrong value for parameter `targets_from`.")
         self.targets_from = targets_from
         self.crop_inds = metadata.loc[
-                         :, ['i_window_in_trial', 'i_start_in_trial',
-                             'i_stop_in_trial']].to_numpy()
-        if self.targets_from == 'metadata':
-            self.y = metadata.loc[:, 'target'].to_list()
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        if self.targets_from == "metadata":
+            self.y = metadata.loc[:, "target"].to_list()
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         """Get a window and its target.
 
         Parameters
@@ -209,16 +230,16 @@ class EEGWindowsDataset(BaseDataset):
 
         i_window_in_trial, i_start, i_stop = crop_inds
         X = self.raw._getitem((slice(None), slice(i_start, i_stop)), return_times=False)
-        X = X.astype('float32')
+        X = X.astype("float32")
         # ensure we don't give the user the option
         # to accidentally modify the underlying array
         X = X.copy()
         if self.transform is not None:
             X = self.transform(X)
-        if self.targets_from == 'metadata':
+        if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            misc_mask = np.array(self.raw.get_channel_types()) == 'misc'
+            misc_mask = np.array(self.raw.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
@@ -240,14 +261,14 @@ class EEGWindowsDataset(BaseDataset):
     @transform.setter
     def transform(self, value):
         if value is not None and not callable(value):
-            raise ValueError('Transform needs to be a callable.')
+            raise ValueError("Transform needs to be a callable.")
         self._transform = value
 
     @property
-    def description(self):
+    def description(self) -> pd.Series:
         return self._description
 
-    def set_description(self, description, overwrite=False):
+    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -262,8 +283,10 @@ class EEGWindowsDataset(BaseDataset):
         for key, value in description.items():
             # if they key is already in the existing description, drop it
             if key in self._description:
-                assert overwrite, (f"'{key}' already in description. Please "
-                                   f"rename or set overwrite to True.")
+                assert overwrite, (
+                    f"'{key}' already in description. Please "
+                    f"rename or set overwrite to True."
+                )
                 self._description.pop(key)
         self._description = pd.concat([self.description, description])
 
@@ -294,23 +317,30 @@ class WindowsDataset(BaseDataset):
         Defines whether targets will be extracted from mne.Epochs metadata or mne.Epochs `misc`
         channels (time series targets). It can be `metadata` (default) or `channels`.
     """
-    def __init__(self, windows, description=None, transform=None, targets_from='metadata',
-                 last_target_only=True):
+
+    def __init__(
+        self,
+        windows: mne.BaseEpochs,
+        description: dict | pd.Series | None = None,
+        transform: Callable | None = None,
+        targets_from: str = "metadata",
+        last_target_only: bool = True,
+    ):
         self.windows = windows
         self._description = _create_description(description)
         self.transform = transform
         self.last_target_only = last_target_only
-        if targets_from not in ('metadata', 'channels'):
-            raise ValueError('Wrong value for parameter `targets_from`.')
+        if targets_from not in ("metadata", "channels"):
+            raise ValueError("Wrong value for parameter `targets_from`.")
         self.targets_from = targets_from
 
         self.crop_inds = self.windows.metadata.loc[
-            :, ['i_window_in_trial', 'i_start_in_trial',
-                'i_stop_in_trial']].to_numpy()
-        if self.targets_from == 'metadata':
-            self.y = self.windows.metadata.loc[:, 'target'].to_list()
+            :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+        ].to_numpy()
+        if self.targets_from == "metadata":
+            self.y = self.windows.metadata.loc[:, "target"].to_list()
 
-    def __getitem__(self, index):
+    def __getitem__(self, index: int):
         """Get a window and its target.
 
         Parameters
@@ -327,13 +357,13 @@ class WindowsDataset(BaseDataset):
         np.ndarray
             Crop indices.
         """
-        X = self.windows.get_data(item=index)[0].astype('float32')
+        X = self.windows.get_data(item=index)[0].astype("float32")
         if self.transform is not None:
             X = self.transform(X)
-        if self.targets_from == 'metadata':
+        if self.targets_from == "metadata":
             y = self.y[index]
         else:
-            misc_mask = np.array(self.windows.get_channel_types()) == 'misc'
+            misc_mask = np.array(self.windows.get_channel_types()) == "misc"
             if self.last_target_only:
                 y = X[misc_mask, -1]
             else:
@@ -345,7 +375,7 @@ class WindowsDataset(BaseDataset):
         crop_inds = self.crop_inds[index].tolist()
         return X, y, crop_inds
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.windows.events)
 
     @property
@@ -355,14 +385,14 @@ class WindowsDataset(BaseDataset):
     @transform.setter
     def transform(self, value):
         if value is not None and not callable(value):
-            raise ValueError('Transform needs to be a callable.')
+            raise ValueError("Transform needs to be a callable.")
         self._transform = value
 
     @property
-    def description(self):
+    def description(self) -> pd.Series:
         return self._description
 
-    def set_description(self, description, overwrite=False):
+    def set_description(self, description: dict | pd.Series, overwrite: bool = False):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -377,8 +407,10 @@ class WindowsDataset(BaseDataset):
         for key, value in description.items():
             # if they key is already in the existing description, drop it
             if key in self._description:
-                assert overwrite, (f"'{key}' already in description. Please "
-                                   f"rename or set overwrite to True.")
+                assert overwrite, (
+                    f"'{key}' already in description. Please "
+                    f"rename or set overwrite to True."
+                )
                 self._description.pop(key)
         self._description = pd.concat([self.description, description])
 
@@ -395,7 +427,12 @@ class BaseConcatDataset(ConcatDataset):
     target_transform : callable | None
         Optional function to call on targets before returning them.
     """
-    def __init__(self, list_of_ds, target_transform=None):
+
+    def __init__(
+        self,
+        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset] = None,
+        target_transform: Callable | None = None,
+    ):
         # if we get a list of BaseConcatDataset, get all the individual datasets
         if list_of_ds and isinstance(list_of_ds[0], BaseConcatDataset):
             list_of_ds = [d for ds in list_of_ds for d in ds.datasets]
@@ -415,7 +452,7 @@ class BaseConcatDataset(ConcatDataset):
 
         return X, y
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int | list):
         """
         Parameters
         ----------
@@ -433,7 +470,12 @@ class BaseConcatDataset(ConcatDataset):
             item = item[:1] + (self.target_transform(item[1]),) + item[2:]
         return item
 
-    def split(self, by=None, property=None, split_ids=None):
+    def split(
+        self,
+        by: str | list[int] | list[list[int]] | dict[str, list[int]] | None = None,
+        property: str | None = None,
+        split_ids: list[int] | list[list[int]] | dict[str, list[int]] | None = None,
+    ) -> dict[str, BaseConcatDataset]:
         """Split the dataset based on information listed in its description
         DataFrame or based on indices.
 
@@ -449,7 +491,7 @@ class BaseConcatDataset(ConcatDataset):
             splits dict and each value should be a list of int.
         property : str
             Some property which is listed in info DataFrame.
-        split_ids : list | dict
+        split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
 
@@ -459,20 +501,21 @@ class BaseConcatDataset(ConcatDataset):
             A dictionary with the name of the split (a string) as key and the
             dataset as value.
         """
-        args_not_none = [
-            by is not None, property is not None, split_ids is not None]
+        args_not_none = [by is not None, property is not None, split_ids is not None]
         if sum(args_not_none) != 1:
             raise ValueError("Splitting requires exactly one argument.")
 
         if property is not None or split_ids is not None:
-            warnings.warn("Keyword arguments `property` and `split_ids` "
-                          "are deprecated and will be removed in the future. "
-                          "Use `by` instead.", DeprecationWarning)
+            warnings.warn(
+                "Keyword arguments `property` and `split_ids` "
+                "are deprecated and will be removed in the future. "
+                "Use `by` instead.",
+                DeprecationWarning,
+            )
             by = property if property is not None else split_ids
         if isinstance(by, str):
             split_ids = {
-                k: list(v)
-                for k, v in self.description.groupby(by).groups.items()
+                k: list(v) for k, v in self.description.groupby(by).groups.items()
             }
         elif isinstance(by, dict):
             split_ids = by
@@ -483,11 +526,15 @@ class BaseConcatDataset(ConcatDataset):
             # assume list(list(int))
             split_ids = {split_i: split for split_i, split in enumerate(by)}
 
-        return {str(split_name): BaseConcatDataset(
-            [self.datasets[ds_ind] for ds_ind in ds_inds], target_transform=self.target_transform)
-            for split_name, ds_inds in split_ids.items()}
+        return {
+            str(split_name): BaseConcatDataset(
+                [self.datasets[ds_ind] for ds_ind in ds_inds],
+                target_transform=self.target_transform,
+            )
+            for split_name, ds_inds in split_ids.items()
+        }
 
-    def get_metadata(self):
+    def get_metadata(self) -> pd.DataFrame:
         """Concatenate the metadata and description of the wrapped Epochs.
 
         Returns
@@ -497,13 +544,20 @@ class BaseConcatDataset(ConcatDataset):
             BaseConcatDataset, with the metadata and description information
             for each window.
         """
-        if not all([isinstance(ds, (WindowsDataset, EEGWindowsDataset)) for ds in self.datasets]):
-            raise TypeError('Metadata dataframe can only be computed when all '
-                            'datasets are WindowsDataset.')
+        if not all(
+            [
+                isinstance(ds, (WindowsDataset, EEGWindowsDataset))
+                for ds in self.datasets
+            ]
+        ):
+            raise TypeError(
+                "Metadata dataframe can only be computed when all "
+                "datasets are WindowsDataset."
+            )
 
         all_dfs = list()
         for ds in self.datasets:
-            if hasattr(ds, 'windows'):
+            if hasattr(ds, "windows"):
                 df = ds.windows.metadata
             else:
                 df = ds.metadata
@@ -529,7 +583,7 @@ class BaseConcatDataset(ConcatDataset):
     @target_transform.setter
     def target_transform(self, fn):
         if not (callable(fn) or fn is None):
-            raise TypeError('target_transform must be a callable.')
+            raise TypeError("target_transform must be a callable.")
         self._target_transform = fn
 
     def _outdated_save(self, path, overwrite=False):
@@ -547,39 +601,50 @@ class BaseConcatDataset(ConcatDataset):
             Whether to delete old files (.json, .fif, -epo.fif) in specified
             directory prior to saving.
         """
-        warnings.warn('This function only exists for backwards compatibility '
-                      'purposes. DO NOT USE!', UserWarning)
+        warnings.warn(
+            "This function only exists for backwards compatibility "
+            "purposes. DO NOT USE!",
+            UserWarning,
+        )
         if isinstance(self.datasets[0], EEGWindowsDataset):
-            raise NotImplementedError("Outdated save not implemented for new window datasets.")
+            raise NotImplementedError(
+                "Outdated save not implemented for new window datasets."
+            )
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
-        if not (hasattr(self.datasets[0], 'raw') or hasattr(
-                self.datasets[0], 'windows')):
-            raise ValueError("dataset should have either raw or windows "
-                             "attribute")
+        if not (
+            hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
+        ):
+            raise ValueError("dataset should have either raw or windows " "attribute")
         file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
-        description_file_name = os.path.join(path, 'description.json')
-        target_file_name = os.path.join(path, 'target_name.json')
+        description_file_name = os.path.join(path, "description.json")
+        target_file_name = os.path.join(path, "target_name.json")
         if not overwrite:
-            from braindecode.datautil.serialization import \
-                _check_save_dir_empty  # Import here to avoid circular import
+            from braindecode.datautil.serialization import (
+                _check_save_dir_empty,
+            )  # Import here to avoid circular import
+
             _check_save_dir_empty(path)
         else:
             for file_name_template in file_name_templates:
-                file_names = glob(os.path.join(
-                    path, f"*{file_name_template.lstrip('{}')}"))
+                file_names = glob(
+                    os.path.join(path, f"*{file_name_template.lstrip('{}')}")
+                )
                 _ = [os.remove(f) for f in file_names]
             if os.path.isfile(target_file_name):
                 os.remove(target_file_name)
             if os.path.isfile(description_file_name):
                 os.remove(description_file_name)
-            for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
-                               'window_preproc_kwargs']:
-                kwarg_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
+            for kwarg_name in [
+                "raw_preproc_kwargs",
+                "window_kwargs",
+                "window_preproc_kwargs",
+            ]:
+                kwarg_path = os.path.join(path, ".".join([kwarg_name, "json"]))
                 if os.path.exists(kwarg_path):
                     os.remove(kwarg_path)
 
-        is_raw = hasattr(self.datasets[0], 'raw')
+        is_raw = hasattr(self.datasets[0], "raw")
 
         if is_raw:
             file_name_template = file_name_templates[0]
@@ -594,21 +659,26 @@ class BaseConcatDataset(ConcatDataset):
                 ds.windows.save(full_file_path, overwrite=overwrite)
 
         self.description.to_json(description_file_name)
-        for kwarg_name in ['raw_preproc_kwargs', 'window_kwargs',
-                           'window_preproc_kwargs']:
+        for kwarg_name in [
+            "raw_preproc_kwargs",
+            "window_kwargs",
+            "window_preproc_kwargs",
+        ]:
             if hasattr(self, kwarg_name):
-                kwargs_path = os.path.join(path, '.'.join([kwarg_name, 'json']))
+                kwargs_path = os.path.join(path, ".".join([kwarg_name, "json"]))
                 kwargs = getattr(self, kwarg_name)
                 if kwargs is not None:
-                    json.dump(kwargs, open(kwargs_path, 'w'))
+                    json.dump(kwargs, open(kwargs_path, "w"))
 
     @property
-    def description(self):
+    def description(self) -> pd.DataFrame:
         df = pd.DataFrame([ds.description for ds in self.datasets])
         df.reset_index(inplace=True, drop=True)
         return df
 
-    def set_description(self, description, overwrite=False):
+    def set_description(
+        self, description: dict | pd.DataFrame, overwrite: bool = False
+    ):
         """Update (add or overwrite) the dataset description.
 
         Parameters
@@ -625,7 +695,7 @@ class BaseConcatDataset(ConcatDataset):
             for ds, value_ in zip(self.datasets, value):
                 ds.set_description({key: value_}, overwrite=overwrite)
 
-    def save(self, path, overwrite=False, offset=0):
+    def save(self, path: str, overwrite: bool = False, offset: int = 0):
         """Save datasets to files by creating one subdirectory for each dataset:
         path/
             0/
@@ -659,10 +729,10 @@ class BaseConcatDataset(ConcatDataset):
         """
         if len(self.datasets) == 0:
             raise ValueError("Expect at least one dataset")
-        if not (hasattr(self.datasets[0], 'raw') or hasattr(
-                self.datasets[0], 'windows')):
-            raise ValueError("dataset should have either raw or windows "
-                             "attribute")
+        if not (
+            hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
+        ):
+            raise ValueError("dataset should have either raw or windows " "attribute")
         path_contents = os.listdir(path)
         n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
         for i_ds, ds in enumerate(self.datasets):
@@ -676,9 +746,10 @@ class BaseConcatDataset(ConcatDataset):
                     shutil.rmtree(sub_dir)
                 else:
                     raise FileExistsError(
-                        f'Subdirectory {sub_dir} already exists. Please select'
-                        f' a different directory, set overwrite=True, or '
-                        f'resolve manually.')
+                        f"Subdirectory {sub_dir} already exists. Please select"
+                        f" a different directory, set overwrite=True, or "
+                        f"resolve manually."
+                    )
             # save_dir/{i_ds+offset}/
             os.makedirs(sub_dir)
             # save_dir/{i_ds+offset}/{i_ds+offset}-{raw_or_epo}.fif
@@ -696,59 +767,67 @@ class BaseConcatDataset(ConcatDataset):
         if overwrite:
             # the following will be True for all datasets preprocessed and
             # stored in parallel with braindecode.preprocessing.preprocess
-            if i_ds+1+offset < n_sub_dirs:
-                warnings.warn(f"The number of saved datasets ({i_ds+1+offset}) "
-                              f"does not match the number of existing "
-                              f"subdirectories ({n_sub_dirs}). You may now "
-                              f"encounter a mix of differently preprocessed "
-                              f"datasets!", UserWarning)
+            if i_ds + 1 + offset < n_sub_dirs:
+                warnings.warn(
+                    f"The number of saved datasets ({i_ds + 1 + offset}) "
+                    f"does not match the number of existing "
+                    f"subdirectories ({n_sub_dirs}). You may now "
+                    f"encounter a mix of differently preprocessed "
+                    f"datasets!",
+                    UserWarning,
+                )
         # if path contains files or directories that were not touched, raise
         # warning
         if path_contents:
-            warnings.warn(f'Chosen directory {path} contains other '
-                          f'subdirectories or files {path_contents}.')
+            warnings.warn(
+                f"Chosen directory {path} contains other "
+                f"subdirectories or files {path_contents}."
+            )
 
     @staticmethod
     def _save_signals(sub_dir, ds, i_ds, offset):
-        raw_or_epo = 'raw' if hasattr(ds, 'raw') else 'epo'
-        fif_file_name = f'{i_ds + offset}-{raw_or_epo}.fif'
+        raw_or_epo = "raw" if hasattr(ds, "raw") else "epo"
+        fif_file_name = f"{i_ds + offset}-{raw_or_epo}.fif"
         fif_file_path = os.path.join(sub_dir, fif_file_name)
-        raw_or_windows = 'raw' if raw_or_epo == 'raw' else 'windows'
+        raw_or_windows = "raw" if raw_or_epo == "raw" else "windows"
 
         # The following appears to be necessary to avoid a CI failure when
         # preprocessing WindowsDatasets with serialization enabled. The failure
         # comes from `mne.epochs._check_consistency` which ensures the Epochs's
         # object `times` attribute is not writeable.
-        getattr(ds, raw_or_windows).times.flags['WRITEABLE'] = False
+        getattr(ds, raw_or_windows).times.flags["WRITEABLE"] = False
 
         getattr(ds, raw_or_windows).save(fif_file_path)
 
     @staticmethod
     def _save_metadata(sub_dir, ds):
-        if hasattr(ds, 'metadata'):
-            metadata_file_path = os.path.join(sub_dir, 'metadata_df.pkl')
+        if hasattr(ds, "metadata"):
+            metadata_file_path = os.path.join(sub_dir, "metadata_df.pkl")
             ds.metadata.to_pickle(metadata_file_path)
 
     @staticmethod
     def _save_description(sub_dir, description):
-        description_file_path = os.path.join(sub_dir, 'description.json')
+        description_file_path = os.path.join(sub_dir, "description.json")
         description.to_json(description_file_path)
 
     @staticmethod
     def _save_kwargs(sub_dir, ds):
-        for kwargs_name in ['raw_preproc_kwargs', 'window_kwargs',
-                            'window_preproc_kwargs']:
+        for kwargs_name in [
+            "raw_preproc_kwargs",
+            "window_kwargs",
+            "window_preproc_kwargs",
+        ]:
             if hasattr(ds, kwargs_name):
-                kwargs_file_name = '.'.join([kwargs_name, 'json'])
+                kwargs_file_name = ".".join([kwargs_name, "json"])
                 kwargs_file_path = os.path.join(sub_dir, kwargs_file_name)
                 kwargs = getattr(ds, kwargs_name)
                 if kwargs is not None:
-                    with open(kwargs_file_path, 'w') as f:
+                    with open(kwargs_file_path, "w") as f:
                         json.dump(kwargs, f)
 
     @staticmethod
     def _save_target_name(sub_dir, ds):
-        if hasattr(ds, 'target_name'):
-            target_file_path = os.path.join(sub_dir, 'target_name.json')
-            with open(target_file_path, 'w') as f:
-                json.dump({'target_name': ds.target_name}, f)
+        if hasattr(ds, "target_name"):
+            target_file_path = os.path.join(sub_dir, "target_name.json")
+            with open(target_file_path, "w") as f:
+                json.dump({"target_name": ds.target_name}, f)

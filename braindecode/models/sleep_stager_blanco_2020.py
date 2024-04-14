@@ -48,29 +48,38 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            sfreq=None,
-            n_conv_chans=20,
-            input_window_seconds=None,
-            n_outputs=5,
-            n_groups=2,
-            max_pool_size=2,
-            dropout=0.5,
-            apply_batch_norm=False,
-            return_feats=False,
-            chs_info=None,
-            n_times=None,
-            n_channels=None,
-            n_classes=None,
-            input_size_s=None,
-            add_log_softmax=True,
+        self,
+        n_chans=None,
+        sfreq=None,
+        n_conv_chans=20,
+        input_window_seconds=None,
+        n_outputs=5,
+        n_groups=2,
+        max_pool_size=2,
+        dropout=0.5,
+        apply_batch_norm=False,
+        return_feats=False,
+        chs_info=None,
+        n_times=None,
+        n_channels=None,
+        n_classes=None,
+        input_size_s=None,
+        add_log_softmax=True,
     ):
-        n_chans, n_outputs, input_window_seconds, = deprecated_args(
+        (
+            n_chans,
+            n_outputs,
+            input_window_seconds,
+        ) = deprecated_args(
             self,
             ("n_channels", "n_chans", n_channels, n_chans),
             ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_size_s", "input_window_seconds", input_size_s, input_window_seconds),
+            (
+                "input_size_s",
+                "input_window_seconds",
+                input_size_s,
+                input_window_seconds,
+            ),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -86,7 +95,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
 
         self.mapping = {
             "fc.1.weight": "final_layer.1.weight",
-            "fc.1.bias": "final_layer.1.bias"
+            "fc.1.bias": "final_layer.1.bias",
         }
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
@@ -96,30 +105,42 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 7), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 7), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
             nn.MaxPool2d((1, max_pool_size)),
-            nn.Conv2d(n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0),
+            nn.Conv2d(
+                n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0
+            ),
             batch_norm(n_conv_chans),
             nn.ReLU(),
-            nn.MaxPool2d((1, max_pool_size))
+            nn.MaxPool2d((1, max_pool_size)),
         )
 
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
@@ -130,14 +151,15 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
             self.final_layer = nn.Sequential(
                 nn.Dropout(dropout),
                 nn.Linear(self.len_last_layer, self.n_outputs),
-                nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity()
+                nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
             )
 
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()
         with torch.no_grad():
             out = self.feature_extractor(
-                torch.Tensor(1, n_channels, 1, input_size))  # batch_size,n_channels,height,width
+                torch.Tensor(1, n_channels, 1, input_size)
+            )  # batch_size,n_channels,height,width
         self.feature_extractor.train()
         return len(out.flatten())
 

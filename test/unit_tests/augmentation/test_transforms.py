@@ -42,7 +42,7 @@ def time_aranged_batch(batch_size=5):
     """Generates a batch of size 1, where the feature matrix has 64 repeated
     rows of integers arranged between 0 and 49.
     """
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     X = torch.stack(
         [torch.stack([torch.arange(50, device=device)] * 64)] * batch_size
     ).float()
@@ -67,14 +67,14 @@ def test_time_reverse_transform(time_aranged_batch, probability):
     expected_tensor = None
     if probability == 1.0:
         expected_tensor = np.stack([np.arange(50)] * 64)
-        expected_tensor = torch.as_tensor(
-            expected_tensor[:, ::-1].copy(), device=device
-        ).repeat(X.shape[0], 1, 1).float()
+        expected_tensor = (
+            torch.as_tensor(expected_tensor[:, ::-1].copy(), device=device)
+            .repeat(X.shape[0], 1, 1)
+            .float()
+        )
 
     common_tranform_assertions(
-        time_aranged_batch,
-        flip_transform(*time_aranged_batch),
-        expected_tensor
+        time_aranged_batch, flip_transform(*time_aranged_batch), expected_tensor
     )
 
 
@@ -87,22 +87,28 @@ def test_sign_flip_transform(time_aranged_batch, probability):
     expected_tensor = None
     if probability == 1.0:
         expected_tensor = np.stack([-np.arange(50)] * 64)
-        expected_tensor = torch.as_tensor(
-            expected_tensor.copy(), device=device
-        ).repeat(X.shape[0], 1, 1).float()
+        expected_tensor = (
+            torch.as_tensor(expected_tensor.copy(), device=device)
+            .repeat(X.shape[0], 1, 1)
+            .float()
+        )
 
     common_tranform_assertions(
-        time_aranged_batch,
-        sign_flip_transform(*time_aranged_batch),
-        expected_tensor
+        time_aranged_batch, sign_flip_transform(*time_aranged_batch), expected_tensor
     )
 
 
-@pytest.mark.parametrize("even,phase_noise_magnitude", [
-    (False, 1,),
-    (True, 1),
-    (True, 0.5),
-])
+@pytest.mark.parametrize(
+    "even,phase_noise_magnitude",
+    [
+        (
+            False,
+            1,
+        ),
+        (True, 1),
+        (True, 0.5),
+    ],
+)
 @pytest.mark.parametrize("channel_indep", [False, True])
 @pytest.mark.parametrize("diff", [False, True])
 def test_ft_surrogate_transforms(
@@ -132,7 +138,7 @@ def test_ft_surrogate_transforms(
     )
 
 
-def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
+def ones_and_zeros_batch(zeros_ratio=0.0, shape=None, batch_size=100):
     """Generates a batch of size one, where the feature matrix (of size 66x50)
     contains rows full of zeros first, then rows full of ones.
 
@@ -143,7 +149,7 @@ def ones_and_zeros_batch(zeros_ratio=0., shape=None, batch_size=100):
     """
     assert isinstance(zeros_ratio, float)
     assert zeros_ratio <= 1 and zeros_ratio >= 0
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     if shape is None:
         X = torch.ones(batch_size, 66, 50, device=device)
     else:
@@ -160,16 +166,10 @@ def test_channels_dropout_transform(rng_seed, p_drop, diff):
     X, y = ones_batch
     if diff:
         p_drop = nn.Parameter(torch.empty(1).fill_(p_drop).to(X.device))
-    transform = ChannelsDropout(
-        1, p_drop=p_drop, random_state=rng_seed
-    )
+    transform = ChannelsDropout(1, p_drop=p_drop, random_state=rng_seed)
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(
-        ones_batch,
-        new_batch,
-        diff_param=p_drop if diff else None
-    )
+    common_tranform_assertions(ones_batch, new_batch, diff_param=p_drop if diff else None)
     zeros_mask = np.all(tr_X.detach().cpu().numpy() <= 1e-3, axis=-1)
     average_nb_of_zero_rows = np.mean(np.sum(zeros_mask.astype(int), axis=-1))
     proportion_of_zeros = transform.p_drop
@@ -179,22 +179,18 @@ def test_channels_dropout_transform(rng_seed, p_drop, diff):
     # test that the expected number of channels was set to zero
     assert np.abs(average_nb_of_zero_rows - expected_nb_zero_rows) <= 1
     # test that channels are conserved (same across it)
-    assert all([torch.equal(tr_X[0, :, 0], tr_X[0, :, i])
-                for i in range(tr_X.shape[2])])
+    assert all([torch.equal(tr_X[0, :, 0], tr_X[0, :, i]) for i in range(tr_X.shape[2])])
 
 
 @pytest.mark.parametrize("p_shuffle", [0.25, 0.5])
 def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
     X, y = ch_aranged_batch
-    transform = ChannelsShuffle(
-        1, p_shuffle=p_shuffle, random_state=rng_seed
-    )
+    transform = ChannelsShuffle(1, p_shuffle=p_shuffle, random_state=rng_seed)
     new_batch = transform(*ch_aranged_batch)
     tr_X, _ = new_batch
     common_tranform_assertions(ch_aranged_batch, new_batch)
     # test that rows (channels) are conserved
-    assert all([torch.equal(tr_X[0, :, 0], tr_X[0, :, i])
-                for i in range(tr_X.shape[2])])
+    assert all([torch.equal(tr_X[0, :, 0], tr_X[0, :, i]) for i in range(tr_X.shape[2])])
     # test that rows (channels) have been shuffled
     assert not torch.equal(tr_X[0, :, :], X)
     # test that number of shuffled channels is correct
@@ -206,13 +202,11 @@ def test_channels_shuffle_transform(rng_seed, ch_aranged_batch, p_shuffle):
             for k in range(batch_size)
         ]
     )
-    theor_n_shuffled_channels = int(
-        round(p_shuffle * n_channels * batch_size)
-    )
+    theor_n_shuffled_channels = int(round(p_shuffle * n_channels * batch_size))
     # Check we are within 5% of asymptotic number of shuffled channels
     assert (
         theor_n_shuffled_channels - n_shuffled_channels
-    )/theor_n_shuffled_channels < 0.05
+    ) / theor_n_shuffled_channels < 0.05
 
 
 @pytest.mark.parametrize("probability", [1.0, 0.5])
@@ -224,29 +218,21 @@ def test_gaussian_noise_transform(rng_seed, probability, diff):
 
     if diff:
         std = nn.Parameter(torch.Tensor([std]).to(X.device))
-    transform = GaussianNoise(
-        probability,
-        std=std,
-        random_state=rng_seed
-    )
+    transform = GaussianNoise(probability, std=std, random_state=rng_seed)
     new_batch = transform(*ones_batch)
     tr_X, _ = new_batch
-    common_tranform_assertions(
-        ones_batch,
-        new_batch,
-        diff_param=std if diff else None
-    )
+    common_tranform_assertions(ones_batch, new_batch, diff_param=std if diff else None)
 
     if probability == 1.0:
         # check that the values of X changed, but the rows and cols means are
         # unchanged (within Gaussian confidence interval)
         assert not torch.equal(tr_X, X)
-        assert torch.mean(
-            (torch.abs(torch.mean(tr_X, 1) - 1.0) < 1.96 * std).float()
-        ) > 0.95
-        assert torch.mean(
-            (torch.abs(torch.mean(tr_X, 2) - 1.0) < 1.96 * std).float()
-        ) > 0.95
+        assert (
+            torch.mean((torch.abs(torch.mean(tr_X, 1) - 1.0) < 1.96 * std).float()) > 0.95
+        )
+        assert (
+            torch.mean((torch.abs(torch.mean(tr_X, 2) - 1.0) < 1.96 * std).float()) > 0.95
+        )
 
 
 @pytest.mark.parametrize("probability", [1.0, 0.5])
@@ -257,35 +243,71 @@ def test_channels_symmetry_transform(probability):
     X = X.float()
 
     ch_names = [
-        'Fp1', 'Fpz', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-        'T3', 'C3', 'Cz', 'C4', 'T4',
-        'T5', 'P3', 'Pz', 'P4', 'T6', 'O1', 'Oz', 'O2'
+        "Fp1",
+        "Fpz",
+        "Fp2",
+        "F7",
+        "F3",
+        "Fz",
+        "F4",
+        "F8",
+        "T3",
+        "C3",
+        "Cz",
+        "C4",
+        "T4",
+        "T5",
+        "P3",
+        "Pz",
+        "P4",
+        "T6",
+        "O1",
+        "Oz",
+        "O2",
     ]
     transform = ChannelsSymmetry(probability, ch_names)
 
     expected_tensor = None
     if probability == 1.0:
         expected_perm = [
-            2, 1, 0, 7, 6, 5, 4, 3, 12, 11, 10, 9, 8, 17, 16, 15, 14,
-            13, 20, 19, 18
+            2,
+            1,
+            0,
+            7,
+            6,
+            5,
+            4,
+            3,
+            12,
+            11,
+            10,
+            9,
+            8,
+            17,
+            16,
+            15,
+            14,
+            13,
+            20,
+            19,
+            18,
         ]
         expected_tensor = X[:, expected_perm, :]
 
     ordered_batch = (X, torch.zeros(batch_size))
 
-    common_tranform_assertions(
-        ordered_batch,
-        transform(*ordered_batch),
-        expected_tensor
-    )
+    common_tranform_assertions(ordered_batch, transform(*ordered_batch), expected_tensor)
 
 
-@pytest.mark.parametrize("mask_len_samples,fail,diff", [
-    (0.5, True, False),
-    (5, False, False),
-    (10, False, False),
-    (10, False, True),
-])
+@pytest.mark.parametrize(
+    "mask_len_samples,fail,diff",
+    [
+        (0.5, True, False),
+        (5, False, False),
+        (10, False, False),
+        (10, False, True),
+    ],
+)
 def test_smooth_time_mask_transform(
     rng_seed,
     mask_len_samples,
@@ -296,9 +318,7 @@ def test_smooth_time_mask_transform(
         # Check max length smaller than 1 cannot be instantiated
         with pytest.raises(AssertionError):
             transform = SmoothTimeMask(
-                1.0,
-                mask_len_samples=mask_len_samples,
-                random_state=rng_seed
+                1.0, mask_len_samples=mask_len_samples, random_state=rng_seed
             )
     else:
         ones_batch = ones_and_zeros_batch()
@@ -307,15 +327,11 @@ def test_smooth_time_mask_transform(
                 torch.empty(1).fill_(mask_len_samples).to(ones_batch[0].device)
             )
         transform = SmoothTimeMask(
-            1.0,
-            mask_len_samples=mask_len_samples,
-            random_state=rng_seed
+            1.0, mask_len_samples=mask_len_samples, random_state=rng_seed
         )
         transformed_batch = transform(*ones_batch)
         common_tranform_assertions(
-            ones_batch,
-            transformed_batch,
-            diff_param=mask_len_samples if diff else None
+            ones_batch, transformed_batch, diff_param=mask_len_samples if diff else None
         )
 
         # Check that masks are the same for all channels
@@ -323,23 +339,23 @@ def test_smooth_time_mask_transform(
         for sample in transformed_X:
             first_channel_zeros = sample[0, :].detach().cpu().numpy() <= 1e-2
             for i in range(1, sample.shape[0]):
-                assert all(
-                    val <= 1e-2 for val in sample[i, first_channel_zeros]
-                )
+                assert all(val <= 1e-2 for val in sample[i, first_channel_zeros])
         # check that the number of zeros in the masked matrix is +- equal to
         # the mask length
         if isinstance(mask_len_samples, torch.Tensor):
             mask_len_samples = mask_len_samples.detach().cpu()
-        assert np.abs(
-            np.sum(first_channel_zeros) - mask_len_samples) <= 1
+        assert np.abs(np.sum(first_channel_zeros) - mask_len_samples) <= 1
 
 
-@pytest.mark.parametrize("bandwidth,fail", [
-    (2, False),
-    (55, True),
-    (1, False),
-    (0., False),
-])
+@pytest.mark.parametrize(
+    "bandwidth,fail",
+    [
+        (2, False),
+        (55, True),
+        (1, False),
+        (0.0, False),
+    ],
+)
 def test_bandstop_filter_transform(rng_seed, random_batch, bandwidth, fail):
     sfreq = 100
     if fail:
@@ -347,17 +363,11 @@ def test_bandstop_filter_transform(rng_seed, random_batch, bandwidth, fail):
         # instantiated
         with pytest.raises(AssertionError):
             transform = BandstopFilter(
-                1.0,
-                bandwidth=bandwidth,
-                sfreq=sfreq,
-                random_state=rng_seed
+                1.0, bandwidth=bandwidth, sfreq=sfreq, random_state=rng_seed
             )
     else:
         transform = BandstopFilter(
-            1.0,
-            bandwidth=bandwidth,
-            sfreq=sfreq,
-            random_state=rng_seed
+            1.0, bandwidth=bandwidth, sfreq=sfreq, random_state=rng_seed
         )
 
         transformed_batch = transform(*random_batch)
@@ -371,9 +381,7 @@ def test_bandstop_filter_transform(rng_seed, random_batch, bandwidth, fail):
             white_noise = rng.normal(size=time.shape[0])
             batch_size = 5
             n_channels = 2
-            X = torch.as_tensor(
-                [np.stack([white_noise] * n_channels)] * batch_size
-            )
+            X = torch.as_tensor([np.stack([white_noise] * n_channels)] * batch_size)
             transformed_noise, _ = transform(X, torch.zeros(batch_size))
             transformed_noise = transformed_noise[0][0].detach().numpy()
 
@@ -400,21 +408,21 @@ def _get_frequency_peaks(time, signal, sfreq, min_peak_height=100):
     return np.array(list(set(np.abs(freq[peaks_idx]))))
 
 
-@ pytest.fixture
+@pytest.fixture
 def make_sinusoid():
     def _make_sinusoid(sfreq, freq, duration_s, batch_size=1):
         time = torch.arange(0, duration_s, 1 / sfreq)
         sinusoid = torch.cos(2 * np.pi * freq * time)
         return time, torch.stack([torch.stack([sinusoid] * 2)] * batch_size)
+
     return _make_sinusoid
 
 
-@ pytest.mark.parametrize("shift", [1, 2, 5])
+@pytest.mark.parametrize("shift", [1, 2, 5])
 def test_frequency_shift_funcion(make_sinusoid, shift):
     sfreq = 100
     _, sinusoid_epoch = make_sinusoid(sfreq=sfreq, freq=20, duration_s=30)
-    transformed_sinusoid = _frequency_shift(
-        sinusoid_epoch, sfreq, shift)[0, 0, :]
+    transformed_sinusoid = _frequency_shift(sinusoid_epoch, sfreq, shift)[0, 0, :]
     sinusoid = sinusoid_epoch[0, 0, :]
     _, psd_orig = welch(sinusoid, sfreq, nperseg=1024)
     f, psd_shifted = welch(transformed_sinusoid, sfreq, nperseg=1024)
@@ -425,10 +433,14 @@ def test_frequency_shift_funcion(make_sinusoid, shift):
     assert np.max(diff) / np.max(psd_orig) < 0.4
 
 
-@pytest.mark.parametrize("max_shift", [0., 1., 2])
+@pytest.mark.parametrize("max_shift", [0.0, 1.0, 2])
 @pytest.mark.parametrize("diff", [False, True])
 def test_frequency_shift_transform(
-    rng_seed, random_batch, make_sinusoid, max_shift, diff,
+    rng_seed,
+    random_batch,
+    make_sinusoid,
+    max_shift,
+    diff,
 ):
     sfreq = 100
     if diff:
@@ -436,32 +448,30 @@ def test_frequency_shift_transform(
             torch.empty(1).fill_(max_shift).to(random_batch[0].device)
         )
     transform = FrequencyShift(
-        probability=1.0,
-        sfreq=sfreq,
-        max_delta_freq=max_shift,
-        random_state=rng_seed
+        probability=1.0, sfreq=sfreq, max_delta_freq=max_shift, random_state=rng_seed
     )
 
     transformed_batch = transform(*random_batch)
     common_tranform_assertions(
-        random_batch,
-        transformed_batch,
-        diff_param=max_shift if diff else None
+        random_batch, transformed_batch, diff_param=max_shift if diff else None
     )
 
     # Transform a pure sinusoid with known frequency...
     freq = 5
     time, sinusoid_batch = make_sinusoid(
-        sfreq=sfreq, freq=freq, duration_s=5, batch_size=100)
+        sfreq=sfreq, freq=freq, duration_s=5, batch_size=100
+    )
     transformed_sinusoid_batch, _ = transform(sinusoid_batch, torch.zeros(100))
     transformed_sinusoid_batch = transformed_sinusoid_batch[:, 0, :]
     transformed_sinusoid_batch = transformed_sinusoid_batch.detach().numpy()
 
     # Check that frequencies are shifted
-    shifted_frequencies = np.hstack([
-        _get_frequency_peaks(time, transformed_sinusoid, sfreq)
-        for transformed_sinusoid in transformed_sinusoid_batch
-    ])
+    shifted_frequencies = np.hstack(
+        [
+            _get_frequency_peaks(time, transformed_sinusoid, sfreq)
+            for transformed_sinusoid in transformed_sinusoid_batch
+        ]
+    )
     effective_frequency_shifts = shifted_frequencies - freq
     if max_shift > 0:  # Unless the allowed shift is 0...
         assert np.abs(effective_frequency_shifts).std() > 0
@@ -486,42 +496,48 @@ def test_torch_normalize_vectors(cuda, grads_on):
 
         new_rr = _torch_normalize_vectors(rr)
         assert new_rr.shape == rr.shape
-        assert all([
-            r in [0, pytest.approx(1)]
-            for r in torch.linalg.norm(new_rr, axis=1).cpu().detach().numpy()
-        ])
+        assert all(
+            [
+                r in [0, pytest.approx(1)]
+                for r in torch.linalg.norm(new_rr, axis=1).cpu().detach().numpy()
+            ]
+        )
 
 
 def test_sensors_rotation_functional():
-    channels = ['C4', 'C3']
+    channels = ["C4", "C3"]
     batch_size = 5
     positions_matrix = torch.as_tensor(
-        _get_standard_10_20_positions(ordered_ch_names=channels),
-        dtype=torch.float
+        _get_standard_10_20_positions(ordered_ch_names=channels), dtype=torch.float
     )
     signal_length = 300
-    zero_one_X = torch.stack([
-        torch.zeros(signal_length),
-        torch.ones(signal_length)
-    ]).repeat(batch_size, 1, 1)
+    zero_one_X = torch.stack(
+        [torch.zeros(signal_length), torch.ones(signal_length)]
+    ).repeat(batch_size, 1, 1)
     angles = [180] * batch_size
     transformed_X, _ = sensors_rotation(
-        zero_one_X, torch.zeros(batch_size), positions_matrix, 'z', angles,
-        spherical_splines=True
+        zero_one_X,
+        torch.zeros(batch_size),
+        positions_matrix,
+        "z",
+        angles,
+        spherical_splines=True,
     )
-    expected_X = torch.stack([
-        torch.ones(signal_length),
-        torch.zeros(signal_length)
-    ]).repeat(batch_size, 1, 1)
+    expected_X = torch.stack(
+        [torch.ones(signal_length), torch.zeros(signal_length)]
+    ).repeat(batch_size, 1, 1)
     assert torch.all(torch.abs(expected_X - transformed_X) < 0.02)
 
 
-@ pytest.mark.parametrize("rotation,max_degrees,fail,diff", [
-    (SensorsXRotation, 15, False, False),
-    (SensorsYRotation, 15, False, False),
-    (SensorsZRotation, 15, False, False),
-    (SensorsZRotation, -15, True, False),
-])
+@pytest.mark.parametrize(
+    "rotation,max_degrees,fail,diff",
+    [
+        (SensorsXRotation, 15, False, False),
+        (SensorsYRotation, 15, False, False),
+        (SensorsZRotation, 15, False, False),
+        (SensorsZRotation, -15, True, False),
+    ],
+)
 def test_sensors_rotation_transforms(
     rng_seed,
     random_batch,
@@ -530,7 +546,7 @@ def test_sensors_rotation_transforms(
     fail,
     diff,
 ):
-    channels = ['O2', 'C4', 'C3', 'F4', 'F3', 'O1']
+    channels = ["O2", "C4", "C3", "F4", "F3", "O1"]
     if fail:
         # Check Bandstopfilter with bandwdth higher than max_freq cannot be
         # instantiated
@@ -546,9 +562,7 @@ def test_sensors_rotation_transforms(
         X = X[:, :6, :]
         cropped_random_batch = X, y
         if diff:
-            max_degrees = nn.Parameter(
-                torch.empty(1).fill_(max_degrees).to(X.device)
-            )
+            max_degrees = nn.Parameter(torch.empty(1).fill_(max_degrees).to(X.device))
         transform = rotation(
             1.0,
             channels,
@@ -559,21 +573,15 @@ def test_sensors_rotation_transforms(
         common_tranform_assertions(
             cropped_random_batch,
             transformed_batch,
-            diff_param=max_degrees if diff else None
+            diff_param=max_degrees if diff else None,
         )
 
 
-@ pytest.mark.parametrize("alpha,beta_per_sample", [
-    (0.5, False),
-    (0.5, True),
-    (-.1, True)
-])
+@pytest.mark.parametrize(
+    "alpha,beta_per_sample", [(0.5, False), (0.5, True), (-0.1, True)]
+)
 def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
-    transform = Mixup(
-        alpha=alpha,
-        beta_per_sample=beta_per_sample,
-        random_state=rng_seed
-    )
+    transform = Mixup(alpha=alpha, beta_per_sample=beta_per_sample, random_state=rng_seed)
     batch_size = random_batch[0].shape[0]
     random_batch = (random_batch[0], torch.arange(batch_size))
     X, y = random_batch
@@ -586,8 +594,7 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
     assert torch.equal(idx.cpu(), y)
     # basic mixup
     for i in range(batch_size):
-        mixed = lam[i] * X[i] \
-            + (1 - lam[i]) * X[idx_perm[i]]
+        mixed = lam[i] * X[i] + (1 - lam[i]) * X[idx_perm[i]]
         assert torch.equal(X_t[i], mixed)
     # all lam should be equal
     if not beta_per_sample:
@@ -598,71 +605,58 @@ def test_mixup_transform(rng_seed, random_batch, alpha, beta_per_sample):
         assert torch.equal(X_t, X)
 
 
-MONTAGE_10_20 = ['Fz',
-                 'FC3',
-                 'FC1',
-                 'FCz',
-                 'FC2',
-                 'FC4',
-                 'C5',
-                 'C3',
-                 'C1',
-                 'Cz',
-                 'C2',
-                 'C4',
-                 'C6',
-                 'CP3',
-                 'CP1',
-                 'CPz',
-                 'CP2',
-                 'CP4',
-                 'P1',
-                 'Pz',
-                 'P2',
-                 'POz']
-
-
-@ pytest.mark.parametrize("augmentation,kwargs", [
-    (IdentityTransform, {"probability": 0.5}),
-    (BandstopFilter, {"probability": 0.5, "sfreq": 100}),
-    (ChannelsDropout, {"probability": 0.5}),
-    (ChannelsShuffle, {"probability": 0.5}),
-    (FrequencyShift, {"probability": 0.5, "sfreq": 100}),
-    (FTSurrogate, {"probability": 0.5}),
-    (GaussianNoise, {"probability": 0.5}),
-    (SignFlip, {"probability": 0.5}),
-    (SmoothTimeMask, {"probability": 0.5}),
-    (TimeReverse, {"probability": 0.5}),
-    (ChannelsSymmetry, {
-        "probability": 0.5,
-        "ordered_ch_names": MONTAGE_10_20
-    }),
-    (SensorsXRotation, {
-        "probability": 0.5,
-        "ordered_ch_names": MONTAGE_10_20
-    }),
-    (SensorsYRotation, {
-        "probability": 0.5,
-        "ordered_ch_names": MONTAGE_10_20
-    }),
-    (SensorsZRotation, {
-        "probability": 0.5,
-        "ordered_ch_names": MONTAGE_10_20
-    }),
+MONTAGE_10_20 = [
+    "Fz",
+    "FC3",
+    "FC1",
+    "FCz",
+    "FC2",
+    "FC4",
+    "C5",
+    "C3",
+    "C1",
+    "Cz",
+    "C2",
+    "C4",
+    "C6",
+    "CP3",
+    "CP1",
+    "CPz",
+    "CP2",
+    "CP4",
+    "P1",
+    "Pz",
+    "P2",
+    "POz",
 ]
+
+
+@pytest.mark.parametrize(
+    "augmentation,kwargs",
+    [
+        (IdentityTransform, {"probability": 0.5}),
+        (BandstopFilter, {"probability": 0.5, "sfreq": 100}),
+        (ChannelsDropout, {"probability": 0.5}),
+        (ChannelsShuffle, {"probability": 0.5}),
+        (FrequencyShift, {"probability": 0.5, "sfreq": 100}),
+        (FTSurrogate, {"probability": 0.5}),
+        (GaussianNoise, {"probability": 0.5}),
+        (SignFlip, {"probability": 0.5}),
+        (SmoothTimeMask, {"probability": 0.5}),
+        (TimeReverse, {"probability": 0.5}),
+        (ChannelsSymmetry, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
+        (SensorsXRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
+        (SensorsYRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
+        (SensorsZRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
+    ],
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
     """Asserts that changing the parameters of a classifier instantiated with
     the `AugmentedDataLoader` is possible. Ensures that
     `braindecode.augmentation` is consistent with `Skorch` API.
     """
-    augmented_mock_clf.set_params(
-        iterator_train__transforms=augmentation(**kwargs)
-    )
-    augmented_mock_clf.set_params(
-        train_split=predefined_split(random_batch)
-    )
+    augmented_mock_clf.set_params(iterator_train__transforms=augmentation(**kwargs))
+    augmented_mock_clf.set_params(train_split=predefined_split(random_batch))
     assert isinstance(
-        augmented_mock_clf.train_split,
-        type(predefined_split(random_batch))
+        augmented_mock_clf.train_split, type(predefined_split(random_batch))
     )

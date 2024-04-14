@@ -25,7 +25,7 @@ class EpochsDataset(Dataset):
         self.y = self.y - self.y.min()
 
     def __getitem__(self, index):
-        X = self.windows.get_data(item=index)[0].astype('float32')[:, :, None]
+        X = self.windows.get_data(item=index)[0].astype("float32")[:, :, None]
         y = self.y[index]
         return X, y
 
@@ -47,9 +47,7 @@ def test_trialwise_decoding():
 
     # Load each of the files
     parts = [
-        mne.io.read_raw_edf(
-            path, preload=True, stim_channel="auto", verbose="WARNING"
-        )
+        mne.io.read_raw_edf(path, preload=True, stim_channel="auto", verbose="WARNING")
         for path in physionet_paths
     ]
 
@@ -86,9 +84,9 @@ def test_trialwise_decoding():
 
     cuda = False
     if cuda:
-        device = 'cuda'
+        device = "cuda"
     else:
-        device = 'cpu'
+        device = "cpu"
     set_random_seeds(seed=20170629, cuda=cuda)
     n_classes = 2
     in_chans = train_set[0][0].shape[0]
@@ -117,56 +115,64 @@ def test_trialwise_decoding():
     clf.fit(train_set, y=None, epochs=6)
 
     np.testing.assert_allclose(
-        clf.history[:, 'train_loss'],
-        np.array([
-            1.501254916191101,
-            0.8498813807964325,
-            0.6930762231349945,
-            0.7033905684947968,
-            0.7674900889396667,
-            0.47585436701774597
-        ]),
+        clf.history[:, "train_loss"],
+        np.array(
+            [
+                1.501254916191101,
+                0.8498813807964325,
+                0.6930762231349945,
+                0.7033905684947968,
+                0.7674900889396667,
+                0.47585436701774597,
+            ]
+        ),
         rtol=1e-4,
         atol=1e-5,
     )
 
     np.testing.assert_allclose(
-        clf.history[:, 'valid_loss'],
-        np.array([
-            0.9057853817939758,
-            1.0028964281082153,
-            0.85847407579422,
-            0.88216233253479,
-            0.8980739712715149,
-            0.8764537572860718
-        ]),
+        clf.history[:, "valid_loss"],
+        np.array(
+            [
+                0.9057853817939758,
+                1.0028964281082153,
+                0.85847407579422,
+                0.88216233253479,
+                0.8980739712715149,
+                0.8764537572860718,
+            ]
+        ),
         rtol=1e-4,
         atol=1e-5,
     )
 
     np.testing.assert_allclose(
-        clf.history[:, 'train_accuracy'],
-        np.array([
-            0.7666666666666667,
-            0.7333333333333333,
-            0.8166666666666667,
-            0.8333333333333334,
-            0.9333333333333333,
-            0.9333333333333333
-        ]),
+        clf.history[:, "train_accuracy"],
+        np.array(
+            [
+                0.7666666666666667,
+                0.7333333333333333,
+                0.8166666666666667,
+                0.8333333333333334,
+                0.9333333333333333,
+                0.9333333333333333,
+            ]
+        ),
         rtol=1e-4,
         atol=1e-5,
     )
     np.testing.assert_allclose(
-        clf.history[:, 'valid_accuracy'],
-        np.array([
-            0.5666666666666667,
-            0.5666666666666667,
-            0.6,
-            0.6,
-            0.6,
-            0.6,
-        ]),
+        clf.history[:, "valid_accuracy"],
+        np.array(
+            [
+                0.5666666666666667,
+                0.5666666666666667,
+                0.6,
+                0.6,
+                0.6,
+                0.6,
+            ]
+        ),
         rtol=1e-4,
         atol=1e-5,
     )

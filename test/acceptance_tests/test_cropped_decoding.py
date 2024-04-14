@@ -33,9 +33,7 @@ def test_cropped_decoding():
 
     # Load each of the files
     parts = [
-        mne.io.read_raw_edf(
-            path, preload=True, stim_channel="auto", verbose="WARNING"
-        )
+        mne.io.read_raw_edf(path, preload=True, stim_channel="auto", verbose="WARNING")
         for path in physionet_paths
     ]
 
@@ -90,17 +88,23 @@ def test_cropped_decoding():
     # Perform forward pass to determine how many outputs per input
     n_preds_per_input = model.get_output_shape()[2]
 
-    train_set = create_from_X_y(X[:60], y[:60],
-                                drop_last_window=False,
-                                sfreq=100,
-                                window_size_samples=input_window_samples,
-                                window_stride_samples=n_preds_per_input)
+    train_set = create_from_X_y(
+        X[:60],
+        y[:60],
+        drop_last_window=False,
+        sfreq=100,
+        window_size_samples=input_window_samples,
+        window_stride_samples=n_preds_per_input,
+    )
 
-    valid_set = create_from_X_y(X[60:], y[60:],
-                                drop_last_window=False,
-                                sfreq=100,
-                                window_size_samples=input_window_samples,
-                                window_stride_samples=n_preds_per_input)
+    valid_set = create_from_X_y(
+        X[60:],
+        y[60:],
+        drop_last_window=False,
+        sfreq=100,
+        window_size_samples=input_window_samples,
+        window_stride_samples=n_preds_per_input,
+    )
 
     train_split = predefined_split(valid_set)
 
@@ -112,63 +116,35 @@ def test_cropped_decoding():
         optimizer=optim.Adam,
         train_split=train_split,
         batch_size=32,
-        callbacks=['accuracy'],
+        callbacks=["accuracy"],
         classes=[0, 1],
     )
 
     clf.fit(train_set, y=None, epochs=4)
     np.testing.assert_allclose(
-        clf.history[:, 'train_loss'],
-        np.array(
-            [
-                1.391054,
-                1.278387,
-                1.086732,
-                1.111006
-            ]
-        ),
+        clf.history[:, "train_loss"],
+        np.array([1.391054, 1.278387, 1.086732, 1.111006]),
         rtol=1e-3,
         atol=1e-4,
     )
 
     np.testing.assert_allclose(
-        clf.history[:, 'valid_loss'],
-        np.array(
-            [
-                2.24272,
-                0.891798,
-                0.741147,
-                0.933025
-            ]
-        ),
+        clf.history[:, "valid_loss"],
+        np.array([2.24272, 0.891798, 0.741147, 0.933025]),
         rtol=1e-3,
         atol=1e-3,
     )
 
     np.testing.assert_allclose(
-        clf.history[:, 'train_accuracy'],
-        np.array(
-            [
-                0.5,
-                0.516667,
-                0.6,
-                0.533333
-            ]
-        ),
+        clf.history[:, "train_accuracy"],
+        np.array([0.5, 0.516667, 0.6, 0.533333]),
         rtol=1e-3,
         atol=1e-4,
     )
 
     np.testing.assert_allclose(
-        clf.history[:, 'valid_accuracy'],
-        np.array(
-            [
-                0.466667,
-                0.533333,
-                0.6,
-                0.6
-            ]
-        ),
+        clf.history[:, "valid_accuracy"],
+        np.array([0.466667, 0.533333, 0.6, 0.6]),
         rtol=1e-3,
         atol=1e-4,
     )

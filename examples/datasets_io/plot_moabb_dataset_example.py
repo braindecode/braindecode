@@ -35,8 +35,8 @@ for x, y in dataset:
 # We can apply preprocessing transforms that are defined in mne and work
 # in-place, such as resampling, bandpass filtering, or electrode selection.
 preprocessors = [
-    Preprocessor('pick_types', eeg=True, meg=False, stim=True),
-    Preprocessor('resample', sfreq=100)
+    Preprocessor("pick_types", eeg=True, meg=False, stim=True),
+    Preprocessor("resample", sfreq=100),
 ]
 print(dataset.datasets[0].raw.info["sfreq"])
 preprocess(dataset, preprocessors)

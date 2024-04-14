@@ -68,27 +68,35 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-            self,
-            sfreq=None,
-            n_tce=2,
-            d_model=80,
-            d_ff=120,
-            n_attn_heads=5,
-            dropout=0.1,
-            input_window_seconds=None,
-            n_outputs=None,
-            after_reduced_cnn_size=30,
-            return_feats=False,
-            chs_info=None,
-            n_chans=None,
-            n_times=None,
-            n_classes=None,
-            input_size_s=None,
+        self,
+        sfreq=None,
+        n_tce=2,
+        d_model=80,
+        d_ff=120,
+        n_attn_heads=5,
+        dropout=0.1,
+        input_window_seconds=None,
+        n_outputs=None,
+        after_reduced_cnn_size=30,
+        return_feats=False,
+        chs_info=None,
+        n_chans=None,
+        n_times=None,
+        n_classes=None,
+        input_size_s=None,
     ):
-        n_outputs, input_window_seconds, = deprecated_args(
+        (
+            n_outputs,
+            input_window_seconds,
+        ) = deprecated_args(
             self,
             ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_size_s", "input_window_seconds", input_size_s, input_window_seconds),
+            (
+                "input_size_s",
+                "input_window_seconds",
+                input_size_s,
+                input_window_seconds,
+            ),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -103,15 +111,22 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
 
         self.mapping = {
             "fc.weight": "final_layer.weight",
-            "fc.bias": "final_layer.bias"
+            "fc.bias": "final_layer.bias",
         }
 
-        if not ((self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80) or
-                (self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100)):
-            warnings.warn("This model was designed originally for input windows of 30sec at 100Hz, "
-                          "with d_model at 80 or at 125Hz, with d_model at 100, to use anything "
-                          "other than this may cause errors or cause the model to perform in "
-                          "other ways than intended", UserWarning)
+        if not (
+            (self.input_window_seconds == 30 and self.sfreq == 100 and d_model == 80)
+            or (
+                self.input_window_seconds == 30 and self.sfreq == 125 and d_model == 100
+            )
+        ):
+            warnings.warn(
+                "This model was designed originally for input windows of 30sec at 100Hz, "
+                "with d_model at 80 or at 125Hz, with d_model at 100, to use anything "
+                "other than this may cause errors or cause the model to perform in "
+                "other ways than intended",
+                UserWarning,
+            )
 
         # the usual kernel size for the mrcnn, for sfreq 100
         kernel_size = 7
@@ -122,8 +137,12 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         mrcnn = _MRCNN(after_reduced_cnn_size, kernel_size)
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
         ff = _PositionwiseFeedForward(d_model, d_ff, dropout)
-        tce = _TCE(_EncoderLayer(d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size,
-                                 dropout), n_tce)
+        tce = _TCE(
+            _EncoderLayer(
+                d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size, dropout
+            ),
+            n_tce,
+        )
 
         self.feature_extractor = nn.Sequential(mrcnn, tce)
         self.len_last_layer = self._len_last_layer(self.n_times)
@@ -133,7 +152,9 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         """if return_feats:
             raise ValueError("return_feat == True is not accepted anymore")"""
         if not return_feats:
-            self.final_layer = nn.Linear(d_model * after_reduced_cnn_size, self.n_outputs)
+            self.final_layer = nn.Linear(
+                d_model * after_reduced_cnn_size, self.n_outputs
+            )
 
     def _len_last_layer(self, input_size):
         self.feature_extractor.eval()
@@ -153,7 +174,9 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         """
 
         encoded_features = self.feature_extractor(x)
-        encoded_features = encoded_features.contiguous().view(encoded_features.shape[0], -1)
+        encoded_features = encoded_features.contiguous().view(
+            encoded_features.shape[0], -1
+        )
 
         if self.return_feats:
             return encoded_features
@@ -170,7 +193,7 @@ class _SELayer(nn.Module):
             nn.Linear(channel, channel // reduction, bias=False),
             nn.ReLU(inplace=True),
             nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
 
     def forward(self, x):
@@ -183,9 +206,19 @@ class _SELayer(nn.Module):
 class _SEBasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
-                 base_width=64, dilation=1, norm_layer=None,
-                 *, reduction=16):
+    def __init__(
+        self,
+        inplanes,
+        planes,
+        stride=1,
+        downsample=None,
+        groups=1,
+        base_width=64,
+        dilation=1,
+        norm_layer=None,
+        *,
+        reduction=16,
+    ):
         super(_SEBasicBlock, self).__init__()
         self.conv1 = nn.Conv1d(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm1d(planes)
@@ -195,8 +228,9 @@ class _SEBasicBlock(nn.Module):
         self.se = _SELayer(planes, reduction)
         self.downsample = downsample
         self.stride = stride
-        self.features = nn.Sequential(self.conv1, self.bn1, self.relu, self.conv2, self.bn2,
-                                      self.se)
+        self.features = nn.Sequential(
+            self.conv1, self.bn1, self.relu, self.conv2, self.bn2, self.se
+        )
 
     def forward(self, x):
         residual = x
@@ -222,16 +256,13 @@ class _MRCNN(nn.Module):
             self.GELU,
             nn.MaxPool1d(kernel_size=8, stride=2, padding=4),
             nn.Dropout(drate),
-
             nn.Conv1d(64, 128, kernel_size=8, stride=1, bias=False, padding=4),
             nn.BatchNorm1d(128),
             self.GELU,
-
             nn.Conv1d(128, 128, kernel_size=8, stride=1, bias=False, padding=4),
             nn.BatchNorm1d(128),
             self.GELU,
-
-            nn.MaxPool1d(kernel_size=4, stride=4, padding=2)
+            nn.MaxPool1d(kernel_size=4, stride=4, padding=2),
         )
 
         self.features2 = nn.Sequential(
@@ -240,16 +271,17 @@ class _MRCNN(nn.Module):
             self.GELU,
             nn.MaxPool1d(kernel_size=4, stride=2, padding=2),
             nn.Dropout(drate),
-
-            nn.Conv1d(64, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3),
+            nn.Conv1d(
+                64, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3
+            ),
             nn.BatchNorm1d(128),
             self.GELU,
-
-            nn.Conv1d(128, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3),
+            nn.Conv1d(
+                128, 128, kernel_size=kernel_size, stride=1, bias=False, padding=3
+            ),
             nn.BatchNorm1d(128),
             self.GELU,
-
-            nn.MaxPool1d(kernel_size=2, stride=2, padding=1)
+            nn.MaxPool1d(kernel_size=2, stride=2, padding=1),
         )
 
         self.dropout = nn.Dropout(drate)
@@ -260,8 +292,13 @@ class _MRCNN(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv1d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
+                nn.Conv1d(
+                    self.inplanes,
+                    planes * block.expansion,
+                    kernel_size=1,
+                    stride=stride,
+                    bias=False,
+                ),
                 nn.BatchNorm1d(planes * block.expansion),
             )
 
@@ -298,14 +335,16 @@ def _attention(query, key, value, dropout=None):
 
 
 class _CausalConv1d(torch.nn.Conv1d):
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size,
-                 stride=1,
-                 dilation=1,
-                 groups=1,
-                 bias=True):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        stride=1,
+        dilation=1,
+        groups=1,
+        bias=True,
+    ):
         self.__padding = (kernel_size - 1) * dilation
 
         super(_CausalConv1d, self).__init__(
@@ -316,12 +355,13 @@ class _CausalConv1d(torch.nn.Conv1d):
             padding=self.__padding,
             dilation=dilation,
             groups=groups,
-            bias=bias)
+            bias=bias,
+        )
 
     def forward(self, input):
         result = super(_CausalConv1d, self).forward(input)
         if self.__padding != 0:
-            return result[:, :, :-self.__padding]
+            return result[:, :, : -self.__padding]
         return result
 
 
@@ -333,8 +373,12 @@ class _MultiHeadedAttention(nn.Module):
         self.d_per_head = d_model // h
         self.h = h
 
-        self.convs = _clones(_CausalConv1d(after_reduced_cnn_size, after_reduced_cnn_size,
-                                           kernel_size=7, stride=1), 3)
+        self.convs = _clones(
+            _CausalConv1d(
+                after_reduced_cnn_size, after_reduced_cnn_size, kernel_size=7, stride=1
+            ),
+            3,
+        )
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
@@ -343,13 +387,20 @@ class _MultiHeadedAttention(nn.Module):
         nbatches = query.size(0)
 
         query = query.view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
-        key = self.convs[1](key).view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
-        value = self.convs[2](value).view(nbatches, -1, self.h, self.d_per_head).transpose(1, 2)
+        key = (
+            self.convs[1](key)
+            .view(nbatches, -1, self.h, self.d_per_head)
+            .transpose(1, 2)
+        )
+        value = (
+            self.convs[2](value)
+            .view(nbatches, -1, self.h, self.d_per_head)
+            .transpose(1, 2)
+        )
 
         x, self.attn = _attention(query, key, value, dropout=self.dropout)
 
-        x = x.transpose(1, 2).contiguous() \
-            .view(nbatches, -1, self.h * self.d_per_head)
+        x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_per_head)
 
         return self.linear(x)
 
@@ -404,8 +455,13 @@ class _EncoderLayer(nn.Module):
         self.feed_forward = feed_forward
         self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
         self.size = size
-        self.conv = _CausalConv1d(after_reduced_cnn_size, after_reduced_cnn_size, kernel_size=7,
-                                  stride=1, dilation=1)
+        self.conv = _CausalConv1d(
+            after_reduced_cnn_size,
+            after_reduced_cnn_size,
+            kernel_size=7,
+            stride=1,
+            dilation=1,
+        )
 
     def forward(self, x_in):
         """Transformer Encoder"""
