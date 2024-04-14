@@ -419,16 +419,18 @@ def get_attention_block(
         The attention block based on the attention mode.
     """
     if attention_mode == "se":
-        return SqueezeAndExcitation(in_channels=ch_dim,
-                                    reduction_rate=reduction_rate)
+        return SqueezeAndExcitation(in_channels=ch_dim, reduction_rate=reduction_rate)
     # improving the squeeze module
     elif attention_mode == "gsop":
-        return GSoP(in_channels=ch_dim,
-                    reduction_rate=reduction_rate)
+        return GSoP(in_channels=ch_dim, reduction_rate=reduction_rate)
     elif attention_mode == "fca":
         assert seq_len is not None
-        return FCA(in_channels=ch_dim, seq_len=seq_len,
-                   reduction_rate=reduction_rate, freq_idx=freq_idx)
+        return FCA(
+            in_channels=ch_dim,
+            seq_len=seq_len,
+            reduction_rate=reduction_rate,
+            freq_idx=freq_idx,
+        )
     elif attention_mode == "encnet":
         return EncNet(in_channels=ch_dim, n_codewords=n_codewords)
     # improving the excitation module
@@ -446,18 +448,16 @@ def get_attention_block(
     elif attention_mode == "gct":
         return GCT(in_channels=ch_dim)
     elif attention_mode == "srm":
-        return SRM(in_channels=ch_dim,
-                   use_mlp=use_mlp,
-                   reduction_rate=reduction_rate)
+        return SRM(in_channels=ch_dim, use_mlp=use_mlp, reduction_rate=reduction_rate)
     # temporal and channel attention
     elif attention_mode == "cbam":
-        return CBAM(in_channels=ch_dim,
-                    reduction_rate=reduction_rate,
-                    kernel_size=kernel_size)
+        return CBAM(
+            in_channels=ch_dim, reduction_rate=reduction_rate, kernel_size=kernel_size
+        )
     elif attention_mode == "cat":
-        return CAT(in_channels=ch_dim,
-                   reduction_rate=reduction_rate,
-                   kernel_size=kernel_size)
+        return CAT(
+            in_channels=ch_dim, reduction_rate=reduction_rate, kernel_size=kernel_size
+        )
     elif attention_mode == "catlite":
         return CATLite(ch_dim, reduction_rate=reduction_rate)
     else:
