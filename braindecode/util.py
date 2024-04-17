@@ -11,6 +11,7 @@ import h5py
 import mne
 import numpy as np
 import torch
+from torch import Tensor
 from sklearn.utils import check_random_state
 
 
@@ -62,17 +63,6 @@ def set_random_seeds(seed, cuda, cudnn_benchmark=None):
     np.random.seed(seed)
 
 
-def np_to_var(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
-    warn("np_to_var has been renamed np_to_th, please use np_to_th instead")
-    return np_to_th(
-        X,
-        requires_grad=requires_grad,
-        dtype=dtype,
-        pin_memory=pin_memory,
-        **tensor_kwargs,
-    )
-
-
 def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwargs):
     """
     Convenience function to transform numpy array to `torch.Tensor`.
@@ -104,12 +94,7 @@ def np_to_th(X, requires_grad=False, dtype=None, pin_memory=False, **tensor_kwar
     return X_tensor
 
 
-def var_to_np(var):
-    warn("var_to_np has been renamed th_to_np, please use th_to_np instead")
-    return th_to_np(var)
-
-
-def th_to_np(var):
+def th_to_np(var: Tensor):
     """Convenience function to transform `torch.Tensor` to numpy
     array.
 

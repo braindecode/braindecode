@@ -29,6 +29,7 @@ Enhancements
 - Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
 - Applying black to the codebase (:gh:`579` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.EEGSimpleConv` (:gh:`581` by `Yassine El Ouahidi`_ and `Bruno Aristimunha`_)
+- Increasing the coverage of the tests (:gh:`592` by `Bruno Aristimunha`_)
 - Adding cache and pre-processing option to :class:`braindecode.datasets.MOABBDataset` (:gh:`582` by `Bruno Aristimunha`_)
 - Add type hints to datasets (:gh:`590` by `Pierre Guetschel`_)
 - Add channel names and montage to  :class:`braindecode.datasets.TUH` (:gh:`593` by `Pierre Guetschel`_)

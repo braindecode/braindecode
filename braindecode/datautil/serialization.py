@@ -28,7 +28,8 @@ from ..datasets.base import (
 def save_concat_dataset(path, concat_dataset, overwrite=False):
     warnings.warn(
         '"save_concat_dataset()" is deprecated and will be removed in'
-        " the future. Use dataset.save() instead."
+        " the future. Use dataset.save() instead.",
+        UserWarning,
     )
     concat_dataset.save(path=path, overwrite=overwrite)
 
