@@ -5,9 +5,14 @@
         "url": "https://braindecode.org/dev/"
     },
     {
-        "name": "0.8 (stable)",
-        "version": "dev",
+        "name": "0.8.2 (stable)",
+        "version": "stable",
         "url": "https://braindecode.org/stable/"
+    },
+    {
+        "name": "0.8.1",
+        "version": "0.8.1",
+        "url": "https://braindecode.org/0.8.1/"
     },
     {
         "name": "0.7",
