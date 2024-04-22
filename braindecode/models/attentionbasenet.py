@@ -58,7 +58,7 @@ class _FeatureExtractor(nn.Module):
         pool_stride: int = 15,
         dropout: float = 0.5,
     ):
-        super(_FeatureExtractor, self).__init__()
+        super().__init__()
 
         self.ensure4d = Ensure4d()
         self.rearrange_input = Rearrange("b c t 1 -> b 1 c t")
