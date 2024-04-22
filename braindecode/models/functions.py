@@ -141,7 +141,7 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     https://github.com/pytorch/vision/blob/main/torchvision/transforms/_functional_tensor.py#L725-L732
     All rights reserved.
 
-    LICENSE in  https://github.com/pytorch/vision/blob/main/LICENSE
+    LICENSE in https://github.com/pytorch/vision/blob/main/LICENSE
 
     """
     ksize_half = (kernel_size - 1) * 0.5
