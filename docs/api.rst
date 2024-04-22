@@ -64,6 +64,7 @@ Models
    :toctree: generated/
 
     ATCNet
+    AttentionBaseNet
     BIOT
     Deep4Net
     DeepSleepNet

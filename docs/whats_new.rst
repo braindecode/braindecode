@@ -23,6 +23,8 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+
+- Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`572` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
 - Adding an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.BIOT` (:gh:`573` by `Bruno Aristimunha`_)
@@ -39,7 +41,7 @@ Bugs
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
 - Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
 - Fix issue with coverage CI and adding a condition on the test for avoid HTML errors (:gh: 591 by `Bruno Aristimunha`_)
-
+- Constraint the version of mne (:gh: 594 by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
