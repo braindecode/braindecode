@@ -2,6 +2,7 @@
 Some predefined network architectures for EEG decoding.
 """
 
+from .attentionbasenet import AttentionBaseNet
 from .base import EEGModuleMixin
 from .biot import BIOT
 from .eegconformer import EEGConformer
