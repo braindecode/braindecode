@@ -124,13 +124,17 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     specified size and type, filled with values distributed according to a
     Gaussian curve, normalized using a softmax function
     to ensure all weights sum to 1.
+
+
     Parameters
     ----------
     kernel_size: int
     sigma: float
+
     Returns
     -------
     kernel1d: torch.Tensor
+
     Notes
     -----
     Code copied and modified from TorchVision:
@@ -270,6 +274,23 @@ def _get_sinc_resample_kernel(
     """
     Get the sinc resampling kernel.
 
+    Parameters
+    ----------
+    orig_freq: int
+    new_freq: int
+    gcd: int
+    lowpass_filter_width: int
+    rolloff: float
+    resampling_method: str
+    beta: Optional[float]
+    device: torch.device
+    dtype: Optional[torch.dtype]
+
+    Returns
+    -------
+    Tuple[torch.Tensor, int]
+
+
     Notes
     -----
     Code copied and modified from TorchAudio.
@@ -298,22 +319,6 @@ def _get_sinc_resample_kernel(
     THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-    Parameters
-    ----------
-    orig_freq: int
-    new_freq: int
-    gcd: int
-    lowpass_filter_width: int
-    rolloff: float
-    resampling_method: str
-    beta: Optional[float]
-    device: torch.device
-    dtype: Optional[torch.dtype]
-
-    Returns
-    -------
-    Tuple[torch.Tensor, int]
 
     """
     if not (int(orig_freq) == orig_freq and int(new_freq) == new_freq):
@@ -425,12 +430,24 @@ def _apply_sinc_resample_kernel(
     width: int,
 ):
     """
-     Apply the sinc resampling kernel.
+    Apply the sinc resampling kernel.
 
-     Notes
-     -----
-     Code copied and modified from TorchAudio.
+    Parameters
+    ----------
+    waveform: Tensor
+    orig_freq: int
+    new_freq: int
+    gcd: int
+    kernel: Tensor
+    width: int
 
+    Returns
+    -------
+    Tensor
+
+    Notes
+    -----
+    Code copied and modified from TorchAudio.
 
     All rights reserved.
     Redistribution and use in source and binary forms, with or without
@@ -456,20 +473,6 @@ def _apply_sinc_resample_kernel(
     THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
     (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
     OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-
-    Parameters
-    ----------
-    waveform: Tensor
-    orig_freq: int
-    new_freq: int
-    gcd: int
-    kernel: Tensor
-    width: int
-
-    Returns
-    -------
-    Tensor
     """
     if not waveform.is_floating_point():
         raise TypeError(
