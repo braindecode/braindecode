@@ -658,9 +658,12 @@ class CATLite(nn.Module):
 
     Parameters
     ----------
-    in_channels : int, number of input feature channels
-    reduction_rate : int, reduction ratio of the fully-connected layers
+    in_channels : int
+        number of input feature channels
+    reduction_rate : int
+        reduction ratio of the fully-connected layers
     bias : bool, default=True
+        if True, adds a learnable bias will be used in the convolution,
 
     References
     ----------
