@@ -60,8 +60,8 @@ class TUH(BaseConcatDataset):
         target_name: str | None = None,
         preload: bool = False,
         add_physician_reports: bool = False,
-        rename_channels: bool = True,
-        set_montage: bool = True,
+        rename_channels: bool = False,
+        set_montage: bool = False,
         n_jobs: int = 1,
     ):
         if set_montage:
@@ -403,8 +403,8 @@ class TUHAbnormal(TUH):
         target_name: str | None = "pathological",
         preload: bool = False,
         add_physician_reports: bool = False,
-        rename_channels: bool = True,
-        set_montage: bool = True,
+        rename_channels: bool = False,
+        set_montage: bool = False,
         n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
@@ -528,8 +528,8 @@ class _TUHMock(TUH):
         target_name: str | None = None,
         preload: bool = False,
         add_physician_reports: bool = False,
-        rename_channels: bool = True,
-        set_montage: bool = True,
+        rename_channels: bool = False,
+        set_montage: bool = False,
         n_jobs: int = 1,
     ):
         with warnings.catch_warnings():
@@ -564,8 +564,8 @@ class _TUHAbnormalMock(TUHAbnormal):
         target_name: str | None = "pathological",
         preload: bool = False,
         add_physician_reports: bool = False,
-        rename_channels: bool = True,
-        set_montage: bool = True,
+        rename_channels: bool = False,
+        set_montage: bool = False,
         n_jobs: int = 1,
     ):
         with warnings.catch_warnings():

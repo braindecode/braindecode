@@ -65,6 +65,8 @@ tuh = TUH(
     target_name=None,
     preload=False,
     add_physician_reports=False,
+    rename_channels=True,
+    set_montage=True,
     n_jobs=1 if TUH.__name__ == "_TUHMock" else N_JOBS,
 )
 
