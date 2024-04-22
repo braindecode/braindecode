@@ -55,8 +55,7 @@ mne_functions = [
     mne.io.Raw.drop_channels,
     mne.io.Raw.filter,
     mne.io.Raw.crop,
-    mne.pick_channels,
-    mne.pick_types,
+    mne.io.Raw.pick,
     mne.io.Raw.set_eeg_reference,
 ]
 
