@@ -31,6 +31,7 @@ Enhancements
 - Adding :class:`braindecode.models.Labram` (:gh:`578` by `Bruno Aristimunha`_)
 - Applying black to the codebase (:gh:`579` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.EEGSimpleConv` (:gh:`581` by `Yassine El Ouahidi`_ and `Bruno Aristimunha`_)
+- Increasing the coverage of the tests (:gh:`592` by `Bruno Aristimunha`_)
 - Adding cache and pre-processing option to :class:`braindecode.datasets.MOABBDataset` (:gh:`582` by `Bruno Aristimunha`_)
 - Add type hints to datasets (:gh:`590` by `Pierre Guetschel`_)
 
@@ -40,7 +41,7 @@ Bugs
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
 - Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
 - Fix issue with coverage CI and adding a condition on the test for avoid HTML errors (:gh: 591 by `Bruno Aristimunha`_)
-
+- Constraint the version of mne (:gh: 594 by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~

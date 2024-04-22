@@ -18,6 +18,7 @@ from braindecode.preprocessing import (
 from braindecode.datautil.serialization import (
     load_concat_dataset,
     _check_save_dir_empty,
+    save_concat_dataset
 )
 
 bnci_kwargs = {
@@ -64,9 +65,9 @@ def test_outdated_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
     with pytest.warns(
-        UserWarning,
-        match="This function only exists for "
-        "backwards compatibility purposes. DO NOT USE!",
+            UserWarning,
+            match="This function only exists for "
+                  "backwards compatibility purposes. DO NOT USE!",
     ):
         concat_raw_dataset._outdated_save(path=tmpdir, overwrite=False)
     assert os.path.exists(tmpdir.join("description.json"))
@@ -75,13 +76,14 @@ def test_outdated_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     assert not os.path.exists(tmpdir.join(f"{n_raw_datasets}-raw.fif"))
 
 
-def test_outdated_save_concat_windows_dataset(setup_concat_windows_mne_dataset, tmpdir):
+def test_outdated_save_concat_windows_dataset(setup_concat_windows_mne_dataset,
+                                              tmpdir):
     concat_windows_dataset = setup_concat_windows_mne_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     with pytest.warns(
-        UserWarning,
-        match="This function only exists for "
-        "backwards compatibility purposes. DO NOT USE!",
+            UserWarning,
+            match="This function only exists for "
+                  "backwards compatibility purposes. DO NOT USE!",
     ):
         concat_windows_dataset._outdated_save(path=tmpdir, overwrite=False)
     assert os.path.exists(tmpdir.join("description.json"))
@@ -96,7 +98,8 @@ def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset.save(path=tmpdir, overwrite=False)
     loaded_concat_raw_dataset = load_concat_dataset(path=tmpdir, preload=False)
     assert len(concat_raw_dataset) == len(loaded_concat_raw_dataset)
-    assert len(concat_raw_dataset.datasets) == len(loaded_concat_raw_dataset.datasets)
+    assert len(concat_raw_dataset.datasets) == len(
+        loaded_concat_raw_dataset.datasets)
     assert len(concat_raw_dataset.description) == len(
         loaded_concat_raw_dataset.description
     )
@@ -110,11 +113,12 @@ def test_load_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     )
 
 
-def test_fail_outdated_save_on_new_window_dataset(setup_concat_windows_dataset, tmpdir):
+def test_fail_outdated_save_on_new_window_dataset(setup_concat_windows_dataset,
+                                                  tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     with pytest.raises(
-        NotImplementedError,
-        match="Outdated save not implemented for new window datasets.",
+            NotImplementedError,
+            match="Outdated save not implemented for new window datasets.",
     ):
         concat_windows_dataset._outdated_save(path=tmpdir, overwrite=False)
 
@@ -123,7 +127,8 @@ def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     concat_windows_dataset.save(path=tmpdir, overwrite=False)
-    loaded_concat_windows_dataset = load_concat_dataset(path=tmpdir, preload=False)
+    loaded_concat_windows_dataset = load_concat_dataset(path=tmpdir,
+                                                        preload=False)
     assert len(concat_windows_dataset) == len(loaded_concat_windows_dataset)
     assert len(concat_windows_dataset.datasets) == len(
         loaded_concat_windows_dataset.datasets
@@ -132,7 +137,8 @@ def test_load_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
         loaded_concat_windows_dataset.description
     )
     for windows_i in range(n_windows_datasets):
-        actual_x, actual_y, actual_crop_inds = concat_windows_dataset[windows_i]
+        actual_x, actual_y, actual_crop_inds = concat_windows_dataset[
+            windows_i]
         x, y, crop_inds = loaded_concat_windows_dataset[windows_i]
         np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
         np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
@@ -148,7 +154,8 @@ def test_load_multiple_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     for i in range(2):
         i_offset = i * len(concat_raw_dataset.datasets)
         concat_raw_dataset.save(path=tmpdir, overwrite=False, offset=i_offset)
-    loaded_concat_raw_datasets = load_concat_dataset(path=tmpdir, preload=False)
+    loaded_concat_raw_datasets = load_concat_dataset(path=tmpdir,
+                                                     preload=False)
     assert 2 * len(concat_raw_dataset) == len(loaded_concat_raw_datasets)
     assert 2 * len(concat_raw_dataset.datasets) == len(
         loaded_concat_raw_datasets.datasets
@@ -158,13 +165,17 @@ def test_load_multiple_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     )
 
 
-def test_load_multiple_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
+def test_load_multiple_concat_windows_dataset(setup_concat_windows_dataset,
+                                              tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     for i in range(2):
         i_offset = i * len(concat_windows_dataset.datasets)
-        concat_windows_dataset.save(path=tmpdir, overwrite=False, offset=i_offset)
-    loaded_concat_windows_datasets = load_concat_dataset(path=tmpdir, preload=False)
-    assert 2 * len(concat_windows_dataset) == len(loaded_concat_windows_datasets)
+        concat_windows_dataset.save(path=tmpdir, overwrite=False,
+                                    offset=i_offset)
+    loaded_concat_windows_datasets = load_concat_dataset(path=tmpdir,
+                                                         preload=False)
+    assert 2 * len(concat_windows_dataset) == len(
+        loaded_concat_windows_datasets)
     assert 2 * len(concat_windows_dataset.datasets) == len(
         loaded_concat_windows_datasets.datasets
     )
@@ -183,7 +194,8 @@ def test_load_save_raw_preproc_kwargs(setup_concat_raw_dataset, tmpdir):
     )
     concat_raw_dataset.save(tmpdir, overwrite=False)
     for i in range(len(concat_raw_dataset.datasets)):
-        assert os.path.exists(os.path.join(tmpdir, str(i), "raw_preproc_kwargs.json"))
+        assert os.path.exists(
+            os.path.join(tmpdir, str(i), "raw_preproc_kwargs.json"))
     loaded_concat_raw_dataset = load_concat_dataset(tmpdir, preload=False)
     for ds in loaded_concat_raw_dataset.datasets:
         assert ds.raw_preproc_kwargs == [
@@ -292,7 +304,8 @@ def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
         )
         assert len(raised_warnings) == 0
     assert len(concat_raw_dataset) == len(loaded_concat_raw_dataset)
-    assert len(concat_raw_dataset.datasets) == len(loaded_concat_raw_dataset.datasets)
+    assert len(concat_raw_dataset.datasets) == len(
+        loaded_concat_raw_dataset.datasets)
     assert len(concat_raw_dataset.description) == len(
         loaded_concat_raw_dataset.description
     )
@@ -306,7 +319,8 @@ def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
     )
 
 
-def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpdir):
+def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset,
+                                              tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     # assert no warning raised with 'new' saving function
@@ -327,7 +341,8 @@ def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpd
         loaded_concat_windows_dataset.description
     )
     for windows_i in range(n_windows_datasets):
-        actual_x, actual_y, actual_crop_inds = concat_windows_dataset[windows_i]
+        actual_x, actual_y, actual_crop_inds = concat_windows_dataset[
+            windows_i]
         x, y, crop_inds = loaded_concat_windows_dataset[windows_i]
         np.testing.assert_allclose(x, actual_x, rtol=1e-4, atol=1e-5)
         np.testing.assert_allclose(y, actual_y, rtol=1e-4, atol=1e-5)
@@ -339,7 +354,7 @@ def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset, tmpd
 
 
 def test_save_varying_number_of_datasets_with_overwrite(
-    setup_concat_windows_dataset, tmpdir
+        setup_concat_windows_dataset, tmpdir
 ):
     concat_windows_dataset = setup_concat_windows_dataset
     concat_windows_dataset.save(path=tmpdir, overwrite=False)
@@ -388,3 +403,9 @@ def test_check_save_dir_empty(setup_concat_raw_dataset, tmpdir):
     setup_concat_raw_dataset.save(tmpdir)
     with pytest.raises(FileExistsError):
         _check_save_dir_empty(tmpdir)
+
+
+def test_save_concat_dataset(tmpdir, setup_concat_raw_dataset):
+    # Call the save_concat_dataset function
+    with pytest.warns(UserWarning):
+        save_concat_dataset(tmpdir, setup_concat_raw_dataset, overwrite=False)

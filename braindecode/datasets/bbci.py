@@ -41,7 +41,6 @@ class BBCIDataset(object):
         check_class_names: bool = False,
     ):
         self.__dict__.update(locals())
-        del self.self
 
     def load(self) -> mne.io.RawArray:
         cnt = self._load_continuous_signal()
