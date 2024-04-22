@@ -39,7 +39,7 @@ Bugs
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
 - Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
 - Fix issue with coverage CI and adding a condition on the test for avoid HTML errors (:gh: 591 by `Bruno Aristimunha`_)
-
+- Fix deprecation of pick_channels from the mnepreproc (:gh: 594 by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
