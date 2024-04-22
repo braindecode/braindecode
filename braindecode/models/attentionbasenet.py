@@ -189,7 +189,7 @@ class _ChannelAttentionBlock(nn.Module):
         kernel_size: int = 9,
         extra_params: bool = False,
     ):
-        super(_ChannelAttentionBlock, self).__init__()
+        super().__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(
                 in_channels,
