@@ -106,7 +106,8 @@ def test_shallow_fbcsp_net_load_state_dict(input_sizes):
     state_dict = OrderedDict()
     state_dict["conv_time.weight"] = torch.rand([40, 1, 25, 1])
     state_dict["conv_time.bias"] = torch.rand([40])
-    state_dict["conv_spat.weight"] = torch.rand([40, 40, 1, input_sizes["n_channels"]])
+    state_dict["conv_spat.weight"] = torch.rand(
+        [40, 40, 1, input_sizes["n_channels"]])
     state_dict["bnorm.weight"] = torch.rand([40])
     state_dict["bnorm.bias"] = torch.rand([40])
     state_dict["bnorm.running_mean"] = torch.rand([40])
@@ -139,7 +140,8 @@ def test_deep4net_load_state_dict(input_sizes):
     state_dict = OrderedDict()
     state_dict["conv_time.weight"] = torch.rand([25, 1, 10, 1])
     state_dict["conv_time.bias"] = torch.rand([25])
-    state_dict["conv_spat.weight"] = torch.rand([25, 25, 1, input_sizes["n_channels"]])
+    state_dict["conv_spat.weight"] = torch.rand(
+        [25, 25, 1, input_sizes["n_channels"]])
     state_dict["bnorm.weight"] = torch.rand([25])
     state_dict["bnorm.bias"] = torch.rand([25])
     state_dict["bnorm.running_mean"] = torch.rand([25])
@@ -495,7 +497,8 @@ def test_tidnet(input_sizes):
 
 
 @pytest.mark.parametrize(
-    "sfreq,n_classes,input_size_s,d_model", [(100, 5, 30, 80), (125, 4, 30, 100)]
+    "sfreq,n_classes,input_size_s,d_model",
+    [(100, 5, 30, 80), (125, 4, 30, 100)]
 )
 def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     # (100, 5, 30, 80) - Physionet Sleep
@@ -513,7 +516,8 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     )
     model.eval()
 
-    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels,
+                  np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -561,7 +565,8 @@ def test_blanco_2020(n_channels, sfreq, n_groups, n_classes, input_size_s):
     )
     model.eval()
 
-    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels,
+                  np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -629,7 +634,8 @@ def test_deepsleepnet(n_classes):
     model.eval()
 
     rng = np.random.RandomState(42)
-    X = rng.randn(n_examples, n_channels, np.ceil(input_size_s * sfreq).astype(int))
+    X = rng.randn(n_examples, n_channels,
+                  np.ceil(input_size_s * sfreq).astype(int))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs
@@ -675,7 +681,8 @@ def test_deepsleepnet_feats_with_hook():
 
     def get_intermediate_layers(intermediate_layers, layer_name):
         def hook(model, input, output):
-            intermediate_layers[layer_name] = output.flatten(start_dim=1).detach()
+            intermediate_layers[layer_name] = output.flatten(
+                start_dim=1).detach()
 
         return hook
 
@@ -735,7 +742,8 @@ def test_model_trainable_parameters(model):
     classification_parameters = model.fc.parameters()
     final_layer_parameters = model.final_layer.parameters()
 
-    trainable_patch_params = sum(p.numel() for p in patch_parameters if p.requires_grad)
+    trainable_patch_params = sum(
+        p.numel() for p in patch_parameters if p.requires_grad)
 
     trainable_transformer_params = sum(
         p.numel() for p in transformer_parameters if p.requires_grad
@@ -759,7 +767,6 @@ def test_model_trainable_parameters(model):
 @pytest.mark.parametrize("n_outputs", [2, 3, 4, 5, 50])
 @pytest.mark.parametrize("input_size_s", [1, 2, 5, 10, 15, 30])
 def test_biot(n_chans, n_outputs, input_size_s):
-
     rng = check_random_state(42)
     sfreq = 200
     n_examples = 3
@@ -805,14 +812,15 @@ def test_initialization_default_parameters(default_biot_params):
 
 
 def test_model_trainable_parameters_biot(default_biot_params):
-
     biot = BIOT(**default_biot_params)
 
     biot_encoder = biot.encoder.parameters()
     biot_classifier = biot.classifier.parameters()
 
-    trainable_params_bio = sum(p.numel() for p in biot_encoder if p.requires_grad)
-    trainable_params_clf = sum(p.numel() for p in biot_classifier if p.requires_grad)
+    trainable_params_bio = sum(
+        p.numel() for p in biot_encoder if p.requires_grad)
+    trainable_params_clf = sum(
+        p.numel() for p in biot_classifier if p.requires_grad)
 
     assert trainable_params_bio == 3198464  # ~ 3.2 M according with Labram paper
     assert trainable_params_clf == 514
@@ -842,7 +850,8 @@ def test_model_trainable_parameters_labram(default_labram_params):
     default_labram_params: dict with default parameters for Labram model
 
     """
-    labram_base = Labram(n_layers=12, att_num_heads=12, **default_labram_params)
+    labram_base = Labram(n_layers=12, att_num_heads=12,
+                         **default_labram_params)
 
     labram_base_parameters = labram_base.get_torchinfo_statistics().trainable_params
 
@@ -898,20 +907,24 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
         **default_labram_params,
     )
     # Defining a random data
-    X = torch.rand(1, default_labram_params["n_chans"], default_labram_params["n_times"])
+    X = torch.rand(1, default_labram_params["n_chans"],
+                   default_labram_params["n_times"])
 
     with torch.no_grad():
-        out = labram_base(X, return_all_tokens=False, return_patch_tokens=False)
+        out = labram_base(X, return_all_tokens=False,
+                          return_patch_tokens=False)
 
         assert out.shape == torch.Size([1, default_labram_params["n_outputs"]])
 
-        out_patches = labram_base(X, return_all_tokens=False, return_patch_tokens=True)
+        out_patches = labram_base(X, return_all_tokens=False,
+                                  return_patch_tokens=True)
 
         assert out_patches.shape == torch.Size(
             [1, 320, default_labram_params["n_outputs"]]
         )
 
-        out_all_tokens = labram_base(X, return_all_tokens=True, return_patch_tokens=False)
+        out_all_tokens = labram_base(X, return_all_tokens=True,
+                                     return_patch_tokens=False)
         assert out_all_tokens.shape == torch.Size(
             [1, 321, default_labram_params["n_outputs"]]
         )
@@ -919,10 +932,12 @@ def test_labram_returns(default_labram_params, use_mean_pooling):
 
 def test_labram_without_pos_embed(default_labram_params):
     labram_base_not_pos_emb = Labram(
-        n_layers=12, att_num_heads=12, use_abs_pos_emb=False, **default_labram_params
+        n_layers=12, att_num_heads=12, use_abs_pos_emb=False,
+        **default_labram_params
     )
 
-    X = torch.rand(1, default_labram_params["n_chans"], default_labram_params["n_times"])
+    X = torch.rand(1, default_labram_params["n_chans"],
+                   default_labram_params["n_times"])
 
     with torch.no_grad():
         out_without_pos_emb = labram_base_not_pos_emb(X)
@@ -940,9 +955,11 @@ def test_labram_n_outputs_0(default_labram_params):
 
     """
     default_labram_params["n_outputs"] = 0
-    labram_base = Labram(n_layers=12, att_num_heads=12, **default_labram_params)
+    labram_base = Labram(n_layers=12, att_num_heads=12,
+                         **default_labram_params)
     # Defining a random data
-    X = torch.rand(1, default_labram_params["n_chans"], default_labram_params["n_times"])
+    X = torch.rand(1, default_labram_params["n_chans"],
+                   default_labram_params["n_times"])
 
     with torch.no_grad():
         out = labram_base(X)
@@ -951,40 +968,6 @@ def test_labram_n_outputs_0(default_labram_params):
 
 
 @pytest.fixture
-def default_attentionbasenet_params():
-    return {
-        'n_times': 1000,
-        'n_chans': 22,
-        'n_outputs': 4,
-    }
-
-
-@pytest.mark.parametrize("attention_mode", [
-    None,
-    "se",
-    "gsop",
-    "fca",
-    "encnet",
-    "eca",
-    "ge",
-    "gct",
-    "srm",
-    "cbam",
-    "cat",
-    "catlite"
-])
-def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
-    model = AttentionBaseNet(**default_attentionbasenet_params,
-                             attention_mode=attention_mode)
-    input_sizes = dict(
-        n_samples=7,
-        n_channels=default_attentionbasenet_params.get("n_chans"),
-        n_in_times=default_attentionbasenet_params.get("n_times"),
-        n_classes=default_attentionbasenet_params.get("n_outputs")
-    )
-    check_forward_pass(model, input_sizes)
-
-@pytest.fixture(scope="module")
 def param_eegsimple():
     return {
         "n_times": 1000,
@@ -1049,3 +1032,38 @@ def test_eeg_simpleconv_features(param_eegsimple):
 
     assert (feature.shape[0] == batch_size and
             feature.shape[1] == 32)
+
+
+@pytest.fixture(scope="module")
+def default_attentionbasenet_params():
+    return {
+        'n_times': 1000,
+        'n_chans': 22,
+        'n_outputs': 4,
+    }
+
+
+@pytest.mark.parametrize("attention_mode", [
+    None,
+    "se",
+    "gsop",
+    "fca",
+    "encnet",
+    "eca",
+    "ge",
+    "gct",
+    "srm",
+    "cbam",
+    "cat",
+    "catlite"
+])
+def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
+    model = AttentionBaseNet(**default_attentionbasenet_params,
+                             attention_mode=attention_mode)
+    input_sizes = dict(
+        n_samples=7,
+        n_channels=default_attentionbasenet_params.get("n_chans"),
+        n_in_times=default_attentionbasenet_params.get("n_times"),
+        n_classes=default_attentionbasenet_params.get("n_outputs")
+    )
+    check_forward_pass(model, input_sizes)
