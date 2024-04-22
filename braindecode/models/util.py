@@ -222,6 +222,7 @@ models_mandatory_parameters = [
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
     ("BIOT", ["n_chans", "n_outputs", "sfreq"], None),
+    ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
     ("Labram", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
 ]
