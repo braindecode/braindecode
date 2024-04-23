@@ -65,6 +65,8 @@ tuh = TUH(
     target_name=None,
     preload=False,
     add_physician_reports=False,
+    rename_channels=True,
+    set_montage=True,
     n_jobs=1 if TUH.__name__ == "_TUHMock" else N_JOBS,
 )
 
@@ -202,16 +204,14 @@ tuh = select_by_duration(tuh, tmin, tmax)
 
 ###############################################################################
 # Next, we will discard all recordings that have an incomplete channel
-# configuration on the channels that we are interested. The subdivisions of the
-# recordings into 'le' and 'ar' labels represents the channels for
-# the re-referencing of the signals.
+# configuration on the channels that we are interested.
 
 short_ch_names = sorted(
     [
         "A1",
         "A2",
-        "FP1",
-        "FP2",
+        "Fp1",
+        "Fp2",
         "F3",
         "F4",
         "C3",
@@ -226,81 +226,18 @@ short_ch_names = sorted(
         "T4",
         "T5",
         "T6",
-        "FZ",
-        "CZ",
-        "PZ",
+        "Fz",
+        "Cz",
+        "Pz",
     ]
 )
 
-# TUH data is subdivided into 'le' and 'ar' recordings references
-ar_ch_names = sorted(
-    [
-        "EEG A1-REF",
-        "EEG A2-REF",
-        "EEG FP1-REF",
-        "EEG FP2-REF",
-        "EEG F3-REF",
-        "EEG F4-REF",
-        "EEG C3-REF",
-        "EEG C4-REF",
-        "EEG P3-REF",
-        "EEG P4-REF",
-        "EEG O1-REF",
-        "EEG O2-REF",
-        "EEG F7-REF",
-        "EEG F8-REF",
-        "EEG T3-REF",
-        "EEG T4-REF",
-        "EEG T5-REF",
-        "EEG T6-REF",
-        "EEG FZ-REF",
-        "EEG CZ-REF",
-        "EEG PZ-REF",
-    ]
-)
-le_ch_names = sorted(
-    [
-        "EEG A1-LE",
-        "EEG A2-LE",
-        "EEG FP1-LE",
-        "EEG FP2-LE",
-        "EEG F3-LE",
-        "EEG F4-LE",
-        "EEG C3-LE",
-        "EEG C4-LE",
-        "EEG P3-LE",
-        "EEG P4-LE",
-        "EEG O1-LE",
-        "EEG O2-LE",
-        "EEG F7-LE",
-        "EEG F8-LE",
-        "EEG T3-LE",
-        "EEG T4-LE",
-        "EEG T5-LE",
-        "EEG T6-LE",
-        "EEG FZ-LE",
-        "EEG CZ-LE",
-        "EEG PZ-LE",
-    ]
-)
-assert len(short_ch_names) == len(ar_ch_names) == len(le_ch_names)
-ar_ch_mapping = {
-    ch_name: short_ch_name
-    for ch_name, short_ch_name in zip(ar_ch_names, short_ch_names)
-}
-le_ch_mapping = {
-    ch_name: short_ch_name
-    for ch_name, short_ch_name in zip(le_ch_names, short_ch_names)
-}
-ch_mapping = {"ar": ar_ch_mapping, "le": le_ch_mapping}
 
-
-def select_by_channels(ds, ch_mapping):
+def select_by_channels(ds, ch_names):
+    # these are the channels we are looking for
+    seta = set(ch_names)
     split_ids = []
     for i, d in enumerate(ds.datasets):
-        ref = "ar" if d.raw.ch_names[0].endswith("-REF") else "le"
-        # these are the channels we are looking for
-        seta = set(ch_mapping[ref].keys())
         # these are the channels of the recoding
         setb = set(d.raw.ch_names)
         # if recording contains all channels we are looking for, include it
@@ -309,7 +246,7 @@ def select_by_channels(ds, ch_mapping):
     return ds.split(split_ids)["0"]
 
 
-tuh = select_by_channels(tuh, ch_mapping)
+tuh = select_by_channels(tuh, short_ch_names)
 
 
 ###############################################################################
@@ -321,22 +258,10 @@ tuh = select_by_channels(tuh, ch_mapping)
 #
 # - Crop the recordings to a region of interest
 # - Re-reference all recordings to 'ar' (requires load)
-# - Rename channels to short channel names
 # - Pick channels of interest
 # - Scale signals to micro volts (requires load)
 # - Clip outlier values to +/- 800 micro volts (requires load)
 # - Resample recordings to a common frequency (requires load)
-
-
-def custom_rename_channels(raw, mapping):
-    # rename channels which are dependent on referencing:
-    # le: EEG 01-LE, ar: EEG 01-REF
-    # mne fails if the mapping contains channels as keys that are not present
-    # in the raw
-    reference = raw.ch_names[0].split("-")[-1].lower()
-    assert reference in ["le", "ref"], "unexpected referencing"
-    reference = "le" if reference == "le" else "ar"
-    raw.rename_channels(mapping[reference])
 
 
 def custom_crop(raw, tmin=0.0, tmax=None, include_tmax=True):
@@ -357,7 +282,6 @@ preprocessors = [
         custom_crop, tmin=tmin, tmax=tmax, include_tmax=False, apply_on_array=False
     ),
     Preprocessor("set_eeg_reference", ref_channels="average", ch_type="eeg"),
-    Preprocessor(custom_rename_channels, mapping=ch_mapping, apply_on_array=False),
     Preprocessor("pick_channels", ch_names=short_ch_names, ordered=True),
     Preprocessor(
         lambda data: multiply(data, factor), apply_on_array=True
