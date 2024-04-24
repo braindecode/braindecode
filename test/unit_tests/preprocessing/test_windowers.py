@@ -351,11 +351,11 @@ def test_windows_from_events_(lazy_loadable_dataset):
     ],
 )
 def test_fixed_length_windower(
-    start_offset_samples,
-    window_size_samples,
-    window_stride_samples,
-    drop_last_window,
-    mapping,
+        start_offset_samples,
+        window_size_samples,
+        window_stride_samples,
+        drop_last_window,
+        mapping,
 ):
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
@@ -395,14 +395,68 @@ def test_fixed_length_windower(
 
     assert len(idxs) == epochs_data.shape[0], "Number of epochs different than expected"
     assert (
-        window_size_samples == epochs_data.shape[2]
+            window_size_samples == epochs_data.shape[2]
     ), "Window size different than expected"
     for j, idx in enumerate(idxs):
         np.testing.assert_allclose(
-            base_ds.raw.get_data()[:, idx : idx + window_size_samples],
+            base_ds.raw.get_data()[:, idx: idx + window_size_samples],
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}",
         )
+
+
+@pytest.mark.parametrize(
+    "start_offset_samples,window_size_samples,window_stride_samples,drop_last_window,mapping",
+    [
+        (0, 100, 90, True, None),
+        (0, 100, 50, True, {48: 0}),
+        (0, 50, 50, True, None),
+        (0, None, 50, True, None),
+        (5, 10, 20, True, None),
+    ],
+)
+def test_fixed_length_windower_lazy(
+        start_offset_samples,
+        window_size_samples,
+        window_stride_samples,
+        drop_last_window,
+        mapping,
+):
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
+    data = rng.randn(2, 1000)
+    raw = mne.io.RawArray(data=data, info=info)
+    desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
+    base_ds = BaseDataset(raw, desc, target_name="age")
+    concat_ds = BaseConcatDataset([base_ds])
+
+    if window_size_samples is None:
+        window_size_samples = base_ds.raw.n_times
+    stop_offset_samples = data.shape[1] - start_offset_samples
+    epochs_ds = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+    )
+    epochs_ds_lazy = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+        lazy_metadata=True,
+    )
+    assert len(epochs_ds) == len(epochs_ds_lazy)
+    for (X, y, i), (Xl, yl, il) in zip(epochs_ds, epochs_ds_lazy):
+        assert (X == Xl).all()
+        assert y == yl
+        assert i == il
 
 
 # Skip if OS is Windows
@@ -665,7 +719,7 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Window size larger than all trials
     window_size = len(concat_ds.datasets[0]) + 1
     with pytest.raises(
-        ValueError, match=f"Window size {window_size} exceeds trial durat"
+            ValueError, match=f"Window size {window_size} exceeds trial durat"
     ):
         create_windows_from_events(
             concat_ds=concat_ds,
@@ -677,7 +731,7 @@ def test_window_sizes_too_large(concat_ds_targets):
         )
 
     with pytest.raises(
-        ValueError, match=f"Window size {window_size} exceeds trial durat"
+            ValueError, match=f"Window size {window_size} exceeds trial durat"
     ):
         create_fixed_length_windows(
             concat_ds=concat_ds,
@@ -747,7 +801,7 @@ def test_windower_from_target_channels(dataset_target_time_series):
         target_idx = i * 5 + 100
         np.testing.assert_array_almost_equal(targets[:, target_idx], y)
         np.testing.assert_array_almost_equal(
-            signal[:, target_idx - 99 : target_idx + 1], epoch
+            signal[:, target_idx - 99: target_idx + 1], epoch
         )
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
@@ -764,10 +818,10 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         epoch, y, window_inds = windows_dataset[i]
         target_idx = i * 5 + 100
         np.testing.assert_array_almost_equal(
-            targets[:, target_idx - 99 : target_idx + 1], y
+            targets[:, target_idx - 99: target_idx + 1], y
         )
         np.testing.assert_array_almost_equal(
-            signal[:, target_idx - 99 : target_idx + 1], epoch
+            signal[:, target_idx - 99: target_idx + 1], epoch
         )
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
