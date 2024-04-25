@@ -104,6 +104,47 @@ class _LazyDataFrame:
         return self.to_numpy()
 
 
+class _FixedLengthWindowFunctions:
+    def __init__(
+        self,
+        start_offset_samples: int,
+        last_potential_start: int,
+        window_stride_samples: int,
+        window_size_samples: int,
+        target: Any,
+    ):
+        self.start_offset_samples = start_offset_samples
+        self.last_potential_start = last_potential_start
+        self.window_stride_samples = window_stride_samples
+        self.window_size_samples = window_size_samples
+        self.target_val = target
+
+    @property
+    def length(self) -> int:
+        return int(
+            np.ceil(
+                (self.last_potential_start + 1 - self.start_offset_samples)
+                / self.window_stride_samples
+            )
+        )
+
+    def i_window_in_trial(self, i: int) -> int:
+        return i
+
+    def i_start_in_trial(self, i: int) -> int:
+        return self.start_offset_samples + i * self.window_stride_samples
+
+    def i_stop_in_trial(self, i: int) -> int:
+        return (
+            self.start_offset_samples
+            + i * self.window_stride_samples
+            + self.window_size_samples
+        )
+
+    def target(self, i: int) -> Any:
+        return self.target_val
+
+
 # XXX it's called concat_ds...
 def create_windows_from_events(
     concat_ds,
@@ -601,21 +642,20 @@ def _create_fixed_length_windows(
             target = mapping[target]
 
     if lazy_metadata:
+        factory = _FixedLengthWindowFunctions(
+            start_offset_samples,
+            last_potential_start,
+            window_stride_samples,
+            window_size_samples,
+            target,
+        )
         metadata = _LazyDataFrame(
-            length=int(
-                np.ceil(
-                    (last_potential_start + 1 - start_offset_samples)
-                    / window_stride_samples
-                )
-            ),
+            length=factory.length,
             functions={
-                "i_window_in_trial": lambda i: i,
-                "i_start_in_trial": lambda i: start_offset_samples
-                + i * window_stride_samples,
-                "i_stop_in_trial": lambda i: start_offset_samples
-                + i * window_stride_samples
-                + window_size_samples,
-                "target": lambda i: target,
+                "i_window_in_trial": factory.i_window_in_trial,
+                "i_start_in_trial": factory.i_start_in_trial,
+                "i_stop_in_trial": factory.i_stop_in_trial,
+                "target": factory.target,
             },
             columns=[
                 "i_window_in_trial",
