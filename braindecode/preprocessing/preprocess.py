@@ -93,7 +93,9 @@ class Preprocessor(object):
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
-def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=None):
+def preprocess(
+    concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=None, offset=0
+):
     """Apply preprocessors to a concat dataset.
 
     Parameters
@@ -114,6 +116,11 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=
     n_jobs : int | None
         Number of jobs for parallel execution. See `joblib.Parallel` for
         a more detailed explanation.
+    offset : int
+        If provided, the integer is added to the id of the dataset in the
+        concat. This is useful in the setting of very large datasets, where
+        one dataset has to be processed and saved at a time to account for
+        its original position.
 
     Returns
     -------
@@ -135,7 +142,7 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=
     list_of_ds = Parallel(n_jobs=n_jobs)(
         delayed(_preprocess)(
             ds,
-            i,
+            i + offset,
             preprocessors,
             save_dir,
             overwrite,
@@ -145,8 +152,12 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=
     )
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
+        ids_to_load = [i + offset for i in range(len(concat_ds.datasets))]
         concat_ds_reloaded = load_concat_dataset(
-            save_dir, preload=False, target_name=None
+            save_dir,
+            preload=False,
+            target_name=None,
+            ids_to_load=ids_to_load,
         )
         _replace_inplace(concat_ds, concat_ds_reloaded)
     else:
