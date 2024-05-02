@@ -35,6 +35,7 @@ Enhancements
 - Adding cache and pre-processing option to :class:`braindecode.datasets.MOABBDataset` (:gh:`582` by `Bruno Aristimunha`_)
 - Add type hints to datasets (:gh:`590` by `Pierre Guetschel`_)
 - Add channel names and montage to  :class:`braindecode.datasets.TUH` (:gh:`593` by `Pierre Guetschel`_)
+- Add ``offset`` arg to :function:`braindecode.preprocessing.preprocess` (:gh:`599` by `Pierre Guetschel`_)
 
 
 Bugs
