@@ -8,6 +8,7 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 from warnings import warn
 from functools import partial
 from collections.abc import Iterable
