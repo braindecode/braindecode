@@ -10,7 +10,13 @@
 
 from warnings import warn
 from functools import partial
-from collections.abc import Iterable, Callable
+from collections.abc import Iterable
+import sys
+
+if sys.version_info < (3, 9):
+    from typing import Callable
+else:
+    from collections.abc import Callable
 
 import numpy as np
 from numpy.typing import NDArray
