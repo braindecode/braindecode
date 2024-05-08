@@ -92,11 +92,11 @@ class NMT(BaseConcatDataset):
     ):
         # correct the path if needed
         if path is not None:
-            file_paths = glob.glob(f'{path}/**/Labels.csv', recursive=True)
-            if len(file_paths) > 0:
-                path = Path(file_paths[0]).parent
+            look_4Labels_csv = glob.glob(f'{path}/**/Labels.csv', recursive=True)
+            if isinstance(look_4Labels_csv, list) and len(look_4Labels_csv) > 0:
+                path = Path(look_4Labels_csv[0]).parent
 
-        if path is None or len(file_paths)==0:
+        if path is None or len(look_4Labels_csv)==0:
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
                 path=Path(path) if path is not None else None,
