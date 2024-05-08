@@ -14,9 +14,11 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import warnings
 
 import numpy as np
+from numpy.typing import ArrayLike
 import mne
 import pandas as pd
 from joblib import Parallel, delayed
@@ -26,22 +28,22 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
 
 # XXX it's called concat_ds...
 def create_windows_from_events(
-    concat_ds,
-    trial_start_offset_samples=0,
-    trial_stop_offset_samples=0,
-    window_size_samples=None,
-    window_stride_samples=None,
-    drop_last_window=False,
-    mapping=None,
-    preload=False,
-    drop_bad_windows=None,
-    picks=None,
-    reject=None,
-    flat=None,
-    on_missing="error",
-    accepted_bads_ratio=0.0,
-    n_jobs=1,
-    verbose="error",
+    concat_ds: BaseConcatDataset,
+    trial_start_offset_samples: int = 0,
+    trial_stop_offset_samples: int = 0,
+    window_size_samples: int | None = None,
+    window_stride_samples: int | None = None,
+    drop_last_window: bool = False,
+    mapping: dict[str, int] | None = None,
+    preload: bool = False,
+    drop_bad_windows: bool = None,
+    picks: str | ArrayLike | slice | None = None,
+    reject: dict[str:float] | None = None,
+    flat: dict[str:float] | None = None,
+    on_missing: str = "error",
+    accepted_bads_ratio: float = 0.0,
+    n_jobs: int = 1,
+    verbose: bool | str | int | None = "error",
 ):
     """Create windows based on events in mne.Raw.
 
@@ -182,22 +184,22 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-    concat_ds,
-    start_offset_samples=0,
-    stop_offset_samples=None,
-    window_size_samples=None,
-    window_stride_samples=None,
-    drop_last_window=None,
-    mapping=None,
-    preload=False,
-    picks=None,
-    reject=None,
-    flat=None,
-    targets_from="metadata",
-    last_target_only=True,
-    on_missing="error",
-    n_jobs=1,
-    verbose="error",
+    concat_ds: BaseConcatDataset,
+    start_offset_samples: int = 0,
+    stop_offset_samples: int = None,
+    window_size_samples: int | None = None,
+    window_stride_samples: int | None = None,
+    drop_last_window: bool | None = None,
+    mapping: dict[str, int] | None = None,
+    preload: bool = False,
+    picks: str | ArrayLike | slice | None = None,
+    reject: dict[str:float] | None = None,
+    flat: dict[str:float] | None = None,
+    targets_from: str = "metadata",
+    last_target_only: bool = True,
+    on_missing: float = "error",
+    n_jobs: int = 1,
+    verbose: bool | str | int | None = "error",
 ):
     """Windower that creates sliding windows.
 
