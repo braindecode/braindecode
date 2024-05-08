@@ -83,20 +83,20 @@ class NMT(BaseConcatDataset):
     """
 
     def __init__(
-            self,
-            path=None,
-            target_name="pathological",
-            recording_ids=None,
-            preload=False,
-            n_jobs=1,
+        self,
+        path=None,
+        target_name="pathological",
+        recording_ids=None,
+        preload=False,
+        n_jobs=1,
     ):
         # correct the path if needed
         if path is not None:
-            look_4Labels_csv = glob.glob(f'{path}/**/Labels.csv', recursive=True)
+            look_4Labels_csv = glob.glob(f"{path}/**/Labels.csv", recursive=True)
             if isinstance(look_4Labels_csv, list) and len(look_4Labels_csv) > 0:
                 path = Path(look_4Labels_csv[0]).parent
 
-        if path is None or len(look_4Labels_csv)==0:
+        if path is None or len(look_4Labels_csv) == 0:
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
                 path=Path(path) if path is not None else None,
