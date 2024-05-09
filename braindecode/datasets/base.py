@@ -430,7 +430,8 @@ class BaseConcatDataset(ConcatDataset):
 
     def __init__(
         self,
-        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset] = None,
+        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset]
+        | None = None,
         target_transform: Callable | None = None,
     ):
         # if we get a list of BaseConcatDataset, get all the individual datasets
