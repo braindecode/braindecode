@@ -141,7 +141,7 @@ class IdentityTransform(Transform):
     Transform that does not change the input.
     """
 
-    operation = staticmethod(identity)
+    operation = identity
 
 
 class Compose(Transform):
