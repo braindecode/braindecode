@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 from einops.layers.torch import Rearrange
 from torch import nn
