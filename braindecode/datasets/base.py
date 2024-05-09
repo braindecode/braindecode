@@ -15,7 +15,7 @@ from collections.abc import Callable
 import os
 import json
 import shutil
-from typing import Iterable
+from typing import Iterable, no_type_check
 import warnings
 from glob import glob
 
@@ -470,6 +470,7 @@ class BaseConcatDataset(ConcatDataset):
             item = item[:1] + (self.target_transform(item[1]),) + item[2:]
         return item
 
+    @no_type_check  # TODO, it's a mess
     def split(
         self,
         by: str | list[int] | list[list[int]] | dict[str, list[int]] | None = None,
