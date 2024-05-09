@@ -9,6 +9,8 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
+from typing import Any
+
 import pandas as pd
 import mne
 
@@ -30,7 +32,7 @@ def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):
     raise ValueError(f"{dataset_name} not found in moabb datasets")
 
 
-def _fetch_and_unpack_moabb_data(dataset, subject_ids, dataset_load_kwargs=None):
+def _fetch_and_unpack_moabb_data(dataset, subject_ids=None, dataset_load_kwargs=None):
     if dataset_load_kwargs is None:
         data = dataset.get_data(subject_ids)
     else:
@@ -69,9 +71,9 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
 
 def fetch_data_with_moabb(
     dataset_name: str,
-    subject_ids: list[int] | int,
-    dataset_kwargs: dict[str, []] | None = None,
-    dataset_load_kwargs: dict[str, []] | None = None,
+    subject_ids: list[int] | int | None = None,
+    dataset_kwargs: dict[str, Any] | None = None,
+    dataset_load_kwargs: dict[str, Any] | None = None,
 ) -> tuple[list[mne.io.Raw], pd.DataFrame]:
     # ToDo: update path to where moabb downloads / looks for the data
     """Fetch data using moabb.
@@ -133,9 +135,9 @@ class MOABBDataset(BaseConcatDataset):
     def __init__(
         self,
         dataset_name: str,
-        subject_ids: list[int] | int | None,
-        dataset_kwargs: dict[str, []] | None = None,
-        dataset_load_kwargs: dict[str, []] | None = None,
+        subject_ids: list[int] | int | None = None,
+        dataset_kwargs: dict[str, Any] | None = None,
+        dataset_load_kwargs: dict[str, Any] | None = None,
     ):
         raws, description = fetch_data_with_moabb(
             dataset_name,
