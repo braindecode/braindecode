@@ -1,5 +1,6 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -969,3 +970,92 @@ def mixup(X, y, lam, idx_perm):
         y_b[idx] = y[idx_perm[idx]]
 
     return X_mix, (y_a, y_b, lam)
+
+
+def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
+    """Segment and reconstruct EEG data as proposed in [1]_.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example or batch.
+    y : torch.Tensor
+        EEG labels for the example or batch.
+    n_segments : int
+        Number of segments to use in the batch. If None, X will be
+        automatically segmented, getting the value after the middle
+        element in a list of factors of the number of samples' square root.
+        Defaults to None.
+    random_state: int | numpy.random.Generator, optional
+        Used to draw the phase perturbation. Defaults to None.
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
+    References
+    ----------
+    .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
+    suppress calibration time in oscillatory activity-based brain–computer
+    interfaces. Proceedings of the IEEE, 103(6), 871-890.
+    """
+
+    # Assuming 'y' is a tensor of labels, and 'X' is a tensor of data
+    n_classes = torch.unique(y).numel()
+
+    # Find the factors of the number of samples to segment
+    if n_segments is None:
+        n_segments = int(X.shape[2])
+        n_segments_list = []
+        for i in range(1, int(n_segments**0.5) + 1):
+            if n_segments % i == 0:
+                n_segments_list.append(i)
+    assert isinstance(n_segments, (int, float))
+    # parse the float to int
+    n_segments = int(n_segments)
+
+    # Initialize lists to store augmented data and corresponding labels
+    aug_data = []
+    aug_label = []
+    # Getting the random_state
+    rng = check_random_state(random_state)
+    data_classes = [(X[y == i], i) for i in range(n_classes)]
+    # Iterate through each class to separate and augment data
+    for X_class, class_index in data_classes:
+        # Determine class-specific dimensions
+        n_samples, n_channels, window_size = X_class.shape
+        # Segment Size
+        segment_size = window_size // n_segments
+        # Initialize an empty tensor for augmented data
+        X_aug = torch.zeros_like(X_class)
+        # Use PyTorch's random generator for consistency
+        for idx_sample in range(n_samples):
+            for idx_segment in range(n_segments):
+                # Generate random indices within the class-specific dataset
+                rand_idx = rng.randint(0, n_samples, n_segments)
+
+                start = idx_segment * segment_size
+                end = (idx_segment + 1) * segment_size
+
+                # Perform the data augmentation
+                X_aug[idx_sample, :, start:end] = X_class[
+                    rand_idx[idx_segment], :, start:end
+                ]
+
+        # Store the augmented data and the corresponding class labels
+        aug_data.append(X_aug)
+        aug_label.append(
+            torch.full((n_samples,), class_index, dtype=y.dtype, device=y.device)
+        )
+
+    # Concatenate the augmented data and labels
+    aug_data = torch.cat(aug_data, dim=0)
+    aug_label = torch.cat(aug_label, dim=0)
+
+    idx_shuffle = rng.permutation(len(aug_data))
+
+    aug_data = aug_data[idx_shuffle]
+    aug_label = aug_label[idx_shuffle]
+
+    return aug_data, aug_label

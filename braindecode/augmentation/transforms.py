@@ -1,5 +1,6 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -23,6 +24,7 @@ from .functional import sensors_rotation
 from .functional import sign_flip
 from .functional import smooth_time_mask
 from .functional import time_reverse
+from .functional import segmentation_reconstruction
 
 
 class TimeReverse(Transform):
@@ -1069,3 +1071,59 @@ class Mixup(Transform):
             "lam": lam,
             "idx_perm": idx_perm,
         }
+
+
+class SegmentationReconstruction(Transform):
+    """Applies a segmentation-reconstruction transform to the input data, as
+       proposed in _[1].
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    random_state: int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Used to decide whether to transform given the probability
+        argument. Defaults to None.
+    n_segments : int
+        Number of segments to use in the batch. If None, X will be
+        automatically segmented, getting the value after the middle
+        element in a list of factors of the number of samples' square root.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
+    suppress calibration time in oscillatory activity-based brain–computer
+    interfaces. Proceedings of the IEEE, 103(6), 871-890.
+    """
+
+    operation = staticmethod(segmentation_reconstruction)
+
+    def __init__(
+        self,
+        probability,
+        n_segments=None,
+        random_state=None,
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
+        self.n_segments = n_segments
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+        Returns
+        -------
+        params : dict
+            Contains the number of segments to split the signal into.
+        """
+        return {"n_segments": self.n_segments}
