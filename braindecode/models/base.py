@@ -233,7 +233,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
 
-    def to_dense_prediction_model(self, axis: Tuple[int, int] | int = (2, 3)) -> None:
+    def to_dense_prediction_model(self, axis: Tuple[int, ...] | int = (2, 3)) -> None:
         """
         Transform a sequential model with strides to a model that outputs
         dense predictions by removing the strides and instead inserting dilations.
@@ -253,7 +253,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         """
         if not hasattr(axis, "__len__"):
-            axis = [axis]
+            axis = (axis,)
         assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"
         axis = np.array(axis) - 2
         stride_so_far = np.array([1, 1])
@@ -312,3 +312,12 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
+
+    def forward(self, *args, **kwargs):
+        return super().forward(*args, **kwargs)
+
+    def parameters(self):
+        return super().parameters()
+
+    def modules(self):
+        return super().modules()
