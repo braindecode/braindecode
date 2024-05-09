@@ -54,7 +54,7 @@ class SleepPhysionet(BaseConcatDataset):
         crop=None,
     ):
         if subject_ids is None:
-            subject_ids = range(83)
+            subject_ids = list(range(83))
         if recording_ids is None:
             recording_ids = [1, 2]
 

@@ -15,7 +15,7 @@ from collections.abc import Callable
 import os
 import json
 import shutil
-from typing import Iterable
+from typing import Iterable, no_type_check
 import warnings
 from glob import glob
 
@@ -60,7 +60,7 @@ class BaseDataset(Dataset):
         self,
         raw: mne.io.BaseRaw,
         description: dict | pd.Series | None = None,
-        target_name: str | tuple[str] | None = None,
+        target_name: str | tuple[str, ...] | None = None,
         transform: Callable | None = None,
     ):
         self.raw = raw
@@ -430,7 +430,8 @@ class BaseConcatDataset(ConcatDataset):
 
     def __init__(
         self,
-        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset] = None,
+        list_of_ds: list[BaseDataset | BaseConcatDataset | WindowsDataset]
+        | None = None,
         target_transform: Callable | None = None,
     ):
         # if we get a list of BaseConcatDataset, get all the individual datasets
@@ -470,6 +471,7 @@ class BaseConcatDataset(ConcatDataset):
             item = item[:1] + (self.target_transform(item[1]),) + item[2:]
         return item
 
+    @no_type_check  # TODO, it's a mess
     def split(
         self,
         by: str | list[int] | list[list[int]] | dict[str, list[int]] | None = None,

@@ -3,6 +3,7 @@
 #
 # License: BSD-3
 
+from __future__ import annotations
 import warnings
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -179,16 +180,16 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._add_log_softmax
 
     @property
-    def input_shape(self) -> Tuple[int]:
+    def input_shape(self) -> Tuple[int, int, int]:
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
-    def get_output_shape(self) -> Tuple[int]:
+    def get_output_shape(self) -> Tuple[int, ...]:
         """Returns shape of neural network output for batch size equal 1.
 
         Returns
         -------
-        output_shape: Tuple[int]
+        output_shape: Tuple[int, ...]
             shape of the network output for `batch_size==1` (1, ...)
         """
         with torch.inference_mode():
@@ -232,7 +233,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
 
-    def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
+    def to_dense_prediction_model(self, axis: Tuple[int, ...] | int = (2, 3)) -> None:
         """
         Transform a sequential model with strides to a model that outputs
         dense predictions by removing the strides and instead inserting dilations.
@@ -251,9 +252,9 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         backwards one layer.
 
         """
-        if not hasattr(axis, "__len__"):
-            axis = [axis]
-        assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"
+        if not hasattr(axis, "__iter__"):
+            axis = (axis,)
+        assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
         axis = np.array(axis) - 2
         stride_so_far = np.array([1, 1])
         for module in self.modules():
@@ -263,7 +264,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     "already converted?"
                 )
                 new_dilation = [1, 1]
-                for ax in axis:
+                for ax in axis:  # type: ignore[union-attr]
                     new_dilation[ax] = int(stride_so_far[ax])
                 module.dilation = tuple(new_dilation)
             if hasattr(module, "stride"):
@@ -271,7 +272,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     module.stride = (module.stride, module.stride)
                 stride_so_far *= np.array(module.stride)
                 new_stride = list(module.stride)
-                for ax in axis:
+                for ax in axis:  # type: ignore[union-attr]
                     new_stride[ax] = 1
                 module.stride = tuple(new_stride)
 
@@ -311,3 +312,12 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
+
+    def forward(self, *args, **kwargs):
+        return super().forward(*args, **kwargs)
+
+    def parameters(self):
+        return super().parameters()
+
+    def modules(self):
+        return super().modules()
