@@ -430,7 +430,7 @@ class MLP(nn.Sequential):
         layers.append(nn.Dropout(p=drop))
 
         # Cleaning if we are not using the normalization layer
-        layers = filter(lambda layer: layer is not None, layers)
+        layers = list(filter(lambda layer: layer is not None, layers))
 
         super().__init__(*layers)
 

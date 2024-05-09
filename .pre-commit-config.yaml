@@ -8,7 +8,7 @@ ci:
   autoupdate_branch: "master"
   autoupdate_commit_msg: "[pre-commit.ci] pre-commit autoupdate"
   autoupdate_schedule: quarterly
-  skip: []
+  skip: [ ]
   submodules: false
 
 repos:
@@ -29,22 +29,22 @@ repos:
       - id: check-case-conflict
       - id: forbid-new-submodules
       - id: pretty-format-json
-        args: ["--autofix", "--no-sort-keys", "--indent=4"]
+        args: [ "--autofix", "--no-sort-keys", "--indent=4" ]
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.3.5
     hooks:
       - id: ruff
-        args: ["--ignore=E402,E501,F401", "--fix"] #, --exit-non-zero-on-fix, ]
+        args: [ "--ignore=E402,E501,F401", "--fix" ] #, --exit-non-zero-on-fix, ]
       - id: ruff
         name: ruff lint braindecode preview
-        args: ["--fix", "--preview", "--select=NPY201"]
+        args: [ "--fix", "--preview", "--select=NPY201" ]
         files: ^braindecode/
       - id: ruff
         name: ruff lint docs, and examples
         # D103: missing docstring in public function
         # D400: docstring first line must end with period
-        args: ["--ignore=D103,D400,E402", "--fix"]
+        args: [ "--ignore=D103,D400,E402", "--fix" ]
         files: ^docs/|^examples/
       - id: ruff-format
         files: ^braindecode/|^docs/|^examples/
@@ -58,11 +58,24 @@ repos:
           - --ignore-words-list=splitted,meaned,wil,whats,additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar
           - --skip="./.*,*.csv,*.json,*.ambr"
           - --quiet-level=2
-        exclude_types: [csv, json]
+        exclude_types: [ csv, json ]
         exclude: ^tests/|generated/^.github
 
-  -   repo: https://github.com/asottile/blacken-docs
-      rev: 1.16.0
-      hooks:
+  - repo: https://github.com/asottile/blacken-docs
+    rev: 1.16.0
+    hooks:
       - id: blacken-docs
         exclude: ^.github|CONTRIBUTING.md
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        files: braindecode/.*.py|test/.*.py|examples/.*.py
+        stages: [ push ]
+        additional_dependencies:
+          [
+            types-PyYAML,
+            types-requests,
+          ]
+        verbose: true
