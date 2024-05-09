@@ -440,6 +440,7 @@ def get_attention_block(
         return ECA(in_channels=ch_dim, kernel_size=kernel_size)
     # improving the squeeze and the excitation module
     elif attention_mode == "ge":
+        assert seq_len is not None
         return GatherExcite(
             in_channels=ch_dim,
             seq_len=seq_len,
