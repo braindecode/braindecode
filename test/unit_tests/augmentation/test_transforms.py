@@ -1,4 +1,5 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -31,6 +32,7 @@ from braindecode.augmentation.transforms import Mixup
 from braindecode.augmentation.transforms import SensorsXRotation
 from braindecode.augmentation.transforms import SensorsYRotation
 from braindecode.augmentation.transforms import SensorsZRotation
+from braindecode.augmentation.transforms import SegmentationReconstruction
 from braindecode.augmentation.transforms import SignFlip
 from braindecode.augmentation.transforms import SmoothTimeMask
 from braindecode.augmentation.transforms import TimeReverse
@@ -631,6 +633,21 @@ MONTAGE_10_20 = [
 ]
 
 
+@pytest.mark.parametrize("n_segments", [5, 10, None])
+def test_segmentation_reconstruction_transform(
+        time_aranged_batch,
+        n_segments,
+):
+    X, _ = time_aranged_batch
+    transform = SegmentationReconstruction(
+        probability=1.,
+        n_segments=n_segments,
+    )
+    common_tranform_assertions(
+        time_aranged_batch, transform(*time_aranged_batch), X
+    )
+
+
 @pytest.mark.parametrize(
     "augmentation,kwargs",
     [
@@ -648,6 +665,7 @@ MONTAGE_10_20 = [
         (SensorsXRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SensorsYRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SensorsZRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
+        (SegmentationReconstruction, {"probability": 0.5}),
     ],
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
