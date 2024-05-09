@@ -186,7 +186,7 @@ def create_windows_from_events(
 def create_fixed_length_windows(
     concat_ds: BaseConcatDataset,
     start_offset_samples: int = 0,
-    stop_offset_samples: int = None,
+    stop_offset_samples: int | None = None,
     window_size_samples: int | None = None,
     window_stride_samples: int | None = None,
     drop_last_window: bool | None = None,
