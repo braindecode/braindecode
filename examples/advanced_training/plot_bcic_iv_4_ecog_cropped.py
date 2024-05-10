@@ -53,9 +53,9 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select `train` dataset
 # for training and validation and `test` for final evaluation.
-dataset = dataset.split("session")
-train_set = dataset["train"]
-test_set = dataset["test"]
+dataset_split = dataset.split("session")
+train_set = dataset_split["train"]
+test_set = dataset_split["test"]
 
 ######################################################################
 # Preprocessing
@@ -103,7 +103,6 @@ valid_set = preprocess(
 preprocess(train_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
 preprocess(test_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
 
-
 ######################################################################
 # In time series targets setup, targets variables are stored in mne.Raw object as channels
 # of type `misc`. Thus those channels have to be selected for further processing. However,
@@ -132,7 +131,6 @@ assert all([ds.raw.info["sfreq"] == sfreq for ds in train_set.datasets])
 # Extract target sampling frequency
 target_sfreq = train_set.datasets[0].raw.info["temp"]["target_sfreq"]
 
-
 ######################################################################
 # Create model
 # ------------
@@ -150,7 +148,6 @@ target_sfreq = train_set.datasets[0].raw.info["temp"]["target_sfreq"]
 #
 
 input_window_samples = 1000
-
 
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
@@ -331,6 +328,7 @@ set_log_level(verbose="WARNING")
 # Model training for a specified number of epochs. ``y`` is None as it is already supplied
 # in the dataset.
 regressor.fit(train_set, y=None, epochs=n_epochs)
+
 
 ######################################################################
 # Obtaining predictions and targets for the test, train, and validation dataset
