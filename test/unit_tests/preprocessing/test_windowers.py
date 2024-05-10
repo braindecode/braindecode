@@ -7,12 +7,14 @@
 
 import copy
 import platform
+import warnings
+
 import mne
 import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset
+from braindecode.datasets.base import BaseDataset, BaseConcatDataset, EEGWindowsDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
     create_windows_from_events,
@@ -351,11 +353,11 @@ def test_windows_from_events_(lazy_loadable_dataset):
     ],
 )
 def test_fixed_length_windower(
-    start_offset_samples,
-    window_size_samples,
-    window_stride_samples,
-    drop_last_window,
-    mapping,
+        start_offset_samples,
+        window_size_samples,
+        window_stride_samples,
+        drop_last_window,
+        mapping,
 ):
     rng = np.random.RandomState(42)
     info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
@@ -395,14 +397,90 @@ def test_fixed_length_windower(
 
     assert len(idxs) == epochs_data.shape[0], "Number of epochs different than expected"
     assert (
-        window_size_samples == epochs_data.shape[2]
+            window_size_samples == epochs_data.shape[2]
     ), "Window size different than expected"
     for j, idx in enumerate(idxs):
         np.testing.assert_allclose(
-            base_ds.raw.get_data()[:, idx : idx + window_size_samples],
+            base_ds.raw.get_data()[:, idx: idx + window_size_samples],
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}",
         )
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ['ch0'], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ]
+)
+def test_not_use_mne_epochs_fail(
+        drop_bad_windows,
+        picks,
+        flat,
+        reject,
+        lazy_loadable_dataset,
+):
+    with pytest.raises(ValueError, match="Cannot set use_mne_epochs=False"):
+        _ = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ['ch0'], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ]
+)
+def test_auto_use_mne_epochs(
+        drop_bad_windows,
+        picks,
+        flat,
+        reject,
+        lazy_loadable_dataset
+):
+    with pytest.warns(UserWarning,
+                      match='mne Epochs are created, which will be substantially slower'):
+        windows = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=None,
+        )
+    assert all(isinstance(w.windows, mne.Epochs) for w in windows.datasets)
+
+
+@pytest.mark.parametrize('use_mne_epochs', [False, None])
+def test_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
+    message = (
+        "Using reject or picks or flat or dropping bad windows means "
+        "mne Epochs are created, "
+        "which will be substantially slower and may be deprecated in the future."
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings('error', message=message)
+        windows = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=False,
+            picks=None,
+            flat=None,
+            reject=None,
+            use_mne_epochs=use_mne_epochs,
+        )
+    assert all(isinstance(w, EEGWindowsDataset) for w in windows.datasets)
 
 
 # Skip if OS is Windows
@@ -665,7 +743,7 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Window size larger than all trials
     window_size = len(concat_ds.datasets[0]) + 1
     with pytest.raises(
-        ValueError, match=f"Window size {window_size} exceeds trial durat"
+            ValueError, match=f"Window size {window_size} exceeds trial durat"
     ):
         create_windows_from_events(
             concat_ds=concat_ds,
@@ -677,7 +755,7 @@ def test_window_sizes_too_large(concat_ds_targets):
         )
 
     with pytest.raises(
-        ValueError, match=f"Window size {window_size} exceeds trial durat"
+            ValueError, match=f"Window size {window_size} exceeds trial durat"
     ):
         create_fixed_length_windows(
             concat_ds=concat_ds,
@@ -747,7 +825,7 @@ def test_windower_from_target_channels(dataset_target_time_series):
         target_idx = i * 5 + 100
         np.testing.assert_array_almost_equal(targets[:, target_idx], y)
         np.testing.assert_array_almost_equal(
-            signal[:, target_idx - 99 : target_idx + 1], epoch
+            signal[:, target_idx - 99: target_idx + 1], epoch
         )
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
@@ -764,10 +842,10 @@ def test_windower_from_target_channels_all_targets(dataset_target_time_series):
         epoch, y, window_inds = windows_dataset[i]
         target_idx = i * 5 + 100
         np.testing.assert_array_almost_equal(
-            targets[:, target_idx - 99 : target_idx + 1], y
+            targets[:, target_idx - 99: target_idx + 1], y
         )
         np.testing.assert_array_almost_equal(
-            signal[:, target_idx - 99 : target_idx + 1], epoch
+            signal[:, target_idx - 99: target_idx + 1], epoch
         )
         np.testing.assert_array_almost_equal(
             np.array([i, i * 5 + 1, target_idx + 1]), window_inds
