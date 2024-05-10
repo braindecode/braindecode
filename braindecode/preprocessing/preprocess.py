@@ -240,6 +240,10 @@ def _preprocess(
             preproc.apply(raw_or_epochs)
 
     if hasattr(ds, "raw"):
+        if isinstance(ds, EEGWindowsDataset):
+            warn(
+                f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
+            )
         _preprocess_raw_or_epochs(ds.raw, preprocessors)
     elif hasattr(ds, "windows"):
         _preprocess_raw_or_epochs(ds.windows, preprocessors)

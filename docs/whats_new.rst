@@ -40,7 +40,6 @@ Enhancements
 - Add ``mypy`` type checks to pre-commit and CI (:gh:`606` by `Pierre Guetschel`_)
 - Adding SegmentationReconstruction augmentation :class:`braindecode.augmentation.SegmentationReconstruction` (:gh:`608` by `Gustavo Rodrigues`_)
 
-
 Bugs
 ~~~~
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
@@ -48,9 +47,12 @@ Bugs
 - Fix issue with coverage CI and adding a condition on the test for avoid HTML errors (:gh: 591 by `Bruno Aristimunha`_)
 - Constraint the version of mne (:gh: 594 by `Bruno Aristimunha`_)
 - Fix type errors (:gh:`606` by `Pierre Guetschel`_)
+- Warn when applying preprocessing steps on a :class:`braindecode.datasets.base.EEGWindowsDataset` (:gh:`607` by `Pierre Guetschel`_)
 
 API changes
 ~~~~~~~~~~~
+- Expose the ``use_mne_epochs parameter`` of :function:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
+
 
 .. _changes_0_8_0:
 Current 0.8 (11-2022)
