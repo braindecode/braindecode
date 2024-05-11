@@ -632,15 +632,16 @@ MONTAGE_10_20 = [
     "POz",
 ]
 
-
-@pytest.mark.parametrize("n_segments", [5, 10, None])
+@pytest.mark.parametrize("probability", [0, 0.5, 1])
+@pytest.mark.parametrize("n_segments", [1, 5, 10, None, 50])
 def test_segmentation_reconstruction_transform(
         time_aranged_batch,
         n_segments,
+        probability,
 ):
     X, _ = time_aranged_batch
     transform = SegmentationReconstruction(
-        probability=1.,
+        probability=probability,
         n_segments=n_segments,
     )
     common_tranform_assertions(

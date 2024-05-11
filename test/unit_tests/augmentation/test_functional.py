@@ -54,3 +54,23 @@ def test_analytic_transform_even():
 
     # Check if the output has the same shape as the input
     assert transformed_x.shape == x.shape
+
+
+def test_segmentation_reconstruction():
+    X = torch.stack(
+        [torch.stack([torch.arange(100)] * 64)] * 20
+    ).float()
+    # Random EEG data for 20 examples, 64 channels, and 100 time points
+    y = torch.randint(0, 4, (20,))
+    # Random labels for 5 examples
+    random_state = 42
+    n_segments = 5
+
+    transformed_X, transformed_y = channels_shuffle(X, y, n_segments,
+                                                    random_state)
+
+    # Check the output
+    assert torch.equal(transformed_X, X)
+    # preserve time sequence
+    assert torch.equal(torch.bincount(transformed_y), torch.bincount(y))
+    # preserve number of occurrences of each label
