@@ -57,9 +57,7 @@ def test_analytic_transform_even():
 
 
 def test_segmentation_reconstruction():
-    X = torch.stack(
-        [torch.stack([torch.arange(100)] * 64)] * 20
-    ).float()
+    X = torch.zeros((20, 64, 100))
     # Random EEG data for 20 examples, 64 channels, and 100 time points
     y = torch.randint(0, 4, (20,))
     # Random labels for 5 examples
