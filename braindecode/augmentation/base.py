@@ -141,7 +141,8 @@ class IdentityTransform(Transform):
     Transform that does not change the input.
     """
 
-    operation = staticmethod(identity)
+    operation = staticmethod(identity)  # type: ignore[assignment]
+    # https://github.com/python/mypy/issues/4574
 
 
 class Compose(Transform):

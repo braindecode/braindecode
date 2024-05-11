@@ -236,12 +236,13 @@ weight_decay = 0
 batch_size = 64
 n_epochs = 2
 
-
 ######################################################################
 # The following method runs one training epoch over the dataloader for the
 # given model. It needs a loss function, optimization algorithm, and
 # learning rate updating callback.
 from tqdm import tqdm
+
+
 # Define a method for training one epoch
 
 
@@ -256,7 +257,7 @@ def train_one_epoch(
     print_batch_stats=True,
 ):
     model.train()  # Set the model to training mode
-    train_loss, correct = 0, 0
+    train_loss, correct = 0.0, 0.0
 
     progress_bar = tqdm(
         enumerate(dataloader), total=len(dataloader), disable=not print_batch_stats
@@ -298,7 +299,7 @@ def test_model(dataloader: DataLoader, model: Module, loss_fn, print_batch_stats
     size = len(dataloader.dataset)
     n_batches = len(dataloader)
     model.eval()  # Switch to evaluation mode
-    test_loss, correct = 0, 0
+    test_loss, correct = 0.0, 0.0
 
     if print_batch_stats:
         progress_bar = tqdm(enumerate(dataloader), total=len(dataloader))
@@ -359,7 +360,6 @@ for epoch in range(1, n_epochs + 1):
         f"Test Accuracy: {100 * test_accuracy:.1f}%, "
         f"Average Test Loss: {test_loss:.6f}\n"
     )
-
 
 ######################################################################
 # Option 2: Train it with PyTorch Lightning

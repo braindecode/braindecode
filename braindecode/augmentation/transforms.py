@@ -5,6 +5,7 @@
 
 import warnings
 from numbers import Real
+from typing import Callable
 
 import numpy as np
 import torch
@@ -38,7 +39,7 @@ class TimeReverse(Transform):
         argument. Defaults to None.
     """
 
-    operation = staticmethod(time_reverse)
+    operation = staticmethod(time_reverse)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -64,7 +65,7 @@ class SignFlip(Transform):
         argument. Defaults to None.
     """
 
-    operation = staticmethod(sign_flip)
+    operation = staticmethod(sign_flip)  # type: ignore[assignment]
 
     def __init__(self, probability, random_state=None):
         super().__init__(probability=probability, random_state=random_state)
@@ -98,7 +99,7 @@ class FTSurrogate(Transform):
        preprint arXiv:1806.08675.
     """
 
-    operation = staticmethod(ft_surrogate)
+    operation = staticmethod(ft_surrogate)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -171,7 +172,7 @@ class ChannelsDropout(Transform):
        Reordering. arXiv preprint arXiv:2010.13694.
     """
 
-    operation = staticmethod(channels_dropout)
+    operation = staticmethod(channels_dropout)  # type: ignore[assignment]
 
     def __init__(self, probability, p_drop=0.2, random_state=None):
         super().__init__(probability=probability, random_state=random_state)
@@ -229,7 +230,7 @@ class ChannelsShuffle(Transform):
        Reordering. arXiv preprint arXiv:2010.13694.
     """
 
-    operation = staticmethod(channels_shuffle)
+    operation = staticmethod(channels_shuffle)  # type: ignore[assignment]
 
     def __init__(self, probability, p_shuffle=0.2, random_state=None):
         super().__init__(probability=probability, random_state=random_state)
@@ -291,7 +292,7 @@ class GaussianNoise(Transform):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
 
-    operation = staticmethod(gaussian_noise)
+    operation = staticmethod(gaussian_noise)  # type: ignore[assignment]
 
     def __init__(self, probability, std=0.1, random_state=None):
         super().__init__(
@@ -352,7 +353,7 @@ class ChannelsSymmetry(Transform):
        arXiv preprint arXiv:1803.09702.
     """
 
-    operation = staticmethod(channels_permute)
+    operation = staticmethod(channels_permute)  # type: ignore[assignment]
 
     def __init__(self, probability, ordered_ch_names, random_state=None):
         super().__init__(
@@ -428,7 +429,7 @@ class SmoothTimeMask(Transform):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
 
-    operation = staticmethod(smooth_time_mask)
+    operation = staticmethod(smooth_time_mask)  # type: ignore[assignment]
 
     def __init__(self, probability, mask_len_samples=100, random_state=None):
         super().__init__(
@@ -520,7 +521,7 @@ class BandstopFilter(Transform):
        Machine Learning for Health (pp. 238-253). PMLR.
     """
 
-    operation = staticmethod(bandstop_filter)
+    operation = staticmethod(bandstop_filter)  # type: ignore[assignment]
 
     def __init__(
         self, probability, sfreq, bandwidth=1, max_freq=None, random_state=None
@@ -620,7 +621,7 @@ class FrequencyShift(Transform):
         Defaults to None.
     """
 
-    operation = staticmethod(frequency_shift)
+    operation = staticmethod(frequency_shift)  # type: ignore[assignment]
 
     def __init__(self, probability, sfreq, max_delta_freq=2, random_state=None):
         super().__init__(
@@ -738,7 +739,7 @@ class SensorsRotation(Transform):
        (EMBC) (pp. 471-474).
     """
 
-    operation = staticmethod(sensors_rotation)
+    operation = staticmethod(sensors_rotation)  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -1016,7 +1017,7 @@ class Mixup(Transform):
     .. [2] https://github.com/facebookresearch/mixup-cifar10/blob/master/train.py
     """
 
-    operation = staticmethod(mixup)
+    operation = staticmethod(mixup)  # type: ignore[assignment]
 
     def __init__(self, alpha, beta_per_sample=False, random_state=None):
         super().__init__(

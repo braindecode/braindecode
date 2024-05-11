@@ -20,7 +20,7 @@ def create_from_mne_raw(
     window_stride_samples: int,
     drop_last_window: bool,
     descriptions: list[dict | pd.Series] | None = None,
-    mapping: dict[str, int] = None,
+    mapping: dict[str, int] | None = None,
     preload: bool = False,
     drop_bad_windows: bool = True,
     accepted_bads_ratio: float = 0.0,

@@ -285,7 +285,7 @@ def _get_sinc_resample_kernel(
 
     if lowpass_filter_width <= 0:
         raise ValueError("Low pass filter width should be positive.")
-    base_freq = min(orig_freq, new_freq)
+    base_freq: float = min(orig_freq, new_freq)
     # This will perform antialiasing filtering by removing the highest frequencies.
     # At first I thought I only needed this when downsampling, but when upsampling
     # you will get edge artifacts without this, as the edge is equivalent to zero padding,
