@@ -985,9 +985,8 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
         EEG labels for the example or batch.
     n_segments : int
         Number of segments to use in the batch. If None, X will be
-        automatically segmented, getting the value after the middle
-        element in a list of factors of the number of samples's square root.
-        Defaults to None.
+        automatically segmented, getting the last element in a list
+        of factors of the number of samples's square root. Defaults to None.
     random_state: int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
     Returns

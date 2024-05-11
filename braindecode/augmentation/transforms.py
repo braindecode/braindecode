@@ -1088,9 +1088,8 @@ class SegmentationReconstruction(Transform):
         argument. Defaults to None.
     n_segments : int
         Number of segments to use in the batch. If None, X will be
-        automatically segmented, getting the value after the middle
-        element in a list of factors of the number of samples' square root.
-        Defaults to None.
+        automatically segmented, getting the last element in a list
+        of factors of the number of samples's square root. Defaults to None.
 
     References
     ----------

@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from braindecode.augmentation.functional import _analytic_transform, \
-    channels_shuffle
+    channels_shuffle, segmentation_reconstruction
 
 
 def test_channels_shuffle():
@@ -66,7 +66,7 @@ def test_segmentation_reconstruction():
     random_state = 42
     n_segments = 5
 
-    transformed_X, transformed_y = channels_shuffle(X, y, n_segments,
+    transformed_X, transformed_y = segmentation_reconstruction(X, y, n_segments,
                                                     random_state)
 
     # Check the output
