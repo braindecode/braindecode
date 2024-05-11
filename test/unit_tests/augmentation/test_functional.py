@@ -74,3 +74,22 @@ def test_segmentation_reconstruction():
     # preserve time sequence
     assert torch.equal(torch.bincount(transformed_y), torch.bincount(y))
     # preserve number of occurrences of each label
+
+
+def test_segment_rec_diff_size_error():
+    X = torch.zeros((5, 22, 1000))
+    # Error here, different size 4 instead of 5
+    y = torch.randint(0, 4, (20,))
+
+    with pytest.raises(ValueError):
+        segmentation_reconstruction(X, y)
+
+
+def test_segment_rec_diff_type_error():
+    X = torch.zeros((5, 22, 1000))
+    # Random EEG data for 20 examples, 64 channels, and 100 time points
+    # Error here, transforming into a list
+    y = torch.randint(0, 5, (20,)).numel()
+
+    with pytest.raises(ValueError):
+        segmentation_reconstruction(X, y)
