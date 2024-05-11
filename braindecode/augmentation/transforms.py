@@ -1127,4 +1127,7 @@ class SegmentationReconstruction(Transform):
         params : dict
             Contains the number of segments to split the signal into.
         """
-        return {"n_segments": self.n_segments}
+        return {
+            "n_segments": self.n_segments,
+            "random_state": self.rng,
+        }

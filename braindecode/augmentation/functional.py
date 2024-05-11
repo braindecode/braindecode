@@ -973,7 +973,9 @@ def mixup(X, y, lam, idx_perm):
 
 
 def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
-    """Segment and reconstruct EEG data as proposed in [1]_.
+    """Segment and reconstruct EEG data.
+
+    See [1]_ for details.
 
     Parameters
     ----------
@@ -984,7 +986,7 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
     n_segments : int
         Number of segments to use in the batch. If None, X will be
         automatically segmented, getting the value after the middle
-        element in a list of factors of the number of samples' square root.
+        element in a list of factors of the number of samples's square root.
         Defaults to None.
     random_state: int | numpy.random.Generator, optional
         Used to draw the phase perturbation. Defaults to None.
@@ -1001,6 +1003,12 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
     interfaces. Proceedings of the IEEE, 103(6), 871-890.
     """
 
+    if not isinstance(X, torch.Tensor) or not isinstance(y, torch.Tensor):
+        raise ValueError("X and y must be torch tensors.")
+
+    if X.shape[0] != y.shape[0]:
+        raise ValueError("Number of samples in X and y must be the same.")
+
     # Assuming 'y' is a tensor of labels, and 'X' is a tensor of data
     n_classes = torch.unique(y).numel()
 
@@ -1011,9 +1019,13 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
         for i in range(1, int(n_segments**0.5) + 1):
             if n_segments % i == 0:
                 n_segments_list.append(i)
-    assert isinstance(n_segments, (int, float))
-    # parse the float to int
-    n_segments = int(n_segments)
+        n_segments = n_segments_list[-1]
+    else:
+        assert (
+            isinstance(n_segments, (int, float)) and 1 <= n_segments <= X.shape[2]
+        ), f"Number of segments must be a positive integer less than (or equal) the window size. Got {n_segments}"
+        # parse the float to int
+        n_segments = int(n_segments)
 
     # Initialize lists to store augmented data and corresponding labels
     aug_data = []
@@ -1024,29 +1036,26 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
     # Iterate through each class to separate and augment data
     for X_class, class_index in data_classes:
         # Determine class-specific dimensions
-        n_samples, n_channels, window_size = X_class.shape
+        n_trials, n_channels, window_size = X_class.shape
         # Segment Size
         segment_size = window_size // n_segments
         # Initialize an empty tensor for augmented data
         X_aug = torch.zeros_like(X_class)
-        # Use PyTorch's random generator for consistency
-        for idx_sample in range(n_samples):
-            for idx_segment in range(n_segments):
-                # Generate random indices within the class-specific dataset
-                rand_idx = rng.randint(0, n_samples, n_segments)
+        # Generate random indices within the class-specific dataset
+        rand_idx = rng.randint(0, n_trials, (n_trials, n_segments))
+        for idx_segment in range(n_segments):
+            start = idx_segment * segment_size
+            end = (idx_segment + 1) * segment_size
 
-                start = idx_segment * segment_size
-                end = (idx_segment + 1) * segment_size
-
-                # Perform the data augmentation
-                X_aug[idx_sample, :, start:end] = X_class[
-                    rand_idx[idx_segment], :, start:end
-                ]
+            # Perform the data augmentation
+            X_aug[np.arange(n_trials), :, start:end] = X_class[
+                rand_idx[:, idx_segment], :, start:end
+            ]
 
         # Store the augmented data and the corresponding class labels
         aug_data.append(X_aug)
         aug_label.append(
-            torch.full((n_samples,), class_index, dtype=y.dtype, device=y.device)
+            torch.full((n_trials,), class_index, dtype=y.dtype, device=y.device)
         )
 
     # Concatenate the augmented data and labels
