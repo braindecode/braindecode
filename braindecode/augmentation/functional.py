@@ -1049,11 +1049,11 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
     # Getting the random_state
     rng = check_random_state(random_state)
 
-    if False:
+    if y is not None:
         # Assuming 'y' is a tensor of labels, and 'X' is a tensor of data
-        n_classes = torch.unique(y).numel()
+        classes = torch.unique(y)
 
-        data_classes = [(i, X[y == i]) for i in range(n_classes)]
+        data_classes = [(i, X[y == i]) for i in classes]
         # Iterate through each class to separate and augment data
         for class_index, X_class in data_classes:
             # Determine class-specific dimensions
@@ -1074,11 +1074,11 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
 
     aug_data = aug_data[idx_shuffle]
 
-    if False:
+    if y is not None:
         aug_label = torch.cat(aug_label, dim=0)
         aug_label = aug_label[idx_shuffle]
 
         return aug_data, aug_label
 
     else:
-        return aug_data, y[idx_shuffle]
+        return aug_data, y
