@@ -1086,7 +1086,7 @@ class SegmentationReconstruction(Transform):
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether to transform given the probability
         argument. Defaults to None.
-    n_segments : int
+    n_segments : int, optional
         Number of segments to use in the batch. If None, X will be
         automatically segmented, getting the last element in a list
         of factors of the number of samples's square root. Defaults to None.

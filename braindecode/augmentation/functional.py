@@ -1002,7 +1002,7 @@ def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    n_segments : int
+    n_segments : int, optional
         Number of segments to use in the batch. If None, X will be
         automatically segmented, getting the last element in a list
         of factors of the number of samples's square root. Defaults to None.
