@@ -1076,7 +1076,9 @@ class Mixup(Transform):
 
 class SegmentationReconstruction(Transform):
     """Applies a segmentation-reconstruction transform to the input data, as
-       proposed in _[1].
+       proposed in _[1]. It segments each trial in the batch and randomly mix
+       it to generate new synthetic trials by label, preserving the original
+       order of the segments in time domain.
 
     Parameters
     ----------
@@ -1085,7 +1087,7 @@ class SegmentationReconstruction(Transform):
     random_state: int | numpy.random.Generator, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether to transform given the probability
-        argument. Defaults to None.
+        argument and to sample the segments mixing. Defaults to None.
     n_segments : int, optional
         Number of segments to use in the batch. If None, X will be
         automatically segmented, getting the last element in a list
