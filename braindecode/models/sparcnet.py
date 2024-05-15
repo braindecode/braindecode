@@ -255,7 +255,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, chs_info, n_times, sfreq
+        del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
         # add initial convolutional layer
         # the number of output channels is the smallest power of 2
