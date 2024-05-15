@@ -226,4 +226,5 @@ models_mandatory_parameters = [
     ("Labram", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("ContraWR", ["n_chans", "n_outputs", "sfreq"], dict(sfreq=200)),
 ]
