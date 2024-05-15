@@ -88,11 +88,13 @@ class ResBlock(nn.Module):
 
         Parameters
         ----------
-        x
+        X: Tensor
+            Input tensor of shape (batch_size, n_channels, n_freqs, n_times).
 
         Returns
         -------
-
+        Tensor
+            Output tensor of shape (batch_size, n_channels, n_freqs, n_times).
         """
         out = self.conv1(x)
         out = self.bn1(out)
@@ -148,14 +150,15 @@ class ContraWR(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         n_chans: int = None,
-        n_times: int = None,
         n_outputs: int = None,
-        chs_info: dict = None,
-        input_window_seconds: [float | int] = None,
         sfreq: int = None,
         emb_size: int = 256,
         res_channels: list[int] = [32, 64, 128],
         steps=20,
+        # Another way to pass the EEG parameters
+        chs_info: dict = None,
+        n_times: int = None,
+        input_window_seconds: [float | int] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
