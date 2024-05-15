@@ -29,6 +29,7 @@ from .util import _init_models_dict, models_mandatory_parameters
 from .labram import Labram
 from .eegsimpleconv import EEGSimpleConv
 from .sparcnet import SPARCNet
+from .contrawr import ContraWR
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
