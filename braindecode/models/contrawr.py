@@ -166,11 +166,10 @@ class ContraWR(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
-
-        if isinstance(res_channels, list):
+        if not isinstance(res_channels, list):
             raise ValueError("res_channels must be a list of integers.")
 
-        self.fft = self.sfreq
+        self.n_fft = int(self.sfreq)
         self.steps = steps
 
         res_channels = [self.n_chans] + res_channels + [emb_size]
@@ -208,13 +207,14 @@ class ContraWR(EEGModuleMixin, nn.Module):
         Tensor
             Output tensor of shape (batch_size, n_channels, n_freqs, n_times).
         """
+
         signal = []
         for s in range(x.shape[1]):
             spectral = torch.stft(
                 x[:, s, :],
-                n_fft=self.fft,
-                hop_length=self.fft // self.steps,
-                win_length=self.fft,
+                n_fft=self.n_fft,
+                hop_length=self.n_fft // self.steps,
+                win_length=self.n_fft,
                 normalized=True,
                 center=True,
                 onesided=True,
