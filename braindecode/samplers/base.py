@@ -18,8 +18,8 @@ class RecordingSampler(Sampler):
     Parameters
     ----------
     metadata : pd.DataFrame
-        DataFrame with at least one of {subject, session, run} columns for each
-        window in the BaseConcatDataset to sample examples from. Normally
+        DataFrame with at least one of {subject, session, run, recording} columns
+        for each window in the BaseConcatDataset to sample examples from. Normally
         obtained with `BaseConcatDataset.get_metadata()`. For instance,
         `metadata.head()` might look like this:
 
@@ -61,7 +61,8 @@ class RecordingSampler(Sampler):
         -------
             See class attributes.
         """
-        keys = [k for k in ["subject", "session", "run"] if k in self.metadata.columns]
+        keys = [k for k in ["subject", "session", "run", "recording"]
+                if k in self.metadata.columns]
         if not keys:
             raise ValueError(
                 "metadata must contain at least one of the following columns: "
@@ -115,7 +116,11 @@ class SequenceSampler(RecordingSampler):
     n_windows : int
         Number of consecutive windows in a sequence.
     n_windows_stride : int
-        Number of windows between two consecutive sequences.
+        Number of windows between two consecutive starts of sequences.
+        n_windows_stride=1 is maximal overlap.
+        n_windows_stride=n_windows is minimal overlap.
+        n_windows_stride>n_windows skips (n_windows_stride-n_windows) windows
+        between every consecutive sequence.
     random : bool
         If True, sample sequences randomly. If False, sample sequences in
         order.

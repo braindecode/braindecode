@@ -461,7 +461,7 @@ class BaseConcatDataset(ConcatDataset):
             Index of window and target to return. If provided as a list of
             ints, multiple windows and targets will be extracted and
             concatenated. The target output can be modified on the
-            fly by the ``traget_transform`` parameter.
+            fly by the ``target_transform`` parameter.
         """
         if isinstance(idx, Iterable):  # Sample multiple windows
             item = self._get_sequence(idx)
