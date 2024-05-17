@@ -44,6 +44,8 @@ Bugs
 - Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
 - Fix issue with coverage CI and adding a condition on the test for avoid HTML errors (:gh: 591 by `Bruno Aristimunha`_)
 - Constraint the version of mne (:gh: 594 by `Bruno Aristimunha`_)
+- Fix dead link & Sphinx URL formatting (:gh:`602` by `John Muradeli`_)
+- Fix `tmax` in `SleepPhysionet` (:gh:`612` by `John Muradeli`_)
 
 API changes
 ~~~~~~~~~~~
@@ -262,3 +264,4 @@ Authors
 .. _Remi Delbouys: https://github.com/remidbs
 .. _Valentin Iovene: https://github.com/tgy
 .. _Yassine El Ouahidi: https://github.com/elouayas
+.. _John Muradeli: https://github.com/OverLordGoldDragon/
