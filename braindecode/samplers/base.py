@@ -61,8 +61,11 @@ class RecordingSampler(Sampler):
         -------
             See class attributes.
         """
-        keys = [k for k in ["subject", "session", "run", "recording"]
-                if k in self.metadata.columns]
+        keys = [
+            k
+            for k in ["subject", "session", "run", "recording"]
+            if k in self.metadata.columns
+        ]
         if not keys:
             raise ValueError(
                 "metadata must contain at least one of the following columns: "
