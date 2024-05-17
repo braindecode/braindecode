@@ -38,6 +38,7 @@ Enhancements
 - Add ``offset`` arg to :function:`braindecode.preprocessing.preprocess` (:gh:`599` by `Pierre Guetschel`_)
 - Add type hints to preprocessing (:gh:`600` by `Pierre Guetschel`_)
 - Add ``mypy`` type checks to pre-commit and CI (:gh:`606` by `Pierre Guetschel`_)
+- Add `"recording"` to `keys` in `RecordingSampler`; docs fix (:gh:`614` by `John Muradeli`_)
 
 Bugs
 ~~~~
