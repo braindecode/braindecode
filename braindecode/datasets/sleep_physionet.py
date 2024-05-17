@@ -20,7 +20,7 @@ class SleepPhysionet(BaseConcatDataset):
     Sleep dataset from https://physionet.org/content/sleep-edfx/1.0.0/.
     Contains overnight recordings from 78 healthy subjects.
 
-    See [MNE example](https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html).
+    See `MNE example <https://mne.tools/stable/auto_tutorials/clinical/60_sleep.html>`.
 
     Parameters
     ----------
@@ -54,7 +54,7 @@ class SleepPhysionet(BaseConcatDataset):
         crop=None,
     ):
         if subject_ids is None:
-            subject_ids = range(83)
+            subject_ids = list(range(83))
         if recording_ids is None:
             recording_ids = [1, 2]
 

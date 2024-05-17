@@ -7,6 +7,7 @@ import os
 import copy
 import platform
 from glob import glob
+import warnings
 
 import mne
 import pandas as pd
@@ -24,9 +25,9 @@ from braindecode.preprocessing.preprocess import (
     _replace_inplace,
     _set_preproc_kwargs,
 )
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.preprocessing.windowers import create_fixed_length_windows, \
+    create_windows_from_events
 from braindecode.datautil.serialization import load_concat_dataset
-
 
 # We can't use fixtures with scope='module' as the dataset objects are modified
 # inplace during preprocessing. To avoid the long setup time caused by calling
@@ -43,6 +44,11 @@ windows_ds = create_fixed_length_windows(
     mapping=None,
     preload=True,
 )
+mne_windows_ds = create_windows_from_events(
+    raw_ds,
+    preload=True,
+    use_mne_epochs=True,
+)
 
 
 @pytest.fixture
@@ -53,6 +59,11 @@ def base_concat_ds():
 @pytest.fixture
 def windows_concat_ds():
     return copy.deepcopy(windows_ds)
+
+
+@pytest.fixture
+def mne_windows_concat_ds():
+    return copy.deepcopy(mne_windows_ds)
 
 
 def modify_windows_object(epochs, factor=1):
@@ -101,7 +112,9 @@ def test_preprocess_raw_str(base_concat_ds):
 
 def test_preprocess_windows_str(windows_concat_ds):
     preprocessors = [Preprocessor("crop", tmin=0, tmax=0.1, include_tmax=False)]
-    preprocess(windows_concat_ds, preprocessors)
+    with pytest.warns(UserWarning,
+                      match='Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.'):
+        preprocess(windows_concat_ds, preprocessors)
     # assert windows_concat_ds[0][0].shape[1] == 25  no longer correct as raw preprocessed
 
     # Since windowed datasets are not using mne epochs anymore,
@@ -114,6 +127,29 @@ def test_preprocess_windows_str(windows_concat_ds):
                 ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
             ]
             for ds in windows_concat_ds.datasets
+        ]
+    )
+
+
+def test_preprocess_mne_windows_str(mne_windows_concat_ds):
+    preprocessors = [Preprocessor("crop", tmin=0, tmax=0.1, include_tmax=False)]
+    # message = f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
+    with warnings.catch_warnings():
+        # warnings.filterwarnings('error', message=message)
+        warnings.simplefilter('error')
+        preprocess(mne_windows_concat_ds, preprocessors)
+    # assert mne_windows_concat_ds[0][0].shape[1] == 25  no longer correct as raw preprocessed
+
+    # Since windowed datasets are not using mne epochs anymore,
+    # also for windows it is called raw_preproc_kwargs
+    # as underlying data is always raw
+    assert all(
+        [
+            ds.raw_preproc_kwargs
+            == [
+                ("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False}),
+            ]
+            for ds in mne_windows_concat_ds.datasets
         ]
     )
 
@@ -139,9 +175,27 @@ def test_preprocess_windows_callable_on_object(windows_concat_ds):
         Preprocessor(modify_windows_object, apply_on_array=False, factor=factor)
     ]
     raw_window = windows_concat_ds[0][0]
-    preprocess(windows_concat_ds, preprocessors)
+    with pytest.warns(UserWarning,
+                      match='Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.'):
+        preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
         windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
+    )
+
+
+def test_preprocess_mne_windows_callable_on_object(mne_windows_concat_ds):
+    factor = 10
+    preprocessors = [
+        Preprocessor(modify_windows_object, apply_on_array=False, factor=factor)
+    ]
+    raw_window = mne_windows_concat_ds[0][0]
+    # message = f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
+    with warnings.catch_warnings():
+        # warnings.filterwarnings('error', message=message)
+        warnings.simplefilter('error')
+        preprocess(mne_windows_concat_ds, preprocessors)
+    np.testing.assert_allclose(
+        mne_windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
     )
 
 
@@ -173,7 +227,9 @@ def test_scale_windows(windows_concat_ds):
         Preprocessor(lambda data: multiply(data, factor)),
     ]
     raw_window = windows_concat_ds[0][0][:22]  # only keep EEG channels
-    preprocess(windows_concat_ds, preprocessors)
+    with pytest.warns(UserWarning,
+                      match='Applying preprocessors .* to the mne.io.Raw of an EEGWindowsDataset.'):
+        preprocess(windows_concat_ds, preprocessors)
     np.testing.assert_allclose(
         windows_concat_ds[0][0], raw_window * factor, rtol=1e-4, atol=1e-4
     )
@@ -414,7 +470,7 @@ def test_set_preproc_kwargs_wrong_type(base_concat_ds):
 @pytest.mark.parametrize("overwrite", [True, False])
 @pytest.mark.parametrize("n_jobs", [-1, 1, 2, None])
 def test_preprocess_save_dir(
-    base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
+        base_concat_ds, windows_concat_ds, tmp_path, kind, save, overwrite, n_jobs
 ):
     preproc_kwargs = [("crop", {"tmin": 0, "tmax": 0.1, "include_tmax": False})]
     preprocessors = [Preprocessor("crop", tmin=0, tmax=0.1, include_tmax=False)]

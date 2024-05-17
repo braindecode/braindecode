@@ -5,7 +5,7 @@ from .preprocess import (
     preprocess,
     Preprocessor,
 )
-from .mne_preprocess import Resample, DropChannels, SetEEGReference, Filter, Pick, Crop
+from .mne_preprocess import Resample, DropChannels, SetEEGReference, Filter, Pick, Crop  # type: ignore[attr-defined]
 from .windowers import (
     create_windows_from_events,
     create_fixed_length_windows,

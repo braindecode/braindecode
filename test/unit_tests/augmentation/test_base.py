@@ -20,7 +20,7 @@ def dummy_k_operation(X, y, k):
 
 
 class DummyTransform(Transform):
-    operation = staticmethod(dummy_k_operation)
+    operation = staticmethod(dummy_k_operation)  # type: ignore[assignment]
 
     def __init__(self, probability=1.0, random_state=None, k=None):
         if k is None:
@@ -39,10 +39,10 @@ def dummy_transform():
 
 
 def common_tranform_assertions(
-    input_batch,
-    output_batch,
-    expected_X=None,
-    diff_param=None,
+        input_batch,
+        output_batch,
+        expected_X=None,
+        diff_param=None,
 ):
     """Assert whether shapes and devices are conserved. Also, (optional)
     checks whether the expected features matrix is produced.
@@ -153,7 +153,7 @@ def concat_windows_dataset():
     ],
 )
 def test_data_loader(
-    dummy_transform, concat_windows_dataset, nb_transforms, no_list, dummy
+        dummy_transform, concat_windows_dataset, nb_transforms, no_list, dummy
 ):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     transform = dummy_transform if dummy else SmoothTimeMask(0.5)

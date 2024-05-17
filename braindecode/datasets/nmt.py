@@ -84,16 +84,22 @@ class NMT(BaseConcatDataset):
 
     def __init__(
         self,
-        path: str,
-        target_name: str = "pathological",
-        recording_ids: list[int] | None = None,
-        preload: bool = False,
-        n_jobs: int = 1,
+        path=None,
+        target_name="pathological",
+        recording_ids=None,
+        preload=False,
+        n_jobs=1,
     ):
-        # If the path is not informed, we fetch the dataset from zenodo.
-        if path is None:
+        # correct the path if needed
+        if path is not None:
+            list_csv = glob.glob(f"{path}/**/Labels.csv", recursive=True)
+            if isinstance(list_csv, list) and len(list_csv) > 0:
+                path = Path(list_csv[0]).parent
+
+        if path is None or len(list_csv) == 0:
             path = fetch_dataset(
                 dataset_params=NMT_dataset_params,
+                path=Path(path) if path is not None else None,
                 processor="unzip",
                 force_update=False,
             )

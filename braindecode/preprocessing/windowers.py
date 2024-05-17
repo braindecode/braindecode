@@ -14,9 +14,11 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import warnings
 
 import numpy as np
+from numpy.typing import ArrayLike
 import mne
 import pandas as pd
 from joblib import Parallel, delayed
@@ -24,24 +26,47 @@ from joblib import Parallel, delayed
 from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
 
 
+def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
+    should_use_mne_epochs = (
+        (reject is not None)
+        or (picks is not None)
+        or (flat is not None)
+        or (drop_bad_windows is True)
+    )
+    if use_mne_epochs is None:
+        if should_use_mne_epochs:
+            warnings.warn(
+                "Using reject or picks or flat or dropping bad windows means "
+                "mne Epochs are created, "
+                "which will be substantially slower and may be deprecated in the future."
+            )
+        return should_use_mne_epochs
+    if not use_mne_epochs and should_use_mne_epochs:
+        raise ValueError(
+            "Cannot set use_mne_epochs=False when using reject, picks, flat, or dropping bad windows."
+        )
+    return use_mne_epochs
+
+
 # XXX it's called concat_ds...
 def create_windows_from_events(
-    concat_ds,
-    trial_start_offset_samples=0,
-    trial_stop_offset_samples=0,
-    window_size_samples=None,
-    window_stride_samples=None,
-    drop_last_window=False,
-    mapping=None,
-    preload=False,
-    drop_bad_windows=None,
-    picks=None,
-    reject=None,
-    flat=None,
-    on_missing="error",
-    accepted_bads_ratio=0.0,
-    n_jobs=1,
-    verbose="error",
+    concat_ds: BaseConcatDataset,
+    trial_start_offset_samples: int = 0,
+    trial_stop_offset_samples: int = 0,
+    window_size_samples: int | None = None,
+    window_stride_samples: int | None = None,
+    drop_last_window: bool = False,
+    mapping: dict[str, int] | None = None,
+    preload: bool = False,
+    drop_bad_windows: bool | None = None,
+    picks: str | ArrayLike | slice | None = None,
+    reject: dict[str, float] | None = None,
+    flat: dict[str, float] | None = None,
+    on_missing: str = "error",
+    accepted_bads_ratio: float = 0.0,
+    use_mne_epochs: bool | None = None,
+    n_jobs: int = 1,
+    verbose: bool | str | int | None = "error",
 ):
     """Create windows based on events in mne.Raw.
 
@@ -111,6 +136,10 @@ def create_windows_from_events(
         smaller than this, then only the corresponding trials are dropped, but
         the computation continues. Otherwise, an error is raised. Defaults to
         0.0 (raise an error).
+    use_mne_epochs: bool
+        If False, return EEGWindowsDataset objects.
+        If True, return mne.Epochs objects encapsulated in WindowsDataset objects,
+        which is substantially slower that EEGWindowsDataset.
     n_jobs: int
         Number of jobs to use to parallelize the windowing.
     verbose: bool | str | int | None
@@ -140,20 +169,11 @@ def create_windows_from_events(
             "and this argument may be removed in the future."
         )
 
-    use_mne_epochs = (
-        (reject is not None)
-        or (picks is not None)
-        or (flat is not None)
-        or (drop_bad_windows is True)
+    use_mne_epochs = _get_use_mne_epochs(
+        use_mne_epochs, reject, picks, flat, drop_bad_windows
     )
-    if use_mne_epochs:
-        warnings.warn(
-            "Using reject or picks or flat or dropping bad windows means "
-            "mne Epochs are created, "
-            "which will be substantially slower and may be deprecated in the future."
-        )
-        if drop_bad_windows is None:
-            drop_bad_windows = True
+    if use_mne_epochs and drop_bad_windows is None:
+        drop_bad_windows = True
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
         delayed(_create_windows_from_events)(
@@ -182,22 +202,22 @@ def create_windows_from_events(
 
 
 def create_fixed_length_windows(
-    concat_ds,
-    start_offset_samples=0,
-    stop_offset_samples=None,
-    window_size_samples=None,
-    window_stride_samples=None,
-    drop_last_window=None,
-    mapping=None,
-    preload=False,
-    picks=None,
-    reject=None,
-    flat=None,
-    targets_from="metadata",
-    last_target_only=True,
-    on_missing="error",
-    n_jobs=1,
-    verbose="error",
+    concat_ds: BaseConcatDataset,
+    start_offset_samples: int = 0,
+    stop_offset_samples: int | None = None,
+    window_size_samples: int | None = None,
+    window_stride_samples: int | None = None,
+    drop_last_window: bool | None = None,
+    mapping: dict[str, int] | None = None,
+    preload: bool = False,
+    picks: str | ArrayLike | slice | None = None,
+    reject: dict[str, float] | None = None,
+    flat: dict[str, float] | None = None,
+    targets_from: str = "metadata",
+    last_target_only: bool = True,
+    on_missing: str = "error",
+    n_jobs: int = 1,
+    verbose: bool | str | int | None = "error",
 ):
     """Windower that creates sliding windows.
 
