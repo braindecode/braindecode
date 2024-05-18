@@ -89,7 +89,7 @@ Models
     Labram
     EEGSimpleConv
     SPARCNet
-
+    ContraWR
 
 Training
 ========
