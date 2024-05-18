@@ -61,11 +61,25 @@ def test_segmentation_reconstruction():
     # Random EEG data for 20 examples, 64 channels, and 100 time points
     y = torch.randint(0, 4, (20,))
     # Random labels for 5 examples
-    random_state = 42
+
     n_segments = 5
 
+    from sklearn.utils import check_random_state
+    rng = check_random_state(42)
+
+    classes = torch.unique(y)
+    data_classes = [(i, X[y == i]) for i in classes]
+
+    rand_idxs = dict()
+    for label, X_class in data_classes:
+        n_trials = X_class.shape[0]
+        rand_idxs[label] = rng.randint(0, n_trials, (n_trials, n_segments))
+
+    idx_shuffle = rng.permutation(X.shape[0])
+
     transformed_X, transformed_y = segmentation_reconstruction(X, y, n_segments,
-                                                    random_state)
+                                                               data_classes, rand_idxs,
+                                                               idx_shuffle)
 
     # Check the output
     assert torch.equal(transformed_X, X)
@@ -79,8 +93,26 @@ def test_segment_rec_diff_size_error():
     # Error here, different size 4 instead of 5
     y = torch.randint(0, 4, (20,))
 
+    n_segments = 5
+
+    from sklearn.utils import check_random_state
+    rng = check_random_state(42)
+
+    classes = torch.unique(y)
+    data_classes = [(i, X[y == i]) for i in classes]
+
+    rand_idxs = dict()
+    for label, X_class in data_classes:
+        n_trials = X_class.shape[0]
+        rand_idxs[label] = rng.randint(0, n_trials, (n_trials, n_segments))
+
+    idx_shuffle = rng.permutation(X.shape[0])
+
     with pytest.raises(ValueError):
-        segmentation_reconstruction(X, y)
+        segmentation_reconstruction(X, y, n_segments,
+                                    data_classes, rand_idxs,
+                                    idx_shuffle)
+
 
 
 def test_segment_rec_diff_type_error():
@@ -89,5 +121,22 @@ def test_segment_rec_diff_type_error():
     # Error here, transforming into a list
     y = torch.randint(0, 5, (20,)).numel()
 
+    n_segments = 5
+
+    from sklearn.utils import check_random_state
+    rng = check_random_state(42)
+
+    classes = torch.unique(y)
+    data_classes = [(i, X[y == i]) for i in classes]
+
+    rand_idxs = dict()
+    for label, X_class in data_classes:
+        n_trials = X_class.shape[0]
+        rand_idxs[label] = rng.randint(0, n_trials, (n_trials, n_segments))
+
+    idx_shuffle = rng.permutation(X.shape[0])
+
     with pytest.raises(ValueError):
-        segmentation_reconstruction(X, y)
+        segmentation_reconstruction(X, y, n_segments,
+                                    data_classes, rand_idxs,
+                                    idx_shuffle)
