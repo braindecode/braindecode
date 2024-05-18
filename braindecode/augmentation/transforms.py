@@ -1128,7 +1128,52 @@ class SegmentationReconstruction(Transform):
         params : dict
             Contains the number of segments to split the signal into.
         """
+        X, y = batch[0], batch[1]
+
+        if y is not None:
+            if not isinstance(X, torch.Tensor) or not isinstance(y, torch.Tensor):
+                raise ValueError("X and y must be torch tensors.")
+
+            if X.shape[0] != y.shape[0]:
+                raise ValueError("Number of samples in X and y must be the same.")
+
+        if self.n_segments is None:
+            self.n_segments = int(X.shape[2])
+            n_segments_list = []
+            for i in range(1, int(self.n_segments**0.5) + 1):
+                if self.n_segments % i == 0:
+                    n_segments_list.append(i)
+            self.n_segments = n_segments_list[-1]
+
+        elif not (
+            isinstance(self.n_segments, (int, float))
+            and 1 <= self.n_segments <= X.shape[2]
+        ):
+            raise ValueError(
+                f"Number of segments must be a positive integer less than "
+                f"(or equal) the window size. Got {self.n_segments}"
+            )
+
+        if y is None:
+            data_classes = [(np.nan, X)]
+
+        else:
+            classes = torch.unique(y)
+
+            data_classes = [(i, X[y == i]) for i in classes]
+
+        rand_idxs = dict()
+        for label, X_class in data_classes:
+            n_trials = X_class.shape[0]
+            rand_idxs[label] = self.rng.randint(
+                0, n_trials, (n_trials, self.n_segments)
+            )
+
+        idx_shuffle = self.rng.permutation(X.shape[0])
+
         return {
             "n_segments": self.n_segments,
-            "random_state": self.rng,
+            "data_classes": data_classes,
+            "rand_idxs": rand_idxs,
+            "idx_shuffle": idx_shuffle,
         }

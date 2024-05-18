@@ -972,113 +972,41 @@ def mixup(X, y, lam, idx_perm):
     return X_mix, (y_a, y_b, lam)
 
 
-def _segmentation_reconstruction(X, n_segments, rng):
-    n_trials, n_channels, window_size = X.shape
-    # Segment Size
-    segment_size = window_size // n_segments
-    # Initialize an empty tensor for augmented data
-    X_aug = torch.zeros_like(X)
-    # Generate random indices within the class-specific dataset
-    rand_idx = rng.randint(0, n_trials, (n_trials, n_segments))
-    for idx_segment in range(n_segments):
-        start = idx_segment * segment_size
-        end = (idx_segment + 1) * segment_size
-
-        # Perform the data augmentation
-        X_aug[np.arange(n_trials), :, start:end] = X[
-            rand_idx[:, idx_segment], :, start:end
-        ]
-    return X_aug, n_trials
-
-
-def segmentation_reconstruction(X, y, n_segments=None, random_state=None):
-    """Segment and reconstruct EEG data.
-
-    See [1]_ for details.
-
-    Parameters
-    ----------
-    X : torch.Tensor
-        EEG input example or batch.
-    y : torch.Tensor
-        EEG labels for the example or batch.
-    n_segments : int, optional
-        Number of segments to use in the batch. If None, X will be
-        automatically segmented, getting the last element in a list
-        of factors of the number of samples's square root. Defaults to None.
-    random_state: int | numpy.random.Generator, optional
-        Used to draw the phase perturbation. Defaults to None.
-    Returns
-    -------
-    torch.Tensor
-        Transformed inputs.
-    torch.Tensor
-        Transformed labels.
-    References
-    ----------
-    .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
-    suppress calibration time in oscillatory activity-based brain–computer
-    interfaces. Proceedings of the IEEE, 103(6), 871-890.
-    """
-
-    if y is not None:
-        if not isinstance(X, torch.Tensor) or not isinstance(y, torch.Tensor):
-            raise ValueError("X and y must be torch tensors.")
-
-        if X.shape[0] != y.shape[0]:
-            raise ValueError("Number of samples in X and y must be the same.")
-
-    if n_segments is None:
-        n_segments = int(X.shape[2])
-        n_segments_list = []
-        for i in range(1, int(n_segments**0.5) + 1):
-            if n_segments % i == 0:
-                n_segments_list.append(i)
-        n_segments = n_segments_list[-1]
-
-    elif not (isinstance(n_segments, (int, float)) and 1 <= n_segments <= X.shape[2]):
-        raise ValueError(
-            f"Number of segments must be a positive integer less than "
-            f"(or equal) the window size. Got {n_segments}"
-        )
-
+def segmentation_reconstruction(X, y, n_segments, data_classes, rand_idxs, idx_shuffle):
     # Initialize lists to store augmented data and corresponding labels
     aug_data = []
     aug_label = []
 
-    # Getting the random_state
-    rng = check_random_state(random_state)
+    # Iterate through each class to separate and augment data
+    for class_index, X_class in data_classes:
+        # Determine class-specific dimensions
+        # Store the augmented data and the corresponding class labels
+        n_trials, n_channels, window_size = X_class.shape
+        # Segment Size
+        segment_size = window_size // n_segments
+        # Initialize an empty tensor for augmented data
+        X_aug = torch.zeros_like(X_class)
+        # Generate random indices within the class-specific dataset
+        rand_idx = rand_idxs[class_index]
+        for idx_segment in range(n_segments):
+            start = idx_segment * segment_size
+            end = (idx_segment + 1) * segment_size
 
-    if y is not None:
-        # Assuming 'y' is a tensor of labels, and 'X' is a tensor of data
-        classes = torch.unique(y)
-
-        data_classes = [(i, X[y == i]) for i in classes]
-        # Iterate through each class to separate and augment data
-        for class_index, X_class in data_classes:
-            # Determine class-specific dimensions
-            # Store the augmented data and the corresponding class labels
-            X_aug, n_trials = _segmentation_reconstruction(X_class, n_segments, rng)
-            aug_data.append(X_aug)
-            aug_label.append(
-                torch.full((n_trials,), class_index, dtype=y.dtype, device=y.device)
-            )
-    else:
-        X_aug, n_trials = _segmentation_reconstruction(X, n_segments, rng)
+            # Perform the data augmentation
+            X_aug[np.arange(n_trials), :, start:end] = X_class[
+                rand_idx[:, idx_segment], :, start:end
+            ]
         aug_data.append(X_aug)
-
+        aug_label.append(torch.full((n_trials,), class_index))
     # Concatenate the augmented data and labels
     aug_data = torch.cat(aug_data, dim=0)
-
-    idx_shuffle = rng.permutation(len(aug_data))
-
+    aug_data = aug_data.to(dtype=X.dtype, device=X.device)
     aug_data = aug_data[idx_shuffle]
 
     if y is not None:
         aug_label = torch.cat(aug_label, dim=0)
+        aug_label = aug_label.to(dtype=y.dtype, device=y.device)
         aug_label = aug_label[idx_shuffle]
-
         return aug_data, aug_label
 
-    else:
-        return aug_data, y
+    return aug_data, y
