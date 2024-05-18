@@ -477,7 +477,7 @@ print(classification_report(data["test"][1], test_y_pred))
 # of the feature space using a PCA:
 
 from sklearn.decomposition import PCA
-from matplotlib import cm
+from matplotlib import colormaps
 
 X = np.concatenate([v[0] for k, v in data.items()])
 y = np.concatenate([v[1] for k, v in data.items()])
@@ -487,7 +487,7 @@ pca = PCA(n_components=2)
 components = pca.fit_transform(X)
 
 fig, ax = plt.subplots()
-colors = cm.get_cmap("viridis", 5)(range(5))
+colors = colormaps["viridis"](range(5))
 for i, stage in enumerate(["W", "N1", "N2", "N3", "R"]):
     mask = y == i
     ax.scatter(
