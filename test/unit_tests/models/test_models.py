@@ -41,6 +41,8 @@ from braindecode.models import (
     Labram,
     EEGSimpleConv,
     AttentionBaseNet,
+    SPARCNet,
+    ContraWR
 )
 
 from braindecode.util import set_random_seeds
@@ -1067,3 +1069,21 @@ def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
         n_classes=default_attentionbasenet_params.get("n_outputs")
     )
     check_forward_pass(model, input_sizes)
+
+
+def test_parameters_contrawr():
+
+    model = ContraWR(n_outputs=2, n_chans=22, sfreq=250)
+
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # 1.6M parameters according to the Labram paper, table 1
+    assert np.round(n_params / 1e6, 1) == 1.6
+
+
+def test_parameters_SPARCNet():
+
+    model = SPARCNet(n_outputs=2, n_chans=16, n_times=400)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # 0.79M parameters according to the Labram paper, table 1
+    # The model parameters are indeed in the n_times range
+    assert np.round(n_params / 1e6, 1) == 0.8
