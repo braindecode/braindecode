@@ -51,8 +51,8 @@ class ResBlock(nn.Module):
     ):
         super(ResBlock, self).__init__()
         self.conv1 = nn.Conv2d(
-            in_channels,
-            out_channels,
+            in_channels=in_channels,
+            out_channels=out_channels,
             kernel_size=kernel_size,
             stride=stride,
             padding=padding,

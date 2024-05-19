@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import math
+from math import floor, log2
 from collections import OrderedDict
 
 import numpy as np
@@ -17,11 +17,11 @@ class DenseLayer(nn.Sequential):
 
     Parameters
     ----------
-    input_channels : int
+    in_channels : int
         Number of input channels.
     growth_rate : int
         Rate of growth of channels in this layer.
-    bn_size : int
+    bottleneck_size : int
         Multiplicative factor for the bottleneck layer (does not affect the output size).
     drop_rate : float, optional
         Dropout rate. Default is 0.5.
@@ -42,23 +42,23 @@ class DenseLayer(nn.Sequential):
 
     def __init__(
         self,
-        input_channels: int,
+        in_channels: int,
         growth_rate: int,
-        bn_size: int,
+        bottleneck_size: int,
         drop_rate=0.5,
         conv_bias=True,
         batch_norm=True,
     ):
         super(DenseLayer, self).__init__()
         if batch_norm:
-            (self.add_module("norm1", nn.BatchNorm1d(input_channels)),)
+            (self.add_module("norm1", nn.BatchNorm1d(in_channels)),)
         (self.add_module("elu1", nn.ELU()),)
         (
             self.add_module(
                 "conv1",
                 nn.Conv1d(
-                    input_channels,
-                    bn_size * growth_rate,
+                    in_channels=in_channels,
+                    out_channels=bottleneck_size * growth_rate,
                     kernel_size=1,
                     stride=1,
                     bias=conv_bias,
@@ -66,14 +66,14 @@ class DenseLayer(nn.Sequential):
             ),
         )
         if batch_norm:
-            (self.add_module("norm2", nn.BatchNorm1d(bn_size * growth_rate)),)
+            (self.add_module("norm2", nn.BatchNorm1d(bottleneck_size * growth_rate)),)
         (self.add_module("elu2", nn.ELU()),)
         (
             self.add_module(
                 "conv2",
                 nn.Conv1d(
-                    bn_size * growth_rate,
-                    growth_rate,
+                    in_channels=bottleneck_size * growth_rate,
+                    out_channels=growth_rate,
                     kernel_size=3,
                     stride=1,
                     padding=1,
@@ -97,11 +97,11 @@ class DenseBlock(nn.Sequential):
     ----------
     num_layers : int
         Number of layers in this block.
-    input_channels : int
+    in_channels : int
         Number of input channels.
     growth_rate : int
         Rate of growth of channels in this layer.
-    bn_size : int
+    bottleneck_size : int
         Multiplicative factor for the bottleneck layer (does not affect the output size).
     drop_rate : float, optional
         Dropout rate. Default is 0.5.
@@ -123,9 +123,9 @@ class DenseBlock(nn.Sequential):
     def __init__(
         self,
         num_layers,
-        input_channels,
+        in_channels,
         growth_rate,
-        bn_size,
+        bottleneck_size,
         drop_rate=0.5,
         conv_bias=True,
         batch_norm=True,
@@ -133,12 +133,12 @@ class DenseBlock(nn.Sequential):
         super(DenseBlock, self).__init__()
         for idx_layer in range(num_layers):
             layer = DenseLayer(
-                input_channels + idx_layer * growth_rate,
-                growth_rate,
-                bn_size,
-                drop_rate,
-                conv_bias,
-                batch_norm,
+                in_channels=in_channels + idx_layer * growth_rate,
+                growth_rate=growth_rate,
+                bottleneck_size=bottleneck_size,
+                drop_rate=drop_rate,
+                conv_bias=conv_bias,
+                batch_norm=batch_norm,
             )
             self.add_module(f"denselayer{idx_layer + 1}", layer)
 
@@ -149,9 +149,9 @@ class TransitionLayer(nn.Sequential):
 
     Parameters
     ----------
-    input_channels : int
+    in_channels : int
         Number of input channels.
-    output_channels : int
+    out_channels : int
         Number of output channels.
     conv_bias : bool, optional
         Whether to use bias in convolutional layers. Default is True.
@@ -167,18 +167,16 @@ class TransitionLayer(nn.Sequential):
     torch.Size([128, 18, 500])
     """
 
-    def __init__(
-        self, input_channels, output_channels, conv_bias=True, batch_norm=True
-    ):
+    def __init__(self, in_channels, out_channels, conv_bias=True, batch_norm=True):
         super(TransitionLayer, self).__init__()
         if batch_norm:
-            self.add_module("norm", nn.BatchNorm1d(input_channels))
+            self.add_module("norm", nn.BatchNorm1d(in_channels))
         self.add_module("elu", nn.ELU())
         self.add_module(
             "conv",
             nn.Conv1d(
-                input_channels,
-                output_channels,
+                in_channels=in_channels,
+                out_channels=out_channels,
                 kernel_size=1,
                 stride=1,
                 bias=conv_bias,
@@ -237,7 +235,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         # Neural network parameters
         block_layers: int = 4,
         growth_rate: int = 16,
-        bn_size: int = 16,
+        bottleneck_size: int = 16,
         drop_rate: float = 0.5,
         conv_bias: bool = True,
         batch_norm: bool = True,
@@ -260,7 +258,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         # add initial convolutional layer
         # the number of output channels is the smallest power of 2
         # that is greater than the number of input channels
-        out_channels = 2 ** (math.floor(np.log2(self.n_chans)) + 1)
+        out_channels = 2 ** (floor(log2(self.n_chans)) + 1)
         first_conv = OrderedDict(
             [
                 (
@@ -285,12 +283,12 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         n_channels = out_channels
 
         # Adding dense blocks
-        for n_layer in range(math.floor(math.log2(self.n_times // 4)):
+        for n_layer in range(floor(log2(self.n_times // 4))):
             block = DenseBlock(
                 num_layers=block_layers,
-                input_channels=n_channels,
+                in_channels=n_channels,
                 growth_rate=growth_rate,
-                bn_size=bn_size,
+                bottleneck_size=bottleneck_size,
                 drop_rate=drop_rate,
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
@@ -300,8 +298,8 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             n_channels = n_channels + block_layers * growth_rate
 
             trans = TransitionLayer(
-                input_channels=n_channels,
-                output_channels=n_channels // 2,
+                in_channels=n_channels,
+                out_channels=n_channels // 2,
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
             )
@@ -315,9 +313,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             nn.Linear(n_channels, self.n_outputs),
         )
 
-        self.init_weights()
+        self._init_weights()
 
-    def init_weights(self):
+    def _init_weights(self):
         """
         Initialize the weights of the model.
 
