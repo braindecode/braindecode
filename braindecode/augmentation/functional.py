@@ -972,7 +972,38 @@ def mixup(X, y, lam, idx_perm):
     return X_mix, (y_a, y_b, lam)
 
 
-def segmentation_reconstruction(X, y, n_segments, data_classes, rand_idxs, idx_shuffle):
+def segmentation_reconstruction(
+    X, y, n_segments, data_classes, rand_indices, idx_shuffle
+):
+    """Segment and reconstruct EEG data in the time domain preserving labels.
+
+    See [1]_ for details.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example or batch.
+    y : torch.Tensor
+        EEG labels for the example or batch.
+    n_segments : int
+        Number of segments to use in the batch.
+    rand_indices: array-like
+        Array of indices that indicates which trial to use in each segment.
+    idx_shuffle: array-like
+        Array of indices to shuffle the new generated trials.
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
+    References
+    ----------
+    .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
+    suppress calibration time in oscillatory activity-based brain–computer
+    interfaces. Proceedings of the IEEE, 103(6), 871-890.
+    """
+
     # Initialize lists to store augmented data and corresponding labels
     aug_data = []
     aug_label = []
@@ -987,7 +1018,7 @@ def segmentation_reconstruction(X, y, n_segments, data_classes, rand_idxs, idx_s
         # Initialize an empty tensor for augmented data
         X_aug = torch.zeros_like(X_class)
         # Generate random indices within the class-specific dataset
-        rand_idx = rand_idxs[class_index]
+        rand_idx = rand_indices[class_index]
         for idx_segment in range(n_segments):
             start = idx_segment * segment_size
             end = (idx_segment + 1) * segment_size

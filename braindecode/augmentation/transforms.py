@@ -1162,10 +1162,10 @@ class SegmentationReconstruction(Transform):
 
             data_classes = [(i, X[y == i]) for i in classes]
 
-        rand_idxs = dict()
+        rand_indices = dict()
         for label, X_class in data_classes:
             n_trials = X_class.shape[0]
-            rand_idxs[label] = self.rng.randint(
+            rand_indices[label] = self.rng.randint(
                 0, n_trials, (n_trials, self.n_segments)
             )
 
@@ -1174,6 +1174,6 @@ class SegmentationReconstruction(Transform):
         return {
             "n_segments": self.n_segments,
             "data_classes": data_classes,
-            "rand_idxs": rand_idxs,
+            "rand_indices": rand_indices,
             "idx_shuffle": idx_shuffle,
         }
