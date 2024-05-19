@@ -33,6 +33,9 @@ def test_crop_wake():
     sfreq = sp.datasets[0].raw.info["sfreq"]
     duration_h = len(sp) / (3600 * sfreq)
     assert duration_h < 7 and duration_h > 6
+    # Labeling is done on 30 sec intervals, so all annotations' durations are
+    # multiples of 30s. If `crop_wake_mins` is also a mult of 30s, this must pass
+    assert (duration_h * 3600 / 30).is_integer()
 
 
 def test_serializable():
