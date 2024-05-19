@@ -49,6 +49,7 @@ Bugs
 - Warn when applying preprocessing steps on a :class:`braindecode.datasets.base.EEGWindowsDataset` (:gh:`607` by `Pierre Guetschel`_)
 - Fix dead link & Sphinx URL formatting (:gh:`602` by `John Muradeli`_)
 - Fix `tmax` in `SleepPhysionet` (:gh:`612` by `John Muradeli`_)
+- Fix matplotlib colormaps deprecation (:gh:`617` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
