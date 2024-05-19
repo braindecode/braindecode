@@ -285,7 +285,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         n_channels = out_channels
 
         # Adding dense blocks
-        for n_layer in np.arange(math.floor(np.log2(self.n_times // 4))):
+        for n_layer in range(math.floor(math.log2(self.n_times // 4)):
             block = DenseBlock(
                 num_layers=block_layers,
                 input_channels=n_channels,
