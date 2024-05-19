@@ -38,7 +38,7 @@ Enhancements
 - Add ``offset`` arg to :function:`braindecode.preprocessing.preprocess` (:gh:`599` by `Pierre Guetschel`_)
 - Add type hints to preprocessing (:gh:`600` by `Pierre Guetschel`_)
 - Add ``mypy`` type checks to pre-commit and CI (:gh:`606` by `Pierre Guetschel`_)
-- Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`608` by `Bruno Aristimunha`_)
+- Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
 
 
 Bugs
