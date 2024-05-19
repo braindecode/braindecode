@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+from typing import List
+
 import torch
 import torch.nn as nn
 
@@ -158,7 +161,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         # Another way to pass the EEG parameters
         chs_info: dict = None,
         n_times: int = None,
-        input_window_seconds: [float | int] = None,
+        input_window_seconds: List[float | int] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,

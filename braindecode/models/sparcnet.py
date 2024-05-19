@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from math import floor, log2
 from collections import OrderedDict
+from typing import List
 
 import numpy as np
 import torch
@@ -242,7 +243,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         # EEGModuleMixin parameters
         # (another way to present the same parameters)
         chs_info: dict = None,
-        input_window_seconds: [float | int] = None,
+        input_window_seconds: List[float | int] = None,
         sfreq: int = None,
     ):
         super().__init__(
