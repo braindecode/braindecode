@@ -39,6 +39,10 @@ Enhancements
 - Add type hints to preprocessing (:gh:`600` by `Pierre Guetschel`_)
 - Add ``mypy`` type checks to pre-commit and CI (:gh:`606` by `Pierre Guetschel`_)
 - Add `"recording"` to `keys` in `RecordingSampler`; docs fix (:gh:`614` by `John Muradeli`_)
+- Code clarity changes in `windowers.py` (:gh:`615` by `John Muradeli`_)
+- Adding SegmentationReconstruction augmentation :class:`braindecode.augmentation.SegmentationReconstruction` (:gh:`608` by `Gustavo Rodrigues`_)
+- Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
+- Optimize the CI by executing only the last commit (:gh:`612` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
@@ -48,6 +52,9 @@ Bugs
 - Constraint the version of mne (:gh: 594 by `Bruno Aristimunha`_)
 - Fix type errors (:gh:`606` by `Pierre Guetschel`_)
 - Warn when applying preprocessing steps on a :class:`braindecode.datasets.base.EEGWindowsDataset` (:gh:`607` by `Pierre Guetschel`_)
+- Fix matplotlib colormaps deprecation (:gh:`608` by `Bruno Aristimunha`_)
+- Ensure mypy to work for every commit (:gh:`619` by `Bruno Aristimunha`_)
+
 
 API changes
 ~~~~~~~~~~~
@@ -268,3 +275,5 @@ Authors
 .. _Remi Delbouys: https://github.com/remidbs
 .. _Valentin Iovene: https://github.com/tgy
 .. _Yassine El Ouahidi: https://github.com/elouayas
+.. _John Muradeli: https://github.com/OverLordGoldDragon/
+.. _Gustavo Rodrigues: https://github.com/gustavohenriquesr

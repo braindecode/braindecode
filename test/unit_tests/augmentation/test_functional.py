@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from braindecode.augmentation.functional import _analytic_transform, \
-    channels_shuffle
+    channels_shuffle, segmentation_reconstruction
 
 
 def test_channels_shuffle():
@@ -54,3 +54,35 @@ def test_analytic_transform_even():
 
     # Check if the output has the same shape as the input
     assert transformed_x.shape == x.shape
+
+
+def test_segmentation_reconstruction():
+    X = torch.zeros((20, 64, 100))
+    # Random EEG data for 20 examples, 64 channels, and 100 time points
+    y = torch.randint(0, 4, (20,))
+    # Random labels for 5 examples
+
+    n_segments = 5
+
+    from sklearn.utils import check_random_state
+    rng = check_random_state(42)
+
+    classes = torch.unique(y)
+    data_classes = [(i, X[y == i]) for i in classes]
+
+    rand_idxs = dict()
+    for label, X_class in data_classes:
+        n_trials = X_class.shape[0]
+        rand_idxs[label] = rng.randint(0, n_trials, (n_trials, n_segments))
+
+    idx_shuffle = rng.permutation(X.shape[0])
+
+    transformed_X, transformed_y = segmentation_reconstruction(X, y, n_segments,
+                                                               data_classes, rand_idxs,
+                                                               idx_shuffle)
+
+    # Check the output
+    assert torch.equal(transformed_X, X)
+    # preserve time sequence
+    assert torch.equal(torch.bincount(transformed_y), torch.bincount(y))
+    # preserve number of occurrences of each label
