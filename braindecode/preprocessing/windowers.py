@@ -376,7 +376,7 @@ def create_fixed_length_windows(
         rejection based on flatness is done. See mne.Epochs.
     lazy_metadata: bool
         If True, metadata is not computed immediately, but only when accessed
-        by using the _LazyDataFrame.
+        by using the _LazyDataFrame (experimental).
     on_missing: str
         What to do if one or several event ids are not found in the recording.
         Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
