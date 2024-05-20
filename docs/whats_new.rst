@@ -269,3 +269,4 @@ Authors
 .. _Remi Delbouys: https://github.com/remidbs
 .. _Valentin Iovene: https://github.com/tgy
 .. _Yassine El Ouahidi: https://github.com/elouayas
+.. _John Muradeli: https://github.com/OverLordGoldDragon/
