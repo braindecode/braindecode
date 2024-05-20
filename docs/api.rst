@@ -88,7 +88,8 @@ Models
     BIOT
     Labram
     EEGSimpleConv
-
+    SPARCNet
+    ContraWR
 
 Training
 ========
