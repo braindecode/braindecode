@@ -1,5 +1,7 @@
 name: push-artifact-to-circle-ci
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
+  cancel-in-progress: true
 # will be changed to on workflow_run
 on:
   workflow_run:
