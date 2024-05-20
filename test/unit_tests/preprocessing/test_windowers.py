@@ -460,7 +460,7 @@ def test_fixed_length_windower_lazy(
         assert y == yl
         assert i == il
 
-        
+
 @pytest.mark.parametrize(
     "drop_bad_windows,picks,flat,reject",
     [

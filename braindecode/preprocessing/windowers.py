@@ -335,7 +335,7 @@ def create_fixed_length_windows(
     flat: dict[str, float] | None = None,
     targets_from: str = "metadata",
     last_target_only: bool = True,
-    lazy_metadata: bool =False,
+    lazy_metadata: bool = False,
     on_missing: str = "error",
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
