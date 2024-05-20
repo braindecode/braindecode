@@ -376,8 +376,9 @@ def _create_windows_from_events(
     # XXX This could probably be simplified by using chunk_duration in
     #     `events_from_annotations`
 
-    last_samp = ds.raw.first_samp + ds.raw.n_times
-    if stops[-1] + trial_stop_offset_samples > last_samp:
+    last_samp = ds.raw.first_samp + ds.raw.n_times - 1
+    # `stops` is used exclusively (i.e. `start:stop`), so add back 1
+    if stops[-1] + trial_stop_offset_samples > last_samp + 1:
         raise ValueError(
             '"trial_stop_offset_samples" too large. Stop of last trial '
             f'({stops[-1]}) + "trial_stop_offset_samples" '
@@ -734,8 +735,9 @@ def _compute_window_inds(
 
     i_window_in_trials, i_trials, window_starts = [], [], []
     for start_i, (start, stop) in enumerate(zip(starts, stops)):
-        # Generate possible window starts with given stride between original
-        # trial onsets (shifted by start_offset) and stops
+        # Generate possible window starts, with given stride, between original
+        # trial onsets and stops (shifted by start_offset and stop_offset,
+        # respectively)
         possible_starts = np.arange(start, stop, stride)
 
         # Possible window start is actually a start, if window size fits in
@@ -755,7 +757,7 @@ def _compute_window_inds(
                 i_window_in_trials.append(i_window_in_trials[-1] + 1)
                 i_trials.append(start_i)
 
-    # Update stops to now be event stops instead of trial stops
+    # Set window stops to be event stops (rather than trial stops)
     window_stops = np.array(window_starts) + size
     if not (len(i_window_in_trials) == len(window_starts) == len(window_stops)):
         raise ValueError(
