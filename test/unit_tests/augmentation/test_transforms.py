@@ -1,8 +1,9 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #
 # License: BSD (3-clause)
-
 from test.unit_tests.augmentation.test_base import common_tranform_assertions
+from test.dataset import concat_windows_dataset, concat_ds_targets
 
 import numpy as np
 import pytest
@@ -16,7 +17,10 @@ from sklearn.utils import check_random_state
 from skorch.helper import predefined_split
 from torch import nn
 
-from braindecode.augmentation import IdentityTransform
+from braindecode import EEGClassifier
+from braindecode.models import ShallowFBCSPNet
+
+from braindecode.augmentation import IdentityTransform, AugmentedDataLoader
 from braindecode.augmentation.functional import _frequency_shift
 from braindecode.augmentation.functional import _torch_normalize_vectors
 from braindecode.augmentation.functional import sensors_rotation
@@ -31,6 +35,7 @@ from braindecode.augmentation.transforms import Mixup
 from braindecode.augmentation.transforms import SensorsXRotation
 from braindecode.augmentation.transforms import SensorsYRotation
 from braindecode.augmentation.transforms import SensorsZRotation
+from braindecode.augmentation.transforms import SegmentationReconstruction
 from braindecode.augmentation.transforms import SignFlip
 from braindecode.augmentation.transforms import SmoothTimeMask
 from braindecode.augmentation.transforms import TimeReverse
@@ -631,6 +636,60 @@ MONTAGE_10_20 = [
 ]
 
 
+@pytest.fixture()
+def dataset():
+    return concat_windows_dataset(concat_ds_targets())
+
+
+@pytest.mark.parametrize("probability", [0, 0.5, 1])
+def test_segmentation_reconstruction_with_EEGClassifier(dataset, probability):
+
+    transform = SegmentationReconstruction(probability=probability)
+
+    model = ShallowFBCSPNet(n_times=750, n_chans=4, n_classes=2)
+
+    clf = EEGClassifier(
+        module=model,
+        optimizer=torch.optim.Adam,
+        iterator_train=AugmentedDataLoader,
+        iterator_train__transforms=transform,
+        batch_size=5,
+        max_epochs=1,
+        classes=[0, 1],
+        train_split=predefined_split(dataset),
+        verbose=0,
+    )
+
+    _ = clf.fit(X=dataset)
+
+
+@pytest.mark.parametrize("n_segments", [1, 5, 10, None, 50])
+def test_segmentation_reconstruction_transform(
+        time_aranged_batch,
+        n_segments,
+):
+    X, _ = time_aranged_batch
+    transform = SegmentationReconstruction(
+        probability=1.0,
+        n_segments=n_segments,
+    )
+    common_tranform_assertions(
+        time_aranged_batch, transform(*time_aranged_batch), X
+    )
+
+
+def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
+    X, _ = time_aranged_batch
+    transform = SegmentationReconstruction(
+        probability=1.0,
+        n_segments=100,
+    )
+    with pytest.raises(ValueError):
+        common_tranform_assertions(
+            time_aranged_batch, transform(*time_aranged_batch), X
+        )
+
+
 @pytest.mark.parametrize(
     "augmentation,kwargs",
     [
@@ -648,6 +707,7 @@ MONTAGE_10_20 = [
         (SensorsXRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SensorsYRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SensorsZRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
+        (SegmentationReconstruction, {"probability": 0.5}),
     ],
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
