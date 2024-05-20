@@ -41,7 +41,7 @@ Enhancements
 - Code clarity changes in `windowers.py` (:gh:`615` by `John Muradeli`_)
 - Adding SegmentationReconstruction augmentation :class:`braindecode.augmentation.SegmentationReconstruction` (:gh:`608` by `Gustavo Rodrigues`_)
 - Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
-
+- Optimize the CI by executing only the last commit (:gh:`612` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
