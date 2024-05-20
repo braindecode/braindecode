@@ -147,8 +147,8 @@ class BBCIDataset(object):
                 "".join(chr(c.item()) for c in h5file[obj_ref]) for obj_ref in clab_set
             ]
             if pattern is not None:
-                all_sensor_names = filter(
-                    lambda sname: re.search(pattern, sname), all_sensor_names
+                all_sensor_names = list(
+                    filter(lambda sname: re.search(pattern, sname), all_sensor_names)
                 )
         return all_sensor_names
 
@@ -676,10 +676,10 @@ def load_bbci_sets_from_folder(
     """
     bbci_mat_files = sorted(glob(os.path.join(folder, "*.BBCI.mat")))
     if runs != "all":
-        file_run_numbers = [
-            int(re.search("S[0-9]{3,3}R[0-9]{2,2}_", f).group()[5:7])
-            for f in bbci_mat_files
-        ]
+        assert isinstance(runs, list), "runs should be list[int] or 'all'"
+        matches = [re.search("S[0-9]{3,3}R[0-9]{2,2}_", f) for f in bbci_mat_files]
+        file_run_numbers = [int(m.group()[5:7]) for m in matches if m is not None]
+        assert len(file_run_numbers) == len(bbci_mat_files), "Some files don't match"
         indices = [file_run_numbers.index(num) for num in runs]
 
         wanted_files = np.array(bbci_mat_files)[indices]

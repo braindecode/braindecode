@@ -236,7 +236,7 @@ model = partial(
 )
 
 # Send model to GPU
-if cuda:
+if cuda and hasattr(model, "cuda"):
     model.cuda()
 
 ######################################################################
@@ -333,7 +333,6 @@ search_results = pd.DataFrame(search.cv_results_)
 #
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 
 # Create a pivot table for the heatmap
 pivot_table = search_results.pivot(

@@ -7,12 +7,14 @@
 
 import copy
 import platform
+import warnings
+
 import mne
 import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset
+from braindecode.datasets.base import BaseDataset, BaseConcatDataset, EEGWindowsDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
     create_windows_from_events,
@@ -457,6 +459,82 @@ def test_fixed_length_windower_lazy(
         assert (X == Xl).all()
         assert y == yl
         assert i == il
+
+        
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ['ch0'], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ]
+)
+def test_not_use_mne_epochs_fail(
+        drop_bad_windows,
+        picks,
+        flat,
+        reject,
+        lazy_loadable_dataset,
+):
+    with pytest.raises(ValueError, match="Cannot set use_mne_epochs=False"):
+        _ = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=False,
+        )
+
+
+@pytest.mark.parametrize(
+    "drop_bad_windows,picks,flat,reject",
+    [
+        (True, None, None, None),
+        (False, ['ch0'], None, None),
+        (False, None, {}, None),
+        (False, None, None, {}),
+    ]
+)
+def test_auto_use_mne_epochs(
+        drop_bad_windows,
+        picks,
+        flat,
+        reject,
+        lazy_loadable_dataset
+):
+    with pytest.warns(UserWarning,
+                      match='mne Epochs are created, which will be substantially slower'):
+        windows = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=drop_bad_windows,
+            picks=picks,
+            flat=flat,
+            reject=reject,
+            use_mne_epochs=None,
+        )
+    assert all(isinstance(w.windows, mne.Epochs) for w in windows.datasets)
+
+
+@pytest.mark.parametrize('use_mne_epochs', [False, None])
+def test_not_use_mne_epochs(use_mne_epochs, lazy_loadable_dataset):
+    message = (
+        "Using reject or picks or flat or dropping bad windows means "
+        "mne Epochs are created, "
+        "which will be substantially slower and may be deprecated in the future."
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings('error', message=message)
+        windows = create_windows_from_events(
+            lazy_loadable_dataset,
+            drop_bad_windows=False,
+            picks=None,
+            flat=None,
+            reject=None,
+            use_mne_epochs=use_mne_epochs,
+        )
+    assert all(isinstance(w, EEGWindowsDataset) for w in windows.datasets)
 
 
 # Skip if OS is Windows

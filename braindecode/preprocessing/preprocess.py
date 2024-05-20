@@ -8,13 +8,22 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 from warnings import warn
 from functools import partial
 from collections.abc import Iterable
+import sys
+
+if sys.version_info < (3, 9):
+    from typing import Callable
+else:
+    from collections.abc import Callable
 
 import numpy as np
+from numpy.typing import NDArray
 import pandas as pd
-from mne import create_info
+from mne import create_info, BaseEpochs
+from mne.io import BaseRaw
 from joblib import Parallel, delayed
 
 from braindecode.datasets.base import (
@@ -55,7 +64,7 @@ class Preprocessor(object):
         Keyword arguments to be forwarded to the MNE function.
     """
 
-    def __init__(self, fn, *, apply_on_array=True, **kwargs):
+    def __init__(self, fn: Callable | str, *, apply_on_array: bool = True, **kwargs):
         if hasattr(fn, "__name__") and fn.__name__ == "<lambda>":
             warn("Preprocessing choices with lambda functions cannot be saved.")
         if callable(fn) and apply_on_array:
@@ -72,7 +81,7 @@ class Preprocessor(object):
         self.fn = fn
         self.kwargs = kwargs
 
-    def apply(self, raw_or_epochs):
+    def apply(self, raw_or_epochs: BaseRaw | BaseEpochs):
         try:
             self._try_apply(raw_or_epochs)
         except RuntimeError:
@@ -93,7 +102,14 @@ class Preprocessor(object):
             getattr(raw_or_epochs, self.fn)(**self.kwargs)
 
 
-def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=None):
+def preprocess(
+    concat_ds: BaseConcatDataset,
+    preprocessors: list[Preprocessor],
+    save_dir: str | None = None,
+    overwrite: bool = False,
+    n_jobs: int | None = None,
+    offset: int = 0,
+):
     """Apply preprocessors to a concat dataset.
 
     Parameters
@@ -114,6 +130,11 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=
     n_jobs : int | None
         Number of jobs for parallel execution. See `joblib.Parallel` for
         a more detailed explanation.
+    offset : int
+        If provided, the integer is added to the id of the dataset in the
+        concat. This is useful in the setting of very large datasets, where
+        one dataset has to be processed and saved at a time to account for
+        its original position.
 
     Returns
     -------
@@ -135,7 +156,7 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=
     list_of_ds = Parallel(n_jobs=n_jobs)(
         delayed(_preprocess)(
             ds,
-            i,
+            i + offset,
             preprocessors,
             save_dir,
             overwrite,
@@ -145,8 +166,12 @@ def preprocess(concat_ds, preprocessors, save_dir=None, overwrite=False, n_jobs=
     )
 
     if save_dir is not None:  # Reload datasets and replace in concat_ds
+        ids_to_load = [i + offset for i in range(len(concat_ds.datasets))]
         concat_ds_reloaded = load_concat_dataset(
-            save_dir, preload=False, target_name=None
+            save_dir,
+            preload=False,
+            target_name=None,
+            ids_to_load=ids_to_load,
         )
         _replace_inplace(concat_ds, concat_ds_reloaded)
     else:
@@ -215,6 +240,10 @@ def _preprocess(
             preproc.apply(raw_or_epochs)
 
     if hasattr(ds, "raw"):
+        if isinstance(ds, EEGWindowsDataset):
+            warn(
+                f"Applying preprocessors {preprocessors} to the mne.io.Raw of an EEGWindowsDataset."
+            )
         _preprocess_raw_or_epochs(ds.raw, preprocessors)
     elif hasattr(ds, "windows"):
         _preprocess_raw_or_epochs(ds.windows, preprocessors)
@@ -276,7 +305,10 @@ def _set_preproc_kwargs(ds, preprocessors):
 
 
 def exponential_moving_standardize(
-    data, factor_new=0.001, init_block_size=None, eps=1e-4
+    data: NDArray,
+    factor_new: float = 0.001,
+    init_block_size: int | None = None,
+    eps: float = 1e-4,
 ):
     r"""Perform exponential moving standardization.
 
@@ -323,7 +355,9 @@ def exponential_moving_standardize(
     return standardized.T
 
 
-def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
+def exponential_moving_demean(
+    data: NDArray, factor_new: float = 0.001, init_block_size: int | None = None
+):
     r"""Perform exponential moving demeanining.
 
     Compute the exponental moving mean :math:`m_t` at time `t` as
@@ -357,10 +391,10 @@ def exponential_moving_demean(data, factor_new=0.001, init_block_size=None):
 
 
 def filterbank(
-    raw,
-    frequency_bands,
-    drop_original_signals=True,
-    order_by_frequency_band=False,
+    raw: BaseRaw,
+    frequency_bands: list[tuple[float, float]],
+    drop_original_signals: bool = True,
+    order_by_frequency_band: bool = False,
     **mne_filter_kwargs,
 ):
     """Applies multiple bandpass filters to the signals in raw. The raw will be

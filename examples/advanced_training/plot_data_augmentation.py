@@ -130,7 +130,7 @@ import numpy as np
 X = np.stack([X for X, y, i in train_set.datasets[0]])
 # This allows to apply the transform with a fixed shift (10 Hz) for
 # visualization instead of sampling the shift randomly between -2 and 2 Hz
-X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10.0, sfreq)
+X_tr, _ = transform.operation(torch.as_tensor(X).float(), None, 10.0, sfreq)  # type: ignore[has-type]
 
 ######################################################################
 # The psd of the transformed session has now been shifted by 10 Hz, as one can
