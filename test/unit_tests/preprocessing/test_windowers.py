@@ -459,6 +459,24 @@ def test_fixed_length_windower_lazy(
         assert (X == Xl).all()
         assert y == yl
         assert i == il
+    # not supported yet:
+    # metadata = epochs_ds.get_metadata()
+    # metadata_lazy = epochs_ds_lazy.get_metadata()
+    for d, d_lazy in zip(epochs_ds.datasets, epochs_ds_lazy.datasets):
+        crop_inds = d.metadata.loc[
+                    :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+                    ].to_numpy()
+        crop_inds_lazy = d_lazy.metadata.loc[
+                         :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+                         ].to_numpy()
+        y = d.metadata.loc[:, "target"].to_list()
+        y_lazy = d_lazy.metadata.loc[:, "target"].to_list()
+        n = len(d.metadata)
+        assert n == len(d_lazy.metadata)
+        assert len(crop_inds) == len(crop_inds_lazy)
+        assert len(y) == len(y_lazy)
+        assert all(crop_inds[i].tolist() == crop_inds_lazy[i].tolist() for i in range(n))
+        assert all(y[i] == y_lazy[i] for i in range(n))
 
 
 @pytest.mark.parametrize(
