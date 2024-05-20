@@ -1,5 +1,6 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -24,6 +25,7 @@ from .functional import sensors_rotation
 from .functional import sign_flip
 from .functional import smooth_time_mask
 from .functional import time_reverse
+from .functional import segmentation_reconstruction
 
 
 class TimeReverse(Transform):
@@ -1069,4 +1071,109 @@ class Mixup(Transform):
         return {
             "lam": lam,
             "idx_perm": idx_perm,
+        }
+
+
+class SegmentationReconstruction(Transform):
+    """Applies a segmentation-reconstruction transform to the input data, as
+       proposed in _[1]. It segments each trial in the batch and randomly mix
+       it to generate new synthetic trials by label, preserving the original
+       order of the segments in time domain.
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    random_state: int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Used to decide whether to transform given the probability
+        argument and to sample the segments mixing. Defaults to None.
+    n_segments : int, optional
+        Number of segments to use in the batch. If None, X will be
+        automatically segmented, getting the last element in a list
+        of factors of the number of samples's square root. Defaults to None.
+
+    References
+    ----------
+    .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
+    suppress calibration time in oscillatory activity-based brain–computer
+    interfaces. Proceedings of the IEEE, 103(6), 871-890.
+    """
+
+    operation = staticmethod(segmentation_reconstruction)  # type: ignore[assignment]
+
+    def __init__(
+        self,
+        probability,
+        n_segments=None,
+        random_state=None,
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
+        self.n_segments = n_segments
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+        Returns
+        -------
+        params : dict
+            Contains the number of segments to split the signal into.
+        """
+        X, y = batch[0], batch[1]
+
+        if y is not None:
+            if not isinstance(X, torch.Tensor) or not isinstance(y, torch.Tensor):
+                raise ValueError("X and y must be torch tensors.")
+
+            if X.shape[0] != y.shape[0]:
+                raise ValueError("Number of samples in X and y must be the same.")
+
+        if self.n_segments is None:
+            self.n_segments = int(X.shape[2])
+            n_segments_list = []
+            for i in range(1, int(self.n_segments**0.5) + 1):
+                if self.n_segments % i == 0:
+                    n_segments_list.append(i)
+            self.n_segments = n_segments_list[-1]
+
+        elif not (
+            isinstance(self.n_segments, (int, float))
+            and 1 <= self.n_segments <= X.shape[2]
+        ):
+            raise ValueError(
+                f"Number of segments must be a positive integer less than "
+                f"(or equal) the window size. Got {self.n_segments}"
+            )
+
+        if y is None:
+            data_classes = [(np.nan, X)]
+
+        else:
+            classes = torch.unique(y)
+
+            data_classes = [(i, X[y == i]) for i in classes]
+
+        rand_indices = dict()
+        for label, X_class in data_classes:
+            n_trials = X_class.shape[0]
+            rand_indices[label] = self.rng.randint(
+                0, n_trials, (n_trials, self.n_segments)
+            )
+
+        idx_shuffle = self.rng.permutation(X.shape[0])
+
+        return {
+            "n_segments": self.n_segments,
+            "data_classes": data_classes,
+            "rand_indices": rand_indices,
+            "idx_shuffle": idx_shuffle,
         }

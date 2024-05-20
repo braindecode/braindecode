@@ -19,6 +19,7 @@ from .transforms import (
     SensorsYRotation,
     SensorsXRotation,
     Mixup,
+    SegmentationReconstruction,
 )
 
 from . import functional
@@ -43,5 +44,6 @@ __all__ = [
     "SensorsYRotation",
     "SensorsXRotation",
     "Mixup",
+    "SegmentationReconstruction",
     "functional",
 ]

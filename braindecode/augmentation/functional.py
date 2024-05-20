@@ -1,5 +1,6 @@
 # Authors: Cédric Rommel <cedric.rommel@inria.fr>
 #          Alexandre Gramfort <alexandre.gramfort@inria.fr>
+#          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -969,3 +970,74 @@ def mixup(X, y, lam, idx_perm):
         y_b[idx] = y[idx_perm[idx]]
 
     return X_mix, (y_a, y_b, lam)
+
+
+def segmentation_reconstruction(
+    X, y, n_segments, data_classes, rand_indices, idx_shuffle
+):
+    """Segment and reconstruct EEG data in the time domain preserving labels.
+
+    See [1]_ for details.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example or batch.
+    y : torch.Tensor
+        EEG labels for the example or batch.
+    n_segments : int
+        Number of segments to use in the batch.
+    rand_indices: array-like
+        Array of indices that indicates which trial to use in each segment.
+    idx_shuffle: array-like
+        Array of indices to shuffle the new generated trials.
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
+    References
+    ----------
+    .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
+    suppress calibration time in oscillatory activity-based brain–computer
+    interfaces. Proceedings of the IEEE, 103(6), 871-890.
+    """
+
+    # Initialize lists to store augmented data and corresponding labels
+    aug_data = []
+    aug_label = []
+
+    # Iterate through each class to separate and augment data
+    for class_index, X_class in data_classes:
+        # Determine class-specific dimensions
+        # Store the augmented data and the corresponding class labels
+        n_trials, n_channels, window_size = X_class.shape
+        # Segment Size
+        segment_size = window_size // n_segments
+        # Initialize an empty tensor for augmented data
+        X_aug = torch.zeros_like(X_class)
+        # Generate random indices within the class-specific dataset
+        rand_idx = rand_indices[class_index]
+        for idx_segment in range(n_segments):
+            start = idx_segment * segment_size
+            end = (idx_segment + 1) * segment_size
+
+            # Perform the data augmentation
+            X_aug[np.arange(n_trials), :, start:end] = X_class[
+                rand_idx[:, idx_segment], :, start:end
+            ]
+        aug_data.append(X_aug)
+        aug_label.append(torch.full((n_trials,), class_index))
+    # Concatenate the augmented data and labels
+    aug_data = torch.cat(aug_data, dim=0)
+    aug_data = aug_data.to(dtype=X.dtype, device=X.device)
+    aug_data = aug_data[idx_shuffle]
+
+    if y is not None:
+        aug_label = torch.cat(aug_label, dim=0)
+        aug_label = aug_label.to(dtype=y.dtype, device=y.device)
+        aug_label = aug_label[idx_shuffle]
+        return aug_data, aug_label
+
+    return aug_data, y
