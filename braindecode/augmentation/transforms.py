@@ -1100,7 +1100,7 @@ class SegmentationReconstruction(Transform):
     interfaces. Proceedings of the IEEE, 103(6), 871-890.
     """
 
-    operation = staticmethod(segmentation_reconstruction)
+    operation = staticmethod(segmentation_reconstruction)  # type: ignore[assignment]
 
     def __init__(
         self,
