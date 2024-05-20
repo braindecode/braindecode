@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List
+from typing import Any, List
 
 import torch
 import torch.nn as nn
@@ -152,16 +152,16 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_chans: int = None,
-        n_outputs: int = None,
-        sfreq: int = None,
+        n_chans: int | None = None,
+        n_outputs: int | None = None,
+        sfreq: int | None = None,
         emb_size: int = 256,
         res_channels: list[int] = [32, 64, 128],
         steps=20,
         # Another way to pass the EEG parameters
-        chs_info: dict = None,
-        n_times: int = None,
-        input_window_seconds: List[float | int] = None,
+        chs_info: list[dict[Any, Any]] | None = None,
+        n_times: int | None = None,
+        input_window_seconds: float | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
