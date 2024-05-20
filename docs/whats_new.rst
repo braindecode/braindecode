@@ -50,6 +50,8 @@ Bugs
 - Fix type errors (:gh:`606` by `Pierre Guetschel`_)
 - Warn when applying preprocessing steps on a :class:`braindecode.datasets.base.EEGWindowsDataset` (:gh:`607` by `Pierre Guetschel`_)
 - Fix matplotlib colormaps deprecation (:gh:`608` by `Bruno Aristimunha`_)
+- Fix mypy not finding the correct type hints (:gh:`612` by `Bruno Aristimunha`_)
+
 
 API changes
 ~~~~~~~~~~~
