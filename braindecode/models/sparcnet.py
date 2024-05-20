@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from math import floor, log2
 from collections import OrderedDict
-from typing import List
+from typing import Any, List
 
 import numpy as np
 import torch
@@ -230,9 +230,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_chans: int = None,
-        n_times: int = None,
-        n_outputs: int = None,
+        n_chans: int | None = None,
+        n_times: int | None = None,
+        n_outputs: int | None = None,
         # Neural network parameters
         block_layers: int = 4,
         growth_rate: int = 16,
@@ -242,9 +242,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         batch_norm: bool = True,
         # EEGModuleMixin parameters
         # (another way to present the same parameters)
-        chs_info: dict = None,
-        input_window_seconds: List[float | int] = None,
-        sfreq: int = None,
+        chs_info: list[dict[Any, Any]] | None = None,
+        input_window_seconds: float | None = None,
+        sfreq: int | None = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
