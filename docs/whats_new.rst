@@ -39,7 +39,7 @@ Enhancements
 - Add type hints to preprocessing (:gh:`600` by `Pierre Guetschel`_)
 - Add ``mypy`` type checks to pre-commit and CI (:gh:`606` by `Pierre Guetschel`_)
 - Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
-
+- Add Sleep Physionet 18 dataset (:gh:`612` by `Hubert Banville`_ and `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
