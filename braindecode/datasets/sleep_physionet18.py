@@ -201,7 +201,8 @@ def convert_wfdb_anns_to_mne_annotations(annots):
             pass
         else:  # Sleep stage-like annotations
             ch_durations = np.concatenate([np.diff(ch_onsets), [30]])
-            assert all(ch_durations > 0), "Negative duration"
+            if all(ch_durations > 0):
+                ValueError("Negative duration")
             new_onset.extend(ch_onsets)
             new_duration.extend(ch_durations)
             new_description.extend(ch_descs)
