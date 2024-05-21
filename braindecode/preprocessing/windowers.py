@@ -26,9 +26,6 @@ from joblib import Parallel, delayed
 
 from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
 
-# null slice:
-_NS = slice(None)
-
 
 class _LazyDataFrame:
     """
@@ -71,7 +68,7 @@ class _LazyDataFrame:
                 f"index must be either [row] or [row, column], got [{', '.join(map(str, key))}]."
             )
         row, col = key
-        if col == _NS:
+        if col == slice(None):
             col = self.columns
         one_col = False
         if isinstance(col, str):
@@ -83,7 +80,7 @@ class _LazyDataFrame:
             raise IndexError(
                 f"All columns must be present in the dataframe with columns {self.columns}. Got {col}."
             )
-        if row == _NS:
+        if row == slice(None):
             return _LazyDataFrame(self.length, self.functions, col)
         if not isinstance(row, int):
             raise NotImplementedError(
