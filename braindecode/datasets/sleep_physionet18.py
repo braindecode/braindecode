@@ -220,6 +220,9 @@ class PC18(BaseConcatDataset):
     Sleep dataset from https://physionet.org/content/challenge-2018/1.0.0/.
     Contains overnight recordings from 1983 healthy subjects.
 
+    The total size is 266 GB, so make sure you have enough space before
+    downloading.
+
     See `fetch_pc18_data` for a more complete description.
 
     Parameters
