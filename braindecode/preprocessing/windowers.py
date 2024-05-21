@@ -29,8 +29,12 @@ from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
 
 class _LazyDataFrame:
     """
-    Super hacky way to emulate the functions we need from a DataFrame
-    while lazily computing the data.
+    DataFrame-like object that lazily computes values (experimental).
+
+    This class emulates some features of a pandas DataFrame, but computes
+    the values on-the-fly when they are accessed. This is useful for
+    very long DataFrames with repetitive values.
+    Only the methods used by EEGWindowsDataset on its metadata are implemented.
 
     Parameters:
     -----------
