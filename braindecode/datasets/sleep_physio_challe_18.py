@@ -25,7 +25,7 @@ from braindecode.preprocessing.preprocess import _preprocess
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 
 
-PC18_DIR = op.join(op.dirname(__file__), "data")
+PC18_DIR = op.join(op.dirname(__file__), "data", "pc18")
 PC18_RECORDS = op.join(PC18_DIR, "sleep_records.csv")
 PC18_INFO = op.join(PC18_DIR, "age-sex.csv")
 PC18_URL = "https://physionet.org/files/challenge-2018/1.0.0/"
@@ -300,7 +300,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
             channels = None
 
         # Load raw signals and header
-        record = wfdb.io.rdrecord(op.splitext(raw_fname)[0], channels=channels)
+        record = wfdb.io.rdrecord(op.splitext(raw_fname[0])[0], channels=channels)
 
         # Convert to right units for MNE (EEG should be in V)
         data = record.p_signal.T
@@ -312,7 +312,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
         # Extract annotations
         if arousal_fname is not None:
             annots = wfdb.rdann(
-                op.splitext(raw_fname)[0],
+                op.splitext(raw_fname[0])[0],
                 "arousal",
                 sampfrom=0,
                 sampto=None,
@@ -323,7 +323,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
             mne_annots = convert_wfdb_anns_to_mne_annotations(annots)
             out.set_annotations(mne_annots)
 
-        record_name = op.splitext(op.basename(raw_fname))[0]
+        record_name = op.splitext(op.basename(raw_fname[0]))[0]
         record_info = self.info_df[self.info_df["Record"] == record_name].iloc[0]
         if record_info["Record"].startswith("tr"):
             split = "training"
