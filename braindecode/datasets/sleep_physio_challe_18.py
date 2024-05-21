@@ -20,12 +20,12 @@ from joblib import Parallel, delayed
 
 from mne.datasets.utils import _get_path
 from mne.datasets.sleep_physionet._utils import _fetch_one
-
-from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.preprocessing.preprocess import _preprocess
 
+from braindecode.datasets import BaseDataset, BaseConcatDataset
 
-PC18_DIR = op.join(op.dirname(__file__), "data", "pc18")
+
+PC18_DIR = op.join(op.dirname(__file__), "data")
 PC18_RECORDS = op.join(PC18_DIR, "sleep_records.csv")
 PC18_INFO = op.join(PC18_DIR, "age-sex.csv")
 PC18_URL = "https://physionet.org/files/challenge-2018/1.0.0/"
@@ -214,7 +214,7 @@ def convert_wfdb_anns_to_mne_annotations(annots):
     return mne_annots
 
 
-class PC18(BaseConcatDataset):
+class SleepPhysionetChallenge2018(BaseConcatDataset):
     """Physionet Challenge 2018 polysomnography dataset.
 
     Sleep dataset from https://physionet.org/content/challenge-2018/1.0.0/.
@@ -245,10 +245,6 @@ class PC18(BaseConcatDataset):
         data can e.g., be downsampled (temporally and spatially) to limit the
         memory usage of the entire Dataset object. This also enables applying
         preprocessing in parallel over the recordings.
-    windower : callable | None
-        Function to split the raw data into windows. If provided, windowing is
-        integrated into the loading process (after preprocessing) such that
-        memory usage is minimized while allowing parallelization.
     n_jobs : int
         Number of parallel processes.
     """
@@ -259,7 +255,6 @@ class PC18(BaseConcatDataset):
         path=None,
         load_eeg_only=True,
         preproc=None,
-        windower=None,
         n_jobs=1,
     ):
         if subject_ids is None:
@@ -280,7 +275,6 @@ class PC18(BaseConcatDataset):
                     p[2],
                     load_eeg_only=load_eeg_only,
                     preproc=preproc,
-                    windower=windower,
                 )
                 for subject_id, p in zip(subject_ids, paths)
             ]
@@ -292,15 +286,12 @@ class PC18(BaseConcatDataset):
                     p[2],
                     load_eeg_only=load_eeg_only,
                     preproc=preproc,
-                    windower=windower,
                 )
                 for subject_id, p in zip(subject_ids, paths)
             )
         super().__init__(all_base_ds)
 
-    def _load_raw(
-        self, subj_nb, raw_fname, arousal_fname, load_eeg_only, preproc, windower
-    ):
+    def _load_raw(self, subj_nb, raw_fname, arousal_fname, load_eeg_only, preproc):
         channel_types = ["eeg"] * 7
         if load_eeg_only:
             channels = list(range(7))
@@ -355,9 +346,5 @@ class PC18(BaseConcatDataset):
 
         if preproc is not None:
             _preprocess(out, None, preproc)
-
-        if windower is not None:
-            out = windower(out)
-            out.windows.load_data()
 
         return out
