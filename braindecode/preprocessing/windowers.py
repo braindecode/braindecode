@@ -15,6 +15,7 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
+from typing import Callable, Any
 import warnings
 
 import numpy as np
@@ -24,6 +25,143 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
+
+
+class _LazyDataFrame:
+    """
+    DataFrame-like object that lazily computes values (experimental).
+
+    This class emulates some features of a pandas DataFrame, but computes
+    the values on-the-fly when they are accessed. This is useful for
+    very long DataFrames with repetitive values.
+    Only the methods used by EEGWindowsDataset on its metadata are implemented.
+
+    Parameters:
+    -----------
+    length: int
+        The length of the dataframe.
+    functions: dict[str, Callable[[int], Any]]
+        A dictionary mapping column names to functions that take an index and
+        return the value of the column at that index.
+    columns: list[str]
+        The names of the columns in the dataframe.
+    series: bool
+        Whether the object should emulate a series or a dataframe.
+    """
+
+    def __init__(
+        self,
+        length: int,
+        functions: dict[str, Callable[[int], Any]],
+        columns: list[str],
+        series: bool = False,
+    ):
+        if not (isinstance(length, int) and length >= 0):
+            raise ValueError("Length must be a positive integer.")
+        if not all(c in functions for c in columns):
+            raise ValueError("All columns must have a corresponding function.")
+        if series and len(columns) != 1:
+            raise ValueError("Series must have exactly one column.")
+        self.length = length
+        self.functions = functions
+        self.columns = columns
+        self.series = series
+
+    @property
+    def loc(self):
+        return self
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, key):
+        if not isinstance(key, tuple):
+            key = (key, self.columns)
+        if len(key) == 1:
+            key = (key[0], self.columns)
+        if not len(key) == 2:
+            raise IndexError(
+                f"index must be either [row] or [row, column], got [{', '.join(map(str, key))}]."
+            )
+        row, col = key
+        if col == slice(None):  # all columns (i.e., call to df[row, :])
+            col = self.columns
+        one_col = False
+        if isinstance(col, str):  # one column
+            one_col = True
+            col = [col]
+        else:  # multiple columns
+            col = list(col)
+        if not all(c in self.columns for c in col):
+            raise IndexError(
+                f"All columns must be present in the dataframe with columns {self.columns}. Got {col}."
+            )
+        if row == slice(None):  # all rows (i.e., call to df[:] or df[:, col])
+            return _LazyDataFrame(self.length, self.functions, col)
+        if not isinstance(row, int):
+            raise NotImplementedError(
+                "Row indexing only supports either a single integer or a null slice (i.e., df[:])."
+            )
+        if not (0 <= row < self.length):
+            raise IndexError(f"Row index {row} is out of bounds.")
+        if self.series or one_col:
+            return self.functions[col[0]](row)
+        return pd.Series({c: self.functions[c](row) for c in col})
+
+    def to_numpy(self):
+        return _LazyDataFrame(
+            length=self.length,
+            functions=self.functions,
+            columns=self.columns,
+            series=len(self.columns) == 1,
+        )
+
+    def to_list(self):
+        return self.to_numpy()
+
+
+class _FixedLengthWindowFunctions:
+    """Class defining functions for lazy metadata generation in fixed length windowing
+    to be used in combination with _LazyDataFrame (experimental)."""
+
+    def __init__(
+        self,
+        start_offset_samples: int,
+        last_potential_start: int,
+        window_stride_samples: int,
+        window_size_samples: int,
+        target: Any,
+    ):
+        self.start_offset_samples = start_offset_samples
+        self.last_potential_start = last_potential_start
+        self.window_stride_samples = window_stride_samples
+        self.window_size_samples = window_size_samples
+        self.target_val = target
+
+    @property
+    def length(self) -> int:
+        return int(
+            np.ceil(
+                (self.last_potential_start + 1 - self.start_offset_samples)
+                / self.window_stride_samples
+            )
+        )
+
+    def i_window_in_trial(self, i: int) -> int:
+        return i
+
+    def i_start_in_trial(self, i: int) -> int:
+        return self.start_offset_samples + i * self.window_stride_samples
+
+    def i_stop_in_trial(self, i: int) -> int:
+        return (
+            self.start_offset_samples
+            + i * self.window_stride_samples
+            + self.window_size_samples
+        )
+
+    def target(self, i: int) -> Any:
+        return self.target_val
 
 
 def _get_use_mne_epochs(use_mne_epochs, reject, picks, flat, drop_bad_windows):
@@ -215,6 +353,7 @@ def create_fixed_length_windows(
     flat: dict[str, float] | None = None,
     targets_from: str = "metadata",
     last_target_only: bool = True,
+    lazy_metadata: bool = False,
     on_missing: str = "error",
     n_jobs: int = 1,
     verbose: bool | str | int | None = "error",
@@ -253,6 +392,9 @@ def create_fixed_length_windows(
     flat: dict | None
         Epoch rejection parameters based on flatness of signals. If None, no
         rejection based on flatness is done. See mne.Epochs.
+    lazy_metadata: bool
+        If True, metadata is not computed immediately, but only when accessed
+        by using the _LazyDataFrame (experimental).
     on_missing: str
         What to do if one or several event ids are not found in the recording.
         Valid keys are ‘error’ | ‘warning’ | ‘ignore’. See mne.Epochs.
@@ -273,6 +415,7 @@ def create_fixed_length_windows(
             window_size_samples,
             window_stride_samples,
             drop_last_window,
+            lazy_metadata,
         )
     )
 
@@ -301,6 +444,7 @@ def create_fixed_length_windows(
             flat,
             targets_from,
             last_target_only,
+            lazy_metadata,
             on_missing,
             verbose,
         )
@@ -493,6 +637,7 @@ def _create_fixed_length_windows(
     flat=None,
     targets_from="metadata",
     last_target_only=True,
+    lazy_metadata=False,
     on_missing="error",
     verbose="error",
 ):
@@ -523,14 +668,6 @@ def _create_fixed_length_windows(
         window_stride_samples = window_size_samples
 
     last_potential_start = stop - window_size_samples
-    # already includes last incomplete window start
-    starts = np.arange(
-        start_offset_samples, last_potential_start + 1, window_stride_samples
-    )
-
-    if not drop_last_window and starts[-1] < last_potential_start:
-        # if last window does not end at trial stop, make it stop there
-        starts = np.append(starts, last_potential_start)
 
     # get targets from dataset description if they exist
     target = -1 if ds.target_name is None else ds.description[ds.target_name]
@@ -542,14 +679,47 @@ def _create_fixed_length_windows(
         else:
             target = mapping[target]
 
-    metadata = pd.DataFrame(
-        {
-            "i_window_in_trial": np.arange(len(starts)),
-            "i_start_in_trial": starts,
-            "i_stop_in_trial": starts + window_size_samples,
-            "target": len(starts) * [target],
-        }
-    )
+    if lazy_metadata:
+        factory = _FixedLengthWindowFunctions(
+            start_offset_samples,
+            last_potential_start,
+            window_stride_samples,
+            window_size_samples,
+            target,
+        )
+        metadata = _LazyDataFrame(
+            length=factory.length,
+            functions={
+                "i_window_in_trial": factory.i_window_in_trial,
+                "i_start_in_trial": factory.i_start_in_trial,
+                "i_stop_in_trial": factory.i_stop_in_trial,
+                "target": factory.target,
+            },
+            columns=[
+                "i_window_in_trial",
+                "i_start_in_trial",
+                "i_stop_in_trial",
+                "target",
+            ],
+        )
+    else:
+        # already includes last incomplete window start
+        starts = np.arange(
+            start_offset_samples, last_potential_start + 1, window_stride_samples
+        )
+
+        if not drop_last_window and starts[-1] < last_potential_start:
+            # if last window does not end at trial stop, make it stop there
+            starts = np.append(starts, last_potential_start)
+
+        metadata = pd.DataFrame(
+            {
+                "i_window_in_trial": np.arange(len(starts)),
+                "i_start_in_trial": starts,
+                "i_stop_in_trial": starts + window_size_samples,
+                "target": len(starts) * [target],
+            }
+        )
 
     window_kwargs.append(
         (
@@ -792,6 +962,7 @@ def _check_and_set_fixed_length_window_arguments(
     window_size_samples,
     window_stride_samples,
     drop_last_window,
+    lazy_metadata,
 ):
     """Raises warnings for incorrect input arguments and will set correct default values for
     stop_offset_samples & drop_last_window, if necessary.
@@ -840,7 +1011,10 @@ def _check_and_set_fixed_length_window_arguments(
         == (window_stride_samples is None)
         == (drop_last_window is None)
     )
-
+    if not drop_last_window and lazy_metadata:
+        raise ValueError(
+            "Cannot have drop_last_window=False and lazy_metadata=True at the same time."
+        )
     return stop_offset_samples, drop_last_window
 
 

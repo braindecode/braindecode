@@ -21,7 +21,7 @@ from braindecode.preprocessing import (
     create_fixed_length_windows,
 )
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
-from braindecode.preprocessing.windowers import create_windows_from_target_channels
+from braindecode.preprocessing.windowers import create_windows_from_target_channels, _LazyDataFrame
 from braindecode.util import create_mne_dummy_raw
 
 
@@ -405,6 +405,101 @@ def test_fixed_length_windower(
             epochs_data[j, :],
             err_msg=f"Epochs different for epoch {j}",
         )
+
+
+@pytest.mark.parametrize(
+    "start_offset_samples,window_size_samples,window_stride_samples,drop_last_window,mapping",
+    [
+        (0, 100, 90, True, None),
+        (0, 100, 50, True, {48: 0}),
+        (0, 50, 50, True, None),
+        (0, None, 50, True, None),
+        (5, 10, 20, True, None),
+    ],
+)
+def test_fixed_length_windower_lazy(
+        start_offset_samples,
+        window_size_samples,
+        window_stride_samples,
+        drop_last_window,
+        mapping,
+):
+    rng = np.random.RandomState(42)
+    info = mne.create_info(ch_names=["0", "1"], sfreq=50, ch_types="eeg")
+    data = rng.randn(2, 1000)
+    raw = mne.io.RawArray(data=data, info=info)
+    desc = pd.Series({"pathological": True, "gender": "M", "age": 48})
+    base_ds = BaseDataset(raw, desc, target_name="age")
+    concat_ds = BaseConcatDataset([base_ds])
+
+    if window_size_samples is None:
+        window_size_samples = base_ds.raw.n_times
+    stop_offset_samples = data.shape[1] - start_offset_samples
+    epochs_ds = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+    )
+    epochs_ds_lazy = create_fixed_length_windows(
+        concat_ds,
+        start_offset_samples=start_offset_samples,
+        stop_offset_samples=stop_offset_samples,
+        window_size_samples=window_size_samples,
+        window_stride_samples=window_stride_samples,
+        drop_last_window=drop_last_window,
+        mapping=mapping,
+        lazy_metadata=True,
+    )
+    assert len(epochs_ds) == len(epochs_ds_lazy)
+    for (X, y, i), (Xl, yl, il) in zip(epochs_ds, epochs_ds_lazy):
+        assert (X == Xl).all()
+        assert y == yl
+        assert i == il
+    # not supported yet:
+    # metadata = epochs_ds.get_metadata()
+    # metadata_lazy = epochs_ds_lazy.get_metadata()
+    for d, d_lazy in zip(epochs_ds.datasets, epochs_ds_lazy.datasets):
+        crop_inds = d.metadata.loc[
+                    :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+                    ].to_numpy()
+        crop_inds_lazy = d_lazy.metadata.loc[
+                         :, ["i_window_in_trial", "i_start_in_trial", "i_stop_in_trial"]
+                         ].to_numpy()
+        y = d.metadata.loc[:, "target"].to_list()
+        y_lazy = d_lazy.metadata.loc[:, "target"].to_list()
+        n = len(d.metadata)
+        assert n == len(d_lazy.metadata)
+        assert len(crop_inds) == len(crop_inds_lazy)
+        assert len(y) == len(y_lazy)
+        assert all(crop_inds[i].tolist() == crop_inds_lazy[i].tolist() for i in range(n))
+        assert all(y[i] == y_lazy[i] for i in range(n))
+
+
+def test_lazy_dataframe():
+    with pytest.raises(ValueError, match="Length must be a positive integer."):
+        _ = _LazyDataFrame(length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    with pytest.raises(ValueError, match="All columns must have a corresponding function."):
+        _ = _LazyDataFrame(length=10, columns=['a'], functions=dict())
+    with pytest.raises(ValueError, match="Series must have exactly one column."):
+        _ = _LazyDataFrame(length=10, columns=['a', 'b'],
+                           functions=dict(a=lambda i: 2 * i, b=lambda i: 2 + i), series=True)
+    df = _LazyDataFrame(length=10, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    assert len(df) == 10
+    assert all(df[i, "a"] == 2 * i for i in range(10))
+    assert all((df[i] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    assert all((df[i, :] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    with pytest.raises(IndexError, match="index must be either \[row\] or"):
+        _ = df[0, 0, 0]
+    with pytest.raises(IndexError, match="All columns must be present in the dataframe"):
+        _ = df[0, "b"]
+    with pytest.raises(NotImplementedError, match="Row indexing only supports either a single"):
+        _ = df[0:2]
+    with pytest.raises(IndexError, match="out of bounds"):
+        _ = df[10]
 
 
 @pytest.mark.parametrize(
