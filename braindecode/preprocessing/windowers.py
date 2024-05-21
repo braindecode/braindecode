@@ -121,6 +121,9 @@ class _LazyDataFrame:
 
 
 class _FixedLengthWindowFunctions:
+    """Class defining functions for lazy metadata generation in fixed length windowing
+    to be used in combination with _LazyDataFrame (experimental)."""
+
     def __init__(
         self,
         start_offset_samples: int,
