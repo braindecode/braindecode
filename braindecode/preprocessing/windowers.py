@@ -31,6 +31,18 @@ class _LazyDataFrame:
     """
     Super hacky way to emulate the functions we need from a DataFrame
     while lazily computing the data.
+
+    Parameters:
+    -----------
+    length: int
+        The length of the dataframe.
+    functions: dict[str, Callable[[int], Any]]
+        A dictionary mapping column names to functions that take an index and
+        return the value of the column at that index.
+    columns: list[str]
+        The names of the columns in the dataframe.
+    series: bool
+        Whether the object should emulate a series or a dataframe.
     """
 
     def __init__(
