@@ -68,19 +68,19 @@ class _LazyDataFrame:
                 f"index must be either [row] or [row, column], got [{', '.join(map(str, key))}]."
             )
         row, col = key
-        if col == slice(None):
+        if col == slice(None):  # all columns (i.e., call to df[row, :])
             col = self.columns
         one_col = False
-        if isinstance(col, str):
+        if isinstance(col, str):  # one column
             one_col = True
             col = [col]
-        else:
+        else:  # multiple columns
             col = list(col)
         if not all(c in self.columns for c in col):
             raise IndexError(
                 f"All columns must be present in the dataframe with columns {self.columns}. Got {col}."
             )
-        if row == slice(None):
+        if row == slice(None):  # all rows (i.e., call to df[:] or df[:, col])
             return _LazyDataFrame(self.length, self.functions, col)
         if not isinstance(row, int):
             raise NotImplementedError(
