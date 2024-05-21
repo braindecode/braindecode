@@ -73,7 +73,9 @@ class _LazyDataFrame:
         row, col = key
         if col == _NS:
             col = self.columns
+        one_col = False
         if isinstance(col, str):
+            one_col = True
             col = [col]
         else:
             col = list(col)
@@ -89,8 +91,8 @@ class _LazyDataFrame:
             )
         if not (0 <= row < self.length):
             raise IndexError(f"Row index {row} is out of bounds.")
-        if self.series:
-            return self.functions[self.columns[0]](row)
+        if self.series or one_col:
+            return self.functions[col[0]](row)
         return pd.Series({c: self.functions[c](row) for c in col})
 
     def to_numpy(self):

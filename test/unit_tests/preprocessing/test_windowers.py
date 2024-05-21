@@ -21,7 +21,7 @@ from braindecode.preprocessing import (
     create_fixed_length_windows,
 )
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
-from braindecode.preprocessing.windowers import create_windows_from_target_channels
+from braindecode.preprocessing.windowers import create_windows_from_target_channels, _LazyDataFrame
 from braindecode.util import create_mne_dummy_raw
 
 
@@ -477,6 +477,29 @@ def test_fixed_length_windower_lazy(
         assert len(y) == len(y_lazy)
         assert all(crop_inds[i].tolist() == crop_inds_lazy[i].tolist() for i in range(n))
         assert all(y[i] == y_lazy[i] for i in range(n))
+
+
+def test_lazy_dataframe():
+    with pytest.raises(ValueError, match="Length must be a positive integer."):
+        _ = _LazyDataFrame(length=-1, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    with pytest.raises(ValueError, match="All columns must have a corresponding function."):
+        _ = _LazyDataFrame(length=10, columns=['a'], functions=dict())
+    with pytest.raises(ValueError, match="Series must have exactly one column."):
+        _ = _LazyDataFrame(length=10, columns=['a', 'b'],
+                           functions=dict(a=lambda i: 2 * i, b=lambda i: 2 + i), series=True)
+    df = _LazyDataFrame(length=10, functions=dict(a=lambda i: 2 * i), columns=["a"])
+    assert len(df) == 10
+    assert all(df[i, "a"] == 2 * i for i in range(10))
+    assert all((df[i] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    assert all((df[i, :] == pd.Series(dict(a=2 * i))).all() for i in range(10))
+    with pytest.raises(IndexError, match="index must be either \[row\] or"):
+        _ = df[0, 0, 0]
+    with pytest.raises(IndexError, match="All columns must be present in the dataframe"):
+        _ = df[0, "b"]
+    with pytest.raises(NotImplementedError, match="Row indexing only supports either a single"):
+        _ = df[0:2]
+    with pytest.raises(IndexError, match="out of bounds"):
+        _ = df[10]
 
 
 @pytest.mark.parametrize(
