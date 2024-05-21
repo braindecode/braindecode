@@ -38,8 +38,12 @@ Enhancements
 - Add ``offset`` arg to :function:`braindecode.preprocessing.preprocess` (:gh:`599` by `Pierre Guetschel`_)
 - Add type hints to preprocessing (:gh:`600` by `Pierre Guetschel`_)
 - Add ``mypy`` type checks to pre-commit and CI (:gh:`606` by `Pierre Guetschel`_)
+- Code clarity changes in `windowers.py` (:gh:`615` by `John Muradeli`_)
+- Adding SegmentationReconstruction augmentation :class:`braindecode.augmentation.SegmentationReconstruction` (:gh:`608` by `Gustavo Rodrigues`_)
 - Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
-- Add Sleep Physionet 18 dataset (:gh:`612` by `Hubert Banville`_ and `Bruno Aristimunha`_)
+- Add Sleep Physionet 18 dataset (:gh:`621` by `Hubert Banville`_ and `Bruno Aristimunha`_)
+- Optimize the CI by executing only the last commit (:gh:`612` by `Bruno Aristimunha`_)
+- Add experimental `lazy_metadata` parameter to :function:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`597` by `Pierre Guetschel`_)
 
 Bugs
 ~~~~
@@ -272,3 +276,5 @@ Authors
 .. _Remi Delbouys: https://github.com/remidbs
 .. _Valentin Iovene: https://github.com/tgy
 .. _Yassine El Ouahidi: https://github.com/elouayas
+.. _John Muradeli: https://github.com/OverLordGoldDragon/
+.. _Gustavo Rodrigues: https://github.com/gustavohenriquesr

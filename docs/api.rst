@@ -220,6 +220,7 @@ Augmentation
     SensorsYRotation
     SensorsXRotation
     Mixup
+    SegmentationReconstruction
 
     functional.identity
     functional.time_reverse
@@ -234,6 +235,7 @@ Augmentation
     functional.frequency_shift
     functional.sensors_rotation
     functional.mixup
+    functional.segmentation_reconstruction
 
 
 Utils
