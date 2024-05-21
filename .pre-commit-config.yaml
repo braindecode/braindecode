@@ -72,7 +72,6 @@ repos:
     hooks:
       - id: mypy
         files: braindecode/.*.py|test/.*.py|examples/.*.py
-        stages: [ push ]
         additional_dependencies:
           [
             types-PyYAML,
