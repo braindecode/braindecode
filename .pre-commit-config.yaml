@@ -21,6 +21,7 @@ repos:
       - id: check-toml
       - id: check-docstring-first
       - id: check-added-large-files
+        args: ['--maxkb=600']
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-case-conflict
