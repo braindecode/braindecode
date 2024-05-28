@@ -111,7 +111,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         in_channels=None,
         n_classes=None,
         input_window_samples=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         (
             n_chans,

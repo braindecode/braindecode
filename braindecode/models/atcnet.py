@@ -127,7 +127,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         n_channels=None,
         n_classes=None,
         input_size_s=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         n_chans, n_outputs, input_window_seconds = deprecated_args(
             self,

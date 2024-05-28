@@ -106,7 +106,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         n_classes=None,
         n_channels=None,
         input_window_samples=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         n_outputs, n_chans, n_times = deprecated_args(
             self,
