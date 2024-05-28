@@ -395,7 +395,11 @@ class _FullyConnected(nn.Module):
 
 class _FinalLayer(nn.Module):
     def __init__(
-        self, n_classes, hidden_channels=32, return_features=False, add_log_softmax=True
+        self,
+        n_classes,
+        hidden_channels=32,
+        return_features=False,
+        add_log_softmax=False,
     ):
         """Classification head for the transformer encoder.
 
