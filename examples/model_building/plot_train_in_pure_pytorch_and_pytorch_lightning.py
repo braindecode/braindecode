@@ -332,7 +332,7 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=n_epochs
 # Define the loss function
 # We used the NNLoss function, which expects log probabilities as input
 # (which is the case for our model output)
-loss_fn = torch.nn.NLLLoss()
+loss_fn = torch.nn.CrossEntropyLoss()
 
 # train_set and test_set are instances of torch Datasets, and can seamlessly be
 # wrapped in data loaders.
@@ -380,7 +380,7 @@ class LitModule(L.LightningModule):
     def __init__(self, module):
         super().__init__()
         self.module = module
-        self.loss = torch.nn.NLLLoss()
+        self.loss = torch.nn.CrossEntropyLoss()
 
     def training_step(self, batch, batch_idx):
         x, y, _ = batch

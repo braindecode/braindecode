@@ -271,7 +271,7 @@ n_epochs = 2
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=None,
     optimizer__lr=lr,
@@ -387,7 +387,7 @@ val_subset = Subset(train_set, val_indices)
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(val_subset),
     optimizer__lr=lr,
@@ -503,7 +503,7 @@ n_epochs = 2
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=None,
     optimizer__lr=lr,

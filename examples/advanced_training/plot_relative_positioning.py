@@ -337,7 +337,7 @@ callbacks = [
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.BCEWithLogitsLoss,
+    criterion=torch.nn.BCELoss,
     optimizer=torch.optim.Adam,
     max_epochs=n_epochs,
     iterator_train__shuffle=False,

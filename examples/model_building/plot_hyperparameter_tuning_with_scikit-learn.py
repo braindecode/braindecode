@@ -263,7 +263,7 @@ n_epochs = 2
 
 clf = EEGClassifier(
     model,
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     optimizer__lr=[],  # This will be handled by GridSearchCV
     batch_size=batch_size,
