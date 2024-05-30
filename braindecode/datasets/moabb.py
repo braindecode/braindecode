@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 from typing import Any
+import warnings
 
 import pandas as pd
 import mne
@@ -139,6 +140,17 @@ class MOABBDataset(BaseConcatDataset):
         dataset_kwargs: dict[str, Any] | None = None,
         dataset_load_kwargs: dict[str, Any] | None = None,
     ):
+        # soft dependency on moabb
+        from moabb import __version__ as moabb_version
+
+        if moabb_version == "1.0.0":
+            warnings.warn(
+                "moabb version 1.0.0 generates incorrect annotations. "
+                "Please update to another version. "
+                "Epoching using windows_from_events will not work. "
+                "See https://github.com/NeuroTechX/moabb/pull/607#issuecomment-2139212788 "
+            )
+
         raws, description = fetch_data_with_moabb(
             dataset_name,
             subject_ids,
