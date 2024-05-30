@@ -147,8 +147,6 @@ class MOABBDataset(BaseConcatDataset):
             warnings.warn(
                 "moabb version 1.0.0 generates incorrect annotations. "
                 "Please update to another version, version 0.5 or 1.0.1 "
-                "Epoching using windows_from_events will not work. "
-                "See https://github.com/NeuroTechX/moabb/pull/607#issuecomment-2139212788 "
             )
 
         raws, description = fetch_data_with_moabb(
