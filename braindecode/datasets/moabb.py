@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 from typing import Any
+import warnings
 
 import pandas as pd
 import mne
@@ -139,6 +140,15 @@ class MOABBDataset(BaseConcatDataset):
         dataset_kwargs: dict[str, Any] | None = None,
         dataset_load_kwargs: dict[str, Any] | None = None,
     ):
+        # soft dependency on moabb
+        from moabb import __version__ as moabb_version
+
+        if moabb_version == "1.0.0":
+            warnings.warn(
+                "moabb version 1.0.0 generates incorrect annotations. "
+                "Please update to another version, version 0.5 or 1.0.1 "
+            )
+
         raws, description = fetch_data_with_moabb(
             dataset_name,
             subject_ids,
