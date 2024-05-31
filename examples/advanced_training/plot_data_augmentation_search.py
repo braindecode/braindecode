@@ -253,7 +253,7 @@ clf = EEGClassifier(
     model,
     iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
     iterator_train__transforms=[],  # This sets is handled by GridSearchCV
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=None,  # GridSearchCV will control the split and train/validation over the dataset
     optimizer__lr=lr,

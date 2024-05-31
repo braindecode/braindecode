@@ -318,7 +318,7 @@ def test_post_epoch_train_scoring():
 
     clf = EEGClassifier(
         model,
-        criterion=torch.nn.NLLLoss,
+        criterion=torch.nn.CrossEntropyLoss,
         optimizer=optim.AdamW,
         train_split=None,
         optimizer__lr=0.0625 * 0.01,
@@ -465,7 +465,7 @@ def test_predict_trials():
     # cropped EEGClassifier, cropped data
     clf = EEGClassifier(
         model,
-        criterion=torch.nn.NLLLoss,
+        criterion=torch.nn.CrossEntropyLoss,
         optimizer=optim.AdamW,
         train_split=None,
         optimizer__lr=0.0625 * 0.01,

@@ -36,7 +36,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
         in_chans=None,
         n_classes=None,
         input_window_samples=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,

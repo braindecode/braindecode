@@ -103,7 +103,7 @@ def test_trialwise_decoding():
     clf = EEGClassifier(
         model,
         cropped=False,
-        criterion=torch.nn.NLLLoss,
+        criterion=torch.nn.CrossEntropyLoss,
         optimizer=torch.optim.Adam,
         train_split=train_valid_split,
         optimizer__lr=0.001,
