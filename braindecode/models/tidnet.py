@@ -315,7 +315,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
         temp_span=0.05,
         bottleneck=3,
         summary=-1,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,

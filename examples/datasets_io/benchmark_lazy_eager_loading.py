@@ -201,7 +201,7 @@ def create_example_model(
         model.cuda()
 
     optimizer = optim.Adam(model.parameters())
-    loss = nn.NLLLoss()
+    loss = nn.CrossEntropyLoss()
 
     return model, loss, optimizer
 

@@ -76,7 +76,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         in_channels=None,
         n_classes=None,
         input_window_s=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         (
             n_chans,

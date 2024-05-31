@@ -106,7 +106,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         n_classes=None,
         n_channels=None,
         input_window_samples=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         n_outputs, n_chans, n_times = deprecated_args(
             self,
@@ -395,7 +395,11 @@ class _FullyConnected(nn.Module):
 
 class _FinalLayer(nn.Module):
     def __init__(
-        self, n_classes, hidden_channels=32, return_features=False, add_log_softmax=True
+        self,
+        n_classes,
+        hidden_channels=32,
+        return_features=False,
+        add_log_softmax=False,
     ):
         """Classification head for the transformer encoder.
 

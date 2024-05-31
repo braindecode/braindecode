@@ -130,7 +130,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         n_classes=None,
         in_channels=None,
         input_window_samples=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         (
             n_outputs,
