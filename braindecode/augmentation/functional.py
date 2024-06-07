@@ -1043,7 +1043,7 @@ def segmentation_reconstruction(
     return aug_data, y
 
 
-def mask_encoding(X, y, time_start, segment_length, splits):
+def mask_encoding(X, y, time_start, segment_length, n_segments):
     """Replaces a contiguous part (or parts) of all channels by zeros
     (if more than one segment, it may overlap).
 
@@ -1057,11 +1057,11 @@ def mask_encoding(X, y, time_start, segment_length, splits):
          EEG labels for the example or batch.
      time_start : torch.Tensor
          Tensor of integers containing the position (in last dimension) where to
-         start masking the signal. Should have "splits" times the size of the first
-         dimension of X (i.e. "splits" start positions per example in the batch).
+         start masking the signal. Should have "n_segments" times the size of the first
+         dimension of X (i.e. "n_segments" start positions per example in the batch).
      segment_length: int
          Length of each segment to zero out.
-     splits : int
+     n_segments : int
          Number of segments to zero out in each example.
 
      Returns
@@ -1079,7 +1079,7 @@ def mask_encoding(X, y, time_start, segment_length, splits):
      32 (2024): 875-886.
     """
 
-    batch_indices = torch.arange(X.shape[0]).repeat_interleave(splits)
+    batch_indices = torch.arange(X.shape[0]).repeat_interleave(n_segments)
     start_indices = time_start.flatten()
     mask_indices = start_indices[:, None] + torch.arange(segment_length)
 

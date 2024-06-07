@@ -1192,7 +1192,7 @@ class MaskEncoding(Transform):
         Float setting the probability of applying the operation.
     max_mask_ratio: float, optional
         Signal ratio to zero out. Defaults to 0.1.
-    splits : int, optional
+    n_segments : int, optional
         Number of segments to zero out in each example.
         Defaults to 1.
     random_state: int | numpy.random.Generator, optional
@@ -1213,7 +1213,7 @@ class MaskEncoding(Transform):
         self,
         probability,
         max_mask_ratio=0.1,
-        splits=1,
+        n_segments=1,
         random_state=None,
     ):
         super().__init__(
@@ -1221,14 +1221,14 @@ class MaskEncoding(Transform):
             random_state=random_state,
         )
         assert (
-            isinstance(splits, int) and splits > 0
-        ), "splits should be a positive integer."
+            isinstance(n_segments, int) and n_segments > 0
+        ), "n_segments should be a positive integer."
         assert (
             isinstance(max_mask_ratio, (int, float)) and 0 <= max_mask_ratio <= 1
         ), "mask_ratio should be a float between 0 and 1."
 
         self.mask_ratio = max_mask_ratio
-        self.splits = splits
+        self.n_segments = n_segments
 
     def get_augmentation_params(self, *batch):
         """Return transform parameters.
@@ -1250,19 +1250,19 @@ class MaskEncoding(Transform):
 
         batch_size, _, n_times = X.shape
 
-        segment_length = int((n_times * self.mask_ratio) / self.splits)
+        segment_length = int((n_times * self.mask_ratio) / self.n_segments)
 
         assert (
             segment_length >= 1
-        ), "splits should be a positive integer not higher than (max_mask_ratio * window size)."
+        ), "n_segments should be a positive integer not higher than (max_mask_ratio * window size)."
 
         time_start = self.rng.randint(
-            0, n_times - segment_length, (batch_size, self.splits)
+            0, n_times - segment_length, (batch_size, self.n_segments)
         )
         time_start = torch.from_numpy(time_start)
 
         return {
             "time_start": time_start,
             "segment_length": segment_length,
-            "splits": self.splits,
+            "n_segments": self.n_segments,
         }
