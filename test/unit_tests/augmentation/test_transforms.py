@@ -692,7 +692,7 @@ def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
 
 
 @pytest.mark.parametrize(
-    "max_mask_ratio, splits, fail",
+    "max_mask_ratio, n_segments, fail",
     [
         (3, 1, True),
         (0, 1, True),
@@ -705,19 +705,19 @@ def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
 def test_mask_encoding_transform(
         rng_seed,
         max_mask_ratio,
-        splits,
+        n_segments,
         fail,
 ):
     if fail:
         with pytest.raises(AssertionError):
             # Check max_mask_ratio cannot be outside interval [0,1] and
-            # splits must be a positive integer
+            # n_segments must be a positive integer
             transform = MaskEncoding(
                 1.0, max_mask_ratio=max_mask_ratio,
-                splits=splits,
+                n_segments=n_segments,
                 random_state=rng_seed,
             )
-            # Check splits cannot be higher than (max_mask_ratio * window_size)
+            # Check n_segments cannot be higher than (max_mask_ratio * window_size)
             ones_batch = ones_and_zeros_batch()
             common_transform_assertions(
                 ones_batch, transform(*ones_batch)
@@ -726,7 +726,7 @@ def test_mask_encoding_transform(
         ones_batch = ones_and_zeros_batch()
         transform = MaskEncoding(
             1.0, max_mask_ratio=max_mask_ratio,
-            splits=splits, random_state=rng_seed,
+            n_segments=n_segments, random_state=rng_seed,
         )
 
         transformed_batch = transform(*ones_batch)
@@ -739,7 +739,7 @@ def test_mask_encoding_transform(
         transformed_X = transformed_batch[0]
         _, _, n_times = transformed_X.shape
 
-        segment_length = int((n_times * max_mask_ratio) / splits)
+        segment_length = int((n_times * max_mask_ratio) / n_segments)
         for sample in transformed_X:
             # check that the number of zeros in the masked matrix is at least
             # segment_length
