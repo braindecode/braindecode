@@ -31,6 +31,7 @@ from braindecode.augmentation.transforms import ChannelsSymmetry
 from braindecode.augmentation.transforms import FrequencyShift
 from braindecode.augmentation.transforms import FTSurrogate
 from braindecode.augmentation.transforms import GaussianNoise
+from braindecode.augmentation.transforms import MaskEncoding
 from braindecode.augmentation.transforms import Mixup
 from braindecode.augmentation.transforms import SensorsXRotation
 from braindecode.augmentation.transforms import SensorsYRotation
@@ -691,6 +692,61 @@ def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
 
 
 @pytest.mark.parametrize(
+    "max_mask_ratio, splits, fail",
+    [
+        (3, 1, True),
+        (0, 1, True),
+        (0.2, 1, False),
+        (0.2, -1, True),
+        (0.2, 2, False),
+        (1., 3, False),
+    ],
+)
+def test_mask_encoding_transform(
+        rng_seed,
+        max_mask_ratio,
+        splits,
+        fail,
+):
+    if fail:
+        with pytest.raises(AssertionError):
+            # Check max_mask_ratio cannot be outside interval [0,1] and
+            # splits must be a positive integer
+            transform = MaskEncoding(
+                1.0, max_mask_ratio=max_mask_ratio,
+                splits=splits,
+                random_state=rng_seed,
+            )
+            # Check splits cannot be higher than (max_mask_ratio * window_size)
+            ones_batch = ones_and_zeros_batch()
+            common_tranform_assertions(
+                ones_batch, transform(*ones_batch)
+            )
+    else:
+        ones_batch = ones_and_zeros_batch()
+        transform = MaskEncoding(
+            1.0, max_mask_ratio=max_mask_ratio,
+            splits=splits, random_state=rng_seed,
+        )
+
+        transformed_batch = transform(*ones_batch)
+        common_tranform_assertions(
+            ones_batch, transformed_batch
+        )
+
+        # check that the number of zeros in the masked matrix is at least
+        # segment_length
+        transformed_X = transformed_batch[0]
+        _, _, n_times = transformed_X.shape
+
+        segment_length = int((n_times * max_mask_ratio) / splits)
+        for sample in transformed_X:
+            # check that the number of zeros in the masked matrix is at least
+            # segment_length
+            assert np.sum(sample[0, :].detach().cpu().numpy() == 0) >= segment_length
+
+
+@pytest.mark.parametrize(
     "augmentation,kwargs",
     [
         (IdentityTransform, {"probability": 0.5}),
@@ -708,6 +764,7 @@ def test_segmentation_rec_with_large_n_segments(time_aranged_batch):
         (SensorsYRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SensorsZRotation, {"probability": 0.5, "ordered_ch_names": MONTAGE_10_20}),
         (SegmentationReconstruction, {"probability": 0.5}),
+        (MaskEncoding, {"probability": 0.5}),
     ],
 )
 def test_set_params(augmented_mock_clf, augmentation, kwargs, random_batch):
