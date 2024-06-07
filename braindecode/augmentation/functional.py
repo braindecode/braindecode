@@ -1041,3 +1041,54 @@ def segmentation_reconstruction(
         return aug_data, aug_label
 
     return aug_data, y
+
+
+def mask_encoding(X, y, time_start, segment_length, splits):
+    """Replaces a contiguous part (or parts) of all channels by zeros
+    (if more than one segment, it may overlap).
+
+     Implementation based on [1]_
+
+     Parameters
+     ----------
+     X : torch.Tensor
+         EEG input example or batch.
+     y : torch.Tensor
+         EEG labels for the example or batch.
+     time_start : torch.Tensor
+         Tensor of integers containing the position (in last dimension) where to
+         start masking the signal. Should have "splits" times the size of the first
+         dimension of X (i.e. "splits" start positions per example in the batch).
+     segment_length: int
+         Length of each segment to zero out.
+     splits : int
+         Number of segments to zero out in each example.
+
+     Returns
+     -------
+     torch.Tensor
+         Transformed inputs.
+     torch.Tensor
+         Transformed labels.
+
+     References
+     ----------
+     .. [1] Ding, Wenlong, et al. "A Novel Data Augmentation Approach
+     Using Mask Encoding for Deep Learning-Based Asynchronous SSVEP-BCI."
+     IEEE Transactions on Neural Systems and Rehabilitation Engineering
+     32 (2024): 875-886.
+    """
+
+    batch_indices = torch.arange(X.shape[0]).repeat_interleave(splits)
+    start_indices = time_start.flatten()
+    mask_indices = start_indices[:, None] + torch.arange(segment_length)
+
+    # Create a boolean mask with the same shape as X
+    mask = torch.zeros_like(X, dtype=torch.bool)
+    for batch_index, grouped_mask_indices in zip(batch_indices, mask_indices):
+        mask[batch_index, :, grouped_mask_indices] = True
+
+    # Apply the mask to set the values to 0
+    X[mask] = 0
+
+    return X, y  # Return the masked tensor and labels

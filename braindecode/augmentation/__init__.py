@@ -20,6 +20,7 @@ from .transforms import (
     SensorsXRotation,
     Mixup,
     SegmentationReconstruction,
+    MaskEncoding,
 )
 
 from . import functional
@@ -45,5 +46,6 @@ __all__ = [
     "SensorsXRotation",
     "Mixup",
     "SegmentationReconstruction",
+    "MaskEncoding",
     "functional",
 ]
