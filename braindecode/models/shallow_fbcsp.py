@@ -88,7 +88,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         in_chans=None,
         n_classes=None,
         input_window_samples=None,
-        add_log_softmax=True,
+        add_log_softmax=False,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,

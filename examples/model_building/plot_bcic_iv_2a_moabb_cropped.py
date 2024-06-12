@@ -277,7 +277,7 @@ clf = EEGClassifier(
     model,
     cropped=True,
     criterion=CroppedLoss,
-    criterion__loss_function=torch.nn.functional.nll_loss,
+    criterion__loss_function=torch.nn.functional.cross_entropy,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),
     optimizer__lr=lr,

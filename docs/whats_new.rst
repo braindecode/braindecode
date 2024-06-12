@@ -55,12 +55,13 @@ Bugs
 - Warn when applying preprocessing steps on a :class:`braindecode.datasets.base.EEGWindowsDataset` (:gh:`607` by `Pierre Guetschel`_)
 - Fix matplotlib colormaps deprecation (:gh:`608` by `Bruno Aristimunha`_)
 - Ensure mypy to work for every commit (:gh:`619` by `Bruno Aristimunha`_)
+- Deprecate moabb version 1.0.0 because of incorrect epoching (:gh:`627` by `Pierre Guetschel`_)
 
 
 API changes
 ~~~~~~~~~~~
 - Expose the ``use_mne_epochs parameter`` of :function:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
-
+- Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
 
 .. _changes_0_8_0:
 Current 0.8 (11-2022)

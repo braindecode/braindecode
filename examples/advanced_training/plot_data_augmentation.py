@@ -244,7 +244,7 @@ clf = EEGClassifier(
     model,
     iterator_train=AugmentedDataLoader,  # This tells EEGClassifier to use a custom DataLoader
     iterator_train__transforms=transforms,  # This sets the augmentations to use
-    criterion=torch.nn.NLLLoss,
+    criterion=torch.nn.CrossEntropyLoss,
     optimizer=torch.optim.AdamW,
     train_split=predefined_split(valid_set),  # using valid_set for validation
     optimizer__lr=lr,
