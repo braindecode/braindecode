@@ -58,7 +58,7 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb >= 1.0.0"]
+moabb = ["moabb >= 1.1.0"]
 tests = [
     'pytest',
     'pytest-cov',

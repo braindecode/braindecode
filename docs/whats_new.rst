@@ -43,6 +43,7 @@ Enhancements
 - Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
 - Optimize the CI by executing only the last commit (:gh:`612` by `Bruno Aristimunha`_)
 - Add experimental `lazy_metadata` parameter to :function:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`597` by `Pierre Guetschel`_)
+- Increasing moabb version to 1.1.0 (:gh:`617` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
