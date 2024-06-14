@@ -50,7 +50,8 @@ dependencies = [
     'joblib',
     'torchinfo',
     'linear_attention_transformer',
-    'docstring_inheritance'
+    'docstring_inheritance',
+    'setuptools', # because of 3.12
 ]
 [project.urls]
 homepage = "https://braindecode.org"
