@@ -50,7 +50,7 @@ dependencies = [
     'torchinfo',
     'linear_attention_transformer',
     'docstring_inheritance',
-    'setuptools', # because of 3.12
+    'setuptools', # because of python 3.12
 ]
 [project.urls]
 homepage = "https://braindecode.org"
@@ -58,7 +58,7 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb >= 1.1.0"]
+moabb = ["moabb >= 1.1.0, != 1.0.0"]
 tests = [
     'pytest',
     'pytest-cov',

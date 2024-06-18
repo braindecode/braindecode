@@ -150,7 +150,6 @@ Preprocessing
     create_windows_from_target_channels
     exponential_moving_demean
     exponential_moving_standardize
-    scale
     filterbank
     preprocess
     Preprocessor
