@@ -35,9 +35,9 @@ classifiers = [
     'Programming Language :: Python :: 3.11',
 ]
 readme = "README.rst"
-requires-python = ">3.8"
+requires-python = ">3.9"
 dependencies = [
-    'mne',
+    'mne==1.6.1',
     'numpy',
     'pandas',
     'scipy',
@@ -58,7 +58,7 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb >= 1.1.0, != 1.0.0"]
+moabb = ["moabb@git+https://github.com/bruAristimunha/moabb#egg=no-poetry-lock"]
 tests = [
     'pytest',
     'pytest-cov',
