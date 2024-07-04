@@ -220,6 +220,7 @@ Augmentation
     SensorsXRotation
     Mixup
     SegmentationReconstruction
+    MaskEncoding
 
     functional.identity
     functional.time_reverse
@@ -235,6 +236,7 @@ Augmentation
     functional.sensors_rotation
     functional.mixup
     functional.segmentation_reconstruction
+    functional.mask_encoding
 
 
 Utils
