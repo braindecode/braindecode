@@ -58,7 +58,7 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb@git+https://github.com/bruAristimunha/moabb#egg=no-poetry-lock"]
+moabb = ["moabb@git+https://github.com/bruAristimunha/moabb.git@no-poetry-lock#egg=moabb"]
 tests = [
     'pytest',
     'pytest-cov',
