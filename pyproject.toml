@@ -30,15 +30,14 @@ classifiers = [
     'Topic :: Software Development :: Build Tools',
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     'License :: OSI Approved :: BSD License',
-    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
 ]
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">3.9"
 dependencies = [
-    'mne<1.6.0',
+    'mne', # because of python 3.12
     'numpy',
     'pandas',
     'scipy',
@@ -50,7 +49,7 @@ dependencies = [
     'joblib',
     'torchinfo',
     'linear_attention_transformer',
-    'docstring_inheritance'
+    'docstring_inheritance',
 ]
 [project.urls]
 homepage = "https://braindecode.org"
@@ -58,7 +57,7 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb >= 1.0.0"]
+moabb = ["moabb>=1.1.1"]
 tests = [
     'pytest',
     'pytest-cov',
