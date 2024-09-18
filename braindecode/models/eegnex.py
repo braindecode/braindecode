@@ -1,3 +1,8 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#
+# License: BSD (3-clause)
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
@@ -6,10 +11,32 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class EEGNeX(EEGModuleMixin, nn.Module):
-    """EEGNeX model from XXXX.
+    """EEGNeX model from [EEGNeX]_.
 
     Parameters
     ----------
+    activation : nn.Module, optional
+        Activation function to use. Default is `nn.ELU`.
+    depth_multiplier : int, optional
+        Depth multiplier for the depthwise convolution. Default is 2.
+    filter_1 : int, optional
+        Number of filters in the first convolutional layer. Default is 8.
+    filter_2 : int, optional
+        Number of filters in the second convolutional layer. Default is 32.
+    drop_rate : float, optional
+        Dropout rate. Default is 0.5.
+    kernel_block_4 : tuple[int, int], optional
+        Kernel size for block 4. Default is (1, 16).
+    dilation_block_4 : tuple[int, int], optional
+        Dilation rate for block 4. Default is (1, 2).
+    avg_pool_block4 : tuple[int, int], optional
+        Pooling size for block 4. Default is (1, 4).
+    kernel_block_5 : tuple[int, int], optional
+        Kernel size for block 5. Default is (1, 16).
+    dilation_block_5 : tuple[int, int], optional
+        Dilation rate for block 5. Default is (1, 4).
+    avg_pool_block5 : tuple[int, int], optional
+        Pooling size for block 5. Default is (1, 8).
 
     Notes
     -----
@@ -37,11 +64,17 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # Model parameters
-        activation=nn.ELU,
-        depth_multiplier=2,
-        filter_1=8,
-        filter_2=32,
-        drop_rate=0.5,
+        activation: nn.Module = nn.ELU,
+        depth_multiplier: int = 2,
+        filter_1: int = 8,
+        filter_2: int = 32,
+        drop_rate: float = 0.5,
+        kernel_block_4: tuple[int, int] = (1, 16),
+        dilation_block_4: tuple[int, int] = (1, 2),
+        avg_pool_block4: tuple[int, int] = (1, 4),
+        kernel_block_5: tuple[int, int] = (1, 16),
+        dilation_block_5: tuple[int, int] = (1, 4),
+        avg_pool_block5: tuple[int, int] = (1, 8),
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -53,27 +86,33 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        self.depth_multiplier = depth_multiplier
         self.filter_1 = filter_1
         self.filter_2 = filter_2
+        self.filter_3 = self.filter_2 * self.depth_multiplier
         self.drop_rate = drop_rate
         self.activation = activation
 
-        kernel_size_block_4 = (1, 16)
-        dilation_block_4 = (1, 2)
-        padding_block_4 = self.calc_padding(kernel_size_block_4, dilation_block_4)
+        self.kernel_block_4 = kernel_block_4
+        self.dilation_block_4 = dilation_block_4
+        self.padding_block_4 = self.calc_padding(
+            self.kernel_block_4, self.dilation_block_4
+        )
+        self.avg_pool_block4 = avg_pool_block4
 
-        kernel_size_block_5 = (1, 16)
-        dilation_block_5 = (1, 4)
-        padding_block_5 = self.calc_padding(kernel_size_block_5, dilation_block_5)
+        self.kernel_block_5 = kernel_block_5
+        self.dilation_block_5 = dilation_block_5
+        self.padding_block_5 = self.calc_padding(
+            self.kernel_block_5, self.dilation_block_5
+        )
+        self.avg_pool_block5 = avg_pool_block5
 
-        # from the table 3 from the paper
+        # final layers output
         self.in_features = self.filter_1 * (self.n_times // self.filter_2)
-
-        self.dimshuffle = Rearrange("batch ch t -> batch 1 ch t")
 
         # Following paper nomenclature
         self.block_1 = nn.Sequential(
-            self.dimshuffle,
+            Rearrange("batch ch time -> batch 1 ch time"),
             nn.Conv2d(
                 in_channels=1,
                 out_channels=self.filter_1,
@@ -99,40 +138,48 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         self.block_3 = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.filter_2,
-                out_channels=self.filter_2 * depth_multiplier,
+                out_channels=self.filter_3,
                 kernel_size=(self.n_chans, 1),
                 groups=self.filter_2,
                 padding=(0, 0),
                 bias=False,
             ),
-            nn.BatchNorm2d(num_features=64),
-            nn.AvgPool2d(kernel_size=(1, 4), stride=(1, 4), padding=(0, 1)),
+            nn.BatchNorm2d(num_features=self.filter_3),
+            nn.AvgPool2d(
+                kernel_size=self.avg_pool_block4,
+                stride=self.avg_pool_block4,
+                padding=(0, 1),
+            ),
             nn.Dropout(p=self.drop_rate),
         )
 
         self.block_4 = nn.Sequential(
             nn.Conv2d(
-                in_channels=64,
+                in_channels=self.filter_3,
                 out_channels=self.filter_2,
-                kernel_size=kernel_size_block_4,
-                dilation=dilation_block_4,
-                padding=padding_block_4,
+                kernel_size=self.kernel_block_4,
+                dilation=self.dilation_block_4,
+                padding=self.padding_block_4,
                 bias=False,
             ),
-            nn.BatchNorm2d(num_features=32),
+            nn.BatchNorm2d(num_features=self.filter_2),
         )
 
         self.block_5 = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.filter_2,
                 out_channels=self.filter_1,
-                kernel_size=kernel_size_block_5,
-                dilation=dilation_block_5,
-                padding=padding_block_5,
+                kernel_size=self.kernel_block_5,
+                dilation=self.dilation_block_5,
+                padding=self.padding_block_5,
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=self.filter_1),
-            nn.AvgPool2d(kernel_size=(1, 8), stride=(1, 8), padding=(0, 1)),
+            nn.AvgPool2d(
+                kernel_size=self.avg_pool_block5,
+                stride=self.avg_pool_block5,
+                padding=(0, 1),
+            ),
             nn.Dropout(p=self.drop_rate),
             nn.Flatten(),
         )
@@ -141,60 +188,55 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             in_features=self.in_features, out_features=self.n_outputs
         )
 
-    def forward(self, x):
-        # x shape: (batch_size, n_features, n_timesteps)
-        print("initial:", x.shape)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the EEGNeX model.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor of shape (batch_size, n_outputs).
+        """
+        # x shape: (batch_size, n_chans, n_times)
         x = self.block_1(x)
-        print("block 1:", x.shape)
+        # (batch_size, n_filter, n_chans, n_times)
         x = self.block_2(x)
-        print("block 2", x.shape)
+        # (batch_size, n_filter*4, n_chans, n_times)
         x = self.block_3(x)
-        print("block 3", x.shape)
+        # (batch_size, 1, n_filter*8, n_times//4)
         x = self.block_4(x)
-        print("block 4", x.shape)
+        # (batch_size, 1, n_filter*8, n_times//4)
         x = self.block_5(x)
-        print("block 5", x.shape)
+        # (batch_size, n_filter*(n_times//32))
         x = self.final_layer(x)
 
         return x
 
     @staticmethod
-    def calc_padding(kernel_size: tuple, dilation: tuple):
+    def calc_padding(
+        kernel_size: tuple[int, int], dilation: tuple[int, int]
+    ) -> tuple[int, int]:
         """
-            Util function to calculate padding, because the native version of
-            Pytorch doesn't handle well the dilatation using the same
+        Calculate padding size for 'same' convolution with dilation.
 
         Parameters
         ----------
-        kernel_size: list
-            tuple with kernel_size in block 4 and block 5.
-        dilation: list
-            tuple with kernel_size in block 4 and block 5.
+        kernel_size : tuple
+            Tuple containing the kernel size (height, width).
+        dilation : tuple
+            Tuple containing the dilation rate (height, width).
 
         Returns
         -------
-        padding_height, padding_width
+        tuple
+            Padding sizes (padding_height, padding_width).
         """
         # Calculate padding
         padding_height = ((kernel_size[0] - 1) * dilation[0]) // 2
         padding_width = ((kernel_size[1] - 1) * dilation[1]) // 2
         return padding_height, padding_width
-
-
-# Test the implementation
-if __name__ == "__main__":
-    n_features = 22
-    n_timesteps = 1000
-    n_outputs = 2  # Example number of output classes
-
-    # Create a test input tensor
-    X = torch.zeros(1, n_features, n_timesteps)
-
-    # Initialize the model
-    model = EEGNeX(n_chans=n_features, n_times=n_timesteps, n_outputs=n_outputs)
-
-    # Get the model output
-    out = model(X)
-
-    # print("Model output shape:", out.shape)
-    # print("Model output:", out)
