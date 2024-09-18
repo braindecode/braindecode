@@ -43,8 +43,9 @@ Enhancements
 - Add two models :class:`braindecode.models.ContraWR` and :class:`braindecode.models.SPARCNet` (:gh:`611` by `Bruno Aristimunha`_)
 - Optimize the CI by executing only the last commit (:gh:`612` by `Bruno Aristimunha`_)
 - Add experimental `lazy_metadata` parameter to :function:`braindecode.preprocessing.create_fixed_length_windows` (:gh:`597` by `Pierre Guetschel`_)
-- Increasing moabb version to 1.1.0 (:gh:`332` by `Bruno Aristimunha`_)
+- Increasing moabb version to 1.1.0 (:gh:`632` by `Bruno Aristimunha`_)
 - Add MaskEncoding augmentation :class:`braindecode.augmentation.MaskEncoding` (:gh:`631` by `Gustavo Rodrigues`_)
+- Adding :class:`braindecode.models.EEGNex`  (:gh:`635` by `Bruno Aristimunha`_ )
 
 Bugs
 ~~~~
