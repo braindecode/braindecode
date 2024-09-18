@@ -30,6 +30,7 @@ from .labram import Labram
 from .eegsimpleconv import EEGSimpleConv
 from .sparcnet import SPARCNet
 from .contrawr import ContraWR
+from .eegnex import EEGNeX
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.

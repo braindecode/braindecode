@@ -63,33 +63,33 @@ Models
 .. autosummary::
    :toctree: generated/
 
-    ShallowFBCSPNet
+    ATCNet
+    AttentionBaseNet
+    BIOT
+    ContraWR
     Deep4Net
     DeepSleepNet
     EEGConformer
     EEGInception
     EEGInceptionERP
     EEGInceptionMI
-    AttentionBaseNet
-    ATCNet
     EEGITNet
     EEGNetv1
     EEGNetv4
-    HybridNet
+    EEGNeX
     EEGResNet
-    TCN
-    SleepStagerChambon2018
-    SleepStagerBlanco2020
-    SleepStagerEldele2021
-    USleep
-    TIDNet
-    get_output_shape
-    TimeDistributed
-    BIOT
-    Labram
     EEGSimpleConv
+    HybridNet
+    Labram
+    ShallowFBCSPNet
+    SleepStagerBlanco2020
+    SleepStagerChambon2018
+    SleepStagerEldele2021
     SPARCNet
-    ContraWR
+    TCN
+    TIDNet
+    TimeDistributed
+    USleep
 
 Training
 ========
