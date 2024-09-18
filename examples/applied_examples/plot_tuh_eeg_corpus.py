@@ -286,7 +286,7 @@ preprocessors = [
     Preprocessor(
         lambda data: multiply(data, factor), apply_on_array=True
     ),  # Convert from V to uV
-    Preprocessor(np.clip, a_min=-800, a_max=800, apply_on_array=True),
+    Preprocessor(lambda x: np.clip(x, a_min=-800, a_max=800), apply_on_array=True),
     Preprocessor("resample", sfreq=sfreq),
 ]
 

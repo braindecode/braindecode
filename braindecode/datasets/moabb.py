@@ -146,7 +146,7 @@ class MOABBDataset(BaseConcatDataset):
         if moabb_version == "1.0.0":
             warnings.warn(
                 "moabb version 1.0.0 generates incorrect annotations. "
-                "Please update to another version, version 0.5 or 1.0.1 "
+                "Please update to another version, version 0.5 or 1.1.0 "
             )
 
         raws, description = fetch_data_with_moabb(
