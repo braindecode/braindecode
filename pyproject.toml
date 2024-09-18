@@ -38,7 +38,7 @@ classifiers = [
 readme = "README.rst"
 requires-python = ">=3.8"
 dependencies = [
-    'mne',
+    'mne', # because of python 3.12
     'numpy',
     'pandas',
     'scipy',
