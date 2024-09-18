@@ -38,7 +38,7 @@ def dummy_transform():
     return DummyTransform()
 
 
-def common_tranform_assertions(
+def common_transform_assertions(
         input_batch,
         output_batch,
         expected_X=None,
@@ -101,7 +101,7 @@ def test_transform_composition(random_batch, k1, k2, expected, p1, p2):
     concat_transform = Compose([dummy_transform1, dummy_transform2])
     expected_tensor = torch.ones(X.shape, device=X.device) * expected
 
-    common_tranform_assertions(random_batch, concat_transform(X, y), expected_tensor)
+    common_transform_assertions(random_batch, concat_transform(X, y), expected_tensor)
 
 
 def test_transform_proba_exception(rng_seed, dummy_transform):

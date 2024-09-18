@@ -26,6 +26,7 @@ from .functional import sign_flip
 from .functional import smooth_time_mask
 from .functional import time_reverse
 from .functional import segmentation_reconstruction
+from .functional import mask_encoding
 
 
 class TimeReverse(Transform):
@@ -1176,4 +1177,92 @@ class SegmentationReconstruction(Transform):
             "data_classes": data_classes,
             "rand_indices": rand_indices,
             "idx_shuffle": idx_shuffle,
+        }
+
+
+class MaskEncoding(Transform):
+    """Replaces randomly chosen contiguous part (or parts) of all channels by
+    zeros (if more than one segment, it may overlap).
+
+    Implementation based on [1]_
+
+    Parameters
+    ----------
+    probability : float
+        Float setting the probability of applying the operation.
+    max_mask_ratio: float, optional
+        Signal ratio to zero out. Defaults to 0.1.
+    n_segments : int, optional
+        Number of segments to zero out in each example.
+        Defaults to 1.
+    random_state: int | numpy.random.Generator, optional
+        Seed to be used to instantiate numpy random number generator instance.
+        Defaults to None.
+
+    References
+    ----------
+    .. [1] Ding, Wenlong, et al. "A Novel Data Augmentation Approach
+    Using Mask Encoding for Deep Learning-Based Asynchronous SSVEP-BCI."
+    IEEE Transactions on Neural Systems and Rehabilitation Engineering
+    32 (2024): 875-886.
+    """
+
+    operation = staticmethod(mask_encoding)  # type: ignore[assignment]
+
+    def __init__(
+        self,
+        probability,
+        max_mask_ratio=0.1,
+        n_segments=1,
+        random_state=None,
+    ):
+        super().__init__(
+            probability=probability,
+            random_state=random_state,
+        )
+        assert (
+            isinstance(n_segments, int) and n_segments > 0
+        ), "n_segments should be a positive integer."
+        assert (
+            isinstance(max_mask_ratio, (int, float)) and 0 <= max_mask_ratio <= 1
+        ), "mask_ratio should be a float between 0 and 1."
+
+        self.mask_ratio = max_mask_ratio
+        self.n_segments = n_segments
+
+    def get_augmentation_params(self, *batch):
+        """Return transform parameters.
+
+        Parameters
+        ----------
+        X : tensor.Tensor
+            The data.
+        y : tensor.Tensor
+            The labels.
+        Returns
+        -------
+        params : dict
+            Contains ...
+        """
+        if len(batch) == 0:
+            return super().get_augmentation_params(*batch)
+        X = batch[0]
+
+        batch_size, _, n_times = X.shape
+
+        segment_length = int((n_times * self.mask_ratio) / self.n_segments)
+
+        assert (
+            segment_length >= 1
+        ), "n_segments should be a positive integer not higher than (max_mask_ratio * window size)."
+
+        time_start = self.rng.randint(
+            0, n_times - segment_length, (batch_size, self.n_segments)
+        )
+        time_start = torch.from_numpy(time_start)
+
+        return {
+            "time_start": time_start,
+            "segment_length": segment_length,
+            "n_segments": self.n_segments,
         }
