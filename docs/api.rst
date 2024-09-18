@@ -76,7 +76,7 @@ Models
     EEGITNet
     EEGNetv1
     EEGNetv4
-    EEGNex
+    EEGNeX
     EEGResNet
     EEGSimpleConv
     HybridNet
