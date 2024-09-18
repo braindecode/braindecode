@@ -28,7 +28,7 @@ jobs:
           key: ${{ runner.os }}-v3
       - uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
       - name: Show Python Version
         run: python --version
       # Update pip
