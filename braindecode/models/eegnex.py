@@ -4,6 +4,7 @@
 
 
 from torch import nn
+from einops.layers.torch import Rearrange
 
 
 from .base import EEGModuleMixin
@@ -40,9 +41,11 @@ class EEGNeX(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        activation=nn.ELU,
         # Module related parameters
+        activation=nn.ELU,
         drop_rate=0.5,
+        conv_temp_out_channels=8,
+        kernel_length=32,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -55,33 +58,34 @@ class EEGNeX(EEGModuleMixin, nn.Sequential):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         input_height = 12
         num_features = 1
+        self.dimshuffle = Rearrange("batch ch t 1 -> batch 1 ch t")
 
-        self.conv1 = nn.Conv2d(
+        self.conv_temporal = nn.Conv2d(
             in_channels=1,
-            out_channels=8,
+            out_channels=conv_temp_out_channels,
             bias=False,
-            kernel_size=(1, 32),
-            padding=(0, 15),
+            kernel_size=(1, kernel_length),
+            padding=(0, kernel_length // 2 - 1),
         )
 
-        self.ln1 = nn.GroupNorm(num_groups=1, num_channels=8)
+        self.ln1 = nn.GroupNorm(num_groups=1, num_channels=conv_temp_out_channels)
         self.activation = activation
 
-        self.conv2 = nn.Conv2d(
-            in_channels=8,
-            out_channels=32,
-            kernel_size=(1, 32),
+        self.conv_spatial = nn.Conv2d(
+            in_channels=conv_temp_out_channels,
+            out_channels=kernel_length,
+            kernel_size=(1, kernel_length),
             bias=False,
-            padding=(0, 15),
+            padding=(0, kernel_length // 2 - 1),
         )
-        self.ln2 = nn.GroupNorm(num_groups=1, num_channels=32)
+        self.ln2 = nn.GroupNorm(num_groups=1, num_channels=kernel_length)
         self.elu1 = nn.ELU()
 
         self.depthwise_conv = nn.Conv2d(
-            in_channels=32,
-            out_channels=32 * 2,  # depth_multiplier=2
+            in_channels=kernel_length,
+            out_channels=kernel_length * 2,  # depth_multiplier=2
             kernel_size=(input_height, 1),
-            groups=32,  # Depthwise convolution
+            groups=kernel_length,  # Depthwise convolution
             bias=False,
             padding=0,
         )
