@@ -166,7 +166,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.tcn_kernel_size = tcn_kernel_size
         self.tcn_n_filters = tcn_n_filters
         self.tcn_dropout = tcn_dropout
-        self.tcn_activation = tcn_activation()
+        self.tcn_activation = tcn_activation
         self.concat = concat
         self.max_norm_const = max_norm_const
 
