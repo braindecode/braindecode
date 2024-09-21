@@ -30,6 +30,9 @@ class ResBlock(nn.Module):
         Kernel size of the convolutional layers.
     padding : int (default=1)
         Padding of the convolutional layers.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     Examples
     --------
@@ -51,6 +54,7 @@ class ResBlock(nn.Module):
         kernel_size=3,
         padding=1,
         drop_prob=0.5,
+        activation: nn.Module = nn.ReLU,
     ):
         super(ResBlock, self).__init__()
         self.conv1 = nn.Conv2d(
@@ -61,7 +65,7 @@ class ResBlock(nn.Module):
             padding=padding,
         )
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
+        self.relu = activation()
         self.conv2 = nn.Conv2d(
             in_channels=out_channels,
             out_channels=out_channels,
