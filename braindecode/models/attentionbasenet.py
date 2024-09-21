@@ -48,6 +48,9 @@ class _FeatureExtractor(nn.Module):
         The stride of the average pooling operation. Default is 15.
     dropout : float, optional
         The dropout rate for regularization. Default is 0.5.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     """
 
     def __init__(
@@ -153,6 +156,9 @@ class _ChannelAttentionBlock(nn.Module):
     extra_params : bool, default=False
         Flag to indicate whether additional, custom parameters should be passed to
         the attention mechanism.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Attributes
     ----------
@@ -166,6 +172,9 @@ class _ChannelAttentionBlock(nn.Module):
     attention_block : torch.nn.Module or None
         The attention mechanism applied to the output of the convolutional layers,
         if `attention_mode` is not None. Otherwise, it's set to None.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Examples
     --------
