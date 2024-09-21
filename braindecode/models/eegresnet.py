@@ -54,7 +54,6 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         n_layers_per_block=2,
         first_filter_length=3,
         activation=nn.ELU,
-        nonlinearity=elu,
         split_first_layer=True,
         batch_norm_alpha=0.1,
         batch_norm_epsilon=1e-4,
@@ -72,7 +71,6 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             ("in_chans", "n_chans", in_chans, n_chans),
             ("n_classes", "n_outputs", n_classes, n_outputs),
             ("input_window_samples", "n_times", input_window_samples, n_times),
-            ("nonlinearity", "activate", nonlinearity, activation),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -84,7 +82,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_window_samples, nonlinearity
+        del in_chans, n_classes, input_window_samples
 
         if final_pool_length == "auto":
             assert self.n_times is not None

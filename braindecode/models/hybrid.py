@@ -75,8 +75,8 @@ class HybridNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
             chs_info=chs_info,
             final_conv_length=2,
-            activation_1=activation,
-            activation_2=activation,
+            activation_first_conv_nonlin=activation,
+            activation_later_conv_nonlin=activation,
         )
         shallow_model = ShallowFBCSPNet(
             n_chans=n_chans,

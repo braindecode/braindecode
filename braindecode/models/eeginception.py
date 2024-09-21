@@ -144,7 +144,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
         self.scales_samples = tuple(
             int(size_s * self.sfreq) for size_s in self.scales_samples_s
         )
-        self.activation = activation()
+        self.activation = activation
         self.alpha_momentum = batch_norm_alpha
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes
@@ -238,7 +238,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                     bias=False,
                 ),
                 nn.BatchNorm2d(n_concat_filters // 2, momentum=self.alpha_momentum),
-                activation,
+                activation(),
                 nn.Dropout(self.drop_prob),
                 nn.AvgPool2d((1, self.pooling_sizes[2])),
                 nn.Conv2d(
@@ -249,7 +249,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                     bias=False,
                 ),
                 nn.BatchNorm2d(n_concat_filters // 4, momentum=self.alpha_momentum),
-                activation,
+                activation(),
                 nn.Dropout(self.drop_prob),
                 nn.AvgPool2d((1, self.pooling_sizes[3])),
             ),
@@ -296,7 +296,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                 bias=True,
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
-            activation,
+            activation(),
             nn.Dropout(drop_prob),
             _DepthwiseConv2d(
                 out_channels,
@@ -306,7 +306,7 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                 padding="valid",
             ),
             nn.BatchNorm2d(depth_multiplier * out_channels, momentum=alpha_momentum),
-            activation,
+            activation(),
             nn.Dropout(drop_prob),
         )
 
@@ -323,6 +323,6 @@ class EEGInception(EEGModuleMixin, nn.Sequential):
                 bias=False,
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
-            activation,
+            activation(),
             nn.Dropout(drop_prob),
         )
