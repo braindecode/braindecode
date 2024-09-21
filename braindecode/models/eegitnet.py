@@ -10,6 +10,36 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class _DepthwiseConv2d(torch.nn.Conv2d):
+    """
+    Depthwise convolution layer.
+
+    This class implements a depthwise convolution, where each input channel is
+    convolved separately with its own filter (channel multiplier), effectively
+    performing a spatial convolution independently over each channel.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of channels in the input tensor.
+    depth_multiplier : int, optional
+        Multiplier for the number of output channels. The total number of
+        output channels will be `in_channels * depth_multiplier`. Default is 2.
+    kernel_size : int or tuple, optional
+        Size of the convolutional kernel. Default is 3.
+    stride : int or tuple, optional
+        Stride of the convolution. Default is 1.
+    padding : int or tuple, optional
+        Padding added to both sides of the input. Default is 0.
+    dilation : int or tuple, optional
+        Spacing between kernel elements. Default is 1.
+    bias : bool, optional
+        If True, adds a learnable bias to the output. Default is True.
+    padding_mode : str, optional
+        Padding mode to use. Options are 'zeros', 'reflect', 'replicate', or
+        'circular'.
+        Default is 'zeros'.
+    """
+
     def __init__(
         self,
         in_channels,
@@ -36,6 +66,19 @@ class _DepthwiseConv2d(torch.nn.Conv2d):
 
 
 class _InceptionBlock(nn.Module):
+    """
+    Inception block module.
+
+    This module applies multiple convolutional branches to the input and concatenates
+    their outputs along the channel dimension. Each branch can have a different
+    configuration, allowing the model to capture multi-scale features.
+
+    Parameters
+    ----------
+    branches : list of nn.Module
+        List of convolutional branches to apply to the input.
+    """
+
     def __init__(self, branches):
         super().__init__()
         self.branches = nn.ModuleList(branches)
@@ -45,6 +88,30 @@ class _InceptionBlock(nn.Module):
 
 
 class _TCBlock(nn.Module):
+    """
+    Temporal Convolutional (TC) block.
+
+    This module applies two depthwise separable convolutions with dilation and residual
+    connections, commonly used in temporal convolutional networks to capture long-range
+    dependencies in time-series data.
+
+    Parameters
+    ----------
+    in_ch : int
+        Number of input channels.
+    kernel_length : int
+        Length of the convolutional kernels.
+    dilation : int
+        Dilation rate for the convolutions.
+    padding : int
+        Amount of padding to add to the input.
+    drop_prob : float, optional
+        Dropout probability. Default is 0.4.
+    activation : nn.Module class, optional
+        Activation function class to use. Should be a PyTorch activation module class
+        like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    """
+
     def __init__(
         self,
         in_ch,
