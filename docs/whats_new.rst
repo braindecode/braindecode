@@ -46,6 +46,7 @@ Enhancements
 - Increasing moabb version to 1.1.0 (:gh:`632` by `Bruno Aristimunha`_)
 - Add MaskEncoding augmentation :class:`braindecode.augmentation.MaskEncoding` (:gh:`631` by `Gustavo Rodrigues`_)
 - Adding :class:`braindecode.models.EEGNex`  (:gh:`635` by `Bruno Aristimunha`_ )
+- Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
 
 Bugs
 ~~~~
