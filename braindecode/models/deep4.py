@@ -44,13 +44,13 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         Number of temporal filters in layer 4.
     filter_length_4: int
         Length of the temporal filter in layer 4.
-    activation_first_conv_nonlin: callable
+    activation_first_conv_nonlin: nn.Module, default is nn.ELU
         Non-linear activation function to be used after convolution in layer 1.
     first_pool_mode: str
         Pooling mode in layer 1. "max" or "mean".
     first_pool_nonlin: callable
         Non-linear activation function to be used after pooling in layer 1.
-    activation_later_conv_nonlin: callable
+    activation_later_conv_nonlin: nn.Module, default is nn.ELU
         Non-linear activation function to be used after convolution in later layers.
     later_pool_mode: str
         Pooling mode in later layers. "max" or "mean".
