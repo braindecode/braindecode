@@ -70,7 +70,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         last classification layer. Defaults to False.
     activation: nn.Module
         Activation function as parameter. Default is nn.ELU
-    activate_transfor: nn.Module
+    activation_transfor: nn.Module
         Activation function as parameter, applied at the FeedForwardBlock module
         inside the transformer. Default is nn.GeLU
     n_classes :
