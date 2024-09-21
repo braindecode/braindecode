@@ -353,7 +353,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
                 return_label_elements=["symbol"],
                 summarize_labels=False,
             )
-            mne_annots = convert_wfdb_anns_to_mne_annotations(annots)
+            mne_annots = _convert_wfdb_anns_to_mne_annotations(annots)
             out.set_annotations(mne_annots)
 
         record_name = op.splitext(op.basename(raw_fname[0]))[0]
