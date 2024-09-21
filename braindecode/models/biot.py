@@ -62,6 +62,9 @@ class _ClassificationHead(nn.Sequential):
         The size of the embedding layer
     n_outputs: int
         The number of classes
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Returns
     -------
