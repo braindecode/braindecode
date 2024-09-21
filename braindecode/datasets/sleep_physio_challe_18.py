@@ -3,19 +3,21 @@ PhysioNet Challenge 2018 dataset.
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
-#
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 # License: BSD (3-clause)
-# Code remove from the repository
+# Code copied from the repository
 # https://github.com/hubertjb/dynamic-spatial-filtering
 
 import os
 import os.path as op
-
+import urllib
 import mne
+
 import wfdb
 import numpy as np
 import pandas as pd
 
+from mne.utils import warn
 from joblib import Parallel, delayed
 
 from mne.datasets.utils import _get_path
@@ -31,6 +33,34 @@ PC18_INFO = op.join(PC18_DIR, "age-sex.csv")
 PC18_URL = "https://physionet.org/files/challenge-2018/1.0.0/"
 PC18_SHA1_TRAINING = op.join(PC18_DIR, "training_SHA1SUMS")
 PC18_SHA1_TEST = op.join(PC18_DIR, "test_SHA1SUMS")
+PC18_METAINFO_URL = "https://zenodo.org/records/13823458/files/"
+
+
+# Function to download a file if it doesn't exist
+def _download_if_missing(file_path, url):
+    folder_path = op.dirname(file_path)
+
+    # Ensure the folder exists
+    if not op.exists(folder_path):
+        warn(f"Directory {folder_path} not found. Creating directory.")
+        os.makedirs(folder_path)
+
+    # Check if file exists, if not download it
+    if not op.exists(file_path):
+        warn(f"{file_path} not found. Downloading from {url}")
+        urllib.request.urlretrieve(url, file_path)
+
+
+def ensure_metafiles_exist():
+    files_to_check = {
+        PC18_RECORDS: PC18_METAINFO_URL + "sleep_records.csv",
+        PC18_INFO: PC18_METAINFO_URL + "age-sex.csv",
+        PC18_SHA1_TRAINING: PC18_METAINFO_URL + "training_SHA1SUMS",
+        PC18_SHA1_TEST: PC18_METAINFO_URL + "test_SHA1SUMS",
+    }
+
+    for file_path, url in files_to_check.items():
+        _download_if_missing(file_path, url)
 
 
 def update_pc18_sleep_records(fname=PC18_RECORDS):
@@ -263,6 +293,9 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
             subject_ids = range(989, 1983)
         elif subject_ids == "test":
             subject_ids = range(989)
+
+        ensure_metafiles_exist()
+
         paths = fetch_pc18_data(subject_ids, path=path)
 
         self.info_df = pd.read_csv(PC18_INFO)
