@@ -2,13 +2,50 @@
 #
 # License: BSD (3-clause)
 
-from einops.layers.torch import Rearrange
+import torch
 from torch import nn
 from torch.nn import init
+from einops.layers.torch import Rearrange
 
 from .base import EEGModuleMixin, deprecated_args
-from .functions import safe_log, square, squeeze_final_output
+from .functions import square, squeeze_final_output
 from .modules import CombinedConv, Ensure4d, Expression
+
+
+class SafeLog(nn.Module):
+    """
+    Safe logarithm activation function module.
+
+    This module computes the logarithm of its input tensor while preventing issues with zero or
+    negative values by clamping the input to a minimum value epsilon before applying the logarithm.
+
+    Parameters
+    ----------
+    eps : float, optional
+        A small value to clamp the input tensor to prevent computing log(0) or log of negative numbers.
+        Default is 1e-6.
+
+    """
+
+    def __init__(self, eps=1e-6):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x):
+        """
+        Forward pass of the SafeLog module.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying safe logarithm.
+        """
+        return torch.log(torch.clamp(x, min=self.eps))
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -77,7 +114,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         final_conv_length="auto",
         conv_nonlin=square,
         pool_mode="mean",
-        activation_pool_nonlin=safe_log,
+        activation_pool_nonlin: nn.Module = SafeLog,
         split_first_layer=True,
         batch_norm=True,
         batch_norm_alpha=0.1,
@@ -117,7 +154,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.final_conv_length = final_conv_length
         self.conv_nonlin = conv_nonlin
         self.pool_mode = pool_mode
-        self.pool_nonlin = activation_pool_nonlin
+        self.pool_nonlin = activation_pool_nonlin()
         self.split_first_layer = split_first_layer
         self.batch_norm = batch_norm
         self.batch_norm_alpha = batch_norm_alpha
@@ -175,7 +212,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                 stride=(self.pool_time_stride, 1),
             ),
         )
-        self.add_module("pool_nonlin_exp", Expression(self.pool_nonlin))
+        self.add_module("pool_nonlin_exp", self.pool_nonlin)
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":
