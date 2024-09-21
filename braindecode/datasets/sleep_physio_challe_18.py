@@ -63,7 +63,7 @@ def ensure_metafiles_exist():
         _download_if_missing(file_path, url)
 
 
-def update_pc18_sleep_records(fname=PC18_RECORDS):
+def _update_pc18_sleep_records(fname=PC18_RECORDS):
     """Create CSV file with information about available PC18 recordings."""
     # Load and massage the checksums.
     sha_train_df = pd.read_csv(
