@@ -70,7 +70,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         n_convs=5,
         n_filters=48,
         kernel_unit_s=0.1,
-        activation=nn.ReLU,
+        activation: nn.Module = nn.ReLU,
         chs_info=None,
         n_times=None,
         in_channels=None,
@@ -231,6 +231,38 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
 
 class _InceptionModuleMI(nn.Module):
+    """
+    Inception module.
+
+    This module implements a inception-like architecture that processes input
+    feature maps through multiple convolutional paths with different kernel
+    sizes, allowing the network to capture features at multiple scales.
+    It includes bottleneck layers, convolutional layers, and pooling layers,
+    followed by batch normalization and an activation function.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels in the input tensor.
+    n_filters : int
+        Number of filters (output channels) for each convolutional layer.
+    n_convs : int
+        Number of convolutional layers in the module (excluding bottleneck
+        and pooling paths).
+    kernel_unit_s : float, optional
+        Base size (in seconds) for the convolutional kernels. The actual kernel
+        size is computed as ``(2 * n_units + 1) * kernel_unit``, where ``n_units``
+        ranges from 0 to ``n_convs - 1``. Default is 0.1 seconds.
+    sfreq : float, optional
+        Sampling frequency of the input data, used to convert kernel sizes from
+        seconds to samples. Default is 250 Hz.
+    activation : nn.Module class, optional
+        Activation function class to apply after batch normalization. Should be
+        a PyTorch activation module class like ``nn.ReLU`` or ``nn.ELU``.
+        Default is ``nn.ReLU``.
+
+    """
+
     def __init__(
         self,
         in_channels,
@@ -238,7 +270,7 @@ class _InceptionModuleMI(nn.Module):
         n_convs,
         kernel_unit_s=0.1,
         sfreq=250,
-        activation=nn.ReLU(),
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -288,7 +320,7 @@ class _InceptionModuleMI(nn.Module):
 
         self.bn = nn.BatchNorm2d(self.n_filters * (self.n_convs + 1))
 
-        self.activation = activation
+        self.activation = activation()
 
     def forward(
         self,
@@ -308,11 +340,31 @@ class _InceptionModuleMI(nn.Module):
 
 
 class _ResidualModuleMI(nn.Module):
-    def __init__(self, in_channels, n_filters, activation=nn.ReLU()):
+    """
+    Residual module.
+
+    This module performs a 1x1 convolution followed by batch normalization and an activation function.
+    It is designed to process input feature maps and produce transformed output feature maps, often used
+    in residual connections within neural network architectures.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels in the input tensor.
+    n_filters : int
+        Number of filters (output channels) for the convolutional layer.
+    activation : nn.Module, optional
+        Activation function to apply after batch normalization. Should be an instance of a PyTorch
+        activation module (e.g., ``nn.ReLU()``, ``nn.ELU()``). Default is ``nn.ReLU()``.
+
+
+    """
+
+    def __init__(self, in_channels, n_filters, activation: nn.Module = nn.ReLU):
         super().__init__()
         self.in_channels = in_channels
         self.n_filters = n_filters
-        self.activation = activation
+        self.activation = activation()
 
         self.bn = nn.BatchNorm2d(self.n_filters)
         self.conv = nn.Conv2d(
@@ -326,6 +378,19 @@ class _ResidualModuleMI(nn.Module):
         self,
         X: torch.Tensor,
     ) -> torch.Tensor:
+        """
+        Forward pass of the residual module.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Input tensor of shape (batch_size, ch_names, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after convolution, batch normalization, and activation function.
+        """
         out = self.conv(X)
         out = self.bn(out)
         return self.activation(out)
