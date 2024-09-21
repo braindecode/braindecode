@@ -45,7 +45,15 @@ class _InceptionBlock(nn.Module):
 
 
 class _TCBlock(nn.Module):
-    def __init__(self, in_ch, kernel_length, dialation, padding, drop_prob=0.4):
+    def __init__(
+        self,
+        in_ch,
+        kernel_length,
+        dialation,
+        padding,
+        drop_prob=0.4,
+        activation: nn.Module = nn.ELU,
+    ):
         super().__init__()
         self.pad = padding
         self.tc1 = nn.Sequential(
@@ -58,7 +66,7 @@ class _TCBlock(nn.Module):
                 padding="valid",
             ),
             nn.BatchNorm2d(in_ch),
-            nn.ELU(),
+            activation(),
             nn.Dropout(drop_prob),
         )
 
@@ -72,7 +80,7 @@ class _TCBlock(nn.Module):
                 padding="valid",
             ),
             nn.BatchNorm2d(in_ch),
-            nn.ELU(),
+            activation(),
             nn.Dropout(drop_prob),
         )
 
@@ -105,6 +113,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         Alias for n_chans.
     input_window_samples : int
         Alias for n_times.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+
 
     References
     ----------
@@ -124,6 +136,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         n_chans=None,
         n_times=None,
         drop_prob=0.4,
+        activation: nn.Module = nn.ELU,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
@@ -166,13 +179,22 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         )
         # ======== Inception branches ========================
         block11 = self._get_inception_branch(
-            in_channels=self.n_chans, out_channels=2, kernel_length=16
+            in_channels=self.n_chans,
+            out_channels=2,
+            kernel_length=16,
+            activation=activation,
         )
         block12 = self._get_inception_branch(
-            in_channels=self.n_chans, out_channels=4, kernel_length=32
+            in_channels=self.n_chans,
+            out_channels=4,
+            kernel_length=32,
+            activation=activation,
         )
         block13 = self._get_inception_branch(
-            in_channels=self.n_chans, out_channels=8, kernel_length=64
+            in_channels=self.n_chans,
+            out_channels=8,
+            kernel_length=64,
+            activation=activation,
         )
         self.add_module("inception_block", _InceptionBlock((block11, block12, block13)))
         self.pool1 = self.add_module(
@@ -183,28 +205,48 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "TC_block1",
             _TCBlock(
-                in_ch=14, kernel_length=4, dialation=1, padding=3, drop_prob=drop_prob
+                in_ch=14,
+                kernel_length=4,
+                dialation=1,
+                padding=3,
+                drop_prob=drop_prob,
+                activation=activation,
             ),
         )
         # ================================
         self.add_module(
             "TC_block2",
             _TCBlock(
-                in_ch=14, kernel_length=4, dialation=2, padding=6, drop_prob=drop_prob
+                in_ch=14,
+                kernel_length=4,
+                dialation=2,
+                padding=6,
+                drop_prob=drop_prob,
+                activation=activation,
             ),
         )
         # ================================
         self.add_module(
             "TC_block3",
             _TCBlock(
-                in_ch=14, kernel_length=4, dialation=4, padding=12, drop_prob=drop_prob
+                in_ch=14,
+                kernel_length=4,
+                dialation=4,
+                padding=12,
+                drop_prob=drop_prob,
+                activation=activation,
             ),
         )
         # ================================
         self.add_module(
             "TC_block4",
             _TCBlock(
-                in_ch=14, kernel_length=4, dialation=8, padding=24, drop_prob=drop_prob
+                in_ch=14,
+                kernel_length=4,
+                dialation=8,
+                padding=24,
+                drop_prob=drop_prob,
+                activation=activation,
             ),
         )
 
@@ -214,7 +256,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             nn.Sequential(
                 nn.Conv2d(14, 28, kernel_size=(1, 1)),
                 nn.BatchNorm2d(28),
-                nn.ELU(),
+                activation(),
                 nn.AvgPool2d((1, 4)),
                 nn.Dropout(drop_prob),
             ),
@@ -239,7 +281,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
 
     @staticmethod
     def _get_inception_branch(
-        in_channels, out_channels, kernel_length, depth_multiplier=1
+        in_channels,
+        out_channels,
+        kernel_length,
+        depth_multiplier=1,
+        activation: nn.Module = nn.ELU,
     ):
         return nn.Sequential(
             nn.Conv2d(
@@ -258,5 +304,5 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
                 padding="valid",
             ),
             nn.BatchNorm2d(out_channels),
-            nn.ELU(),
+            activation(),
         )

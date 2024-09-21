@@ -139,7 +139,7 @@ class _DenseSpatialFilter(nn.Module):
         self.collapse = collapse
         if collapse:
             self.channel_collapse = _ConvBlock2D(
-                n_filters, n_filters, (n_chans, 1), drop_prob=0
+                n_filters, n_filters, (n_chans, 1), drop_prob=0, activation=activation
             )
 
     def forward(self, x):
@@ -208,6 +208,7 @@ class _TIDNetFeatures(nn.Module):
         temp_span,
         bottleneck,
         summary,
+        activation: nn.Module = nn.LeakyReLU,
     ):
         super().__init__()
         self.n_chans = n_chans
@@ -223,12 +224,13 @@ class _TIDNetFeatures(nn.Module):
         summary = n_times // pooling if summary == -1 else summary
 
         self.spatial = _DenseSpatialFilter(
-            n_chans,
-            s_growth,
-            spat_layers,
+            n_chans=n_chans,
+            growth=s_growth,
+            depth=spat_layers,
             in_ch=t_filters,
             drop_prob=drop_prob,
             bottleneck=bottleneck,
+            activation=activation(),
         )
         self.extract_features = nn.Sequential(
             nn.AdaptiveAvgPool1d(int(summary)), nn.Flatten(start_dim=1)
@@ -316,6 +318,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
         bottleneck=3,
         summary=-1,
         add_log_softmax=False,
+        activation: nn.Module = nn.ReLU,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -354,6 +357,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
             temp_span=temp_span,
             bottleneck=bottleneck,
             summary=summary,
+            activation=activation,
         )
 
         self._num_features = self.dscnn.num_features

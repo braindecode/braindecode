@@ -130,7 +130,9 @@ class ContraWR(EEGModuleMixin, nn.Module):
         Embedding size for the final layer, by default 256.
     res_channels : list[int], optional
         Number of channels for each residual block, by default [32, 64, 128].
-
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     .. versionadded:: 0.9
 
@@ -158,6 +160,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         emb_size: int = 256,
         res_channels: list[int] = [32, 64, 128],
         steps=20,
+        activation: nn.Module = nn.ELU,
         # Another way to pass the EEG parameters
         chs_info: list[dict[Any, Any]] | None = None,
         n_times: int | None = None,
@@ -194,7 +197,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         )
 
         self.final_layer = nn.Sequential(
-            nn.ELU(),
+            activation(),
             nn.Linear(emb_size, self.n_outputs),
         )
 

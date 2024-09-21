@@ -70,7 +70,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         n_convs=5,
         n_filters=48,
         kernel_unit_s=0.1,
-        activation=nn.ReLU(),
+        activation=nn.ReLU,
         chs_info=None,
         n_times=None,
         in_channels=None,
@@ -108,7 +108,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.n_convs = n_convs
         self.n_filters = n_filters
         self.kernel_unit_s = kernel_unit_s
-        self.activation = activation
+        self.activation = activation()
 
         self.ensuredims = Ensure4d()
         self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")

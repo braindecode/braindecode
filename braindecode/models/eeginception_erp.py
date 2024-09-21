@@ -102,7 +102,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         drop_prob=0.5,
         scales_samples_s=(0.5, 0.25, 0.125),
         n_filters=8,
-        activation=nn.ELU(),
+        activation=nn.ELU,
         batch_norm_alpha=0.01,
         depth_multiplier=2,
         pooling_sizes=(4, 2, 2, 2),
@@ -140,7 +140,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         self.scales_samples = tuple(
             int(size_s * self.sfreq) for size_s in self.scales_samples_s
         )
-        self.activation = activation
+        self.activation = activation()
         self.alpha_momentum = batch_norm_alpha
         self.depth_multiplier = depth_multiplier
         self.pooling_sizes = pooling_sizes

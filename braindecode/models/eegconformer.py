@@ -68,6 +68,11 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     return_features: bool
         If True, the forward method returns the features before the
         last classification layer. Defaults to False.
+    activation: nn.Module
+        Activation function as parameter. Default is nn.ELU
+    activate_transfor: nn.Module
+        Activation function as parameter, applied at the FeedForwardBlock module
+        inside the transformer. Default is nn.GeLU
     n_classes :
         Alias for n_outputs.
     n_channels :
@@ -99,6 +104,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         att_drop_prob=0.5,
         final_fc_length="auto",
         return_features=False,
+        activation: nn.Module = nn.ELU,
+        activation_transfor: nn.Module = nn.GELU,
         n_times=None,
         chs_info=None,
         input_window_seconds=None,
@@ -145,6 +152,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             pool_time_length=pool_time_length,
             stride_avg_pool=pool_time_stride,
             drop_prob=drop_prob,
+            activation=activation,
         )
 
         if final_fc_length == "auto":
@@ -156,9 +164,12 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             emb_size=n_filters_time,
             att_heads=att_heads,
             att_drop=att_drop_prob,
+            activation=activation_transfor,
         )
 
-        self.fc = _FullyConnected(final_fc_length=final_fc_length)
+        self.fc = _FullyConnected(
+            final_fc_length=final_fc_length, activation=activation
+        )
 
         self.final_layer = _FinalLayer(
             n_classes=self.n_outputs,
@@ -217,6 +228,7 @@ class _PatchEmbedding(nn.Module):
         pool_time_length,
         stride_avg_pool,
         drop_prob,
+        activation: nn.Module = nn.ELU,
     ):
         super().__init__()
 
@@ -224,7 +236,7 @@ class _PatchEmbedding(nn.Module):
             nn.Conv2d(1, n_filters_time, (1, filter_time_length), (1, 1)),
             nn.Conv2d(n_filters_time, n_filters_time, (n_channels, 1), (1, 1)),
             nn.BatchNorm2d(num_features=n_filters_time),
-            nn.ELU(),
+            activation(),
             nn.AvgPool2d(
                 kernel_size=(1, pool_time_length), stride=(1, stride_avg_pool)
             ),
@@ -288,17 +300,24 @@ class _ResidualAdd(nn.Module):
 
 
 class _FeedForwardBlock(nn.Sequential):
-    def __init__(self, emb_size, expansion, drop_p):
+    def __init__(self, emb_size, expansion, drop_p, activation: nn.Module = nn.GELU):
         super().__init__(
             nn.Linear(emb_size, expansion * emb_size),
-            nn.GELU(),
+            activation(),
             nn.Dropout(drop_p),
             nn.Linear(expansion * emb_size, emb_size),
         )
 
 
 class _TransformerEncoderBlock(nn.Sequential):
-    def __init__(self, emb_size, att_heads, att_drop, forward_expansion=4):
+    def __init__(
+        self,
+        emb_size,
+        att_heads,
+        att_drop,
+        forward_expansion=4,
+        activation: nn.Module = nn.GELU,
+    ):
         super().__init__(
             _ResidualAdd(
                 nn.Sequential(
@@ -311,7 +330,10 @@ class _TransformerEncoderBlock(nn.Sequential):
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
                     _FeedForwardBlock(
-                        emb_size, expansion=forward_expansion, drop_p=att_drop
+                        emb_size,
+                        expansion=forward_expansion,
+                        drop_p=att_drop,
+                        activation=activation,
                     ),
                     nn.Dropout(att_drop),
                 )
@@ -337,10 +359,14 @@ class _TransformerEncoder(nn.Sequential):
 
     """
 
-    def __init__(self, att_depth, emb_size, att_heads, att_drop):
+    def __init__(
+        self, att_depth, emb_size, att_heads, att_drop, activation: nn.Module = nn.GELU
+    ):
         super().__init__(
             *[
-                _TransformerEncoderBlock(emb_size, att_heads, att_drop)
+                _TransformerEncoderBlock(
+                    emb_size, att_heads, att_drop, activation=activation
+                )
                 for _ in range(att_depth)
             ]
         )
@@ -354,6 +380,7 @@ class _FullyConnected(nn.Module):
         drop_prob_2=0.3,
         out_channels=256,
         hidden_channels=32,
+        activation: nn.Module = nn.ELU,
     ):
         """Fully-connected layer for the transformer encoder.
 
@@ -380,10 +407,10 @@ class _FullyConnected(nn.Module):
         super().__init__()
         self.fc = nn.Sequential(
             nn.Linear(final_fc_length, out_channels),
-            nn.ELU(),
+            activation(),
             nn.Dropout(drop_prob_1),
             nn.Linear(out_channels, hidden_channels),
-            nn.ELU(),
+            activation(),
             nn.Dropout(drop_prob_2),
         )
 

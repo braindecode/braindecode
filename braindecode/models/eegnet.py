@@ -5,7 +5,6 @@
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn.functional import elu
 
 from .base import EEGModuleMixin, deprecated_args
 from .functions import squeeze_final_output
@@ -39,6 +38,9 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         Alias for n_outputs.
     input_window_samples :
         Alias for n_times.
+    activate: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Notes
     -----
@@ -67,6 +69,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         kernel_length=64,
         third_kernel_size=(8, 4),
         drop_prob=0.25,
+        activate: nn.Module = nn.ELU,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
@@ -145,7 +148,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             "bnorm_1",
             nn.BatchNorm2d(self.F1 * self.D, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_1", Expression(elu))
+        self.add_module("elu_1", activate())
 
         self.add_module("pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4)))
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
@@ -179,7 +182,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             "bnorm_2",
             nn.BatchNorm2d(self.F2, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_2", Expression(elu))
+        self.add_module("elu_2", activate())
         self.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
@@ -233,6 +236,9 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         Alias for n_outputs.
     input_window_samples :
         Alias for n_times.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Notes
     -----
@@ -258,6 +264,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         second_kernel_size=(2, 32),
         third_kernel_size=(8, 4),
         drop_prob=0.25,
+        activation: nn.Module = nn.ELU,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
@@ -309,7 +316,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "bnorm_1",
             nn.BatchNorm2d(n_filters_1, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_1", Expression(elu))
+        self.add_module("elu_1", activation())
         # transpose to examples x 1 x (virtual, not EEG) channels x time
         self.add_module("permute_1", Expression(lambda x: x.permute(0, 3, 1, 2)))
 
@@ -336,7 +343,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "bnorm_2",
             nn.BatchNorm2d(n_filters_2, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_2", Expression(elu))
+        self.add_module("elu_2", activation())
         self.add_module("pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
@@ -356,7 +363,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "bnorm_3",
             nn.BatchNorm2d(n_filters_3, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_3", Expression(elu))
+        self.add_module("elu_3", activation())
         self.add_module("pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
