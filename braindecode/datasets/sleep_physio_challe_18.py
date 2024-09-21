@@ -204,7 +204,7 @@ def fetch_pc18_data(subjects, path=None, force_update=False, base_url=PC18_URL):
     return fnames
 
 
-def convert_wfdb_anns_to_mne_annotations(annots):
+def _convert_wfdb_anns_to_mne_annotations(annots):
     """Convert wfdb.io.Annotation format to MNE's.
 
     Parameters
