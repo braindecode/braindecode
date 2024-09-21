@@ -945,7 +945,7 @@ class _WindowsAttentionBlock(nn.Module):
     init_values: float (default=None)
         If not None, use this value to initialize the gamma_1 and gamma_2
         parameters.
-    activate: nn.GELU (default)
+    activation: nn.GELU (default)
         Activation function.
     norm_layer: nn.LayerNorm (default)
         Normalization layer.
