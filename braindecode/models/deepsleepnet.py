@@ -8,7 +8,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal information
-    def __init__(self):
+    def __init__(self, activation: nn.Module = nn.ReLU):
         super().__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(
@@ -20,7 +20,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=64),
-            nn.ReLU(),
+            activation(),
         )
         self.pool1 = nn.MaxPool2d(kernel_size=(1, 8), stride=(1, 8), padding=(0, 2))
         self.dropout = nn.Dropout(p=0.5)
@@ -34,7 +34,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv3 = nn.Sequential(
             nn.Conv2d(
@@ -46,7 +46,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv4 = nn.Sequential(
             nn.Conv2d(
@@ -58,7 +58,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.pool2 = nn.MaxPool2d(kernel_size=(1, 4), stride=(1, 4), padding=(0, 1))
 
@@ -73,7 +73,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
 
 
 class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency information
-    def __init__(self):
+    def __init__(self, activation: nn.Module = nn.ELU):
         super().__init__()
 
         self.conv1 = nn.Sequential(
@@ -86,7 +86,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=64),
-            nn.ReLU(),
+            activation(),
         )
         self.pool1 = nn.MaxPool2d(kernel_size=(1, 4), stride=(1, 4))
         self.dropout = nn.Dropout(p=0.5)
@@ -100,7 +100,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv3 = nn.Sequential(
             nn.Conv2d(
@@ -112,7 +112,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv4 = nn.Sequential(
             nn.Conv2d(
@@ -124,7 +124,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.pool2 = nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 2), padding=(0, 1))
 
@@ -170,6 +170,9 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     return_feats : bool
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
@@ -195,6 +198,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         n_classes=None,
+        activation: nn.Module = nn.ReLU,
     ):
         (n_outputs,) = deprecated_args(
             self,
@@ -210,8 +214,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes
-        self.cnn1 = _SmallCNN()
-        self.cnn2 = _LargeCNN()
+        self.cnn1 = _SmallCNN(activation=activation)
+        self.cnn2 = _LargeCNN(activation=activation)
         self.dropout = nn.Dropout(0.5)
         self.bilstm = _BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
         self.fc = nn.Sequential(

@@ -69,7 +69,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         kernel_length=64,
         third_kernel_size=(8, 4),
         drop_prob=0.25,
-        activate: nn.Module = nn.ELU,
+        activation: nn.Module = nn.ELU,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
@@ -148,7 +148,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             "bnorm_1",
             nn.BatchNorm2d(self.F1 * self.D, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_1", activate())
+        self.add_module("elu_1", activation())
 
         self.add_module("pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4)))
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
@@ -182,7 +182,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             "bnorm_2",
             nn.BatchNorm2d(self.F2, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_2", activate())
+        self.add_module("elu_2", activation())
         self.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 

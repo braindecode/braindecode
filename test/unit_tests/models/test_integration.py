@@ -3,7 +3,7 @@
 #          Pierre Guetschel
 #
 # License: BSD-3
-
+import inspect
 from copy import deepcopy
 
 import mne
@@ -206,3 +206,28 @@ def test_model_integration_full(model_name, required_params, signal_params):
     )
 
     clf.fit(X=epo, y=y)
+
+
+@pytest.mark.parametrize('model_class', models_dict.values())
+def test_model_has_activation_parameter(model_class):
+    """
+    Test that checks if the model class's __init__ method has a parameter
+    named 'activation' or any parameter that starts with 'activation'.
+    """
+    # Get the __init__ method of the class
+    init_method = model_class.__init__
+
+    # Get the signature of the __init__ method
+    sig = inspect.signature(init_method)
+
+    # Get the parameter names, excluding 'self'
+    param_names = [param_name for param_name in sig.parameters if param_name != 'self']
+
+    # Check if any parameter name contains 'activation'
+    has_activation_param = any('activation' in name for name in param_names)
+
+    # Assert that the activation parameter exists
+    assert has_activation_param, (
+        f"{model_class.__name__} does not have an activation parameter."
+        f" Found parameters: {param_names}"
+    )

@@ -35,7 +35,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         Non-linear function to be used after convolution layers.
     pool_mode: str
         Method to use on pooling layers. "max" or "mean".
-    pool_nonlin: callable
+    activation_pool_nonlin: callable
         Non-linear function to be used after pooling layers.
     split_first_layer: bool
         Split first layer into temporal and spatial layers (True) or just use temporal (False).
@@ -77,7 +77,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         final_conv_length="auto",
         conv_nonlin=square,
         pool_mode="mean",
-        pool_nonlin=safe_log,
+        activation_pool_nonlin=safe_log,
         split_first_layer=True,
         batch_norm=True,
         batch_norm_alpha=0.1,
@@ -117,7 +117,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.final_conv_length = final_conv_length
         self.conv_nonlin = conv_nonlin
         self.pool_mode = pool_mode
-        self.pool_nonlin = pool_nonlin
+        self.pool_nonlin = activation_pool_nonlin
         self.split_first_layer = split_first_layer
         self.batch_norm = batch_norm
         self.batch_norm_alpha = batch_norm_alpha
