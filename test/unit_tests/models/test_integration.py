@@ -11,6 +11,7 @@ import torch
 import numpy as np
 import pytest
 
+from torch import nn
 from skorch.dataset import ValidSplit
 
 from braindecode.models.util import models_dict, models_mandatory_parameters
@@ -231,3 +232,27 @@ def test_model_has_activation_parameter(model_class):
         f"{model_class.__name__} does not have an activation parameter."
         f" Found parameters: {param_names}"
     )
+
+
+@pytest.mark.parametrize('model_class', models_dict.values())
+def test_activation_default_parameters_are_nn_module_classes(model_class):
+    """
+    Test that checks if all parameters with default values in the model class's
+    __init__ method are nn.Module classes and not initialized instances.
+    """
+    init_method = model_class.__init__
+
+    sig = inspect.signature(init_method)
+
+    # Filtering parameters with 'activation' in their names
+    activation_list = [
+        value for key, value in sig.parameters.items()
+        if 'activation' in key.lower()
+    ]
+    for activation in activation_list:
+
+        assert issubclass(activation.default, nn.Module), (
+            f"In class {model_class.__name__}, parameter has a default value "
+            f"that is an initialized nn.Module instance. Default values should be nn.Module "
+            f"classes (like nn.ReLU), not instances (like nn.ReLU())."
+        )
