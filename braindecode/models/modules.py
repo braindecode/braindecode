@@ -54,6 +54,42 @@ class Expression(nn.Module):
         return self.__class__.__name__ + "(expression=%s) " % expression_str
 
 
+class SafeLog(nn.Module):
+    """
+    Safe logarithm activation function module.
+
+    This module computes the logarithm of its input tensor while preventing issues with zero or
+    negative values by clamping the input to a minimum value epsilon before applying the logarithm.
+
+    Parameters
+    ----------
+    eps : float, optional
+        A small value to clamp the input tensor to prevent computing log(0) or log of negative numbers.
+        Default is 1e-6.
+
+    """
+
+    def __init__(self, eps=1e-6):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x):
+        """
+        Forward pass of the SafeLog module.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying safe logarithm.
+        """
+        return torch.log(torch.clamp(x, min=self.eps))
+
+
 class AvgPool2dWithConv(nn.Module):
     """
     Compute average pooling using a convolution, to have the dilation parameter.

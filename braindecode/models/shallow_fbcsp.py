@@ -9,43 +9,7 @@ from einops.layers.torch import Rearrange
 
 from .base import EEGModuleMixin, deprecated_args
 from .functions import square, squeeze_final_output
-from .modules import CombinedConv, Ensure4d, Expression
-
-
-class SafeLog(nn.Module):
-    """
-    Safe logarithm activation function module.
-
-    This module computes the logarithm of its input tensor while preventing issues with zero or
-    negative values by clamping the input to a minimum value epsilon before applying the logarithm.
-
-    Parameters
-    ----------
-    eps : float, optional
-        A small value to clamp the input tensor to prevent computing log(0) or log of negative numbers.
-        Default is 1e-6.
-
-    """
-
-    def __init__(self, eps=1e-6):
-        super().__init__()
-        self.eps = eps
-
-    def forward(self, x):
-        """
-        Forward pass of the SafeLog module.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor.
-
-        Returns
-        -------
-        torch.Tensor
-            Output tensor after applying safe logarithm.
-        """
-        return torch.log(torch.clamp(x, min=self.eps))
+from .modules import CombinedConv, Ensure4d, Expression, SafeLog
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
