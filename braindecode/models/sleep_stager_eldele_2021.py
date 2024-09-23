@@ -211,6 +211,19 @@ class _SELayer(nn.Module):
         )
 
     def forward(self, x):
+        """
+        Forward pass of the SE layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, channel, length).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying the SE recalibration.
+        """
         b, c, _ = x.size()
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1)
@@ -244,6 +257,19 @@ class _SEBasicBlock(nn.Module):
         )
 
     def forward(self, x):
+        """
+        Forward pass of the SE layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying the SE recalibration.
+        """
         residual = x
         out = self.features(x)
 
