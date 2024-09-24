@@ -151,6 +151,7 @@ class TSception(EEGModuleMixin, nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_size, self.n_outputs),
         )
+        print("to-do: put a warning about the channels order")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """

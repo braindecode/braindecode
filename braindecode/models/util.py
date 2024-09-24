@@ -228,4 +228,5 @@ models_mandatory_parameters = [
     ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ContraWR", ["n_chans", "n_outputs", "sfreq"], dict(sfreq=200)),
     ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
+    ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
 ]
