@@ -64,6 +64,8 @@ API changes
 ~~~~~~~~~~~
 - Expose the ``use_mne_epochs parameter`` of :function:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
+- Removing deprecated EEGInception, the correct named is :class:`braindecode.models.EEGInceptionERP` and deprecating :class:`braindecode.models.EEGNetv1` (:gh:`639` by `Bruno Aristimunha`_)
+
 
 .. _changes_0_8_0:
 Current 0.8 (11-2022)
