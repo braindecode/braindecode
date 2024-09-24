@@ -6,6 +6,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn.functional import elu
+from mne.utils import warn
 
 from .base import EEGModuleMixin, deprecated_args
 from .functions import squeeze_final_output
@@ -283,6 +284,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
+        warn(
+            "The class EEGNetv1 is deprecated and will be removed in the "
+            "release 1.0 of braindecode. Please use "
+            "braindecode.models.EEGNetv4 instead in the future.",
+            DeprecationWarning,
+        )
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.final_conv_length = final_conv_length
@@ -298,6 +305,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
 
+        warn(
+            "The class EEGInception is deprecated and will be removed in the "
+            "release 0.9 of braindecode. Please use "
+            "braindecode.models.EEGInceptionERP instead in the future.",
+            DeprecationWarning,
+        )
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
         n_filters_1 = 16
