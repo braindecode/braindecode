@@ -17,6 +17,10 @@ class TSception(EEGModuleMixin, nn.Module):
     [1]_. This model is designed to capture both temporal and spatial
     features of EEG signals for tasks like emotion recognition.
 
+    Code from: https://github.com/deepBrains/TSception
+
+    TO-DO: put warning and note
+
     Parameters
     ----------
     num_temporal_filters : int, optional
