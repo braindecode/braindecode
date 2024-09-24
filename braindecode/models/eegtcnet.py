@@ -117,12 +117,12 @@ class TCNBlock(nn.Module):
         depth: int,
         kernel_size: int,
         filters: int,
-        dropout: float,
+        drop_prob: float,
         activation: nn.Module = nn.ELU,
     ):
         super().__init__()
         self.activation = activation()
-        self.dropout = dropout
+        self.drop_prob = drop_prob
         self.depth = depth
         self.filters = filters
         self.kernel_size = kernel_size
@@ -148,7 +148,7 @@ class TCNBlock(nn.Module):
                 ),
                 Chomp1d(padding),
                 self.activation,
-                nn.Dropout(dropout),
+                nn.Dropout(self.drop_prob),
                 nn.Conv1d(
                     in_channels=filters,
                     out_channels=filters,
@@ -159,7 +159,7 @@ class TCNBlock(nn.Module):
                 ),
                 Chomp1d(padding),
                 self.activation,
-                nn.Dropout(dropout),
+                nn.Dropout(self.drop_prob),
             )
             self.layers.append(conv_block)
 
@@ -270,7 +270,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             depth=self.depth,
             kernel_size=self.kernel_size,
             filters=self.filters,
-            dropout=self.dropout,
+            drop_prob=self.drop_prob,
             activation=self.activation,
         )
 
