@@ -163,7 +163,7 @@ def test_model_integration(model_name, required_params, signal_params):
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
 )
-def test_model_integration_full(model_name, required_params, signal_params):
+def test_model_integration_full_last_layer(model_name, required_params, signal_params):
     """
     Full test of the models compatibility with the skorch wrappers.
     In particular, it tests if the wrappers can set the signal-related parameters
@@ -171,14 +171,8 @@ def test_model_integration_full(model_name, required_params, signal_params):
 
     Parameters
     ----------
-    model_name : str
+    model_class : str
         The name of the model to test.
-    required_params : list[str]
-        The signal-related parameters that are needed to initialize the model.
-    signal_params : dict | None
-        The characteristics of the signal that should be passed to the model tested
-        in case the default_signal_params are not compatible with this model.
-        The keys of this dictionary can only be among those of default_signal_params.
 
     """
     model_cropped_only = ["TCN", "HybridNet"]
@@ -206,3 +200,6 @@ def test_model_integration_full(model_name, required_params, signal_params):
     )
 
     clf.fit(X=epo, y=y)
+    last_layers_name = list(clf.module_.named_children())[-2:]
+
+    assert len([name for name, _ in last_layers_name if name == "final_layer"]) > 0
