@@ -163,7 +163,7 @@ def test_model_integration(model_name, required_params, signal_params):
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
 )
-def test_model_integration_full_last_layer(model_name, required_params, signal_params):
+def test_model_integration_full(model_name, required_params, signal_params):
     """
     Full test of the models compatibility with the skorch wrappers.
     In particular, it tests if the wrappers can set the signal-related parameters
@@ -171,8 +171,66 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
 
     Parameters
     ----------
-    model_class : str
+    model_name : str
         The name of the model to test.
+    required_params : list[str]
+        The signal-related parameters that are needed to initialize the model.
+    signal_params : dict | None
+        The characteristics of the signal that should be passed to the model tested
+        in case the default_signal_params are not compatible with this model.
+        The keys of this dictionary can only be among those of default_signal_params.
+
+    """
+    model_cropped_only = ["TCN", "HybridNet"]
+
+    if model_name in model_cropped_only:
+        pytest.skip(f"Skipping {model_name} as it only supports cropped datasets")
+
+    epo, y = get_epochs_y(signal_params, n_epochs=10)
+
+    LEARNING_RATE = 0.0625 * 0.01
+    BATCH_SIZE = 2
+    EPOCH = 1
+    seed = 2409
+    valid_split = 0.2
+
+    clf = EEGClassifier(
+        module=model_name,
+        optimizer=torch.optim.Adam,
+        optimizer__lr=LEARNING_RATE,
+        batch_size=BATCH_SIZE,
+        max_epochs=EPOCH,
+        classes=[0, 1],
+        train_split=ValidSplit(valid_split, random_state=seed),
+        verbose=0,
+    )
+
+    clf.fit(X=epo, y=y)
+
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", models_mandatory_parameters
+)
+def test_model_integration_full_last_layer(model_name, required_params, signal_params):
+    """
+    Test that the last layers of the model include a layer named 'final_layer'.
+
+    This test iterates over various models defined in `models_mandatory_parameters`
+    to ensure that each model has a layer named 'final_layer' among its last two layers.
+    Models that only support cropped datasets are skipped.
+
+    Parameters
+    ----------
+    model_name : str
+        Name of the model to be tested.
+    required_params : dict
+        Required parameters for the model.
+    signal_params : dict
+        Parameters related to the input signals.
+
+    Raises
+    ------
+    AssertionError
+        If 'final_layer' is not found among the last two layers of the model.
 
     """
     model_cropped_only = ["TCN", "HybridNet"]
