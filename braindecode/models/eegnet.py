@@ -305,12 +305,6 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
 
-        warn(
-            "The class EEGInception is deprecated and will be removed in the "
-            "release 0.9 of braindecode. Please use "
-            "braindecode.models.EEGInceptionERP instead in the future.",
-            DeprecationWarning,
-        )
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
         n_filters_1 = 16
