@@ -74,9 +74,9 @@ class _EEGNetTC(nn.Module):
         self.separable_conv_depthwise = nn.Conv2d(
             in_channels=self.filter_2,
             out_channels=self.filter_2,
-            kernel_size=(16, 1),
+            kernel_size=(self.filter_2, 1),
             groups=self.filter_2,
-            padding=(16 // 2, 0),
+            padding=(self.filter_2 // 2, 0),
             bias=False,
         )
         self.separable_conv_pointwise = nn.Conv2d(
@@ -86,7 +86,7 @@ class _EEGNetTC(nn.Module):
             bias=False,
         )
         self.bn3 = nn.BatchNorm2d(self.filter_2)
-        self.pool2 = nn.AvgPool2d(kernel_size=(8, 1))
+        self.pool2 = nn.AvgPool2d(kernel_size=(self.filter_1, 1))
         self.drop2 = nn.Dropout(p=drop_prob)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
