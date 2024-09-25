@@ -816,7 +816,7 @@ def test_model_trainable_parameters_biot(default_biot_params):
     biot = BIOT(**default_biot_params)
 
     biot_encoder = biot.encoder.parameters()
-    biot_classifier = biot.classifier.parameters()
+    biot_classifier = biot.final_layer.parameters()
 
     trainable_params_bio = sum(
         p.numel() for p in biot_encoder if p.requires_grad)
@@ -965,7 +965,7 @@ def test_labram_n_outputs_0(default_labram_params):
     with torch.no_grad():
         out = labram_base(X)
         assert out.shape[-1] == default_labram_params["patch_size"]
-        assert isinstance(labram_base.head, nn.Identity)
+        assert isinstance(labram_base.final_layer, nn.Identity)
 
 
 @pytest.fixture
