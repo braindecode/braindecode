@@ -48,6 +48,7 @@ dependencies = [
     'einops',
     'joblib',
     'torchinfo',
+    'wfdb',
     'linear_attention_transformer',
     'docstring_inheritance',
 ]
