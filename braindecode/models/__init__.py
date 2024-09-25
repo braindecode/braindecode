@@ -32,6 +32,7 @@ from .contrawr import ContraWR
 from .eegnex import EEGNeX
 from .eegtcnet import EEGTCNet
 from .eegchannelnet import EEGChannelNet
+from .syncnet import SyncNet
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.

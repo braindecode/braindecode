@@ -71,7 +71,6 @@ Models
     DeepSleepNet
     EEGChannelNet
     EEGConformer
-    EEGInception
     EEGInceptionERP
     EEGInceptionMI
     EEGITNet
@@ -88,10 +87,12 @@ Models
     SleepStagerChambon2018
     SleepStagerEldele2021
     SPARCNet
+    SyncNet
     TCN
     TIDNet
     TimeDistributed
     USleep
+
 
 Training
 ========
