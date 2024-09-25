@@ -21,6 +21,7 @@ from braindecode.models import (
     Deep4Net,
     EEGNetv4,
     EEGNetv1,
+    EEGTCNet,
     HybridNet,
     ShallowFBCSPNet,
     EEGResNet,
@@ -1086,3 +1087,11 @@ def test_parameters_SPARCNet():
     # 0.79M parameters according to the Labram paper, table 1
     # The model parameters are indeed in the n_times range
     assert np.round(n_params / 1e6, 1) == 0.8
+
+
+def test_parameters_EEGTCNet():
+
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1000)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # 4.27 K according to the Table V from the original paper.
+    assert np.round(n_params / 1e3, 1) == 4.2
