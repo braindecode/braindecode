@@ -440,25 +440,13 @@ class FeaturesExtractor(nn.Module):
 
 
 class EEGChannelNet(EEGModuleMixin, nn.Module):
-    """EEG ChannelNet model for EEG classification.
+    """EEG ChannelNet model from [EEGChannelNet]_.
 
     The model applies temporal and spatial convolutions to extract features from EEG signals,
     followed by residual blocks and fully connected layers for classification.
 
     Parameters
     ----------
-    n_chans : int
-        Number of EEG channels (input height).
-    n_times : int
-        Number of time samples (input width).
-    n_outputs : int
-        Number of output classes.
-    chs_info : dict or None, optional
-        Channel info. Default is None.
-    input_window_seconds : float or None, optional
-        Input window length in seconds. Default is None.
-    sfreq : float or None, optional
-        Sampling frequency. Default is None.
     temp_channels : int, optional
         Number of channels in the temporal block. Default is 10.
     out_channels : int, optional
@@ -486,28 +474,54 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+
+    Notes
+    -----
+    This implementation is not guaranteed to be correct! it has not been checked
+    by original authors. The modifications are based on derivated code from
+    [CodeICASSP2025]_.
+
+    References
+    ----------
+    .. [EEGChannelNet] Palazzo, S., Spampinato, C., Kavasidis, I., Giordano, D.,
+       Schmidt, J., & Shah, M. (2020). Decoding brain representations by
+       multimodal learning of neural activity and visual features.
+       IEEE Transactions on Pattern Analysis and Machine Intelligence,
+       43(11), 3833-3849.
+    .. [CodeICASSP2025] Code from Baselines for EEG-Music Emotion Recognition
+       Grand Challenge at ICASSP 2025.
+       https://github.com/SalvoCalcagno/eeg-music-challenge-icassp-2025-baselines
+
     """
 
     def __init__(
         self,
-        n_chans,
-        n_times,
-        n_outputs,
+        # Braindecode's parameters
+        n_chans=None,
+        n_times=None,
+        n_outputs=None,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        temp_channels=10,
-        out_channels=50,
-        embedding_size=1000,
-        temporal_dilation_list=[(1, 1), (1, 2), (1, 4), (1, 8), (1, 16)],
-        temporal_kernel=(1, 33),
-        temporal_stride=(1, 2),
-        num_temporal_layers=4,
-        num_spatial_layers=4,
-        spatial_stride=(2, 1),
-        num_residual_blocks=4,
-        down_kernel=3,
-        down_stride=2,
+        # model's parameters
+        temp_channels: int = 10,
+        out_channels: int = 50,
+        embedding_size: int = 1000,
+        temporal_dilation_list: list[tuple[int, int]] = [
+            (1, 1),
+            (1, 2),
+            (1, 4),
+            (1, 8),
+            (1, 16),
+        ],
+        temporal_kernel: tuple[int, int] = (1, 33),
+        temporal_stride: tuple[int, int] = (1, 2),
+        num_temporal_layers: int = 4,
+        num_spatial_layers: int = 4,
+        spatial_stride: tuple[int, int] = (2, 1),
+        num_residual_blocks: int = 4,
+        down_kernel: int = 3,
+        down_stride: int = 2,
         activation: nn.Module = nn.ReLU,
     ):
         super().__init__(
@@ -539,7 +553,8 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
             activation=self.activation,
         )
 
-        # Compute the encoding size by passing a dummy input through the encoder
+        # Compute the encoding size by passing a dummy input through the
+        # encoder
         encoding_size = self.calculate_embedding_size()
 
         self.embedding = nn.Sequential(
