@@ -345,7 +345,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             extra_params=extra_params,
         )
 
-        self.classifier = nn.Sequential(
+        self.final_layer = nn.Sequential(
             nn.Flatten(), nn.Linear(seq_lengths[-1] * ch_dim, self.n_outputs)
         )
 
@@ -353,7 +353,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         x = self.input_block(x)
         x = self.channel_expansion(x)
         x = self.channel_attention_block(x)
-        x = self.classifier(x)
+        x = self.final_layer(x)
         return x
 
     @staticmethod
