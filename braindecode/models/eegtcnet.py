@@ -266,6 +266,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         self.kernel_size = kernel_size
         self.filters = filters
         self.max_norm_const = max_norm_const
+        self.filter_2 = self.filter_1 * self.depth_multiplier
 
         self.arrange_dim_input = Rearrange(
             "batch nchans ntimes -> batch 1 ntimes nchans"
@@ -284,9 +285,8 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         )
 
         # TCN Block
-        self.F2 = self.filter_1 * self.depth_multiplier
         self.tcn_block = _TCNBlock(
-            input_dimension=self.F2,
+            input_dimension=self.filter_2,
             depth=self.depth,
             kernel_size=self.kernel_size,
             filters=self.filters,
