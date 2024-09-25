@@ -48,6 +48,12 @@ class SyncNet(EEGModuleMixin, nn.Module):
     omega_maxval : float, optional
         Maximum value for initializing frequency parameter ``omega``. Default is 1.
 
+    Notes
+    -----
+    This implementation is not guaranteed to be correct! it has not been checked
+    by original authors. The modifications are based on derivated code from
+    [CodeICASSP2025]_.
+
 
     References
     ----------
