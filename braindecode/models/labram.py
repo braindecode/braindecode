@@ -259,9 +259,9 @@ class Labram(EEGModuleMixin, nn.Module):
         self.fc_norm = norm_layer(self.emb_size) if use_mean_pooling else None
 
         if self.n_outputs > 0:
-            self.head = nn.Linear(self.emb_size, self.n_outputs)
+            self.final_layer = nn.Linear(self.emb_size, self.n_outputs)
         else:
-            self.head = nn.Identity()
+            self.final_layer = nn.Identity()
 
         self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
@@ -277,16 +277,16 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.position_embedding is not None:
             trunc_normal_(self.position_embedding, std=0.02)
 
-        if isinstance(self.head, nn.Linear):
-            trunc_normal_(self.head.weight, std=0.02)
+        if isinstance(self.final_layer, nn.Linear):
+            trunc_normal_(self.final_layer.weight, std=0.02)
 
         for layer_id, layer in enumerate(self.blocks):
             rescale_parameter(layer.attn.proj.weight.data, layer_id + 1)
             rescale_parameter(layer.mlp[-2].weight.data, layer_id + 1)
 
-        if isinstance(self.head, nn.Linear):
-            self.head.weight.data.mul_(self.init_scale)
-            self.head.bias.data.mul_(self.init_scale)
+        if isinstance(self.final_layer, nn.Linear):
+            self.final_layer.weight.data.mul_(self.init_scale)
+            self.final_layer.bias.data.mul_(self.init_scale)
 
     @staticmethod
     def _init_weights(layer):
@@ -436,7 +436,7 @@ class Labram(EEGModuleMixin, nn.Module):
             return_patch_tokens=return_patch_tokens,
             return_all_tokens=return_all_tokens,
         )
-        x = self.head(x)
+        x = self.final_layer(x)
         return x
 
     def get_classifier(self):
@@ -448,7 +448,7 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.nn.Module
             The classifier of the head model.
         """
-        return self.head
+        return self.final_layer
 
     def reset_classifier(self, n_outputs):
         """
@@ -460,7 +460,7 @@ class Labram(EEGModuleMixin, nn.Module):
             The new number of classes.
         """
         self.n_outputs = n_outputs
-        self.head = (
+        self.final_layer = (
             nn.Linear(self.emb_dim, self.n_outputs)
             if self.n_outputs > 0
             else nn.Identity()
