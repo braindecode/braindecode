@@ -146,7 +146,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
         )
         self.beta = nn.Parameter(
             torch.FloatTensor(1, 1, 1, self.num_filters).uniform_(
-                self.self.phase_init_values[0], self.self.phase_init_values[1]
+                self.phase_init_values[0], self.phase_init_values[1]
             )
         )
 
