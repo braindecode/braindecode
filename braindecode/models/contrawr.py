@@ -30,6 +30,9 @@ class ResBlock(nn.Module):
         Kernel size of the convolutional layers.
     padding : int (default=1)
         Padding of the convolutional layers.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     Examples
     --------
@@ -51,6 +54,7 @@ class ResBlock(nn.Module):
         kernel_size=3,
         padding=1,
         drop_prob=0.5,
+        activation: nn.Module = nn.ReLU,
     ):
         super(ResBlock, self).__init__()
         self.conv1 = nn.Conv2d(
@@ -61,7 +65,7 @@ class ResBlock(nn.Module):
             padding=padding,
         )
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU()
+        self.relu = activation()
         self.conv2 = nn.Conv2d(
             in_channels=out_channels,
             out_channels=out_channels,
@@ -130,7 +134,9 @@ class ContraWR(EEGModuleMixin, nn.Module):
         Embedding size for the final layer, by default 256.
     res_channels : list[int], optional
         Number of channels for each residual block, by default [32, 64, 128].
-
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     .. versionadded:: 0.9
 
@@ -158,6 +164,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         emb_size: int = 256,
         res_channels: list[int] = [32, 64, 128],
         steps=20,
+        activation: nn.Module = nn.ELU,
         # Another way to pass the EEG parameters
         chs_info: list[dict[Any, Any]] | None = None,
         n_times: int | None = None,
@@ -194,7 +201,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         )
 
         self.final_layer = nn.Sequential(
-            nn.ELU(),
+            activation(),
             nn.Linear(emb_size, self.n_outputs),
         )
 

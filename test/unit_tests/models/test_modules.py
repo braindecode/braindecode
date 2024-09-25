@@ -8,7 +8,7 @@ import torch
 from torch import nn
 
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath
+from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog
 from braindecode.models.labram import _SegmentPatch
 
 from braindecode.models.functions import drop_path
@@ -272,3 +272,36 @@ def test_drop_path_different_dimensions():
     assert (
         output_2d.shape == x_2d.shape and output_3d.shape == x_3d.shape
     ), "Output tensor must maintain input shape across different dimensions."
+
+
+
+@pytest.mark.parametrize(
+    "eps, expected_repr",
+    [
+        (1e-6, "eps=1e-06"),
+        (1e-4, "eps=0.0001"),
+        (1e-8, "eps=1e-08"),
+        (0.0, "eps=0.0"),
+        (123.456, "eps=123.456"),
+    ]
+)
+def test_safelog_extra_repr(eps, expected_repr):
+    """
+    Test the extra_repr method of the SafeLog class to ensure it returns
+    the correct string representation based on the eps value.
+
+    Parameters
+    ----------
+    eps : float
+        The epsilon value to initialize SafeLog with.
+    expected_repr : str
+        The expected string output from extra_repr.
+    """
+    # Initialize the SafeLog module with the given eps
+    module = SafeLog(eps=eps)
+
+    # Get the extra representation
+    repr_output = module.extra_repr()
+
+    # Assert that the extra_repr output matches the expected string
+    assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"

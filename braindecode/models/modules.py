@@ -12,7 +12,12 @@ from torch import Tensor
 from typing import Optional
 import math
 
-from .functions import drop_path, _apply_sinc_resample_kernel, _get_sinc_resample_kernel
+from .functions import (
+    drop_path,
+    _apply_sinc_resample_kernel,
+    _get_sinc_resample_kernel,
+    safe_log,
+)
 from ..util import np_to_th
 
 
@@ -52,6 +57,45 @@ class Expression(nn.Module):
         else:
             expression_str = repr(self.expression_fn)
         return self.__class__.__name__ + "(expression=%s) " % expression_str
+
+
+class SafeLog(nn.Module):
+    """
+    Safe logarithm activation function module.
+
+    :math:\text{SafeLog}(x) = \log\left(\max(x, \epsilon)\right)
+
+    Parameters
+    ----------
+    eps : float, optional
+        A small value to clamp the input tensor to prevent computing log(0) or log of negative numbers.
+        Default is 1e-6.
+
+    """
+
+    def __init__(self, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x) -> Tensor:
+        """
+        Forward pass of the SafeLog module.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying safe logarithm.
+        """
+        return safe_log(x=x, eps=self.eps)
+
+    def extra_repr(self) -> str:
+        eps_str = f"eps={self.eps}"
+        return eps_str
 
 
 class AvgPool2dWithConv(nn.Module):

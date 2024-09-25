@@ -279,7 +279,7 @@ def test_eeginception_erp_n_params(model_cls):
         drop_prob=0.5,
         n_filters=8,
         scales_samples_s=(0.5, 0.25, 0.125),
-        activation=torch.nn.ELU(),
+        activation=torch.nn.ELU,
     )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)

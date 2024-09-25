@@ -119,7 +119,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         tcn_kernel_size=4,
         tcn_n_filters=32,
         tcn_dropout=0.3,
-        tcn_activation=nn.ELU(),
+        tcn_activation: nn.Module = nn.ELU,
         concat=False,
         max_norm_const=0.25,
         chs_info=None,
@@ -500,11 +500,11 @@ class _TCNResidualBlock(nn.Module):
         kernel_size=4,
         n_filters=32,
         dropout=0.3,
-        activation=nn.ELU(),
+        activation: nn.Module = nn.ELU,
         dilation=1,
     ):
         super().__init__()
-        self.activation = activation
+        self.activation = activation()
         self.dilation = dilation
         self.dropout = dropout
         self.n_filters = n_filters
