@@ -30,6 +30,9 @@ class ConvLayer2D(nn.Sequential):
         Spacing between kernel elements.
     dropout_rate : float, optional
         Dropout rate after the convolution. Default is 0.2.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     """
 
     def __init__(
@@ -41,10 +44,11 @@ class ConvLayer2D(nn.Sequential):
         padding,
         dilation,
         dropout_rate=0.2,
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__()
         self.add_module("norm", nn.BatchNorm2d(in_channels))
-        self.add_module("relu", nn.ReLU(inplace=True))
+        self.add_module("relu", activation(inplace=True))
         self.add_module(
             "conv",
             nn.Conv2d(
@@ -80,10 +84,20 @@ class TemporalBlock(nn.Module):
         Stride for the convolutional layers.
     dilation_list : list of tuples
         List of dilation factors for each layer.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     """
 
     def __init__(
-        self, in_channels, out_channels, n_layers, kernel_size, stride, dilation_list
+        self,
+        in_channels,
+        out_channels,
+        n_layers,
+        kernel_size,
+        stride,
+        dilation_list,
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__()
         if len(dilation_list) < n_layers:
@@ -109,6 +123,7 @@ class TemporalBlock(nn.Module):
                     stride,
                     padding[i],
                     dilation_list[i],
+                    activation=activation,
                 )
                 for i in range(n_layers)
             ]
@@ -155,10 +170,19 @@ class SpatialBlock(nn.Module):
         Stride for the convolutional layers.
     input_height : int
         Height of the input tensor (number of channels).
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     """
 
     def __init__(
-        self, in_channels, out_channels, num_spatial_layers, stride, input_height
+        self,
+        in_channels,
+        out_channels,
+        num_spatial_layers,
+        stride,
+        input_height,
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__()
 
@@ -182,6 +206,7 @@ class SpatialBlock(nn.Module):
                     stride,
                     padding[i],
                     dilation=1,
+                    activation=activation,
                 )
                 for i in range(num_spatial_layers)
             ]
@@ -223,9 +248,19 @@ class ResidualBlock(nn.Module):
         Stride of the convolution. Default is 1.
     downsample : nn.Module or None, optional
         Downsampling layer to match dimensions. Default is None.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     """
 
-    def __init__(self, in_channels, out_channels, stride=1, downsample=None):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        stride=1,
+        downsample=None,
+        activation: nn.Module = nn.ReLU,
+    ):
         super().__init__()
         self.conv1 = nn.Conv2d(
             in_channels=in_channels,
@@ -236,7 +271,7 @@ class ResidualBlock(nn.Module):
             bias=False,
         )
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = activation(inplace=True)
         self.conv2 = nn.Conv2d(
             in_channels=out_channels,
             out_channels=out_channels,
@@ -307,6 +342,9 @@ class FeaturesExtractor(nn.Module):
         Kernel size for downsampling convolution.
     down_stride : int
         Stride for downsampling convolution.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     """
 
     def __init__(
@@ -324,6 +362,7 @@ class FeaturesExtractor(nn.Module):
         num_residual_blocks,
         down_kernel,
         down_stride,
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__()
 
@@ -334,6 +373,7 @@ class FeaturesExtractor(nn.Module):
             temporal_kernel,
             temporal_stride,
             temporal_dilation_list,
+            activation=activation,
         )
 
         self.spatial_block = SpatialBlock(
@@ -342,6 +382,7 @@ class FeaturesExtractor(nn.Module):
             num_spatial_layers,
             spatial_stride,
             input_height,
+            activation=activation,
         )
 
         res_blocks = []
@@ -350,6 +391,7 @@ class FeaturesExtractor(nn.Module):
                 ResidualBlock(
                     out_channels * num_spatial_layers,
                     out_channels * num_spatial_layers,
+                    activation=activation,
                 ),
                 ConvLayer2D(
                     out_channels * num_spatial_layers,
@@ -358,6 +400,7 @@ class FeaturesExtractor(nn.Module):
                     stride=(down_stride, down_stride),
                     padding=0,
                     dilation=1,
+                    activation=activation,
                 ),
             )
             res_blocks.append(res_block)
@@ -440,6 +483,9 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
         Size of the bottleneck kernel. Default is 3.
     down_stride : int, optional
         Size of the bottleneck stride. Default is 2.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     """
 
     def __init__(
@@ -462,6 +508,7 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
         num_residual_blocks=4,
         down_kernel=3,
         down_stride=2,
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -472,6 +519,8 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
+
+        self.activation = activation
 
         self.encoder = FeaturesExtractor(
             in_channels=1,
@@ -487,13 +536,14 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
             num_residual_blocks=num_residual_blocks,
             down_kernel=down_kernel,
             down_stride=down_stride,
+            activation=self.activation,
         )
 
         # Compute the encoding size by passing a dummy input through the encoder
         encoding_size = self.calculate_embedding_size()
 
         self.embedding = nn.Sequential(
-            nn.Linear(encoding_size, embedding_size), nn.ReLU(inplace=True)
+            nn.Linear(encoding_size, embedding_size), self.activation(inplace=True)
         )
 
         self.final_layer = nn.Linear(embedding_size, self.n_outputs)
