@@ -13,7 +13,7 @@ from braindecode.models.tcn import Chomp1d
 from braindecode.models.modules import MaxNormLinear
 
 
-class EEGNetTC(nn.Module):
+class _EEGNetTC(nn.Module):
     """EEGNet Temporal Convolutional Network (TCN) block.
 
     Parameters
@@ -111,7 +111,7 @@ class EEGNetTC(nn.Module):
         return x  # Shape: (batch_size, F2, reduced_time, 1)
 
 
-class TCNBlock(nn.Module):
+class _TCNBlock(nn.Module):
     def __init__(
         self,
         input_dimension: int,
@@ -257,7 +257,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
             "batch nchans ntimes -> batch 1 ntimes nchans"
         )
         # EEGNet_TC Block
-        self.eegnet_tc = EEGNetTC(
+        self.eegnet_tc = _EEGNetTC(
             n_chans=self.n_chans,
             filter_1=self.filter_1,
             kern_length=self.kern_length,
@@ -271,7 +271,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 
         # TCN Block
         self.F2 = self.filter_1 * self.depth_multiplier
-        self.tcn_block = TCNBlock(
+        self.tcn_block = _TCNBlock(
             input_dimension=self.F2,
             depth=self.depth,
             kernel_size=self.kernel_size,
