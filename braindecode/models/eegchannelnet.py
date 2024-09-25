@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import math
+
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -495,16 +494,13 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
         )
 
         # Compute the encoding size by passing a dummy input through the encoder
-        with torch.no_grad():
-            dummy_input = torch.zeros(1, 1, self.n_chans, self.n_times)
-            encoding = self.encoder(dummy_input)
-            encoding_size = encoding.numel()
+        encoding_size = self.calculate_embedding_size()
 
-        self.classifier = nn.Sequential(
-            nn.Linear(encoding_size, embedding_size),
-            nn.ReLU(inplace=True),
-            nn.Linear(embedding_size, self.n_outputs),
+        self.embedding = nn.Sequential(
+            nn.Linear(encoding_size, embedding_size), nn.ReLU(inplace=True)
         )
+
+        self.final_layer = nn.Linear(embedding_size, self.n_outputs)
 
     def forward(self, x):
         """Forward pass through the EEGChannelNet model.
@@ -522,5 +518,13 @@ class EEGChannelNet(EEGModuleMixin, nn.Module):
         x = x.unsqueeze(1)
         out = self.encoder(x)
         out = out.view(out.size(0), -1)
-        out = self.classifier(out)
+        out = self.self.embedding(out)
+        out = self.final_layer(out)
         return out
+
+    def calculate_embedding_size(self):
+        with torch.no_grad():
+            dummy_input = torch.zeros(1, 1, self.n_chans, self.n_times)
+            encoding = self.encoder(dummy_input)
+            encoding_size = encoding.numel()
+        return encoding_size
