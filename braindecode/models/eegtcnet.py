@@ -10,6 +10,7 @@ from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.tcn import Chomp1d
+from braindecode.models.modules import MaxNormLinear
 
 
 class EEGNetTC(nn.Module):
@@ -200,6 +201,9 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         Size of the temporal convolutional kernel in the TCN. Default is 4.
     filters : int, optional
         Number of filters in the TCN convolutional layers. Default is 12.
+    max_norm_const : float
+        Maximum L2-norm constraint imposed on weights of the last
+        fully-connected layer. Defaults to 0.25.
 
     References
     ----------
@@ -227,6 +231,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         depth: int = 2,
         kernel_size: int = 4,
         filters: int = 12,
+        max_norm_const: float = 0.25,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -246,6 +251,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         self.depth = depth
         self.kernel_size = kernel_size
         self.filters = filters
+        self.max_norm_const = max_norm_const
 
         self.arrange_dim_input = Rearrange(
             "batch nchans ntimes -> batch 1 ntimes nchans"
@@ -275,7 +281,11 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
         )
 
         # Classification Block
-        self.final_layer = nn.Linear(self.filters, self.n_outputs)
+        self.final_layer = MaxNormLinear(
+            in_features=self.filters,
+            out_features=self.n_outputs,
+            max_norm_val=self.max_norm_const,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
