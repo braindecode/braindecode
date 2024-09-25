@@ -47,6 +47,7 @@ Enhancements
 - Add MaskEncoding augmentation :class:`braindecode.augmentation.MaskEncoding` (:gh:`631` by `Gustavo Rodrigues`_)
 - Adding :class:`braindecode.models.EEGNex`  (:gh:`635` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.EEGTCNet`  (:gh:`640` by `Bruno Aristimunha`_ )
+- Ensure consistency in the last layer using tests (:gh:`642` by `Bruno Aristimunha`_ )
 
 
 Bugs
