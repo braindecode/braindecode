@@ -6,6 +6,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn.functional import elu
+from mne.utils import warn
 
 from .base import EEGModuleMixin, deprecated_args
 from .functions import squeeze_final_output
@@ -283,6 +284,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
+        warn(
+            "The class EEGNetv1 is deprecated and will be removed in the "
+            "release 1.0 of braindecode. Please use "
+            "braindecode.models.EEGNetv4 instead in the future.",
+            DeprecationWarning,
+        )
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.final_conv_length = final_conv_length

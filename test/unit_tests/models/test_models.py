@@ -31,7 +31,6 @@ from braindecode.models import (
     USleep,
     DeepSleepNet,
     EEGITNet,
-    EEGInception,
     EEGInceptionERP,
     EEGInceptionMI,
     TIDNet,
@@ -252,7 +251,7 @@ def test_eegitnet(input_sizes):
     )
 
 
-@pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
+@pytest.mark.parametrize("model_cls", [EEGInceptionERP])
 def test_eeginception_erp(input_sizes, model_cls):
     model = model_cls(
         n_outputs=input_sizes["n_classes"],
@@ -266,7 +265,7 @@ def test_eeginception_erp(input_sizes, model_cls):
     )
 
 
-@pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
+@pytest.mark.parametrize("model_cls", [EEGInceptionERP])
 def test_eeginception_erp_n_params(model_cls):
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
