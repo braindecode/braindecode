@@ -39,14 +39,19 @@ class SyncNet(EEGModuleMixin, nn.Module):
         Size of the pooling window. Default is 40.
     activation : nn.Module, optional
         Activation function to apply after pooling. Default is ``nn.ReLU``.
-    b_minval : float, optional
-        Minimum value for initializing amplitude parameter ``b``. Default is -0.05.
-    b_maxval : float, optional
-        Maximum value for initializing amplitude parameter ``b``. Default is 0.05.
-    omega_minval : float, optional
-        Minimum value for initializing frequency parameter ``omega``. Default is 0.
-    omega_maxval : float, optional
-        Maximum value for initializing frequency parameter ``omega``. Default is 1.
+    ampli_init_values : tuple of float, optional
+        The initialization range for amplitude parameter using uniform
+        distribution. Default is (-0.05, 0.05).
+    omega_init_values : tuple of float, optional
+        The initialization range for omega parameters using uniform
+        distribution. Default is (0, 1).
+    beta_init_values : tuple of float, optional
+        The initialization range for beta parameters using uniform
+        distribution. Default is (0, 1). Default is (0, 0.05).
+    phase_init_values : tuple of float, optional
+        The initialization range for phase parameters using `normal`
+        distribution. Default is (0, 1). Default is (0, 0.05).
+
 
     Notes
     -----
@@ -80,10 +85,10 @@ class SyncNet(EEGModuleMixin, nn.Module):
         filter_width=40,
         pool_size=40,
         activation: nn.Module = nn.ReLU,
-        b_minval: float = -0.05,
-        b_maxval: float = 0.05,
-        omega_minval: float = 0,
-        omega_maxval: float = 1,
+        ampli_init_values: tuple[float, float] = (-0.05, 0.05),
+        omega_init_values: tuple[float, float] = (0.0, 1.0),
+        beta_init_values: tuple[float, float] = (0.0, 0.05),
+        phase_init_values: tuple[float, float] = (0.0, 0.05),
     ):
         super().__init__(
             n_chans=n_chans,
@@ -99,20 +104,20 @@ class SyncNet(EEGModuleMixin, nn.Module):
         self.filter_width = filter_width
         self.pool_size = pool_size
         self.activation = activation()
-        self.b_minval = b_minval
-        self.b_maxval = b_maxval
-        self.omega_minval = omega_minval
-        self.omega_maxval = omega_maxval
+        self.ampli_init_values = ampli_init_values
+        self.omega_init_values = omega_init_values
+        self.beta_init_values = beta_init_values
+        self.phase_init_values = phase_init_values
 
         # Initialize parameters
         self.amplitude = nn.Parameter(
             torch.FloatTensor(1, 1, self.n_chans, self.num_filters).uniform_(
-                from_=self.b_minval, to=self.b_maxval
+                self.ampli_init_values[0], self.ampli_init_values[1]
             )
         )
         self.omega = nn.Parameter(
             torch.FloatTensor(1, 1, 1, self.num_filters).uniform_(
-                from_=self.omega_minval, to=self.omega_maxval
+                self.omega_init_values[0], self.omega_init_values[1]
             )
         )
 
@@ -135,10 +140,14 @@ class SyncNet(EEGModuleMixin, nn.Module):
         self.t = nn.Parameter(torch.FloatTensor(t_np))
         # Phase Shift
         self.phi_ini = nn.Parameter(
-            torch.FloatTensor(1, 1, self.n_chans, self.num_filters).normal_(0, 0.05)
+            torch.FloatTensor(1, 1, self.n_chans, self.num_filters).normal_(
+                self.beta_init_values[0], self.beta_init_values[1]
+            )
         )
         self.beta = nn.Parameter(
-            torch.FloatTensor(1, 1, 1, self.num_filters).uniform_(0, 0.05)
+            torch.FloatTensor(1, 1, 1, self.num_filters).uniform_(
+                self.self.phase_init_values[0], self.self.phase_init_values[1]
+            )
         )
 
         self._compute_padding(filter_width=self.filter_width)
