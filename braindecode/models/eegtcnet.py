@@ -16,6 +16,11 @@ from braindecode.models.modules import MaxNormLinear
 class _EEGNetTC(nn.Module):
     """EEGNet Temporal Convolutional Network (TCN) block.
 
+    The main difference from our EEGNetV4 (braindecode) implementation is the
+    kernel and dimensional order. Because of this, we decided to keep this
+    implementation in a future issue; we will re-evaluate if it is necessary
+    to maintain this separate implementation.
+
     Parameters
     ----------
     n_chans : int
@@ -112,6 +117,15 @@ class _EEGNetTC(nn.Module):
 
 
 class _TCNBlock(nn.Module):
+    """
+    Many differences from our Temporal Block (braindecode) implementation.
+    Because of this, we decided to keep this implementation in a future issue;
+    we will re-evaluate if it is necessary to maintain this separate
+    implementation.
+
+
+    """
+
     def __init__(
         self,
         input_dimension: int,
