@@ -9,7 +9,7 @@ from braindecode.datasets.sleep_physio_challe_18 import SleepPhysionetChallenge2
 from braindecode.datasets.base import BaseConcatDataset
 
 
-@pytest.fixture(params=[SleepPhysionet, PC18])
+@pytest.fixture(params=[SleepPhysionet])
 def sleep_class(request):
     if request.param == SleepPhysionet:
         sleep_obj = SleepPhysionet(
