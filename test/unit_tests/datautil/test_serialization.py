@@ -4,6 +4,7 @@
 
 import os
 import platform
+import sys
 
 import pytest
 import numpy as np

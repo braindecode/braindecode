@@ -47,7 +47,9 @@ Enhancements
 - Increasing moabb version to 1.1.0 (:gh:`632` by `Bruno Aristimunha`_)
 - Add MaskEncoding augmentation :class:`braindecode.augmentation.MaskEncoding` (:gh:`631` by `Gustavo Rodrigues`_)
 - Adding :class:`braindecode.models.EEGNex`  (:gh:`635` by `Bruno Aristimunha`_ )
-- Ensure consistency in the last layer using tests (:gh:`XXX` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.EEGTCNet`  (:gh:`640` by `Bruno Aristimunha`_ )
+- Ensure consistency in the last layer using tests (:gh:`642` by `Bruno Aristimunha`_ )
+- Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
 
 
 Bugs
@@ -67,8 +69,6 @@ API changes
 ~~~~~~~~~~~
 - Expose the ``use_mne_epochs parameter`` of :function:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
-- Removing deprecated EEGInception, the correct named is :class:`braindecode.models.EEGInceptionERP` and deprecating :class:`braindecode.models.EEGNetv1` (:gh:`639` by `Bruno Aristimunha`_)
-
 
 .. _changes_0_8_0:
 Current 0.8 (11-2022)

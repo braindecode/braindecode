@@ -39,6 +39,9 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         Alias for `n_outputs`.
     input_size_s : float
         Alias for `input_window_seconds`.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------
@@ -59,6 +62,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         dropout=0.5,
         apply_batch_norm=False,
         return_feats=False,
+        activation: nn.Module = nn.ReLU,
         chs_info=None,
         n_times=None,
         n_channels=None,
@@ -103,43 +107,43 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(self.n_chans, n_conv_chans, (1, 7), groups=n_groups, padding=0),
             batch_norm(n_conv_chans),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chans, n_conv_chans, (1, 7), groups=n_conv_chans, padding=0
             ),
             batch_norm(n_conv_chans),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
             ),
             batch_norm(n_conv_chans),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
             ),
             batch_norm(n_conv_chans),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chans, n_conv_chans, (1, 5), groups=n_conv_chans, padding=0
             ),
             batch_norm(n_conv_chans),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0
             ),
             batch_norm(n_conv_chans),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chans, n_conv_chans, (1, 3), groups=n_conv_chans, padding=0
             ),
             batch_norm(n_conv_chans),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
         )
 
