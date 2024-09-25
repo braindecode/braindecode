@@ -150,7 +150,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
             )
         )
 
-        self._compute_padding(filter_width=self.filter_width)
+        self.padding = self._compute_padding(filter_width=self.filter_width)
         self.pad_input = nn.ConstantPad1d(self.padding, 0.0)
         self.pad_res = nn.ConstantPad1d(self.padding, 0.0)
 
