@@ -440,7 +440,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             hop_length=hop_length,
         )
 
-        self.classifier = _ClassificationHead(
+        self.final_layer = _ClassificationHead(
             emb_size=emb_size,
             n_outputs=self.n_outputs,
             activation=activation,
@@ -464,7 +464,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             (batch_size, n_outputs), (batch_size, emb_size)
         """
         emb = self.encoder(x)
-        x = self.classifier(emb)
+        x = self.final_layer(emb)
 
         if self.return_feature:
             return x, emb
