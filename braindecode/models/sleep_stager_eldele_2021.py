@@ -55,6 +55,13 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         Alias for `n_outputs`.
     input_size_s : float
         Alias for `input_window_seconds`.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+    activation_mrcnn: nn.Module, default=nn.ReLU
+        Activation function class to apply in the Mask R-CNN layer.
+        Should be a PyTorch activation module class like ``nn.ReLU`` or
+        ``nn.GELU``. Default is ``nn.GELU``.
 
     References
     ----------
@@ -75,6 +82,8 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         d_ff=120,
         n_attn_heads=5,
         dropout=0.1,
+        activation_mrcnn: nn.Module = nn.GELU,
+        activation: nn.Module = nn.ReLU,
         input_window_seconds=None,
         n_outputs=None,
         after_reduced_cnn_size=30,
@@ -134,9 +143,14 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         if self.sfreq == 125:
             kernel_size = 6
 
-        mrcnn = _MRCNN(after_reduced_cnn_size, kernel_size)
+        mrcnn = _MRCNN(
+            after_reduced_cnn_size,
+            kernel_size,
+            activation=activation_mrcnn,
+            activation_se=activation,
+        )
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
-        ff = _PositionwiseFeedForward(d_model, d_ff, dropout)
+        ff = _PositionwiseFeedForward(d_model, d_ff, dropout, activation=activation)
         tce = _TCE(
             _EncoderLayer(
                 d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size, dropout
@@ -186,17 +200,30 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
 
 
 class _SELayer(nn.Module):
-    def __init__(self, channel, reduction=16):
+    def __init__(self, channel, reduction=16, activation=nn.ReLU):
         super(_SELayer, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool1d(1)
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
+            activation(inplace=True),
             nn.Linear(channel // reduction, channel, bias=False),
             nn.Sigmoid(),
         )
 
     def forward(self, x):
+        """
+        Forward pass of the SE layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, channel, length).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying the SE recalibration.
+        """
         b, c, _ = x.size()
         y = self.avg_pool(x).view(b, c)
         y = self.fc(y).view(b, c, 1)
@@ -212,17 +239,14 @@ class _SEBasicBlock(nn.Module):
         planes,
         stride=1,
         downsample=None,
-        groups=1,
-        base_width=64,
-        dilation=1,
-        norm_layer=None,
+        activation: nn.Module = nn.ReLU,
         *,
         reduction=16,
     ):
         super(_SEBasicBlock, self).__init__()
         self.conv1 = nn.Conv1d(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm1d(planes)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = activation(inplace=True)
         self.conv2 = nn.Conv1d(planes, planes, 1)
         self.bn2 = nn.BatchNorm1d(planes)
         self.se = _SELayer(planes, reduction)
@@ -233,6 +257,19 @@ class _SEBasicBlock(nn.Module):
         )
 
     def forward(self, x):
+        """
+        Forward pass of the SE layer.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after applying the SE recalibration.
+        """
         residual = x
         out = self.features(x)
 
@@ -246,10 +283,16 @@ class _SEBasicBlock(nn.Module):
 
 
 class _MRCNN(nn.Module):
-    def __init__(self, after_reduced_cnn_size, kernel_size=7):
+    def __init__(
+        self,
+        after_reduced_cnn_size,
+        kernel_size=7,
+        activation: nn.Module = nn.GELU,
+        activation_se: nn.Module = nn.ReLU,
+    ):
         super(_MRCNN, self).__init__()
         drate = 0.5
-        self.GELU = nn.GELU()
+        self.GELU = activation()
         self.features1 = nn.Sequential(
             nn.Conv1d(1, 64, kernel_size=50, stride=6, bias=False, padding=24),
             nn.BatchNorm1d(64),
@@ -286,9 +329,13 @@ class _MRCNN(nn.Module):
 
         self.dropout = nn.Dropout(drate)
         self.inplanes = 128
-        self.AFR = self._make_layer(_SEBasicBlock, after_reduced_cnn_size, 1)
+        self.AFR = self._make_layer(
+            _SEBasicBlock, after_reduced_cnn_size, 1, activate=activation_se
+        )
 
-    def _make_layer(self, block, planes, blocks, stride=1):  # makes residual SE block
+    def _make_layer(
+        self, block, planes, blocks, stride=1, activate: nn.Module = nn.ReLU
+    ):  # makes residual SE block
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
@@ -306,7 +353,7 @@ class _MRCNN(nn.Module):
         layers.append(block(self.inplanes, planes, stride, downsample))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes))
+            layers.append(block(self.inplanes, planes, activate=activate))
 
         return nn.Sequential(*layers)
 
@@ -474,12 +521,13 @@ class _EncoderLayer(nn.Module):
 class _PositionwiseFeedForward(nn.Module):
     """Positionwise feed-forward network."""
 
-    def __init__(self, d_model, d_ff, dropout=0.1):
+    def __init__(self, d_model, d_ff, dropout=0.1, activation: nn.Module = nn.ReLU):
         super(_PositionwiseFeedForward, self).__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
+        self.activate = activation()
 
     def forward(self, x):
         """Implements FFN equation."""
-        return self.w_2(self.dropout(F.relu(self.w_1(x))))
+        return self.w_2(self.dropout(self.activate(self.w_1(x))))

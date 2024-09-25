@@ -2,13 +2,14 @@
 #
 # License: BSD (3-clause)
 
-from einops.layers.torch import Rearrange
+import torch
 from torch import nn
 from torch.nn import init
+from einops.layers.torch import Rearrange
 
 from .base import EEGModuleMixin, deprecated_args
-from .functions import safe_log, square, squeeze_final_output
-from .modules import CombinedConv, Ensure4d, Expression
+from .functions import square, squeeze_final_output
+from .modules import CombinedConv, Ensure4d, Expression, SafeLog
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -35,7 +36,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         Non-linear function to be used after convolution layers.
     pool_mode: str
         Method to use on pooling layers. "max" or "mean".
-    pool_nonlin: callable
+    activation_pool_nonlin: callable
         Non-linear function to be used after pooling layers.
     split_first_layer: bool
         Split first layer into temporal and spatial layers (True) or just use temporal (False).
@@ -77,7 +78,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         final_conv_length="auto",
         conv_nonlin=square,
         pool_mode="mean",
-        pool_nonlin=safe_log,
+        activation_pool_nonlin: nn.Module = SafeLog,
         split_first_layer=True,
         batch_norm=True,
         batch_norm_alpha=0.1,
@@ -117,7 +118,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.final_conv_length = final_conv_length
         self.conv_nonlin = conv_nonlin
         self.pool_mode = pool_mode
-        self.pool_nonlin = pool_nonlin
+        self.pool_nonlin = activation_pool_nonlin()
         self.split_first_layer = split_first_layer
         self.batch_norm = batch_norm
         self.batch_norm_alpha = batch_norm_alpha
@@ -175,7 +176,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                 stride=(self.pool_time_stride, 1),
             ),
         )
-        self.add_module("pool_nonlin_exp", Expression(self.pool_nonlin))
+        self.add_module("pool_nonlin_exp", self.pool_nonlin)
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":

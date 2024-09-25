@@ -12,6 +12,7 @@ The model offers competitive performances, with a low latency and is mainly comp
 # License: BSD-3
 
 import torch
+from torch import nn
 
 from .modules import Resample
 from .base import EEGModuleMixin
@@ -74,6 +75,9 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         Resampling Frequency.
     kernel_size: int
         Size of the convolutions kernels.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     References
     ----------
@@ -99,6 +103,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         resampling_freq=80,
         kernel_size=8,
         return_feature=False,
+        activation: nn.Module = nn.ReLU,
         # Other ways to initialize the model
         chs_info=None,
         n_times=None,
@@ -149,7 +154,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
                     ),
                     (torch.nn.BatchNorm1d(new_feature_maps)),
                     (torch.nn.MaxPool1d(2) if i > 0 - 1 else torch.nn.MaxPool1d(1)),
-                    (torch.nn.ReLU()),
+                    (activation()),
                     (
                         torch.nn.Conv1d(
                             new_feature_maps,
@@ -160,7 +165,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
                         )
                     ),
                     (torch.nn.BatchNorm1d(new_feature_maps)),
-                    (torch.nn.ReLU()),
+                    (activation()),
                 )
             )
             old_feature_maps = new_feature_maps
