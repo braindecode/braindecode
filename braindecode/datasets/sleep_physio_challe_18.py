@@ -258,9 +258,11 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
     Parameters
     ----------
     subject_ids: list(int) | str | None
-        (list of) int of subject(s) to be loaded. If None, load all available
-        subjects. If 'training', load all training recordings. If 'test', load
-        all test recordings.
+        (list of) int of subject(s) to be loaded.
+        - If `None`, loads all subjects (both training and test sets [no label associated]).
+        - If `"training"`, loads only the training set subjects.
+        - If `"test"`, loads only the test set subjects, no label associated!
+        - Otherwise, expects an iterable of subject IDs.
     path : None | str
         Location of where to look for the PC18 data storing location. If None,
         the environment variable or config parameter ``MNE_DATASETS_PC18_PATH``
@@ -281,7 +283,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
 
     def __init__(
         self,
-        subject_ids=None,
+        subject_ids="training",
         path=None,
         load_eeg_only=True,
         preproc=None,
@@ -289,10 +291,40 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
     ):
         if subject_ids is None:
             subject_ids = range(1983)
+            warn(
+                """"
+                You are loading the complete dataset (0 to 1982),
+                which includes a portion of the test set (0 to 988)
+                from the Physionet Challenge 2018. Note that the test set
+                does not have associated labels, so supervised classification
+                cannot be performed on these data.""",
+                UserWarning,
+            )
         elif subject_ids == "training":
             subject_ids = range(989, 1983)
         elif subject_ids == "test":
             subject_ids = range(989)
+            warn(
+                """
+                This subset does not have associated labels, so supervised
+                classification (sleep stage) cannot be performed on this data.
+                You can also use the meta information as a label to perform
+                another task.
+                """
+            )
+        else:
+            # If subject_ids is an iterable, check if it includes any test set IDs
+            if any(sid < 989 for sid in subject_ids):
+                warn(
+                    """
+                You are loading a subset of the data that includes test set
+                subjects (subject IDs: 0 to 988). These subjects do not have
+                associated labels, which means supervised classification
+                (sleep stage) cannot be performed on this data. You can also
+                use the meta information as a label to perform another task.
+                """,
+                    UserWarning,
+                )
 
         ensure_metafiles_exist()
 
@@ -303,9 +335,9 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
         if n_jobs == 1:
             all_base_ds = [
                 self._load_raw(
-                    subject_id,
-                    p[0],
-                    p[2],
+                    subj_nb=subject_id,
+                    raw_fname=p[0],
+                    arousal_fname=p[2],
                     load_eeg_only=load_eeg_only,
                     preproc=preproc,
                 )
@@ -340,7 +372,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
         data[np.array(record.units) == "uV"] /= 1e6
         data[np.array(record.units) == "mV"] /= 1e3
         info = mne.create_info(record.sig_name, record.fs, channel_types)
-        out = mne.io.RawArray(data, info)
+        raw_file = mne.io.RawArray(data, info)
 
         # Extract annotations
         if arousal_fname is not None:
@@ -354,7 +386,7 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
                 summarize_labels=False,
             )
             mne_annots = _convert_wfdb_anns_to_mne_annotations(annots)
-            out.set_annotations(mne_annots)
+            raw_file = raw_file.set_annotations(mne_annots)
 
         record_name = op.splitext(op.basename(raw_fname[0]))[0]
         record_info = self.info_df[self.info_df["Record"] == record_name].iloc[0]
@@ -375,9 +407,9 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
             },
             name="",
         )
-        out = BaseDataset(out, desc)
+        base_dataset = BaseDataset(raw_file, desc)
 
         if preproc is not None:
-            _preprocess(out, None, preproc)
+            _preprocess(base_dataset, None, preproc)
 
-        return out
+        return base_dataset
