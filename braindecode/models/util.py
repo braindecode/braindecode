@@ -228,4 +228,5 @@ models_mandatory_parameters = [
     ("ContraWR", ["n_chans", "n_outputs", "sfreq"], dict(sfreq=200)),
     ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGChannelNet", ["n_chans", "n_outputs", "n_times"], None),
 ]

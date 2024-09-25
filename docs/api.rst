@@ -69,6 +69,7 @@ Models
     ContraWR
     Deep4Net
     DeepSleepNet
+    EEGChannelNet
     EEGConformer
     EEGInception
     EEGInceptionERP
