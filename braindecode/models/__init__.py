@@ -13,7 +13,6 @@ from .eegnet import EEGNetv4, EEGNetv1
 from .hybrid import HybridNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .eegresnet import EEGResNet
-from .eeginception import EEGInception
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .atcnet import ATCNet
