@@ -1,3 +1,7 @@
+# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
+#
+# License: BSD (3-clause)
+
 import torch
 import torch.nn as nn
 
@@ -206,28 +210,6 @@ class SpatialBlock(nn.Module):
         return out
 
 
-def conv3x3(in_channels, out_channels, stride=1):
-    """3x3 convolution with padding.
-
-    Parameters
-    ----------
-    in_channels : int
-        Number of input channels.
-    out_channels : int
-        Number of output channels.
-    stride : int or tuple
-        Stride of the convolution.
-
-    Returns
-    -------
-    nn.Conv2d
-        2D convolution layer.
-    """
-    return nn.Conv2d(
-        in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False
-    )
-
-
 class ResidualBlock(nn.Module):
     """Residual Block consisting of two 3x3 convolutional layers with a skip connection.
 
@@ -245,10 +227,24 @@ class ResidualBlock(nn.Module):
 
     def __init__(self, in_channels, out_channels, stride=1, downsample=None):
         super().__init__()
-        self.conv1 = conv3x3(in_channels, out_channels, stride)
+        self.conv1 = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
+        )
         self.bn1 = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(out_channels, out_channels)
+        self.conv2 = nn.Conv2d(
+            in_channels=out_channels,
+            out_channels=out_channels,
+            kernel_size=3,
+            stride=stride,
+            padding=1,
+            bias=False,
+        )
         self.bn2 = nn.BatchNorm2d(out_channels)
         self.downsample = downsample
 
