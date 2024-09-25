@@ -101,6 +101,10 @@ class Labram(EEGModuleMixin, nn.Module):
     attn_head_dim : bool (default=None)
         The head dimension to be used in the attention layer, to be used only
         during pre-training.
+    activation: nn.Module, default=nn.GELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+
     References
     ----------
     .. [Jiang2024] Wei-Bang Jiang, Li-Ming Zhao, Bao-Liang Lu. 2024, May.
@@ -144,6 +148,7 @@ class Labram(EEGModuleMixin, nn.Module):
         init_scale=0.001,
         neural_tokenizer=True,
         attn_head_dim=None,
+        activation: nn.Module = nn.GELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -185,7 +190,12 @@ class Labram(EEGModuleMixin, nn.Module):
                                 emb_dim=self.patch_size,
                             ),
                         ),
-                        ("temporal_conv", _TemporalConv(out_channels=out_channels)),
+                        (
+                            "temporal_conv",
+                            _TemporalConv(
+                                out_channels=out_channels, activation=activation
+                            ),
+                        ),
                     ]
                 )
             )
@@ -251,6 +261,7 @@ class Labram(EEGModuleMixin, nn.Module):
                         else None
                     ),
                     attn_head_dim=attn_head_dim,
+                    activation=activation,
                 )
                 for i in range(n_layers)
             ]
@@ -934,7 +945,7 @@ class _WindowsAttentionBlock(nn.Module):
     init_values: float (default=None)
         If not None, use this value to initialize the gamma_1 and gamma_2
         parameters.
-    act_layer: nn.GELU (default)
+    activation: nn.GELU (default)
         Activation function.
     norm_layer: nn.LayerNorm (default)
         Normalization layer.
@@ -964,7 +975,7 @@ class _WindowsAttentionBlock(nn.Module):
         attn_drop=0.0,
         drop_path=0.0,
         init_values=None,
-        act_layer=nn.GELU,
+        activation: nn.Module = nn.GELU,
         norm_layer=nn.LayerNorm,
         window_size=None,
         attn_head_dim=None,
@@ -989,7 +1000,7 @@ class _WindowsAttentionBlock(nn.Module):
         self.mlp = MLP(
             in_features=dim,
             hidden_features=[mlp_hidden_dim],
-            activation=act_layer,
+            activation=activation,
             drop=drop,
         )
 
@@ -1067,6 +1078,10 @@ class _TemporalConv(nn.Module):
         Padding for the first convolution.
     padding_2: tuple (default=(0, 1))
         Padding for the second and third convolutions.
+    activation: nn.Module, default=nn.GELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+
     Returns:
     --------
     x: torch.Tensor
@@ -1083,7 +1098,7 @@ class _TemporalConv(nn.Module):
         padding_1=(0, 7),
         kernel_size_2=(1, 3),
         padding_2=(0, 1),
-        act_layer=nn.GELU,
+        activation: nn.Module = nn.GELU,
     ):
         super().__init__()
 
@@ -1100,7 +1115,7 @@ class _TemporalConv(nn.Module):
             stride=stride_1,
             padding=padding_1,
         )
-        self.act_layer_1 = act_layer()
+        self.act_layer_1 = activation()
         self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
 
         self.conv2 = nn.Conv2d(
@@ -1109,7 +1124,7 @@ class _TemporalConv(nn.Module):
             kernel_size=kernel_size_2,
             padding=padding_2,
         )
-        self.act_layer_2 = act_layer()
+        self.act_layer_2 = activation()
         self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
 
         self.conv3 = nn.Conv2d(
@@ -1119,7 +1134,7 @@ class _TemporalConv(nn.Module):
             padding=padding_2,
         )
         self.norm3 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
-        self.act_layer_3 = act_layer()
+        self.act_layer_3 = activation()
 
         self.transpose_temporal_channel = Rearrange("Batch C NA T -> Batch NA (T C)")
 

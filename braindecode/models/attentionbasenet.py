@@ -48,6 +48,9 @@ class _FeatureExtractor(nn.Module):
         The stride of the average pooling operation. Default is 15.
     dropout : float, optional
         The dropout rate for regularization. Default is 0.5.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     """
 
     def __init__(
@@ -59,6 +62,7 @@ class _FeatureExtractor(nn.Module):
         pool_length: int = 75,
         pool_stride: int = 15,
         dropout: float = 0.5,
+        activation: nn.Module = nn.ELU,
     ):
         super().__init__()
 
@@ -80,7 +84,7 @@ class _FeatureExtractor(nn.Module):
             bias=False,
         )
         self.bn = nn.BatchNorm2d(n_temporal_filters * spatial_expansion)
-        self.nonlinearity = nn.ELU()
+        self.nonlinearity = activation()
         self.pool = nn.AvgPool2d((1, pool_length), stride=(1, pool_stride))
         self.dropout = nn.Dropout(dropout)
 
@@ -152,6 +156,9 @@ class _ChannelAttentionBlock(nn.Module):
     extra_params : bool, default=False
         Flag to indicate whether additional, custom parameters should be passed to
         the attention mechanism.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Attributes
     ----------
@@ -165,6 +172,9 @@ class _ChannelAttentionBlock(nn.Module):
     attention_block : torch.nn.Module or None
         The attention mechanism applied to the output of the convolutional layers,
         if `attention_mode` is not None. Otherwise, it's set to None.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Examples
     --------
@@ -190,6 +200,7 @@ class _ChannelAttentionBlock(nn.Module):
         n_codewords: int = 4,
         kernel_size: int = 9,
         extra_params: bool = False,
+        activation: nn.Module = nn.ELU,
     ):
         super().__init__()
         self.conv = nn.Sequential(
@@ -203,7 +214,7 @@ class _ChannelAttentionBlock(nn.Module):
             ),
             nn.Conv2d(in_channels, in_channels, (1, 1), bias=False),
             nn.BatchNorm2d(in_channels),
-            nn.ELU(),
+            activation(),
         )
 
         self.pool = nn.AvgPool2d((1, pool_length), stride=(1, pool_stride))
@@ -255,6 +266,69 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    n_temporal_filters : int, optional
+        Number of temporal convolutional filters in the first layer. This defines
+        the number of output channels after the temporal convolution.
+        Default is 40.
+    temp_filter_length : int, default=15
+        The length of the temporal filters in the convolutional layers.
+    spatial_expansion : int, optional
+        Multiplicative factor to expand the spatial dimensions. Used to increase
+        the capacity of the model by expanding spatial features. Default is 1.
+    pool_length_inp : int, optional
+        Length of the pooling window in the input layer. Determines how much
+        temporal information is aggregated during pooling. Default is 75.
+    pool_stride_inp : int, optional
+        Stride of the pooling operation in the input layer. Controls the
+        downsampling factor in the temporal dimension. Default is 15.
+    dropout_inp : float, optional
+        Dropout rate applied after the input layer. This is the probability of
+        zeroing out elements during training to prevent overfitting.
+        Default is 0.5.
+    ch_dim : int, optional
+        Number of channels in the subsequent convolutional layers. This controls
+        the depth of the network after the initial layer. Default is 16.
+    attention_mode : str, optional
+        The type of attention mechanism to apply. If `None`, no attention is applied.
+        - "se" for Squeeze-and-excitation network
+        - "gsop" for Global Second-Order Pooling
+        - "fca" for Frequency Channel Attention Network
+        - "encnet" for context encoding module
+        - "eca" for Efficient channel attention for deep convolutional neural networks
+        - "ge" for Gather-Excite
+        - "gct" for Gated Channel Transformation
+        - "srm" for Style-based Recalibration Module
+        - "cbam" for Convolutional Block Attention Module
+        - "cat" for Learning to collaborate channel and temporal attention
+        from multi-information fusion
+        - "catlite" for Learning to collaborate channel attention
+        from multi-information fusion (lite version, cat w/o temporal attention)
+    pool_length : int, default=8
+        The length of the window for the average pooling operation.
+    pool_stride : int, default=8
+        The stride of the average pooling operation.
+    dropout : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+    reduction_rate : int, default=4
+        The reduction rate used in the attention mechanism to reduce dimensionality
+        and computational complexity.
+    use_mlp : bool, default=False
+        Flag to indicate whether an MLP (Multi-Layer Perceptron) should be used within
+        the attention mechanism for further processing.
+    freq_idx : int, default=0
+        DCT index used in fca attention mechanism.
+    n_codewords : int, default=4
+        The number of codewords (clusters) used in attention mechanisms that employ
+        quantization or clustering strategies.
+    kernel_size : int, default=9
+        The kernel size used in certain types of attention mechanisms for convolution
+        operations.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    extra_params : bool, default=False
+        Flag to indicate whether additional, custom parameters should be passed to
+        the attention mechanism.
 
     References
     ----------
@@ -273,6 +347,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         chs_info=None,
         sfreq=None,
         input_window_seconds=None,
+        # Module parameters
         n_temporal_filters: int = 40,
         temp_filter_length_inp: int = 25,
         spatial_expansion: int = 1,
@@ -290,6 +365,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         freq_idx: int = 0,
         n_codewords: int = 4,
         kernel_size: int = 9,
+        activation: nn.Module = nn.ELU,
         extra_params: bool = False,
     ):
         super(AttentionBaseNet, self).__init__()
@@ -312,6 +388,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             pool_length=pool_length_inp,
             pool_stride=pool_stride_inp,
             dropout=dropout_inp,
+            activation=activation,
         )
 
         self.channel_expansion = nn.Sequential(
@@ -319,7 +396,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
                 n_temporal_filters * spatial_expansion, ch_dim, (1, 1), bias=False
             ),
             nn.BatchNorm2d(ch_dim),
-            nn.ELU(),
+            activation(),
         )
 
         seq_lengths = self._calculate_sequence_lengths(
@@ -343,6 +420,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             n_codewords=n_codewords,
             kernel_size=kernel_size,
             extra_params=extra_params,
+            activation=activation,
         )
 
         self.final_layer = nn.Sequential(

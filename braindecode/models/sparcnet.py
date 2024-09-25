@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from math import floor, log2
 from collections import OrderedDict
-from typing import Any, List
+from typing import Any
 
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -30,6 +29,9 @@ class DenseLayer(nn.Sequential):
         Whether to use bias in convolutional layers. Default is True.
     batch_norm : bool, optional
         Whether to use batch normalization. Default is True.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Examples
     --------
@@ -49,11 +51,12 @@ class DenseLayer(nn.Sequential):
         drop_rate=0.5,
         conv_bias=True,
         batch_norm=True,
+        activation: nn.Module = nn.ELU,
     ):
         super(DenseLayer, self).__init__()
         if batch_norm:
             (self.add_module("norm1", nn.BatchNorm1d(in_channels)),)
-        (self.add_module("elu1", nn.ELU()),)
+        (self.add_module("elu1", activation()),)
         (
             self.add_module(
                 "conv1",
@@ -68,7 +71,7 @@ class DenseLayer(nn.Sequential):
         )
         if batch_norm:
             (self.add_module("norm2", nn.BatchNorm1d(bottleneck_size * growth_rate)),)
-        (self.add_module("elu2", nn.ELU()),)
+        (self.add_module("elu2", activation()),)
         (
             self.add_module(
                 "conv2",
@@ -110,6 +113,9 @@ class DenseBlock(nn.Sequential):
         Whether to use bias in convolutional layers. Default is True.
     batch_norm : bool, optional
         Whether to use batch normalization. Default is True.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Examples
     --------
@@ -130,6 +136,7 @@ class DenseBlock(nn.Sequential):
         drop_rate=0.5,
         conv_bias=True,
         batch_norm=True,
+        activation: nn.Module = nn.ELU,
     ):
         super(DenseBlock, self).__init__()
         for idx_layer in range(num_layers):
@@ -140,6 +147,7 @@ class DenseBlock(nn.Sequential):
                 drop_rate=drop_rate,
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
+                activation=activation,
             )
             self.add_module(f"denselayer{idx_layer + 1}", layer)
 
@@ -158,6 +166,9 @@ class TransitionLayer(nn.Sequential):
         Whether to use bias in convolutional layers. Default is True.
     batch_norm : bool, optional
         Whether to use batch normalization. Default is True.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Examples
     --------
@@ -168,11 +179,18 @@ class TransitionLayer(nn.Sequential):
     torch.Size([128, 18, 500])
     """
 
-    def __init__(self, in_channels, out_channels, conv_bias=True, batch_norm=True):
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        conv_bias=True,
+        batch_norm=True,
+        activation: nn.Module = nn.ELU,
+    ):
         super(TransitionLayer, self).__init__()
         if batch_norm:
             self.add_module("norm", nn.BatchNorm1d(in_channels))
-        self.add_module("elu", nn.ELU())
+        self.add_module("elu", activation())
         self.add_module(
             "conv",
             nn.Conv1d(
@@ -215,6 +233,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         Whether to use bias in convolutional layers. Default is True.
     batch_norm : bool, optional
         Whether to use batch normalization. Default is True.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     References
     ----------
@@ -240,6 +261,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         drop_rate: float = 0.5,
         conv_bias: bool = True,
         batch_norm: bool = True,
+        activation: nn.Module = nn.ELU,
         # EEGModuleMixin parameters
         # (another way to present the same parameters)
         chs_info: list[dict[Any, Any]] | None = None,
@@ -276,7 +298,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             ]
         )
         first_conv["norm0"] = nn.BatchNorm1d(out_channels)
-        first_conv["act_layer"] = nn.ELU()
+        first_conv["act_layer"] = activation()
         first_conv["pool0"] = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
 
         self.encoder = nn.Sequential(first_conv)
@@ -293,6 +315,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
                 drop_rate=drop_rate,
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
+                activation=activation,
             )
             self.encoder.add_module("denseblock%d" % (n_layer + 1), block)
             # update the number of channels after each dense block
@@ -303,6 +326,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
                 out_channels=n_channels // 2,
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
+                activation=activation,
             )
             self.encoder.add_module("transition%d" % (n_layer + 1), trans)
             # update the number of channels after each transition layer
@@ -310,7 +334,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
 
         # add final convolutional layer
         self.final_layer = nn.Sequential(
-            nn.ELU(),
+            activation(),
             nn.Linear(n_channels, self.n_outputs),
         )
 

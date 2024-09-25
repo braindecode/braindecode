@@ -2,6 +2,7 @@
 #          Omar Chehab <l-emir-omar.chehab@inria.fr>
 #
 # License: BSD (3-clause)
+from typing import Dict, Optional
 
 import numpy as np
 import torch
@@ -25,7 +26,14 @@ def _crop_tensors_to_match(x1, x2, axis=-1):
 class _EncoderBlock(nn.Module):
     """Encoding block for a timeseries x of shape (B, C, T)."""
 
-    def __init__(self, in_channels=2, out_channels=2, kernel_size=9, downsample=2):
+    def __init__(
+        self,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=9,
+        downsample=2,
+        activation: nn.Module = nn.ELU,
+    ):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -39,7 +47,7 @@ class _EncoderBlock(nn.Module):
                 kernel_size=kernel_size,
                 padding="same",
             ),
-            nn.ELU(),
+            activation(),
             nn.BatchNorm1d(num_features=out_channels),
         )
 
@@ -65,6 +73,7 @@ class _DecoderBlock(nn.Module):
         kernel_size=9,
         upsample=2,
         with_skip_connection=True,
+        activation: nn.Module = nn.ELU,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -81,7 +90,7 @@ class _DecoderBlock(nn.Module):
                 kernel_size=2,
                 padding="same",
             ),
-            nn.ELU(),
+            activation(),
             nn.BatchNorm1d(num_features=out_channels),
         )
         self.block_postskip = nn.Sequential(
@@ -93,7 +102,7 @@ class _DecoderBlock(nn.Module):
                 kernel_size=kernel_size,
                 padding="same",
             ),
-            nn.ELU(),
+            activation(),
             nn.BatchNorm1d(num_features=out_channels),
         )
 
@@ -150,7 +159,7 @@ class USleep(EEGModuleMixin, nn.Module):
     ensure_odd_conv_size : bool
         If True and the size of the convolutional kernel is an even number, one
         will be added to it to ensure it is odd, so that the decoder blocks can
-        work. This can ne useful when using different sampling rates from 128
+        work. This can useful when using different sampling rates from 128
         or 100 Hz.
     in_chans : int
         Alias for n_chans.
@@ -158,6 +167,9 @@ class USleep(EEGModuleMixin, nn.Module):
         Alias for n_outputs.
     input_size_s : float
         Alias for input_window_seconds.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     References
     ----------
@@ -178,6 +190,7 @@ class USleep(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         time_conv_size_s=9 / 128,
         ensure_odd_conv_size=False,
+        activation: nn.Module = nn.ELU,
         chs_info=None,
         n_times=None,
         in_chans=None,
@@ -242,6 +255,7 @@ class USleep(EEGModuleMixin, nn.Module):
                     out_channels=channels[idx + 1],
                     kernel_size=time_conv_size,
                     downsample=max_pool_size,
+                    activation=activation,
                 )
             ]
         self.encoder = nn.Sequential(*encoder)
@@ -254,7 +268,7 @@ class USleep(EEGModuleMixin, nn.Module):
                 kernel_size=time_conv_size,
                 padding=(time_conv_size - 1) // 2,
             ),  # preserves dimension
-            nn.ELU(),
+            activation(),
             nn.BatchNorm1d(num_features=channels[-1]),
         )
 
@@ -269,6 +283,7 @@ class USleep(EEGModuleMixin, nn.Module):
                     kernel_size=time_conv_size,
                     upsample=max_pool_size,
                     with_skip_connection=with_skip_connection,
+                    activation=activation,
                 )
             ]
         self.decoder = nn.Sequential(*decoder)
@@ -297,7 +312,7 @@ class USleep(EEGModuleMixin, nn.Module):
                 stride=1,
                 padding=0,
             ),  # output is (B, n_classes, S)
-            nn.ELU(),
+            activation(),
             nn.Conv1d(
                 in_channels=self.n_outputs,
                 out_channels=self.n_outputs,

@@ -102,7 +102,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         drop_prob=0.5,
         scales_samples_s=(0.5, 0.25, 0.125),
         n_filters=8,
-        activation=nn.ELU(),
+        activation: nn.Module = nn.ELU,
         batch_norm_alpha=0.01,
         depth_multiplier=2,
         pooling_sizes=(4, 2, 2, 2),
@@ -234,7 +234,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                     bias=False,
                 ),
                 nn.BatchNorm2d(n_concat_filters // 2, momentum=self.alpha_momentum),
-                activation,
+                activation(),
                 nn.Dropout(self.drop_prob),
                 nn.AvgPool2d((1, self.pooling_sizes[2])),
                 nn.Conv2d(
@@ -245,7 +245,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                     bias=False,
                 ),
                 nn.BatchNorm2d(n_concat_filters // 4, momentum=self.alpha_momentum),
-                activation,
+                activation(),
                 nn.Dropout(self.drop_prob),
                 nn.AvgPool2d((1, self.pooling_sizes[3])),
             ),
@@ -292,7 +292,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                 bias=True,
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
-            activation,
+            activation(),
             nn.Dropout(drop_prob),
             _DepthwiseConv2d(
                 out_channels,
@@ -302,7 +302,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                 padding="valid",
             ),
             nn.BatchNorm2d(depth_multiplier * out_channels, momentum=alpha_momentum),
-            activation,
+            activation(),
             nn.Dropout(drop_prob),
         )
 
@@ -319,6 +319,6 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
                 bias=False,
             ),
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
-            activation,
+            activation(),
             nn.Dropout(drop_prob),
         )
