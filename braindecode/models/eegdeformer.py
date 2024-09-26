@@ -230,11 +230,13 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # Variables
+        self.n_layers = n_layers
         self.drop_prob = drop_prob
         self.dim = int(0.5 * self.n_times)
         self.hidden_size = int(num_kernel * int(self.dim * (0.5**n_layers))) + int(
             num_kernel * n_layers
         )
+
         # Parameters
         self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, self.dim))
 
