@@ -201,10 +201,6 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
        Interfaces. arXiv preprint arXiv:2405.00719.
     """
 
-    @staticmethod
-    def _get_padding(kernel):
-        return 0, int(0.5 * (kernel - 1))
-
     def __init__(
         self,
         temporal_kernel: int = 11,
@@ -232,23 +228,26 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
+        # Variables
         self.drop_prob = drop_prob
 
-        padding = self._get_padding(temporal_kernel)
-        dim = int(0.5 * self.n_times)  # embedding size after the first cnn encoder
-        hidden_size = int(num_kernel * int(dim * (0.5**depth))) + int(
+        self.dim = int(0.5 * self.n_times)
+        # embedding size after the first cnn encoder
+        self.hidden_size = int(num_kernel * int(self.dim * (0.5**depth))) + int(
             num_kernel * depth
         )
+        # Parameters
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, self.dim))
 
-        self.ensuredim = Rearrange("batch C T -> batch 1 T C")
+        # Layers
+        self.ensuredim = Rearrange("batch chan time -> batch 1 chan time")
 
         self.cnn_encoder = nn.Sequential(
             Conv2dWithConstraint(
                 in_channels=1,
                 out_channels=num_kernel,
                 kernel_size=(1, temporal_kernel),
-                padding=padding,
+                padding=(0, int(0.5 * (temporal_kernel - 1))),
                 max_norm=2,
             ),
             Conv2dWithConstraint(
@@ -262,16 +261,13 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
             activation(),
             nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 2)),
         )
-        self.cnn_encoder = self.cnn_block(
-            out_chan=num_kernel, kernel_size=(1, temporal_kernel), num_chan=self.n_chans
+
+        self.to_patch_embedding = Rearrange(
+            "batch kernel chans filter -> batch kernel (chans filter)"
         )
 
-        self.to_patch_embedding = Rearrange("b k c f -> b k (c f)")
-
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, dim))
-
         self.transformer = _Transformer(
-            dim=dim,
+            dim=self.dim,
             depth=depth,
             heads=heads,
             dim_head=dim_head,
@@ -281,7 +277,7 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
             fine_grained_kernel=temporal_kernel,
         )
 
-        self.final_layer = nn.Linear(hidden_size, self.n_outputs)
+        self.final_layer = nn.Linear(self.hidden_size, self.n_outputs)
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.ensuredim(x)
@@ -290,23 +286,6 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         x = x + self.pos_embedding
         x = self.transformer(x)
         return self.final_layer(x)
-
-    def cnn_block(self, out_chan, kernel_size, num_chan):
-        return nn.Sequential(
-            Conv2dWithConstraint(
-                1,
-                out_chan,
-                kernel_size,
-                padding=self._get_padding(kernel_size[-1]),
-                max_norm=2,
-            ),
-            Conv2dWithConstraint(
-                out_chan, out_chan, (num_chan, 1), padding=0, max_norm=2
-            ),
-            nn.BatchNorm2d(out_chan),
-            nn.ELU(),
-            nn.MaxPool2d((1, 2), stride=(1, 2)),
-        )
 
 
 if __name__ == "__main__":
