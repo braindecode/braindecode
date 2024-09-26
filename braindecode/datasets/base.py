@@ -482,7 +482,7 @@ class BaseConcatDataset(ConcatDataset):
     ) -> dict[str, BaseConcatDataset]:
         """Split the dataset based on information listed in its description.
 
-        The format could be DataFrame or based on indices.
+        The format could be based on a DataFrame or based on indices.
 
         Parameters
         ----------
@@ -495,7 +495,7 @@ class BaseConcatDataset(ConcatDataset):
             If a dict then each key will be used in the returned
             splits dict and each value should be a list of int.
         property : str
-            Some property which is listed in info DataFrame.
+            Some property which is listed in the info DataFrame.
         split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
@@ -506,6 +506,7 @@ class BaseConcatDataset(ConcatDataset):
             A dictionary with the name of the split (a string) as key and the
             dataset as value.
         """
+
         args_not_none = [by is not None, property is not None, split_ids is not None]
         if sum(args_not_none) != 1:
             raise ValueError("Splitting requires exactly one argument.")

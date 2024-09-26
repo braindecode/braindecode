@@ -26,7 +26,7 @@ Installing Braindecode from the source
 --------------------------------------
 
 If you want to only install Braindecode from source once and not do any development
-work, then the recommended way to build and install is to use ``pip``::
+work, then the recommended way to build and install is to use ``pip``
 
 For the latest development version, directly from GitHub:
 
