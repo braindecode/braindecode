@@ -80,32 +80,34 @@ class _FeedForward(nn.Module):
 
 
 class _Attention(nn.Module):
-    def __init__(self, dim, heads=8, dim_head=64, dropout=0.0):
+    def __init__(self, embed_dim, num_heads=8, dim_head=64, dropout=0.0):
         super().__init__()
-        inner_dim = dim_head * heads
-        project_out = not (heads == 1 and dim_head == dim)
+        inner_dim = dim_head * num_heads
+        project_out = not (num_heads == 1 and dim_head == embed_dim)
 
-        self.heads = heads
+        self.heads = num_heads
         self.scale = dim_head**-0.5
 
         self.attend = nn.Softmax(dim=-1)
-        self.to_qkv = nn.Linear(dim, inner_dim * 3, bias=False)
+        self.to_qkv = nn.Linear(embed_dim, inner_dim * 3, bias=False)
 
         self.to_out = (
-            nn.Sequential(nn.Linear(inner_dim, dim), nn.Dropout(dropout))
+            nn.Sequential(nn.Linear(inner_dim, embed_dim), nn.Dropout(dropout))
             if project_out
             else nn.Identity()
         )
 
     def forward(self, x):
         qkv = self.to_qkv(x).chunk(3, dim=-1)
-        q, k, v = map(lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.heads), qkv)
+        query, key, value = map(
+            lambda t: rearrange(t, "b n (h d) -> b h n d", h=self.heads), qkv
+        )
 
-        dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
+        dots = torch.matmul(query, key.transpose(-1, -2)) * self.scale
 
         attn = self.attend(dots)
 
-        out = torch.matmul(attn, v)
+        out = torch.matmul(attn, value)
         out = rearrange(out, "b h n d -> b n (h d)")
         return self.to_out(out)
 
@@ -129,9 +131,7 @@ class _Transformer(nn.Module):
             self.layers.append(
                 nn.ModuleList(
                     [
-                        _Attention(
-                            dim, heads=heads, dim_head=dim_head, dropout=dropout
-                        ),
+                        _Attention(dim, heads, dim_head, dropout=dropout),
                         _FeedForward(dim, mlp_dim, drop_prob=dropout),
                         nn.Sequential(
                             nn.Dropout(p=dropout),
@@ -166,7 +166,8 @@ class _Transformer(nn.Module):
         )  # b, in_chan*(depth + d_hidden_last_layer)
         return emd
 
-    def get_info(self, x):
+    @staticmethod
+    def get_info(x):
         # x: b, k, l
         x = torch.log(torch.mean(x.pow(2), dim=-1))
         return x
@@ -230,7 +231,6 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # Variables
         self.drop_prob = drop_prob
-
         self.dim = int(0.5 * self.n_times)
         # embedding size after the first cnn encoder
         self.hidden_size = int(num_kernel * int(self.dim * (0.5**depth))) + int(
@@ -265,7 +265,7 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.to_patch_embedding = Rearrange(
             "batch kernel chans filter -> batch kernel (chans filter)"
         )
-
+        nn.TransformerDecoderLayer
         self.transformer = _Transformer(
             dim=self.dim,
             depth=depth,
@@ -279,18 +279,10 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
 
         self.final_layer = nn.Linear(self.hidden_size, self.n_outputs)
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x):
         x = self.ensuredim(x)
         x = self.cnn_encoder(x)
         x = self.to_patch_embedding(x)
         x = x + self.pos_embedding
         x = self.transformer(x)
         return self.final_layer(x)
-
-
-if __name__ == "__main__":
-    data = torch.ones((16, 32, 1000))
-    model = EEGDeformer(n_chans=32, n_times=1000, n_outputs=2)
-    print(model)
-
-    out = model(data)

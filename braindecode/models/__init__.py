@@ -32,7 +32,7 @@ from .contrawr import ContraWR
 from .eegnex import EEGNeX
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
-from .eegdeformer import EEGDeformer, _Attention, _FeedForward
+from .eegdeformer import EEGDeformer
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.

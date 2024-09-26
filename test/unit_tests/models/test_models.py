@@ -42,7 +42,8 @@ from braindecode.models import (
     EEGSimpleConv,
     AttentionBaseNet,
     SPARCNet,
-    ContraWR
+    ContraWR,
+    EEGDeformer,
 )
 
 from braindecode.util import set_random_seeds
@@ -1095,3 +1096,10 @@ def test_parameters_EEGTCNet():
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # 4.27 K according to the Table V from the original paper.
     assert np.round(n_params / 1e3, 1) == 4.2
+
+def test_parameters_EEGDeformer():
+
+    model = EEGDeformer(n_outputs=2, n_chans=32, n_times=1000)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # According with the original implementation
+    assert n_params == 845650
