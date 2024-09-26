@@ -13,7 +13,7 @@ from .modules import AvgPool2dWithConv, CombinedConv, Ensure4d, Expression
 
 
 class Deep4Net(EEGModuleMixin, nn.Sequential):
-    """Deep ConvNet model from Schirrmeister et al 2017.
+    """Deep ConvNet model from Schirrmeister et al 2017 [Schirrmeister2017]_.
 
     Model described in [Schirrmeister2017]_.
 

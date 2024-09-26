@@ -77,9 +77,10 @@ class NMT(BaseConcatDataset):
     References
     ----------
     .. [Khan2022] Khan, H.A.,Ul Ain, R., Kamboh, A.M., Butt, H.T.,Shafait,S.,
-    Alamgir, W., Stricker, D. and Shafait, F., 2022. The NMT scalp EEG dataset:
-    an open-source annotated dataset of healthy and pathological EEG recordings
-    for predictive modeling. Frontiers in neuroscience, 15, p.755817.
+        Alamgir, W., Stricker, D. and Shafait, F., 2022. The NMT scalp EEG
+        dataset: an open-source annotated dataset of healthy and pathological
+        EEG recordings for predictive modeling. Frontiers in neuroscience,
+        15, p.755817.
     """
 
     def __init__(

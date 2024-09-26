@@ -13,7 +13,7 @@ from .modules import CombinedConv, Ensure4d, Expression, SafeLog
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
-    """Shallow ConvNet model from Schirrmeister et al 2017.
+    """Shallow ConvNet model from Schirrmeister et al. 2017 [Schirrmeister2017]_.
 
     Model described in [Schirrmeister2017]_.
 

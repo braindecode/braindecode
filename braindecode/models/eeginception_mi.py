@@ -11,7 +11,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGInceptionMI(EEGModuleMixin, nn.Module):
-    """EEG Inception for Motor Imagery, as proposed in [1]_
+    """EEG Inception for Motor Imagery, as proposed in Zhang et al. (2021) [1]_
 
     The model is strongly based on the original InceptionNet for computer
     vision. The main goal is to extract features in parallel with different
@@ -43,7 +43,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         Size in seconds of the basic 1D convolutional kernel used in inception
         modules. Each convolutional layer in such modules have kernels of
         increasing size, odd multiples of this value (e.g. 0.1, 0.3, 0.5, 0.7,
-        0.9 here for `n_convs`=5). Defaults to 0.1 s.
+        0.9 here for ``n_convs=5``). Defaults to 0.1 s.
     activation: nn.Module
         Activation function. Defaults to ReLU activation.
     in_channels : int
@@ -56,9 +56,9 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
     References
     ----------
     .. [1] Zhang, C., Kim, Y. K., & Eskandarian, A. (2021).
-           EEG-inception: an accurate and robust end-to-end neural network
-           for EEG-based motor imagery classification.
-           Journal of Neural Engineering, 18(4), 046014.
+        EEG-inception: an accurate and robust end-to-end neural network
+        for EEG-based motor imagery classification.
+        Journal of Neural Engineering, 18(4), 046014.
     """
 
     def __init__(

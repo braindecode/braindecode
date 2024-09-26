@@ -17,7 +17,8 @@ log = logging.getLogger(__name__)
 
 
 class BBCIDataset(object):
-    """
+    """BBCIDataset.
+
     Loader class for files created by saving BBCI files in matlab (make
     sure to save with '-v7.3' in matlab, see
     https://de.mathworks.com/help/matlab/import_export/mat-file-versions.html#buk6i87

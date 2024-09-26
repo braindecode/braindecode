@@ -185,7 +185,7 @@ class _BiLSTM(nn.Module):
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Supratak et al 2017.
+    """Sleep staging architecture from Supratak et al. 2017 [Supratak2017]_.
 
     Convolutional neural network and bidirectional-Long Short-Term
     for single channels sleep staging described in [Supratak2017]_.

@@ -13,7 +13,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class TCN(EEGModuleMixin, nn.Module):
-    """Temporal Convolutional Network (TCN) from Bai et al 2018.
+    """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
 

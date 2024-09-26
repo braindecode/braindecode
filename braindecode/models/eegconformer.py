@@ -12,12 +12,12 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
-    """EEG Conformer.
+    """EEG Conformer from Song et al. (2022) from [song2022]_.
 
     Convolutional Transformer for EEG decoding.
 
     The paper and original code with more details about the methodological
-    choices are available at the [Song2022]_ and [ConformerCode]_.
+    choices are available at the [song2022]_ and [ConformerCode]_.
 
     This neural network architecture receives a traditional braindecode input.
     The input shape should be three-dimensional matrix representing the EEG
@@ -81,7 +81,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         Alias for n_times.
     References
     ----------
-    .. [Song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
+    .. [song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
        conformer: Convolutional transformer for EEG decoding and visualization.
        IEEE Transactions on Neural Systems and Rehabilitation Engineering,
        31, pp.710-719. https://ieeexplore.ieee.org/document/9991178

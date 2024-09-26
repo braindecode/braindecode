@@ -89,7 +89,6 @@ Models
     SyncNet
     TCN
     TIDNet
-    TimeDistributed
     USleep
 
 

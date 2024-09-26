@@ -14,7 +14,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
-    """Sleep Staging Architecture from Eldele et al 2021.
+    """Sleep Staging Architecture from Eldele et al. 2021 [Eldele2021]_.
 
     Attention based Neural Net for sleep staging as described in [Eldele2021]_.
     The code for the paper and this model is also available at [1]_.

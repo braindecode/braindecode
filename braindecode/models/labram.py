@@ -20,7 +20,7 @@ from .base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram.
+    """Labram from [Jiang2024]_.
 
     Large Brain Model for Learning Generic Representations with Tremendous
     EEG Data in BCI from [Jiang2024]_
@@ -31,8 +31,8 @@ class Labram(EEGModuleMixin, nn.Module):
     BEiTv2 [BeiTv2]_.
 
     The models can be used in two modes:
-        - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
-        - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
+    - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
+    - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
 
     The braindecode's modification is to allow the model to be used in
     with an input shape of (batch, n_chans, n_times), if neural tokenizer

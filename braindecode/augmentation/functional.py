@@ -975,7 +975,7 @@ def mixup(X, y, lam, idx_perm):
 def segmentation_reconstruction(
     X, y, n_segments, data_classes, rand_indices, idx_shuffle
 ):
-    """Segment and reconstruct EEG data in the time domain preserving labels.
+    """Segment and reconstruct EEG data from [1]_.
 
     See [1]_ for details.
 
@@ -1000,8 +1000,8 @@ def segmentation_reconstruction(
     References
     ----------
     .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
-    suppress calibration time in oscillatory activity-based brain–computer
-    interfaces. Proceedings of the IEEE, 103(6), 871-890.
+        suppress calibration time in oscillatory activity-based brain–computer
+        interfaces. Proceedings of the IEEE, 103(6), 871-890.
     """
 
     # Initialize lists to store augmented data and corresponding labels
@@ -1044,39 +1044,41 @@ def segmentation_reconstruction(
 
 
 def mask_encoding(X, y, time_start, segment_length, n_segments):
-    """Replaces a contiguous part (or parts) of all channels by zeros
+    """Mark encoding from Ding et al. (2024) from [ding2024]_.
+
+    Replaces a contiguous part (or parts) of all channels by zeros
     (if more than one segment, it may overlap).
 
-     Implementation based on [1]_
+    Implementation based on [ding2024]_
 
-     Parameters
-     ----------
-     X : torch.Tensor
-         EEG input example or batch.
-     y : torch.Tensor
-         EEG labels for the example or batch.
-     time_start : torch.Tensor
-         Tensor of integers containing the position (in last dimension) where to
-         start masking the signal. Should have "n_segments" times the size of the first
-         dimension of X (i.e. "n_segments" start positions per example in the batch).
-     segment_length: int
-         Length of each segment to zero out.
-     n_segments : int
-         Number of segments to zero out in each example.
+    Parameters
+    ----------
+    X : torch.Tensor
+        EEG input example or batch.
+    y : torch.Tensor
+        EEG labels for the example or batch.
+    time_start : torch.Tensor
+        Tensor of integers containing the position (in last dimension) where to
+        start masking the signal. Should have "n_segments" times the size of the first
+        dimension of X (i.e. "n_segments" start positions per example in the batch).
+    segment_length : int
+        Length of each segment to zero out.
+    n_segments : int
+        Number of segments to zero out in each example.
 
-     Returns
-     -------
-     torch.Tensor
-         Transformed inputs.
-     torch.Tensor
-         Transformed labels.
+    Returns
+    -------
+    torch.Tensor
+        Transformed inputs.
+    torch.Tensor
+        Transformed labels.
 
-     References
-     ----------
-     .. [1] Ding, Wenlong, et al. "A Novel Data Augmentation Approach
-     Using Mask Encoding for Deep Learning-Based Asynchronous SSVEP-BCI."
-     IEEE Transactions on Neural Systems and Rehabilitation Engineering
-     32 (2024): 875-886.
+    References
+    ----------
+    .. [ding2024] Ding, Wenlong, et al. A Novel Data Augmentation Approach
+       Using Mask Encoding for Deep Learning-Based Asynchronous SSVEP-BCI.
+       IEEE Transactions on Neural Systems and Rehabilitation Engineering
+       32 (2024): 875-886.
     """
 
     batch_indices = torch.arange(X.shape[0]).repeat_interleave(n_segments)

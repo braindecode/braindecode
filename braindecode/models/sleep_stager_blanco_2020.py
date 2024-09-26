@@ -9,7 +9,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Blanco et al 2020.
+    """Sleep staging architecture from Blanco et al. 2020 from [Blanco2020]_
 
     Convolutional neural network for sleep staging described in [Blanco2020]_.
     A series of seven convolutional layers with kernel sizes running down from 7 to 3,

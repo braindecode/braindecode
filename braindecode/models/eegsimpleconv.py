@@ -19,7 +19,7 @@ from .base import EEGModuleMixin
 
 
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
-    """EEGSimpleConv from [Yassine2023]_.
+    """EEGSimpleConv from Ouahidi, YE et al. (2023) [Yassine2023]_.
 
     EEGSimpleConv is a 1D Convolutional Neural Network originally designed
     for decoding motor imagery from EEG signals. The model aims to have a
@@ -35,14 +35,13 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     is performed to obtain a single value per feature map, which is then fed
     into a linear layer to obtain the final classification prediction output.
 
-
     The paper and original code with more details about the methodological
     choices are available at the [Yassine2023]_ and [Yassine2023Code]_.
 
     The input shape should be three-dimensional matrix representing the EEG
     signals.
 
-    `(batch_size, n_channels, n_timesteps)`.
+    ``(batch_size, n_channels, n_timesteps)``.
 
     Notes
     -----
@@ -53,7 +52,6 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     evaluation paradigm.
 
     |    Parameter    | Within-Subject | Cross-Subject |
-    |-----------------|----------------|---------------|
     | feature_maps    | [64-144]       |   [64-144]    |
     | n_convs         |    1           |   [2-4]       |
     | resampling_freq | [70-100]       |   [50-80]     |
@@ -82,12 +80,12 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     References
     ----------
     .. [Yassine2023] Yassine El Ouahidi, V. Gripon, B. Pasdeloup, G. Bouallegue
-    N. Farrugia, G. Lioi, 2023. A Strong and Simple Deep Learning Baseline for
-    BCI Motor Imagery Decoding. Arxiv preprint. arxiv.org/abs/2309.07159
+        N. Farrugia, G. Lioi, 2023. A Strong and Simple Deep Learning Baseline for
+        BCI Motor Imagery Decoding. Arxiv preprint. arxiv.org/abs/2309.07159
     .. [Yassine2023Code] Yassine El Ouahidi, V. Gripon, B. Pasdeloup, G. Bouallegue
-    N. Farrugia, G. Lioi, 2023. A Strong and Simple Deep Learning Baseline for
-    BCI Motor Imagery Decoding. GitHub repository.
-    https://github.com/elouayas/EEGSimpleConv.
+        N. Farrugia, G. Lioi, 2023. A Strong and Simple Deep Learning Baseline for
+        BCI Motor Imagery Decoding. GitHub repository.
+        https://github.com/elouayas/EEGSimpleConv.
 
     """
 
