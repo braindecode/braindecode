@@ -265,7 +265,6 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.to_patch_embedding = Rearrange(
             "batch kernel chans filter -> batch kernel (chans filter)"
         )
-        nn.TransformerDecoderLayer
         self.transformer = _Transformer(
             dim=self.dim,
             depth=depth,
