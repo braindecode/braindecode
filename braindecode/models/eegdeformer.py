@@ -206,7 +206,7 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self,
         temporal_kernel: int = 11,
         num_kernel: int = 64,
-        depth: int = 4,
+        n_layers: int = 4,
         heads: int = 16,
         mlp_dim: int = 16,
         dim_head: int = 16,
@@ -233,8 +233,8 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
         self.dim = int(0.5 * self.n_times)
         # embedding size after the first cnn encoder
-        self.hidden_size = int(num_kernel * int(self.dim * (0.5**depth))) + int(
-            num_kernel * depth
+        self.hidden_size = int(num_kernel * int(self.dim * (0.5**n_layers))) + int(
+            num_kernel * n_layers
         )
         # Parameters
         self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, self.dim))
@@ -267,7 +267,7 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         )
         self.transformer = _Transformer(
             dim=self.dim,
-            depth=depth,
+            depth=self.n_layers,
             heads=heads,
             dim_head=dim_head,
             mlp_dim=mlp_dim,
