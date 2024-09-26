@@ -41,7 +41,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
     ----------
     n_times : int, optional
         Size of the input, in number of samples. Set to 128 (1s) as in
-        [Santamaria2020]_.
+        [santamaria2020]_.
     sfreq : float, optional
         EEG sampling frequency. Defaults to 128 as in [santamaria2020]_.
     drop_prob : float, optional
