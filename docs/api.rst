@@ -86,9 +86,11 @@ Models
     SleepStagerChambon2018
     SleepStagerEldele2021
     SPARCNet
+    SyncNet
     TCN
     TIDNet
     USleep
+
 
 Training
 ========
