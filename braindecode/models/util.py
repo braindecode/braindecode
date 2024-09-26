@@ -229,4 +229,5 @@ models_mandatory_parameters = [
     ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGDeformer", ["n_chans", "n_outputs", "n_times"], None),
 ]

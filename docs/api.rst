@@ -70,6 +70,7 @@ Models
     Deep4Net
     DeepSleepNet
     EEGConformer
+    EEGDeformer
     EEGInceptionERP
     EEGInceptionMI
     EEGITNet
