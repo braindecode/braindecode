@@ -50,6 +50,8 @@ Enhancements
 - Ensure consistency in the last layer using tests (:gh:`642` by `Bruno Aristimunha`_ )
 - Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.EEGDeformer` (:gh:`648` by `Bruno Aristimunha`_ )
+
 
 Bugs
 ~~~~
