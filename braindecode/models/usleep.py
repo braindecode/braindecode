@@ -118,19 +118,20 @@ class _DecoderBlock(nn.Module):
 
 
 class USleep(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Perslev et al 2021.
+    """
+    Sleep staging architecture from Perslev et al. 2021 [1]_.
 
     U-Net (autoencoder with skip connections) feature-extractor for sleep
     staging described in [1]_.
 
     For the encoder ('down'):
-        -- the temporal dimension shrinks (via maxpooling in the time-domain)
-        -- the spatial dimension expands (via more conv1d filters in the
-           time-domain)
+    - the temporal dimension shrinks (via maxpooling in the time-domain)
+    - the spatial dimension expands (via more conv1d filters in the time-domain)
+
     For the decoder ('up'):
-        -- the temporal dimension expands (via upsampling in the time-domain)
-        -- the spatial dimension shrinks (via fewer conv1d filters in the
-           time-domain)
+    - the temporal dimension expands (via upsampling in the time-domain)
+    - the spatial dimension shrinks (via fewer conv1d filters in the time-domain)
+
     Both do so at exponential rates.
 
     Parameters
@@ -140,12 +141,12 @@ class USleep(EEGModuleMixin, nn.Module):
     sfreq : float
         EEG sampling frequency. Set to 128 in [1]_.
     depth : int
-        Number of conv blocks in encoding layer (number of 2x2 max pools)
-        Note: each block halve the spatial dimensions of the features.
+        Number of conv blocks in encoding layer (number of 2x2 max pools).
+        Note: each block halves the spatial dimensions of the features.
     n_time_filters : int
         Initial number of convolutional filters. Set to 5 in [1]_.
     complexity_factor : float
-        Multiplicative factor for number of channels at each layer of the U-Net.
+        Multiplicative factor for the number of channels at each layer of the U-Net.
         Set to 2 in [1]_.
     with_skip_connection : bool
         If True, use skip connections in decoder blocks.
@@ -159,23 +160,23 @@ class USleep(EEGModuleMixin, nn.Module):
     ensure_odd_conv_size : bool
         If True and the size of the convolutional kernel is an even number, one
         will be added to it to ensure it is odd, so that the decoder blocks can
-        work. This can useful when using different sampling rates from 128
+        work. This can be useful when using different sampling rates from 128
         or 100 Hz.
     in_chans : int
-        Alias for n_chans.
+        Alias for `n_chans`.
     n_classes : int
-        Alias for n_outputs.
+        Alias for `n_outputs`.
     input_size_s : float
-        Alias for input_window_seconds.
-    activation: nn.Module, default=nn.ELU
+        Alias for `input_window_seconds`.
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     References
     ----------
     .. [1] Perslev M, Darkner S, Kempfner L, Nikolic M, Jennum PJ, Igel C.
-           U-Sleep: resilient high-frequency sleep staging. npj Digit. Med. 4, 72 (2021).
-           https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
+       U-Sleep: resilient high-frequency sleep staging. *npj Digit. Med.* 4, 72 (2021).
+       https://github.com/perslev/U-Time/blob/master/utime/models/usleep.py
     """
 
     def __init__(

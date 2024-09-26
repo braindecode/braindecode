@@ -162,9 +162,11 @@ class _TCBlock(nn.Module):
 
 
 class EEGITNet(EEGModuleMixin, nn.Sequential):
-    """EEG-ITNet: An Explainable Inception Temporal
-     Convolutional Network for motor imagery classification from
-     Salami et. al 2022.
+    """EEG-ITNet from Salami, et al. [Salami2022]_
+
+    EEG-ITNet: An Explainable Inception Temporal
+    Convolutional Network for motor imagery classification from
+    Salami et al. 2022.
 
     See [Salami2022]_ for details.
 
@@ -184,17 +186,18 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
-
-    References
-    ----------
-    .. [Salami2022] A. Salami, J. Andreu-Perez and H. Gillmeister, "EEG-ITNet: An Explainable
-    Inception Temporal Convolutional Network for motor imagery classification," in IEEE Access,
-    doi: 10.1109/ACCESS.2022.3161489.
-
     Notes
     -----
     This implementation is not guaranteed to be correct, has not been checked
     by original authors, only reimplemented from the paper based on author implementation.
+
+
+    References
+    ----------
+    .. [Salami2022] A. Salami, J. Andreu-Perez and H. Gillmeister, "EEG-ITNet:
+        An Explainable Inception Temporal Convolutional Network for motor
+        imagery classification," in IEEE Access,
+        doi: 10.1109/ACCESS.2022.3161489.
     """
 
     def __init__(

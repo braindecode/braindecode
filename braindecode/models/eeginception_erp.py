@@ -14,7 +14,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
-    """EEG Inception for ERP-based classification
+    """EEG Inception for ERP-based from Santamaria-Vazquez E. [Santamaria2020]_.
 
     The code for the paper and this model is also available at [Santamaria2020]_
     and an adaptation for PyTorch [2]_.

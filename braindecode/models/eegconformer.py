@@ -12,7 +12,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
-    """EEG Conformer.
+    """EEG Conformer from Song, Y. et al. (2022) from [Song2022]_.
 
     Convolutional Transformer for EEG decoding.
 

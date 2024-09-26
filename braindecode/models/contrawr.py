@@ -118,7 +118,7 @@ class ResBlock(nn.Module):
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
-    """Contrast with the World Representation (ContraWR) model [Yang2021]_.
+    """Contrast with the World Representation ContraWR from Yang et al. 2021 [Yang2021]_.
 
     This model is a convolutional neural network that uses a spectral
     representation with a series of convolutional layers and residual blocks.
@@ -144,7 +144,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
     -----
     This implementation is not guaranteed to be correct, has not been checked
     by original authors. The modifications are minimal and the model is expected
-    to work as intended.
+    to work as intended. the original code from [Code2023]_.
 
     References
     ----------

@@ -20,7 +20,7 @@ from .base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram.
+    """Labram from [Jiang2024]_.
 
     Large Brain Model for Learning Generic Representations with Tremendous
     EEG Data in BCI from [Jiang2024]_
@@ -31,8 +31,8 @@ class Labram(EEGModuleMixin, nn.Module):
     BEiTv2 [BeiTv2]_.
 
     The models can be used in two modes:
-        - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
-        - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
+    - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
+    - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
 
     The braindecode's modification is to allow the model to be used in
     with an input shape of (batch, n_chans, n_times), if neural tokenizer
@@ -41,18 +41,18 @@ class Labram(EEGModuleMixin, nn.Module):
 
     The models have the following sequence of steps:
     if neural tokenizer:
-        - SegmentPatch: Segment the input data in patches;
-        - TemporalConv: Apply a temporal convolution to the segmented data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
+    - SegmentPatch: Segment the input data in patches;
+    - TemporalConv: Apply a temporal convolution to the segmented data;
+    - Residual adding cls, temporal and position embeddings (optional);
+    - WindowsAttentionBlock: Apply a windows attention block to the data;
+    - LayerNorm: Apply layer normalization to the data;
+    - Linear: An head linear layer to transformer the data into classes.
     else:
-        - PatchEmbed: Apply a patch embedding to the input data;
-        - Residual adding cls, temporal and position embeddings (optional);
-        - WindowsAttentionBlock: Apply a windows attention block to the data;
-        - LayerNorm: Apply layer normalization to the data;
-        - Linear: An head linear layer to transformer the data into classes.
+    - PatchEmbed: Apply a patch embedding to the input data;
+    - Residual adding cls, temporal and position embeddings (optional);
+    - WindowsAttentionBlock: Apply a windows attention block to the data;
+    - LayerNorm: Apply layer normalization to the data;
+    - Linear: An head linear layer to transformer the data into classes.
 
     .. versionadded:: 0.9
 

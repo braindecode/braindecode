@@ -62,9 +62,6 @@ class _ClassificationHead(nn.Sequential):
         The size of the embedding layer
     n_outputs: int
         The number of classes
-    activation: nn.Module, default=nn.ELU
-        Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Returns
     -------
@@ -72,10 +69,10 @@ class _ClassificationHead(nn.Sequential):
         (batch, n_outputs)
     """
 
-    def __init__(self, emb_size: int, n_outputs: int, activation: nn.Module = nn.ELU):
+    def __init__(self, emb_size: int, n_outputs: int):
         super().__init__()
         self.classification_head = nn.Sequential(
-            activation(),
+            nn.ELU(),
             nn.Linear(emb_size, n_outputs),
         )
 
@@ -324,9 +321,7 @@ class _BIOTEncoder(nn.Module):
 
 
 class BIOT(EEGModuleMixin, nn.Module):
-    """BIOT from Yang et al. (2023) [Yang2023]_
-
-    BIOT: Cross-data Biosignal Learning in the Wild.
+    """BIOT: Cross-data Biosignal Learning in the Wild from [Yang2023]_
 
     BIOT is a large language model for biosignal classification. It is
     a wrapper around the `BIOTEncoder` and `ClassificationHead` modules.
@@ -360,18 +355,6 @@ class BIOT(EEGModuleMixin, nn.Module):
         The number of attention heads, by default 8
     n_layers : int, optional
         The number of transformer layers, by default 4
-    activation: nn.Module, default=nn.ELU
-        Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
-    return_feature: bool, optional
-        Changing the output for the neural network. Default is single tensor
-        when return_feature is True, return embedding space too.
-        Default is False.
-    hop_length: int, optional
-        The hop length for the torch.stft transformation in the
-        encoder. The default is 100.
-    sfreq: int, optional
-        The sfreq parameter for the encoder. The default is 200
 
     References
     ----------
@@ -396,7 +379,6 @@ class BIOT(EEGModuleMixin, nn.Module):
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
-        activation: nn.Module = nn.ELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -442,10 +424,8 @@ class BIOT(EEGModuleMixin, nn.Module):
             hop_length=hop_length,
         )
 
-        self.final_layer = _ClassificationHead(
-            emb_size=emb_size,
-            n_outputs=self.n_outputs,
-            activation=activation,
+        self.classifier = _ClassificationHead(
+            emb_size=emb_size, n_outputs=self.n_outputs
         )
 
     def forward(self, x):
@@ -466,7 +446,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             (batch_size, n_outputs), (batch_size, emb_size)
         """
         emb = self.encoder(x)
-        x = self.final_layer(emb)
+        x = self.classifier(emb)
 
         if self.return_feature:
             return x, emb

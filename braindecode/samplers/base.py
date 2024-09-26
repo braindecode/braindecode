@@ -22,13 +22,19 @@ class RecordingSampler(Sampler):
         window in the BaseConcatDataset to sample examples from. Normally
         obtained with `BaseConcatDataset.get_metadata()`. For instance,
         `metadata.head()` might look like this:
-
-           i_window_in_trial  i_start_in_trial  i_stop_in_trial  target  subject    session    run
-        0                  0                 0              500      -1        4  session_T  run_0
-        1                  1               500             1000      -1        4  session_T  run_0
-        2                  2              1000             1500      -1        4  session_T  run_0
-        3                  3              1500             2000      -1        4  session_T  run_0
-        4                  4              2000             2500      -1        4  session_T  run_0
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | i_window_in_trial | i_start_in_trial| i_stop_in_trial | target | subject  | session   | run   |
+        +===================+=================+=================+========+==========+===========+=======+
+        | 0                 | 0               | 500             | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 1                 | 500             | 1000            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 2                 | 1000            | 1500            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 3                 | 1500            | 2000            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
+        | 4                 | 2000            | 2500            | -1     | 4        | session_T | run_0 |
+        +-------------------+-----------------+-----------------+--------+----------+-----------+-------+
 
     random_state : np.RandomState | int | None
         Random state.

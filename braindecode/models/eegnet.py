@@ -25,7 +25,7 @@ class Conv2dWithConstraint(nn.Conv2d):
 
 
 class EEGNetv4(EEGModuleMixin, nn.Sequential):
-    """EEGNet v4 model from Lawhern et al 2018.
+    """EEGNet v4 model from Lawhern et al. 2018 [EEGNet4]_.
 
     See details in [EEGNet4]_.
 

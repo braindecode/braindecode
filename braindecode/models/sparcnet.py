@@ -205,7 +205,7 @@ class TransitionLayer(nn.Sequential):
 
 
 class SPARCNet(EEGModuleMixin, nn.Module):
-    """Seizures, Periodic and Rhythmic pattern Continuum Neural Network (SPaRCNet) [jing2023]_.
+    """Seizures, Periodic and Rhythmic pattern Continuum Neural Network (SPaRCNet) from Jing, J. et al. (2023) [jing2023]_.
 
     This is a temporal CNN model for biosignal classification based on the DenseNet
     architecture.

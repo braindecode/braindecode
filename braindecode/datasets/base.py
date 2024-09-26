@@ -416,9 +416,10 @@ class WindowsDataset(BaseDataset):
 
 
 class BaseConcatDataset(ConcatDataset):
-    """A base class for concatenated datasets. Holds either mne.Raw or
-    mne.Epoch in self.datasets and has a pandas DataFrame with additional
-    description.
+    """A base class for concatenated datasets.
+
+    Holds either mne.Raw or mne.Epoch in self.datasets and has
+    a pandas DataFrame with additional description.
 
     Parameters
     ----------
@@ -426,6 +427,7 @@ class BaseConcatDataset(ConcatDataset):
         list of BaseDataset, BaseConcatDataset or WindowsDataset
     target_transform : callable | None
         Optional function to call on targets before returning them.
+
     """
 
     def __init__(
@@ -478,8 +480,9 @@ class BaseConcatDataset(ConcatDataset):
         property: str | None = None,
         split_ids: list[int] | list[list[int]] | dict[str, list[int]] | None = None,
     ) -> dict[str, BaseConcatDataset]:
-        """Split the dataset based on information listed in its description
-        DataFrame or based on indices.
+        """Split the dataset based on information listed in its description.
+
+        The format could be DataFrame or based on indices.
 
         Parameters
         ----------

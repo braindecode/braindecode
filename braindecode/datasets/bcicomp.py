@@ -45,7 +45,8 @@ class BCICompetitionIVDataset4(BaseConcatDataset):
     References
     ----------
     .. [1] Miller, Kai J. "A library of human electrocorticographic data and analyses."
-    Nature human behaviour 3, no. 11 (2019): 1225-1235. https://doi.org/10.1038/s41562-019-0678-3
+       Nature human behaviour 3, no. 11 (2019): 1225-1235.
+       https://doi.org/10.1038/s41562-019-0678-3
     """
 
     possible_subjects = [1, 2, 3]

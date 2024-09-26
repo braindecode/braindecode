@@ -1076,10 +1076,12 @@ class Mixup(Transform):
 
 
 class SegmentationReconstruction(Transform):
-    """Applies a segmentation-reconstruction transform to the input data, as
-       proposed in _[1]. It segments each trial in the batch and randomly mix
-       it to generate new synthetic trials by label, preserving the original
-       order of the segments in time domain.
+    """Segmentation Reconstruction from Lotte (2015) [Lotte2015]_.
+
+    Applies a segmentation-reconstruction transform to the input data, as
+    proposed in [Lotte2015]_. It segments each trial in the batch and randomly mix
+    it to generate new synthetic trials by label, preserving the original
+    order of the segments in time domain.
 
     Parameters
     ----------
@@ -1096,9 +1098,9 @@ class SegmentationReconstruction(Transform):
 
     References
     ----------
-    .. [1] Lotte, F. (2015). Signal processing approaches to minimize or
-    suppress calibration time in oscillatory activity-based brain–computer
-    interfaces. Proceedings of the IEEE, 103(6), 871-890.
+    .. [Lotte2015] Lotte, F. (2015). Signal processing approaches to minimize
+        or suppress calibration time in oscillatory activity-based brain–computer
+        interfaces. Proceedings of the IEEE, 103(6), 871-890.
     """
 
     operation = staticmethod(segmentation_reconstruction)  # type: ignore[assignment]
@@ -1181,7 +1183,9 @@ class SegmentationReconstruction(Transform):
 
 
 class MaskEncoding(Transform):
-    """Replaces randomly chosen contiguous part (or parts) of all channels by
+    """MaskEncoding from [1]_.
+
+    Replaces randomly chosen contiguous part (or parts) of all channels by
     zeros (if more than one segment, it may overlap).
 
     Implementation based on [1]_
@@ -1202,9 +1206,9 @@ class MaskEncoding(Transform):
     References
     ----------
     .. [1] Ding, Wenlong, et al. "A Novel Data Augmentation Approach
-    Using Mask Encoding for Deep Learning-Based Asynchronous SSVEP-BCI."
-    IEEE Transactions on Neural Systems and Rehabilitation Engineering
-    32 (2024): 875-886.
+        Using Mask Encoding for Deep Learning-Based Asynchronous SSVEP-BCI."
+        IEEE Transactions on Neural Systems and Rehabilitation Engineering
+        32 (2024): 875-886.
     """
 
     operation = staticmethod(mask_encoding)  # type: ignore[assignment]

@@ -70,7 +70,6 @@ Models
     Deep4Net
     DeepSleepNet
     EEGConformer
-    EEGInception
     EEGInceptionERP
     EEGInceptionMI
     EEGITNet
@@ -89,7 +88,6 @@ Models
     SPARCNet
     TCN
     TIDNet
-    TimeDistributed
     USleep
 
 Training

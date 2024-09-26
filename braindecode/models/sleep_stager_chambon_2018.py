@@ -9,7 +9,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Chambon et al 2018.
+    """Sleep staging architecture from Chambon et al. 2018 [Chambon2018]_.
 
     Convolutional neural network for sleep staging described in [Chambon2018]_.
 

@@ -9,7 +9,7 @@ If you want to test features under development or contribute to the library, or 
 
    If you are only trying to install Braindecode, we recommend using the pip installation `Installation <https://braindecode.org/braindecode/install/install_pip.html#install-pip>`__ for details on that.
 
-.. _system-level:
+
 
 Clone the repository from GitHub
 --------------------------------

@@ -11,7 +11,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class EEGNeX(EEGModuleMixin, nn.Module):
-    """EEGNeX model from [EEGNeX]_.
+    """EEGNeX model from Chen, X. et al. (2024) [EEGNeX]_.
 
     Parameters
     ----------

@@ -245,7 +245,7 @@ class _ChannelAttentionBlock(nn.Module):
 
 
 class AttentionBaseNet(EEGModuleMixin, nn.Module):
-    """AttentionBaseNet.
+    """AttentionBaseNet from Wimpff M et al. (2023) [Martin2023]_.
 
     Neural Network from the paper: EEG motor imagery decoding:
     A framework for comparative analysis with channel attention

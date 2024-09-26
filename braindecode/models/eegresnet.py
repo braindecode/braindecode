@@ -8,7 +8,6 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import init
-from torch.nn.functional import elu
 from einops.layers.torch import Rearrange
 
 from .functions import squeeze_final_output
@@ -17,18 +16,18 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
-    """Residual Network for EEG  from Schirrmeister et al 2017.
+    """EEGResNet from Schirrmeister et al. 2017 [Schirrmeister2017]_.
 
     Model described in [Schirrmeister2017]_.
 
     Parameters
     ----------
-     in_chans :
-        Alias for `n_chans`.
-     n_classes :
-        Alias for `n_outputs`.
-     input_window_samples :
-        Alias for `n_times`.
+    in_chans :
+        Alias for ``n_chans``.
+    n_classes :
+        Alias for ``n_outputs``.
+    input_window_samples :
+       Alias for ``n_times``.
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
@@ -37,10 +36,8 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
     ----------
     .. [Schirrmeister2017] Schirrmeister, R. T., Springenberg, J. T., Fiederer,
        L. D. J., Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F.
-       & Ball, T. (2017).
-       Deep learning with convolutional neural networks for EEG decoding and
-       visualization.
-       Human Brain Mapping , Aug. 2017.
+       & Ball, T. (2017). Deep learning with convolutional neural networks for ,
+       EEG decoding and visualization. Human Brain Mapping, Aug. 2017.
        Online: http://dx.doi.org/10.1002/hbm.23730
     """
 

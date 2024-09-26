@@ -195,7 +195,9 @@ class _TCNBlock(nn.Module):
 
 
 class EEGTCNet(EEGModuleMixin, nn.Module):
-    """EEGTCNet model combining EEGNet and TCN blocks.
+    """EEGTCNet model from Ingolfsson et al. (2020) [ingolfsson2020]_.
+
+    Combining EEGNet and TCN blocks.
 
     Parameters
     ----------
@@ -221,10 +223,10 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [1] Ingolfsson, T. M., Hersche, M., Wang, X., Kobayashi, N., Cavigelli, L., & Benini, L.
-           (2020). EEG-TCNet: An accurate temporal convolutional network for embedded motor-imagery
-           brain–machine interfaces. arXiv preprint arXiv:2006.00622.
-           https://doi.org/10.48550/arXiv.2006.00622
+    .. [ingolfsson2020] Ingolfsson, T. M., Hersche, M., Wang, X., Kobayashi, N.,
+        Cavigelli, L., & Benini, L. (2020). EEG-TCNet: An accurate temporal
+        convolutional network for embedded motor-imagery brain–machine interfaces.
+        https://doi.org/10.48550/arXiv.2006.00622
     """
 
     def __init__(
