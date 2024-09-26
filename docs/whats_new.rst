@@ -184,7 +184,7 @@ Enhancements
 - Preprocessing and windowing choices are now saved on the level of individual datasets (:gh:`288` by `Lukas Gemein`_)
 - Serialization now happens entirely on dataset level creating subsets for individual datasets that contain 'fif' and 'json' files (:gh:`288` `Lukas Gemein`_)
 - Instantiation of TUH :class:`braindecode.datasets.tuh.TUH` and TUHAbnormal :class:`braindecode.datasets.tuh.TUHAbnormal`, as well as loading :func:`braindecode.datautil.serialization.load_concat_dataset` of stored datasets now support multiple workers (:gh:`288` by `Lukas Gemein`_)
-- Adding balanced sampling of sequences of windows with :class:`braindecode.samplers.BalancedSequenceSampler`  as proposed in U-Sleep paper (:gh:`295` by `Theo Gnassounou`_ and `Hubert Banville`_)
+- Adding balanced sampling of sequences of windows with :class:`braindecode.samplers.BalancedSequenceSampler`  as proposed in U-Sleep paper (:gh:`295` by `Théo Gnassounou`_ and `Hubert Banville`_)
 - :func:`braindecode.preprocessing.preprocess` can now work in parallel and serialize datasets to enable lazy-loading (i.e. `preload=False`) (:gh:`277` by `Hubert Banville`_)
 - Adding :class:`braindecode.models.TimeDistributed` to apply a module on a sequence (:gh:`318` by `Hubert Banville`_)
 - Adding time series targets decoding together with :class:`braindecode.datasets.BCICompetitionIVDataset4` and fingers flexion decoding from ECoG examples (:gh:`261` by `Maciej Śliwowski`_ and `Mohammed Fattouh`_)
@@ -228,7 +228,7 @@ Enhancements
 - Removing code duplicate in BaseDataset and WindowsDataset (:gh:`159` by `Lukas Gemein`_)
 - Only load data if needed during preprocessing (e.g., allow timecrop without loading) (:gh:`164` by `Robin Tibor Schirrmeister`_)
 - Adding option to sort filtered channels by frequency band for the filterbank in :func:`braindecode.datautil.filterbank` (:gh:`185` by `Lukas Gemein`_)
-- Adding the USleep model :class:`braindecode.models.USleep` (:gh:`282` by `Theo Gnassounou`_ and `Omar Chehab`_)
+- Adding the USleep model :class:`braindecode.models.USleep` (:gh:`282` by `Théo Gnassounou`_ and `Omar Chehab`_)
 - Adding :class:`braindecode.models.SleepStagerEldele2021` and :class:`braindecode.models.SleepStagerBlanco2020` models for sleep staging  (:gh:`341` by `Divyesh Narayanan`_)
 
 Bugs
