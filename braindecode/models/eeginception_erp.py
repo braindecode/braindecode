@@ -14,9 +14,9 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
-    """EEG Inception for ERP-based from Santamaria-Vazquez E. [Santamaria2020]_.
+    """EEG Inception for ERP-based from Santamaria-Vazquez [santamaria2020]_.
 
-    The code for the paper and this model is also available at [Santamaria2020]_
+    The code for the paper and this model is also available at [santamaria2020]_
     and an adaptation for PyTorch [2]_.
 
     The model is strongly based on the original InceptionNet for an image. The main goal is
@@ -30,7 +30,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
     The winners of BEETL Competition/NeurIps 2021 used parts of the
     model [beetl]_.
 
-    The model is fully described in [Santamaria2020]_.
+    The model is fully described in [santamaria2020]_.
 
     Notes
     -----
@@ -43,29 +43,29 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         Size of the input, in number of samples. Set to 128 (1s) as in
         [Santamaria2020]_.
     sfreq : float, optional
-        EEG sampling frequency. Defaults to 128 as in [Santamaria2020]_.
+        EEG sampling frequency. Defaults to 128 as in [santamaria2020]_.
     drop_prob : float, optional
         Dropout rate inside all the network. Defaults to 0.5 as in
-        [Santamaria2020]_.
+        [santamaria2020]_.
     scales_samples_s: list(float), optional
         Windows for inception block. Temporal scale (s) of the convolutions on
         each Inception module. This parameter determines the kernel sizes of
         the filters. Defaults to 0.5, 0.25, 0.125 seconds, as in
-        [Santamaria2020]_.
+        [santamaria2020]_.
     n_filters : int, optional
         Initial number of convolutional filters. Defaults to 8 as in
-        [Santamaria2020]_.
+        [santamaria2020]_.
     activation: nn.Module, optional
         Activation function. Defaults to ELU activation as in
-        [Santamaria2020]_.
+        [santamaria2020]_.
     batch_norm_alpha: float, optional
         Momentum for BatchNorm2d. Defaults to 0.01.
     depth_multiplier: int, optional
         Depth multiplier for the depthwise convolution. Defaults to 2 as in
-        [Santamaria2020]_.
+        [santamaria2020]_.
     pooling_sizes: list(int), optional
         Pooling sizes for the inception blocks. Defaults to 4, 2, 2 and 2, as
-        in [Santamaria2020]_.
+        in [santamaria2020]_.
     in_channels : int
         Alias for n_chans.
     n_classes : int
@@ -75,7 +75,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
     References
     ----------
-    .. [Santamaria2020] Santamaria-Vazquez, E., Martinez-Cagigal, V.,
+    .. [santamaria2020] Santamaria-Vazquez, E., Martinez-Cagigal, V.,
        Vaquerizo-Villar, F., & Hornero, R. (2020).
        EEG-inception: A novel deep convolutional neural network for assistive
        ERP-based brain-computer interfaces.

@@ -225,7 +225,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
 
 class EEGNetv1(EEGModuleMixin, nn.Sequential):
-    """EEGNet model from Lawhern et al. 2016.
+    """EEGNet model from Lawhern et al. 2016 from [EEGNet]_.
 
     See details in [EEGNet]_.
 

@@ -11,7 +11,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class EEGNeX(EEGModuleMixin, nn.Module):
-    """EEGNeX model from Chen, X. et al. (2024) [EEGNeX]_.
+    """EEGNeX model from Chen et al. (2024) [eegnex]_.
 
     Parameters
     ----------
@@ -46,7 +46,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [EEGNeX] Chen, X., Teng, X., Chen, H., Pan, Y., & Geyer, P. (2024).
+    .. [eegnex] Chen, X., Teng, X., Chen, H., Pan, Y., & Geyer, P. (2024).
        Toward reliable signals decoding for electroencephalogram: A benchmark
        study to EEGNeX. Biomedical Signal Processing and Control, 87, 105475.
     .. [EEGNexCode] Chen, X., Teng, X., Chen, H., Pan, Y., & Geyer, P. (2024).
