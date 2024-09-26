@@ -232,7 +232,6 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         # Variables
         self.drop_prob = drop_prob
         self.dim = int(0.5 * self.n_times)
-        # embedding size after the first cnn encoder
         self.hidden_size = int(num_kernel * int(self.dim * (0.5**n_layers))) + int(
             num_kernel * n_layers
         )
