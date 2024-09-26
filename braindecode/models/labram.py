@@ -41,18 +41,18 @@ class Labram(EEGModuleMixin, nn.Module):
 
     The models have the following sequence of steps:
     if neural tokenizer:
-    - SegmentPatch: Segment the input data in patches;
-    - TemporalConv: Apply a temporal convolution to the segmented data;
-    - Residual adding cls, temporal and position embeddings (optional);
-    - WindowsAttentionBlock: Apply a windows attention block to the data;
-    - LayerNorm: Apply layer normalization to the data;
-    - Linear: An head linear layer to transformer the data into classes.
+        - SegmentPatch: Segment the input data in patches;
+        - TemporalConv: Apply a temporal convolution to the segmented data;
+        - Residual adding cls, temporal and position embeddings (optional);
+        - WindowsAttentionBlock: Apply a windows attention block to the data;
+        - LayerNorm: Apply layer normalization to the data;
+        - Linear: An head linear layer to transformer the data into classes.
     else:
-    - PatchEmbed: Apply a patch embedding to the input data;
-    - Residual adding cls, temporal and position embeddings (optional);
-    - WindowsAttentionBlock: Apply a windows attention block to the data;
-    - LayerNorm: Apply layer normalization to the data;
-    - Linear: An head linear layer to transformer the data into classes.
+        - PatchEmbed: Apply a patch embedding to the input data;
+        - Residual adding cls, temporal and position embeddings (optional);
+        - WindowsAttentionBlock: Apply a windows attention block to the data;
+        - LayerNorm: Apply layer normalization to the data;
+        - Linear: An head linear layer to transformer the data into classes.
 
     .. versionadded:: 0.9
 
