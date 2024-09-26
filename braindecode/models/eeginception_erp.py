@@ -27,7 +27,8 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
     One advantage of the EEG-Inception block is that it allows a network
     to learn simultaneous components of low and high frequency associated with the signal.
-    The winners of BEETL Competition/NeurIps 2021 used parts of the model [beetl]_.
+    The winners of BEETL Competition/NeurIps 2021 used parts of the
+    model [beetl]_.
 
     The model is fully described in [Santamaria2020]_.
 
@@ -80,15 +81,15 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
        ERP-based brain-computer interfaces.
        IEEE Transactions on Neural Systems and Rehabilitation Engineering , v. 28.
        Online: http://dx.doi.org/10.1109/TNSRE.2020.3048106
-    .. [2]  Grifcc. Implementation of the EEGInception in torch (2022).
-       Online: https://github.com/Grifcc/EEG/tree/90e412a407c5242dfc953d5ffb490bdb32faf022
-    .. [beetl]_ Wei, X., Faisal, A.A., Grosse-Wentrup, M., Gramfort, A., Chevallier, S.,
+    .. [2] Grifcc. Implementation of the EEGInception in torch (2022).
+       Online: https://github.com/Grifcc/EEG/
+    .. [beetl] Wei, X., Faisal, A.A., Grosse-Wentrup, M., Gramfort, A., Chevallier, S.,
        Jayaram, V., Jeunet, C., Bakas, S., Ludwig, S., Barmpas, K., Bahri, M., Panagakis,
        Y., Laskaris, N., Adamos, D.A., Zafeiriou, S., Duong, W.C., Gordon, S.M.,
-       Lawhern, V.J., Śliwowski, M., Rouanne, V. &amp; Tempczyk, P.. (2022).
+       Lawhern, V.J., Śliwowski, M., Rouanne, V. &amp; Tempczyk, P. (2022).
        2021 BEETL Competition: Advancing Transfer Learning for Subject Independence &amp;
-       Heterogeneous EEG Data Sets. <i>Proceedings of the NeurIPS 2021 Competitions and
-       Demonstrations Track</i>, in <i>Proceedings of Machine Learning Research</i>
+       Heterogeneous EEG Data Sets. Proceedings of the NeurIPS 2021 Competitions and
+       Demonstrations Track, in Proceedings of Machine Learning Research
        176:205-219 Available from https://proceedings.mlr.press/v176/wei22a.html.
 
     """
