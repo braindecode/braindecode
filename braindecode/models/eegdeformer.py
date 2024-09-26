@@ -79,7 +79,7 @@ class _FeedForward(nn.Module):
         return self.net(x)
 
 
-class Attention(nn.Module):
+class _Attention(nn.Module):
     def __init__(self, dim, heads=8, dim_head=64, dropout=0.0):
         super().__init__()
         inner_dim = dim_head * heads
@@ -110,7 +110,7 @@ class Attention(nn.Module):
         return self.to_out(out)
 
 
-class Transformer(nn.Module):
+class _Transformer(nn.Module):
     def __init__(
         self,
         dim,
@@ -129,7 +129,9 @@ class Transformer(nn.Module):
             self.layers.append(
                 nn.ModuleList(
                     [
-                        Attention(dim, heads=heads, dim_head=dim_head, dropout=dropout),
+                        _Attention(
+                            dim, heads=heads, dim_head=dim_head, dropout=dropout
+                        ),
                         _FeedForward(dim, mlp_dim, drop_prob=dropout),
                         nn.Sequential(
                             nn.Dropout(p=dropout),
@@ -199,6 +201,10 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
        Interfaces. arXiv preprint arXiv:2405.00719.
     """
 
+    @staticmethod
+    def _get_padding(kernel):
+        return 0, int(0.5 * (kernel - 1))
+
     def __init__(
         self,
         temporal_kernel: int = 11,
@@ -230,6 +236,10 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
 
         padding = self._get_padding(temporal_kernel)
+        dim = int(0.5 * self.n_times)  # embedding size after the first cnn encoder
+        hidden_size = int(num_kernel * int(dim * (0.5**depth))) + int(
+            num_kernel * depth
+        )
 
         self.ensuredim = Rearrange("batch C T -> batch 1 T C")
 
@@ -252,14 +262,15 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
             activation(),
             nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 2)),
         )
-
-        dim = int(0.5 * self.n_times)  # embedding size after the first cnn encoder
+        self.cnn_encoder = self.cnn_block(
+            out_chan=num_kernel, kernel_size=(1, temporal_kernel), num_chan=self.n_chans
+        )
 
         self.to_patch_embedding = Rearrange("b k c f -> b k (c f)")
 
         self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, dim))
 
-        self.transformer = Transformer(
+        self.transformer = _Transformer(
             dim=dim,
             depth=depth,
             heads=heads,
@@ -269,15 +280,8 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
             in_chan=num_kernel,
             fine_grained_kernel=temporal_kernel,
         )
-        hidden_size = int(num_kernel * int(dim * (0.5**depth))) + int(
-            num_kernel * depth
-        )
 
         self.final_layer = nn.Linear(hidden_size, self.n_outputs)
-
-    @staticmethod
-    def _get_padding(kernel):
-        return 0, int(0.5 * (kernel - 1))
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.ensuredim(x)
@@ -286,6 +290,23 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         x = x + self.pos_embedding
         x = self.transformer(x)
         return self.final_layer(x)
+
+    def cnn_block(self, out_chan, kernel_size, num_chan):
+        return nn.Sequential(
+            Conv2dWithConstraint(
+                1,
+                out_chan,
+                kernel_size,
+                padding=self._get_padding(kernel_size[-1]),
+                max_norm=2,
+            ),
+            Conv2dWithConstraint(
+                out_chan, out_chan, (num_chan, 1), padding=0, max_norm=2
+            ),
+            nn.BatchNorm2d(out_chan),
+            nn.ELU(),
+            nn.MaxPool2d((1, 2), stride=(1, 2)),
+        )
 
 
 if __name__ == "__main__":
