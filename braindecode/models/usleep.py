@@ -125,12 +125,12 @@ class USleep(EEGModuleMixin, nn.Module):
     staging described in [1]_.
 
     For the encoder ('down'):
-    - the temporal dimension shrinks (via maxpooling in the time-domain)
-    - the spatial dimension expands (via more conv1d filters in the time-domain)
+        - the temporal dimension shrinks (via maxpooling in the time-domain)
+        - the spatial dimension expands (via more conv1d filters in the time-domain)
 
     For the decoder ('up'):
-    - the temporal dimension expands (via upsampling in the time-domain)
-    - the spatial dimension shrinks (via fewer conv1d filters in the time-domain)
+        - the temporal dimension expands (via upsampling in the time-domain)
+        - the spatial dimension shrinks (via fewer conv1d filters in the time-domain)
 
     Both do so at exponential rates.
 
