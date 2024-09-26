@@ -227,7 +227,7 @@ class LGGNet(EEGModuleMixin, nn.Module):
         self.num_areas = len(idx_graph)
 
         self.pool_size = pool_size
-        self.window_sizes = [0.5, 0.25, 0.125]  # in seconds
+        self.window_sizes = [0.5, 0.25, 0.125]  # in seconds, TO-DO: Replace
         self.activation_1 = activation_1
         self.activation_2 = activation_2()
 
