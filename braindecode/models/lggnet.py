@@ -175,18 +175,7 @@ class LGGNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    num_T : int
-        Number of temporal convolution filters.
-    out_graph : int
-        Number of output features from the graph convolution layer.
-    dropout_rate : float
-        Dropout rate for the fully connected layer.
-    pool_size : int
-        Pooling window size for the power layer.
-    pool_step_rate : float
-        Step rate for the pooling window (as a fraction of the pool size).
-    idx_graph : list of int
-        List containing the number of channels in each brain area.
+    XXXX
 
     References
     ----------
