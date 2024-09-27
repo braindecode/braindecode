@@ -331,7 +331,7 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
                 in_channels=1,
                 out_channels=self.num_kernel,
                 kernel_size=(1, self.temporal_kernel),
-                padding=(0, int(0.5 * (self.temporal_kernel - 1))),
+                padding=(0, self.temporal_kernel // 2),
                 max_norm=2,
             ),
             Conv2dWithConstraint(
