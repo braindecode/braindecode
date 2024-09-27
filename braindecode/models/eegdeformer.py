@@ -316,6 +316,8 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.heads = heads
         self.num_kernel = num_kernel
         self.temporal_kernel = temporal_kernel
+        self.activation = activation
+
         # Parameters
         self.pos_embedding = nn.Parameter(
             torch.randn(1, self.num_kernel, self.embed_dim)
