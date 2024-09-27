@@ -19,7 +19,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 
 import torch
-from torch import nn, Tensor
+from torch import nn
 
 from einops import rearrange
 from einops.layers.torch import Rearrange
@@ -80,7 +80,13 @@ class _FeedForward(nn.Module):
 
 
 class _Attention(nn.Module):
-    def __init__(self, embed_dim, num_heads=8, dim_head=64, dropout=0.0):
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int = 8,
+        dim_head: int = 64,
+        drop_prob: float = 0.0,
+    ):
         super().__init__()
         inner_dim = dim_head * num_heads
         project_out = not (num_heads == 1 and dim_head == embed_dim)
@@ -92,7 +98,7 @@ class _Attention(nn.Module):
         self.to_qkv = nn.Linear(embed_dim, inner_dim * 3, bias=False)
 
         self.to_out = (
-            nn.Sequential(nn.Linear(inner_dim, embed_dim), nn.Dropout(dropout))
+            nn.Sequential(nn.Linear(inner_dim, embed_dim), nn.Dropout(drop_prob))
             if project_out
             else nn.Identity()
         )
@@ -112,7 +118,35 @@ class _Attention(nn.Module):
         return self.to_out(out)
 
 
-class _Transformer(nn.Module):
+class _HierarchicalCoarseTransformer(nn.Module):
+    """
+    Hierarchical Coarse-to-Fine Transformer for EEG signal processing.
+
+    This transformer captures both coarse-grained and fine-grained temporal dynamics
+    in EEG data by combining multi-head self-attention mechanisms with CNN-based
+    feature extraction within each transformer block.
+
+    Parameters
+    ----------
+    embed_dim : int
+        Dimension of the embedding vectors.
+    heads : int
+        Number of attention heads.
+    dim_head : int
+        Dimension of each attention head.
+    dim_feedforward : int
+        Dimension of the feedforward network.
+    drop_prob : float
+        Dropout probability.
+    in_features : int
+        Number of input channels.
+    fine_grained_kernel : int, optional, default 11
+        Kernel size for fine-grained temporal feature extraction.
+    activation: nn.Module, default nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    """
+
     def __init__(
         self,
         embed_dim: int,
@@ -122,7 +156,7 @@ class _Transformer(nn.Module):
         dim_feedforward: int,
         in_features: int,
         fine_grained_kernel: int = 11,
-        dropout: float = 0.0,
+        drop_prob: float = 0.0,
         activation: nn.Module = nn.ELU,
     ):
         super().__init__()
@@ -132,10 +166,10 @@ class _Transformer(nn.Module):
             self.layers.append(
                 nn.ModuleList(
                     [
-                        _Attention(embed_dim, heads, dim_head, dropout=dropout),
-                        _FeedForward(embed_dim, dim_feedforward, drop_prob=dropout),
+                        _Attention(embed_dim, heads, dim_head, drop_prob=drop_prob),
+                        _FeedForward(embed_dim, dim_feedforward, drop_prob=drop_prob),
                         nn.Sequential(
-                            nn.Dropout(p=dropout),
+                            nn.Dropout(p=drop_prob),
                             nn.Conv1d(
                                 in_channels=in_features,
                                 out_channels=in_features,
@@ -177,7 +211,27 @@ class _Transformer(nn.Module):
 class EEGDeformer(EEGModuleMixin, nn.Module):
     """Deformer model from [ding2024]_.
 
-    XXXX.
+    The model integrates CNN-based shallow feature encoding with a hierarchical
+    coarse-to-fine Transformer architecture to effectively capture both shallow
+    temporal and spatial information, as well as coarse and fine-grained temporal
+     dynamics in EEG data.
+
+    EEGDeformer starts with a CNN-based shallow feature encoder that processes
+    the input EEG signals through temporal and spatial convolutional layers,
+    followed by batch normalization, ELU activation, and max pooling.
+    The output of the CNN encoder is then rearranged and augmented with
+    learnable positional embeddings to form tokens for the Transformer.
+
+    The Transformer consists of multiple Hierarchical Coarse-to-fine Transformer
+    (HCT) blocks, each combining a multi-head self-attention mechanism to capture
+    coarse-grained temporal dynamics and a CNN-based branch to learn fine-grained
+    temporal features. Additionally, dense information purification modules are
+    employed to extract discriminative information from multiple HCT layers,
+    enhancing the model’s ability to capture multi-level temporal information.
+
+    Finally, the model aggregates the feature and passes it through
+    a linear layer to produce the final classification or regression output.
+
 
     Parameters
     ----------
@@ -206,11 +260,21 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         Activation function to use in the CNN encoder and transformer layers. Default is
         `nn.ELU`.
 
+    Notes
+    -----
+    This implementation was adapted to braindecode from pytorch code [ding2024code]_.
+    During the process, some functionality and reproducibility may or may not
+    have been lost. If in doubt, consult the original code and
+    contact the original authors.
+
     References
     ----------
     .. [ding2024] Ding, Y., Li, Y., Sun, H., Liu, R., Tong, C., & Guan, C. (2024).
        EEG-Deformer: A Dense Convolutional Transformer for Brain-computer
        Interfaces. arXiv preprint arXiv:2405.00719.
+    .. [ding2024code] Ding, Y., Li, Y., Sun, H., Liu, R., Tong, C., & Guan, C.
+       (2024). EEG-Deformer: A Dense Convolutional Transformer for Brain-computer
+       Interfaces. https://github.com/yi-ding-cs/EEG-Deformer
     """
 
     def __init__(
@@ -283,13 +347,13 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.to_patch_embedding = Rearrange(
             "batch kernel chans filter -> batch kernel (chans filter)"
         )
-        self.transformer = _Transformer(
+        self.transformer = _HierarchicalCoarseTransformer(
             embed_dim=self.embed_dim,
             depth=self.n_layers,
             heads=self.heads,
             dim_head=self.dim_head,
             dim_feedforward=self.dim_feedforward,
-            dropout=self.drop_prob,
+            drop_prob=self.drop_prob,
             in_features=self.num_kernel,
             fine_grained_kernel=self.temporal_kernel,
             activation=self.activation,
