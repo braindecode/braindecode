@@ -115,14 +115,15 @@ class _Attention(nn.Module):
 class _Transformer(nn.Module):
     def __init__(
         self,
-        embed_dim,
-        depth,
-        heads,
-        dim_head,
-        dim_feedforward,
-        in_chan,
-        fine_grained_kernel=11,
-        dropout=0.0,
+        embed_dim: int,
+        depth: int,
+        heads: int,
+        dim_head: int,
+        dim_feedforward: int,
+        in_features: int,
+        fine_grained_kernel: int = 11,
+        dropout: float = 0.0,
+        activation: nn.Module = nn.ELU,
     ):
         super().__init__()
         self.layers = nn.ModuleList([])
@@ -136,13 +137,13 @@ class _Transformer(nn.Module):
                         nn.Sequential(
                             nn.Dropout(p=dropout),
                             nn.Conv1d(
-                                in_channels=in_chan,
-                                out_channels=in_chan,
+                                in_channels=in_features,
+                                out_channels=in_features,
                                 kernel_size=fine_grained_kernel,
                                 padding=int(0.5 * (fine_grained_kernel - 1)),
                             ),
-                            nn.BatchNorm1d(in_chan),
-                            nn.ELU(),
+                            nn.BatchNorm1d(in_features),
+                            activation(),
                             nn.MaxPool1d(kernel_size=2, stride=2),
                         ),
                     ]
@@ -180,20 +181,30 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    temporal_kernel : int
-        Size of the temporal convolutional kernel.
+    temporal_kernel : int, optional
+        Size of the temporal convolution kernel. Determines the width of the convolution
+        applied along the time dimension. Default is `11`.
     num_kernel : int, optional
-        Number of kernels (filters) in the convolutional layer. Default is 64.
-    depth : int, optional
-        Depth of the transformer (number of layers). Default is 4.
+        Number of convolutional kernels (output channels) in the CNN encoder. Controls
+        the capacity of the convolutional layers. Default is `64`.
+    n_layers : int, optional
+        Number of transformer layers in the transformer encoder. Each layer consists of
+        multi-head self-attention and feedforward networks. Default is `4`.
     heads : int, optional
-        Number of attention heads in the transformer. Default is 16.
-    mlp_dim : int, optional
-        Dimension of the hidden layer in the feedforward network. Default is 16.
+        Number of attention heads in each transformer layer. More heads allow the model
+        to attend to information from different representation subspaces. Default is `16`.
+    dim_feedforward : int, optional
+        Dimension of the feedforward network within each transformer layer. Determines
+        the size of the intermediate representations. Default is `16`.
     dim_head : int, optional
-        Dimension of each attention head. Default is 16.
+        Dimension of each attention head in the transformer. Affects the capacity of
+        the self-attention mechanism. Default is `16`.
     drop_prob : float, optional
-        Dropout rate. Default is 0.0
+        Dropout probability applied after each dropout layer in the model. Helps prevent
+        overfitting by randomly zeroing some of the elements. Default is `0.0`.
+    activation : nn.Module, optional
+        Activation function to use in the CNN encoder and transformer layers. Default is
+        `nn.ELU`.
 
     References
     ----------
@@ -236,9 +247,15 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.hidden_size = int(
             num_kernel * int(self.embed_dim * (0.5**n_layers))
         ) + int(num_kernel * n_layers)
-
+        self.dim_feedforward = dim_feedforward
+        self.dim_head = dim_head
+        self.heads = heads
+        self.num_kernel = num_kernel
+        self.temporal_kernel = temporal_kernel
         # Parameters
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, self.embed_dim))
+        self.pos_embedding = nn.Parameter(
+            torch.randn(1, self.num_kernel, self.embed_dim)
+        )
 
         # Layers
         self.ensuredim = Rearrange("batch chan time -> batch 1 chan time")
@@ -246,14 +263,14 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.cnn_encoder = nn.Sequential(
             Conv2dWithConstraint(
                 in_channels=1,
-                out_channels=num_kernel,
-                kernel_size=(1, temporal_kernel),
-                padding=(0, int(0.5 * (temporal_kernel - 1))),
+                out_channels=self.num_kernel,
+                kernel_size=(1, self.temporal_kernel),
+                padding=(0, int(0.5 * (self.temporal_kernel - 1))),
                 max_norm=2,
             ),
             Conv2dWithConstraint(
-                in_channels=num_kernel,
-                out_channels=num_kernel,
+                in_channels=self.num_kernel,
+                out_channels=self.num_kernel,
                 kernel_size=(self.n_chans, 1),
                 padding=0,
                 max_norm=2,
@@ -269,12 +286,13 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         self.transformer = _Transformer(
             embed_dim=self.embed_dim,
             depth=self.n_layers,
-            heads=heads,
-            dim_head=dim_head,
-            dim_feedforward=dim_feedforward,
+            heads=self.heads,
+            dim_head=self.dim_head,
+            dim_feedforward=self.dim_feedforward,
             dropout=self.drop_prob,
-            in_chan=num_kernel,
-            fine_grained_kernel=temporal_kernel,
+            in_features=self.num_kernel,
+            fine_grained_kernel=self.temporal_kernel,
+            activation=self.activation,
         )
 
         self.final_layer = nn.Linear(self.hidden_size, self.n_outputs)
