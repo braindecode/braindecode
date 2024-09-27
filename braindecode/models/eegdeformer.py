@@ -127,7 +127,7 @@ class _Transformer(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList([])
         for i in range(depth):
-            embed_dim= int(embed_dim* 0.5)
+            embed_dim = int(embed_dim * 0.5)
             self.layers.append(
                 nn.ModuleList(
                     [
@@ -232,10 +232,10 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         # Variables
         self.n_layers = n_layers
         self.drop_prob = drop_prob
-        self.embed_dim= int(0.5 * self.n_times)
-        self.hidden_size = int(num_kernel * int(self.embed_dim* (0.5**n_layers))) + int(
-            num_kernel * n_layers
-        )
+        self.embed_dim = int(0.5 * self.n_times)
+        self.hidden_size = int(
+            num_kernel * int(self.embed_dim * (0.5**n_layers))
+        ) + int(num_kernel * n_layers)
 
         # Parameters
         self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, self.embed_dim))
