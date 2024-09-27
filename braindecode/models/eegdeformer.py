@@ -115,11 +115,11 @@ class _Attention(nn.Module):
 class _Transformer(nn.Module):
     def __init__(
         self,
-        dim,
+        embed_dim,
         depth,
         heads,
         dim_head,
-        mlp_dim,
+        dim_feedforward,
         in_chan,
         fine_grained_kernel=11,
         dropout=0.0,
@@ -127,12 +127,12 @@ class _Transformer(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList([])
         for i in range(depth):
-            dim = int(dim * 0.5)
+            embed_dim= int(embed_dim* 0.5)
             self.layers.append(
                 nn.ModuleList(
                     [
-                        _Attention(dim, heads, dim_head, dropout=dropout),
-                        _FeedForward(dim, mlp_dim, drop_prob=dropout),
+                        _Attention(embed_dim, heads, dim_head, dropout=dropout),
+                        _FeedForward(embed_dim, dim_feedforward, drop_prob=dropout),
                         nn.Sequential(
                             nn.Dropout(p=dropout),
                             nn.Conv1d(
@@ -208,7 +208,7 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         num_kernel: int = 64,
         n_layers: int = 4,
         heads: int = 16,
-        mlp_dim: int = 16,
+        dim_feedforward: int = 16,
         dim_head: int = 16,
         drop_prob: float = 0.0,
         activation: nn.Module = nn.ELU,
@@ -232,13 +232,13 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
         # Variables
         self.n_layers = n_layers
         self.drop_prob = drop_prob
-        self.dim = int(0.5 * self.n_times)
-        self.hidden_size = int(num_kernel * int(self.dim * (0.5**n_layers))) + int(
+        self.embed_dim= int(0.5 * self.n_times)
+        self.hidden_size = int(num_kernel * int(self.embed_dim* (0.5**n_layers))) + int(
             num_kernel * n_layers
         )
 
         # Parameters
-        self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, self.dim))
+        self.pos_embedding = nn.Parameter(torch.randn(1, num_kernel, self.embed_dim))
 
         # Layers
         self.ensuredim = Rearrange("batch chan time -> batch 1 chan time")
@@ -267,11 +267,11 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
             "batch kernel chans filter -> batch kernel (chans filter)"
         )
         self.transformer = _Transformer(
-            dim=self.dim,
+            embed_dim=self.embed_dim,
             depth=self.n_layers,
             heads=heads,
             dim_head=dim_head,
-            mlp_dim=mlp_dim,
+            dim_feedforward=dim_feedforward,
             dropout=self.drop_prob,
             in_chan=num_kernel,
             fine_grained_kernel=temporal_kernel,
