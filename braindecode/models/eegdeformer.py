@@ -214,7 +214,7 @@ class EEGDeformer(EEGModuleMixin, nn.Module):
     The model integrates CNN-based shallow feature encoding with a hierarchical
     coarse-to-fine Transformer architecture to effectively capture both shallow
     temporal and spatial information, as well as coarse and fine-grained temporal
-     dynamics in EEG data.
+    dynamics in EEG data.
 
     EEGDeformer starts with a CNN-based shallow feature encoder that processes
     the input EEG signals through temporal and spatial convolutional layers,
