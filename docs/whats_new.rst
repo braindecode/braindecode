@@ -62,7 +62,7 @@ Bugs
 - Fix matplotlib colormaps deprecation (:gh:`608` by `Bruno Aristimunha`_)
 - Ensure mypy to work for every commit (:gh:`619` by `Bruno Aristimunha`_)
 - Deprecate moabb version 1.0.0 because of incorrect epoching (:gh:`627` by `Pierre Guetschel`_)
-
+- Fixing tutorial benchmark lazy eager loagin (:gh:`` by `Bruno Aristimunha`_ and `Aphel`_)
 
 API changes
 ~~~~~~~~~~~
@@ -286,3 +286,4 @@ Authors
 .. _Yassine El Ouahidi: https://github.com/elouayas
 .. _John Muradeli: https://github.com/OverLordGoldDragon/
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
+.. _Aphel: https://github.com/itsaphel
