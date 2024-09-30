@@ -4,7 +4,7 @@
 import torch
 import torch.nn as nn
 
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class _SmallCNN(nn.Module):

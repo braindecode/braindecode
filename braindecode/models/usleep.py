@@ -7,7 +7,7 @@ from typing import Dict, Optional
 import numpy as np
 import torch
 from torch import nn
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 def _crop_tensors_to_match(x1, x2, axis=-1):

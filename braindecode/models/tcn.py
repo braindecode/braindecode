@@ -7,9 +7,9 @@ from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
 
-from .modules import Ensure4d, Expression
-from .functions import squeeze_final_output
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.modules import Ensure4d, Expression, Chomp1d
+from braindecode.models.functions import squeeze_final_output
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class TCN(EEGModuleMixin, nn.Module):
@@ -86,7 +86,7 @@ class TCN(EEGModuleMixin, nn.Module):
             dilation_size = 2**i
             t_blocks.add_module(
                 "temporal_block_{:d}".format(i),
-                TemporalBlock(
+                _TemporalBlock(
                     n_inputs=n_inputs,
                     n_outputs=n_filters,
                     kernel_size=kernel_size,
@@ -160,7 +160,7 @@ class _FinalLayer(nn.Module):
         return self.squeeze(out[:, :, :, None])
 
 
-class TemporalBlock(nn.Module):
+class _TemporalBlock(nn.Module):
     def __init__(
         self,
         n_inputs,
@@ -222,15 +222,3 @@ class TemporalBlock(nn.Module):
         out = self.dropout2(out)
         res = x if self.downsample is None else self.downsample(x)
         return self.relu(out + res)
-
-
-class Chomp1d(nn.Module):
-    def __init__(self, chomp_size):
-        super().__init__()
-        self.chomp_size = chomp_size
-
-    def extra_repr(self):
-        return "chomp_size={}".format(self.chomp_size)
-
-    def forward(self, x):
-        return x[:, :, : -self.chomp_size].contiguous()

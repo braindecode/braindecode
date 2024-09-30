@@ -8,7 +8,7 @@ from einops.layers.torch import Rearrange
 from torch import nn, Tensor
 import warnings
 
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):

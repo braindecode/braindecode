@@ -6,10 +6,10 @@ import torch
 from torch import nn
 from torch.nn import ConstantPad2d
 
-from .deep4 import Deep4Net
-from .util import to_dense_prediction_model
-from .shallow_fbcsp import ShallowFBCSPNet
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.deep4 import Deep4Net
+from braindecode.models.util import to_dense_prediction_model
+from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class HybridNet(EEGModuleMixin, nn.Module):

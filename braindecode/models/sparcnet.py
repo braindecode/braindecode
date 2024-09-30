@@ -8,10 +8,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin
 
 
-class DenseLayer(nn.Sequential):
+class _DenseLayer(nn.Sequential):
     """
     A densely connected layer with batch normalization and dropout.
 
@@ -37,7 +37,7 @@ class DenseLayer(nn.Sequential):
     --------
     >>> x = torch.randn(128, 5, 1000)
     >>> batch, channels, length = x.shape
-    >>> model = DenseLayer(channels, 5, 2)
+    >>> model = _DenseLayer(channels, 5, 2)
     >>> y = model(x)
     >>> y.shape
     torch.Size([128, 10, 1000])
@@ -53,7 +53,7 @@ class DenseLayer(nn.Sequential):
         batch_norm=True,
         activation: nn.Module = nn.ELU,
     ):
-        super(DenseLayer, self).__init__()
+        super(_DenseLayer, self).__init__()
         if batch_norm:
             (self.add_module("norm1", nn.BatchNorm1d(in_channels)),)
         (self.add_module("elu1", activation()),)
@@ -88,12 +88,12 @@ class DenseLayer(nn.Sequential):
         self.drop_rate = drop_rate
 
     def forward(self, x):
-        new_features = super(DenseLayer, self).forward(x)
+        new_features = super(_DenseLayer, self).forward(x)
         new_features = F.dropout(new_features, p=self.drop_rate, training=self.training)
         return torch.cat([x, new_features], 1)
 
 
-class DenseBlock(nn.Sequential):
+class _DenseBlock(nn.Sequential):
     """
     A densely connected block that uses DenseLayers.
 
@@ -121,7 +121,7 @@ class DenseBlock(nn.Sequential):
     --------
     >>> x = torch.randn(128, 5, 1000)
     >>> batch, channels, length = x.shape
-    >>> model = DenseBlock(3, channels, 5, 2)
+    >>> model = _DenseBlock(3, channels, 5, 2)
     >>> y = model(x)
     >>> y.shape
     torch.Size([128, 20, 1000])
@@ -138,9 +138,9 @@ class DenseBlock(nn.Sequential):
         batch_norm=True,
         activation: nn.Module = nn.ELU,
     ):
-        super(DenseBlock, self).__init__()
+        super(_DenseBlock, self).__init__()
         for idx_layer in range(num_layers):
-            layer = DenseLayer(
+            layer = _DenseLayer(
                 in_channels=in_channels + idx_layer * growth_rate,
                 growth_rate=growth_rate,
                 bottleneck_size=bottleneck_size,
@@ -152,7 +152,7 @@ class DenseBlock(nn.Sequential):
             self.add_module(f"denselayer{idx_layer + 1}", layer)
 
 
-class TransitionLayer(nn.Sequential):
+class _TransitionLayer(nn.Sequential):
     """
     A pooling transition layer.
 
@@ -173,7 +173,7 @@ class TransitionLayer(nn.Sequential):
     Examples
     --------
     >>> x = torch.randn(128, 5, 1000)
-    >>> model = TransitionLayer(5, 18)
+    >>> model = _TransitionLayer(5, 18)
     >>> y = model(x)
     >>> y.shape
     torch.Size([128, 18, 500])
@@ -187,7 +187,7 @@ class TransitionLayer(nn.Sequential):
         batch_norm=True,
         activation: nn.Module = nn.ELU,
     ):
-        super(TransitionLayer, self).__init__()
+        super(_TransitionLayer, self).__init__()
         if batch_norm:
             self.add_module("norm", nn.BatchNorm1d(in_channels))
         self.add_module("elu", activation())
@@ -307,7 +307,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
 
         # Adding dense blocks
         for n_layer in range(floor(log2(self.n_times // 4))):
-            block = DenseBlock(
+            block = _DenseBlock(
                 num_layers=block_layers,
                 in_channels=n_channels,
                 growth_rate=growth_rate,
@@ -321,7 +321,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
             # update the number of channels after each dense block
             n_channels = n_channels + block_layers * growth_rate
 
-            trans = TransitionLayer(
+            trans = _TransitionLayer(
                 in_channels=n_channels,
                 out_channels=n_channels // 2,
                 conv_bias=conv_bias,

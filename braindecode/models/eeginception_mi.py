@@ -6,8 +6,8 @@ import torch
 from torch import nn
 from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.modules import Ensure4d
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class EEGInceptionMI(EEGModuleMixin, nn.Module):

@@ -7,9 +7,14 @@ from torch import nn
 from torch.nn import init
 from torch.nn.functional import elu
 
-from .base import EEGModuleMixin, deprecated_args
-from .functions import identity, squeeze_final_output
-from .modules import AvgPool2dWithConv, CombinedConv, Ensure4d, Expression
+from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.functions import identity, squeeze_final_output
+from braindecode.models.modules import (
+    AvgPool2dWithConv,
+    CombinedConv,
+    Ensure4d,
+    Expression,
+)
 
 
 class Deep4Net(EEGModuleMixin, nn.Sequential):

@@ -9,8 +9,7 @@ import torch.nn as nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.tcn import Chomp1d
-from braindecode.models.modules import MaxNormLinear
+from braindecode.models.modules import MaxNormLinear, Chomp1d
 
 
 class _EEGNetTC(nn.Module):

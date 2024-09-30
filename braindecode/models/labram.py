@@ -14,9 +14,9 @@ from torch.nn.init import trunc_normal_
 from einops import rearrange
 from einops.layers.torch import Rearrange
 
-from .functions import rescale_parameter
-from .modules import MLP, DropPath
-from .base import EEGModuleMixin
+from braindecode.models.functions import rescale_parameter
+from braindecode.models.modules import MLP, DropPath
+from braindecode.models.base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):

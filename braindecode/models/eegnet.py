@@ -7,9 +7,9 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from mne.utils import warn
 
-from .base import EEGModuleMixin, deprecated_args
-from .functions import squeeze_final_output
-from .modules import Ensure4d, Expression
+from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.functions import squeeze_final_output
+from braindecode.models.modules import Ensure4d, Expression
 
 
 class Conv2dWithConstraint(nn.Conv2d):
