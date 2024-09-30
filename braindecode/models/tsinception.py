@@ -225,15 +225,6 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
         """
         Calculates the size of the features after convolution and pooling layers.
 
-        Parameters
-        ----------
-        n_channels : int
-            Number of EEG channels.
-        input_window_samples : int
-            Number of time samples in the input window.
-        sampling_rate : float
-            Sampling rate of the EEG data.
-
         Returns
         -------
         int
