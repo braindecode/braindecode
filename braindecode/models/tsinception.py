@@ -1,64 +1,71 @@
-# Authors: Bruno Aristimunha <b.aristimunha@gmail.com>
-#
-# License: BSD (3-clause)
-
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
+from typing import List
+
+from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
 
 
-class TSception(EEGModuleMixin, nn.Module):
-    """TSception model for EEG signal classification.
+class TSceptionV1(EEGModuleMixin, nn.Module):
+    """TSception model from Ding et al. (2020) from [ding2020]_.
 
-    Temporal-Spatial Convolutional Neural Network (TSception) as described in
-    [1]_. This model is designed to capture both temporal and spatial
-    features of EEG signals for tasks like emotion recognition.
+    TSception: A deep learning framework for emotion detection using EEG.
 
-    Code from: https://github.com/deepBrains/TSception
-
-    TO-DO: put warning and note
+    The model consists of temporal and spatial convolutional layers
+    (Tception and Sception) designed to learn temporal and spatial features
+    from EEG data.
 
     Parameters
     ----------
-    num_temporal_filters : int, optional
-        Number of temporal convolutional filters. Default is 9.
-    num_spatial_filters : int, optional
-        Number of spatial convolutional filters. Default is 6.
-    hidden_size : int, optional
-        Number of units in the hidden fully connected layer. Default is 128.
-    dropout : float, optional
-        Dropout rate. Default is 0.5.
-    pooling_size : int, optional
-        Pooling size. Default is 8.
+    number_filter_temp : int
+        Number of temporal convolutional filters.
+    number_filter_spat : int
+        Number of spatial convolutional filters.
+    hidden_size : int
+        Number of units in the hidden fully connected layer.
+    drop_prob : float
+        Dropout rate applied after the hidden layer.
     activation : nn.Module, optional
-        Activation function. Default is `nn.LeakyReLU()`.
+        Activation function class to apply. Should be a PyTorch activation
+        module like ``nn.ReLU`` or ``nn.LeakyReLU``. Default is ``nn.LeakyReLU``.
+    pool_size : int, optional
+        Pooling size for the average pooling layers. Default is 8.
+    inception_windows : List[float], optional
+        List of window sizes (in seconds) for the inception modules.
+        Default is [0.5, 0.25, 0.125].
 
     References
     ----------
-    .. [1] Ding, Y., Robinson, N., Zhang, S., Zeng, Q., & Guan, C. (2022).
-           Tsception: Capturing temporal dynamics and spatial asymmetry from
-           EEG for emotion recognition. IEEE Transactions on Affective Computing,
-           14(3), 2238-2250.
-           https://ieeexplore.ieee.org/document/9762054
+    [ding2020] Ding, Y., Robinson, N., Zeng, Q., Chen, D., Wai, A. A. P., Lee,
+        T. S., & Guan, C. (2020, July). Tsception: a deep learning framework
+        for emotion detection using EEG. In 2020 international joint conference
+         on neural networks (IJCNN) (pp. 1-7). IEEE.
+    [code2020] Ding, Y., Robinson, N., Zeng, Q., Chen, D., Wai, A. A. P., Lee,
+        T. S., & Guan, C. (2020, July). Tsception: a deep learning framework
+        for emotion detection using EEG.
+        https://github.com/deepBrains/TSception/blob/master/Models.py
     """
 
     def __init__(
         self,
+        # Braindecode parameters
         n_chans=None,
         n_outputs=None,
         input_window_seconds=None,
-        sfreq=None,
         chs_info=None,
         n_times=None,
-        num_temporal_filters: int = 9,
-        num_spatial_filters: int = 6,
+        sfreq=None,
+        # Model parameters
+        number_filter_temp: int = 9,
+        number_filter_spat: int = 6,
         hidden_size: int = 128,
-        dropout: float = 0.5,
-        pooling_size: int = 8,
-        activation: nn.Module = nn.LeakyReLU(),
+        drop_prob: float = 0.5,
+        activation: nn.Module = nn.LeakyReLU,
+        pool_size: int = 8,
+        inception_windows: List[float] = [0.5, 0.25, 0.125],
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -70,92 +77,107 @@ class TSception(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        # Inception windows in seconds
-        self.inception_windows = [0.5, 0.25, 0.125]
-        self.pooling_size = pooling_size
-        self.num_temporal_filters = num_temporal_filters
-        self.num_spatial_filters = num_spatial_filters
-        self.hidden_size = hidden_size
-        self.dropout = dropout
         self.activation = activation
+        self.pool_size = pool_size
+        self.inception_windows = inception_windows
+        self.number_filter_spat = number_filter_spat
+        self.number_filter_temp = number_filter_temp
+        self.drop_prob = drop_prob
 
-        # Temporal Convolutional Layers (Tception)
-        self.tception_layers = nn.ModuleList()
-        for window in self.inception_windows:
-            kernel_size = (1, int(window * self.sfreq))
-            self.tception_layers.append(
-                nn.Sequential(
-                    nn.Conv2d(
-                        in_channels=1,
-                        out_channels=num_temporal_filters,
-                        kernel_size=kernel_size,
-                        stride=1,
-                    ),
-                    activation,
-                    nn.AvgPool2d(
-                        kernel_size=(1, self.pooling_size),
-                        stride=(1, self.pooling_size),
-                    ),
+        ### Layers
+        self.ensuredim = Rearrange("batch nchans time -> batch 1 nchans time")
+        # Define temporal convolutional layers (Tception)
+        self.Tception_layers = nn.ModuleList(
+            [
+                self._conv_block(
+                    in_channels=1,
+                    out_channels=number_filter_temp,
+                    kernel_size=(1, int(window * self.sfreq)),
+                    stride=1,
+                    pool_size=self.pool_size,
+                    activation=self.activation,
                 )
-            )
-
-        # Batch Normalization after Tception
-        self.bn_t = nn.BatchNorm2d(num_temporal_filters)
-
-        # Spatial Convolutional Layers (Sception)
-        self.sception1 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=num_temporal_filters,
-                out_channels=num_spatial_filters,
-                kernel_size=(self.n_chans, 1),
-                stride=1,
-            ),
-            activation,
-            nn.AvgPool2d(
-                kernel_size=(1, max(1, int(self.pooling_size * 0.25))),
-                stride=(1, max(1, int(self.pooling_size * 0.25))),
-            ),
+                for window in self.inception_windows
+            ]
         )
 
-        self.sception2 = nn.Sequential(
-            nn.Conv2d(
-                in_channels=num_temporal_filters,
-                out_channels=num_spatial_filters,
-                kernel_size=(max(1, self.n_chans // 2), 1),
-                stride=(max(1, self.n_chans // 2), 1),
-            ),
-            activation,
-            nn.AvgPool2d(
-                kernel_size=(1, max(1, int(self.pooling_size * 0.25))),
-                stride=(1, max(1, int(self.pooling_size * 0.25))),
-            ),
+        # Define spatial convolutional layers (Sception)
+        self.Sception1 = self._conv_block(
+            in_channels=self.number_filter_temp,
+            out_channels=self.number_filter_spat,
+            kernel_size=(self.n_chans, 1),
+            stride=1,
+            pool_size=int(self.pool_size * 0.25),
+            activation=self.activation,
+        )
+        self.Sception2 = self._conv_block(
+            in_channels=self.number_filter_temp,
+            out_channels=self.number_filter_spat,
+            kernel_size=(max(1, int(self.n_chans * 0.5)), 1),
+            stride=(max(1, int(self.n_chans * 0.5)), 1),
+            pool_size=int(self.pool_size * 0.25),
+            activation=self.activation,
         )
 
-        # Batch Normalization after Sception
-        self.bn_s = nn.BatchNorm2d(num_spatial_filters)
+        self.BN_t = nn.BatchNorm2d(self.number_filter_temp)
+        self.BN_s = nn.BatchNorm2d(self.number_filter_spat)
 
-        # Fusion Layer
-        self.fusion_layer = nn.Sequential(
-            nn.Conv2d(
-                in_channels=num_spatial_filters,
-                out_channels=num_spatial_filters,
-                kernel_size=(3, 1),
-                stride=1,
-                padding=(1, 0),  # To maintain the spatial dimension
-            ),
-            activation,
-            nn.AvgPool2d(kernel_size=(1, 4), stride=(1, 4)),
-        )
-        self.bn_fusion = nn.BatchNorm2d(num_spatial_filters)
+        # Calculate the size of the features after convolution and pooling layers
+        # self.feature_size = self._calculate_feature_size(
+        #     n_channels, input_window_samples, sampling_rate
+        # )
 
-        # Fully Connected Layers
-        self.fc = nn.Sequential(
-            nn.Linear(num_spatial_filters, hidden_size),
-            nn.ReLU(),
-            nn.Dropout(dropout),
+        # Define the final classification layers
+        self.final_layers = nn.Sequential(
+            nn.Linear(self.feature_size, hidden_size),
+            self.activation(),
+            nn.Dropout(self.drop_prob),
             nn.Linear(hidden_size, self.n_outputs),
         )
-        print("to-do: put a warning about the channels order")
+
+    def _conv_block(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: tuple,
+        stride: tuple[int, int] | int,
+        pool_size: int,
+        activation: nn.Module,
+    ) -> nn.Sequential:
+        """
+        Creates a convolutional block with Conv2d, activation, and AvgPool2d layers.
+
+        Parameters
+        ----------
+        in_channels : int
+            Number of input channels.
+        out_channels : int
+            Number of output channels.
+        kernel_size : tuple
+            Size of the convolutional kernel.
+        stride : int
+            Stride of the convolution.
+        pool_size : int
+            Size of the pooling kernel.
+        activation : nn.Module
+            Activation function class.
+
+        Returns
+        -------
+        nn.Sequential
+            A sequential container of the convolutional block.
+        """
+        return nn.Sequential(
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=0,
+            ),
+            activation(),
+            nn.AvgPool2d(kernel_size=(1, pool_size), stride=(1, pool_size)),
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -164,42 +186,60 @@ class TSception(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape (batch_size, n_chans, n_times).
+            Input tensor of shape (batch_size, 1, n_channels, n_times).
 
         Returns
         -------
         torch.Tensor
-            Output tensor of shape (batch_size, n_outputs).
+            Output tensor of shape (batch_size, n_classes).
         """
-        # x shape: (batch_size, n_chans, n_times)
-        x = x.unsqueeze(1)  # (batch_size, 1, n_chans, n_times)
+        # Temporal Convolution
+        x = self.ensuredim(x)
+        t_features = [layer(x) for layer in self.Tception_layers]
+        t_out = torch.cat(t_features, dim=-1)
+        t_out = self.BN_t(t_out)
 
-        # Tception layers
-        t_features = []
-        for layer in self.tception_layers:
-            t_out = layer(x)
-            t_features.append(t_out)
+        # Spatial Convolution
+        s_out1 = self.Sception1(t_out)
+        s_out2 = self.Sception2(t_out)
+        s_out = torch.cat((s_out1, s_out2), dim=2)
+        s_out = self.BN_s(s_out)
 
-        out = torch.cat(t_features, dim=-1)  # Concatenate along time dimension
-        out = self.bn_t(out)
+        # Flatten and apply final layers
+        s_out = s_out.view(s_out.size(0), -1)
+        # output = self.final_layers(s_out)
+        return s_out
 
-        # Sception layers
-        s_out1 = self.sception1(out)
-        s_out2 = self.sception2(out)
-        out_combined = torch.cat(
-            (s_out1, s_out2), dim=2
-        )  # Concatenate along channel dimension
-        out = self.bn_s(out_combined)
+    def _calculate_feature_size(
+        self, n_channels: int, input_window_samples: int, sampling_rate: float
+    ) -> int:
+        """
+        Calculates the size of the features after convolution and pooling layers.
 
-        # Fusion layer
-        out = self.fusion_layer(out)
-        out = self.bn_fusion(out)
+        Parameters
+        ----------
+        n_channels : int
+            Number of EEG channels.
+        input_window_samples : int
+            Number of time samples in the input window.
+        sampling_rate : float
+            Sampling rate of the EEG data.
 
-        # Global average pooling
-        out = torch.mean(out, dim=-1)  # Mean over the time dimension
-        out = torch.squeeze(out, dim=-1)  # Remove redundant dimension
+        Returns
+        -------
+        int
+            Flattened size of the features after convolution and pooling layers.
+        """
+        with torch.no_grad():
+            dummy_input = torch.ones(1, 1, n_channels, input_window_samples)
+            t_features = [layer(dummy_input) for layer in self.Tception_layers]
+            t_out = torch.cat(t_features, dim=-1)
+            t_out = self.BN_t(t_out)
 
-        # Fully connected layers
-        out = self.fc(out)
+            s_out1 = self.Sception1(t_out)
+            s_out2 = self.Sception2(t_out)
+            s_out = torch.cat((s_out1, s_out2), dim=2)
+            s_out = self.BN_s(s_out)
 
-        return out
+            feature_size = s_out.view(1, -1).size(1)
+        return feature_size
