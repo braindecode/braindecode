@@ -41,14 +41,20 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
         List of window sizes (in seconds) for the inception modules.
         Default is [0.5, 0.25, 0.125].
 
+    Notes
+    -----
+    This implementation is not guaranteed to be correct, has not been checked
+    by original authors. The modifications are minimal and the model is expected
+    to work as intended. the original code from [code2020]_.
+
     References
     ----------
-    [ding2020] Ding, Y., Robinson, N., Zeng, Q., Chen, D., Wai, A. A. P., Lee,
-        T. S., & Guan, C. (2020, July). Tsception: a deep learning framework
+    .. [ding2020] Ding, Y., Robinson, N., Zeng, Q., Chen, D., Wai, A. A. P.,
+        Lee, T. S., & Guan, C. (2020, July). Tsception: a deep learning framework
         for emotion detection using EEG. In 2020 international joint conference
-         on neural networks (IJCNN) (pp. 1-7). IEEE.
-    [code2020] Ding, Y., Robinson, N., Zeng, Q., Chen, D., Wai, A. A. P., Lee,
-        T. S., & Guan, C. (2020, July). Tsception: a deep learning framework
+        on neural networks (IJCNN) (pp. 1-7). IEEE.
+    .. [code2020] Ding, Y., Robinson, N., Zeng, Q., Chen, D., Wai, A. A. P.,
+        Lee, T. S., & Guan, C. (2020, July). Tsception: a deep learning framework
         for emotion detection using EEG.
         https://github.com/deepBrains/TSception/blob/master/Models.py
     """
