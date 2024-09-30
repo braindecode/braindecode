@@ -13,7 +13,7 @@ from .modules import AvgPool2dWithConv, CombinedConv, Ensure4d, Expression
 
 
 class Deep4Net(EEGModuleMixin, nn.Sequential):
-    """Deep ConvNet model from Schirrmeister et al 2017.
+    """Deep ConvNet model from Schirrmeister et al 2017 [Schirrmeister2017]_.
 
     Model described in [Schirrmeister2017]_.
 
@@ -44,13 +44,13 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         Number of temporal filters in layer 4.
     filter_length_4: int
         Length of the temporal filter in layer 4.
-    first_conv_nonlin: callable
+    activation_first_conv_nonlin: nn.Module, default is nn.ELU
         Non-linear activation function to be used after convolution in layer 1.
     first_pool_mode: str
         Pooling mode in layer 1. "max" or "mean".
     first_pool_nonlin: callable
         Non-linear activation function to be used after pooling in layer 1.
-    later_conv_nonlin: callable
+    activation_later_conv_nonlin: nn.Module, default is nn.ELU
         Non-linear activation function to be used after convolution in later layers.
     later_pool_mode: str
         Pooling mode in later layers. "max" or "mean".
@@ -103,10 +103,10 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         filter_length_3=10,
         n_filters_4=200,
         filter_length_4=10,
-        first_conv_nonlin=elu,
+        activation_first_conv_nonlin: nn.Module = nn.ELU,
         first_pool_mode="max",
         first_pool_nonlin=identity,
-        later_conv_nonlin=elu,
+        activation_later_conv_nonlin: nn.Module = nn.ELU,
         later_pool_mode="max",
         later_pool_nonlin=identity,
         drop_prob=0.5,
@@ -138,7 +138,11 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_window_samples
+        del (
+            in_chans,
+            n_classes,
+            input_window_samples,
+        )
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.final_conv_length = final_conv_length
@@ -153,10 +157,10 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.filter_length_3 = filter_length_3
         self.n_filters_4 = n_filters_4
         self.filter_length_4 = filter_length_4
-        self.first_nonlin = first_conv_nonlin
+        self.first_nonlin = activation_first_conv_nonlin
         self.first_pool_mode = first_pool_mode
         self.first_pool_nonlin = first_pool_nonlin
-        self.later_conv_nonlin = later_conv_nonlin
+        self.later_conv_nonlin = activation_later_conv_nonlin
         self.later_pool_mode = later_pool_mode
         self.later_pool_nonlin = later_pool_nonlin
         self.drop_prob = drop_prob
@@ -223,7 +227,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                     eps=1e-5,
                 ),
             )
-        self.add_module("conv_nonlin", Expression(self.first_nonlin))
+        self.add_module("conv_nonlin", self.first_nonlin())
         self.add_module(
             "pool",
             first_pool_class(
@@ -257,7 +261,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                         eps=1e-5,
                     ),
                 )
-            self.add_module("nonlin" + suffix, Expression(self.later_conv_nonlin))
+            self.add_module("nonlin" + suffix, self.later_conv_nonlin())
 
             self.add_module(
                 "pool" + suffix,

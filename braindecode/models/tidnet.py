@@ -60,7 +60,7 @@ class _ConvBlock2D(nn.Module):
             if residual
             else nn.BatchNorm2d(out_filters)
             if batch_norm
-            else lambda x: x
+            else nn.Identity()
         )
 
     def forward(self, input):
@@ -82,7 +82,7 @@ class _DenseFilter(nn.Module):
         filter_len=5,
         drop_prob=0.5,
         bottleneck=2,
-        activation=nn.LeakyReLU,
+        activation: nn.Module = nn.LeakyReLU,
         dim=-2,
     ):
         super().__init__()
@@ -119,7 +119,7 @@ class _DenseSpatialFilter(nn.Module):
         in_ch=1,
         bottleneck=4,
         drop_prob=0.0,
-        activation=nn.LeakyReLU,
+        activation: nn.Module = nn.LeakyReLU,
         collapse=True,
     ):
         super().__init__()
@@ -139,7 +139,7 @@ class _DenseSpatialFilter(nn.Module):
         self.collapse = collapse
         if collapse:
             self.channel_collapse = _ConvBlock2D(
-                n_filters, n_filters, (n_chans, 1), drop_prob=0
+                n_filters, n_filters, (n_chans, 1), drop_prob=0, activation=activation
             )
 
     def forward(self, x):
@@ -159,7 +159,7 @@ class _TemporalFilter(nn.Module):
         depth,
         temp_len,
         drop_prob=0.0,
-        activation=nn.LeakyReLU,
+        activation: nn.Module = nn.LeakyReLU,
         residual="netwise",
     ):
         super().__init__()
@@ -208,6 +208,7 @@ class _TIDNetFeatures(nn.Module):
         temp_span,
         bottleneck,
         summary,
+        activation: nn.Module = nn.LeakyReLU,
     ):
         super().__init__()
         self.n_chans = n_chans
@@ -216,19 +217,26 @@ class _TIDNetFeatures(nn.Module):
         self.temporal = nn.Sequential(
             Ensure4d(),
             Rearrange("batch C T 1 -> batch 1 C T"),
-            _TemporalFilter(1, t_filters, depth=temp_layers, temp_len=self.temp_len),
+            _TemporalFilter(
+                1,
+                t_filters,
+                depth=temp_layers,
+                temp_len=self.temp_len,
+                activation=activation,
+            ),
             nn.MaxPool2d((1, pooling)),
             nn.Dropout2d(drop_prob),
         )
         summary = n_times // pooling if summary == -1 else summary
 
         self.spatial = _DenseSpatialFilter(
-            n_chans,
-            s_growth,
-            spat_layers,
+            n_chans=n_chans,
+            growth=s_growth,
+            depth=spat_layers,
             in_ch=t_filters,
             drop_prob=drop_prob,
             bottleneck=bottleneck,
+            activation=activation,
         )
         self.extract_features = nn.Sequential(
             nn.AdaptiveAvgPool1d(int(summary)), nn.Flatten(start_dim=1)
@@ -247,7 +255,7 @@ class _TIDNetFeatures(nn.Module):
 
 
 class TIDNet(EEGModuleMixin, nn.Module):
-    """Thinker Invariance DenseNet model from Kostas et al 2020.
+    """Thinker Invariance DenseNet model from Kostas et al. 2020 [TIDNet]_.
 
     See [TIDNet]_ for details.
 
@@ -281,6 +289,9 @@ class TIDNet(EEGModuleMixin, nn.Module):
         Alias for n_outputs.
     input_window_samples :
         Alias for n_times.
+    activation: nn.Module, default=nn.LeakyReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.LeakyReLU``.
 
     Notes
     -----
@@ -316,6 +327,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
         bottleneck=3,
         summary=-1,
         add_log_softmax=False,
+        activation: nn.Module = nn.LeakyReLU,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -354,6 +366,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
             temp_span=temp_span,
             bottleneck=bottleneck,
             summary=summary,
+            activation=activation,
         )
 
         self._num_features = self.dscnn.num_features

@@ -8,7 +8,6 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import init
-from torch.nn.functional import elu
 from einops.layers.torch import Rearrange
 
 from .functions import squeeze_final_output
@@ -17,27 +16,28 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
-    """Residual Network for EEG  from Schirrmeister et al 2017.
+    """EEGResNet from Schirrmeister et al. 2017 [Schirrmeister2017]_.
 
     Model described in [Schirrmeister2017]_.
 
     Parameters
     ----------
-     in_chans :
-        Alias for `n_chans`.
-     n_classes :
-        Alias for `n_outputs`.
-     input_window_samples :
-        Alias for `n_times`.
+    in_chans :
+        Alias for ``n_chans``.
+    n_classes :
+        Alias for ``n_outputs``.
+    input_window_samples :
+       Alias for ``n_times``.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     References
     ----------
     .. [Schirrmeister2017] Schirrmeister, R. T., Springenberg, J. T., Fiederer,
        L. D. J., Glasstetter, M., Eggensperger, K., Tangermann, M., Hutter, F.
-       & Ball, T. (2017).
-       Deep learning with convolutional neural networks for EEG decoding and
-       visualization.
-       Human Brain Mapping , Aug. 2017.
+       & Ball, T. (2017). Deep learning with convolutional neural networks for ,
+       EEG decoding and visualization. Human Brain Mapping, Aug. 2017.
        Online: http://dx.doi.org/10.1002/hbm.23730
     """
 
@@ -50,7 +50,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         n_first_filters=20,
         n_layers_per_block=2,
         first_filter_length=3,
-        nonlinearity=elu,
+        activation=nn.ELU,
         split_first_layer=True,
         batch_norm_alpha=0.1,
         batch_norm_epsilon=1e-4,
@@ -88,7 +88,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         self.n_first_filters = n_first_filters
         self.n_layers_per_block = n_layers_per_block
         self.first_filter_length = first_filter_length
-        self.nonlinearity = nonlinearity
+        self.nonlinearity = activation()
         self.split_first_layer = split_first_layer
         self.batch_norm_alpha = batch_norm_alpha
         self.batch_norm_epsilon = batch_norm_epsilon
@@ -141,7 +141,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
                 n_filters_conv, momentum=self.batch_norm_alpha, affine=True, eps=1e-5
             ),
         )
-        self.add_module("conv_nonlin", Expression(self.nonlinearity))
+        self.add_module("conv_nonlin", self.nonlinearity)
         cur_dilation = np.array([1, 1])
         n_cur_filters = n_filters_conv
         i_block = 1
@@ -313,7 +313,7 @@ class _ResidualBlock(nn.Module):
         out_num_filters,
         dilation,
         filter_time_length=3,
-        nonlinearity=elu,
+        nonlinearity: nn.Module = nn.ELU,
         batch_norm_alpha=0.1,
         batch_norm_epsilon=1e-4,
     ):
@@ -357,7 +357,7 @@ class _ResidualBlock(nn.Module):
         )
         # also see https://mail.google.com/mail/u/0/#search/ilya+joos/1576137dd34c3127
         # for resnet options as ilya used them
-        self.nonlinearity = nonlinearity
+        self.nonlinearity = nonlinearity()
 
     def forward(self, x):
         stack_1 = self.nonlinearity(self.bn1(self.conv_1(x)))

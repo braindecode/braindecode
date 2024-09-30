@@ -70,7 +70,6 @@ Models
     Deep4Net
     DeepSleepNet
     EEGConformer
-    EEGInception
     EEGInceptionERP
     EEGInceptionMI
     EEGITNet
@@ -79,6 +78,7 @@ Models
     EEGNeX
     EEGResNet
     EEGSimpleConv
+    EEGTCNet
     HybridNet
     Labram
     ShallowFBCSPNet
@@ -86,10 +86,11 @@ Models
     SleepStagerChambon2018
     SleepStagerEldele2021
     SPARCNet
+    SyncNet
     TCN
     TIDNet
-    TimeDistributed
     USleep
+
 
 Training
 ========

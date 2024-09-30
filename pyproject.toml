@@ -48,6 +48,8 @@ dependencies = [
     'einops',
     'joblib',
     'torchinfo',
+    'wfdb',
+    "h5py!=3.12.0", # because wfdb use h5py and this issue: https://github.com/h5py/h5py/issues/2505
     'linear_attention_transformer',
     'docstring_inheritance',
 ]

@@ -21,6 +21,7 @@ from braindecode.models import (
     Deep4Net,
     EEGNetv4,
     EEGNetv1,
+    EEGTCNet,
     HybridNet,
     ShallowFBCSPNet,
     EEGResNet,
@@ -31,7 +32,6 @@ from braindecode.models import (
     USleep,
     DeepSleepNet,
     EEGITNet,
-    EEGInception,
     EEGInceptionERP,
     EEGInceptionMI,
     TIDNet,
@@ -252,7 +252,7 @@ def test_eegitnet(input_sizes):
     )
 
 
-@pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
+@pytest.mark.parametrize("model_cls", [EEGInceptionERP])
 def test_eeginception_erp(input_sizes, model_cls):
     model = model_cls(
         n_outputs=input_sizes["n_classes"],
@@ -266,7 +266,7 @@ def test_eeginception_erp(input_sizes, model_cls):
     )
 
 
-@pytest.mark.parametrize("model_cls", [EEGInception, EEGInceptionERP])
+@pytest.mark.parametrize("model_cls", [EEGInceptionERP])
 def test_eeginception_erp_n_params(model_cls):
     """Make sure the number of parameters is the same as in the paper when
     using the same architecture hyperparameters.
@@ -279,7 +279,7 @@ def test_eeginception_erp_n_params(model_cls):
         drop_prob=0.5,
         n_filters=8,
         scales_samples_s=(0.5, 0.25, 0.125),
-        activation=torch.nn.ELU(),
+        activation=torch.nn.ELU,
     )
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -817,7 +817,7 @@ def test_model_trainable_parameters_biot(default_biot_params):
     biot = BIOT(**default_biot_params)
 
     biot_encoder = biot.encoder.parameters()
-    biot_classifier = biot.classifier.parameters()
+    biot_classifier = biot.final_layer.parameters()
 
     trainable_params_bio = sum(
         p.numel() for p in biot_encoder if p.requires_grad)
@@ -966,7 +966,7 @@ def test_labram_n_outputs_0(default_labram_params):
     with torch.no_grad():
         out = labram_base(X)
         assert out.shape[-1] == default_labram_params["patch_size"]
-        assert isinstance(labram_base.head, nn.Identity)
+        assert isinstance(labram_base.final_layer, nn.Identity)
 
 
 @pytest.fixture
@@ -1087,3 +1087,11 @@ def test_parameters_SPARCNet():
     # 0.79M parameters according to the Labram paper, table 1
     # The model parameters are indeed in the n_times range
     assert np.round(n_params / 1e6, 1) == 0.8
+
+
+def test_parameters_EEGTCNet():
+
+    model = EEGTCNet(n_outputs=4, n_chans=22, n_times=1000)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # 4.27 K according to the Table V from the original paper.
+    assert np.round(n_params / 1e3, 1) == 4.2

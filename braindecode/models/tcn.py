@@ -13,7 +13,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class TCN(EEGModuleMixin, nn.Module):
-    """Temporal Convolutional Network (TCN) from Bai et al 2018.
+    """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
 
@@ -31,6 +31,9 @@ class TCN(EEGModuleMixin, nn.Module):
         dropout probability
     n_in_chans: int
         Alias for `n_chans`.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------
@@ -48,6 +51,7 @@ class TCN(EEGModuleMixin, nn.Module):
         n_filters=30,
         kernel_size=5,
         drop_prob=0.5,
+        activation: nn.Module = nn.ReLU,
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
@@ -90,6 +94,7 @@ class TCN(EEGModuleMixin, nn.Module):
                     dilation=dilation_size,
                     padding=(kernel_size - 1) * dilation_size,
                     drop_prob=drop_prob,
+                    activation=activation,
                 ),
             )
         self.temporal_blocks = t_blocks
@@ -157,7 +162,15 @@ class _FinalLayer(nn.Module):
 
 class TemporalBlock(nn.Module):
     def __init__(
-        self, n_inputs, n_outputs, kernel_size, stride, dilation, padding, drop_prob
+        self,
+        n_inputs,
+        n_outputs,
+        kernel_size,
+        stride,
+        dilation,
+        padding,
+        drop_prob,
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__()
         self.conv1 = weight_norm(
@@ -171,7 +184,7 @@ class TemporalBlock(nn.Module):
             )
         )
         self.chomp1 = Chomp1d(padding)
-        self.relu1 = nn.ReLU()
+        self.relu1 = activation()
         self.dropout1 = nn.Dropout2d(drop_prob)
 
         self.conv2 = weight_norm(
@@ -185,13 +198,13 @@ class TemporalBlock(nn.Module):
             )
         )
         self.chomp2 = Chomp1d(padding)
-        self.relu2 = nn.ReLU()
+        self.relu2 = activation()
         self.dropout2 = nn.Dropout2d(drop_prob)
 
         self.downsample = (
             nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
         )
-        self.relu = nn.ReLU()
+        self.relu = activation()
 
         init.normal_(self.conv1.weight, 0, 0.01)
         init.normal_(self.conv2.weight, 0, 0.01)

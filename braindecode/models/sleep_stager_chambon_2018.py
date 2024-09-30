@@ -9,7 +9,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Chambon et al 2018.
+    """Sleep staging architecture from Chambon et al. 2018 [Chambon2018]_.
 
     Convolutional neural network for sleep staging described in [Chambon2018]_.
 
@@ -41,6 +41,9 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         Alias for `input_window_seconds`.
     n_classes:
         Alias for `n_outputs`.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------
@@ -59,6 +62,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         time_conv_size_s=0.5,
         max_pool_size_s=0.125,
         pad_size_s=0.25,
+        activation: nn.Module = nn.ReLU,
         input_window_seconds=None,
         n_outputs=5,
         dropout=0.25,
@@ -113,13 +117,13 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         self.feature_extractor = nn.Sequential(
             nn.Conv2d(1, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
             batch_norm(n_conv_chs),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
                 n_conv_chs, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)
             ),
             batch_norm(n_conv_chs),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
         )
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)

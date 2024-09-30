@@ -416,9 +416,10 @@ class WindowsDataset(BaseDataset):
 
 
 class BaseConcatDataset(ConcatDataset):
-    """A base class for concatenated datasets. Holds either mne.Raw or
-    mne.Epoch in self.datasets and has a pandas DataFrame with additional
-    description.
+    """A base class for concatenated datasets.
+
+    Holds either mne.Raw or mne.Epoch in self.datasets and has
+    a pandas DataFrame with additional description.
 
     Parameters
     ----------
@@ -426,6 +427,7 @@ class BaseConcatDataset(ConcatDataset):
         list of BaseDataset, BaseConcatDataset or WindowsDataset
     target_transform : callable | None
         Optional function to call on targets before returning them.
+
     """
 
     def __init__(
@@ -478,8 +480,9 @@ class BaseConcatDataset(ConcatDataset):
         property: str | None = None,
         split_ids: list[int] | list[list[int]] | dict[str, list[int]] | None = None,
     ) -> dict[str, BaseConcatDataset]:
-        """Split the dataset based on information listed in its description
-        DataFrame or based on indices.
+        """Split the dataset based on information listed in its description.
+
+        The format could be based on a DataFrame or based on indices.
 
         Parameters
         ----------
@@ -492,7 +495,7 @@ class BaseConcatDataset(ConcatDataset):
             If a dict then each key will be used in the returned
             splits dict and each value should be a list of int.
         property : str
-            Some property which is listed in info DataFrame.
+            Some property which is listed in the info DataFrame.
         split_ids : list | dict
             List of indices to be combined in a subset.
             It can be a list of int or a list of list of int.
@@ -503,6 +506,7 @@ class BaseConcatDataset(ConcatDataset):
             A dictionary with the name of the split (a string) as key and the
             dataset as value.
         """
+
         args_not_none = [by is not None, property is not None, split_ids is not None]
         if sum(args_not_none) != 1:
             raise ValueError("Splitting requires exactly one argument.")

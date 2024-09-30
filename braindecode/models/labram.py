@@ -20,7 +20,7 @@ from .base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram.
+    """Labram from [Jiang2024]_.
 
     Large Brain Model for Learning Generic Representations with Tremendous
     EEG Data in BCI from [Jiang2024]_
@@ -31,8 +31,8 @@ class Labram(EEGModuleMixin, nn.Module):
     BEiTv2 [BeiTv2]_.
 
     The models can be used in two modes:
-        - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
-        - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
+    - Neural Tokenizor: Design to get an embedding layers (e.g. classification).
+    - Neural Decoder: To extract the ampliture and phase outputs with a VQSNP.
 
     The braindecode's modification is to allow the model to be used in
     with an input shape of (batch, n_chans, n_times), if neural tokenizer
@@ -101,6 +101,10 @@ class Labram(EEGModuleMixin, nn.Module):
     attn_head_dim : bool (default=None)
         The head dimension to be used in the attention layer, to be used only
         during pre-training.
+    activation: nn.Module, default=nn.GELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+
     References
     ----------
     .. [Jiang2024] Wei-Bang Jiang, Li-Ming Zhao, Bao-Liang Lu. 2024, May.
@@ -144,6 +148,7 @@ class Labram(EEGModuleMixin, nn.Module):
         init_scale=0.001,
         neural_tokenizer=True,
         attn_head_dim=None,
+        activation: nn.Module = nn.GELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -185,7 +190,12 @@ class Labram(EEGModuleMixin, nn.Module):
                                 emb_dim=self.patch_size,
                             ),
                         ),
-                        ("temporal_conv", _TemporalConv(out_channels=out_channels)),
+                        (
+                            "temporal_conv",
+                            _TemporalConv(
+                                out_channels=out_channels, activation=activation
+                            ),
+                        ),
                     ]
                 )
             )
@@ -251,6 +261,7 @@ class Labram(EEGModuleMixin, nn.Module):
                         else None
                     ),
                     attn_head_dim=attn_head_dim,
+                    activation=activation,
                 )
                 for i in range(n_layers)
             ]
@@ -259,9 +270,9 @@ class Labram(EEGModuleMixin, nn.Module):
         self.fc_norm = norm_layer(self.emb_size) if use_mean_pooling else None
 
         if self.n_outputs > 0:
-            self.head = nn.Linear(self.emb_size, self.n_outputs)
+            self.final_layer = nn.Linear(self.emb_size, self.n_outputs)
         else:
-            self.head = nn.Identity()
+            self.final_layer = nn.Identity()
 
         self.apply(self._init_weights)
         self.fix_init_weight_and_init_embedding()
@@ -277,16 +288,16 @@ class Labram(EEGModuleMixin, nn.Module):
         if self.position_embedding is not None:
             trunc_normal_(self.position_embedding, std=0.02)
 
-        if isinstance(self.head, nn.Linear):
-            trunc_normal_(self.head.weight, std=0.02)
+        if isinstance(self.final_layer, nn.Linear):
+            trunc_normal_(self.final_layer.weight, std=0.02)
 
         for layer_id, layer in enumerate(self.blocks):
             rescale_parameter(layer.attn.proj.weight.data, layer_id + 1)
             rescale_parameter(layer.mlp[-2].weight.data, layer_id + 1)
 
-        if isinstance(self.head, nn.Linear):
-            self.head.weight.data.mul_(self.init_scale)
-            self.head.bias.data.mul_(self.init_scale)
+        if isinstance(self.final_layer, nn.Linear):
+            self.final_layer.weight.data.mul_(self.init_scale)
+            self.final_layer.bias.data.mul_(self.init_scale)
 
     @staticmethod
     def _init_weights(layer):
@@ -436,7 +447,7 @@ class Labram(EEGModuleMixin, nn.Module):
             return_patch_tokens=return_patch_tokens,
             return_all_tokens=return_all_tokens,
         )
-        x = self.head(x)
+        x = self.final_layer(x)
         return x
 
     def get_classifier(self):
@@ -448,7 +459,7 @@ class Labram(EEGModuleMixin, nn.Module):
         torch.nn.Module
             The classifier of the head model.
         """
-        return self.head
+        return self.final_layer
 
     def reset_classifier(self, n_outputs):
         """
@@ -460,7 +471,7 @@ class Labram(EEGModuleMixin, nn.Module):
             The new number of classes.
         """
         self.n_outputs = n_outputs
-        self.head = (
+        self.final_layer = (
             nn.Linear(self.emb_dim, self.n_outputs)
             if self.n_outputs > 0
             else nn.Identity()
@@ -934,7 +945,7 @@ class _WindowsAttentionBlock(nn.Module):
     init_values: float (default=None)
         If not None, use this value to initialize the gamma_1 and gamma_2
         parameters.
-    act_layer: nn.GELU (default)
+    activation: nn.GELU (default)
         Activation function.
     norm_layer: nn.LayerNorm (default)
         Normalization layer.
@@ -964,7 +975,7 @@ class _WindowsAttentionBlock(nn.Module):
         attn_drop=0.0,
         drop_path=0.0,
         init_values=None,
-        act_layer=nn.GELU,
+        activation: nn.Module = nn.GELU,
         norm_layer=nn.LayerNorm,
         window_size=None,
         attn_head_dim=None,
@@ -989,7 +1000,7 @@ class _WindowsAttentionBlock(nn.Module):
         self.mlp = MLP(
             in_features=dim,
             hidden_features=[mlp_hidden_dim],
-            activation=act_layer,
+            activation=activation,
             drop=drop,
         )
 
@@ -1067,6 +1078,10 @@ class _TemporalConv(nn.Module):
         Padding for the first convolution.
     padding_2: tuple (default=(0, 1))
         Padding for the second and third convolutions.
+    activation: nn.Module, default=nn.GELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.GELU``.
+
     Returns:
     --------
     x: torch.Tensor
@@ -1083,7 +1098,7 @@ class _TemporalConv(nn.Module):
         padding_1=(0, 7),
         kernel_size_2=(1, 3),
         padding_2=(0, 1),
-        act_layer=nn.GELU,
+        activation: nn.Module = nn.GELU,
     ):
         super().__init__()
 
@@ -1100,7 +1115,7 @@ class _TemporalConv(nn.Module):
             stride=stride_1,
             padding=padding_1,
         )
-        self.act_layer_1 = act_layer()
+        self.act_layer_1 = activation()
         self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
 
         self.conv2 = nn.Conv2d(
@@ -1109,7 +1124,7 @@ class _TemporalConv(nn.Module):
             kernel_size=kernel_size_2,
             padding=padding_2,
         )
-        self.act_layer_2 = act_layer()
+        self.act_layer_2 = activation()
         self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
 
         self.conv3 = nn.Conv2d(
@@ -1119,7 +1134,7 @@ class _TemporalConv(nn.Module):
             padding=padding_2,
         )
         self.norm3 = nn.GroupNorm(num_groups=num_groups, num_channels=out_channels)
-        self.act_layer_3 = act_layer()
+        self.act_layer_3 = activation()
 
         self.transpose_temporal_channel = Rearrange("Batch C NA T -> Batch NA (T C)")
 

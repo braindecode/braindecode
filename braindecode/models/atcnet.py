@@ -12,7 +12,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
-    """ATCNet model from [1]_
+    """ATCNet model from Altaheri et al. (2022) [1]_
 
     Pytorch implementation based on official tensorflow code [2]_.
 
@@ -54,7 +54,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         table 1 of the paper [1]_. Defaults to 8 as in [1]_.
     att_num_heads : int
         Number of attention heads, denoted H in table 1 of the paper [1]_.
-        Defaults to 2 as in [1_.
+        Defaults to 2 as in [1]_.
     att_dropout : float
         Dropout probability used in the attention block, denoted pa in table 1
         of the paper [1]_. Defaults to 0.5 as in [1]_.
@@ -91,11 +91,12 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     References
     ----------
-    .. [1] H. Altaheri, G. Muhammad and M. Alsulaiman, "Physics-informed
-           attention temporal convolutional network for EEG-based motor imagery
-           classification," in IEEE Transactions on Industrial Informatics,
-           2022, doi: 10.1109/TII.2022.3197419.
-    .. [2] https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
+    .. [1] H. Altaheri, G. Muhammad and M. Alsulaiman,
+        Physics-informed attention temporal convolutional network for EEG-based
+        motor imagery classification in IEEE Transactions on Industrial Informatics,
+        2022, doi: 10.1109/TII.2022.3197419.
+    .. [2] EEE-ATCNet implementation.
+       https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
     """
 
     def __init__(
@@ -119,7 +120,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         tcn_kernel_size=4,
         tcn_n_filters=32,
         tcn_dropout=0.3,
-        tcn_activation=nn.ELU(),
+        tcn_activation: nn.Module = nn.ELU,
         concat=False,
         max_norm_const=0.25,
         chs_info=None,
@@ -500,11 +501,11 @@ class _TCNResidualBlock(nn.Module):
         kernel_size=4,
         n_filters=32,
         dropout=0.3,
-        activation=nn.ELU(),
+        activation: nn.Module = nn.ELU,
         dilation=1,
     ):
         super().__init__()
-        self.activation = activation
+        self.activation = activation()
         self.dilation = dilation
         self.dropout = dropout
         self.n_filters = n_filters

@@ -13,7 +13,7 @@ from .base import EEGModuleMixin, deprecated_args
 
 
 class HybridNet(EEGModuleMixin, nn.Module):
-    """Hybrid ConvNet model from Schirrmeister et al 2017.
+    """Hybrid ConvNet model from Schirrmeister et al 2017  [Schirrmeister2017]_.
 
     See [Schirrmeister2017]_ for details.
 
@@ -40,6 +40,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
+        activation: nn.Module = nn.ELU,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -74,6 +75,8 @@ class HybridNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
             chs_info=chs_info,
             final_conv_length=2,
+            activation_first_conv_nonlin=activation,
+            activation_later_conv_nonlin=activation,
         )
         shallow_model = ShallowFBCSPNet(
             n_chans=n_chans,

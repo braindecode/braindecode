@@ -197,7 +197,6 @@ models_mandatory_parameters = [
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
     ("DeepSleepNet", ["n_outputs"], None),
     ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGInception", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
@@ -229,4 +228,6 @@ models_mandatory_parameters = [
     ("ContraWR", ["n_chans", "n_outputs", "sfreq"], dict(sfreq=200)),
     ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
     ("TSception", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
 ]
