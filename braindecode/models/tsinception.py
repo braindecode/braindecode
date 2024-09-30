@@ -117,15 +117,15 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
             out_channels=self.number_filter_spat,
             kernel_size=(self.n_chans, 1),
             stride=1,
-            pool_size=int(self.pool_size * 0.25),
+            pool_size=self.pool_size // 4,
             activation=self.activation,
         )
         self.spatial_block_2 = self._conv_block(
             in_channels=self.number_filter_temp,
             out_channels=self.number_filter_spat,
-            kernel_size=(max(1, int(self.n_chans * 0.5)), 1),
-            stride=(max(1, int(self.n_chans * 0.5)), 1),
-            pool_size=int(self.pool_size * 0.25),
+            kernel_size=(max(1, self.n_chans // 2), 1),
+            stride=(max(1, self.n_chans // 2), 1),
+            pool_size=self.pool_size // 4,
             activation=self.activation,
         )
 
@@ -196,7 +196,7 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape (batch_size, 1, n_channels, n_times).
+            Input tensor of shape (batch_size, n_channels, n_times).
 
         Returns
         -------
