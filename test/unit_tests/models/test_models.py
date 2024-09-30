@@ -395,7 +395,7 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
         pad_size_s=pad_size_s,
         input_window_seconds=input_size_s,
         n_outputs=n_classes,
-        dropout=0.25,
+        drop_prob=0.25,
     )
     model.eval()
 
