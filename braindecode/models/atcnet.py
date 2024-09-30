@@ -115,11 +115,11 @@ class ATCNet(EEGModuleMixin, nn.Module):
         n_windows=5,
         att_head_dim=8,
         att_num_heads=2,
-        att_dropout=0.5,
+        att_drop_prob=0.5,
         tcn_depth=2,
         tcn_kernel_size=4,
         tcn_n_filters=32,
-        tcn_dropout=0.3,
+        tcn_drop_prob=0.3,
         tcn_activation: nn.Module = nn.ELU,
         concat=False,
         max_norm_const=0.25,
@@ -162,11 +162,11 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.n_windows = n_windows
         self.att_head_dim = att_head_dim
         self.att_num_heads = att_num_heads
-        self.att_dropout = att_dropout
+        self.att_dropout = att_drop_prob
         self.tcn_depth = tcn_depth
         self.tcn_kernel_size = tcn_kernel_size
         self.tcn_n_filters = tcn_n_filters
-        self.tcn_dropout = tcn_dropout
+        self.tcn_dropout = tcn_drop_prob
         self.tcn_activation = tcn_activation
         self.concat = concat
         self.max_norm_const = max_norm_const
@@ -203,7 +203,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                     in_shape=self.F2,
                     head_dim=self.att_head_dim,
                     num_heads=att_num_heads,
-                    dropout=att_dropout,
+                    dropout=att_drop_prob,
                 )
                 for _ in range(self.n_windows)
             ]
@@ -217,7 +217,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                             in_channels=self.F2,
                             kernel_size=tcn_kernel_size,
                             n_filters=tcn_n_filters,
-                            dropout=tcn_dropout,
+                            dropout=tcn_drop_prob,
                             activation=tcn_activation,
                             dilation=2**i,
                         )

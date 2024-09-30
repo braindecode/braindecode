@@ -41,6 +41,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
         sfreq=None,
         chs_info=None,
         activation: nn.Module = nn.ELU,
+        drop_prob: float = 0.5,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -77,6 +78,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
             final_conv_length=2,
             activation_first_conv_nonlin=activation,
             activation_later_conv_nonlin=activation,
+            drop_prob=drop_prob,
         )
         shallow_model = ShallowFBCSPNet(
             n_chans=n_chans,
@@ -89,6 +91,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
             n_filters_spat=40,
             filter_time_length=28,
             final_conv_length=29,
+            drop_prob=drop_prob,
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
         del in_chans, n_classes, input_window_samples

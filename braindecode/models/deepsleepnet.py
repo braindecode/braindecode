@@ -16,10 +16,11 @@ class _SmallCNN(nn.Module):
     activation: nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
-
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
     """
 
-    def __init__(self, activation: nn.Module = nn.ReLU):
+    def __init__(self, activation: nn.Module = nn.ReLU, drop_prob: float = 0.5):
         super().__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(
@@ -34,7 +35,7 @@ class _SmallCNN(nn.Module):
             activation(),
         )
         self.pool1 = nn.MaxPool2d(kernel_size=(1, 8), stride=(1, 8), padding=(0, 2))
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=drop_prob)
         self.conv2 = nn.Sequential(
             nn.Conv2d(
                 in_channels=64,
@@ -95,7 +96,7 @@ class _LargeCNN(nn.Module):
 
     """
 
-    def __init__(self, activation: nn.Module = nn.ELU):
+    def __init__(self, activation: nn.Module = nn.ELU, drop_prob: float = 0.5):
         super().__init__()
 
         self.conv1 = nn.Sequential(
@@ -111,7 +112,7 @@ class _LargeCNN(nn.Module):
             activation(),
         )
         self.pool1 = nn.MaxPool2d(kernel_size=(1, 4), stride=(1, 4))
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=drop_prob)
         self.conv2 = nn.Sequential(
             nn.Conv2d(
                 in_channels=64,
@@ -204,6 +205,9 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         the final linear layer.
     n_classes :
         Alias for n_outputs.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+
 
     References
     ----------
@@ -225,6 +229,7 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         n_classes=None,
         activation_large: nn.Module = nn.ELU,
         activation_small: nn.Module = nn.ReLU,
+        drop_prob: float = 0.5,
     ):
         (n_outputs,) = deprecated_args(
             self,
@@ -240,8 +245,8 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes
-        self.cnn1 = _SmallCNN(activation=activation_small)
-        self.cnn2 = _LargeCNN(activation=activation_large)
+        self.cnn1 = _SmallCNN(activation=activation_small, drop_prob=drop_prob)
+        self.cnn2 = _LargeCNN(activation=activation_large, drop_prob=drop_prob)
         self.dropout = nn.Dropout(0.5)
         self.bilstm = _BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
         self.fc = nn.Sequential(

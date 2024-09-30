@@ -46,7 +46,7 @@ class _FeatureExtractor(nn.Module):
         The size of the window for the average pooling operation. Default is 75.
     pool_stride : int, optional
         The stride of the average pooling operation. Default is 15.
-    dropout : float, optional
+    drop_prob : float, optional
         The dropout rate for regularization. Default is 0.5.
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
@@ -61,7 +61,7 @@ class _FeatureExtractor(nn.Module):
         spatial_expansion: int = 1,
         pool_length: int = 75,
         pool_stride: int = 15,
-        dropout: float = 0.5,
+        drop_prob: float = 0.5,
         activation: nn.Module = nn.ELU,
     ):
         super().__init__()
@@ -86,7 +86,7 @@ class _FeatureExtractor(nn.Module):
         self.bn = nn.BatchNorm2d(n_temporal_filters * spatial_expansion)
         self.nonlinearity = activation()
         self.pool = nn.AvgPool2d((1, pool_length), stride=(1, pool_stride))
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(drop_prob)
 
     def forward(self, x):
         x = self.ensure4d(x)
@@ -134,7 +134,7 @@ class _ChannelAttentionBlock(nn.Module):
         The length of the window for the average pooling operation.
     pool_stride : int, default=8
         The stride of the average pooling operation.
-    dropout : float, default=0.5
+    drop_prob : float, default=0.5
         The dropout rate for regularization. Values should be between 0 and 1.
     reduction_rate : int, default=4
         The reduction rate used in the attention mechanism to reduce dimensionality
@@ -192,7 +192,7 @@ class _ChannelAttentionBlock(nn.Module):
         temp_filter_length: int = 15,
         pool_length: int = 8,
         pool_stride: int = 8,
-        dropout: float = 0.5,
+        drop_prob: float = 0.5,
         reduction_rate: int = 4,
         use_mlp: bool = False,
         seq_len: int = 62,
@@ -218,7 +218,7 @@ class _ChannelAttentionBlock(nn.Module):
         )
 
         self.pool = nn.AvgPool2d((1, pool_length), stride=(1, pool_stride))
-        self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(drop_prob)
 
         if attention_mode is not None:
             self.attention_block = get_attention_block(
@@ -353,12 +353,12 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         spatial_expansion: int = 1,
         pool_length_inp: int = 75,
         pool_stride_inp: int = 15,
-        dropout_inp: float = 0.5,
+        drop_prob_inp: float = 0.5,
         ch_dim: int = 16,
         temp_filter_length: int = 15,
         pool_length: int = 8,
         pool_stride: int = 8,
-        dropout: float = 0.5,
+        drop_prob: float = 0.5,
         attention_mode: str | None = None,
         reduction_rate: int = 4,
         use_mlp: bool = False,
@@ -387,7 +387,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             spatial_expansion=spatial_expansion,
             pool_length=pool_length_inp,
             pool_stride=pool_stride_inp,
-            dropout=dropout_inp,
+            drop_prob=drop_prob_inp,
             activation=activation,
         )
 
@@ -412,7 +412,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             temp_filter_length=temp_filter_length,
             pool_length=pool_length,
             pool_stride=pool_stride,
-            dropout=dropout,
+            drop_prob=drop_prob_inp,
             reduction_rate=reduction_rate,
             use_mlp=use_mlp,
             seq_len=seq_lengths[0],
