@@ -252,14 +252,3 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
 
             feature_size = s_out.view(1, -1).size(1)
         return feature_size
-
-
-if __name__ == "__main__":
-    x = torch.zeros(1, 22, 1000)
-    model = TSceptionV1(n_chans=22, n_outputs=2, sfreq=256, n_times=1000)
-    print(model)
-    pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(pytorch_total_params)
-
-    with torch.no_grad():
-        out = model(x)
