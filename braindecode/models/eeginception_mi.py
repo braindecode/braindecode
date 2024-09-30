@@ -77,6 +77,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         n_classes=None,
         input_window_s=None,
         add_log_softmax=False,
+        drop_prob: float = 0.5,
     ):
         (
             n_chans,

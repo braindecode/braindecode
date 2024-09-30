@@ -105,6 +105,8 @@ class _PositionalEncoding(nn.Module):
         The dropout rate
     max_len: int
         The maximum length of the sequence
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
 
     Returns
     -------
@@ -112,7 +114,7 @@ class _PositionalEncoding(nn.Module):
         (batch, max_len, d_model)
     """
 
-    def __init__(self, emb_size: int, dropout: float = 0.1, max_len: int = 1000):
+    def __init__(self, emb_size: int, drop_prob: float = 0.1, max_len: int = 1000):
         super(_PositionalEncoding, self).__init__()
 
         # Compute the positional encodings once in log space.
@@ -125,7 +127,7 @@ class _PositionalEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)
         self.register_buffer("pe", pe)
-        self.dropout = nn.Dropout(p=dropout)
+        self.dropout = nn.Dropout(p=drop_prob)
 
     def forward(self, x: torch.FloatTensor) -> torch.FloatTensor:
         """
@@ -184,6 +186,7 @@ class _BIOTEncoder(nn.Module):
         n_layers=4,  # The number of transformer layers
         n_fft=200,  # Related with the frequency resolution
         hop_length=100,
+        drop_prob: float = 0.1,
     ):
         super().__init__()
 
@@ -201,7 +204,7 @@ class _BIOTEncoder(nn.Module):
             attn_layer_dropout=0.2,  # dropout right after self-attention layer
             attn_dropout=0.2,  # dropout post-attention
         )
-        self.positional_encoding = _PositionalEncoding(emb_size)
+        self.positional_encoding = _PositionalEncoding(emb_size, drop_prob=drop_prob)
 
         # channel token, N_channels >= your actual channels
         self.channel_tokens = nn.Embedding(
@@ -397,6 +400,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         activation: nn.Module = nn.ELU,
+        drop_prob: float = 0.5,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -440,6 +444,7 @@ class BIOT(EEGModuleMixin, nn.Module):
             n_chans=self.n_chans,
             n_fft=self.sfreq,
             hop_length=hop_length,
+            drop_prob=drop_prob,
         )
 
         self.final_layer = _ClassificationHead(
