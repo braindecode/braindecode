@@ -23,7 +23,7 @@ class _DenseLayer(nn.Sequential):
         Rate of growth of channels in this layer.
     bottleneck_size : int
         Multiplicative factor for the bottleneck layer (does not affect the output size).
-    drop_rate : float, optional
+    drop_prob : float, optional
         Dropout rate. Default is 0.5.
     conv_bias : bool, optional
         Whether to use bias in convolutional layers. Default is True.
@@ -89,7 +89,7 @@ class _DenseLayer(nn.Sequential):
 
     def forward(self, x):
         new_features = super(_DenseLayer, self).forward(x)
-        new_features = F.dropout(new_features, p=self.drop_rate, training=self.training)
+        new_features = F.dropout(new_features, p=self.drop_prob, training=self.training)
         return torch.cat([x, new_features], 1)
 
 
@@ -227,7 +227,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         Growth rate of the DenseNet. Default is 16.
     bn_size : int, optional
         Bottleneck size. Default is 16.
-    drop_rate : float, optional
+    drop_prob : float, optional
         Dropout rate. Default is 0.5.
     conv_bias : bool, optional
         Whether to use bias in convolutional layers. Default is True.
