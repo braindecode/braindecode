@@ -3,16 +3,17 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-import math
 import numpy as np
-from typing import Optional, List, Tuple
 
 from mne.filter import create_filter
 
 import torch
-import torch.nn.functional as F
 from torch import nn
+import torch.nn.functional as F
+
 from torch import Tensor
+from typing import Optional, List, Tuple
+import math
 
 from .functions import (
     drop_path,
