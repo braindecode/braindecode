@@ -159,6 +159,7 @@ class FilterBank(nn.Module):
 
     def __init__(
         self,
+        nchans: int,
         sfreq: int,
         band_filters: Optional[List[Tuple[float, float]]] = None,
         filter_length: str | float | int = "auto",
@@ -181,6 +182,7 @@ class FilterBank(nn.Module):
         self.phase = phase
         self.method = method
 
+        self.conv_layers = nn.ModuleList()
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
                 data=None,
@@ -190,16 +192,33 @@ class FilterBank(nn.Module):
                 filter_length=filter_length,
                 l_trans_bandwidth=l_trans_bandwidth,
                 h_trans_bandwidth=h_trans_bandwidth,
-                method=self.method,
+                method=method,
                 iir_params=None,
-                phase=self.phase,
+                phase=phase,
                 fir_window=fir_window,
                 fir_design=fir_design,
                 verbose=True,
             )
-            filt_tensor = torch.from_numpy(filt).float()
 
-            self.register_buffer(f"filter_{idx}", filt_tensor)
+            filt_tensor = torch.from_numpy(filt).float()
+            filter_length = len(filt_tensor)
+
+            filt_tensor = torch.from_numpy(filt).float().unsqueeze(0).unsqueeze(0)
+            # Shape: (1, 1, filter_length)
+            conv = nn.Conv1d(
+                in_channels=nchans,
+                out_channels=nchans,
+                kernel_size=filter_length,
+                stride=1,
+                padding=(filter_length - 1) // 2,
+                groups=nchans,
+                bias=False,
+            )
+            conv.weight = nn.Parameter(
+                filt_tensor.repeat(nchans, 1, 1), requires_grad=False
+            )
+
+            self.conv_layers.append(conv)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -217,33 +236,22 @@ class FilterBank(nn.Module):
         """
         # Initialize a list to collect filtered outputs
         filtered_outputs = []
-
-        for idx in range(self.n_bands):
-            # Retrieve the filter for the current band
-            filt = getattr(self, f"filter_{idx}")
-
-            filtered = _overlap_add_filter_torch(
-                x=x, h=filt, pad=self.pad, phase=self.phase
-            )
-
+        for conv in self.conv_layers:
+            filtered = conv(x)  # Shape: (batch, channels, time)
+            filtered = filtered.unsqueeze(1)  # Shape: (batch, 1, channels, time)
             filtered_outputs.append(filtered)
-
-        # Concatenate all filtered outputs along the channel dimension
-        # Resulting shape: (batch_size, n_bands, n_chans, time_points)
-        output = torch.cat(filtered_outputs, dim=1)
+        output = torch.cat(
+            filtered_outputs, dim=1
+        )  # Shape: (batch, n_bands, channels, time)
 
         return output
 
 
-######################
-
-
-#############################
 if __name__ == "__main__":
     from torch import randn
 
-    x = randn(16, 22, 1000)
-    layer = FilterBank(sfreq=250)
+    x = randn(16, 10, 1000)
+    layer = FilterBank(sfreq=256, nchans=10)
     with torch.no_grad():
         out = layer(x)
 
