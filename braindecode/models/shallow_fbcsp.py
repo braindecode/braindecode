@@ -7,9 +7,9 @@ from torch import nn
 from torch.nn import init
 from einops.layers.torch import Rearrange
 
-from .base import EEGModuleMixin, deprecated_args
-from .functions import square, squeeze_final_output
-from .modules import CombinedConv, Ensure4d, Expression, SafeLog
+from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.functions import square, squeeze_final_output
+from braindecode.models.modules import CombinedConv, Ensure4d, Expression, SafeLog
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):

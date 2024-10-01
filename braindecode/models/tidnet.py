@@ -6,8 +6,8 @@ from torch.nn import init
 from torch.nn.utils import weight_norm
 from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.modules import Ensure4d
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class _BatchNormZG(nn.BatchNorm2d):

@@ -10,7 +10,8 @@ import warnings
 import torch
 from torch import nn
 import torch.nn.functional as F
-from .base import EEGModuleMixin, deprecated_args
+
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):

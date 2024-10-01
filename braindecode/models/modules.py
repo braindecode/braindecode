@@ -18,7 +18,7 @@ from .functions import (
     _get_sinc_resample_kernel,
     safe_log,
 )
-from ..util import np_to_th
+from braindecode.util import np_to_th
 
 
 class Ensure4d(nn.Module):
@@ -26,6 +26,18 @@ class Ensure4d(nn.Module):
         while len(x.shape) < 4:
             x = x.unsqueeze(-1)
         return x
+
+
+class Chomp1d(nn.Module):
+    def __init__(self, chomp_size):
+        super().__init__()
+        self.chomp_size = chomp_size
+
+    def extra_repr(self):
+        return "chomp_size={}".format(self.chomp_size)
+
+    def forward(self, x):
+        return x[:, :, : -self.chomp_size].contiguous()
 
 
 class Expression(nn.Module):

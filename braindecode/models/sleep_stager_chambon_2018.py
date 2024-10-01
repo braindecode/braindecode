@@ -5,7 +5,8 @@
 import torch
 from torch import nn
 import numpy as np
-from .base import EEGModuleMixin, deprecated_args
+
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):

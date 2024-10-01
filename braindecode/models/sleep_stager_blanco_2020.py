@@ -5,7 +5,7 @@
 import torch
 from torch import nn
 
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):

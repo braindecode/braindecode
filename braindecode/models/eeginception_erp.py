@@ -7,10 +7,10 @@ from numpy import prod
 from torch import nn
 from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d
-from .eegnet import _glorot_weight_zero_bias
-from .eegitnet import _InceptionBlock, _DepthwiseConv2d
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.modules import Ensure4d
+from braindecode.models.eegnet import _glorot_weight_zero_bias
+from braindecode.models.eegitnet import _InceptionBlock, _DepthwiseConv2d
 
 
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
