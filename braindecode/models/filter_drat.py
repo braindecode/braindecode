@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from scipy import signal
-from mne.cuda import (
-    _setup_cuda_fft_multiply_repeated,
-)
+
 from mne.filter import _check_zero_phase_length, create_filter, next_fast_len
 from mne.utils import (
     logger,
@@ -13,57 +10,111 @@ from mne.utils import (
 from torch import nn
 
 
-def _fft_multiply_repeated_b(x, n_fft, cuda_dict):
-    """Do FFT multiplication by a filter function (possibly using CUDA).
-
-    Parameters
-    ----------
-    h_fft : 1-d array or gpuarray
-        The filtering array to apply.
-    x : 1-d array
-        The array to filter.
-    n_fft : int
-        The number of points in the FFT.
-    cuda_dict : dict
-        Dictionary constructed using setup_cuda_multiply_repeated().
-
-    Returns
-    -------
-    x : 1-d array
-        Filtered version of x.
+def _smart_pad_torch(x, n_pad, pad="reflect_limited"):
     """
-    # do the fourier-domain operations
-    x_fft = np.fft.rfft(x, n_fft)
-    x_fft *= cuda_dict["h_fft"]
-    x = np.fft.irfft(x_fft, n_fft)
-    return x
+    Pad tensor x.
 
+    Parameters:
+    - x (torch.Tensor): Input tensor of shape (N,)
+    - n_pad (tuple or list or array-like): Number of pads on each side (left, right)
+    - pad (str): Padding mode ('reflect_limited' or others compatible with torch.pad)
 
-def _fft_multiply_repeated(x, cuda_dict):
-    """Do FFT multiplication by a filter function (possibly using CUDA).
-
-    Parameters
-    ----------
-    h_fft : 1-d array or gpuarray
-        The filtering array to apply.
-    x : 1-d array
-        The array to filter.
-    n_fft : int
-        The number of points in the FFT.
-    cuda_dict : dict
-        Dictionary constructed using setup_cuda_multiply_repeated().
-
-    Returns
-    -------
-    x : 1-d array
-        Filtered version of x.
+    Returns:
+    - torch.Tensor: Padded tensor
     """
-    # do the fourier-domain operations
+    n_pad = torch.as_tensor(n_pad)
+    assert n_pad.shape == (2,), "n_pad must have shape (2,)"
 
-    x_fft = cuda_dict[""](x, cuda_dict["n_fft"])
-    x_fft *= cuda_dict["h_fft"]
-    x = cuda_dict["irfft"](x_fft, cuda_dict["n_fft"])
-    return x
+    if torch.all(n_pad == 0):
+        return x
+    elif torch.any(n_pad < 0):
+        raise RuntimeError("n_pad must be non-negative")
+
+    if pad == "reflect_limited":
+        left_pad, right_pad = n_pad.tolist()
+
+        # Calculate zero padding required if n_pad > len(x) -1
+        left_zero_pad_size = max(left_pad - (x.shape[0] - 1), 0)
+        right_zero_pad_size = max(right_pad - (x.shape[0] - 1), 0)
+
+        # Effective reflection lengths
+        left_reflection_len = min(left_pad, x.shape[0] - 1)
+        right_reflection_len = min(right_pad, x.shape[0] - 1)
+
+        # Reflection on the left side
+        if left_reflection_len > 0:
+            # Slice for reflection: x[1:left_reflection_len+1]
+            reflection_left = 2 * x[0] - x[1 : left_reflection_len + 1]
+            # Reverse the reflected part
+            reflection_left = torch.flip(reflection_left, dims=[0])
+        else:
+            reflection_left = torch.tensor([], dtype=x.dtype, device=x.device)
+
+        # Reflection on the right side
+        if right_reflection_len > 0:
+            # Slice for reflection: x[-2:-right_reflection_len-2:-1]
+            reflection_right = 2 * x[-1] - x[-2 : -right_reflection_len - 2 : -1]
+        else:
+            reflection_right = torch.tensor([], dtype=x.dtype, device=x.device)
+
+        # Zero padding
+        left_zero_pad = torch.zeros(left_zero_pad_size, dtype=x.dtype, device=x.device)
+        right_zero_pad = torch.zeros(
+            right_zero_pad_size, dtype=x.dtype, device=x.device
+        )
+
+        # Concatenate all parts
+        padded = torch.cat(
+            [left_zero_pad, reflection_left, x, reflection_right, right_zero_pad]
+        )
+
+        return padded
+    else:
+        # For other padding modes, use torch.nn.functional.pad
+        # torch.pad expects pad as (left, right)
+        left_pad, right_pad = n_pad.tolist()
+        return torch.nn.functional.pad(x, (left_pad, right_pad), mode=pad)
+
+
+def _1d_overlap_filter_torch(x, n_h, n_edge, phase, h_fft, pad, n_fft):
+    """Do one-dimensional overlap-add FFT FIR filtering using PyTorch."""
+
+    # Pad to reduce ringing
+    x_ext = _smart_pad_torch(x, (n_edge, n_edge), pad)
+    # x_ext = torch.from_numpy(x_ext)
+    n_x = x_ext.shape[0]
+    x_filtered = torch.zeros_like(x_ext)
+
+    n_seg = n_fft - n_h + 1
+    n_segments = (n_x + n_seg - 1) // n_seg  # Equivalent to ceil division
+    shift = ((n_h - 1) // 2 if phase.startswith("zero") else 0) + n_edge
+
+    # Actual filtering step
+    for seg_idx in range(n_segments):
+        start = seg_idx * n_seg
+        stop = (seg_idx + 1) * n_seg
+        seg = x_ext[start:stop]
+
+        # Pad segment to length n_fft
+        seg = torch.cat(
+            [seg, torch.zeros(n_fft - seg.shape[0], dtype=seg.dtype, device=seg.device)]
+        )
+
+        # FFT of the segment
+        x_fft = torch.fft.rfft(seg, n=n_fft)
+        x_fft *= h_fft
+        prod = torch.fft.irfft(x_fft, n=n_fft)
+
+        # Overlap-add operation
+        start_filt = max(0, start - shift)
+        stop_filt = min(start - shift + n_fft, n_x)
+        start_prod = max(0, shift - start)
+        stop_prod = start_prod + stop_filt - start_filt
+        x_filtered[start_filt:stop_filt] += prod[start_prod:stop_prod]
+
+    # Remove mirrored edges and cast to original dtype
+    x_filtered = x_filtered[: n_x - 2 * n_edge].type_as(x)
+    return x_filtered
 
 
 def _smart_pad(x, n_pad, pad="reflect_limited"):
@@ -91,7 +142,7 @@ def _smart_pad(x, n_pad, pad="reflect_limited"):
         return np.pad(x, (tuple(n_pad),), pad)
 
 
-def _1d_overlap_filter(x, n_h, n_edge, phase, cuda_dict, pad, n_fft):
+def _1d_overlap_filter(x, n_h, n_edge, phase, h_fft, pad, n_fft):
     """Do one-dimensional overlap-add FFT FIR filtering."""
     # pad to reduce ringing
     x_ext = _smart_pad(x, (n_edge, n_edge), pad)
@@ -110,7 +161,9 @@ def _1d_overlap_filter(x, n_h, n_edge, phase, cuda_dict, pad, n_fft):
         seg = x_ext[start:stop]
         seg = np.concatenate([seg, np.zeros(n_fft - len(seg))])
 
-        prod = _fft_multiply_repeated(seg, cuda_dict)
+        x_fft = np.fft.rfft(seg, n_fft)
+        x_fft *= h_fft
+        prod = np.fft.irfft(x_fft, n_fft)
 
         start_filt = max(0, start - shift)
         stop_filt = min(start - shift + n_fft, n_x)
@@ -128,7 +181,6 @@ def _overlap_add_filter(
     h,
     n_fft=None,
     phase="zero",
-    n_jobs=None,
     pad="reflect_limited",
 ):
     """Filter the signal x using h with overlap-add FFTs."""
@@ -176,19 +228,27 @@ def _overlap_add_filter(
         )
 
     # Figure out if we should use CUDA
-    n_jobs, cuda_dict = _setup_cuda_fft_multiply_repeated(n_jobs, h, n_fft)
+    new_h = np.fft.rfft(h, n=n_fft)
+    x_numpy = x.cpu().numpy().astype(np.float64)
 
-    x = x.cpu().numpy().astype(np.float64)
+    h_fft_torch = torch.fft.rfft(torch.from_numpy(h), n=n_fft)
 
     # Process each row separately
     picks = list(range(orig_shape[1]))
     for p in picks:
-        x[p] = _1d_overlap_filter(
-            x[p], len(h), n_edge, phase, cuda_dict=cuda_dict, pad=pad, n_fft=n_fft
+        x_numpy[p] = _1d_overlap_filter(
+            x_numpy[p], len(h), n_edge, phase, h_fft=new_h, pad=pad, n_fft=n_fft
         )
+        x_filtered_torch = _1d_overlap_filter_torch(
+            x[p], len(h), n_edge, phase, h_fft=h_fft_torch, pad=pad, n_fft=n_fft
+        )
+        x_filtered_torch_np = x_filtered_torch.numpy()
 
-    x.shape = orig_shape
-    return x
+        print(np.allclose(x_numpy[p], x_filtered_torch_np, atol=1e-6))
+        print(np.max(np.abs(x_numpy[p] - x_filtered_torch_np)))
+
+    x_numpy.shape = orig_shape
+    return x_numpy
 
 
 class FilterBank(nn.Module):
@@ -236,7 +296,7 @@ class FilterBank(nn.Module):
                 phase=phase,
                 fir_window=fir_window,
                 fir_design=fir_design,
-                verbose=False,
+                verbose=True,
             )
             self.filter = filt
 
