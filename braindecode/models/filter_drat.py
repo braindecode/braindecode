@@ -1,49 +1,68 @@
 from __future__ import annotations
 
-
-from collections import Counter
-from copy import deepcopy
-from functools import partial
-from math import gcd
-
 import numpy as np
-from scipy import fft, signal
-from scipy.stats import f as fstat
-
-from mne._fiff.pick import _picks_to_idx
-from mne._ola import _COLA
+import torch
+from scipy import signal
 from mne.cuda import (
     _fft_multiply_repeated,
-    _fft_resample,
     _setup_cuda_fft_multiply_repeated,
-    _setup_cuda_fft_resample,
-    _smart_pad,
 )
-from mne.fixes import minimum_phase
-from mne.parallel import parallel_func
+from mne.filter import _check_zero_phase_length, create_filter, next_fast_len
 from mne.utils import (
-    _check_option,
-    _check_preload,
-    _ensure_int,
-    _pl,
-    _validate_type,
     logger,
-    sum_squared,
-    verbose,
-    warn,
 )
-
-import torch
-
 from torch import nn
 
-from mne.filter import (
-    create_filter,
-    _prep_for_filtering,
-    _check_zero_phase_length,
-    next_fast_len,
-)
-from torchaudio.functional import convolve
+
+def _fft_multiply_repeated_b(x, n_fft, cuda_dict):
+    """Do FFT multiplication by a filter function (possibly using CUDA).
+
+    Parameters
+    ----------
+    h_fft : 1-d array or gpuarray
+        The filtering array to apply.
+    x : 1-d array
+        The array to filter.
+    n_fft : int
+        The number of points in the FFT.
+    cuda_dict : dict
+        Dictionary constructed using setup_cuda_multiply_repeated().
+
+    Returns
+    -------
+    x : 1-d array
+        Filtered version of x.
+    """
+    # do the fourier-domain operations
+    x_fft = np.fft.rfft(x, n_fft)
+    x_fft *= cuda_dict["h_fft"]
+    x = np.fft.irfft(x_fft, n_fft)
+    return x
+
+
+def _smart_pad(x, n_pad, pad="reflect_limited"):
+    """Pad vector x."""
+    n_pad = np.asarray(n_pad)
+    assert n_pad.shape == (2,)
+    if (n_pad == 0).all():
+        return x
+    elif (n_pad < 0).any():
+        raise RuntimeError("n_pad must be non-negative")
+    if pad == "reflect_limited":
+        # need to pad with zeros if len(x) <= npad
+        l_z_pad = np.zeros(max(n_pad[0] - len(x) + 1, 0), dtype=x.dtype)
+        r_z_pad = np.zeros(max(n_pad[1] - len(x) + 1, 0), dtype=x.dtype)
+        return np.concatenate(
+            [
+                l_z_pad,
+                2 * x[0] - x[n_pad[0] : 0 : -1],
+                x,
+                2 * x[-1] - x[-2 : -n_pad[1] - 2 : -1],
+                r_z_pad,
+            ]
+        )
+    else:
+        return np.pad(x, (tuple(n_pad),), pad)
 
 
 def _1d_overlap_filter(x, n_h, n_edge, phase, cuda_dict, pad, n_fft):
@@ -83,14 +102,14 @@ def _overlap_add_filter(
     h,
     n_fft=None,
     phase="zero",
-    picks=None,
     n_jobs=None,
-    copy=True,
     pad="reflect_limited",
 ):
     """Filter the signal x using h with overlap-add FFTs."""
     # set up array for filtering, reshape to 2D, operate on last axis
-    x, orig_shape, picks = _prep_for_filtering(x, copy, picks)
+    orig_shape = x.shape
+    # reshaping data to 2D
+    x = x.view(-1, x.shape[-1])
     # Extend the signal by mirroring the edges to reduce transient filter
     # response
     _check_zero_phase_length(len(h), phase)
@@ -133,11 +152,14 @@ def _overlap_add_filter(
     # Figure out if we should use CUDA
     n_jobs, cuda_dict = _setup_cuda_fft_multiply_repeated(n_jobs, h, n_fft)
 
+    x = x.cpu().numpy().astype(np.float64)
+
     # Process each row separately
-    picks = _picks_to_idx(len(x), picks)
-    parallel, p_fun, _ = parallel_func(_1d_overlap_filter, n_jobs)
+    picks = list(range(orig_shape[1]))
     for p in picks:
-        x[p] = _1d_overlap_filter(x[p], len(h), n_edge, phase, cuda_dict, pad, n_fft)
+        x[p] = _1d_overlap_filter(
+            x[p], len(h), n_edge, phase, cuda_dict=cuda_dict, pad=pad, n_fft=n_fft
+        )
 
     x.shape = orig_shape
     return x
@@ -196,13 +218,119 @@ class FilterBank(nn.Module):
         """
         :meta private:
         """
-        sample = x.cpu().numpy().astype(np.float64)
+        sample = x
 
         x = _overlap_add_filter(x=sample, h=self.filter)
 
         return x
 
 
+######################
+
+
+class FilterBankTransformer:
+    """
+    filter the given signal in the specific bands using cheby2 iir filtering.
+    If only one filter is specified then it acts as a simple filter and returns 2d matrix
+    Else, the output will be 3d with the filtered signals appended in the third dimension.
+    axis is the time dimension along which the filtering will be applied
+    """
+
+    def __init__(self, banks, fs, filter_allowance=2, axis=1, filter_type="filter"):
+        self.banks = banks
+        self.fs = fs
+        self.filter_allowance = filter_allowance
+        self.axis = axis
+        self.filter_type = filter_type
+
+    @staticmethod
+    def bandpass_filter(
+        data, band_filt_cut_f, fs, filter_allowance=2, axis=1, filter_type="filter"
+    ):
+        """
+         Filter a signal using cheby2 iir filtering.
+
+        Args:
+            data: 2d/ 3d np array
+                trial x channels x time
+            bandFiltCutF: two element list containing the low and high cut off frequency in hertz.
+                if any value is specified as None then only one sided filtering will be performed
+            fs: sampling frequency
+            filtAllowance: transition bandwidth in hertz
+            filtType: string, available options are 'filtfilt' and 'filter'
+
+        Returns:
+            dataOut: 2d/ 3d np array after filtering
+                Data after applying bandpass filter.
+        """
+        a_stop = 30  # stopband attenuation
+        a_pass = 3  # passband attenuation
+        n_freq = fs / 2  # Nyquist frequency
+
+        if not band_filt_cut_f[0] and (
+            not band_filt_cut_f[1] or (band_filt_cut_f[1] >= fs / 2.0)
+        ):
+            # no filter
+            print("Not doing any filtering. Invalid cut-off specifications")
+            return data
+
+        elif band_filt_cut_f[0] == 0 or band_filt_cut_f[0] is None:
+            # low-pass filter
+            print("Using lowpass filter since low cut hz is 0 or None")
+            f_pass = band_filt_cut_f[1] / n_freq
+            f_stop = (band_filt_cut_f[1] + filter_allowance) / n_freq
+            # find the order
+            [N, ws] = signal.cheb2ord(f_pass, f_stop, a_pass, a_stop)
+            b, a = signal.cheby2(N, a_stop, f_stop, "lowpass")
+
+        elif (band_filt_cut_f[1] is None) or (band_filt_cut_f[1] == fs / 2.0):
+            # high-pass filter
+            print("Using highpass filter since high cut hz is None or nyquist freq")
+            f_pass = band_filt_cut_f[0] / n_freq
+            f_stop = (band_filt_cut_f[0] - filter_allowance) / n_freq
+            # find the order
+            [N, ws] = signal.cheb2ord(f_pass, f_stop, a_pass, a_stop)
+            b, a = signal.cheby2(N, a_stop, f_stop, "highpass")
+        else:
+            # band-pass filter
+            # print("Using bandpass filter")
+            f_pass = (np.array(band_filt_cut_f) / n_freq).tolist()
+            f_stop = [
+                (band_filt_cut_f[0] - filter_allowance) / n_freq,
+                (band_filt_cut_f[1] + filter_allowance) / n_freq,
+            ]
+            # find the order
+            [N, ws] = signal.cheb2ord(f_pass, f_stop, a_pass, a_stop)
+            b, a = signal.cheby2(N, a_stop, f_stop, "bandpass")
+
+        if filter_type == "filtfilt":
+            return signal.filtfilt(b, a, data, axis=axis)
+        else:
+            return signal.lfilter(b, a, data, axis=axis)
+
+    def __call__(self, data):
+        # initialize output
+        filter_banked_signals = np.zeros([*data.shape, len(self.banks)])
+
+        # repetitively filter the data.
+        for i, filter_band in enumerate(self.banks):
+            filter_banked_signals[:, :, i] = self.bandpass_filter(
+                data,
+                filter_band,
+                self.fs,
+                self.filter_allowance,
+                self.axis,
+                self.filter_type,
+            )
+
+        # remove any redundant 3rd dimension
+        if len(self.banks) <= 1:
+            filter_banked_signals = np.squeeze(filter_banked_signals, axis=2)
+
+        return filter_banked_signals
+
+
+#############################
 if __name__ == "__main__":
     from torch import randn
 
