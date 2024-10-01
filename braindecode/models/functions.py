@@ -409,3 +409,78 @@ def _apply_sinc_resample_kernel(
     # unpack batch
     resampled = resampled.view(shape[:-1] + resampled.shape[-1:])
     return resampled
+
+
+def fftconvolve(x: torch.Tensor, y: torch.Tensor, mode: str = "full") -> torch.Tensor:
+    r"""
+    Convolves inputs along their last dimension using FFT. For inputs with large last dimensions, this function
+    is generally much faster than :meth:`convolve`.
+    Note that, in contrast to :meth:`torch.nn.functional.conv1d`, which actually applies the valid cross-correlation
+    operator, this function applies the true `convolution`_ operator.
+    Also note that this function can only output float tensors (int tensor inputs will be cast to float).
+
+    .. devices:: CPU CUDA
+
+    .. properties:: Autograd TorchScript
+
+    Args:
+        x (torch.Tensor): First convolution operand, with shape `(..., N)`.
+        y (torch.Tensor): Second convolution operand, with shape `(..., M)`
+            (leading dimensions must be broadcast-able with those of ``x``).
+        mode (str, optional): Must be one of ("full", "valid", "same").
+
+            * "full": Returns the full convolution result, with shape `(..., N + M - 1)`. (Default)
+            * "valid": Returns the segment of the full convolution result corresponding to where
+              the two inputs overlap completely, with shape `(..., max(N, M) - min(N, M) + 1)`.
+            * "same": Returns the center segment of the full convolution result, with shape `(..., N)`.
+
+    Notes:
+    Code copied from TorchAudio:
+    https://github.com/pytorch/audio/blob/3f0569939c4369bec943fc27d1c9d8dfbc828c26/src/torchaudio/functional/functional.py#L2246
+    All rights reserved.
+
+    LICENSE in https://github.com/pytorch/audio/blob/main/LICENSE
+
+
+    Returns:
+        torch.Tensor: Result of convolving ``x`` and ``y``, with shape `(..., L)`, where
+        the leading dimensions match those of ``x`` and `L` is dictated by ``mode``.
+
+    .. _convolution:
+        https://en.wikipedia.org/wiki/Convolution
+    """
+
+    n = x.size(-1) + y.size(-1) - 1
+    fresult = torch.fft.rfft(x, n=n) * torch.fft.rfft(y, n=n)
+    result = torch.fft.irfft(fresult, n=n)
+    return _apply_convolve_mode(result, x.size(-1), y.size(-1), mode)
+
+
+def _apply_convolve_mode(
+    conv_result: torch.Tensor, x_length: int, y_length: int, mode: str
+) -> torch.Tensor:
+    """
+
+    Notes:
+    Code copied from TorchAudio:
+    https://github.com/pytorch/audio/blob/3f0569939c4369bec943fc27d1c9d8dfbc828c26/src/torchaudio/functional/functional.py#L2231
+    All rights reserved.
+
+    LICENSE in https://github.com/pytorch/audio/blob/main/LICENSE
+    """
+
+    valid_convolve_modes = ["full", "valid", "same"]
+    if mode == "full":
+        return conv_result
+    elif mode == "valid":
+        target_length = max(x_length, y_length) - min(x_length, y_length) + 1
+        start_idx = (conv_result.size(-1) - target_length) // 2
+        return conv_result[..., start_idx : start_idx + target_length]
+    elif mode == "same":
+        start_idx = (conv_result.size(-1) - x_length) // 2
+        return conv_result[..., start_idx : start_idx + x_length]
+    else:
+        raise ValueError(
+            f"Unrecognized mode value '{mode}'. "
+            f"Please specify one of {valid_convolve_modes}."
+        )
