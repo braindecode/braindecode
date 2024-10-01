@@ -1,77 +1,42 @@
 from __future__ import annotations
 
+from typing import List, Optional, Tuple
+
 import numpy as np
 import torch
 
 from mne.filter import _check_zero_phase_length, create_filter, next_fast_len
-from mne.utils import (
-    logger,
-)
+from mne.utils import logger
 from torch import nn
 
 
 def _smart_pad_torch(x, n_pad, pad="reflect_limited"):
-    """
-    Pad tensor x.
-
-    Parameters:
-    - x (torch.Tensor): Input tensor of shape (N,)
-    - n_pad (tuple or list or array-like): Number of pads on each side (left, right)
-    - pad (str): Padding mode ('reflect_limited' or others compatible with torch.pad)
-
-    Returns:
-    - torch.Tensor: Padded tensor
-    """
-    n_pad = torch.as_tensor(n_pad)
-    assert n_pad.shape == (2,), "n_pad must have shape (2,)"
-
-    if torch.all(n_pad == 0):
+    """Pad vector x."""
+    n_pad = np.asarray(n_pad)
+    assert n_pad.shape == (2,)
+    if (n_pad == 0).all():
         return x
-    elif torch.any(n_pad < 0):
+    elif (n_pad < 0).any():
         raise RuntimeError("n_pad must be non-negative")
-
     if pad == "reflect_limited":
-        left_pad, right_pad = n_pad.tolist()
-
-        # Calculate zero padding required if n_pad > len(x) -1
-        left_zero_pad_size = max(left_pad - (x.shape[0] - 1), 0)
-        right_zero_pad_size = max(right_pad - (x.shape[0] - 1), 0)
-
-        # Effective reflection lengths
-        left_reflection_len = min(left_pad, x.shape[0] - 1)
-        right_reflection_len = min(right_pad, x.shape[0] - 1)
-
-        # Reflection on the left side
-        if left_reflection_len > 0:
-            # Slice for reflection: x[1:left_reflection_len+1]
-            reflection_left = 2 * x[0] - x[1 : left_reflection_len + 1]
-            # Reverse the reflected part
-            reflection_left = torch.flip(reflection_left, dims=[0])
-        else:
-            reflection_left = torch.tensor([], dtype=x.dtype, device=x.device)
-
-        # Reflection on the right side
-        if right_reflection_len > 0:
-            # Slice for reflection: x[-2:-right_reflection_len-2:-1]
-            reflection_right = 2 * x[-1] - x[-2 : -right_reflection_len - 2 : -1]
-        else:
-            reflection_right = torch.tensor([], dtype=x.dtype, device=x.device)
-
-        # Zero padding
-        left_zero_pad = torch.zeros(left_zero_pad_size, dtype=x.dtype, device=x.device)
-        right_zero_pad = torch.zeros(
-            right_zero_pad_size, dtype=x.dtype, device=x.device
-        )
-
-        # Concatenate all parts
+        # need to pad with zeros if len(x) <= npad
+        left_zero_pad = torch.zeros(max(n_pad[0] - len(x) + 1, 0))
+        right_zero_pad = torch.zeros(max(n_pad[1] - len(x) + 1, 0))
+        reflection_left = 2 * x[0]
+        reflection_right = 2 * x[-1]
         padded = torch.cat(
-            [left_zero_pad, reflection_left, x, reflection_right, right_zero_pad]
+            [
+                left_zero_pad,
+                reflection_left - torch.flip(x[1 : n_pad[0] + 1], dims=[0]),
+                x,
+                reflection_right - torch.flip(x[-n_pad[1] - 2 + 1 : -1], dims=[0]),
+                right_zero_pad,
+            ]
         )
 
         return padded
+
     else:
-        # For other padding modes, use torch.nn.functional.pad
-        # torch.pad expects pad as (left, right)
         left_pad, right_pad = n_pad.tolist()
         return torch.nn.functional.pad(x, (left_pad, right_pad), mode=pad)
 
@@ -81,7 +46,6 @@ def _1d_overlap_filter_torch(x, n_h, n_edge, phase, h_fft, pad, n_fft):
 
     # Pad to reduce ringing
     x_ext = _smart_pad_torch(x, (n_edge, n_edge), pad)
-    # x_ext = torch.from_numpy(x_ext)
     n_x = x_ext.shape[0]
     x_filtered = torch.zeros_like(x_ext)
 
@@ -117,66 +81,7 @@ def _1d_overlap_filter_torch(x, n_h, n_edge, phase, h_fft, pad, n_fft):
     return x_filtered
 
 
-def _smart_pad(x, n_pad, pad="reflect_limited"):
-    """Pad vector x."""
-    n_pad = np.asarray(n_pad)
-    assert n_pad.shape == (2,)
-    if (n_pad == 0).all():
-        return x
-    elif (n_pad < 0).any():
-        raise RuntimeError("n_pad must be non-negative")
-    if pad == "reflect_limited":
-        # need to pad with zeros if len(x) <= npad
-        l_z_pad = np.zeros(max(n_pad[0] - len(x) + 1, 0), dtype=x.dtype)
-        r_z_pad = np.zeros(max(n_pad[1] - len(x) + 1, 0), dtype=x.dtype)
-        return np.concatenate(
-            [
-                l_z_pad,
-                2 * x[0] - x[n_pad[0] : 0 : -1],
-                x,
-                2 * x[-1] - x[-2 : -n_pad[1] - 2 : -1],
-                r_z_pad,
-            ]
-        )
-    else:
-        return np.pad(x, (tuple(n_pad),), pad)
-
-
-def _1d_overlap_filter(x, n_h, n_edge, phase, h_fft, pad, n_fft):
-    """Do one-dimensional overlap-add FFT FIR filtering."""
-    # pad to reduce ringing
-    x_ext = _smart_pad(x, (n_edge, n_edge), pad)
-    n_x = len(x_ext)
-    x_filtered = np.zeros_like(x_ext)
-
-    n_seg = n_fft - n_h + 1
-    n_segments = int(np.ceil(n_x / float(n_seg)))
-    shift = ((n_h - 1) // 2 if phase.startswith("zero") else 0) + n_edge
-
-    # Now the actual filtering step is identical for zero-phase (filtfilt-like)
-    # or single-pass
-    for seg_idx in range(n_segments):
-        start = seg_idx * n_seg
-        stop = (seg_idx + 1) * n_seg
-        seg = x_ext[start:stop]
-        seg = np.concatenate([seg, np.zeros(n_fft - len(seg))])
-
-        x_fft = np.fft.rfft(seg, n_fft)
-        x_fft *= h_fft
-        prod = np.fft.irfft(x_fft, n_fft)
-
-        start_filt = max(0, start - shift)
-        stop_filt = min(start - shift + n_fft, n_x)
-        start_prod = max(0, shift - start)
-        stop_prod = start_prod + stop_filt - start_filt
-        x_filtered[start_filt:stop_filt] += prod[start_prod:stop_prod]
-
-    # Remove mirrored edges that we added and cast (n_edge can be zero)
-    x_filtered = x_filtered[: n_x - 2 * n_edge].astype(x.dtype)
-    return x_filtered
-
-
-def _overlap_add_filter(
+def _overlap_add_filter_torch(
     x,
     h,
     n_fft=None,
@@ -186,6 +91,7 @@ def _overlap_add_filter(
     """Filter the signal x using h with overlap-add FFTs."""
     # set up array for filtering, reshape to 2D, operate on last axis
     orig_shape = x.shape
+    nchans = orig_shape[1]
     # reshaping data to 2D
     x = x.view(-1, x.shape[-1])
     # Extend the signal by mirroring the edges to reduce transient filter
@@ -228,27 +134,16 @@ def _overlap_add_filter(
         )
 
     # Figure out if we should use CUDA
-    new_h = np.fft.rfft(h, n=n_fft)
-    x_numpy = x.cpu().numpy().astype(np.float64)
-
-    h_fft_torch = torch.fft.rfft(torch.from_numpy(h), n=n_fft)
+    h_fft_torch = torch.fft.rfft(h, n=n_fft)
 
     # Process each row separately
-    picks = list(range(orig_shape[1]))
-    for p in picks:
-        x_numpy[p] = _1d_overlap_filter(
-            x_numpy[p], len(h), n_edge, phase, h_fft=new_h, pad=pad, n_fft=n_fft
+    saving = [None] * nchans
+    for chan in range(nchans):
+        saving[chan] = _1d_overlap_filter_torch(
+            x[chan], len(h), n_edge, phase, h_fft=h_fft_torch, pad=pad, n_fft=n_fft
         )
-        x_filtered_torch = _1d_overlap_filter_torch(
-            x[p], len(h), n_edge, phase, h_fft=h_fft_torch, pad=pad, n_fft=n_fft
-        )
-        x_filtered_torch_np = x_filtered_torch.numpy()
 
-        print(np.allclose(x_numpy[p], x_filtered_torch_np, atol=1e-6))
-        print(np.max(np.abs(x_numpy[p] - x_filtered_torch_np)))
-
-    x_numpy.shape = orig_shape
-    return x_numpy
+    return torch.stack(saving)
 
 
 class FilterBank(nn.Module):
@@ -265,7 +160,7 @@ class FilterBank(nn.Module):
     def __init__(
         self,
         sfreq: int,
-        band_filters=None,
+        band_filters: Optional[List[Tuple[float, float]]] = None,
         filter_length: str | float | int = "auto",
         l_trans_bandwidth: str | float | int = "auto",
         h_trans_bandwidth: str | float | int = "auto",
@@ -278,11 +173,15 @@ class FilterBank(nn.Module):
         super(FilterBank, self).__init__()
 
         if band_filters is None:
-            band_filters = [(4, 8)]
+            band_filters = [(4, 8), (8, 12), (12, 30)]
 
+        self.band_filters = band_filters
         self.n_bands = len(band_filters)
+        self.pad = pad
+        self.phase = phase
+        self.method = method
 
-        for l_freq, h_freq in band_filters:
+        for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
                 data=None,
                 sfreq=sfreq,
@@ -291,24 +190,49 @@ class FilterBank(nn.Module):
                 filter_length=filter_length,
                 l_trans_bandwidth=l_trans_bandwidth,
                 h_trans_bandwidth=h_trans_bandwidth,
-                method=method,
+                method=self.method,
                 iir_params=None,
-                phase=phase,
+                phase=self.phase,
                 fir_window=fir_window,
                 fir_design=fir_design,
                 verbose=True,
             )
-            self.filter = filt
+            filt_tensor = torch.from_numpy(filt).float()
 
-    def forward(self, x):
+            self.register_buffer(f"filter_{idx}", filt_tensor)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        :meta private:
+        Apply the filter bank to the input signal.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, time_points).
+
+        Returns
+        -------
+        torch.Tensor
+            Filtered output tensor of shape (batch_size, n_bands, filtered_time_points).
         """
-        sample = x
+        # Initialize a list to collect filtered outputs
+        filtered_outputs = []
 
-        x = _overlap_add_filter(x=sample, h=self.filter)
+        for idx in range(self.n_bands):
+            # Retrieve the filter for the current band
+            filt = getattr(self, f"filter_{idx}")
 
-        return x
+            filtered = _overlap_add_filter_torch(
+                x=x, h=filt, pad=self.pad, phase=self.phase
+            )
+
+            filtered_outputs.append(filtered)
+
+        # Concatenate all filtered outputs along the channel dimension
+        # Resulting shape: (batch_size, n_bands, n_chans, time_points)
+        output = torch.cat(filtered_outputs, dim=1)
+
+        return output
 
 
 ######################
@@ -318,7 +242,7 @@ class FilterBank(nn.Module):
 if __name__ == "__main__":
     from torch import randn
 
-    x = randn(1500, 22, 1000)
+    x = randn(16, 22, 1000)
     layer = FilterBank(sfreq=250)
     with torch.no_grad():
         out = layer(x)
