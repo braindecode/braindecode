@@ -33,6 +33,8 @@ class _ResBlock(nn.Module):
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
 
     Examples
     --------
@@ -137,6 +139,9 @@ class ContraWR(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+
 
     .. versionadded:: 0.9
 
@@ -165,6 +170,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         res_channels: list[int] = [32, 64, 128],
         steps=20,
         activation: nn.Module = nn.ELU,
+        drop_prob: float = 0.5,
         # Another way to pass the EEG parameters
         chs_info: list[dict[Any, Any]] | None = None,
         n_times: int | None = None,
@@ -195,6 +201,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
                     stride=2,
                     use_downsampling=True,
                     pooling=True,
+                    drop_prob=drop_prob,
                 )
                 for i in range(len(res_channels) - 1)
             ]

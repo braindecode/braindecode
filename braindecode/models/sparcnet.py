@@ -48,7 +48,7 @@ class _DenseLayer(nn.Sequential):
         in_channels: int,
         growth_rate: int,
         bottleneck_size: int,
-        drop_rate=0.5,
+        drop_prob=0.5,
         conv_bias=True,
         batch_norm=True,
         activation: nn.Module = nn.ELU,
@@ -85,7 +85,7 @@ class _DenseLayer(nn.Sequential):
                 ),
             ),
         )
-        self.drop_rate = drop_rate
+        self.drop_prob = drop_prob
 
     def forward(self, x):
         new_features = super(_DenseLayer, self).forward(x)
@@ -107,7 +107,7 @@ class _DenseBlock(nn.Sequential):
         Rate of growth of channels in this layer.
     bottleneck_size : int
         Multiplicative factor for the bottleneck layer (does not affect the output size).
-    drop_rate : float, optional
+    drop_prob : float, optional
         Dropout rate. Default is 0.5.
     conv_bias : bool, optional
         Whether to use bias in convolutional layers. Default is True.
@@ -133,7 +133,7 @@ class _DenseBlock(nn.Sequential):
         in_channels,
         growth_rate,
         bottleneck_size,
-        drop_rate=0.5,
+        drop_prob=0.5,
         conv_bias=True,
         batch_norm=True,
         activation: nn.Module = nn.ELU,
@@ -144,7 +144,7 @@ class _DenseBlock(nn.Sequential):
                 in_channels=in_channels + idx_layer * growth_rate,
                 growth_rate=growth_rate,
                 bottleneck_size=bottleneck_size,
-                drop_rate=drop_rate,
+                drop_prob=drop_prob,
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
                 activation=activation,
@@ -258,7 +258,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         block_layers: int = 4,
         growth_rate: int = 16,
         bottleneck_size: int = 16,
-        drop_rate: float = 0.5,
+        drop_prob: float = 0.5,
         conv_bias: bool = True,
         batch_norm: bool = True,
         activation: nn.Module = nn.ELU,
@@ -312,7 +312,7 @@ class SPARCNet(EEGModuleMixin, nn.Module):
                 in_channels=n_channels,
                 growth_rate=growth_rate,
                 bottleneck_size=bottleneck_size,
-                drop_rate=drop_rate,
+                drop_prob=drop_prob,
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
                 activation=activation,

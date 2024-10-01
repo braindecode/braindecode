@@ -24,7 +24,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         Number of groups for the convolution. Set to 2 in [Blanco2020]_ for 2 Channel EEG.
         controls the connections between inputs and outputs. n_channels and n_conv_chans must be
         divisible by n_groups.
-    dropout : float
+    drop_prob : float
         Dropout rate before the output dense layer.
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
@@ -59,7 +59,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         n_outputs=5,
         n_groups=2,
         max_pool_size=2,
-        dropout=0.5,
+        drop_prob=0.5,
         apply_batch_norm=False,
         return_feats=False,
         activation: nn.Module = nn.ReLU,
@@ -153,7 +153,7 @@ class SleepStagerBlanco2020(EEGModuleMixin, nn.Module):
         # TODO: Add new way to handle return_features == True
         if not return_feats:
             self.final_layer = nn.Sequential(
-                nn.Dropout(dropout),
+                nn.Dropout(drop_prob),
                 nn.Linear(self.len_last_layer, self.n_outputs),
                 nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
             )

@@ -30,6 +30,7 @@ from .eegsimpleconv import EEGSimpleConv
 from .sparcnet import SPARCNet
 from .contrawr import ContraWR
 from .eegnex import EEGNeX
+from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
 

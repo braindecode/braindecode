@@ -88,6 +88,7 @@ Models
     SPARCNet
     SyncNet
     TCN
+    TSceptionV1
     TIDNet
     USleep
 

@@ -27,7 +27,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     pad_size_s : float
         Padding size, in seconds. Set to 0.25 in [Chambon2018]_ (half the
         temporal convolution kernel size).
-    dropout : float
+    drop_prob : float
         Dropout rate before the output dense layer.
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
@@ -66,7 +66,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         activation: nn.Module = nn.ReLU,
         input_window_seconds=None,
         n_outputs=5,
-        dropout=0.25,
+        drop_prob=0.25,
         apply_batch_norm=False,
         return_feats=False,
         chs_info=None,
@@ -133,7 +133,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         # TODO: Add new way to handle return_features == True
         if not return_feats:
             self.final_layer = nn.Sequential(
-                nn.Dropout(dropout),
+                nn.Dropout(p=drop_prob),
                 nn.Linear(self.len_last_layer, self.n_outputs),
             )
 

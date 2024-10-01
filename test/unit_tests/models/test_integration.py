@@ -16,6 +16,8 @@ from skorch.dataset import ValidSplit
 
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from braindecode import EEGClassifier
+from braindecode.models import SyncNet, EEGSimpleConv, EEGResNet, USleep
+
 
 # Generating the channel info
 chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
@@ -311,3 +313,33 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
             f"that is an initialized nn.Module instance. Default values should be nn.Module "
             f"classes (like nn.ReLU), not instances (like nn.ReLU())."
         )
+
+
+@pytest.mark.parametrize('model_class', models_dict.values())
+def test_model_has_drop_prob_parameter(model_class):
+    """
+    Test that checks if the model class's __init__ method has a parameter
+    named 'drop_prob' or any parameter that starts with 'activation'.
+    """
+
+    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep]:
+        pytest.skip(
+            f"Skipping {model_class} as not dropout layer")
+
+    # Get the __init__ method of the class
+    init_method = model_class.__init__
+
+    # Get the signature of the __init__ method
+    sig = inspect.signature(init_method)
+
+    # Get the parameter names, excluding 'self'
+    param_names = [param_name for param_name in sig.parameters if param_name != 'self']
+
+    # Check if any parameter name contains 'activation'
+    has_drop_prob_param = any('drop_prob' in name for name in param_names)
+
+    # Assert that the activation parameter exists
+    assert has_drop_prob_param, (
+        f"{model_class.__name__} does not have an drop_prob parameter."
+        f" Found parameters: {param_names}"
+    )
