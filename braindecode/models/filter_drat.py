@@ -12,17 +12,56 @@ from braindecode.models.functions import fftconvolve
 class FilterBank(nn.Module):
     """Filter bank layer using MNE to create the filter.
 
-    XXXXXXXX:
+    This layer constructs a bank of band-specific filters using MNE's `create_filter` function
+    and applies them to multi-channel time-series data. Each filter in the bank corresponds to a
+    specific frequency band and is applied to all channels of the input data. The filtering is
+    performed using FFT-based convolution via the `fftconvolve` function from `braindecode.models.functions`.
+
+    The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
+    spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
+    reference: *FBCNet: A Multi-view Convolutional Neural Network for Brain-Computer Interface*.
 
     Parameters
     ----------
-
-
+    n_chans : int
+        Number of channels in the input signal.
+    sfreq : int
+        Sampling frequency of the input signal in Hz.
+    band_filters : Optional[List[Tuple[float, float]]], default=None
+        List of frequency bands as (low_freq, high_freq) tuples. Each tuple defines the frequency range
+        for one filter in the bank. If not provided, defaults to 9 non-overlapping bands with 4 Hz
+        bandwidths spanning from 4 to 40 Hz.
+    filter_length : Union[str, float, int], default='auto'
+        Length of the filter. Can be an integer specifying the number of taps or 'auto' to let
+        MNE determine the appropriate length based on other parameters.
+    l_trans_bandwidth : Union[str, float, int], default='auto'
+        Transition bandwidth for the low cutoff frequency in Hz. Can be specified as a float,
+        integer, or 'auto' for automatic selection.
+    h_trans_bandwidth : Union[str, float, int], default='auto'
+        Transition bandwidth for the high cutoff frequency in Hz. Can be specified as a float,
+        integer, or 'auto' for automatic selection.
+    method : str, default='fir'
+        Filter design method. Supported methods include 'fir' for FIR filters and 'iir' for IIR filters.
+    phase : str, default='zero'
+        Phase mode for the filter. Options:
+            - 'zero': Zero-phase filtering (non-causal).
+            - 'minimum': Minimum-phase filtering (causal).
+    iir_params : Optional[dict], default=None
+        Dictionary of parameters specific to IIR filter design, such as filter order and
+        stopband attenuation. Required if `method` is set to 'iir'.
+    fir_window : str, default='hamming'
+        Window function to use for FIR filter design. Common choices include 'hamming', 'hann',
+        'blackman', etc.
+    fir_design : str, default='firwin'
+        FIR filter design method. Common methods include 'firwin' and 'firwin2'.
+    pad : str, default='reflect_limited'
+        Padding mode to use when filtering the input signal. Options include 'reflect', 'constant',
+        'replicate', etc., as supported by PyTorch's `torch.nn.functional.pad`.
     """
 
     def __init__(
         self,
-        nchans: int,
+        n_chans: int,
         sfreq: int,
         band_filters: Optional[List[Tuple[float, float]]] = None,
         filter_length: str | float | int = "auto",
@@ -33,7 +72,6 @@ class FilterBank(nn.Module):
         iir_params: Optional[dict] = None,
         fir_window: str = "hamming",
         fir_design: str = "firwin",
-        pad="reflect_limited",
     ):
         super(FilterBank, self).__init__()
 
@@ -50,9 +88,14 @@ class FilterBank(nn.Module):
 
         self.band_filters = band_filters
         self.n_bands = len(band_filters)
-        self.pad = pad
         self.phase = phase
         self.method = method
+        self.n_chans = n_chans
+
+        method_iir = True if self.method == "iir" else False
+
+        if method_iir:
+            raise ValueError("Not implemented yet")
 
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
@@ -70,13 +113,10 @@ class FilterBank(nn.Module):
                 fir_design=fir_design,
                 verbose=True,
             )
-
             # Shape: (filter_length,)
-            filt_tensor = torch.from_numpy(filt).float()
-            # Expand to (nchans, filter_length)
-            filt_tensor = filt_tensor.unsqueeze(0).repeat(nchans, 1)
 
-            self.register_buffer(f"filter_{idx}", filt_tensor)
+            filt_tensor = torch.from_numpy(filt).float()
+            self.register_buffer(f"filter_{idx}_b", filt_tensor)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -94,16 +134,17 @@ class FilterBank(nn.Module):
         """
         # Initialize a list to collect filtered outputs
         n_bands = self.n_bands
-
         output = []
 
         for band_idx in range(n_bands):
             # Shape: (nchans, filter_length)
-            filt = getattr(self, f"filter_{band_idx}")
-            # Shape: (1, nchans, filter_length)
-            filt_expanded = filt.unsqueeze(0)
+            filt_b = getattr(self, f"filter_{band_idx}_b")
 
-            # I think it will only work with IRR, check with MNE experts.
+            # Expand to (nchans, filter_length)
+            # Shape: (1, nchans, filter_length)
+            filt_expanded = filt_b.unsqueeze(0).repeat(self.n_chans, 1).unsqueeze(0)
+
+            # I think it will only work with FIR, check with MNE experts.
             filtered = fftconvolve(
                 x, filt_expanded, mode="same"
             )  # Shape: (batch_size, nchans, time_points)
@@ -116,14 +157,3 @@ class FilterBank(nn.Module):
         # Shape: (batch_size, n_bands, nchans, time_points)
         output = torch.cat(output, dim=1)
         return output
-
-
-if __name__ == "__main__":
-    from torch import randn
-
-    x = randn(16, 10, 1000)
-    layer = FilterBank(sfreq=256, nchans=10)
-    with torch.no_grad():
-        out = layer(x)
-
-    print(out.shape)
