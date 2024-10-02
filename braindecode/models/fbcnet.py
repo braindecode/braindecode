@@ -68,7 +68,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     .. [fbcnet2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
         Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
         neural network for brain-computer interface. preprint arXiv:2104.01233.
-    .. [fbcnetcode2021]  Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
+    .. [fbcnetcode2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
         Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
         neural network for brain-computer interface.
         https://github.com/ravikiran-mane/FBCNet
