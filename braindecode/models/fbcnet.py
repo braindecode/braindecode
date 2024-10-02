@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from typing import Optional
 from mne.utils import warn
 
 import torch
@@ -44,8 +47,8 @@ class FBCNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_bands : int, default=9
-        Number of frequency bands.
+    n_bands : int or None or List[Tuple[int, int]]], default=9
+        Number of frequency bands. Could
     n_filters_spat : int, default=32
         The depth of the depthwise convolutional layer.
     n_dim: int, default=3
@@ -81,7 +84,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # models parameters
-        n_bands: int = 9,
+        n_bands=9,
         n_filters_spat: int = 32,
         temporal_layer: str = "LogVarLayer",
         n_dim: int = 3,
@@ -106,7 +109,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.stride_factor = stride_factor
         self.activation = activation
         self.drop_prob = drop_prob
-        in_features = self.n_filters_spat * self.n_bands * self.stride_factor
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -129,6 +131,9 @@ class FBCNet(EEGModuleMixin, nn.Module):
             sfreq=self.sfreq,
             band_filters=self.n_bands,
         )
+        # As we have an internal process to create the bands,
+        # we get the values from the filterbank
+        self.n_bands = self.spectral_filtering.n_bands
 
         # Spatial Convolution Block (SCB)
         self.spatial_conv = nn.Sequential(
@@ -155,7 +160,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
-            in_features=in_features,
+            in_features=self.n_filters_spat * self.n_bands * self.stride_factor,
             out_features=self.n_outputs,
             max_norm=0.5,
         )
