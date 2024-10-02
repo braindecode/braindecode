@@ -337,8 +337,8 @@ for (
         worker_init_fn=None,
     )
     # Instantiate model and optimizer
-    n_channels = len(dataset[0][0].shape[0])
-    n_times = len(dataset[0][0].shape[1])
+    n_channels = dataset[0][0].shape[0]
+    n_times = dataset[0][0].shape[1]
     n_classes = 2
     model, loss, optimizer = create_example_model(
         n_channels, n_classes, n_times, kind=model_kind, cuda=cuda
