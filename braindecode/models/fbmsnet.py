@@ -18,8 +18,33 @@ from braindecode.models.modules import LinearWithConstraint, FilterBank
 class FBMSNet(EEGModuleMixin, nn.Module):
     """FBMSNet from Liu et al (2021) [fbmsnet]_.
 
-    XXXXXXX
+    0. FilterBank Layer: Applying filterbank to transform the input.
 
+    1. **Temporal Convolution Block**: Utilizes mixed depthwise convolution
+       (MixConv) to extract multiscale temporal features from multiview EEG
+       representations. The input is split into groups corresponding to different
+       views each convolved with kernels of varying sizes.
+       Kernel sizes are set relative to the EEG
+       sampling rate, with ratio coefficients [0.5, 0.25, 0.125, 0.0625],
+       dividing the input into four groups.
+
+    2. **Spatial Convolution Block**: Applies depthwise convolution with a kernel
+       size of (n_chans, 1) to span all EEG channels, effectively learning spatial
+       filters. This is followed by batch normalization and the Swish activation
+       function. A maximum norm constraint of 2 is imposed on the convolution
+       weights to regularize the model.
+
+    3. **Temporal Log-Variance Block**: Computes the log-variance.
+
+    4. **Classification Layer**: A fully connected with weight constraint.
+
+    Notes
+    -----
+    This implementation is not guaranteed to be correct and has not been checked
+    by the original authors; it has only been reimplemented from the paper
+    description and source code [fbmsnetcode]_. There is an extra layer here to
+    compute the filterbank during bash time and not on data time. This avoids
+    data-leak, and allows the model to follow the braindecode convention.
 
     Parameters
     ----------
@@ -48,8 +73,8 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Engineering, 70(2), 436-445.
     .. [fbmsnetcode] Liu, K., Yang, M., Yu, Z., Wang, G., & Wu, W. (2022).
         FBMSNet: A filter-bank multi-scale convolutional neural network for
-        EEG-based motor imagery decoding. IEEE Transactions on Biomedical
-        Engineering, 70(2), 436-445.
+        EEG-based motor imagery decoding.
+        https://github.com/Want2Vanish/FBMSNet
     """
 
     def __init__(
@@ -149,21 +174,10 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
-            in_features=self._get_feature_dim(),
+            in_features=self.n_filters_spat * self.dilatability * self.stride_factor,
             out_features=self.n_outputs,
             max_norm=0.5,
         )
-
-    def _get_feature_dim(self):
-        # Create a dummy input to calculate the output feature dimension
-        dummy_input = torch.ones(1, self.n_chans, self.n_times)
-        x = self.spectral_filtering(dummy_input)
-        x = self.mix_conv(x)
-        x = self.spatial_conv(x)
-        x = x.view(x.size(0), x.size(1), self.stride_factor, -1)
-        x = self.temporal_layer(x)
-        x = x.flatten(start_dim=1)
-        return x.size(1)
 
     def forward(self, x):
         """
