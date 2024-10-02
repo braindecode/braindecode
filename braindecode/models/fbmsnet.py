@@ -13,7 +13,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.fbcnet import _valid_layers
 
-from braindecode.models.modules import LinearWithConstraint
+from braindecode.models.modules import LinearWithConstraint, FilterBank
 
 
 class FBMSNet(EEGModuleMixin, nn.Module):
@@ -27,13 +27,13 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Number of output classes.
     n_times : int
         Number of time samples in the input data.
-    in_channels : int, default=9
+    n_bands : int, default=9
         Number of input channels (e.g., number of frequency bands).
     stride_factor : int, default=4
         Stride factor for temporal segmentation.
     temporal_layer : str, default='LogVarLayer'
         Temporal aggregation layer to use.
-    num_features : int, default=36
+    n_filters_spat : int, default=36
         Number of output channels from the MixedConv2d layer.
     dilatability : int, default=8
         Expansion factor for the spatial convolution block.
@@ -56,7 +56,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         stride_factor: int = 4,
         dilatability: int = 8,
         activation: nn.Module = nn.SiLU,
-        drop_prob: float = 0.5,
         verbose: bool = False,
     ):
         super().__init__(
@@ -67,12 +66,13 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        # Parameters
         self.n_bands = n_bands
         self.n_filters_spat = n_filters_spat
         self.n_dim = n_dim
         self.stride_factor = stride_factor
-        self.activation = activation
         self.activation = activation
         self.dilatability = dilatability
 
@@ -82,31 +82,51 @@ class FBMSNet(EEGModuleMixin, nn.Module):
                 f"Temporal layer '{temporal_layer}' is not implemented."
             )
 
+        if self.n_times % self.stride_factor != 0:
+            warn(
+                f"Time dimension ({self.n_times}) is not divisible by"
+                f" stride_factor ({self.stride_factor}). Input will be "
+                f"truncated.",
+                UserWarning,
+            )
+
+        # Layers
+        # Following paper nomeclature
+        self.spectral_filtering = FilterBank(
+            n_chans=self.n_chans,
+            sfreq=self.sfreq,
+            band_filters=self.n_bands,
+            verbose=verbose,
+        )
+        # As we have an internal process to create the bands,
+        # we get the values from the filterbank
+        self.n_bands = self.spectral_filtering.n_bands
+
         # MixedConv2d Layer
         self.mix_conv = nn.Sequential(
             _MixedConv2d(
-                in_channels=self.in_channels,
-                out_channels=self.num_features,
+                in_channels=self.n_bands,
+                out_channels=self.n_filters_spat,
                 kernel_size=[(1, 15), (1, 31), (1, 63), (1, 125)],
                 stride=1,
                 dilation=1,
                 depthwise=False,
             ),
-            nn.BatchNorm2d(self.num_features),
+            nn.BatchNorm2d(self.n_filters_spat),
         )
 
         # Spatial Convolution Block (SCB)
-        self.scb = nn.Sequential(
+        self.spatial_conv = nn.Sequential(
             Conv2dWithConstraint(
-                in_channels=self.num_features,
-                out_channels=self.num_features * self.dilatability,
+                in_channels=self.n_filters_spat,
+                out_channels=self.n_filters_spat * self.dilatability,
                 kernel_size=(self.n_chans, 1),
                 groups=self.num_features,
                 max_norm=2,
                 weight_norm=True,
                 padding=0,
             ),
-            nn.BatchNorm2d(self.num_features * self.dilatability),
+            nn.BatchNorm2d(self.n_filters_spat * self.dilatability),
             nn.SiLU(),
         )
 
@@ -125,9 +145,10 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
     def _get_feature_dim(self):
         # Create a dummy input to calculate the output feature dimension
-        dummy_input = torch.ones(1, self.in_channels, self.n_chans, self.n_times)
-        x = self.mix_conv(dummy_input)
-        x = self.scb(x)
+        dummy_input = torch.ones(1, self.n_chans, self.n_times)
+        x = self.spectral_filtering(dummy_input)
+        x = self.mix_conv(x)
+        x = self.spatial_conv(x)
         x = x.view(x.size(0), x.size(1), self.stride_factor, -1)
         x = self.temporal_layer(x)
         x = x.flatten(start_dim=1)
@@ -148,11 +169,11 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             Output tensor with shape (batch_size, n_outputs).
         """
         # Reshape input to (batch_size, in_channels, n_chans, n_times)
-        x = x.unsqueeze(1).repeat(1, self.in_channels, 1, 1)
+        x = self.spectral_filtering(x)
         # Mixed convolution
         x = self.mix_conv(x)
         # Spatial convolution block
-        x = self.scb(x)
+        x = self.spatial_conv(x)
         # Reshape for temporal layer
         x = x.view(x.size(0), x.size(1), self.stride_factor, -1)
         # Temporal aggregation
