@@ -697,6 +697,7 @@ class FilterBank(nn.Module):
         iir_params: Optional[dict] = None,
         fir_window: str = "hamming",
         fir_design: str = "firwin",
+        verbose: bool = True,
     ):
         super(FilterBank, self).__init__()
 
@@ -753,7 +754,7 @@ class FilterBank(nn.Module):
                 phase=phase,
                 fir_window=fir_window,
                 fir_design=fir_design,
-                verbose=True,
+                verbose=verbose,
             )
             # Shape: (filter_length,)
 
