@@ -725,7 +725,7 @@ class FilterBank(nn.Module):
             steps = total_range // band_filters
 
             band_filters = [
-                (low, low + steps) for low in range(low_freq, total_range, steps)
+                (low, low + steps) for low in range(low_freq, total_range + 1, steps)
             ]
 
         self.band_filters = band_filters
