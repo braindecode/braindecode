@@ -53,6 +53,7 @@ Enhancements
 - Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
 - Creating the FilterBank module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBCNet` (:gh:`657` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBMSNet` (:gh:`658` by `Bruno Aristimunha`_ )
 
 Bugs
 ~~~~
