@@ -124,7 +124,11 @@ class FBCNet(EEGModuleMixin, nn.Module):
 
         # Layers
         # Following paper nomeclature
-        self.spectral_filtering = FilterBank(n_chans=self.n_chans, sfreq=self.sfreq)
+        self.spectral_filtering = FilterBank(
+            n_chans=self.n_chans,
+            sfreq=self.sfreq,
+            band_filters=self.n_bands,
+        )
 
         # Spatial Convolution Block (SCB)
         self.spatial_conv = nn.Sequential(
