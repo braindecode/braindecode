@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 from mne.utils import warn
 
 import torch
@@ -17,16 +16,13 @@ from braindecode.models.modules import LinearWithConstraint, FilterBank
 
 
 class FBMSNet(EEGModuleMixin, nn.Module):
-    """FBMSNet model adapted for braindecode.
+    """FBMSNet from Liu et al (2021) [fbmsnet]_.
+
+    XXXXXXX
+
 
     Parameters
     ----------
-    n_chans : int
-        Number of EEG channels.
-    n_outputs : int
-        Number of output classes.
-    n_times : int
-        Number of time samples in the input data.
     n_bands : int, default=9
         Number of input channels (e.g., number of frequency bands).
     stride_factor : int, default=4
@@ -37,6 +33,23 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Number of output channels from the MixedConv2d layer.
     dilatability : int, default=8
         Expansion factor for the spatial convolution block.
+    stride_factor : int, default=4
+        Stride factor for reshaping.
+    activation : nn.Module, default=nn.SiLU
+        Activation function class to apply.
+    verbose: bool, default False
+        Verbose parameter to create the filter using mne.
+
+    References
+    ----------
+    .. [fbmsnet] Liu, K., Yang, M., Yu, Z., Wang, G., & Wu, W. (2022).
+        FBMSNet: A filter-bank multi-scale convolutional neural network for
+        EEG-based motor imagery decoding. IEEE Transactions on Biomedical
+        Engineering, 70(2), 436-445.
+    .. [fbmsnetcode] Liu, K., Yang, M., Yu, Z., Wang, G., & Wu, W. (2022).
+        FBMSNet: A filter-bank multi-scale convolutional neural network for
+        EEG-based motor imagery decoding. IEEE Transactions on Biomedical
+        Engineering, 70(2), 436-445.
     """
 
     def __init__(
@@ -121,22 +134,20 @@ class FBMSNet(EEGModuleMixin, nn.Module):
                 in_channels=self.n_filters_spat,
                 out_channels=self.n_filters_spat * self.dilatability,
                 kernel_size=(self.n_chans, 1),
-                groups=self.num_features,
+                groups=self.n_filters_spat,
                 max_norm=2,
-                weight_norm=True,
                 padding=0,
             ),
             nn.BatchNorm2d(self.n_filters_spat * self.dilatability),
-            nn.SiLU(),
+            self.activation(),
         )
 
         # Temporal Aggregation Layer
-        self.temporal_layer = _valid_layers[temporal_layer](dim=3)
+        self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
 
-        # Flatten Layer
         self.flatten_layer = Rearrange("batch ... -> batch (...)")
 
-        # Final Linear Layer
+        # Final fully connected layer
         self.final_layer = LinearWithConstraint(
             in_features=self._get_feature_dim(),
             out_features=self.n_outputs,
@@ -168,17 +179,15 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor with shape (batch_size, n_outputs).
         """
-        # Reshape input to (batch_size, in_channels, n_chans, n_times)
         x = self.spectral_filtering(x)
         # Mixed convolution
         x = self.mix_conv(x)
         # Spatial convolution block
         x = self.spatial_conv(x)
-        # Reshape for temporal layer
-        x = x.view(x.size(0), x.size(1), self.stride_factor, -1)
-        # Temporal aggregation
-        x = self.temporal_layer(x)
-        # Flatten and classify
+        batch_size, channels, _, time = x.shape
+        x = x.view(batch_size, channels, self.stride_factor, time // self.stride_factor)
+
+        x = self.temporal_layer(x)  # type: ignore[operator]
         x = self.flatten_layer(x)
         x = self.final_layer(x)
         return x
