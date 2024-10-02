@@ -354,6 +354,47 @@ class MaxNormLinear(nn.Linear):
             self.weight *= desired / (self._eps + norm)
 
 
+class LinearWithConstraint(nn.Linear):
+    """
+    Fully connected layer with weight normalization constraint.
+
+    Parameters
+    ----------
+    in_features : int
+        Size of each input sample.
+    out_features : int
+        Size of each output sample.
+    max_norm : float, default=1.0
+        Maximum norm for weight normalization.
+    do_weight_norm : bool, default=True
+        Whether to apply weight normalization.
+
+    Returns
+    -------
+    torch.Tensor
+        Output tensor after applying the linear transformation.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        max_norm: float = 1.0,
+        do_weight_norm: bool = True,
+    ):
+        super().__init__(in_features, out_features)
+        self.max_norm = max_norm
+        self.do_weight_norm = do_weight_norm
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self.do_weight_norm:
+            with torch.no_grad():
+                self.weight.data = torch.renorm(
+                    self.weight.data, p=2, dim=0, maxnorm=self.max_norm
+                )
+        return super().forward(x)
+
+
 class CombinedConv(nn.Module):
     """Merged convolutional layer for temporal and spatial convs in Deep4/ShallowFBCSP
 
@@ -781,3 +822,121 @@ class FilterBank(nn.Module):
         # Shape: (batch_size, n_bands, nchans, time_points)
         output = torch.cat(output, dim=1)
         return output
+
+
+class VarLayer(nn.Module):
+    """
+    Computes the variance of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the variance.
+
+    Returns
+    -------
+    torch.Tensor
+        The variance of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.var(dim=self.dim, keepdim=True)
+
+
+class StdLayer(nn.Module):
+    """
+    Computes the standard deviation of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the standard deviation.
+
+    Returns
+    -------
+    torch.Tensor
+        The standard deviation of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.std(dim=self.dim, keepdim=True)
+
+
+class LogVarLayer(nn.Module):
+    """
+    Computes the logarithm of the variance of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the variance.
+
+    Returns
+    -------
+    torch.Tensor
+        The logarithm of the variance of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        var = x.var(dim=self.dim, keepdim=True)
+        var_clamped = torch.clamp(var, min=1e-6, max=1e6)
+        return torch.log(var_clamped)
+
+
+class MeanLayer(nn.Module):
+    """
+    Computes the mean of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the mean.
+
+    Returns
+    -------
+    torch.Tensor
+        The mean of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean(dim=self.dim, keepdim=True)
+
+
+class MaxLayer(nn.Module):
+    """
+    Computes the maximum of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the maximum.
+
+    Returns
+    -------
+    torch.Tensor
+        The maximum of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        max_val, _ = x.max(dim=self.dim, keepdim=True)
+        return max_val
