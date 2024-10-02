@@ -16,9 +16,9 @@ from braindecode.models.modules import LinearWithConstraint, FilterBank
 
 
 class FBMSNet(EEGModuleMixin, nn.Module):
-    """FBMSNet from Liu et al (2021) [fbmsnet]_.
+    """FBMSNet from Liu et al (2022) [fbmsnet]_.
 
-    0. FilterBank Layer: Applying filterbank to transform the input.
+    0. **FilterBank Layer**: Applying filterbank to transform the input.
 
     1. **Temporal Convolution Block**: Utilizes mixed depthwise convolution
        (MixConv) to extract multiscale temporal features from multiview EEG
