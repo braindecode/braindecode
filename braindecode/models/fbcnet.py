@@ -60,8 +60,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Stride factor for reshaping.
     activation : nn.Module, default=Swish
         Activation function class to apply.
-    drop_prob : float, default=0.5
-        Dropout probability for regularization.
     verbose: bool, default False
         Verbose parameter to create the filter using mne
 
@@ -92,7 +90,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         n_dim: int = 3,
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
-        drop_prob: float = 0.5,
         verbose: bool = False,
     ):
         super().__init__(
@@ -111,7 +108,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.n_dim = n_dim
         self.stride_factor = stride_factor
         self.activation = activation
-        self.drop_prob = drop_prob
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -133,7 +129,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.n_bands,
-            verbose=False,
+            verbose=verbose,
         )
         # As we have an internal process to create the bands,
         # we get the values from the filterbank
