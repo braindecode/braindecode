@@ -52,7 +52,7 @@ Enhancements
 - Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
 - Creating the FilterBank module for new models (:gh:`643` by `Bruno Aristimunha`_ )
-- Adding :class:`braindecode.models.FBCNet` (:gh:`XXX` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBCNet` (:gh:`657` by `Bruno Aristimunha`_ )
 
 Bugs
 ~~~~
