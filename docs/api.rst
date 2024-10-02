@@ -80,6 +80,7 @@ Models
     EEGSimpleConv
     EEGTCNet
     HybridNet
+    IFNet
     Labram
     ShallowFBCSPNet
     SleepStagerBlanco2020
