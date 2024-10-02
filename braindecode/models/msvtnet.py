@@ -108,6 +108,8 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     """
     MSVTNet model adapted for braindecode.
 
+    work a little more tomorrow.
+
     Parameters
     ----------
 
