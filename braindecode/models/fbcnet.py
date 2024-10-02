@@ -60,8 +60,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Stride factor for reshaping.
     activation : nn.Module, default=Swish
         Activation function class to apply.
-    drop_prob : float, default=0.5
-        Dropout probability for regularization.
     verbose: bool, default False
         Verbose parameter to create the filter using mne
 
@@ -70,7 +68,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     .. [fbcnet2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
         Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
         neural network for brain-computer interface. preprint arXiv:2104.01233.
-    .. [fbcnetcode2021]  Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
+    .. [fbcnetcode2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
         Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
         neural network for brain-computer interface.
         https://github.com/ravikiran-mane/FBCNet
@@ -92,7 +90,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         n_dim: int = 3,
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
-        drop_prob: float = 0.5,
         verbose: bool = False,
     ):
         super().__init__(
@@ -111,7 +108,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.n_dim = n_dim
         self.stride_factor = stride_factor
         self.activation = activation
-        self.drop_prob = drop_prob
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -133,7 +129,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.n_bands,
-            verbose=False,
+            verbose=verbose,
         )
         # As we have an internal process to create the bands,
         # we get the values from the filterbank
