@@ -763,12 +763,8 @@ class FilterBank(nn.Module):
             )
             low_freq = 4
             high_freq = 40
-            total_range = high_freq - low_freq
-            steps = total_range // band_filters
 
-            band_filters = [
-                (low, low + steps) for low in range(low_freq, total_range + 1, steps)
-            ]
+            band_filters = self._create_band_filters(low_freq, high_freq, band_filters)
 
         self.band_filters = band_filters
         self.n_bands = len(band_filters)
@@ -841,6 +837,29 @@ class FilterBank(nn.Module):
         # Shape: (batch_size, n_bands, nchans, time_points)
         output = torch.cat(output, dim=1)
         return output
+
+    @staticmethod
+    def _create_band_filters(
+        start, end, num_bands
+    ) -> list[Tuple[float | int, float | int]]:
+        total_numbers = end - start + 1
+        base_interval_size = total_numbers // num_bands
+
+        intervals = []
+        current_start = start
+
+        for i in range(num_bands):
+            # For the last interval, add any extra values
+            if i == num_bands - 1:
+                current_end = end
+            else:
+                current_end = current_start + base_interval_size - 1
+            intervals.append((current_start, current_end))
+            current_start = current_end + 1
+
+        # Convert intervals to a list of tuples (low_freq, high_freq)
+        band_filters = [(low, high) for low, high in intervals]
+        return band_filters
 
 
 class VarLayer(nn.Module):
