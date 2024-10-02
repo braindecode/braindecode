@@ -799,15 +799,3 @@ class FilterBank(nn.Module):
         # Shape: (batch_size, n_bands, nchans, time_points)
         output = torch.cat(output, dim=1)
         return output
-
-
-if __name__ == "__main__":
-    from torch import randn
-
-    x = randn(16, 10, 1000)
-
-    layer = FilterBank(sfreq=256, n_chans=10, band_filters=4)
-    with torch.no_grad():
-        out = layer(x)
-
-    print(out.shape)
