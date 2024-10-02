@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy as np
 
 from mne.filter import create_filter
+from mne.utils import warn
 
 import torch
 from torch import nn
@@ -15,7 +16,7 @@ from torch import Tensor
 from typing import Optional, List, Tuple
 import math
 
-from .functions import (
+from braindecode.models.functions import (
     drop_path,
     _apply_sinc_resample_kernel,
     _get_sinc_resample_kernel,
@@ -728,7 +729,7 @@ class FilterBank(nn.Module):
         self,
         n_chans: int,
         sfreq: int,
-        band_filters: Optional[List[Tuple[float, float]]] = None,
+        band_filters: Optional[List[Tuple[float, float]] | int] = None,
         filter_length: str | float | int = "auto",
         l_trans_bandwidth: str | float | int = "auto",
         h_trans_bandwidth: str | float | int = "auto",
@@ -750,6 +751,23 @@ class FilterBank(nn.Module):
             Network for Brain-Computer Interface
             """
             band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
+
+        if isinstance(band_filters, int):
+            warn(
+                "Creating the filter banks equally divided in the "
+                "interval 4Hz to 40Hz with almost equal bandwidths. "
+                "If you want a specific interval, "
+                "please specify 'band_filters' as a list of tuples.",
+                UserWarning,
+            )
+            low_freq = 4
+            high_freq = 40
+            total_range = high_freq - low_freq
+            steps = total_range // band_filters
+
+            band_filters = [
+                (low, low + steps) for low in range(low_freq, total_range, steps)
+            ]
 
         self.band_filters = band_filters
         self.n_bands = len(band_filters)
