@@ -1,5 +1,12 @@
+from __future__ import annotations
+
+from typing import Optional
+from mne.utils import warn
+
 import torch
+
 from torch import nn
+
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
@@ -41,31 +48,39 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        # Model-specific parameters
+        # models parameters
         n_bands=9,
         n_filters_spat: int = 36,
-        stride_factor=4,
-        temporal_layer="LogVarLayer",
-        num_features=36,
-        dilatability=8,
+        temporal_layer: str = "LogVarLayer",
+        n_dim: int = 3,
+        stride_factor: int = 4,
+        dilatability: int = 8,
+        activation: nn.Module = nn.SiLU,
+        drop_prob: float = 0.5,
+        verbose: bool = False,
     ):
         super().__init__(
             n_chans=n_chans,
             n_outputs=n_outputs,
-            n_times=n_times,
             chs_info=chs_info,
+            n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
 
-        self.in_channels = n_bands
+        self.n_bands = n_bands
+        self.n_filters_spat = n_filters_spat
+        self.n_dim = n_dim
         self.stride_factor = stride_factor
-        self.num_features = num_features
+        self.activation = activation
+        self.activation = activation
         self.dilatability = dilatability
 
-        # Check if temporal_layer is valid
+        # Checkers
         if temporal_layer not in _valid_layers:
-            raise ValueError(f"Temporal layer '{temporal_layer}' is not implemented.")
+            raise NotImplementedError(
+                f"Temporal layer '{temporal_layer}' is not implemented."
+            )
 
         # MixedConv2d Layer
         self.mix_conv = nn.Sequential(
