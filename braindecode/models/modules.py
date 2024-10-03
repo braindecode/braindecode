@@ -9,19 +9,15 @@ from mne.filter import create_filter
 from mne.utils import warn
 
 import torch
-from torch import nn
+from torch import Tensor, nn, from_numpy
 import torch.nn.functional as F
 
-from torch import Tensor
+from torchaudio.functional import fftconvolve, filtfilt
 from typing import Optional, List, Tuple
-import math
 
 from braindecode.models.functions import (
     drop_path,
-    _apply_sinc_resample_kernel,
-    _get_sinc_resample_kernel,
     safe_log,
-    fftconvolve,
 )
 from braindecode.util import np_to_th
 
@@ -533,114 +529,14 @@ class DropPath(nn.Module):
         return f"p={self.drop_prob}"
 
 
-class Resample(torch.nn.Module):
-    r"""Resample a signal from one frequency to another. A resampling method can be given.
-
-    .. devices:: CPU CUDA
-
-    .. properties:: Autograd TorchScript
-
-    Note:
-        If resampling on waveforms of higher precision than float32, there may be a small loss of precision
-        because the kernel is cached once as float32. If high precision resampling is important for your application,
-        the functional form will retain higher precision, but run slower because it does not cache the kernel.
-        Alternatively, you could rewrite a transform that caches a higher precision kernel.
-
-    Args:
-        orig_freq (int, optional): The original frequency of the signal. (Default: ``16000``)
-        new_freq (int, optional): The desired frequency. (Default: ``16000``)
-        resampling_method (str, optional): The resampling method to use.
-            Options: [``sinc_interp_hann``, ``sinc_interp_kaiser``] (Default: ``"sinc_interp_hann"``)
-        lowpass_filter_width (int, optional): Controls the sharpness of the filter, more == sharper
-            but less efficient. (Default: ``6``)
-        rolloff (float, optional): The roll-off frequency of the filter, as a fraction of the Nyquist.
-            Lower values reduce anti-aliasing, but also reduce some of the highest frequencies. (Default: ``0.99``)
-        beta (float or None, optional): The shape parameter used for kaiser window.
-        dtype (torch.device, optional):
-            Determnines the precision that resampling kernel is pre-computed and cached. If not provided,
-            kernel is computed with ``torch.float64`` then cached as ``torch.float32``.
-            If you need higher precision, provide ``torch.float64``, and the pre-computed kernel is computed and
-            cached as ``torch.float64``. If you use resample with lower precision, then instead of providing this
-            providing this argument, please use ``Resample.to(dtype)``, so that the kernel generation is still
-            carried out on ``torch.float64``.
-
-    Example
-        >>> waveform, sample_rate = torchaudio.load("test.wav", normalize=True)
-        >>> transform = transforms.Resample(sample_rate, sample_rate/10)
-        >>> waveform = transform(waveform)
-
-    Notes
-    -----
-    Code copied and modified from Pytorch Audio:
-    https://pytorch.org/audio/main/generated/torchaudio.transforms.Resample.html
-
-    All rights reserved.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
-    """
-
-    def __init__(
-        self,
-        orig_freq: int = 16000,
-        new_freq: int = 16000,
-        resampling_method: str = "sinc_interp_hann",
-        lowpass_filter_width: int = 6,
-        rolloff: float = 0.99,
-        beta: Optional[float] = None,
-        *,
-        dtype: Optional[torch.dtype] = None,
-    ) -> None:
-        super().__init__()
-
-        self.orig_freq = orig_freq
-        self.new_freq = new_freq
-        self.gcd = math.gcd(int(self.orig_freq), int(self.new_freq))
-        self.resampling_method = resampling_method
-        self.lowpass_filter_width = lowpass_filter_width
-        self.rolloff = rolloff
-        self.beta = beta
-
-        if self.orig_freq != self.new_freq:
-            kernel, self.width = _get_sinc_resample_kernel(
-                self.orig_freq,
-                self.new_freq,
-                self.gcd,
-                self.lowpass_filter_width,
-                self.rolloff,
-                self.resampling_method,
-                beta,
-                dtype=dtype,
-            )
-            self.register_buffer("kernel", kernel)
-
-    def forward(self, waveform: Tensor) -> Tensor:
-        r"""
-        Args:
-            waveform (Tensor): Tensor of audio of dimension (..., time).
-
-        Returns:
-            Tensor: Output signal of dimension (..., time).
-        """
-        if self.orig_freq == self.new_freq:
-            return waveform
-        return _apply_sinc_resample_kernel(
-            waveform, self.orig_freq, self.new_freq, self.gcd, self.kernel, self.width
-        )
-
-
 class FilterBank(nn.Module):
     """Filter bank layer using MNE to create the filter.
 
     This layer constructs a bank of band-specific filters using MNE's `create_filter` function
     and applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
-    performed using FFT-based convolution via the `fftconvolve` function from `braindecode.models.functions`.
+    performed using FFT-based convolution via the `fftconvolve` function from
+    :func:`torchaudio.functional.
 
     The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
     spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
@@ -652,36 +548,94 @@ class FilterBank(nn.Module):
         Number of channels in the input signal.
     sfreq : int
         Sampling frequency of the input signal in Hz.
-    band_filters : Optional[List[Tuple[float, float]]], default=None
-        List of frequency bands as (low_freq, high_freq) tuples. Each tuple defines the frequency range
-        for one filter in the bank. If not provided, defaults to 9 non-overlapping bands with 4 Hz
-        bandwidths spanning from 4 to 40 Hz.
-    filter_length : Union[str, float, int], default='auto'
-        Length of the filter. Can be an integer specifying the number of taps or 'auto' to let
-        MNE determine the appropriate length based on other parameters.
+    band_filters : Optional[List[Tuple[float, float]]] or int, default=None
+        List of frequency bands as (low_freq, high_freq) tuples. Each tuple defines
+        the frequency range for one filter in the bank. If not provided, defaults
+        to 9 non-overlapping bands with 4 Hz bandwidths spanning from 4 to 40 Hz.
+    filter_length : str | int
+        Length of the FIR filter to use (if applicable):
+
+        * **'auto' (default)**: The filter length is chosen based
+          on the size of the transition regions (6.6 times the reciprocal
+          of the shortest transition band for fir_window='hamming'
+          and fir_design="firwin2", and half that for "firwin").
+        * **str**: A human-readable time in
+          units of "s" or "ms" (e.g., "10s" or "5500ms") will be
+          converted to that number of samples if ``phase="zero"``, or
+          the shortest power-of-two length at least that duration for
+          ``phase="zero-double"``.
+        * **int**: Specified length in samples. For fir_design="firwin",
+          this should not be used.
     l_trans_bandwidth : Union[str, float, int], default='auto'
-        Transition bandwidth for the low cutoff frequency in Hz. Can be specified as a float,
-        integer, or 'auto' for automatic selection.
+        Width of the transition band at the low cut-off frequency in Hz
+        (high pass or cutoff 1 in bandpass). Can be "auto"
+        (default) to use a multiple of ``l_freq``::
+
+            min(max(l_freq * 0.25, 2), l_freq)
+
+        Only used for ``method='fir'``.
     h_trans_bandwidth : Union[str, float, int], default='auto'
-        Transition bandwidth for the high cutoff frequency in Hz. Can be specified as a float,
-        integer, or 'auto' for automatic selection.
+        Width of the transition band at the high cut-off frequency in Hz
+        (low pass or cutoff 2 in bandpass). Can be "auto"
+        (default in 0.14) to use a multiple of ``h_freq``::
+
+            min(max(h_freq * 0.25, 2.), info['sfreq'] / 2. - h_freq)
+
+        Only used for ``method='fir'``.
     method : str, default='fir'
-        Filter design method. Supported methods include 'fir' for FIR filters and 'iir' for IIR filters.
+        ``'fir'`` will use FIR filtering, ``'iir'`` will use IIR
+        forward-backward filtering (via :func:`~scipy.signal.filtfilt`).
     phase : str, default='zero'
-        Phase mode for the filter. Options:
-            - 'zero': Zero-phase filtering (non-causal).
-            - 'minimum': Minimum-phase filtering (causal).
+        Phase of the filter.
+        When ``method='fir'``, symmetric linear-phase FIR filters are constructed
+        with the following behaviors when ``method="fir"``:
+
+        ``"zero"`` (default)
+            The delay of this filter is compensated for, making it non-causal.
+        ``"minimum"``
+            A minimum-phase filter will be constructed by decomposing the zero-phase filter
+            into a minimum-phase and all-pass systems, and then retaining only the
+            minimum-phase system (of the same length as the original zero-phase filter)
+            via :func:`scipy.signal.minimum_phase`.
+        ``"zero-double"``
+            *This is a legacy option for compatibility with MNE <= 0.13.*
+            The filter is applied twice, once forward, and once backward
+            (also making it non-causal).
+        ``"minimum-half"``
+            *This is a legacy option for compatibility with MNE <= 1.6.*
+            A minimum-phase filter will be reconstructed from the zero-phase filter with
+            half the length of the original filter.
+
+        When ``method='iir'``, ``phase='zero'`` (default) or equivalently ``'zero-double'``
+        constructs and applies IIR filter twice, once forward, and once backward (making it
+        non-causal) using :func:`~scipy.signal.filtfilt`; ``phase='forward'`` will apply
+        the filter once in the forward (causal) direction using
+        :func:`~scipy.signal.lfilter`.
+
+
+           The behavior for ``phase="minimum"`` was fixed to use a filter of the requested
+           length and improved suppression.
     iir_params : Optional[dict], default=None
-        Dictionary of parameters specific to IIR filter design, such as filter order and
-        stopband attenuation. Required if `method` is set to 'iir'.
+        Dictionary of parameters to use for IIR filtering.
+        If ``iir_params=None`` and ``method="iir"``, 4th order Butterworth will be used.
+        For more information, see :func:`mne.filter.construct_iir_filter`.
     fir_window : str, default='hamming'
-        Window function to use for FIR filter design. Common choices include 'hamming', 'hann',
-        'blackman', etc.
+        The window to use in FIR design, can be "hamming" (default),
+        "hann" (default in 0.13), or "blackman".
     fir_design : str, default='firwin'
-        FIR filter design method. Common methods include 'firwin' and 'firwin2'.
+        Can be "firwin" (default) to use :func:`scipy.signal.firwin`,
+        or "firwin2" to use :func:`scipy.signal.firwin2`. "firwin" uses
+        a time-domain design technique that generally gives improved
+        attenuation using fewer samples than "firwin2".
     pad : str, default='reflect_limited'
-        Padding mode to use when filtering the input signal. Options include 'reflect', 'constant',
-        'replicate', etc., as supported by PyTorch's `torch.nn.functional.pad`.
+        The type of padding to use. Supports all func:`numpy.pad()` mode options.
+        Can also be "reflect_limited", which pads with a reflected version of
+        each vector mirrored on the first and last values of the vector,
+        followed by zeros. Only used for ``method='fir'``.
+    verbose: bool | str | int | None, default=True
+        Control verbosity of the logging output. If ``None``, use the default
+        verbosity level. See the func:`mne.verbose` for details.
+        Should only be passed as a keyword argument.
     """
 
     def __init__(
@@ -701,6 +655,8 @@ class FilterBank(nn.Module):
     ):
         super(FilterBank, self).__init__()
 
+        # The first step here is to check the band_filters
+        # We accept as None values.
         if band_filters is None:
             """
             the filter bank is constructed using 9 filters with non-overlapping
@@ -711,7 +667,7 @@ class FilterBank(nn.Module):
             Network for Brain-Computer Interface
             """
             band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
-
+        # We accept as int.
         if isinstance(band_filters, int):
             warn(
                 "Creating the filter banks equally divided in the "
@@ -724,18 +680,34 @@ class FilterBank(nn.Module):
             high_freq = 40
 
             band_filters = self._create_band_filters(low_freq, high_freq, band_filters)
+        if not isinstance(band_filters, list):
+            ValueError(
+                "`band_filters` should be a list of tuples if you want to "
+                "use them this way."
+            )
 
+        # and we accepted as
         self.band_filters = band_filters
         self.n_bands = len(band_filters)
         self.phase = phase
         self.method = method
         self.n_chans = n_chans
 
-        method_iir = True if self.method == "iir" else False
+        self.method_iir = True if self.method == "iir" else False
 
-        if method_iir:
-            raise ValueError("Not implemented yet")
+        if self.method_iir:
+            if iir_params is None:
+                iir_params = dict(output="ba")
+            else:
+                if "output" in iir_params:
+                    if iir_params["output"] == "sos":
+                        warn("""
+                            It is not possible to use second-order section
+                            filtering with Torch. Changing to filter ``ba``
+                            """)
+                        iir_params["output"] = "ba"
 
+        filts = {}
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
                 data=None,
@@ -752,10 +724,15 @@ class FilterBank(nn.Module):
                 fir_design=fir_design,
                 verbose=verbose,
             )
-            # Shape: (filter_length,)
+            if not self.method_iir:
+                filts[f"{idx}_band"] = from_numpy(filt).float()
+            else:
+                b = from_numpy(filt["b"]).float()
+                a = from_numpy(filt["a"]).float()
 
-            filt_tensor = torch.from_numpy(filt).float()
-            self.register_buffer(f"filter_{idx}_b", filt_tensor)
+                filts[f"{idx}_band"] = (b, a)
+
+            self.filts = filts
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -776,21 +753,15 @@ class FilterBank(nn.Module):
         output = []
 
         for band_idx in range(n_bands):
-            # Shape: (nchans, filter_length)
-            filt_b = getattr(self, f"filter_{band_idx}_b")
+            if not self.method_iir:
+                filtered = self._apply_fir(
+                    x, self.filts[f"{band_idx}_band"], self.n_chans
+                )
+            else:
+                filtered = self._apply_irr(
+                    x, self.filts[f"{band_idx}_band"], self.n_bands
+                )
 
-            # Expand to (nchans, filter_length)
-            # Shape: (1, nchans, filter_length)
-            filt_expanded = filt_b.unsqueeze(0).repeat(self.n_chans, 1).unsqueeze(0)
-
-            # I think it will only work with FIR, check with MNE experts.
-            filtered = fftconvolve(
-                x, filt_expanded, mode="same"
-            )  # Shape: (batch_size, nchans, time_points)
-
-            # Add band dimension
-            # Shape: (batch_size, 1, nchans, time_points)
-            filtered = filtered.unsqueeze(1)
             output.append(filtered)
 
         # Shape: (batch_size, n_bands, nchans, time_points)
@@ -819,3 +790,28 @@ class FilterBank(nn.Module):
         # Convert intervals to a list of tuples (low_freq, high_freq)
         band_filters = [(low, high) for low, high in intervals]
         return band_filters
+
+    @staticmethod
+    def _apply_fir(x, filt_b, n_chans) -> Tensor:
+        # Shape: (nchans, filter_length)
+
+        # Expand to (nchans, filter_length)
+        filt_expanded = filt_b.unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+
+        # I think it will only work with FIR, check with MNE experts.
+        filtered = fftconvolve(
+            x, filt_expanded, mode="same"
+        )  # Shape: (batch_size, nchans, time_points)
+
+        # Add band dimension
+        # Shape: (batch_size, 1, nchans, time_points)
+        filtered = filtered.unsqueeze(1)
+        # returning the filtered
+        return filtered
+
+    @staticmethod
+    def _apply_irr(x: Tensor, filter, n_bands: int) -> Tensor:
+        x = x.unsqueeze(2).repeat(1, 1, n_bands, 1)
+        x = filtfilt(x, filter["a"], filter["a"], clamp=False)
+        filtered = torch.permute(x, [0, 2, 1, 3])
+        return filtered
