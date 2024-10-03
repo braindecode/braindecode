@@ -731,7 +731,7 @@ class FilterBankLayer(nn.Module):
                 b = from_numpy(filt["b"]).float()
                 a = from_numpy(filt["a"]).float()
 
-                filts[f"{idx}_band"] = (b, a)
+                filts[f"band_{idx}"] = (b, a)
 
             self.filts = filts
 
