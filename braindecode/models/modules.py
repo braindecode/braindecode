@@ -529,11 +529,12 @@ class DropPath(nn.Module):
         return f"p={self.drop_prob}"
 
 
-class FilterBank(nn.Module):
-    """Filter bank layer using MNE to create the filter.
+class FilterBankLayer(nn.Module):
+    """Filter bank layer to split the signal between different frequency bands.
 
-    This layer constructs a bank of band-specific filters using MNE's `create_filter` function
-    and applies them to multi-channel time-series data. Each filter in the bank corresponds to a
+    This layer constructs a bank of signals filtered in specific bands for each channel.
+    It uses MNE's `create_filter` function to create the band-specific filters and 
+    applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
     performed using FFT-based convolution via the `fftconvolve` function from
     :func:`torchaudio.functional.
@@ -812,6 +813,6 @@ class FilterBank(nn.Module):
     @staticmethod
     def _apply_irr(x: Tensor, filter, n_bands: int) -> Tensor:
         x = x.unsqueeze(2).repeat(1, 1, n_bands, 1)
-        x = filtfilt(x, filter["a"], filter["a"], clamp=False)
+        x = filtfilt(x, filter["a"], filter["b"], clamp=False)
         filtered = torch.permute(x, [0, 2, 1, 3])
         return filtered
