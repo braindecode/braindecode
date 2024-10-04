@@ -3,13 +3,10 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-from matplotlib.pylab import plt
-
 import numpy as np
 from functools import partial
 from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
-from scipy import signal
 
 import torch
 from torch import Tensor, nn, from_numpy
@@ -789,7 +786,7 @@ class FilterBankLayer(nn.Module):
         # Expand to (nchans, filter_length)
         filt_expanded = filter["b"].unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
 
-        # I think it will only work with FIR, check with MNE experts.
+        # Check with MNE and filtering experts if we should do something more.
         filtered = fftconvolve(
             x, filt_expanded, mode="same"
         )  # Shape: (batch_size, nchans, time_points)
@@ -802,43 +799,27 @@ class FilterBankLayer(nn.Module):
 
     @staticmethod
     def _apply_irr(x: Tensor, filter: dict) -> Tensor:
-        x = x.unsqueeze(2)
-        _ = signal.filtfilt(
-            b=filter["b"].numpy(), a=filter["a"].numpy(), x=x.numpy(), padtype=None
-        )
-        filt_ta = filtfilt(x, filter["a"], filter["b"], clamp=False)
+        """
+        Apply an IIR filter to the input tensor.
 
-        np.flatten()
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+        filter : dict
+            Dictionary containing IIR filter coefficients.
+            - "b": Tensor of numerator coefficients.
+            - "a": Tensor of denominator coefficients.
+
+        Returns
+        -------
+        Tensor
+            Filtered tensor of shape (batch_size, 1, n_chans, n_times).
+        """
+        # Add a singleton dimension for processing
+        x = x.unsqueeze(2)  # Shape: (batch_size, n_chans, 1, n_times)
+        # Apply filtering using torchaudio's filtfilt
+        filt_ta = filtfilt(x, filter["a"], filter["b"], clamp=False)
+        # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
         filtered = torch.permute(filt_ta, [0, 2, 1, 3])
         return filtered
-
-
-if __name__ == "__main__":
-    from torch import randn
-
-    sfreq = 256  # Sampling frequency
-    duration = 1  # seconds
-    t = np.arange(0, duration, 1 / sfreq)  # Time vector
-    temporal_signal = np.sin(2 * np.pi * 5 * t)
-
-    # Convert signal to torch tensor
-    signal_torch = (
-        torch.tensor(temporal_signal, dtype=torch.float32).unsqueeze(0).unsqueeze(1)
-    )  # Shape: (batch_size, n_chans, n_times)
-
-    iir_params = dict(order=4, ftype="butter", output="ba")
-
-    filter_bank_layer = FilterBankLayer(
-        n_chans=1,
-        sfreq=256,
-        band_filters=[(4, 8)],
-        method="iir",
-        iir_params=iir_params,
-        phase="zero",
-        verbose=False,
-    )
-
-    with torch.no_grad():
-        out = filter_bank_layer(signal_torch)
-
-    print(out.shape)
