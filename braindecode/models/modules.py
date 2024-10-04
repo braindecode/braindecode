@@ -14,6 +14,8 @@ import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt
 from typing import Optional, List, Tuple
+from torch import Tensor
+
 
 from braindecode.models.functions import (
     drop_path,
@@ -816,3 +818,4 @@ class FilterBankLayer(nn.Module):
         x = filtfilt(x, filter["a"], filter["b"], clamp=False)
         filtered = torch.permute(x, [0, 2, 1, 3])
         return filtered
+
