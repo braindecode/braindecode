@@ -14,7 +14,6 @@ import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt
 from typing import Optional, List, Tuple
-from torch import Tensor
 
 
 from braindecode.models.functions import (
@@ -535,7 +534,7 @@ class FilterBankLayer(nn.Module):
     """Filter bank layer to split the signal between different frequency bands.
 
     This layer constructs a bank of signals filtered in specific bands for each channel.
-    It uses MNE's `create_filter` function to create the band-specific filters and 
+    It uses MNE's `create_filter` function to create the band-specific filters and
     applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
     performed using FFT-based convolution via the `fftconvolve` function from
@@ -656,7 +655,7 @@ class FilterBankLayer(nn.Module):
         fir_design: str = "firwin",
         verbose: bool = True,
     ):
-        super(FilterBank, self).__init__()
+        super(FilterBankLayer, self).__init__()
 
         # The first step here is to check the band_filters
         # We accept as None values.
@@ -814,8 +813,7 @@ class FilterBankLayer(nn.Module):
 
     @staticmethod
     def _apply_irr(x: Tensor, filter, n_bands: int) -> Tensor:
-        x = x.unsqueeze(2).repeat(1, 1, n_bands, 1)
+        x = x.unsqueeze(2)
         x = filtfilt(x, filter["a"], filter["b"], clamp=False)
         filtered = torch.permute(x, [0, 2, 1, 3])
         return filtered
-

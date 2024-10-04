@@ -1,8 +1,11 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
+import warnings
 import math
 import torch
+from torch import Tensor
+from typing import Optional
 
 
 def rescale_parameter(param, layer_id):
