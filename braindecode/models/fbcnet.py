@@ -12,7 +12,7 @@ from einops.layers.torch import Rearrange
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.modules import (
-    FilterBank,
+    FilterBankLayer,
     VarLayer,
     StdLayer,
     LogVarLayer,
@@ -125,7 +125,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
 
         # Layers
         # Following paper nomeclature
-        self.spectral_filtering = FilterBank(
+        self.spectral_filtering = FilterBankLayer(
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.n_bands,

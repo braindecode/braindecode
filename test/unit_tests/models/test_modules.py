@@ -3,12 +3,21 @@
 # License: BSD (3-clause)
 import platform
 
+import numpy as np
 import pytest
 import torch
-from torch import nn
 
+from scipy import signal
+from scipy.signal import freqz
+from mne.time_frequency import psd_array_welch
+from mne.filter import create_filter
+from scipy.signal import fftconvolve as fftconvolve_scipy
+
+
+from torch import nn
+import matplotlib.pyplot as plt
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog
+from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog, FilterBankLayer
 from braindecode.models.labram import _SegmentPatch
 
 from braindecode.models.functions import drop_path
@@ -305,3 +314,297 @@ def test_safelog_extra_repr(eps, expected_repr):
 
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
+
+
+# I need help here!
+#@pytest.mark.parametrize("ftype", ["butter", "buttord","cheby1", "cheby2", "ellip"])
+@pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
+@pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
+def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase):
+    tolerance = 1e-3
+    # Set random seeds for reproducibility
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    # Test parameters
+    n_chans = 22
+    sfreq = 256
+    x = torch.randn(1, n_chans, 1000)
+
+    # if ftype in ["butter", "buttord"]:
+    #     iir_params =
+    # else:
+    #     iir_params = dict(output="ba", ftype=ftype)
+
+    filter_parameters = dict(
+        sfreq=sfreq,
+        method='iir',
+        phase=phase,
+        filter_length=1024,
+        l_trans_bandwidth=1.0,  # Narrower transition bandwidth
+        h_trans_bandwidth=1.0,
+        iir_params=dict(output="ba", ftype="butter", order=4),
+        verbose=True)
+
+    filts = create_filter(data=None,
+        l_freq=l_freq,
+        h_freq=h_freq,
+        **filter_parameters
+    )  # creating iir filter
+
+    filtered_signal_mne = signal.filtfilt(b=filts['b'],
+                                          a=filts['a'],
+                                          x=x.unsqueeze(2).numpy(),
+                                          padtype=None, axis=1)
+
+    # Initialize your FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        band_filters=[(l_freq, h_freq)],
+        **filter_parameters
+    )
+
+    # Apply filtering using your FilterBankLayer
+    filtered_signal_torch = filter_bank_layer(x)
+    # Remove extra dimensions and convert to numpy
+    filtered_signal_torch = filtered_signal_torch.squeeze().detach().numpy()
+
+    # Compare the outputs
+    np.testing.assert_allclose(
+        filtered_signal_torch,
+        filtered_signal_mne,
+        atol=tolerance,
+        err_msg=f"Filtered outputs do not match between FilterBankLayer "
+                f"and MNE-Python for and band=({l_freq}-{h_freq})Hz"
+    )
+
+
+@pytest.mark.parametrize("phase", ["linear", "zero", "zero-double",
+                                   "minimum", "minimum-half"])
+@pytest.mark.parametrize("fir_window", ["hamming", "hann"])
+@pytest.mark.parametrize("fir_design", ["firwin", "firwin2"])
+@pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
+def test_filter_bank_layer_fftconvolve_comparison_fir(l_freq, h_freq, fir_design, fir_window, phase):#, fir_design, fir_window)
+    """
+    Test that the FilterBankLayer applies FIR filters correctly across multiple channels
+    by comparing its output to scipy's fftconvolve.
+    """
+    # ---------------------------
+    # 1. Setup Test Parameters
+    # ---------------------------
+
+    # Set random seeds for reproducibility
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    # Define parameters
+    batch_size = 1
+    n_chans = 22
+    n_times = 1000
+    sfreq = 256  # Sampling frequency in Hz
+    tolerance = 1e5
+    # Generate random input tensor: Shape (batch_size, n_chans, n_times)
+    x = torch.randn(batch_size, n_chans, n_times).float()
+
+    filter_parameters = dict(
+        sfreq=sfreq,
+        method='fir',
+        phase=phase,
+        filter_length=1024, # If the filter length is not this side, nothing works
+        l_trans_bandwidth=1.0,  # Narrower transition bandwidth
+        h_trans_bandwidth=1.0,
+        fir_window=fir_window,
+        fir_design=fir_design,
+        verbose=True)
+
+    # Create FIR filter using MNE:
+    filt = create_filter(data=None, l_freq=l_freq, h_freq=h_freq, **filter_parameters)
+
+    # Expand filter to match channels: Shape (1, n_chans, filter_length)
+    filt_expanded = torch.from_numpy(filt).unsqueeze(0).repeat(n_chans,
+                                                               1).unsqueeze(0).float()
+
+    # ---------------------------
+    # 2. Initialize FilterBankLayer
+    # ---------------------------
+
+    # Initialize the FilterBankLayer with one band
+    filter_bank_layer = FilterBankLayer(
+        n_chans=n_chans,
+        band_filters=[(l_freq, h_freq)],
+        # Increased filter length for better frequency resolution
+        **filter_parameters
+    )
+
+    # ---------------------------
+    # 3. Apply FilterBankLayer
+    # ---------------------------
+
+    # Apply the filter bank to the input tensor
+    # Expected output shape: (batch_size, n_bands, n_chans, n_times)
+    filtered_output = filter_bank_layer(x)
+
+    # Convert the FilterBankLayer output to NumPy for comparison
+    filtered_torch_np = filtered_output.numpy()
+
+    # Convert input tensor and filter to NumPy arrays
+    x_numpy = x.numpy()  # Shape: (1, n_chans, n_times)
+    filt_numpy = filt_expanded.numpy()  # Shape: (1, n_chans, filter_length)
+
+    # Apply scipy's fftconvolve per Channel
+    filtered_scipy = fftconvolve_scipy(x_numpy, filt_numpy, mode='same', axes=2)
+
+    # Assert that all differences are below the tolerance
+    assert np.allclose(filtered_torch_np, filtered_scipy, atol=tolerance), (
+        f"Filtered outputs differ beyond the tolerance of {tolerance}."
+    )
+
+
+
+@pytest.mark.parametrize("method", ["fir"]) # "iir" is not working to 4-8, 8-12, 12-16. I think "sos" solve, but not implemented in Torch.
+@pytest.mark.parametrize("l_freq, h_freq", [
+    (4, 8), (8, 12), (12, 16), (16, 20),
+    (20, 24), (24, 28), (28, 32), (32, 36), (36, 40)
+])
+def test_filter_bank_layer_psd(l_freq, h_freq, method):
+    """
+    Test the FilterBankLayer by analyzing the power spectral density (PSD) of
+    the output using MNE.
+    """
+    # Test parameters
+    sfreq = 256  # Sampling frequency in Hz
+    duration = 5  # Duration in seconds
+    t = np.arange(0, duration, 1 / sfreq)  # Time vector
+
+    # Generate a composite signal with multiple sine waves
+    freqs = [2, 4, 6, 10, 14, 18, 22, 26, 30, 34, 38]
+    signals = [np.sin(2 * np.pi * freq * t) for freq in freqs]
+    composite_signal = np.sum(signals, axis=0)
+
+    # Convert the signal to a torch tensor
+    composite_signal_torch = torch.tensor(composite_signal, dtype=torch.float32).unsqueeze(0).unsqueeze(1)
+
+    # Initialize the FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        method=method,
+        filter_length=1024, # Making an huge filter
+        l_trans_bandwidth=1.0,  # Narrower transition bands
+        h_trans_bandwidth=1.0, # Narrower transition bands
+        band_filters=[(l_freq, h_freq)],
+        verbose=False
+    )
+
+    # Apply the FilterBankLayer to the composite signal
+    filtered_signals = filter_bank_layer(composite_signal_torch)
+    # Shape after squeezing: (n_times,)
+    filtered_signal_np = filtered_signals.squeeze().detach().numpy()
+
+    # Compute PSD using MNE
+    psds, freqs = psd_array_welch(
+        filtered_signal_np,
+        sfreq=sfreq,
+        fmin=0,
+        fmax=sfreq / 2,
+        n_fft=1024,
+        average='mean',
+        verbose=False
+    )
+
+    # Identify frequencies within and outside the band
+    idx_in_band = np.where((freqs >= l_freq) & (freqs <= h_freq))[0]
+    idx_out_band = np.where((freqs < l_freq) | (freqs > h_freq))[0]
+
+    # Calculate power in and out of the band
+    power_in_band = np.sum(psds[idx_in_band])
+    power_out_band = np.sum(psds[idx_out_band])
+
+    # Assert that power in the band is significantly higher than outside
+    assert power_in_band > 10 * power_out_band, \
+        (f"Power in band {l_freq}-{h_freq} Hz is not significantly higher "
+         f"than outside the band.")
+
+
+def test_filter_bank_layer_frequency_response():
+    """
+    Test the FilterBankLayer by analyzing the frequency responses of its filters.
+    """
+    # Test parameters
+    sfreq = 256  # Sampling frequency in Hz
+
+    # Define the frequency bands for the filter bank
+    band_filters = [(4, 8), (8, 12), (12, 16), (16, 20),
+                    (20, 24), (24, 28), (28, 32), (32, 36), (36, 40)]
+
+    # Initialize the FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        band_filters=band_filters,
+        filter_length=1024,
+        l_trans_bandwidth=1.0,  # Narrower transition bands
+        h_trans_bandwidth=1.0,
+        method='fir',
+        phase='zero',
+        fir_window='hamming',
+        fir_design='firwin',
+        verbose=False
+    )
+
+    num_fft = 1024  # Increase for higher frequency resolution
+
+    # Prepare plots
+    num_filters = len(band_filters)
+    fig, axes = plt.subplots(num_filters, 1,
+                             figsize=(10, 2 * num_filters),
+                             sharex=True)
+
+    # Iterate over each filter in the filter bank
+    for idx, ((l_freq, h_freq), filt_dict, ax) in enumerate(zip(
+            band_filters, filter_bank_layer.filts.values(), axes)):
+
+        # Extract filter coefficients
+        b = filt_dict['b'].detach().numpy()
+        a = np.array([1.0])  # FIR filter, so a is [1.0]
+
+        # Compute frequency response
+        w, h = freqz(b, a, worN=num_fft, fs=sfreq)
+
+        # Compute magnitude in dB
+        h_dB = 20 * np.log10(np.abs(h) + 1e-12)  # Add epsilon to avoid log(0)
+
+        # Plot frequency response
+        ax.plot(w, h_dB, label=f'Band {l_freq}-{h_freq} Hz')
+        ax.axvspan(l_freq, h_freq, color='red', alpha=0.3, label='Passband')
+        ax.set_title(f'Frequency Response of Filter {idx+1}')
+        ax.set_ylabel('Amplitude (dB)')
+        ax.set_xlim(0, sfreq / 2)
+        ax.set_ylim(-100, 5)
+        ax.grid(True)
+        ax.legend()
+
+        # Programmatic verification
+        # Define frequency ranges for passband and stopbands
+        passband = (w >= l_freq) & (w <= h_freq)
+        # Allow 2 Hz margin for transition bands, adjusted for higher frequencies
+        margin = min(2.0, l_freq * 0.25)
+        stopband_lower = w < (l_freq - margin)
+        stopband_upper = w > (h_freq + margin)
+
+        # Check that the gain in the passband is close to 0 dB
+        passband_gain = h_dB[passband]
+        assert np.all(passband_gain > -3), \
+            f"Passband gain for filter {idx+1} is not within acceptable range."
+
+        # Check that the gain in the stopbands is significantly attenuated
+        stopband_gain = h_dB[stopband_lower | stopband_upper]
+        # Adjust acceptable attenuation for higher frequencies
+        attenuation_threshold = -40 if h_freq <= 20 else -30
+        assert np.all(stopband_gain < attenuation_threshold), \
+            f"Stopband attenuation for filter {idx+1} is not sufficient."
+
+
+    plt.xlabel('Frequency (Hz)')
+    plt.tight_layout()
+    plt.show()
