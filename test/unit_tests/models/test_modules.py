@@ -3,12 +3,17 @@
 # License: BSD (3-clause)
 import platform
 
+import numpy as np
 import pytest
 import torch
+
+from scipy import signal
+from mne.filter import create_filter, filter_data
 from torch import nn
+import matplotlib.pyplot as plt
 
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog
+from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog, FilterBankLayer
 from braindecode.models.labram import _SegmentPatch
 
 from braindecode.models.functions import drop_path
@@ -305,3 +310,66 @@ def test_safelog_extra_repr(eps, expected_repr):
 
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
+
+
+@pytest.mark.parametrize("ftype", ["butter", "butterworth","cheby1", "cheby2", "ellip"])
+@pytest.mark.parametrize("freq", [5, 10, 20])
+@pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
+@pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
+def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, freq=5, ftype="butter"):
+    # Test parameters
+    sfreq = 256  # Sampling frequency
+    duration = 1  # seconds
+    t = np.arange(0, duration, 1 / sfreq)  # Time vector
+    temporal_signal = np.sin(2 * np.pi * freq * t)
+
+    # Convert signal to torch tensor
+    signal_torch = torch.tensor(temporal_signal, dtype=torch.float32).unsqueeze(
+        0).unsqueeze(1)  # Shape: (batch_size, n_chans, n_times)
+
+    # Filter parameters
+    iir_params = dict(order=4, ftype=ftype, output='ba')
+
+    # Create filter coefficients using MNE-Python
+    filts = create_filter(
+        data=None,
+        sfreq=sfreq,
+        l_freq=l_freq,
+        h_freq=h_freq,
+        method='iir',
+        iir_params=iir_params,
+        phase=phase,
+        verbose=False
+    )
+
+    filtered_signal_mne = signal.filtfilt(b=filts['b'],
+                                          a=filts['a'],
+                                          x=temporal_signal,
+                                          padtype=None)
+
+    # Initialize your FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        band_filters=[(l_freq, h_freq)],
+        method='iir',
+        iir_params=iir_params,
+        phase=phase,
+        verbose=False
+    )
+
+    # Apply filtering using your FilterBankLayer
+    filtered_signal_torch = filter_bank_layer(signal_torch)
+    # Remove extra dimensions and convert to numpy
+    filtered_signal_torch = filtered_signal_torch.squeeze().detach().numpy()
+    _ = np.abs(filtered_signal_torch, filtered_signal_mne).flatten()
+
+    # Compare the outputs
+    np.testing.assert_allclose(
+        filtered_signal_torch,
+        filtered_signal_mne,
+        rtol=1e-3,
+        atol=1e-3,
+        err_msg=f"Filtered outputs do not match between FilterBankLayer "
+                f"and MNE-Python for freq={freq}Hz and band=({l_freq}-{h_freq})Hz"
+    )
