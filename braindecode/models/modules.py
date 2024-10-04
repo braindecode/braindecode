@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import numpy as np
-
+from functools import partial
 from mne.filter import create_filter
 from mne.utils import warn
 
@@ -13,8 +13,7 @@ from torch import Tensor, nn, from_numpy
 import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt
-from typing import Optional, List, Tuple
-
+from typing import Any, Callable, Optional, List, Tuple
 
 from braindecode.models.functions import (
     drop_path,
@@ -678,15 +677,20 @@ class FilterBankLayer(nn.Module):
                 "please specify 'band_filters' as a list of tuples.",
                 UserWarning,
             )
-            low_freq = 4
-            high_freq = 40
+            start = 4
+            end = 40
+            intervals = torch.linspace(start, end, (end - start + 1) // band_filters)
 
-            band_filters = self._create_band_filters(low_freq, high_freq, band_filters)
+            band_filters = [(low, high) for low, high in zip(intervals, intervals[1:])]
+
         if not isinstance(band_filters, list):
             ValueError(
                 "`band_filters` should be a list of tuples if you want to "
                 "use them this way."
             )
+        else:
+            if any(len(bands) != 2 for bands in band_filters):
+                ValueError("The band_filters items should be splitable in 2 values.")
 
         # and we accepted as
         self.band_filters = band_filters
@@ -709,6 +713,8 @@ class FilterBankLayer(nn.Module):
                             """)
                         iir_params["output"] = "ba"
 
+        self._apply_filter_func = None
+
         filts = {}
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
@@ -727,14 +733,22 @@ class FilterBankLayer(nn.Module):
                 verbose=verbose,
             )
             if not self.method_iir:
-                filts[f"{idx}_band"] = from_numpy(filt).float()
+                b = from_numpy(filt).float()
+
+                filts[f"band_{idx}"] = b
+
             else:
                 b = from_numpy(filt["b"]).float()
                 a = from_numpy(filt["a"]).float()
 
                 filts[f"band_{idx}"] = (b, a)
 
-            self.filts = filts
+        self.filts = nn.ModuleDict(filts)
+
+        if self.method_iir:
+            self._apply_filter_func = self._apply_irr
+        else:
+            self._apply_filter_func = partial(self._apply_fir, n_chans=self.n_chans)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -755,15 +769,7 @@ class FilterBankLayer(nn.Module):
         output = []
 
         for band_idx in range(n_bands):
-            if not self.method_iir:
-                filtered = self._apply_fir(
-                    x, self.filts[f"{band_idx}_band"], self.n_chans
-                )
-            else:
-                filtered = self._apply_irr(
-                    x, self.filts[f"{band_idx}_band"], self.n_bands
-                )
-
+            filtered = self._apply_filter_func(x, self.filts[f"band_{band_idx}"])  # type: ignore
             output.append(filtered)
 
         # Shape: (batch_size, n_bands, nchans, time_points)
@@ -771,34 +777,11 @@ class FilterBankLayer(nn.Module):
         return output
 
     @staticmethod
-    def _create_band_filters(
-        start, end, num_bands
-    ) -> list[Tuple[float | int, float | int]]:
-        total_numbers = end - start + 1
-        base_interval_size = total_numbers // num_bands
-
-        intervals = []
-        current_start = start
-
-        for i in range(num_bands):
-            # For the last interval, add any extra values
-            if i == num_bands - 1:
-                current_end = end
-            else:
-                current_end = current_start + base_interval_size - 1
-            intervals.append((current_start, current_end))
-            current_start = current_end + 1
-
-        # Convert intervals to a list of tuples (low_freq, high_freq)
-        band_filters = [(low, high) for low, high in intervals]
-        return band_filters
-
-    @staticmethod
-    def _apply_fir(x, filt_b, n_chans) -> Tensor:
+    def _apply_fir(x, filter: Tensor, n_chans: int) -> Tensor:
         # Shape: (nchans, filter_length)
 
         # Expand to (nchans, filter_length)
-        filt_expanded = filt_b.unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+        filt_expanded = filter.unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
 
         # I think it will only work with FIR, check with MNE experts.
         filtered = fftconvolve(
@@ -812,7 +795,7 @@ class FilterBankLayer(nn.Module):
         return filtered
 
     @staticmethod
-    def _apply_irr(x: Tensor, filter, n_bands: int) -> Tensor:
+    def _apply_irr(x: Tensor, filter: Tensor) -> Tensor:
         x = x.unsqueeze(2)
         x = filtfilt(x, filter["a"], filter["b"], clamp=False)
         filtered = torch.permute(x, [0, 2, 1, 3])
