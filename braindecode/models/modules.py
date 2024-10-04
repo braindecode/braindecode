@@ -3,17 +3,21 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
+from matplotlib.pylab import plt
+
 import numpy as np
 from functools import partial
-from mne.filter import create_filter
+from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
+from scipy import signal
 
 import torch
 from torch import Tensor, nn, from_numpy
 import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt
-from typing import Any, Callable, Optional, List, Tuple
+
+from typing import Optional, List, Tuple
 
 from braindecode.models.functions import (
     drop_path,
@@ -690,7 +694,7 @@ class FilterBankLayer(nn.Module):
             )
         else:
             if any(len(bands) != 2 for bands in band_filters):
-                ValueError("The band_filters items should be splitable in 2 values.")
+                ValueError("The band_filters items should be splitable in 2 " "values.")
 
         # and we accepted as
         self.band_filters = band_filters
@@ -734,16 +738,16 @@ class FilterBankLayer(nn.Module):
             )
             if not self.method_iir:
                 b = from_numpy(filt).float()
-
-                filts[f"band_{idx}"] = b
+                filts[f"band_{idx}"] = {"b": b}
 
             else:
+                _check_coefficients((filt["b"], filt["a"]))
                 b = from_numpy(filt["b"]).float()
                 a = from_numpy(filt["a"]).float()
 
-                filts[f"band_{idx}"] = (b, a)
+                filts[f"band_{idx}"] = {"b": b, "a": a}
 
-        self.filts = nn.ModuleDict(filts)
+        self.filts = nn.ParameterDict(filts)
 
         if self.method_iir:
             self._apply_filter_func = self._apply_irr
@@ -758,6 +762,8 @@ class FilterBankLayer(nn.Module):
         ----------
         x : torch.Tensor
             Input tensor of shape (batch_size, time_points).
+        n_chans: int
+            Number of chans passed internally inside the object
 
         Returns
         -------
@@ -777,11 +783,11 @@ class FilterBankLayer(nn.Module):
         return output
 
     @staticmethod
-    def _apply_fir(x, filter: Tensor, n_chans: int) -> Tensor:
+    def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
         # Shape: (nchans, filter_length)
 
         # Expand to (nchans, filter_length)
-        filt_expanded = filter.unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+        filt_expanded = filter["b"].unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
 
         # I think it will only work with FIR, check with MNE experts.
         filtered = fftconvolve(
@@ -795,8 +801,44 @@ class FilterBankLayer(nn.Module):
         return filtered
 
     @staticmethod
-    def _apply_irr(x: Tensor, filter: Tensor) -> Tensor:
+    def _apply_irr(x: Tensor, filter: dict) -> Tensor:
         x = x.unsqueeze(2)
-        x = filtfilt(x, filter["a"], filter["b"], clamp=False)
-        filtered = torch.permute(x, [0, 2, 1, 3])
+        _ = signal.filtfilt(
+            b=filter["b"].numpy(), a=filter["a"].numpy(), x=x.numpy(), padtype=None
+        )
+        filt_ta = filtfilt(x, filter["a"], filter["b"], clamp=False)
+
+        np.flatten()
+        filtered = torch.permute(filt_ta, [0, 2, 1, 3])
         return filtered
+
+
+if __name__ == "__main__":
+    from torch import randn
+
+    sfreq = 256  # Sampling frequency
+    duration = 1  # seconds
+    t = np.arange(0, duration, 1 / sfreq)  # Time vector
+    temporal_signal = np.sin(2 * np.pi * 5 * t)
+
+    # Convert signal to torch tensor
+    signal_torch = (
+        torch.tensor(temporal_signal, dtype=torch.float32).unsqueeze(0).unsqueeze(1)
+    )  # Shape: (batch_size, n_chans, n_times)
+
+    iir_params = dict(order=4, ftype="butter", output="ba")
+
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=256,
+        band_filters=[(4, 8)],
+        method="iir",
+        iir_params=iir_params,
+        phase="zero",
+        verbose=False,
+    )
+
+    with torch.no_grad():
+        out = filter_bank_layer(signal_torch)
+
+    print(out.shape)
