@@ -375,6 +375,7 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
                 f"and MNE-Python for and band=({l_freq}-{h_freq})Hz"
     )
 
+
 @pytest.mark.parametrize("fir_design", ["firwin", "firwin2"])
 @pytest.mark.parametrize("fir_window", ["hamming", "blackman", "hann"])
 @pytest.mark.parametrize("phase", ["linear", "zero", "zero-double",
@@ -439,6 +440,7 @@ def test_filter_bank_layer_matches_mne_fir(l_freq, h_freq, phase, fir_design, fi
         err_msg=f"Filtered outputs do not match between FilterBankLayer "
                 f"and MNE-Python for band=({l_freq}-{h_freq})Hz with phase={phase}"
     )
+
 
 @pytest.mark.parametrize("method", ["iir", "fir"])
 @pytest.mark.parametrize("l_freq, h_freq", [

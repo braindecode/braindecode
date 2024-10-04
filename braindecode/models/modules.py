@@ -781,8 +781,25 @@ class FilterBankLayer(nn.Module):
 
     @staticmethod
     def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
-        # Shape: (nchans, filter_length)
+        """
+        Apply an FIR filter to the input tensor.
 
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+        filter : dict
+            Dictionary containing IIR filter coefficients.
+            - "b": Tensor of numerator coefficients.
+        n_chans: int
+            Number of channels
+
+        Returns
+        -------
+        Tensor
+            Filtered tensor of shape (batch_size, 1, n_chans, n_times).
+        """
+        # Shape: (nchans, filter_length)
         # Expand to (nchans, filter_length)
         filt_expanded = filter["b"].unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
 
