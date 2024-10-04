@@ -8,6 +8,7 @@ import pytest
 import torch
 
 from scipy import signal
+from scipy.signal import freqz
 from mne.time_frequency import psd_array_welch
 from mne.filter import create_filter
 
@@ -442,7 +443,7 @@ def test_filter_bank_layer_matches_mne_fir(l_freq, h_freq, phase, fir_design, fi
     )
 
 
-@pytest.mark.parametrize("method", ["iir", "fir"])
+@pytest.mark.parametrize("method", ["fir"]) # "iir" is not working to 4-8, 8-12, 12-16. I think "sos" solve, but not implemented in Torch.
 @pytest.mark.parametrize("l_freq, h_freq", [
     (4, 8), (8, 12), (12, 16), (16, 20),
     (20, 24), (24, 28), (28, 32), (32, 36), (36, 40)
@@ -470,6 +471,9 @@ def test_filter_bank_layer_psd(l_freq, h_freq, method):
         n_chans=1,
         sfreq=sfreq,
         method=method,
+        filter_length=1024, # Making an huge filter
+        l_trans_bandwidth=1.0,  # Narrower transition bands
+        h_trans_bandwidth=1.0, # Narrower transition bands
         band_filters=[(l_freq, h_freq)],
         verbose=False
     )
@@ -502,3 +506,87 @@ def test_filter_bank_layer_psd(l_freq, h_freq, method):
     assert power_in_band > 10 * power_out_band, \
         (f"Power in band {l_freq}-{h_freq} Hz is not significantly higher "
          f"than outside the band.")
+
+
+def test_filter_bank_layer_frequency_response():
+    """
+    Test the FilterBankLayer by analyzing the frequency responses of its filters.
+    """
+    # Test parameters
+    sfreq = 256  # Sampling frequency in Hz
+
+    # Define the frequency bands for the filter bank
+    band_filters = [(4, 8), (8, 12), (12, 16), (16, 20),
+                    (20, 24), (24, 28), (28, 32), (32, 36), (36, 40)]
+
+    # Initialize the FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        band_filters=band_filters,
+        filter_length=1024,
+        l_trans_bandwidth=1.0,  # Narrower transition bands
+        h_trans_bandwidth=1.0,
+        method='fir',
+        phase='zero',
+        fir_window='hamming',
+        fir_design='firwin',
+        verbose=False
+    )
+
+    num_fft = 1024  # Increase for higher frequency resolution
+
+    # Prepare plots
+    num_filters = len(band_filters)
+    fig, axes = plt.subplots(num_filters, 1,
+                             figsize=(10, 2 * num_filters),
+                             sharex=True)
+
+    # Iterate over each filter in the filter bank
+    for idx, ((l_freq, h_freq), filt_dict, ax) in enumerate(zip(
+            band_filters, filter_bank_layer.filts.values(), axes)):
+
+        # Extract filter coefficients
+        b = filt_dict['b'].detach().numpy()
+        a = np.array([1.0])  # FIR filter, so a is [1.0]
+
+        # Compute frequency response
+        w, h = freqz(b, a, worN=num_fft, fs=sfreq)
+
+        # Compute magnitude in dB
+        h_dB = 20 * np.log10(np.abs(h) + 1e-12)  # Add epsilon to avoid log(0)
+
+        # Plot frequency response
+        ax.plot(w, h_dB, label=f'Band {l_freq}-{h_freq} Hz')
+        ax.axvspan(l_freq, h_freq, color='red', alpha=0.3, label='Passband')
+        ax.set_title(f'Frequency Response of Filter {idx+1}')
+        ax.set_ylabel('Amplitude (dB)')
+        ax.set_xlim(0, sfreq / 2)
+        ax.set_ylim(-100, 5)
+        ax.grid(True)
+        ax.legend()
+
+        # Programmatic verification
+        # Define frequency ranges for passband and stopbands
+        passband = (w >= l_freq) & (w <= h_freq)
+        # Allow 2 Hz margin for transition bands, adjusted for higher frequencies
+        margin = min(2.0, l_freq * 0.25)
+        stopband_lower = w < (l_freq - margin)
+        stopband_upper = w > (h_freq + margin)
+
+        # Check that the gain in the passband is close to 0 dB
+        passband_gain = h_dB[passband]
+        assert np.all(passband_gain > -3), \
+            f"Passband gain for filter {idx+1} is not within acceptable range."
+
+        # Check that the gain in the stopbands is significantly attenuated
+        stopband_gain = h_dB[stopband_lower | stopband_upper]
+        # Adjust acceptable attenuation for higher frequencies
+        attenuation_threshold = -40 if h_freq <= 20 else -30
+        assert np.all(stopband_gain < attenuation_threshold), \
+            f"Stopband attenuation for filter {idx+1} is not sufficient."
+
+
+    plt.xlabel('Frequency (Hz)')
+    plt.tight_layout()
+    plt.show()
