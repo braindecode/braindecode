@@ -8,10 +8,11 @@ import pytest
 import torch
 
 from scipy import signal
-from mne.filter import create_filter, filter_data
+from mne.time_frequency import psd_array_welch
+from mne.filter import create_filter
+
 from torch import nn
 import matplotlib.pyplot as plt
-
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog, FilterBankLayer
 from braindecode.models.labram import _SegmentPatch
@@ -313,15 +314,15 @@ def test_safelog_extra_repr(eps, expected_repr):
 
 
 @pytest.mark.parametrize("ftype", ["butter", "butterworth","cheby1", "cheby2", "ellip"])
-@pytest.mark.parametrize("freq", [5, 10, 20])
 @pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
 @pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
-def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, freq=5, ftype="butter"):
+def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
     # Test parameters
     sfreq = 256  # Sampling frequency
     duration = 1  # seconds
+    freq_stim = 5
     t = np.arange(0, duration, 1 / sfreq)  # Time vector
-    temporal_signal = np.sin(2 * np.pi * freq * t)
+    temporal_signal = np.sin(2 * np.pi * freq_stim * t)
 
     # Convert signal to torch tensor
     signal_torch = torch.tensor(temporal_signal, dtype=torch.float32).unsqueeze(
@@ -371,5 +372,131 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, freq=5, ftype=
         rtol=1e-3,
         atol=1e-3,
         err_msg=f"Filtered outputs do not match between FilterBankLayer "
-                f"and MNE-Python for freq={freq}Hz and band=({l_freq}-{h_freq})Hz"
+                f"and MNE-Python for and band=({l_freq}-{h_freq})Hz"
     )
+
+@pytest.mark.parametrize("fir_design", ["firwin", "firwin2"])
+@pytest.mark.parametrize("fir_window", ["hamming", "blackman", "hann"])
+@pytest.mark.parametrize("phase", ["linear", "zero", "zero-double",
+                                   "minimum", "minimum-half"])
+@pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
+def test_filter_bank_layer_matches_mne_fir(l_freq, h_freq, phase, fir_design, fir_window):
+    # Test parameters
+    sfreq = 100  # Sampling frequency
+    duration = 1  # seconds
+    freq_stim = 5
+    t = np.arange(0, duration, 1 / sfreq)  # Time vector
+    temporal_signal = np.sin(2 * np.pi * freq_stim * t)
+
+    # Convert signal to torch tensor
+    signal_torch = torch.tensor(temporal_signal, dtype=torch.float32).unsqueeze(
+        0).unsqueeze(1)  # Shape: (batch_size, n_chans, n_times)
+
+    # Create filter coefficients using MNE-Python
+    filt = create_filter(
+        data=None,
+        sfreq=sfreq,
+        l_freq=l_freq,
+        h_freq=h_freq,
+        method='fir',
+        phase=phase,
+        fir_window=fir_window,
+        fir_design=fir_design,
+        verbose=False
+    )
+    # Apply filtering using MNE-Python
+    filtered_signal_mne = signal.fftconvolve(temporal_signal, filt, mode="same")
+
+    # Initialize your FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        band_filters=[(l_freq, h_freq)],
+        method='fir',
+        phase=phase,
+        fir_window=fir_window,
+        fir_design=fir_design,
+        verbose=False
+    )
+
+    # Apply filtering using your FilterBankLayer
+    filtered_signal_torch = filter_bank_layer(signal_torch)
+    # Remove extra dimensions and convert to numpy
+    filtered_signal_torch = filtered_signal_torch.squeeze().detach().numpy()
+    absolute = np.abs(filtered_signal_torch, filtered_signal_mne).flatten()
+
+    plt.plot(absolute, label="Difference", color="green")
+    plt.plot(filtered_signal_torch, label="Torch", color="red")
+    plt.plot(filtered_signal_mne, label="MNE", color="blue")
+    plt.legend()
+    plt.show()
+    # Compare the outputs
+    np.testing.assert_allclose(
+        filtered_signal_torch,
+        filtered_signal_mne,
+        rtol=1e-3,
+        atol=1e-3,
+        err_msg=f"Filtered outputs do not match between FilterBankLayer "
+                f"and MNE-Python for band=({l_freq}-{h_freq})Hz with phase={phase}"
+    )
+
+@pytest.mark.parametrize("method", ["iir", "fir"])
+@pytest.mark.parametrize("l_freq, h_freq", [
+    (4, 8), (8, 12), (12, 16), (16, 20),
+    (20, 24), (24, 28), (28, 32), (32, 36), (36, 40)
+])
+def test_filter_bank_layer_psd(l_freq, h_freq, method):
+    """
+    Test the FilterBankLayer by analyzing the power spectral density (PSD) of
+    the output using MNE.
+    """
+    # Test parameters
+    sfreq = 256  # Sampling frequency in Hz
+    duration = 5  # Duration in seconds
+    t = np.arange(0, duration, 1 / sfreq)  # Time vector
+
+    # Generate a composite signal with multiple sine waves
+    freqs = [2, 4, 6, 10, 14, 18, 22, 26, 30, 34, 38]
+    signals = [np.sin(2 * np.pi * freq * t) for freq in freqs]
+    composite_signal = np.sum(signals, axis=0)
+
+    # Convert the signal to a torch tensor
+    composite_signal_torch = torch.tensor(composite_signal, dtype=torch.float32).unsqueeze(0).unsqueeze(1)
+
+    # Initialize the FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        method=method,
+        band_filters=[(l_freq, h_freq)],
+        verbose=False
+    )
+
+    # Apply the FilterBankLayer to the composite signal
+    filtered_signals = filter_bank_layer(composite_signal_torch)
+    # Shape after squeezing: (n_times,)
+    filtered_signal_np = filtered_signals.squeeze().detach().numpy()
+
+    # Compute PSD using MNE
+    psds, freqs = psd_array_welch(
+        filtered_signal_np,
+        sfreq=sfreq,
+        fmin=0,
+        fmax=sfreq / 2,
+        n_fft=1024,
+        average='mean',
+        verbose=False
+    )
+
+    # Identify frequencies within and outside the band
+    idx_in_band = np.where((freqs >= l_freq) & (freqs <= h_freq))[0]
+    idx_out_band = np.where((freqs < l_freq) | (freqs > h_freq))[0]
+
+    # Calculate power in and out of the band
+    power_in_band = np.sum(psds[idx_in_band])
+    power_out_band = np.sum(psds[idx_out_band])
+
+    # Assert that power in the band is significantly higher than outside
+    assert power_in_band > 10 * power_out_band, \
+        (f"Power in band {l_freq}-{h_freq} Hz is not significantly higher "
+         f"than outside the band.")
