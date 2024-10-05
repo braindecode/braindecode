@@ -539,7 +539,8 @@ class FilterBankLayer(nn.Module):
     applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
     performed using FFT-based convolution via the `fftconvolve` function from
-    :func:`torchaudio.functional.
+    :func:`torchaudio.functional if the method is FIR, and `filtfilt` function from
+    :func:`torchaudio.functional if the method is IIR.
 
     The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
     spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
