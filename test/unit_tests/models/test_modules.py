@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from scipy import signal
+from scipy.signal import lfilter as lfilter_scipy
 from scipy.signal import freqz
 from mne.time_frequency import psd_array_welch
 from mne.filter import create_filter
@@ -21,6 +21,25 @@ from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropP
 from braindecode.models.labram import _SegmentPatch
 
 from braindecode.models.functions import drop_path
+
+
+def _filfilt_in_torch_sytle(b, a, x_np):
+    # Forward filtering
+    forward_filtered = lfilter_scipy(b=b.astype(np.double),
+                                     a=a.astype(np.double),
+                                     x=x_np.astype(np.double), axis=-1)
+
+    # Reverse the filtered signal a long time axis
+    reversed_signal = np.flip(forward_filtered, axis=-1)
+
+    # Backward filtering
+    backward_filtered = lfilter_scipy(b=b, a=a,
+                                      x=reversed_signal, axis=-1)
+
+    # Reverse back to original order
+    filtered_scipy = np.flip(backward_filtered, axis=-1)
+
+    return filtered_scipy
 
 
 def test_time_distributed():
@@ -317,34 +336,29 @@ def test_safelog_extra_repr(eps, expected_repr):
 
 
 # I need help here!
-#@pytest.mark.parametrize("ftype", ["butter", "buttord","cheby1", "cheby2", "ellip"])
+@pytest.mark.parametrize("ftype", ["butterworth", "cheby1", "cheby1", "cheby2", "butter"])
 @pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
 @pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
-def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase):
-    tolerance = 1e-3
+def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
     # Set random seeds for reproducibility
     torch.manual_seed(0)
     np.random.seed(0)
 
     # Test parameters
     n_chans = 22
-    sfreq = 256
-    x = torch.randn(1, n_chans, 1000)
+    batch_size = 1
+    n_times = 1000
+    x = torch.randn(batch_size, n_chans, n_times, dtype=torch.float64)
+    if ftype in ["butter", "buttord", "butterworth"]:
+        iir_params = dict(ftype=ftype, output="ba", order=4)
+    else:
+        iir_params = dict(ftype=ftype, output="ba", order=4, rs=1, rp=1)
 
-    # if ftype in ["butter", "buttord"]:
-    #     iir_params =
-    # else:
-    #     iir_params = dict(output="ba", ftype=ftype)
-
-    filter_parameters = dict(
-        sfreq=sfreq,
-        method='iir',
-        phase=phase,
-        filter_length=1024,
-        l_trans_bandwidth=1.0,  # Narrower transition bandwidth
-        h_trans_bandwidth=1.0,
-        iir_params=dict(output="ba", ftype="butter", order=4),
-        verbose=True)
+    filter_parameters = dict(sfreq=256,
+                      method="iir",
+                      iir_params=iir_params,
+                      phase=phase,
+                      verbose=False)
 
     filts = create_filter(data=None,
         l_freq=l_freq,
@@ -352,28 +366,22 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase):
         **filter_parameters
     )  # creating iir filter
 
-    filtered_signal_mne = signal.filtfilt(b=filts['b'],
-                                          a=filts['a'],
-                                          x=x.unsqueeze(2).numpy(),
-                                          padtype=None, axis=1)
-
     # Initialize your FilterBankLayer
     filter_bank_layer = FilterBankLayer(
-        n_chans=1,
+        n_chans=n_chans,
         band_filters=[(l_freq, h_freq)],
         **filter_parameters
     )
-
-    # Apply filtering using your FilterBankLayer
     filtered_signal_torch = filter_bank_layer(x)
-    # Remove extra dimensions and convert to numpy
-    filtered_signal_torch = filtered_signal_torch.squeeze().detach().numpy()
 
+    # Simulating filtfilt from torch with scipy
+    x_np = x.numpy().astype(np.float64)
+    filtered_scipy = _filfilt_in_torch_sytle(b=filts["b"], a=filts["a"],
+                                            x_np=x_np)
     # Compare the outputs
-    np.testing.assert_allclose(
-        filtered_signal_torch,
-        filtered_signal_mne,
-        atol=tolerance,
+    np.testing.assert_array_almost_equal(
+        filtered_signal_torch.numpy().flatten(),
+        filtered_scipy.flatten(),
         err_msg=f"Filtered outputs do not match between FilterBankLayer "
                 f"and MNE-Python for and band=({l_freq}-{h_freq})Hz"
     )

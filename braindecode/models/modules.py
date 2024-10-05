@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
+
 from functools import partial
 from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
 
-import torch
 from torch import Tensor, nn, from_numpy
 import torch.nn.functional as F
 
@@ -739,8 +740,8 @@ class FilterBankLayer(nn.Module):
 
             else:
                 _check_coefficients((filt["b"], filt["a"]))
-                b = from_numpy(filt["b"]).float()
-                a = from_numpy(filt["a"]).float()
+                b = torch.tensor(filt["b"], dtype=torch.float64)
+                a = torch.tensor(filt["a"], dtype=torch.float64)
 
                 filts[f"band_{idx}"] = {"b": b, "a": a}
 
@@ -834,10 +835,12 @@ class FilterBankLayer(nn.Module):
         Tensor
             Filtered tensor of shape (batch_size, 1, n_chans, n_times).
         """
-        # Add a singleton dimension for processing
-        x = x.unsqueeze(2)  # Shape: (batch_size, n_chans, 1, n_times)
         # Apply filtering using torchaudio's filtfilt
-        filt_ta = filtfilt(x, filter["a"], filter["b"], clamp=False)
+        filtered = filtfilt(
+            x,
+            a_coeffs=filter["a"].type_as(x),
+            b_coeffs=filter["b"].type_as(x),
+            clamp=False,
+        )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
-        filtered = torch.permute(filt_ta, [0, 2, 1, 3])
-        return filtered
+        return filtered.unsqueeze(1)
