@@ -334,8 +334,6 @@ def test_safelog_extra_repr(eps, expected_repr):
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
 
-
-# I need help here!
 @pytest.mark.parametrize("ftype", ["butterworth", "cheby1", "cheby1", "cheby2", "butter"])
 @pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
 @pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
