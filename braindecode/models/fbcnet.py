@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 from mne.utils import warn
 
 import torch
@@ -62,6 +61,8 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Activation function class to apply.
     verbose: bool, default False
         Verbose parameter to create the filter using mne
+    filter_parameters: dict, default {}
+        Parameters for the FilterBankLayer
 
     References
     ----------
@@ -91,6 +92,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
         verbose: bool = False,
+        filter_parameters: dict = {},
     ):
         super().__init__(
             n_chans=n_chans,
@@ -108,6 +110,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.n_dim = n_dim
         self.stride_factor = stride_factor
         self.activation = activation
+        self.filter_parameters = filter_parameters
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -130,6 +133,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             sfreq=self.sfreq,
             band_filters=self.n_bands,
             verbose=verbose,
+            **filter_parameters,
         )
         # As we have an internal process to create the bands,
         # we get the values from the filterbank
@@ -193,12 +197,3 @@ class FBCNet(EEGModuleMixin, nn.Module):
         x = self.flatten_layer(x)
         x = self.final_layer(x)
         return x
-
-
-if __name__ == "__main__":
-    x = torch.randn(1, 22, 1001)
-
-    model = FBCNet(n_chans=22, n_outputs=2, n_times=1001, sfreq=250)
-
-    with torch.no_grad():
-        out = model(x)
