@@ -6,20 +6,17 @@ import platform
 import numpy as np
 import pytest
 import torch
-
-from scipy.signal import lfilter as lfilter_scipy
-from scipy.signal import freqz
-from mne.time_frequency import psd_array_welch
 from mne.filter import create_filter
-from scipy.signal import fftconvolve as fftconvolve_scipy
-
-
+from mne.time_frequency import psd_array_welch
+from scipy.signal import fftconvolve as fftconvolve_scipy, freqz, \
+    lfilter as lfilter_scipy
 from torch import nn
-from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog, FilterBankLayer
-from braindecode.models.labram import _SegmentPatch
 
 from braindecode.models.functions import drop_path
+from braindecode.models.labram import _SegmentPatch
+from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
+    MLP, SafeLog, TimeDistributed
+from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 
 def _filfilt_in_torch_sytle(b, a, x_np):
@@ -389,7 +386,9 @@ def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
 @pytest.mark.parametrize("fir_window", ["hamming", "hann"])
 @pytest.mark.parametrize("fir_design", ["firwin", "firwin2"])
 @pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
-def test_filter_bank_layer_fftconvolve_comparison_fir(l_freq, h_freq, fir_design, fir_window, phase):#, fir_design, fir_window)
+def test_filter_bank_layer_fftconvolve_comparison_fir(l_freq, h_freq,
+                                                      fir_design, fir_window,
+                                                      phase):
     """
     Test that the FilterBankLayer applies FIR filters correctly across multiple channels
     by comparing its output to scipy's fftconvolve.
@@ -602,6 +601,7 @@ def sample_input():
     n_chans = 8
     time_points = 1000
     return torch.randn(batch_size, n_chans, time_points)
+
 
 def test_default_band_filters(sample_input):
     """Test that default band_filters are set correctly when None is provided."""
