@@ -15,7 +15,6 @@ from scipy.signal import fftconvolve as fftconvolve_scipy
 
 
 from torch import nn
-import matplotlib.pyplot as plt
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog, FilterBankLayer
 from braindecode.models.labram import _SegmentPatch
@@ -561,14 +560,9 @@ def test_filter_bank_layer_frequency_response():
     num_fft = 1024  # Increase for higher frequency resolution
 
     # Prepare plots
-    num_filters = len(band_filters)
-    fig, axes = plt.subplots(num_filters, 1,
-                             figsize=(10, 2 * num_filters),
-                             sharex=True)
-
     # Iterate over each filter in the filter bank
-    for idx, ((l_freq, h_freq), filt_dict, ax) in enumerate(zip(
-            band_filters, filter_bank_layer.filts.values(), axes)):
+    for idx, ((l_freq, h_freq), filt_dict) in enumerate(zip(
+            band_filters, filter_bank_layer.filts.values())):
 
         # Extract filter coefficients
         b = filt_dict['b'].detach().numpy()
@@ -579,16 +573,6 @@ def test_filter_bank_layer_frequency_response():
 
         # Compute magnitude in dB
         h_dB = 20 * np.log10(np.abs(h) + 1e-12)  # Add epsilon to avoid log(0)
-
-        # Plot frequency response
-        ax.plot(w, h_dB, label=f'Band {l_freq}-{h_freq} Hz')
-        ax.axvspan(l_freq, h_freq, color='red', alpha=0.3, label='Passband')
-        ax.set_title(f'Frequency Response of Filter {idx+1}')
-        ax.set_ylabel('Amplitude (dB)')
-        ax.set_xlim(0, sfreq / 2)
-        ax.set_ylim(-100, 5)
-        ax.grid(True)
-        ax.legend()
 
         # Programmatic verification
         # Define frequency ranges for passband and stopbands
@@ -609,8 +593,3 @@ def test_filter_bank_layer_frequency_response():
         attenuation_threshold = -40 if h_freq <= 20 else -30
         assert np.all(stopband_gain < attenuation_threshold), \
             f"Stopband attenuation for filter {idx+1} is not sufficient."
-
-
-    plt.xlabel('Frequency (Hz)')
-    plt.tight_layout()
-    plt.show()
