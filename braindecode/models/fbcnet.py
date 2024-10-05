@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Optional
 from mne.utils import warn
 
 import torch
@@ -62,6 +61,8 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Activation function class to apply.
     verbose: bool, default False
         Verbose parameter to create the filter using mne
+    filter_parameters: dict, default {}
+        Parameters for the FilterBankLayer
 
     References
     ----------
@@ -91,6 +92,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
         verbose: bool = False,
+        filter_parameters: dict = {},
     ):
         super().__init__(
             n_chans=n_chans,
@@ -108,6 +110,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.n_dim = n_dim
         self.stride_factor = stride_factor
         self.activation = activation
+        self.filter_parameters = filter_parameters
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -130,6 +133,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             sfreq=self.sfreq,
             band_filters=self.n_bands,
             verbose=verbose,
+            **filter_parameters,
         )
         # As we have an internal process to create the bands,
         # we get the values from the filterbank
@@ -147,10 +151,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
             ),
             nn.BatchNorm2d(self.n_filters_spat * self.n_bands),
             self.activation(),
-        )
-
-        self.segment_reshape_layer = Rearrange(
-            "b c (s t) -> b c s t", s=self.stride_factor
         )
 
         # Temporal aggregator
@@ -179,10 +179,18 @@ class FBCNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor with shape (batch_size, n_outputs).
         """
+
         x = self.spectral_filtering(x)
 
         x = self.spatial_conv(x)
         batch_size, channels, _, time = x.shape
+        # Check if time is divisible by stride_factor
+        if time % self.stride_factor != 0:
+            # Pad x to make time divisible by stride_factor
+            padding = self.stride_factor - (time % self.stride_factor)
+            x = torch.nn.functional.pad(x, (0, padding))
+            time += padding  # Update the time dimension after padding
+
         x = x.view(batch_size, channels, self.stride_factor, time // self.stride_factor)
 
         x = self.temporal_layer(x)  # type: ignore[operator]
