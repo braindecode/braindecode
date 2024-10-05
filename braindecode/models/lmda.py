@@ -245,7 +245,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
             n_out_features = x.view(1, -1).size(1)
 
         # Final Classification Layer
-        self.final_layers = nn.Linear(
+        self.final_layer = nn.Linear(
             in_features=n_out_features, out_features=self.n_outputs
         )
 
@@ -291,5 +291,5 @@ class LMDANet(EEGModuleMixin, nn.Module):
         x = self.spatial_conv(x_time)  # Spatial convolution
         x = self.norm(x)  # Normalization and dropout
         x = x.view(x.size(0), -1)  # Flatten
-        logits = self.final_layers(x)
+        logits = self.final_layer(x)
         return logits
