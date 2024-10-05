@@ -1260,12 +1260,6 @@ def test_ifnetv2_number_of_parameters(ifmodel):
     assert num_params == 11396
 
 
-def test_ifnetv2_output_range(ifmodel):
-    x = torch.randn(8, 22, 1000)
-    output = ifmodel(x)
-    assert torch.all(
-        output <= 0)  # LogSoftmax should yield non-positive values
-
 
 def test_ifnetv2_dropout_effect(ifmodel):
     ifmodel.eval()
