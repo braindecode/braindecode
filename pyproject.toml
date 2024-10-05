@@ -45,6 +45,7 @@ dependencies = [
     'h5py',
     'skorch',
     'torch',
+    'torchaudio',
     'einops',
     'joblib',
     'torchinfo',

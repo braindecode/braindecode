@@ -52,6 +52,8 @@ Enhancements
 - Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.LDMANet` (:gh:`661` by `Bruno Aristimunha`_ )
+- Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
+
 
 Bugs
 ~~~~
