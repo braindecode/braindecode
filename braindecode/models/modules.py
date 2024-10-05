@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
+
 from functools import partial
 from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
 
-import torch
 from torch import Tensor, nn, from_numpy
 import torch.nn.functional as F
 
@@ -579,7 +580,8 @@ class FilterBankLayer(nn.Module):
     applies them to multi-channel time-series data. Each filter in the bank corresponds to a
     specific frequency band and is applied to all channels of the input data. The filtering is
     performed using FFT-based convolution via the `fftconvolve` function from
-    :func:`torchaudio.functional.
+    :func:`torchaudio.functional if the method is FIR, and `filtfilt` function from
+    :func:`torchaudio.functional if the method is IIR.
 
     The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
     spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
@@ -721,18 +723,28 @@ class FilterBankLayer(nn.Module):
             )
             start = 4
             end = 40
-            intervals = torch.linspace(start, end, (end - start + 1) // band_filters)
 
-            band_filters = [(low, high) for low, high in zip(intervals, intervals[1:])]
+            total_band_width = end - start  # 4 Hz to 40 Hz
+
+            band_width_calculated = total_band_width / band_filters
+            band_filters = [
+                (
+                    torch.tensor(start + i * band_width_calculated),
+                    torch.tensor(start + (i + 1) * band_width_calculated),
+                )
+                for i in range(band_filters)
+            ]
 
         if not isinstance(band_filters, list):
-            ValueError(
+            raise ValueError(
                 "`band_filters` should be a list of tuples if you want to "
                 "use them this way."
             )
         else:
             if any(len(bands) != 2 for bands in band_filters):
-                ValueError("The band_filters items should be splitable in 2 " "values.")
+                raise ValueError(
+                    "The band_filters items should be splitable in 2 values."
+                )
 
         # and we accepted as
         self.band_filters = band_filters
@@ -749,10 +761,10 @@ class FilterBankLayer(nn.Module):
             else:
                 if "output" in iir_params:
                     if iir_params["output"] == "sos":
-                        warn("""
-                            It is not possible to use second-order section
-                            filtering with Torch. Changing to filter ``ba``
-                            """)
+                        warn(
+                            "It is not possible to use second-order section filtering with Torch. Changing to filter ba",
+                            UserWarning,
+                        )
                         iir_params["output"] = "ba"
 
         self._apply_filter_func = None
@@ -780,15 +792,15 @@ class FilterBankLayer(nn.Module):
 
             else:
                 _check_coefficients((filt["b"], filt["a"]))
-                b = from_numpy(filt["b"]).float()
-                a = from_numpy(filt["a"]).float()
+                b = torch.tensor(filt["b"], dtype=torch.float64)
+                a = torch.tensor(filt["a"], dtype=torch.float64)
 
                 filts[f"band_{idx}"] = {"b": b, "a": a}
 
         self.filts = nn.ParameterDict(filts)
 
         if self.method_iir:
-            self._apply_filter_func = self._apply_irr
+            self._apply_filter_func = self._apply_iir
         else:
             self._apply_filter_func = partial(self._apply_fir, n_chans=self.n_chans)
 
@@ -856,7 +868,7 @@ class FilterBankLayer(nn.Module):
         return filtered
 
     @staticmethod
-    def _apply_irr(x: Tensor, filter: dict) -> Tensor:
+    def _apply_iir(x: Tensor, filter: dict) -> Tensor:
         """
         Apply an IIR filter to the input tensor.
 
@@ -865,7 +877,8 @@ class FilterBankLayer(nn.Module):
         x : Tensor
             Input tensor of shape (batch_size, n_chans, n_times).
         filter : dict
-            Dictionary containing IIR filter coefficients.
+            Dictionary containing IIR filter coefficients
+
             - "b": Tensor of numerator coefficients.
             - "a": Tensor of denominator coefficients.
 
@@ -874,13 +887,15 @@ class FilterBankLayer(nn.Module):
         Tensor
             Filtered tensor of shape (batch_size, 1, n_chans, n_times).
         """
-        # Add a singleton dimension for processing
-        x = x.unsqueeze(2)  # Shape: (batch_size, n_chans, 1, n_times)
         # Apply filtering using torchaudio's filtfilt
-        filt_ta = filtfilt(x, filter["a"], filter["b"], clamp=False)
+        filtered = filtfilt(
+            x,
+            a_coeffs=filter["a"].type_as(x),
+            b_coeffs=filter["b"].type_as(x),
+            clamp=False,
+        )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
-        filtered = torch.permute(filt_ta, [0, 2, 1, 3])
-        return filtered
+        return filtered.unsqueeze(1)
 
 
 class VarLayer(nn.Module):
