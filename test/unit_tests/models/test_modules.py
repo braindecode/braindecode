@@ -649,6 +649,29 @@ def test_invalid_band_filters_raises_value_error():
                         band_filters=invalid_band_filters)
 
 
+def test_band_filters_none_defaults(sample_input):
+    """
+    Test that when band_filters is None and no n_bands or band_width are provided,
+    the default 9 bands with 4Hz bandwidth are correctly initialized.
+    """
+    n_chans = 8
+    sfreq = 100
+    layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq, band_filters=None)
+
+    # Define the expected default band_filters
+    expected_band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
+
+    # Assertions to verify band_filters and number of bands
+    assert layer.band_filters == expected_band_filters, "Default band_filters not set correctly when band_filters=None."
+    assert layer.n_bands == 9, "Number of bands should be 9 when band_filters=None."
+
+    # Forward pass to ensure output shape is correct
+    output = layer(sample_input)
+    assert output.shape == (sample_input.shape[0], layer.n_bands, n_chans,
+                            sample_input.shape[
+                                2]), "Output shape is incorrect when band_filters=None."
+
+
 def test_band_filters_with_incorrect_tuple_length():
     """Test that providing band_filters with tuples not of length 2 raises a ValueError."""
     n_chans = 8
