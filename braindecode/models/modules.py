@@ -682,18 +682,28 @@ class FilterBankLayer(nn.Module):
             )
             start = 4
             end = 40
-            intervals = torch.linspace(start, end, (end - start + 1) // band_filters)
 
-            band_filters = [(low, high) for low, high in zip(intervals, intervals[1:])]
+            total_band_width = end - start  # 4 Hz to 40 Hz
+
+            band_width_calculated = total_band_width / band_filters
+            band_filters = [
+                (
+                    torch.tensor(start + i * band_width_calculated),
+                    torch.tensor(start + (i + 1) * band_width_calculated),
+                )
+                for i in range(band_filters)
+            ]
 
         if not isinstance(band_filters, list):
-            ValueError(
+            raise ValueError(
                 "`band_filters` should be a list of tuples if you want to "
                 "use them this way."
             )
         else:
             if any(len(bands) != 2 for bands in band_filters):
-                ValueError("The band_filters items should be splitable in 2 " "values.")
+                raise ValueError(
+                    "The band_filters items should be splitable in 2 values."
+                )
 
         # and we accepted as
         self.band_filters = band_filters
@@ -710,10 +720,10 @@ class FilterBankLayer(nn.Module):
             else:
                 if "output" in iir_params:
                     if iir_params["output"] == "sos":
-                        warn("""
-                            It is not possible to use second-order section
-                            filtering with Torch. Changing to filter ``ba``
-                            """)
+                        warn(
+                            "It is not possible to use second-order section filtering with Torch. Changing to filter ba",
+                            UserWarning,
+                        )
                         iir_params["output"] = "ba"
 
         self._apply_filter_func = None
