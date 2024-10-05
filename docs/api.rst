@@ -99,7 +99,7 @@ Models
 .. autosummary::
    :toctree: generated/
 
-    FilterBank
+    FilterBankLayer
 
 Training
 ========

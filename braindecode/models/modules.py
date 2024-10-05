@@ -824,7 +824,8 @@ class FilterBankLayer(nn.Module):
         x : Tensor
             Input tensor of shape (batch_size, n_chans, n_times).
         filter : dict
-            Dictionary containing IIR filter coefficients.
+            Dictionary containing IIR filter coefficients
+
             - "b": Tensor of numerator coefficients.
             - "a": Tensor of denominator coefficients.
 
