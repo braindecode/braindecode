@@ -1014,3 +1014,39 @@ class MaxLayer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         max_val, _ = x.max(dim=self.dim, keepdim=True)
         return max_val
+
+
+class LogPowerLayer(nn.Module):
+    """
+    Layer that computes the logarithm of the power of the input signal.
+    """
+
+    def __init__(self, dim: int, log_min: float = 1e-4, log_max: float = 1e4):
+        """
+        Parameters
+        ----------
+        dim : int
+            Dimension over which to compute the power.
+        """
+        super().__init__()
+        self.dim = dim
+        self.log_min = log_min
+        self.log_max = log_max
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Log-power of the input tensor.
+        """
+        power = torch.mean(x**2, dim=self.dim)
+        log_power = torch.log(torch.clamp(power, min=self.log_min, max=self.log_max))
+        return log_power
