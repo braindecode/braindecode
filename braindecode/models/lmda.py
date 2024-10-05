@@ -1,169 +1,221 @@
 import torch
 import torch.nn as nn
 
+from einops.layers.torch import Rearrange
+
 from braindecode.models.base import EEGModuleMixin
 
-class ChannelwiseAdaptiveFilter(nn.Module):
-    """
-    ChannelwiseAdaptiveFilter.
 
-    This module applies an adaptive average pooling layer to the input tensor.
-    Then, a 1D convolutional layer is applied to the pooled tensor.
-    Finally, the softmax function is applied to the output of the convolutional
-    layer.
+class EEGDepthAttention(nn.Module):
+    """
+    EEG Depth Attention Module.
+
+    This module applies depth-wise attention to the input EEG features.
 
     Parameters
     ----------
+    n_channels : int
+        Number of channels in the input data.
     n_times : int
-        The number of time points in the input tensor.
-    n_chans : int
-        The number of channels in the input tensor.
-    kernel_size : int, default=7
-        The size of the kernel to be used in the convolutional layer.
+        Number of time samples.
+    kernel_size : int, optional
+        Kernel size for the convolution, by default 7.
+
+    Attributes
+    ----------
+    adaptive_pool : nn.AdaptiveAvgPool2d
+        Adaptive average pooling layer.
+    conv : nn.Conv2d
+        Convolutional layer with kernel size `(kernel_size, 1)`.
+    softmax : nn.Softmax
+        Softmax layer applied over the depth dimension.
+
     """
 
-    def __init__(self, n_times, n_chans, kernel_size=7):
+    def __init__(self, n_channels: int, n_times: int, kernel_size: int = 7):
         super().__init__()
-
+        self.n_channels = n_channels
         self.adaptive_pool = nn.AdaptiveAvgPool2d((1, n_times))
-        # Maybe we can replace this with conv1d, I tried but failed
-        self.conv = nn.Conv2d(1, 1,
-                              kernel_size=(kernel_size, 1),
-                              padding=(kernel_size // 2, 0),
-                              bias=True)
-
+        self.conv = nn.Conv2d(
+            in_channels=1,
+            out_channels=1,
+            kernel_size=(kernel_size, 1),
+            padding=(kernel_size // 2, 0),
+            bias=True,
+        )
         self.softmax = nn.Softmax(dim=-2)
-        self.n_chans = n_chans
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass.
-
-        We first apply the adaptive average pooling layer to the input tensor.
-        Then, we apply the convolutional layer to the pooled tensor.
-        Finally, we apply the softmax function to the output of the convolutional
-        layer.
+        Forward pass of the EEG Depth Attention module.
 
         Parameters
         ----------
-        x: torch.Tensor
+        x : torch.Tensor
+            Input tensor of shape `(batch_size, n_channels, depth, n_times)`.
 
         Returns
         -------
         torch.Tensor
+            Output tensor after applying depth-wise attention.
+
         """
-        x_t = self.adaptive_pool(x)
-
-        x_t = x_t.transpose(-2, -3)
-        x_t = self.conv(x_t)
-        x_t = self.softmax(x_t)
-        x_t = x_t.transpose(-2, -3)
-
-        return x_t * self.n_chans * x
+        x_pool = self.adaptive_pool(x)
+        x_transpose = x_pool.transpose(-2, -3)
+        y = self.conv(x_transpose)
+        y = self.softmax(y)
+        y = y.transpose(-2, -3)
+        return y * self.n_channels * x
 
 
-class LDMNet(EEGModuleMixin, nn.Module):
-    """
-    LMDA-Net.
+class LMDANet(EEGModuleMixin, nn.Module):
+    """LMDA-Net Model for EEG Classification.
 
-    A lightweight multi-dimensional attention network for
-    general EEG-based brain-computer interface paradigms and
-    interpretability.
 
-    The paper with more details about the methodological
-    choices are available at the [Miao2023]_.
-
-    References
+    Parameters
     ----------
-    .. [Miao2023] Miao, Z., Zhao, M., Zhang, X. and Ming, D., 2023. LMDA-Net:
-        A lightweight multi-dimensional attention network for general
-        EEG-based brain-computer interfaces and interpretability.
-        NeuroImage, p.120209.
+    depth : int, optional
+        Depth parameter of the model, by default 9.
+    kernel_size : int, optional
+        Kernel size for temporal convolution, by default 75.
+    channel_depth1 : int, optional
+        Number of channels in the first convolutional layer, by default 24.
+    channel_depth2 : int, optional
+        Number of channels in the second convolutional layer, by default 9.
+    avepool_size : int, optional
+        Pooling size for average pooling, by default 5.
+    activation : nn.Module, optional
+        Activation function class to apply, by default `nn.GELU`.
+    drop_prob : float, optional
+        Dropout probability for regularization, by default 0.65.
+
+
     """
 
-    def __init__(self, n_chans=22, n_times=1125, n_outputs=4,
-                 depth=9, kernel=75, channel_depth1=24, channel_depth2=9,
-                 ave_depth=1, avepool=5, drop_prob=0.5,
-                 sfreq=None, chs_info=None):
-
+    def __init__(
+        self,
+        # Signal related parameters
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+        # model related
+        depth: int = 9,
+        kernel_size: int = 75,
+        channel_depth1: int = 24,
+        channel_depth2: int = 9,
+        avepool_size: int = 5,
+        activation: nn.Module = nn.GELU,
+        drop_prob: float = 0.65,
+    ):
         super().__init__(
-            n_outputs=n_outputs,
             n_chans=n_chans,
-            chs_info=chs_info,
+            n_outputs=n_outputs,
             n_times=n_times,
+            chs_info=chs_info,
+            input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del n_outputs, n_chans, chs_info, n_times, sfreq
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        self.ave_depth = ave_depth
-        self.channel_weight = nn.Parameter(torch.randn(depth, 1, self.n_chans),
-                                           requires_grad=True)
+        self.depth = depth
+        self.kernel_size = kernel_size
+        self.channel_depth1 = channel_depth1
+        self.channel_depth2 = channel_depth2
+        self.avepool_size = avepool_size
+        self.activation = activation
+        self.drop_prob = drop_prob
+
+        # Initialize channel weights
+        self.channel_weight = nn.Parameter(
+            torch.randn(self.depth, 1, self.n_chans), requires_grad=True
+        )
         nn.init.xavier_uniform_(self.channel_weight.data)
 
-        self.temporal_conv = nn.Sequential(
-            nn.Conv2d(depth, channel_depth1,
-                      kernel_size=(1, 1),
-                      groups=1, bias=False),
-            nn.BatchNorm2d(channel_depth1),
-            nn.Conv2d(channel_depth1, channel_depth1, kernel_size=(1, kernel),
-                      groups=channel_depth1, bias=False),
-            nn.BatchNorm2d(channel_depth1),
-            nn.GELU(),
-        )
-        self.channel_conv = nn.Sequential(
-            nn.Conv2d(channel_depth1, channel_depth2,
-                      kernel_size=(1, 1),
-                      groups=1, bias=False),
-            nn.BatchNorm2d(channel_depth2),
-            nn.Conv2d(channel_depth2, channel_depth2,
-                      kernel_size=(self.n_chans, 1),
-                      groups=channel_depth2, bias=False),
-            nn.BatchNorm2d(channel_depth2),
-            nn.GELU(),
+        self.ensuredim = Rearrange("batch chans time -> batch 1 chans time")
+        # Temporal Convolutional Layers
+        self.time_conv = nn.Sequential(
+            nn.Conv2d(
+                in_channels=self.depth,
+                out_channels=self.channel_depth1,
+                kernel_size=(1, 1),
+                groups=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(self.channel_depth1),
+            nn.Conv2d(
+                in_channels=self.channel_depth1,
+                out_channels=self.channel_depth1,
+                kernel_size=(1, self.kernel_size),
+                groups=self.channel_depth1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(self.channel_depth1),
+            self.activation(),
         )
 
+        # TO-DO: remove this, and calculate this manually
+
+        # Compute dimensions after temporal convolution
+        with torch.no_grad():
+            dummy_input = torch.ones(1, 1, self.n_chans, self.n_times)
+            x = torch.einsum("bdcw, hdc->bhcw", dummy_input, self.channel_weight)
+            x_time = self.time_conv(x)
+            _, c_time, _, n_times_time = x_time.size()
+
+        # Depth-wise Attention Module
+        self.depth_attention = EEGDepthAttention(
+            n_channels=c_time, n_times=n_times_time, kernel_size=7
+        )
+
+        # Spatial Convolutional Layers
+        self.spatial_conv = nn.Sequential(
+            nn.Conv2d(
+                in_channels=self.channel_depth1,
+                out_channels=self.channel_depth2,
+                kernel_size=(1, 1),
+                groups=1,
+                bias=False,
+            ),
+            nn.BatchNorm2d(self.channel_depth2),
+            nn.Conv2d(
+                in_channels=self.channel_depth2,
+                out_channels=self.channel_depth2,
+                kernel_size=(self.n_chans, 1),
+                groups=self.channel_depth2,
+                bias=False,
+            ),
+            nn.BatchNorm2d(self.channel_depth2),
+            self.activation(),
+        )
+
+        # Normalization Layers
         self.norm = nn.Sequential(
-            nn.AvgPool3d(kernel_size=(1, 1, avepool)),
-            nn.Dropout(p=drop_prob),
+            nn.AvgPool3d(kernel_size=(1, 1, self.avepool_size)),
+            nn.Dropout(p=self.drop_prob),
         )
 
-        self._initialize_dynamic_layers()
+        # TO-DO: remove this, and calculate this manually
+        # Compute the number of features for the final layer
+        with torch.no_grad():
+            x_time = self.depth_attention(x_time)
+            x = self.spatial_conv(x_time)
+            x = self.norm(x)
+            n_out_features = x.view(1, -1).size(1)
 
-    def forward(self, x):
-        """
-        Forward pass.
+        # Final Classification Layer
+        self.final_layers = nn.Linear(
+            in_features=n_out_features, out_features=self.n_outputs
+        )
 
-        Parameters
-        ----------
-        x: torch.Tensor
-
-        Returns
-        -------
-        torch.Tensor
-        """
-        # Lead weight filtering
-        x = torch.einsum('bdcw, hdc->bhcw', x, self.channel_weight)
-
-        x_time = self.temporal_conv(x)
-        x_time = self.channel_adaptive(x_time)
-
-        x = self.channel_conv(x_time)
-        x = self.norm(x)
-
-        features = torch.flatten(x, 1)
-        cls = self.classifier(features)
-        return cls
+        # Initialize weights
+        self._initialize_weights()
 
     def _initialize_weights(self):
         """
-        Util function to initialize the weights of the model.
-
-        If the layers is a Conv2d, we use xavier_uniform_ to initialize the
-        weights and zeros_ to initialize the bias. If the layer is a
-        BatchNorm2d, we use ones_ to initialize the weights and zeros_ to
-        initialize the bias. If the layer is a Linear, we use xavier_uniform_
-        to initialize the weights and zeros_ to initialize the bias.
-
+        Initialize weights of convolutional and linear layers.
         """
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -178,33 +230,42 @@ class LDMNet(EEGModuleMixin, nn.Module):
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
-    def _initialize_dynamic_layers(self):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Util function to initialize the dynamic layers of the model.
+        Forward pass of the LMDA model.
 
-        Dynamically initializes the ChannelwiseAdaptiveFilter and classifier
-        based on simulated forward pass to infer output dimensions.
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape `(batch_size, n_chans, time)`.
+
+        Returns
+        -------
+        torch.Tensor
+            Output logits of shape `(batch_size, n_outputs)`.
+
         """
-        with torch.no_grad():
-            # Simulate input tensor
+        x = self.ensuredim(x)
+        x = torch.einsum("bdcw, hdc->bhcw", x, self.channel_weight)  # Channel weighting
+        x_time = self.time_conv(x)  # Temporal convolution
+        x_time = self.depth_attention(x_time)  # Depth-wise attention
+        x = self.spatial_conv(x_time)  # Spatial convolution
+        x = self.norm(x)  # Normalization and dropout
+        x = x.view(x.size(0), -1)  # Flatten
+        logits = self.final_layers(x)
+        return logits
 
-            out = torch.ones((1, 1, self.n_chans, self.n_times),
-                             dtype=torch.float32, requires_grad=False)
 
-            out = torch.einsum('bdcw, hdc->bhcw', out,
-                               self.channel_weight)
-            out = self.temporal_conv(out)
-
-            # Initialize ChannelwiseAdaptiveFilter with dynamic dimensions
-            _, C, _, W = out.shape
-            self.channel_adaptive = ChannelwiseAdaptiveFilter(W, C, kernel_size=7)
-
-            # Continue through channel_conv and norm layers
-            out = self.channel_conv(out)
-            out = self.norm(out)
-
-            # Calculate the classifier's input size dynamically
-            _, C, H, W = out.shape  # Extract dynamic dimensions
-            classifier_input_size = C * H * W
-            self.classifier = nn.Linear(classifier_input_size,
-                                        self.n_outputs)
+if __name__ == "__main__":
+    model = LMDANet(
+        n_chans=3,
+        n_outputs=2,
+        n_times=875,
+        channel_depth1=24,
+        channel_depth2=7,
+        activation=nn.GELU,
+        drop_prob=0.65,
+    )
+    input_tensor = torch.randn(12, 3, 875)
+    output = model(input_tensor)
+    print(output.shape)
