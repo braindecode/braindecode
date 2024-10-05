@@ -12,7 +12,7 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.fbcnet import _valid_layers
 
-from braindecode.models.modules import LinearWithConstraint, FilterBank
+from braindecode.models.modules import LinearWithConstraint, FilterBankLayer
 
 
 class FBMSNet(EEGModuleMixin, nn.Module):
@@ -95,6 +95,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         dilatability: int = 8,
         activation: nn.Module = nn.SiLU,
         verbose: bool = False,
+        filter_parameters: dict = {},
     ):
         super().__init__(
             n_chans=n_chans,
@@ -113,6 +114,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.stride_factor = stride_factor
         self.activation = activation
         self.dilatability = dilatability
+        self.filter_parameters = filter_parameters
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -130,11 +132,12 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         # Layers
         # Following paper nomeclature
-        self.spectral_filtering = FilterBank(
+        self.spectral_filtering = FilterBankLayer(
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.n_bands,
             verbose=verbose,
+            **filter_parameters,
         )
         # As we have an internal process to create the bands,
         # we get the values from the filterbank
@@ -199,6 +202,13 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         # Spatial convolution block
         x = self.spatial_conv(x)
         batch_size, channels, _, time = x.shape
+        # Check if time is divisible by stride_factor
+        if time % self.stride_factor != 0:
+            # Pad x to make time divisible by stride_factor
+            padding = self.stride_factor - (time % self.stride_factor)
+            x = torch.nn.functional.pad(x, (0, padding))
+            time += padding  # Update the time dimension after padding
+
         x = x.view(batch_size, channels, self.stride_factor, time // self.stride_factor)
 
         x = self.temporal_layer(x)  # type: ignore[operator]
@@ -268,3 +278,11 @@ class _MixedConv2d(nn.ModuleDict):
         x_out = [conv(x_split[i]) for i, conv in enumerate(self.values())]
         x = torch.cat(x_out, 1)
         return x
+
+
+if __name__ == "__main__":
+    x = torch.rand(1, 22, 1001)
+    model = FBMSNet(n_chans=22, n_times=1001, n_outputs=2, sfreq=250)
+
+    with torch.no_grad():
+        out = model(x)
