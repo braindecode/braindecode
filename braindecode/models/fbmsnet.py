@@ -278,11 +278,3 @@ class _MixedConv2d(nn.ModuleDict):
         x_out = [conv(x_split[i]) for i, conv in enumerate(self.values())]
         x = torch.cat(x_out, 1)
         return x
-
-
-if __name__ == "__main__":
-    x = torch.rand(1, 22, 1001)
-    model = FBMSNet(n_chans=22, n_times=1001, n_outputs=2, sfreq=250)
-
-    with torch.no_grad():
-        out = model(x)
