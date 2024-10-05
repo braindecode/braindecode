@@ -12,11 +12,12 @@ doi: 10.1109/TNSRE.2023.3257319.
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from mne.utils import warn
 
 import torch
 from torch import nn
 from torch.nn.init import trunc_normal_
+from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.modules import (
@@ -38,8 +39,9 @@ class _InterFrequencyModule(nn.Module):
             Activation function for the InterFrequency Module
 
         """
-        self.activation = activation()
         super().__init__()
+
+        self.activation = activation()
 
     def forward(self, x_list: list) -> torch.Tensor:
         """Forward pass.
@@ -64,11 +66,12 @@ class _SpatioTemporalFeatureBlock(nn.Module):
 
     def __init__(
         self,
+        n_times: int,
         in_channels: int,
         out_channels: int = 64,
         kernel_sizes=[63, 31],
         patch_size: int = 125,
-        radix: int = 2,
+        n_bands: int = 2,
         drop_prob: float = 0.5,
         activation: nn.Module = nn.GELU,
         dim: int = 3,
@@ -84,7 +87,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
             List of kernel sizes for temporal convolutions.
         patch_size : int, default=125
             Size of the patches for temporal segmentation.
-        radix : int, default=2
+        n_bands : int, default=2
             Number of frequency bands or groups.
         drop_prob : float, default=0.5
             Dropout probability.
@@ -96,21 +99,22 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.radix = radix
+        self.n_bands = n_bands
         self.patch_size = patch_size
         self.drop_prob = drop_prob
         self.activation = activation
         self.dim = dim
+        self.n_times = n_times
 
         # Spatial convolution
         self.spatial_conv = nn.Conv1d(
             in_channels=self.in_channels,
-            out_channels=self.out_channels * self.radix,
+            out_channels=self.out_channels * self.n_bands,
             kernel_size=1,
-            groups=self.radix,
+            groups=self.n_bands,
             bias=False,
         )
-        self.spatial_bn = nn.BatchNorm1d(self.out_channels * self.radix)
+        self.spatial_bn = nn.BatchNorm1d(self.out_channels * self.n_bands)
 
         # Temporal convolutions for each radix
         self.temporal_convs = nn.ModuleList()
@@ -151,7 +155,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         torch.Tensor
             Output tensor after processing.
         """
-        batch_size, _, times = x.shape
+        batch_size, _, _ = x.shape
 
         # Spatial convolution
         x = self.spatial_conv(x)
@@ -166,9 +170,20 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         # Inter-frequency interaction
         x = self.inter_frequency(x_t)
 
+        # We need to find a better way to do this
+        # the other option would be padding like what I made
+        # for the other models, what do you prefer, tom?
+        if self.n_times % self.patch_size != 0:
+            max_time = self.n_times - (self.n_times % self.patch_size)
+            x = x[:, :, :max_time]
+            self.n_times = max_time  # Update the time dimension after padding
+
         # Reshape for log-power computation
         x = x.view(
-            batch_size, self.out_channels, times // self.patch_size, self.patch_size
+            batch_size,
+            self.out_channels,
+            self.n_times // self.patch_size,
+            self.patch_size,
         )
 
         # Log-Power layer
@@ -181,13 +196,13 @@ class _SpatioTemporalFeatureBlock(nn.Module):
 
 
 class IFNetV2(EEGModuleMixin, nn.Module):
-    """Interactive Frequency Convolutional Neural Network (IFNet).
+    """IFNet from Wang J et al (2023) [ifnet]_.
 
         .. figure:: https://raw.githubusercontent.com/Jiaheng-Wang/IFNet/main/IFNet.png
            :align: center
            :alt: IFNetV2 Architecture
 
-    Overview of the IFNetV2 architecture.
+        Overview of the Interactive Frequency Convolutional Neural Network architecture.
 
     IFNetV2 is designed to effectively capture spectro-spatial-temporal
     features for motor imagery decoding from EEG data. The model consists of
@@ -208,16 +223,24 @@ class IFNetV2(EEGModuleMixin, nn.Module):
       connected layer followed by a softmax operation to generate output
       probabilities for each class.
 
+    Notes
+    -----
+    This implementation is not guaranteed to be correct, has not been checked
+    by original authors, only reimplemented from the paper description and
+    Torch source code [ifnetv2code]_. Version 2 is present only in the repository,
+    and the main difference is one pooling layer, describe at the TABLE VII
+    from the paper: https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=10070810
+
+
+
     Parameters
     ----------
     bands : List[Tuple[int, int]] or int or None, default=[[4, 16], (16, 40)]
         Frequency bands for filtering.
     out_planes : int, default=64
         Number of output feature dimensions.
-    kernel_sizes : list of int, default=[63, 31]
+    kernel_sizes : tuple of int, default=(63, 31)
         List of kernel sizes for temporal convolutions.
-    radix : int, default=2
-        Number of cross-frequency domains.
     patch_size : int, default=125
         Size of the patches for temporal segmentation.
     drop_prob : float, default=0.5
@@ -225,9 +248,20 @@ class IFNetV2(EEGModuleMixin, nn.Module):
     activation : nn.Module, default=nn.GELU
         Activation function after the InterFrequency Layer.
     verbose : bool, default=False
-        Verbose output.
+        Verbose to control the filtering layer
     filter_parameters : dict, default={}
         Additional parameters for the filter bank layer.
+
+    References
+    ----------
+    .. [ifnet] Wang, J., Yao, L., & Wang, Y. (2023). IFNet: An interactive
+        frequency convolutional neural network for enhancing motor imagery
+        decoding from EEG. IEEE Transactions on Neural Systems and
+        Rehabilitation Engineering, 31, 1900-1911.
+    .. [ifnetv2code] Wang, J., Yao, L., & Wang, Y. (2023). IFNet: An interactive
+        frequency convolutional neural network for enhancing motor imagery
+        decoding from EEG.
+        https://github.com/Jiaheng-Wang/IFNet
     """
 
     def __init__(
@@ -241,9 +275,8 @@ class IFNetV2(EEGModuleMixin, nn.Module):
         sfreq=None,
         # Model-specific parameters
         bands: list[tuple[float, float]] | int | None = [(4.0, 16.0), (16, 40)],
-        out_planes: int = 64,
+        n_filters_spat: int = 64,
         kernel_sizes: tuple[int, int] = (63, 31),
-        radix: int = 2,
         patch_size: int = 125,
         drop_prob: float = 0.5,
         activation: nn.Module = nn.GELU,
@@ -253,47 +286,73 @@ class IFNetV2(EEGModuleMixin, nn.Module):
         super().__init__(
             n_chans=n_chans,
             n_outputs=n_outputs,
-            n_times=n_times,
             chs_info=chs_info,
+            n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.bands = bands
-        self.in_planes = self.n_chans * radix
-        self.out_planes = out_planes
+        self.n_filters_spat = n_filters_spat
         self.patch_size = patch_size
+        self.kernel_sizes = kernel_sizes
         self.verbose = verbose
         self.filter_parameters = filter_parameters
+        self.drop_prob = drop_prob
+        self.activation = activation
+        self.filter_parameters = filter_parameters
 
+        # Checkers
+
+        if self.n_times % self.patch_size != 0:
+            warn(
+                f"Time dimension ({self.n_times}) is not divisible by"
+                f" patch_size ({self.patch_size}). Input will be "
+                f"truncated in one of the layers.",
+                UserWarning,
+            )
+
+        # Layers
+        # Following paper nomenclature
         self.spectral_filtering = FilterBankLayer(
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.bands,
-            verbose=self.verbose,
+            verbose=verbose,
             **self.filter_parameters,
         )
+        # As we have an internal process to create the bands,
+        # we get the values from the filterbank
+        self.n_bands = self.spectral_filtering.n_bands
+
+        # My interpretation from the TABLE VII IFNet Architecture from the
+        # paper.
+        self.ensuredim = Rearrange(
+            "batch nbands chans time -> " "batch (nbands chans) time"
+        )
+
         # SpatioTemporal Feature Block
         self.feature_block = _SpatioTemporalFeatureBlock(
-            in_channels=self.in_planes,
-            out_channels=self.out_planes,
-            kernel_sizes=kernel_sizes,
+            in_channels=self.n_chans * self.spectral_filtering.n_bands,
+            out_channels=self.n_filters_spat,
+            kernel_sizes=self.kernel_sizes,
             patch_size=self.patch_size,
-            radix=radix,
-            drop_prob=drop_prob,
-            activation=activation,
+            n_bands=self.spectral_filtering.n_bands,
+            drop_prob=self.drop_prob,
+            activation=self.activation,
+            n_times=self.n_times,
         )
 
         # Final classification layer
         self.final_layer = LinearWithConstraint(
-            in_features=self.out_planes * (self.n_times // self.patch_size),
+            in_features=self.n_filters_spat * (self.n_times // self.patch_size),
             out_features=self.n_outputs,
             max_norm=0.5,
         )
 
         # Initialize parameters
-        self.apply(self._initialize_weights)
+        self._initialize_weights(self)
 
     @staticmethod
     def _initialize_weights(m):
@@ -333,7 +392,7 @@ class IFNetV2(EEGModuleMixin, nn.Module):
         """
         # Pass through the spectral filtering layer
         x = self.spectral_filtering(x)
-
+        x = self.ensuredim(x)
         # Pass through the feature block
         x = self.feature_block(x)
 
@@ -343,3 +402,12 @@ class IFNetV2(EEGModuleMixin, nn.Module):
         x = self.final_layer(x)
 
         return x
+
+
+if __name__ == "__main__":
+    x = torch.randn(1, 22, 1001)
+
+    model = IFNetV2(n_chans=22, n_times=1001, n_outputs=2, sfreq=256)
+
+    with torch.no_grad():
+        out = model(x)
