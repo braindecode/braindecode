@@ -149,10 +149,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        self.segment_reshape_layer = Rearrange(
-            "b c (s t) -> b c s t", s=self.stride_factor
-        )
-
         # Temporal aggregator
         self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
 
@@ -179,13 +175,30 @@ class FBCNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor with shape (batch_size, n_outputs).
         """
+
         x = self.spectral_filtering(x)
 
         x = self.spatial_conv(x)
         batch_size, channels, _, time = x.shape
+        # Check if time is divisible by stride_factor
+        if time % self.stride_factor != 0:
+            # Pad x to make time divisible by stride_factor
+            padding = self.stride_factor - (time % self.stride_factor)
+            x = torch.nn.functional.pad(x, (0, padding))
+            time += padding  # Update the time dimension after padding
+
         x = x.view(batch_size, channels, self.stride_factor, time // self.stride_factor)
 
         x = self.temporal_layer(x)  # type: ignore[operator]
         x = self.flatten_layer(x)
         x = self.final_layer(x)
         return x
+
+
+if __name__ == "__main__":
+    x = torch.randn(1, 22, 1001)
+
+    model = FBCNet(n_chans=22, n_outputs=2, n_times=1001, sfreq=250)
+
+    with torch.no_grad():
+        out = model(x)
