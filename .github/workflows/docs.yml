@@ -1,4 +1,7 @@
 name: docs
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches:
@@ -44,7 +47,7 @@ jobs:
           cd docs
           make html
       - name: Upload HTML Docs as Artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: HTML-Docs
           path: ./docs/_build/

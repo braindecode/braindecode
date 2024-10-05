@@ -21,15 +21,12 @@ Output = Union[
     # just outputting X
     torch.Tensor,
     # outputting (X, y) where y can be a tensor or tuple of tensors
-    Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]]
+    Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]],
 ]
 # (X, y) -> (X', y') where y' can be a tensor or a tuple of tensors
 Operation = Callable[
     [torch.Tensor, torch.Tensor],
-    Tuple[
-        torch.Tensor,
-        Union[torch.Tensor, Tuple[torch.Tensor, ...]]
-    ]
+    Tuple[torch.Tensor, Union[torch.Tensor, Tuple[torch.Tensor, ...]]],
 ]
 
 
@@ -50,18 +47,20 @@ class Transform(torch.nn.Module):
         Used to decide whether or not to transform given the probability
         argument. Defaults to None.
     """
+
     operation: Operation
 
     def __init__(self, probability=1.0, random_state=None):
         super().__init__()
         if self.forward.__func__ is Transform.forward:
-            assert callable(self.operation), "operation should be a " \
-                                             "``callable``. "
+            assert callable(self.operation), "operation should be a " "``callable``. "
 
-        assert isinstance(probability, Real), (
-            f"probability should be a ``real``. Got {type(probability)}.")
-        assert probability <= 1. and probability >= 0., \
-            "probability should be between 0 and 1."
+        assert isinstance(
+            probability, Real
+        ), f"probability should be a ``real``. Got {type(probability)}."
+        assert (
+            probability <= 1.0 and probability >= 0.0
+        ), "probability should be between 0 and 1."
         self._probability = probability
         self.rng = check_random_state(random_state)
 
@@ -108,8 +107,9 @@ class Transform(torch.nn.Module):
         if num_valid > 0:
             # Uses the mask to define the output
             out_X[mask, ...], tr_y = self.operation(
-                out_X[mask, ...], out_y[mask],
-                **self.get_augmentation_params(out_X[mask, ...], out_y[mask])
+                out_X[mask, ...],
+                out_y[mask],
+                **self.get_augmentation_params(out_X[mask, ...], out_y[mask]),
             )
             # Apply the operation defining the Transform to the whole batch
             if isinstance(tr_y, tuple):
@@ -125,11 +125,10 @@ class Transform(torch.nn.Module):
             return out_X
 
     def _get_mask(self, batch_size, device) -> torch.Tensor:
-        """Samples whether to apply operation or not over the whole batch
-        """
-        return torch.as_tensor(
-            self.probability > self.rng.uniform(size=batch_size)
-        ).to(device)
+        """Samples whether to apply operation or not over the whole batch"""
+        return torch.as_tensor(self.probability > self.rng.uniform(size=batch_size)).to(
+            device
+        )
 
     @property
     def probability(self):
@@ -141,7 +140,9 @@ class IdentityTransform(Transform):
 
     Transform that does not change the input.
     """
-    operation = staticmethod(identity)
+
+    operation = staticmethod(identity)  # type: ignore[assignment]
+    # https://github.com/python/mypy/issues/4574
 
 
 class Compose(Transform):
@@ -167,8 +168,8 @@ class Compose(Transform):
 
 
 def _make_collateable(transform, device=None):
-    """ Wraps a transform to make it collateable.
-        with device control. """
+    """Wraps a transform to make it collateable.
+    with device control."""
 
     def _collate_fn(batch):
         collated_batch = default_collate(batch)
@@ -205,7 +206,7 @@ class AugmentedDataLoader(DataLoader):
                 "to pass transform"
             )
         if transforms is None or (
-                isinstance(transforms, list) and len(transforms) == 0
+            isinstance(transforms, list) and len(transforms) == 0
         ):
             self.collated_tr = _make_collateable(IdentityTransform(), device=device)
         elif isinstance(transforms, (Transform, nn.Module)):
@@ -218,8 +219,4 @@ class AugmentedDataLoader(DataLoader):
                 "or a list of Transform objects."
             )
 
-        super().__init__(
-            dataset,
-            collate_fn=self.collated_tr,
-            **kwargs
-        )
+        super().__init__(dataset, collate_fn=self.collated_tr, **kwargs)

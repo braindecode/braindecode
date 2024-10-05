@@ -76,7 +76,9 @@ def get_output_shape(model, in_chans, input_window_samples):
     """
     with torch.no_grad():
         dummy_input = torch.ones(
-            1, in_chans, input_window_samples,
+            1,
+            in_chans,
+            input_window_samples,
             dtype=next(model.parameters()).dtype,
             device=next(model.parameters()).device,
         )
@@ -106,13 +108,15 @@ def _pad_shift_array(x, stride=1):
     """
     if x.ndim != 3:
         raise NotImplementedError(
-            'x must be of shape (n_rows, n_classes, n_windows), got '
-            f'{x.shape}')
+            "x must be of shape (n_rows, n_classes, n_windows), got " f"{x.shape}"
+        )
     x_padded = np.pad(x, ((0, 0), (0, 0), (0, (x.shape[0] - 1) * stride)))
     orig_strides = x_padded.strides
-    new_strides = (orig_strides[0] - stride * orig_strides[2],
-                   orig_strides[1],
-                   orig_strides[2])
+    new_strides = (
+        orig_strides[0] - stride * orig_strides[2],
+        orig_strides[1],
+        orig_strides[2],
+    )
     return np.lib.stride_tricks.as_strided(x_padded, strides=new_strides)
 
 
@@ -160,6 +164,70 @@ models_dict = {}
 
 def _init_models_dict():
     for m in inspect.getmembers(models, inspect.isclass):
-        if (issubclass(m[1], models.base.EEGModuleMixin)
-                and m[1] != models.base.EEGModuleMixin):
+        if (
+            issubclass(m[1], models.base.EEGModuleMixin)
+            and m[1] != models.base.EEGModuleMixin
+        ):
             models_dict[m[0]] = m[1]
+
+
+################################################################
+# Test cases for models
+#
+# This list should be updated whenever a new model is added to
+# braindecode (otherwise `test_completeness__models_test_cases`
+# will fail).
+# Each element in the list should be a tuple with structure
+# (model_class, required_params, signal_params), such that:
+#
+# model_name: str
+#   The name of the class of the model to be tested.
+# required_params: list[str]
+#   The signal-related parameters that are needed to initialize
+#   the model.
+# signal_params: dict | None
+#   The characteristics of the signal that should be passed to
+#   the model tested in case the default_signal_params are not
+#   compatible with this model.
+#   The keys of this dictionary can only be among those of
+#   default_signal_params.
+################################################################
+models_mandatory_parameters = [
+    ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
+    ("DeepSleepNet", ["n_outputs"], None),
+    ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGNetv1", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGNetv4", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("HybridNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
+    (
+        "SleepStagerBlanco2020",
+        ["n_chans", "n_outputs", "n_times"],
+        # n_chans dividable by n_groups=2:
+        dict(chs_info=[dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 5)]),
+    ),
+    ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    (
+        "SleepStagerEldele2021",
+        ["n_outputs", "n_times", "sfreq"],
+        dict(sfreq=100, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
+    ),  # 1 channel
+    ("TCN", ["n_chans", "n_outputs"], None),
+    ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
+    ("BIOT", ["n_chans", "n_outputs", "sfreq"], None),
+    ("AttentionBaseNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("Labram", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGSimpleConv", ["n_chans", "n_outputs", "sfreq"], None),
+    ("SPARCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("ContraWR", ["n_chans", "n_outputs", "sfreq"], dict(sfreq=200)),
+    ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
+    ("TSceptionV1", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
+]

@@ -2,54 +2,56 @@
 name = "braindecode"
 version = "0.8.1"
 description = "Deep learning software to decode EEG, ECG or MEG signals"
-authors = [{name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com"}]
+authors = [{ name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }]
 maintainers = [
-    {name = "Alexandre Gramfort", email = "agramfort@meta.com"},
-	 {name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com"},
-	 {name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com"}
+    { name = "Alexandre Gramfort", email = "agramfort@meta.com" },
+    { name = "Bruno Aristimunha Pinto", email = "b.aristimunha@gmail.com" },
+    { name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }
 ]
-license = {text = "BSD-3-Clause"}
+license = { text = "BSD-3-Clause" }
 keywords = [
     "python",
-	"deep-learning",
-	"neuroscience",
-	"pytorch",
-	"meg",
-	"eeg",
-	"neuroimaging",
-	"electroencephalography",
-	"magnetoencephalography",
-	"electrocorticography",
-	"ecog",
-	"electroencephalogram"
+    "deep-learning",
+    "neuroscience",
+    "pytorch",
+    "meg",
+    "eeg",
+    "neuroimaging",
+    "electroencephalography",
+    "magnetoencephalography",
+    "electrocorticography",
+    "ecog",
+    "electroencephalogram"
 ]
-classifiers=[
+classifiers = [
     'Development Status :: 3 - Alpha',
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     'Topic :: Software Development :: Build Tools',
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     'License :: OSI Approved :: BSD License',
-    'Programming Language :: Python :: 3.8',
-	'Programming Language :: Python :: 3.9',
-	'Programming Language :: Python :: 3.10',
-	'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
 ]
 readme = "README.rst"
-requires-python = ">=3.8"
+requires-python = ">3.9"
 dependencies = [
-	'mne',
-	'numpy',
-	'pandas',
-	'scipy',
-	'matplotlib',
-	'h5py',
-	'skorch',
-	'torch',
-	'einops',
-	'joblib',
-	'torchinfo',
-	'docstring_inheritance'
+    'mne', # because of python 3.12
+    'numpy',
+    'pandas',
+    'scipy',
+    'matplotlib',
+    'h5py',
+    'skorch',
+    'torch',
+    'einops',
+    'joblib',
+    'torchinfo',
+    'wfdb',
+    "h5py!=3.12.0", # because wfdb use h5py and this issue: https://github.com/h5py/h5py/issues/2505
+    'linear_attention_transformer',
+    'docstring_inheritance',
 ]
 [project.urls]
 homepage = "https://braindecode.org"
@@ -57,25 +59,26 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb >= 1.0.0"]
+moabb = ["moabb>=1.1.1"]
 tests = [
     'pytest',
     'pytest-cov',
-	'codecov',
-	'pytest_cases'
+    'codecov',
+    'pytest_cases',
+    'mypy'
 ]
 docs = [
     'sphinx_gallery',
-	'sphinx_rtd_theme',
-	'pydata_sphinx_theme',
-	'numpydoc',
-	'memory_profiler',
-	'pillow',
-	'ipython',
-	'sphinx_design',
-	'lightning',
-	'seaborn',
-	'pre-commit'
+    'sphinx_rtd_theme',
+    'pydata_sphinx_theme',
+    'numpydoc',
+    'memory_profiler',
+    'pillow',
+    'ipython',
+    'sphinx_design',
+    'lightning',
+    'seaborn',
+    'pre-commit'
 ]
 
 [build-system]

@@ -5,11 +5,12 @@
 import torch
 from torch import nn
 import numpy as np
-from .base import EEGModuleMixin, deprecated_args
+
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Chambon et al 2018.
+    """Sleep staging architecture from Chambon et al. 2018 [Chambon2018]_.
 
     Convolutional neural network for sleep staging described in [Chambon2018]_.
 
@@ -26,7 +27,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     pad_size_s : float
         Padding size, in seconds. Set to 0.25 in [Chambon2018]_ (half the
         temporal convolution kernel size).
-    dropout : float
+    drop_prob : float
         Dropout rate before the output dense layer.
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
@@ -41,6 +42,9 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         Alias for `input_window_seconds`.
     n_classes:
         Alias for `n_outputs`.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------
@@ -52,29 +56,39 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            sfreq=None,
-            n_conv_chs=8,
-            time_conv_size_s=0.5,
-            max_pool_size_s=0.125,
-            pad_size_s=0.25,
-            input_window_seconds=30,
-            n_outputs=5,
-            dropout=0.25,
-            apply_batch_norm=False,
-            return_feats=False,
-            chs_info=None,
-            n_times=None,
-            n_channels=None,
-            input_size_s=None,
-            n_classes=None,
+        self,
+        n_chans=None,
+        sfreq=None,
+        n_conv_chs=8,
+        time_conv_size_s=0.5,
+        max_pool_size_s=0.125,
+        pad_size_s=0.25,
+        activation: nn.Module = nn.ReLU,
+        input_window_seconds=None,
+        n_outputs=5,
+        drop_prob=0.25,
+        apply_batch_norm=False,
+        return_feats=False,
+        chs_info=None,
+        n_times=None,
+        n_channels=None,
+        input_size_s=None,
+        n_classes=None,
     ):
-        n_chans, n_outputs, input_window_seconds, = deprecated_args(
+        (
+            n_chans,
+            n_outputs,
+            input_window_seconds,
+        ) = deprecated_args(
             self,
             ("n_channels", "n_chans", n_channels, n_chans),
             ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_size_s", "input_window_seconds", input_size_s, input_window_seconds),
+            (
+                "input_size_s",
+                "input_window_seconds",
+                input_size_s,
+                input_window_seconds,
+            ),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -89,7 +103,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
 
         self.mapping = {
             "fc.1.weight": "final_layer.1.weight",
-            "fc.1.bias": "final_layer.1.bias"
+            "fc.1.bias": "final_layer.1.bias",
         }
 
         time_conv_size = np.ceil(time_conv_size_s * self.sfreq).astype(int)
@@ -102,17 +116,16 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 
         self.feature_extractor = nn.Sequential(
-            nn.Conv2d(
-                1, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
+            nn.Conv2d(1, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)),
             batch_norm(n_conv_chs),
-            nn.ReLU(),
+            activation(),
             nn.MaxPool2d((1, max_pool_size)),
             nn.Conv2d(
-                n_conv_chs, n_conv_chs, (1, time_conv_size),
-                padding=(0, pad_size)),
+                n_conv_chs, n_conv_chs, (1, time_conv_size), padding=(0, pad_size)
+            ),
             batch_norm(n_conv_chs),
-            nn.ReLU(),
-            nn.MaxPool2d((1, max_pool_size))
+            activation(),
+            nn.MaxPool2d((1, max_pool_size)),
         )
         self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self.return_feats = return_feats
@@ -120,15 +133,14 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         # TODO: Add new way to handle return_features == True
         if not return_feats:
             self.final_layer = nn.Sequential(
-                nn.Dropout(dropout),
+                nn.Dropout(p=drop_prob),
                 nn.Linear(self.len_last_layer, self.n_outputs),
             )
 
     def _len_last_layer(self, n_channels, input_size):
         self.feature_extractor.eval()
         with torch.no_grad():
-            out = self.feature_extractor(
-                torch.Tensor(1, 1, n_channels, input_size))
+            out = self.feature_extractor(torch.Tensor(1, 1, n_channels, input_size))
         self.feature_extractor.train()
         return len(out.flatten())
 

@@ -1,5 +1,7 @@
 name: tests
-
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.number }}-${{ github.event.ref }}
+  cancel-in-progress: true
 on:
   push:
     branches:
@@ -15,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ "ubuntu-latest", "macos-latest", "windows-latest" ]
-        python-version: ["3.8", "3.9", "3.10", "3.11"]
+        python-version: ["3.9", "3.10", "3.11"]
     steps:
     ## Install Braindecode
     - name: Checking Out Repository
@@ -46,10 +48,11 @@ jobs:
     - name: Run Tests # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
       run: pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
     - name: Upload Coverage to Codecov
-      uses: codecov/codecov-action@v3
-      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8'}}
+      uses: codecov/codecov-action@v4
+      if: ${{ matrix.os == 'ubuntu-latest' && matrix.python-version == '3.9'}}
       with:
         fail_ci_if_error: true
         file: ./coverage.xml
         path_to_write_report: ./codecov_report.txt
         env_vars: OS,PYTHON
+        token: ${{ secrets.CODECOV_TOKEN }}

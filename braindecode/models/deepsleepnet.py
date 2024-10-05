@@ -4,11 +4,23 @@
 import torch
 import torch.nn as nn
 
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
-class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal information
-    def __init__(self):
+class _SmallCNN(nn.Module):
+    """
+    Smaller filter sizes to learn temporal information.
+
+    Parameters
+    ----------
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+    """
+
+    def __init__(self, activation: nn.Module = nn.ReLU, drop_prob: float = 0.5):
         super().__init__()
         self.conv1 = nn.Sequential(
             nn.Conv2d(
@@ -20,10 +32,10 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=64),
-            nn.ReLU(),
+            activation(),
         )
         self.pool1 = nn.MaxPool2d(kernel_size=(1, 8), stride=(1, 8), padding=(0, 2))
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=drop_prob)
         self.conv2 = nn.Sequential(
             nn.Conv2d(
                 in_channels=64,
@@ -34,7 +46,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv3 = nn.Sequential(
             nn.Conv2d(
@@ -46,7 +58,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv4 = nn.Sequential(
             nn.Conv2d(
@@ -58,7 +70,7 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.pool2 = nn.MaxPool2d(kernel_size=(1, 4), stride=(1, 4), padding=(0, 1))
 
@@ -72,8 +84,19 @@ class _SmallCNN(nn.Module):  # smaller filter sizes to learn temporal informatio
         return x
 
 
-class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency information
-    def __init__(self):
+class _LargeCNN(nn.Module):
+    """
+    Larger filter sizes to learn frequency information.
+
+    Parameters
+    ----------
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+
+    """
+
+    def __init__(self, activation: nn.Module = nn.ELU, drop_prob: float = 0.5):
         super().__init__()
 
         self.conv1 = nn.Sequential(
@@ -86,10 +109,10 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=64),
-            nn.ReLU(),
+            activation(),
         )
         self.pool1 = nn.MaxPool2d(kernel_size=(1, 4), stride=(1, 4))
-        self.dropout = nn.Dropout(p=0.5)
+        self.dropout = nn.Dropout(p=drop_prob)
         self.conv2 = nn.Sequential(
             nn.Conv2d(
                 in_channels=64,
@@ -100,7 +123,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv3 = nn.Sequential(
             nn.Conv2d(
@@ -112,7 +135,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.conv4 = nn.Sequential(
             nn.Conv2d(
@@ -124,7 +147,7 @@ class _LargeCNN(nn.Module):  # larger filter sizes to learn frequency informatio
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=128),
-            nn.ReLU(),
+            activation(),
         )
         self.pool2 = nn.MaxPool2d(kernel_size=(1, 2), stride=(1, 2), padding=(0, 1))
 
@@ -154,9 +177,7 @@ class _BiLSTM(nn.Module):
 
     def forward(self, x):
         # set initial hidden and cell states
-        h0 = torch.zeros(
-            self.num_layers * 2, x.size(0), self.hidden_size
-        ).to(x.device)
+        h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
         c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_size).to(x.device)
 
         # forward propagate LSTM
@@ -165,19 +186,28 @@ class _BiLSTM(nn.Module):
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Supratak et al 2017.
+    """Sleep staging architecture from Supratak et al. 2017 [Supratak2017]_.
 
     Convolutional neural network and bidirectional-Long Short-Term
     for single channels sleep staging described in [Supratak2017]_.
 
     Parameters
     ----------
+    activation_large: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    activation_small: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
     return_feats : bool
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
     n_classes :
         Alias for n_outputs.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+
 
     References
     ----------
@@ -188,19 +218,22 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-            self,
-            n_outputs=5,
-            return_feats=False,
-            n_chans=None,
-            chs_info=None,
-            n_times=None,
-            input_window_seconds=None,
-            sfreq=None,
-            n_classes=None,
+        self,
+        n_outputs=5,
+        return_feats=False,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        n_classes=None,
+        activation_large: nn.Module = nn.ELU,
+        activation_small: nn.Module = nn.ReLU,
+        drop_prob: float = 0.5,
     ):
-        n_outputs, = deprecated_args(
+        (n_outputs,) = deprecated_args(
             self,
-            ('n_classes', 'n_outputs', n_classes, n_outputs),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -212,12 +245,13 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del n_classes
-        self.cnn1 = _SmallCNN()
-        self.cnn2 = _LargeCNN()
+        self.cnn1 = _SmallCNN(activation=activation_small, drop_prob=drop_prob)
+        self.cnn2 = _LargeCNN(activation=activation_large, drop_prob=drop_prob)
         self.dropout = nn.Dropout(0.5)
         self.bilstm = _BiLSTM(input_size=3072, hidden_size=512, num_layers=2)
-        self.fc = nn.Sequential(nn.Linear(3072, 1024, bias=False),
-                                nn.BatchNorm1d(num_features=1024))
+        self.fc = nn.Sequential(
+            nn.Linear(3072, 1024, bias=False), nn.BatchNorm1d(num_features=1024)
+        )
 
         self.features_extractor = nn.Identity()
         self.len_last_layer = 1024

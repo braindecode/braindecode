@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 import logging
 import os.path
 import re
@@ -16,7 +17,8 @@ log = logging.getLogger(__name__)
 
 
 class BBCIDataset(object):
-    """
+    """BBCIDataset.
+
     Loader class for files created by saving BBCI files in matlab (make
     sure to save with '-v7.3' in matlab, see
     https://de.mathworks.com/help/matlab/import_export/mat-file-versions.html#buk6i87
@@ -34,12 +36,14 @@ class BBCIDataset(object):
     """
 
     def __init__(
-        self, filename, load_sensor_names=None, check_class_names=False
+        self,
+        filename: str,
+        load_sensor_names: list[str] | None = None,
+        check_class_names: bool = False,
     ):
         self.__dict__.update(locals())
-        del self.self
 
-    def load(self):
+    def load(self) -> mne.io.RawArray:
         cnt = self._load_continuous_signal()
         cnt = self._add_markers(cnt)
         return cnt
@@ -50,9 +54,7 @@ class BBCIDataset(object):
         with h5py.File(self.filename, "r") as h5file:
             samples = int(h5file["nfo"]["T"][0, 0])
             cnt_signal_shape = (samples, len(wanted_chan_inds))
-            continuous_signal = (
-                np.ones(cnt_signal_shape, dtype=np.float32) * np.nan
-            )
+            continuous_signal = np.ones(cnt_signal_shape, dtype=np.float32) * np.nan
             for chan_ind_arr, chan_ind_set in enumerate(wanted_chan_inds):
                 # + 1 because matlab/this hdf5-naming logic
                 # has 1-based indexing
@@ -63,9 +65,7 @@ class BBCIDataset(object):
                     :
                 ].squeeze()  # already load into memory
                 continuous_signal[:, chan_ind_arr] = chan_signal
-            assert not np.any(
-                np.isnan(continuous_signal)
-            ), "No NaNs expected in signal"
+            assert not np.any(np.isnan(continuous_signal)), "No NaNs expected in signal"
 
         if self.load_sensor_names is None:
             ch_types = ["eeg"] * len(wanted_chan_inds)
@@ -83,15 +83,12 @@ class BBCIDataset(object):
     def _determine_sensors(self):
         all_sensor_names = self.get_all_sensors(self.filename, pattern=None)
         if self.load_sensor_names is None:
-
             # if no sensor names given, take all EEG-chans
             eeg_sensor_names = all_sensor_names
             eeg_sensor_names = filter(
                 lambda s: not s.startswith("BIP"), eeg_sensor_names
             )
-            eeg_sensor_names = filter(
-                lambda s: not s.startswith("E"), eeg_sensor_names
-            )
+            eeg_sensor_names = filter(lambda s: not s.startswith("E"), eeg_sensor_names)
             eeg_sensor_names = filter(
                 lambda s: not s.startswith("Microphone"), eeg_sensor_names
             )
@@ -103,17 +100,15 @@ class BBCIDataset(object):
             )
             eeg_sensor_names = list(eeg_sensor_names)
             assert (
-                len(eeg_sensor_names) == 128 or
-                len(eeg_sensor_names) == 64 or
-                len(eeg_sensor_names) == 32 or
-                len(eeg_sensor_names) == 16
+                len(eeg_sensor_names) == 128
+                or len(eeg_sensor_names) == 64
+                or len(eeg_sensor_names) == 32
+                or len(eeg_sensor_names) == 16
             ), "Recheck this code if you have different sensors..."
             wanted_sensor_names = eeg_sensor_names
         else:
             wanted_sensor_names = self.load_sensor_names
-        chan_inds = self._determine_chan_inds(
-            all_sensor_names, wanted_sensor_names
-        )
+        chan_inds = self._determine_chan_inds(all_sensor_names, wanted_sensor_names)
         return chan_inds, wanted_sensor_names
 
     def _determine_samplingrate(self):
@@ -127,16 +122,12 @@ class BBCIDataset(object):
     def _determine_chan_inds(all_sensor_names, sensor_names):
         assert sensor_names is not None
         chan_inds = [all_sensor_names.index(s) for s in sensor_names]
-        assert len(chan_inds) == len(sensor_names), (
-            "All" "sensors should be there."
-        )
-        assert len(set(chan_inds)) == len(chan_inds), (
-            "No duplicated sensors wanted."
-        )
+        assert len(chan_inds) == len(sensor_names), "All" "sensors should be there."
+        assert len(set(chan_inds)) == len(chan_inds), "No duplicated sensors wanted."
         return chan_inds
 
     @staticmethod
-    def get_all_sensors(filename, pattern=None):
+    def get_all_sensors(filename: str, pattern: str | None = None) -> list[str]:
         """
         Get all sensors that exist in the given file.
 
@@ -157,17 +148,15 @@ class BBCIDataset(object):
                 "".join(chr(c.item()) for c in h5file[obj_ref]) for obj_ref in clab_set
             ]
             if pattern is not None:
-                all_sensor_names = filter(
-                    lambda sname: re.search(pattern, sname), all_sensor_names
+                all_sensor_names = list(
+                    filter(lambda sname: re.search(pattern, sname), all_sensor_names)
                 )
         return all_sensor_names
 
     def _add_markers(self, cnt):
         with h5py.File(self.filename, "r") as h5file:
             event_times_in_ms = h5file["mrk"]["time"][:].squeeze()
-            event_classes = (
-                h5file["mrk"]["event"]["desc"][:].squeeze().astype(np.int64)
-            )
+            event_classes = h5file["mrk"]["event"]["desc"][:].squeeze().astype(np.int64)
 
             # Check whether class names known and correct order
             class_name_set = h5file["nfo"]["className"][:].squeeze()
@@ -177,9 +166,7 @@ class BBCIDataset(object):
             ]
 
             if self.check_class_names:
-                _check_class_names(
-                    all_class_names, event_times_in_ms, event_classes
-                )
+                _check_class_names(all_class_names, event_times_in_ms, event_classes)
 
         event_times_in_samples = event_times_in_ms * cnt.info["sfreq"] / 1000.0
         event_times_in_samples = np.uint32(np.round(event_times_in_samples))
@@ -196,8 +183,8 @@ class BBCIDataset(object):
                         i_sample,
                         event_classes[i_event - 1],
                         event_classes[i_event],
-                    ) +
-                    "Marker codes will be summed."
+                    )
+                    + "Marker codes will be summed."
                 )
             previous_i_sample = i_sample
 
@@ -222,7 +209,7 @@ class BBCIDataset(object):
         # Hacky way to try to find out class names for each event
         # h5file['mrk']['y'] y contains one-hot label for event name
         with h5py.File(self.filename, "r") as h5file:
-            y = h5file['mrk']['y'][:]
+            y = h5file["mrk"]["y"][:]
             # seems that there are cases where for last class
             # y is just all zero for some reason?
             # and seems then it is last of the class names
@@ -233,7 +220,7 @@ class BBCIDataset(object):
             event_i_classes = np.argmax(y, axis=1)
 
         # 4 second trials for High-Gamma dataset, otherwise how to know?
-        if all_class_names == ['Right Hand', 'Left Hand', 'Rest', 'Feet']:
+        if all_class_names == ["Right Hand", "Left Hand", "Rest", "Feet"]:
             durations = np.full(event_times_in_ms.shape, 4)
         else:
             warnings.warn("Unknown event durations set to 0")
@@ -265,8 +252,8 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         pass
     elif (
         (
-            all_class_names ==
-            [
+            all_class_names
+            == [
                 "1",
                 "10",
                 "11",
@@ -285,9 +272,10 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
                 "44",
                 "99",
             ]
-        ) or (
-            all_class_names ==
-            [
+        )
+        or (
+            all_class_names
+            == [
                 "1",
                 "10",
                 "11",
@@ -305,8 +293,8 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
                 "44",
                 "99",
             ]
-        ) or (
-            all_class_names == ["1", "2", "3", "4"])
+        )
+        or (all_class_names == ["1", "2", "3", "4"])
     ):
         pass  # Semantic classes
     elif all_class_names == ["Rest", "Feet", "Left Hand", "Right Hand"]:
@@ -668,7 +656,9 @@ def _check_class_names(all_class_names, event_times_in_ms, event_classes):
         log.warn("Unknown class names {:s}".format(all_class_names))
 
 
-def load_bbci_sets_from_folder(folder, runs="all"):
+def load_bbci_sets_from_folder(
+    folder: str, runs: list[int] | str = "all"
+) -> list[mne.io.RawArray]:
     """
     Load bbci datasets from files in given folder.
 
@@ -687,10 +677,10 @@ def load_bbci_sets_from_folder(folder, runs="all"):
     """
     bbci_mat_files = sorted(glob(os.path.join(folder, "*.BBCI.mat")))
     if runs != "all":
-        file_run_numbers = [
-            int(re.search("S[0-9]{3,3}R[0-9]{2,2}_", f).group()[5:7])
-            for f in bbci_mat_files
-        ]
+        assert isinstance(runs, list), "runs should be list[int] or 'all'"
+        matches = [re.search("S[0-9]{3,3}R[0-9]{2,2}_", f) for f in bbci_mat_files]
+        file_run_numbers = [int(m.group()[5:7]) for m in matches if m is not None]
+        assert len(file_run_numbers) == len(bbci_mat_files), "Some files don't match"
         indices = [file_run_numbers.index(num) for num in runs]
 
         wanted_files = np.array(bbci_mat_files)[indices]

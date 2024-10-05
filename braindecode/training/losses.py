@@ -96,15 +96,10 @@ def mixup_criterion(preds, target):
         # unpack target
         y_a, y_b, lam = target
         # compute loss per sample
-        loss_a = torch.nn.functional.nll_loss(preds,
-                                              y_a,
-                                              reduction='none')
-        loss_b = torch.nn.functional.nll_loss(preds,
-                                              y_b,
-                                              reduction='none')
+        loss_a = torch.nn.functional.nll_loss(preds, y_a, reduction="none")
+        loss_b = torch.nn.functional.nll_loss(preds, y_b, reduction="none")
         # compute weighted mean
         ret = torch.mul(lam, loss_a) + torch.mul(1 - lam, loss_b)
         return ret.mean()
     else:
-        return torch.nn.functional.nll_loss(preds,
-                                            target)
+        return torch.nn.functional.nll_loss(preds, target)

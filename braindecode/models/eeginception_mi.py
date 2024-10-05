@@ -6,12 +6,12 @@ import torch
 from torch import nn
 from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.modules import Ensure4d
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class EEGInceptionMI(EEGModuleMixin, nn.Module):
-    """EEG Inception for Motor Imagery, as proposed in [1]_
+    """EEG Inception for Motor Imagery, as proposed in Zhang et al. (2021) [1]_
 
     The model is strongly based on the original InceptionNet for computer
     vision. The main goal is to extract features in parallel with different
@@ -43,7 +43,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         Size in seconds of the basic 1D convolutional kernel used in inception
         modules. Each convolutional layer in such modules have kernels of
         increasing size, odd multiples of this value (e.g. 0.1, 0.3, 0.5, 0.7,
-        0.9 here for `n_convs`=5). Defaults to 0.1 s.
+        0.9 here for ``n_convs=5``). Defaults to 0.1 s.
     activation: nn.Module
         Activation function. Defaults to ReLU activation.
     in_channels : int
@@ -56,33 +56,43 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
     References
     ----------
     .. [1] Zhang, C., Kim, Y. K., & Eskandarian, A. (2021).
-           EEG-inception: an accurate and robust end-to-end neural network
-           for EEG-based motor imagery classification.
-           Journal of Neural Engineering, 18(4), 046014.
+        EEG-inception: an accurate and robust end-to-end neural network
+        for EEG-based motor imagery classification.
+        Journal of Neural Engineering, 18(4), 046014.
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            input_window_seconds=4.5,
-            sfreq=250,
-            n_convs=5,
-            n_filters=48,
-            kernel_unit_s=0.1,
-            activation=nn.ReLU(),
-            chs_info=None,
-            n_times=None,
-            in_channels=None,
-            n_classes=None,
-            input_window_s=None,
-            add_log_softmax=True,
+        self,
+        n_chans=None,
+        n_outputs=None,
+        input_window_seconds=None,
+        sfreq=250,
+        n_convs=5,
+        n_filters=48,
+        kernel_unit_s=0.1,
+        activation: nn.Module = nn.ReLU,
+        chs_info=None,
+        n_times=None,
+        in_channels=None,
+        n_classes=None,
+        input_window_s=None,
+        add_log_softmax=False,
+        drop_prob: float = 0.5,
     ):
-        n_chans, n_outputs, input_window_seconds, = deprecated_args(
+        (
+            n_chans,
+            n_outputs,
+            input_window_seconds,
+        ) = deprecated_args(
             self,
-            ('in_channels', 'n_chans', in_channels, n_chans),
-            ('n_classes', 'n_outputs', n_classes, n_outputs),
-            ('input_window_s', 'input_window_seconds', input_window_s, input_window_seconds),
+            ("in_channels", "n_chans", in_channels, n_chans),
+            ("n_classes", "n_outputs", n_classes, n_outputs),
+            (
+                "input_window_s",
+                "input_window_seconds",
+                input_window_s,
+                input_window_seconds,
+            ),
         )
         super().__init__(
             n_outputs=n_outputs,
@@ -105,8 +115,9 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.dimshuffle = Rearrange("batch C T 1 -> batch C 1 T")
 
         self.mapping = {
-            'fc.weight': 'final_layer.fc.weight',
-            'tc.bias': 'final_layer.fc.bias'}
+            "fc.weight": "final_layer.fc.weight",
+            "tc.bias": "final_layer.fc.bias",
+        }
 
         # ======== Inception branches ========================
 
@@ -121,16 +132,19 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
         intermediate_in_channels = (self.n_convs + 1) * self.n_filters
 
-        self.intermediate_inception_modules_1 = nn.ModuleList([
-            _InceptionModuleMI(
-                in_channels=intermediate_in_channels,
-                n_filters=self.n_filters,
-                n_convs=self.n_convs,
-                kernel_unit_s=self.kernel_unit_s,
-                sfreq=self.sfreq,
-                activation=self.activation,
-            ) for _ in range(2)
-        ])
+        self.intermediate_inception_modules_1 = nn.ModuleList(
+            [
+                _InceptionModuleMI(
+                    in_channels=intermediate_in_channels,
+                    n_filters=self.n_filters,
+                    n_convs=self.n_convs,
+                    kernel_unit_s=self.kernel_unit_s,
+                    sfreq=self.sfreq,
+                    activation=self.activation,
+                )
+                for _ in range(2)
+            ]
+        )
 
         self.residual_block_1 = _ResidualModuleMI(
             in_channels=self.n_chans,
@@ -138,16 +152,19 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             activation=self.activation,
         )
 
-        self.intermediate_inception_modules_2 = nn.ModuleList([
-            _InceptionModuleMI(
-                in_channels=intermediate_in_channels,
-                n_filters=self.n_filters,
-                n_convs=self.n_convs,
-                kernel_unit_s=self.kernel_unit_s,
-                sfreq=self.sfreq,
-                activation=self.activation,
-            ) for _ in range(3)
-        ])
+        self.intermediate_inception_modules_2 = nn.ModuleList(
+            [
+                _InceptionModuleMI(
+                    in_channels=intermediate_in_channels,
+                    n_filters=self.n_filters,
+                    n_convs=self.n_convs,
+                    kernel_unit_s=self.kernel_unit_s,
+                    sfreq=self.sfreq,
+                    activation=self.activation,
+                )
+                for _ in range(3)
+            ]
+        )
 
         self.residual_block_2 = _ResidualModuleMI(
             in_channels=intermediate_in_channels,
@@ -172,19 +189,23 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         self.flat = nn.Flatten()
 
         module = nn.Sequential()
-        module.add_module('fc',
-                          nn.Linear(in_features=intermediate_in_channels,
-                                    out_features=self.n_outputs,
-                                    bias=True, ))
+        module.add_module(
+            "fc",
+            nn.Linear(
+                in_features=intermediate_in_channels,
+                out_features=self.n_outputs,
+                bias=True,
+            ),
+        )
         if self.add_log_softmax:
-            module.add_module('out_fun', nn.LogSoftmax(dim=1))
+            module.add_module("out_fun", nn.LogSoftmax(dim=1))
         else:
-            module.add_module('out_fun', nn.Identity())
+            module.add_module("out_fun", nn.Identity())
         self.final_layer = module
 
     def forward(
-            self,
-            X: torch.Tensor,
+        self,
+        X: torch.Tensor,
     ) -> torch.Tensor:
         X = self.ensuredims(X)
         X = self.dimshuffle(X)
@@ -211,14 +232,46 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
 
 
 class _InceptionModuleMI(nn.Module):
+    """
+    Inception module.
+
+    This module implements a inception-like architecture that processes input
+    feature maps through multiple convolutional paths with different kernel
+    sizes, allowing the network to capture features at multiple scales.
+    It includes bottleneck layers, convolutional layers, and pooling layers,
+    followed by batch normalization and an activation function.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels in the input tensor.
+    n_filters : int
+        Number of filters (output channels) for each convolutional layer.
+    n_convs : int
+        Number of convolutional layers in the module (excluding bottleneck
+        and pooling paths).
+    kernel_unit_s : float, optional
+        Base size (in seconds) for the convolutional kernels. The actual kernel
+        size is computed as ``(2 * n_units + 1) * kernel_unit``, where ``n_units``
+        ranges from 0 to ``n_convs - 1``. Default is 0.1 seconds.
+    sfreq : float, optional
+        Sampling frequency of the input data, used to convert kernel sizes from
+        seconds to samples. Default is 250 Hz.
+    activation : nn.Module class, optional
+        Activation function class to apply after batch normalization. Should be
+        a PyTorch activation module class like ``nn.ReLU`` or ``nn.ELU``.
+        Default is ``nn.ReLU``.
+
+    """
+
     def __init__(
-            self,
-            in_channels,
-            n_filters,
-            n_convs,
-            kernel_unit_s=0.1,
-            sfreq=250,
-            activation=nn.ReLU(),
+        self,
+        in_channels,
+        n_filters,
+        n_convs,
+        kernel_unit_s=0.1,
+        sfreq=250,
+        activation: nn.Module = nn.ReLU,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -253,23 +306,26 @@ class _InceptionModuleMI(nn.Module):
             bias=True,
         )
 
-        self.conv_list = nn.ModuleList([
-            nn.Conv2d(
-                in_channels=self.n_filters,
-                out_channels=self.n_filters,
-                kernel_size=(1, (n_units * 2 + 1) * kernel_unit),
-                padding="same",
-                bias=True,
-            ) for n_units in range(self.n_convs)
-        ])
+        self.conv_list = nn.ModuleList(
+            [
+                nn.Conv2d(
+                    in_channels=self.n_filters,
+                    out_channels=self.n_filters,
+                    kernel_size=(1, (n_units * 2 + 1) * kernel_unit),
+                    padding="same",
+                    bias=True,
+                )
+                for n_units in range(self.n_convs)
+            ]
+        )
 
         self.bn = nn.BatchNorm2d(self.n_filters * (self.n_convs + 1))
 
-        self.activation = activation
+        self.activation = activation()
 
     def forward(
-            self,
-            X: torch.Tensor,
+        self,
+        X: torch.Tensor,
     ) -> torch.Tensor:
         X1 = self.bottleneck(X)
 
@@ -285,16 +341,31 @@ class _InceptionModuleMI(nn.Module):
 
 
 class _ResidualModuleMI(nn.Module):
-    def __init__(
-            self,
-            in_channels,
-            n_filters,
-            activation=nn.ReLU()
-    ):
+    """
+    Residual module.
+
+    This module performs a 1x1 convolution followed by batch normalization and an activation function.
+    It is designed to process input feature maps and produce transformed output feature maps, often used
+    in residual connections within neural network architectures.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels in the input tensor.
+    n_filters : int
+        Number of filters (output channels) for the convolutional layer.
+    activation : nn.Module, optional
+        Activation function to apply after batch normalization. Should be an instance of a PyTorch
+        activation module (e.g., ``nn.ReLU()``, ``nn.ELU()``). Default is ``nn.ReLU()``.
+
+
+    """
+
+    def __init__(self, in_channels, n_filters, activation: nn.Module = nn.ReLU):
         super().__init__()
         self.in_channels = in_channels
         self.n_filters = n_filters
-        self.activation = activation
+        self.activation = activation()
 
         self.bn = nn.BatchNorm2d(self.n_filters)
         self.conv = nn.Conv2d(
@@ -305,9 +376,22 @@ class _ResidualModuleMI(nn.Module):
         )
 
     def forward(
-            self,
-            X: torch.Tensor,
+        self,
+        X: torch.Tensor,
     ) -> torch.Tensor:
+        """
+        Forward pass of the residual module.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Input tensor of shape (batch_size, ch_names, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor after convolution, batch normalization, and activation function.
+        """
         out = self.conv(X)
         out = self.bn(out)
         return self.activation(out)

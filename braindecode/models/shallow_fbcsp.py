@@ -2,17 +2,18 @@
 #
 # License: BSD (3-clause)
 
-from einops.layers.torch import Rearrange
+import torch
 from torch import nn
 from torch.nn import init
+from einops.layers.torch import Rearrange
 
-from .base import EEGModuleMixin, deprecated_args
-from .functions import safe_log, square, squeeze_final_output
-from .modules import CombinedConv, Ensure4d, Expression
+from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.functions import square, squeeze_final_output
+from braindecode.models.modules import CombinedConv, Ensure4d, Expression, SafeLog
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
-    """Shallow ConvNet model from Schirrmeister et al 2017.
+    """Shallow ConvNet model from Schirrmeister et al. 2017 [Schirrmeister2017]_.
 
     Model described in [Schirrmeister2017]_.
 
@@ -35,7 +36,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         Non-linear function to be used after convolution layers.
     pool_mode: str
         Method to use on pooling layers. "max" or "mean".
-    pool_nonlin: callable
+    activation_pool_nonlin: callable
         Non-linear function to be used after pooling layers.
     split_first_layer: bool
         Split first layer into temporal and spatial layers (True) or just use temporal (False).
@@ -65,30 +66,30 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            n_times=None,
-            n_filters_time=40,
-            filter_time_length=25,
-            n_filters_spat=40,
-            pool_time_length=75,
-            pool_time_stride=15,
-            final_conv_length=30,
-            conv_nonlin=square,
-            pool_mode="mean",
-            pool_nonlin=safe_log,
-            split_first_layer=True,
-            batch_norm=True,
-            batch_norm_alpha=0.1,
-            drop_prob=0.5,
-            chs_info=None,
-            input_window_seconds=None,
-            sfreq=None,
-            in_chans=None,
-            n_classes=None,
-            input_window_samples=None,
-            add_log_softmax=True,
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        n_filters_time=40,
+        filter_time_length=25,
+        n_filters_spat=40,
+        pool_time_length=75,
+        pool_time_stride=15,
+        final_conv_length="auto",
+        conv_nonlin=square,
+        pool_mode="mean",
+        activation_pool_nonlin: nn.Module = SafeLog,
+        split_first_layer=True,
+        batch_norm=True,
+        batch_norm_alpha=0.1,
+        drop_prob=0.5,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+        in_chans=None,
+        n_classes=None,
+        input_window_samples=None,
+        add_log_softmax=False,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -117,7 +118,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.final_conv_length = final_conv_length
         self.conv_nonlin = conv_nonlin
         self.pool_mode = pool_mode
-        self.pool_nonlin = pool_nonlin
+        self.pool_nonlin = activation_pool_nonlin()
         self.split_first_layer = split_first_layer
         self.batch_norm = batch_norm
         self.batch_norm_alpha = batch_norm_alpha
@@ -129,7 +130,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             "conv_time.bias": "conv_time_spat.conv_time.bias",
             "conv_spat.bias": "conv_time_spat.conv_spat.bias",
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+            "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
 
         self.add_module("ensuredims", Ensure4d())
@@ -175,7 +176,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                 stride=(self.pool_time_stride, 1),
             ),
         )
-        self.add_module("pool_nonlin_exp", Expression(self.pool_nonlin))
+        self.add_module("pool_nonlin_exp", self.pool_nonlin)
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":
@@ -184,12 +185,15 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
-        module.add_module("conv_classifier",
-                          nn.Conv2d(
-                            n_filters_conv,
-                            self.n_outputs,
-                            (self.final_conv_length, 1),
-                            bias=True, ))
+        module.add_module(
+            "conv_classifier",
+            nn.Conv2d(
+                n_filters_conv,
+                self.n_outputs,
+                (self.final_conv_length, 1),
+                bias=True,
+            ),
+        )
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))

@@ -63,27 +63,34 @@ Models
 .. autosummary::
    :toctree: generated/
 
-    ShallowFBCSPNet
+    ATCNet
+    AttentionBaseNet
+    BIOT
+    ContraWR
     Deep4Net
     DeepSleepNet
     EEGConformer
-    EEGInception
     EEGInceptionERP
     EEGInceptionMI
-    ATCNet
     EEGITNet
     EEGNetv1
     EEGNetv4
-    HybridNet
+    EEGNeX
     EEGResNet
-    TCN
-    SleepStagerChambon2018
+    EEGSimpleConv
+    EEGTCNet
+    HybridNet
+    Labram
+    ShallowFBCSPNet
     SleepStagerBlanco2020
+    SleepStagerChambon2018
     SleepStagerEldele2021
-    USleep
+    SPARCNet
+    SyncNet
+    TCN
+    TSceptionV1
     TIDNet
-    LDMNet
-    TimeDistributed
+    USleep
 
 
 Training
@@ -123,6 +130,7 @@ Datasets
     BNCI2014001
     TUH
     TUHAbnormal
+    NMT
     SleepPhysionet
     BCICompetitionIVDataset4
     create_from_X_y
@@ -144,7 +152,6 @@ Preprocessing
     create_windows_from_target_channels
     exponential_moving_demean
     exponential_moving_standardize
-    scale
     filterbank
     preprocess
     Preprocessor
@@ -214,6 +221,8 @@ Augmentation
     SensorsYRotation
     SensorsXRotation
     Mixup
+    SegmentationReconstruction
+    MaskEncoding
 
     functional.identity
     functional.time_reverse
@@ -228,6 +237,8 @@ Augmentation
     functional.frequency_shift
     functional.sensors_rotation
     functional.mixup
+    functional.segmentation_reconstruction
+    functional.mask_encoding
 
 
 Utils

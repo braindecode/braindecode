@@ -5,11 +5,11 @@
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
-from torch.nn.functional import elu
+from mne.utils import warn
 
-from .base import EEGModuleMixin, deprecated_args
-from .functions import squeeze_final_output
-from .modules import Ensure4d, Expression
+from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.functions import squeeze_final_output
+from braindecode.models.modules import Ensure4d, Expression
 
 
 class Conv2dWithConstraint(nn.Conv2d):
@@ -25,7 +25,7 @@ class Conv2dWithConstraint(nn.Conv2d):
 
 
 class EEGNetv4(EEGModuleMixin, nn.Sequential):
-    """EEGNet v4 model from Lawhern et al 2018.
+    """EEGNet v4 model from Lawhern et al. 2018 [EEGNet4]_.
 
     See details in [EEGNet4]_.
 
@@ -39,6 +39,9 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         Alias for n_outputs.
     input_window_samples :
         Alias for n_times.
+    activate: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Notes
     -----
@@ -55,24 +58,25 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            n_times=None,
-            final_conv_length="auto",
-            pool_mode="mean",
-            F1=8,
-            D=2,
-            F2=16,  # usually set to F1*D (?)
-            kernel_length=64,
-            third_kernel_size=(8, 4),
-            drop_prob=0.25,
-            chs_info=None,
-            input_window_seconds=None,
-            sfreq=None,
-            in_chans=None,
-            n_classes=None,
-            input_window_samples=None,
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        final_conv_length="auto",
+        pool_mode="mean",
+        F1=8,
+        D=2,
+        F2=16,  # usually set to F1*D (?)
+        kernel_length=64,
+        third_kernel_size=(8, 4),
+        drop_prob=0.25,
+        activation: nn.Module = nn.ELU,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+        in_chans=None,
+        n_classes=None,
+        input_window_samples=None,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -105,14 +109,13 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         # add the old's parameters here
         self.mapping = {
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+            "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
         self.add_module("ensuredims", Ensure4d())
 
-        self.add_module("dimshuffle",
-                        Rearrange("batch ch t 1 -> batch 1 ch t"))
+        self.add_module("dimshuffle", Rearrange("batch ch t 1 -> batch 1 ch t"))
         self.add_module(
             "conv_temporal",
             nn.Conv2d(
@@ -144,11 +147,9 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         self.add_module(
             "bnorm_1",
-            nn.BatchNorm2d(
-                self.F1 * self.D, momentum=0.01, affine=True, eps=1e-3
-            ),
+            nn.BatchNorm2d(self.F1 * self.D, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_1", Expression(elu))
+        self.add_module("elu_1", activation())
 
         self.add_module("pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4)))
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
@@ -182,7 +183,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             "bnorm_2",
             nn.BatchNorm2d(self.F2, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_2", Expression(elu))
+        self.add_module("elu_2", activation())
         self.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
@@ -196,16 +197,25 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
-        module.add_module("conv_classifier",
-                          nn.Conv2d(self.F2, self.n_outputs,
-                                    (n_out_virtual_chans, self.final_conv_length), bias=True, ))
+        module.add_module(
+            "conv_classifier",
+            nn.Conv2d(
+                self.F2,
+                self.n_outputs,
+                (n_out_virtual_chans, self.final_conv_length),
+                bias=True,
+            ),
+        )
 
         if self.add_log_softmax:
             module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
 
         # Transpose back to the logic of braindecode,
         # so time in third dimension (axis=2)
-        module.add_module("permute_back", Rearrange("batch x y z -> batch x z y"), )
+        module.add_module(
+            "permute_back",
+            Rearrange("batch x y z -> batch x z y"),
+        )
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 
@@ -215,7 +225,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
 
 class EEGNetv1(EEGModuleMixin, nn.Sequential):
-    """EEGNet model from Lawhern et al. 2016.
+    """EEGNet model from Lawhern et al. 2016 from [EEGNet]_.
 
     See details in [EEGNet]_.
 
@@ -227,6 +237,9 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         Alias for n_outputs.
     input_window_samples :
         Alias for n_times.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
 
     Notes
     -----
@@ -243,22 +256,23 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            n_times=None,
-            final_conv_length="auto",
-            pool_mode="max",
-            second_kernel_size=(2, 32),
-            third_kernel_size=(8, 4),
-            drop_prob=0.25,
-            chs_info=None,
-            input_window_seconds=None,
-            sfreq=None,
-            in_chans=None,
-            n_classes=None,
-            input_window_samples=None,
-            add_log_softmax=True,
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        final_conv_length="auto",
+        pool_mode="max",
+        second_kernel_size=(2, 32),
+        third_kernel_size=(8, 4),
+        drop_prob=0.25,
+        activation: nn.Module = nn.ELU,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+        in_chans=None,
+        n_classes=None,
+        input_window_samples=None,
+        add_log_softmax=False,
     ):
         n_chans, n_outputs, n_times = deprecated_args(
             self,
@@ -277,6 +291,12 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         del in_chans, n_classes, input_window_samples
+        warn(
+            "The class EEGNetv1 is deprecated and will be removed in the "
+            "release 1.0 of braindecode. Please use "
+            "braindecode.models.EEGNetv4 instead in the future.",
+            DeprecationWarning,
+        )
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.final_conv_length = final_conv_length
@@ -289,7 +309,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         # add the old's parameters here
         self.mapping = {
             "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias": "final_layer.conv_classifier.bias"
+            "conv_classifier.bias": "final_layer.conv_classifier.bias",
         }
 
         pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
@@ -303,11 +323,9 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "bnorm_1",
             nn.BatchNorm2d(n_filters_1, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_1", Expression(elu))
+        self.add_module("elu_1", activation())
         # transpose to examples x 1 x (virtual, not EEG) channels x time
-        self.add_module(
-            "permute_1", Expression(lambda x: x.permute(0, 3, 1, 2))
-        )
+        self.add_module("permute_1", Expression(lambda x: x.permute(0, 3, 1, 2)))
 
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
@@ -332,7 +350,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "bnorm_2",
             nn.BatchNorm2d(n_filters_2, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_2", Expression(elu))
+        self.add_module("elu_2", activation())
         self.add_module("pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
@@ -352,7 +370,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             "bnorm_3",
             nn.BatchNorm2d(n_filters_3, momentum=0.01, affine=True, eps=1e-3),
         )
-        self.add_module("elu_3", Expression(elu))
+        self.add_module("elu_3", activation())
         self.add_module("pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4)))
         self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
 
@@ -366,16 +384,25 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
 
-        module.add_module("conv_classifier",
-                          nn.Conv2d(n_filters_3, self.n_outputs,
-                                    (n_out_virtual_chans, self.final_conv_length), bias=True, ))
+        module.add_module(
+            "conv_classifier",
+            nn.Conv2d(
+                n_filters_3,
+                self.n_outputs,
+                (n_out_virtual_chans, self.final_conv_length),
+                bias=True,
+            ),
+        )
 
         if self.add_log_softmax:
             module.add_module("softmax", nn.LogSoftmax(dim=1))
         # Transpose back to the logic of braindecode,
 
         # so time in third dimension (axis=2)
-        module.add_module("permute_2", Rearrange("batch x y z -> batch x z y"), )
+        module.add_module(
+            "permute_2",
+            Rearrange("batch x y z -> batch x z y"),
+        )
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 

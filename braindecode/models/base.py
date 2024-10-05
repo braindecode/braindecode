@@ -3,6 +3,7 @@
 #
 # License: BSD-3
 
+from __future__ import annotations
 import warnings
 from typing import Dict, Iterable, List, Optional, Tuple
 
@@ -21,11 +22,11 @@ def deprecated_args(obj, *old_new_args):
             out_args.append(new_val)
         else:
             warnings.warn(
-                f'{obj.__class__.__name__}: {old_name!r} is depreciated. Use {new_name!r} instead.'
+                f"{obj.__class__.__name__}: {old_name!r} is depreciated. Use {new_name!r} instead."
             )
             if new_val is not None:
                 raise ValueError(
-                    f'{obj.__class__.__name__}: Both {old_name!r} and {new_name!r} were specified.'
+                    f"{obj.__class__.__name__}: Both {old_name!r} and {new_name!r} were specified."
                 )
             out_args.append(old_val)
     return out_args
@@ -73,30 +74,25 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     """
 
     def __init__(
-            self,
-            n_outputs: Optional[int] = None,
-            n_chans: Optional[int] = None,
-            chs_info: Optional[List[Dict]] = None,
-            n_times: Optional[int] = None,
-            input_window_seconds: Optional[float] = None,
-            sfreq: Optional[float] = None,
-            add_log_softmax: Optional[bool] = False,
+        self,
+        n_outputs: Optional[int] = None,
+        n_chans: Optional[int] = None,
+        chs_info: Optional[List[Dict]] = None,
+        n_times: Optional[int] = None,
+        input_window_seconds: Optional[float] = None,
+        sfreq: Optional[float] = None,
+        add_log_softmax: Optional[bool] = False,
     ):
+        if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
+            raise ValueError(f"{n_chans=} different from {chs_info=} length")
         if (
-                n_chans is not None and
-                chs_info is not None and
-                len(chs_info) != n_chans
-        ):
-            raise ValueError(f'{n_chans=} different from {chs_info=} length')
-        if (
-                n_times is not None and
-                input_window_seconds is not None and
-                sfreq is not None and
-                n_times != int(input_window_seconds * sfreq)
+            n_times is not None
+            and input_window_seconds is not None
+            and sfreq is not None
+            and n_times != int(input_window_seconds * sfreq)
         ):
             raise ValueError(
-                f'{n_times=} different from '
-                f'{input_window_seconds=} * {sfreq=}'
+                f"{n_times=} different from " f"{input_window_seconds=} * {sfreq=}"
             )
         self._n_outputs = n_outputs
         self._n_chans = n_chans
@@ -110,7 +106,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     @property
     def n_outputs(self):
         if self._n_outputs is None:
-            raise ValueError('n_outputs not specified.')
+            raise ValueError("n_outputs not specified.")
         return self._n_outputs
 
     @property
@@ -119,93 +115,100 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             return len(self._chs_info)
         elif self._n_chans is None:
             raise ValueError(
-                'n_chans could not be inferred. Either specify n_chans or chs_info.'
+                "n_chans could not be inferred. Either specify n_chans or chs_info."
             )
         return self._n_chans
 
     @property
     def chs_info(self):
         if self._chs_info is None:
-            raise ValueError('chs_info not specified.')
+            raise ValueError("chs_info not specified.")
         return self._chs_info
 
     @property
     def n_times(self):
         if (
-                self._n_times is None and
-                self._input_window_seconds is not None and
-                self._sfreq is not None
+            self._n_times is None
+            and self._input_window_seconds is not None
+            and self._sfreq is not None
         ):
             return int(self._input_window_seconds * self._sfreq)
         elif self._n_times is None:
             raise ValueError(
-                'n_times could not be inferred. '
-                'Either specify n_times or input_window_seconds and sfreq.'
+                "n_times could not be inferred. "
+                "Either specify n_times or input_window_seconds and sfreq."
             )
         return self._n_times
 
     @property
     def input_window_seconds(self):
         if (
-                self._input_window_seconds is None and
-                self._n_times is not None and
-                self._sfreq is not None
+            self._input_window_seconds is None
+            and self._n_times is not None
+            and self._sfreq is not None
         ):
             return self._n_times / self._sfreq
         elif self._input_window_seconds is None:
             raise ValueError(
-                'input_window_seconds could not be inferred. '
-                'Either specify input_window_seconds or n_times and sfreq.'
+                "input_window_seconds could not be inferred. "
+                "Either specify input_window_seconds or n_times and sfreq."
             )
         return self._input_window_seconds
 
     @property
     def sfreq(self):
         if (
-                self._sfreq is None and
-                self._input_window_seconds is not None and
-                self._n_times is not None
+            self._sfreq is None
+            and self._input_window_seconds is not None
+            and self._n_times is not None
         ):
-            return self._n_times / self._input_window_seconds
+            return self._n_times // self._input_window_seconds
         elif self._sfreq is None:
             raise ValueError(
-                'sfreq could not be inferred. '
-                'Either specify sfreq or input_window_seconds and n_times.'
+                "sfreq could not be inferred. "
+                "Either specify sfreq or input_window_seconds and n_times."
             )
         return self._sfreq
 
     @property
     def add_log_softmax(self):
         if self._add_log_softmax:
-            warnings.warn("LogSoftmax final layer will be removed! " +
-                          "Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!")
+            warnings.warn(
+                "LogSoftmax final layer will be removed! "
+                + "Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!"
+            )
         return self._add_log_softmax
 
     @property
-    def input_shape(self) -> Tuple[int]:
+    def input_shape(self) -> Tuple[int, int, int]:
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
-    def get_output_shape(self) -> Tuple[int]:
+    def get_output_shape(self) -> Tuple[int, ...]:
         """Returns shape of neural network output for batch size equal 1.
 
         Returns
         -------
-        output_shape: Tuple[int]
+        output_shape: Tuple[int, ...]
             shape of the network output for `batch_size==1` (1, ...)
-    """
+        """
         with torch.inference_mode():
             try:
-                return tuple(self.forward(
-                    torch.zeros(
-                        self.input_shape,
-                        dtype=next(self.parameters()).dtype,
-                        device=next(self.parameters()).device
-                    )).shape)
+                return tuple(
+                    self.forward(
+                        torch.zeros(
+                            self.input_shape,
+                            dtype=next(self.parameters()).dtype,
+                            device=next(self.parameters()).device,
+                        )
+                    ).shape
+                )
             except RuntimeError as exc:
                 if str(exc).endswith(
-                        ("Output size is too small",
-                         "Kernel size can't be greater than actual input size")
+                    (
+                        "Output size is too small",
+                        "Kernel size can't be greater than actual input size",
+                    )
                 ):
                     msg = (
                         "During model prediction RuntimeError was thrown showing that at some "
@@ -217,10 +220,9 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     raise ValueError(msg) from exc
                 raise exc
 
-    mapping = None
+    mapping: Optional[Dict[str, str]] = None
 
     def load_state_dict(self, state_dict, *args, **kwargs):
-
         mapping = self.mapping if self.mapping else {}
         new_state_dict = OrderedDict()
         for k, v in state_dict.items():
@@ -231,7 +233,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
 
-    def to_dense_prediction_model(self, axis: Tuple[int] = (2, 3)) -> None:
+    def to_dense_prediction_model(self, axis: Tuple[int, ...] | int = (2, 3)) -> None:
         """
         Transform a sequential model with strides to a model that outputs
         dense predictions by removing the strides and instead inserting dilations.
@@ -250,9 +252,9 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         backwards one layer.
 
         """
-        if not hasattr(axis, "__len__"):
-            axis = [axis]
-        assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"
+        if not hasattr(axis, "__iter__"):
+            axis = (axis,)
+        assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
         axis = np.array(axis) - 2
         stride_so_far = np.array([1, 1])
         for module in self.modules():
@@ -262,7 +264,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     "already converted?"
                 )
                 new_dilation = [1, 1]
-                for ax in axis:
+                for ax in axis:  # type: ignore[union-attr]
                     new_dilation[ax] = int(stride_so_far[ax])
                 module.dilation = tuple(new_dilation)
             if hasattr(module, "stride"):
@@ -270,19 +272,19 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                     module.stride = (module.stride, module.stride)
                 stride_so_far *= np.array(module.stride)
                 new_stride = list(module.stride)
-                for ax in axis:
+                for ax in axis:  # type: ignore[union-attr]
                     new_stride[ax] = 1
                 module.stride = tuple(new_stride)
 
     def get_torchinfo_statistics(
-            self,
-            col_names: Optional[Iterable[str]] = (
-                    "input_size",
-                    "output_size",
-                    "num_params",
-                    "kernel_size",
-            ),
-            row_settings: Optional[Iterable[str]] = ("var_names", "depth"),
+        self,
+        col_names: Optional[Iterable[str]] = (
+            "input_size",
+            "output_size",
+            "num_params",
+            "kernel_size",
+        ),
+        row_settings: Optional[Iterable[str]] = ("var_names", "depth"),
     ) -> ModelStatistics:
         """Generate table describing the model using torchinfo.summary.
 
@@ -310,3 +312,12 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
+
+    def forward(self, *args, **kwargs):
+        return super().forward(*args, **kwargs)
+
+    def parameters(self):
+        return super().parameters()
+
+    def modules(self):
+        return super().modules()

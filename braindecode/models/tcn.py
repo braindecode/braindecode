@@ -7,13 +7,13 @@ from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
 
-from .modules import Ensure4d, Expression
-from .functions import squeeze_final_output
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.modules import Ensure4d, Expression, Chomp1d
+from braindecode.models.functions import squeeze_final_output
+from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class TCN(EEGModuleMixin, nn.Module):
-    """Temporal Convolutional Network (TCN) from Bai et al 2018.
+    """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
 
@@ -31,6 +31,9 @@ class TCN(EEGModuleMixin, nn.Module):
         dropout probability
     n_in_chans: int
         Alias for `n_chans`.
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
 
     References
     ----------
@@ -41,21 +44,22 @@ class TCN(EEGModuleMixin, nn.Module):
     """
 
     def __init__(
-            self,
-            n_chans=None,
-            n_outputs=None,
-            n_blocks=None,
-            n_filters=None,
-            kernel_size=None,
-            drop_prob=None,
-            chs_info=None,
-            n_times=None,
-            input_window_seconds=None,
-            sfreq=None,
-            n_in_chans=None,
-            add_log_softmax=False,
+        self,
+        n_chans=None,
+        n_outputs=None,
+        n_blocks=3,
+        n_filters=30,
+        kernel_size=5,
+        drop_prob=0.5,
+        activation: nn.Module = nn.ReLU,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        n_in_chans=None,
+        add_log_softmax=False,
     ):
-        n_chans, = deprecated_args(
+        (n_chans,) = deprecated_args(
             self,
             ("n_in_chans", "n_chans", n_in_chans, n_chans),
         )
@@ -73,30 +77,37 @@ class TCN(EEGModuleMixin, nn.Module):
 
         self.mapping = {
             "fc.weight": "final_layer.fc.weight",
-            "fc.bias": "final_layer.fc.bias"
+            "fc.bias": "final_layer.fc.bias",
         }
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
             n_inputs = self.n_chans if i == 0 else n_filters
-            dilation_size = 2 ** i
-            t_blocks.add_module("temporal_block_{:d}".format(i), TemporalBlock(
-                n_inputs=n_inputs,
-                n_outputs=n_filters,
-                kernel_size=kernel_size,
-                stride=1,
-                dilation=dilation_size,
-                padding=(kernel_size - 1) * dilation_size,
-                drop_prob=drop_prob
-            ))
+            dilation_size = 2**i
+            t_blocks.add_module(
+                "temporal_block_{:d}".format(i),
+                _TemporalBlock(
+                    n_inputs=n_inputs,
+                    n_outputs=n_filters,
+                    kernel_size=kernel_size,
+                    stride=1,
+                    dilation=dilation_size,
+                    padding=(kernel_size - 1) * dilation_size,
+                    drop_prob=drop_prob,
+                    activation=activation,
+                ),
+            )
         self.temporal_blocks = t_blocks
 
         # Here, change to final_layer
-        self.final_layer = _FinalLayer(in_features=n_filters, out_features=self.n_outputs,
-                                       add_log_softmax=add_log_softmax)
+        self.final_layer = _FinalLayer(
+            in_features=n_filters,
+            out_features=self.n_outputs,
+            add_log_softmax=add_log_softmax,
+        )
         self.min_len = 1
         for i in range(n_blocks):
-            dilation = 2 ** i
+            dilation = 2**i
             self.min_len += 2 * (kernel_size - 1) * dilation
 
         # start in eval mode
@@ -127,7 +138,6 @@ class TCN(EEGModuleMixin, nn.Module):
 
 class _FinalLayer(nn.Module):
     def __init__(self, in_features, out_features, add_log_softmax=True):
-
         super().__init__()
 
         self.fc = nn.Linear(in_features=in_features, out_features=out_features)
@@ -140,7 +150,6 @@ class _FinalLayer(nn.Module):
         self.squeeze = Expression(squeeze_final_output)
 
     def forward(self, x, batch_size, time_size, min_len):
-
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))
@@ -151,27 +160,51 @@ class _FinalLayer(nn.Module):
         return self.squeeze(out[:, :, :, None])
 
 
-class TemporalBlock(nn.Module):
-    def __init__(self, n_inputs, n_outputs, kernel_size, stride, dilation,
-                 padding, drop_prob):
+class _TemporalBlock(nn.Module):
+    def __init__(
+        self,
+        n_inputs,
+        n_outputs,
+        kernel_size,
+        stride,
+        dilation,
+        padding,
+        drop_prob,
+        activation: nn.Module = nn.ReLU,
+    ):
         super().__init__()
-        self.conv1 = weight_norm(nn.Conv1d(
-            n_inputs, n_outputs, kernel_size,
-            stride=stride, padding=padding, dilation=dilation))
+        self.conv1 = weight_norm(
+            nn.Conv1d(
+                n_inputs,
+                n_outputs,
+                kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+            )
+        )
         self.chomp1 = Chomp1d(padding)
-        self.relu1 = nn.ReLU()
+        self.relu1 = activation()
         self.dropout1 = nn.Dropout2d(drop_prob)
 
-        self.conv2 = weight_norm(nn.Conv1d(
-            n_outputs, n_outputs, kernel_size,
-            stride=stride, padding=padding, dilation=dilation))
+        self.conv2 = weight_norm(
+            nn.Conv1d(
+                n_outputs,
+                n_outputs,
+                kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation,
+            )
+        )
         self.chomp2 = Chomp1d(padding)
-        self.relu2 = nn.ReLU()
+        self.relu2 = activation()
         self.dropout2 = nn.Dropout2d(drop_prob)
 
-        self.downsample = (nn.Conv1d(n_inputs, n_outputs, 1)
-                           if n_inputs != n_outputs else None)
-        self.relu = nn.ReLU()
+        self.downsample = (
+            nn.Conv1d(n_inputs, n_outputs, 1) if n_inputs != n_outputs else None
+        )
+        self.relu = activation()
 
         init.normal_(self.conv1.weight, 0, 0.01)
         init.normal_(self.conv2.weight, 0, 0.01)
@@ -189,15 +222,3 @@ class TemporalBlock(nn.Module):
         out = self.dropout2(out)
         res = x if self.downsample is None else self.downsample(x)
         return self.relu(out + res)
-
-
-class Chomp1d(nn.Module):
-    def __init__(self, chomp_size):
-        super().__init__()
-        self.chomp_size = chomp_size
-
-    def extra_repr(self):
-        return 'chomp_size={}'.format(self.chomp_size)
-
-    def forward(self, x):
-        return x[:, :, :-self.chomp_size].contiguous()

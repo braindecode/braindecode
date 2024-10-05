@@ -1,7 +1,10 @@
 """
 Some predefined network architectures for EEG decoding.
 """
+
+from .attentionbasenet import AttentionBaseNet
 from .base import EEGModuleMixin
+from .biot import BIOT
 from .eegconformer import EEGConformer
 from .eegitnet import EEGITNet
 from .deep4 import Deep4Net
@@ -10,7 +13,6 @@ from .eegnet import EEGNetv4, EEGNetv1
 from .hybrid import HybridNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .eegresnet import EEGResNet
-from .eeginception import EEGInception
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
 from .lmda import LDMNet
@@ -23,8 +25,15 @@ from .tidnet import TIDNet
 from .usleep import USleep
 from .util import get_output_shape, to_dense_prediction_model
 from .modules import TimeDistributed
-
-from .util import _init_models_dict
+from .util import _init_models_dict, models_mandatory_parameters
+from .labram import Labram
+from .eegsimpleconv import EEGSimpleConv
+from .sparcnet import SPARCNet
+from .contrawr import ContraWR
+from .eegnex import EEGNeX
+from .tsinception import TSceptionV1
+from .eegtcnet import EEGTCNet
+from .syncnet import SyncNet
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
