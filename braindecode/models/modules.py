@@ -747,7 +747,7 @@ class FilterBankLayer(nn.Module):
         self.filts = nn.ParameterDict(filts)
 
         if self.method_iir:
-            self._apply_filter_func = self._apply_irr
+            self._apply_filter_func = self._apply_iir
         else:
             self._apply_filter_func = partial(self._apply_fir, n_chans=self.n_chans)
 
@@ -815,7 +815,7 @@ class FilterBankLayer(nn.Module):
         return filtered
 
     @staticmethod
-    def _apply_irr(x: Tensor, filter: dict) -> Tensor:
+    def _apply_iir(x: Tensor, filter: dict) -> Tensor:
         """
         Apply an IIR filter to the input tensor.
 
