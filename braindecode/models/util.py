@@ -231,4 +231,5 @@ models_mandatory_parameters = [
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("IFNetV2", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
 ]
