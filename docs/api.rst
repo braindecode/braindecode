@@ -81,6 +81,7 @@ Models
     EEGTCNet
     HybridNet
     Labram
+    LMDANet
     ShallowFBCSPNet
     SleepStagerBlanco2020
     SleepStagerChambon2018

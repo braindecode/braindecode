@@ -1,3 +1,8 @@
+"""LMDA Neural Network.
+Authors: Miao Zheng Qing
+         Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
+"""
+
 import torch
 import torch.nn as nn
 
@@ -69,8 +74,29 @@ class EEGDepthAttention(nn.Module):
 
 
 class LMDANet(EEGModuleMixin, nn.Module):
-    """LMDA-Net Model for EEG Classification.
+    """LMDA-Net Model from Miao, Z et al (2023) [lmda]_.
 
+
+    .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S1053811923003609-gr2_lrg.jpg
+       :align: center
+       :alt: LMDA-Net Architecture
+    Overview of the Neural Network architecture.
+
+    LMDA-Net is designed to effectively capture spectro-spatial-temporal features
+    for motor imagery decoding from EEG data. It combines a benchmark feature
+    extraction network, inspired by ConvNet and EEGNet, with two attention
+    mechanisms: a channel attention module and a depth attention module.
+
+    - **Channel Attention Module**: Enhances the spatial information in EEG data
+      by mapping channel information to the depth dimension using tensor
+      multiplication. This step helps in effectively integrating spatial
+      information, based on neuroscience knowledge of the low spatial resolution
+      of EEG signals.
+
+    - **Depth Attention Module**: Further refines the extracted high-dimensional
+      EEG features by enhancing interactions in the depth dimension. It applies
+      semi-global pooling, a convolutional layer, and softmax activation to
+      strengthen feature interactions between temporal and spatial dimensions.
 
     Parameters
     ----------
@@ -89,7 +115,20 @@ class LMDANet(EEGModuleMixin, nn.Module):
     drop_prob : float, optional
         Dropout probability for regularization, by default 0.65.
 
+    Notes
+    -----
+    This implementation is not guaranteed to be correct, has not been checked
+    by original authors, only adaptation from PyTorch source code [lmdacode]_.
 
+    References
+    ----------
+    .. [lmda] Miao, Z., Zhao, M., Zhang, X., & Ming, D. (2023). LMDA-Net: A
+       lightweight multi-dimensional attention network for general EEG-based
+        brain-computer interfaces and interpretability. NeuroImage, 276, 120209.
+    .. [lmdacode] Miao, Z., Zhao, M., Zhang, X., & Ming, D. (2023). LMDA-Net: A
+       lightweight multi-dimensional attention network for general EEG-based
+       brain-computer interfaces and interpretability.
+       https://github.com/MiaoZhengQing/LMDA-Code
     """
 
     def __init__(
@@ -119,7 +158,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
+        # TO-DO: normalize the variable names
         self.depth = depth
         self.kernel_size = kernel_size
         self.channel_depth1 = channel_depth1
@@ -254,18 +293,3 @@ class LMDANet(EEGModuleMixin, nn.Module):
         x = x.view(x.size(0), -1)  # Flatten
         logits = self.final_layers(x)
         return logits
-
-
-if __name__ == "__main__":
-    model = LMDANet(
-        n_chans=3,
-        n_outputs=2,
-        n_times=875,
-        channel_depth1=24,
-        channel_depth2=7,
-        activation=nn.GELU,
-        drop_prob=0.65,
-    )
-    input_tensor = torch.randn(12, 3, 875)
-    output = model(input_tensor)
-    print(output.shape)
