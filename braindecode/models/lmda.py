@@ -79,6 +79,13 @@ class LMDANet(EEGModuleMixin, nn.Module):
     LMDA-Net is a combination of ShallowConvNet, EEGNet and one attention
     mechanisms. The steps are:
 
+    1. **Input Reshaping**: Reshape input for convolution operations.
+    2. **Channel Weighting**: Apply learnable weights to channels to emphasize important ones.
+    3. **Temporal Convolution**: Extract temporal features using two convolutional layers.
+    4. **Depth-wise Attention**: Highlight important temporal features across channels.
+    5. **Spatial Convolution**: Capture spatial features across channels.
+    6. **Normalization and Dropout**: Reduce temporal size and regularize the model.
+    7. **Flattening and Classification**: Flatten the tensor and apply a linear layer for classification
 
     Parameters
     ----------
@@ -92,6 +99,8 @@ class LMDANet(EEGModuleMixin, nn.Module):
         Number of channels in the second convolutional layer, by default 9.
     avg_pool_size : int, optional
         Pooling size for average pooling, by default 5.
+    kernel_size_attention: int, optional
+       Kernel size for attention layer, by default 7.
     activation : nn.Module, optional
         Activation function class to apply, by default `nn.GELU`.
     dropout_prob : float, optional
@@ -106,7 +115,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
     ----------
     .. [lmda] Miao, Z., Zhao, M., Zhang, X., & Ming, D. (2023). LMDA-Net: A
        lightweight multi-dimensional attention network for general EEG-based
-        brain-computer interfaces and interpretability. NeuroImage, 276, 120209.
+       brain-computer interfaces and interpretability. NeuroImage, 276, 120209.
     .. [lmdacode] Miao, Z., Zhao, M., Zhang, X., & Ming, D. (2023). LMDA-Net: A
        lightweight multi-dimensional attention network for general EEG-based
        brain-computer interfaces and interpretability.
@@ -141,10 +150,9 @@ class LMDANet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        # TO-DO: normalize the variable names
+
         self.n_filters_time = n_filters_time
         self.kernel_size_time = kernel_size_time
-
         self.channel_depth_1 = channel_depth_1
         self.channel_depth_2 = channel_depth_2
         self.kernel_size_attention = kernel_size_attention
