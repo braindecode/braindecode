@@ -139,7 +139,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
         kernel_size_attention: int = 7,
         avg_pool_size: int = 5,
         activation: nn.Module = nn.GELU,
-        dropout_prob: float = 0.65,
+        drop_prob: float = 0.65,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -158,7 +158,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
         self.kernel_size_attention = kernel_size_attention
         self.avg_pool_size = avg_pool_size
         self.activation = activation
-        self.dropout_prob = dropout_prob
+        self.drop_prob = drop_prob
 
         # Initialize channel weights
         self.channel_weight = nn.Parameter(
@@ -223,7 +223,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
         # Normalization Layers
         self.normalization = nn.Sequential(
             nn.AvgPool3d(kernel_size=(1, 1, self.avg_pool_size)),
-            nn.Dropout(p=self.dropout_prob),
+            nn.Dropout(p=self.drop_prob),
         )
 
         # Final Classification Layer
