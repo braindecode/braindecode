@@ -6,11 +6,20 @@ from einops.layers.torch import Rearrange
 from braindecode.models.base import EEGModuleMixin
 
 
-class EEGDepthAttention(nn.Module):
+class _EEGDepthAttention(nn.Module):
     """
     EEG Depth Attention Module.
 
-    This module applies depth-wise attention to the input EEG features.
+    The depth attention module generates an output map M(F) ∈ ℝ^(D'×1×T')
+    from the input feature F ∈ ℝ^(D'×C'×T'), defined as:
+
+        M(F) = (Softmax(Conv(Pooling(F)^T)) * D')^T    (3)
+
+    Where:
+        - Pooling: Semi-global pooling applied on the spatial dimension.
+        - Conv: Convolution operation for local cross-depth interaction.
+        - Softmax: Softmax function to probabilize the depth information.
+        - T: Transpose operation between the spatial and depth dimensions.
 
     Parameters
     ----------
@@ -20,16 +29,6 @@ class EEGDepthAttention(nn.Module):
         Number of time samples.
     kernel_size : int, optional
         Kernel size for the convolution, by default 7.
-
-    Attributes
-    ----------
-    adaptive_pool : nn.AdaptiveAvgPool2d
-        Adaptive average pooling layer.
-    conv : nn.Conv2d
-        Convolutional layer with kernel size `(kernel_size, 1)`.
-    softmax : nn.Softmax
-        Softmax layer applied over the depth dimension.
-
     """
 
     def __init__(self, num_channels: int, num_times: int, kernel_size: int = 7):
@@ -75,29 +74,17 @@ class LMDANet(EEGModuleMixin, nn.Module):
     .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S1053811923003609-gr2_lrg.jpg
        :align: center
        :alt: LMDA-Net Architecture
-    Overview of the Neural Network architecture.
+        Overview of the Neural Network architecture.
 
-    LMDA-Net is designed to effectively capture spectro-spatial-temporal features
-    for motor imagery decoding from EEG data. It combines a benchmark feature
-    extraction network, inspired by ConvNet and EEGNet, with two attention
-    mechanisms: a channel attention module and a depth attention module.
+    LMDA-Net is a combination of ShallowConvNet, EEGNet and one attention
+    mechanisms. The steps are:
 
-    - **Channel Attention Module**: Enhances the spatial information in EEG data
-      by mapping channel information to the depth dimension using tensor
-      multiplication. This step helps in effectively integrating spatial
-      information, based on neuroscience knowledge of the low spatial resolution
-      of EEG signals.
-
-    - **Depth Attention Module**: Further refines the extracted high-dimensional
-      EEG features by enhancing interactions in the depth dimension. It applies
-      semi-global pooling, a convolutional layer, and softmax activation to
-      strengthen feature interactions between temporal and spatial dimensions.
 
     Parameters
     ----------
-    depth : int, optional
-        Depth parameter of the model, by default 9.
-    kernel_size : int, optional
+    n_filters_time : int, optional
+        Number of temporal filters, by default 9.
+    kernel_size_time : int, optional
         Kernel size for temporal convolution, by default 75.
     channel_depth_1 : int, optional
         Number of channels in the first convolutional layer, by default 24.
@@ -136,10 +123,11 @@ class LMDANet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # model related
-        depth: int = 9,
-        kernel_size: int = 75,
+        n_filters_time: int = 9,
+        kernel_size_time: int = 75,
         channel_depth_1: int = 24,
         channel_depth_2: int = 9,
+        kernel_size_attention: int = 7,
         avg_pool_size: int = 5,
         activation: nn.Module = nn.GELU,
         dropout_prob: float = 0.65,
@@ -154,25 +142,31 @@ class LMDANet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # TO-DO: normalize the variable names
-        self.depth = depth
-        self.kernel_size = kernel_size
+        self.n_filters_time = n_filters_time
+        self.kernel_size_time = kernel_size_time
+
         self.channel_depth_1 = channel_depth_1
         self.channel_depth_2 = channel_depth_2
+        self.kernel_size_attention = kernel_size_attention
         self.avg_pool_size = avg_pool_size
         self.activation = activation
         self.dropout_prob = dropout_prob
 
         # Initialize channel weights
         self.channel_weight = nn.Parameter(
-            torch.randn(self.depth, 1, self.num_channels), requires_grad=True
+            torch.randn(self.n_filters_time, 1, self.n_chans), requires_grad=True
         )
         nn.init.xavier_uniform_(self.channel_weight.data)
 
+        reduced_time = self.n_times - self.kernel_size_time + 1
+        embedding_size = self.channel_depth_2 * (reduced_time // avg_pool_size)
+
+        # Layers:
         self.ensure_dim = Rearrange("batch channels time -> batch 1 channels time")
         # Temporal Convolutional Layers
         self.temporal_conv = nn.Sequential(
             nn.Conv2d(
-                in_channels=self.depth,
+                in_channels=self.n_filters_time,
                 out_channels=self.channel_depth_1,
                 kernel_size=(1, 1),
                 groups=1,
@@ -182,7 +176,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
             nn.Conv2d(
                 in_channels=self.channel_depth_1,
                 out_channels=self.channel_depth_1,
-                kernel_size=(1, self.kernel_size),
+                kernel_size=(1, self.kernel_size_time),
                 groups=self.channel_depth_1,
                 bias=False,
             ),
@@ -190,18 +184,11 @@ class LMDANet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        # TO-DO: remove this, and calculate this manually
-
-        # Compute dimensions after temporal convolution
-        with torch.no_grad():
-            dummy_input = torch.ones(1, 1, self.num_channels, self.num_times)
-            x = torch.einsum("bdcw, hdc->bhcw", dummy_input, self.channel_weight)
-            x_time = self.temporal_conv(x)
-            _, conv_channels, _, num_times_time = x_time.size()
-
         # Depth-wise Attention Module
-        self.depth_attention = EEGDepthAttention(
-            num_channels=conv_channels, num_times=num_times_time, kernel_size=7
+        self.depth_attention = _EEGDepthAttention(
+            num_channels=self.channel_depth_1,
+            num_times=reduced_time,
+            kernel_size=self.kernel_size_attention,
         )
 
         # Spatial Convolutional Layers
@@ -231,17 +218,9 @@ class LMDANet(EEGModuleMixin, nn.Module):
             nn.Dropout(p=self.dropout_prob),
         )
 
-        # TO-DO: remove this, and calculate this manually
-        # Compute the number of features for the final layer
-        with torch.no_grad():
-            x_time = self.depth_attention(x_time)
-            x = self.spatial_conv(x_time)
-            x = self.normalization(x)
-            num_out_features = x.view(1, -1).size(1)
-
         # Final Classification Layer
         self.final_layer = nn.Linear(
-            in_features=num_out_features, out_features=self.num_outputs
+            in_features=embedding_size, out_features=self.n_outputs
         )
 
         # Initialize weights
@@ -280,7 +259,8 @@ class LMDANet(EEGModuleMixin, nn.Module):
 
         """
         x = self.ensure_dim(x)
-        x = torch.einsum("bdcw, hdc->bhcw", x, self.channel_weight)  # Channel weighting
+        x = torch.einsum("bdcw, hdc->bhcw", x, self.channel_weight)  #
+        # Channel weighting
         x_time = self.temporal_conv(x)  # Temporal convolution
         x_time = self.depth_attention(x_time)  # Depth-wise attention
         x = self.spatial_conv(x_time)  # Spatial convolution
