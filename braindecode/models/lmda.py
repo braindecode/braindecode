@@ -1,8 +1,3 @@
-"""LMDA Neural Network.
-Authors: Miao Zheng Qing
-         Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
-"""
-
 import torch
 import torch.nn as nn
 
@@ -19,9 +14,9 @@ class EEGDepthAttention(nn.Module):
 
     Parameters
     ----------
-    n_channels : int
+    num_channels : int
         Number of channels in the input data.
-    n_times : int
+    num_times : int
         Number of time samples.
     kernel_size : int, optional
         Kernel size for the convolution, by default 7.
@@ -37,10 +32,10 @@ class EEGDepthAttention(nn.Module):
 
     """
 
-    def __init__(self, n_channels: int, n_times: int, kernel_size: int = 7):
+    def __init__(self, num_channels: int, num_times: int, kernel_size: int = 7):
         super().__init__()
-        self.n_channels = n_channels
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, n_times))
+        self.num_channels = num_channels
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, num_times))
         self.conv = nn.Conv2d(
             in_channels=1,
             out_channels=1,
@@ -57,7 +52,7 @@ class EEGDepthAttention(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape `(batch_size, n_channels, depth, n_times)`.
+            Input tensor of shape `(batch_size, num_channels, depth, num_times)`.
 
         Returns
         -------
@@ -70,7 +65,7 @@ class EEGDepthAttention(nn.Module):
         y = self.conv(x_transpose)
         y = self.softmax(y)
         y = y.transpose(-2, -3)
-        return y * self.n_channels * x
+        return y * self.num_channels * x
 
 
 class LMDANet(EEGModuleMixin, nn.Module):
@@ -104,15 +99,15 @@ class LMDANet(EEGModuleMixin, nn.Module):
         Depth parameter of the model, by default 9.
     kernel_size : int, optional
         Kernel size for temporal convolution, by default 75.
-    channel_depth1 : int, optional
+    channel_depth_1 : int, optional
         Number of channels in the first convolutional layer, by default 24.
-    channel_depth2 : int, optional
+    channel_depth_2 : int, optional
         Number of channels in the second convolutional layer, by default 9.
-    avepool_size : int, optional
+    avg_pool_size : int, optional
         Pooling size for average pooling, by default 5.
     activation : nn.Module, optional
         Activation function class to apply, by default `nn.GELU`.
-    drop_prob : float, optional
+    dropout_prob : float, optional
         Dropout probability for regularization, by default 0.65.
 
     Notes
@@ -143,11 +138,11 @@ class LMDANet(EEGModuleMixin, nn.Module):
         # model related
         depth: int = 9,
         kernel_size: int = 75,
-        channel_depth1: int = 24,
-        channel_depth2: int = 9,
-        avepool_size: int = 5,
+        channel_depth_1: int = 24,
+        channel_depth_2: int = 9,
+        avg_pool_size: int = 5,
         activation: nn.Module = nn.GELU,
-        drop_prob: float = 0.65,
+        dropout_prob: float = 0.65,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -161,37 +156,37 @@ class LMDANet(EEGModuleMixin, nn.Module):
         # TO-DO: normalize the variable names
         self.depth = depth
         self.kernel_size = kernel_size
-        self.channel_depth1 = channel_depth1
-        self.channel_depth2 = channel_depth2
-        self.avepool_size = avepool_size
+        self.channel_depth_1 = channel_depth_1
+        self.channel_depth_2 = channel_depth_2
+        self.avg_pool_size = avg_pool_size
         self.activation = activation
-        self.drop_prob = drop_prob
+        self.dropout_prob = dropout_prob
 
         # Initialize channel weights
         self.channel_weight = nn.Parameter(
-            torch.randn(self.depth, 1, self.n_chans), requires_grad=True
+            torch.randn(self.depth, 1, self.num_channels), requires_grad=True
         )
         nn.init.xavier_uniform_(self.channel_weight.data)
 
-        self.ensuredim = Rearrange("batch chans time -> batch 1 chans time")
+        self.ensure_dim = Rearrange("batch channels time -> batch 1 channels time")
         # Temporal Convolutional Layers
-        self.time_conv = nn.Sequential(
+        self.temporal_conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.depth,
-                out_channels=self.channel_depth1,
+                out_channels=self.channel_depth_1,
                 kernel_size=(1, 1),
                 groups=1,
                 bias=False,
             ),
-            nn.BatchNorm2d(self.channel_depth1),
+            nn.BatchNorm2d(self.channel_depth_1),
             nn.Conv2d(
-                in_channels=self.channel_depth1,
-                out_channels=self.channel_depth1,
+                in_channels=self.channel_depth_1,
+                out_channels=self.channel_depth_1,
                 kernel_size=(1, self.kernel_size),
-                groups=self.channel_depth1,
+                groups=self.channel_depth_1,
                 bias=False,
             ),
-            nn.BatchNorm2d(self.channel_depth1),
+            nn.BatchNorm2d(self.channel_depth_1),
             self.activation(),
         )
 
@@ -199,41 +194,41 @@ class LMDANet(EEGModuleMixin, nn.Module):
 
         # Compute dimensions after temporal convolution
         with torch.no_grad():
-            dummy_input = torch.ones(1, 1, self.n_chans, self.n_times)
+            dummy_input = torch.ones(1, 1, self.num_channels, self.num_times)
             x = torch.einsum("bdcw, hdc->bhcw", dummy_input, self.channel_weight)
-            x_time = self.time_conv(x)
-            _, c_time, _, n_times_time = x_time.size()
+            x_time = self.temporal_conv(x)
+            _, conv_channels, _, num_times_time = x_time.size()
 
         # Depth-wise Attention Module
         self.depth_attention = EEGDepthAttention(
-            n_channels=c_time, n_times=n_times_time, kernel_size=7
+            num_channels=conv_channels, num_times=num_times_time, kernel_size=7
         )
 
         # Spatial Convolutional Layers
         self.spatial_conv = nn.Sequential(
             nn.Conv2d(
-                in_channels=self.channel_depth1,
-                out_channels=self.channel_depth2,
+                in_channels=self.channel_depth_1,
+                out_channels=self.channel_depth_2,
                 kernel_size=(1, 1),
                 groups=1,
                 bias=False,
             ),
-            nn.BatchNorm2d(self.channel_depth2),
+            nn.BatchNorm2d(self.channel_depth_2),
             nn.Conv2d(
-                in_channels=self.channel_depth2,
-                out_channels=self.channel_depth2,
+                in_channels=self.channel_depth_2,
+                out_channels=self.channel_depth_2,
                 kernel_size=(self.n_chans, 1),
-                groups=self.channel_depth2,
+                groups=self.channel_depth_2,
                 bias=False,
             ),
-            nn.BatchNorm2d(self.channel_depth2),
+            nn.BatchNorm2d(self.channel_depth_2),
             self.activation(),
         )
 
         # Normalization Layers
-        self.norm = nn.Sequential(
-            nn.AvgPool3d(kernel_size=(1, 1, self.avepool_size)),
-            nn.Dropout(p=self.drop_prob),
+        self.normalization = nn.Sequential(
+            nn.AvgPool3d(kernel_size=(1, 1, self.avg_pool_size)),
+            nn.Dropout(p=self.dropout_prob),
         )
 
         # TO-DO: remove this, and calculate this manually
@@ -241,12 +236,12 @@ class LMDANet(EEGModuleMixin, nn.Module):
         with torch.no_grad():
             x_time = self.depth_attention(x_time)
             x = self.spatial_conv(x_time)
-            x = self.norm(x)
-            n_out_features = x.view(1, -1).size(1)
+            x = self.normalization(x)
+            num_out_features = x.view(1, -1).size(1)
 
         # Final Classification Layer
         self.final_layer = nn.Linear(
-            in_features=n_out_features, out_features=self.n_outputs
+            in_features=num_out_features, out_features=self.num_outputs
         )
 
         # Initialize weights
@@ -284,12 +279,12 @@ class LMDANet(EEGModuleMixin, nn.Module):
             Output logits of shape `(batch_size, n_outputs)`.
 
         """
-        x = self.ensuredim(x)
+        x = self.ensure_dim(x)
         x = torch.einsum("bdcw, hdc->bhcw", x, self.channel_weight)  # Channel weighting
-        x_time = self.time_conv(x)  # Temporal convolution
+        x_time = self.temporal_conv(x)  # Temporal convolution
         x_time = self.depth_attention(x_time)  # Depth-wise attention
         x = self.spatial_conv(x_time)  # Spatial convolution
-        x = self.norm(x)  # Normalization and dropout
+        x = self.normalization(x)  # Normalization and dropout
         x = x.view(x.size(0), -1)  # Flatten
         logits = self.final_layer(x)
         return logits
