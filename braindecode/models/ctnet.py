@@ -27,13 +27,13 @@ class CTNet(EEGModuleMixin, nn.Module):
 
     A Convolutional Transformer Network for EEG-Based Motor Imagery Classification
 
-
-    TODO: fill here..
-
-
     .. figure:: https://raw.githubusercontent.com/snailpt/CTNet/main/architecture.png
        :align: center
        :alt: CTNet Architecture
+
+
+    TODO: fill here..
+
 
     Parameters
     ----------
