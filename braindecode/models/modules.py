@@ -777,7 +777,7 @@ class FilterBankLayer(nn.Module):
         Returns
         -------
         torch.Tensor
-            Filtered output tensor of shape (batch_size, n_bands, filtered_time_points).
+            Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
         # Initialize a list to collect filtered outputs
         n_bands = self.n_bands
