@@ -532,7 +532,7 @@ class DropPath(nn.Module):
 
 
 class FilterBankLayer(nn.Module):
-    """Filter bank layer to split the signal between different frequency bands.
+    """Apply multiple band-pass filters to generate multiview signal representation.
 
     This layer constructs a bank of signals filtered in specific bands for each channel.
     It uses MNE's `create_filter` function to create the band-specific filters and
