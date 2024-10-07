@@ -726,8 +726,6 @@ class FilterBankLayer(nn.Module):
                         )
                         iir_params["output"] = "ba"
 
-        self._apply_filter_func = None
-
         filts = {}
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
@@ -770,26 +768,17 @@ class FilterBankLayer(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape (batch_size, time_points).
-        n_chans: int
-            Number of chans passed internally inside the object
+            Input tensor of shape (batch_size, n_chans, time_points).
 
         Returns
         -------
         torch.Tensor
             Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
-        # Initialize a list to collect filtered outputs
-        n_bands = self.n_bands
-        output = []
-
-        for band_idx in range(n_bands):
-            filtered = self._apply_filter_func(x, self.filts[f"band_{band_idx}"])  # type: ignore
-            output.append(filtered)
-
-        # Shape: (batch_size, n_bands, nchans, time_points)
-        output = torch.cat(output, dim=1)
-        return output
+        return torch.cat(
+            self._apply_filter_func(x, p_filt) for p_filt in self.filts.values(),
+            dim=1
+         )
 
     @staticmethod
     def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:

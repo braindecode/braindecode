@@ -667,9 +667,10 @@ def test_band_filters_none_defaults(sample_input):
 
     # Forward pass to ensure output shape is correct
     output = layer(sample_input)
-    assert output.shape == (sample_input.shape[0], layer.n_bands, n_chans,
-                            sample_input.shape[
-                                2]), "Output shape is incorrect when band_filters=None."
+    assert output.shape == (
+        sample_input.shape[0], layer.n_bands, n_chans,
+        sample_input.shape[2]
+    ), "Output shape is incorrect when band_filters=None."
 
 
 def test_band_filters_with_incorrect_tuple_length():
@@ -705,37 +706,19 @@ def test_iir_params_output_sos_warning(sample_input):
                "a"].dtype == torch.float64, "Filter coefficients should be float64."
 
 
-def test_forward_pass_iir(sample_input):
+@pytest.mark.parametrize('method', ['iir', 'fir'])
+def test_forward_pass_filter_bank(method, sample_input):
     """Test the forward pass of the FilterBankLayer with IIR filtering."""
     n_chans = 8
     sfreq = 100
-    iir_params = {"output": "ba"}
     layer = FilterBankLayer(
         n_chans=n_chans,
         sfreq=sfreq,
         band_filters=None,
-        method="iir",
-        iir_params=iir_params
+        method=method,
     )
 
     output = layer(sample_input)
     assert output.shape == (
-    sample_input.shape[0], layer.n_bands, n_chans, sample_input.shape[2]), \
-        "Output shape is incorrect for IIR filtering."
-
-
-def test_forward_pass_fir(sample_input):
-    """Test the forward pass of the FilterBankLayer with FIR filtering."""
-    n_chans = 8
-    sfreq = 100
-    layer = FilterBankLayer(
-        n_chans=n_chans,
-        sfreq=sfreq,
-        band_filters=None,
-        method="fir"
-    )
-
-    output = layer(sample_input)
-    assert output.shape == (
-    sample_input.shape[0], layer.n_bands, n_chans, sample_input.shape[2]), \
-        "Output shape is incorrect for FIR filtering."
+        sample_input.shape[0], layer.n_bands, n_chans, sample_input.shape[2]
+    ), f"Output shape is incorrect for {method} filtering."
