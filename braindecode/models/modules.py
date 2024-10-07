@@ -532,7 +532,7 @@ class DropPath(nn.Module):
 
 
 class FilterBankLayer(nn.Module):
-    """Filter bank layer to split the signal between different frequency bands.
+    """Apply multiple band-pass filters to generate multiview signal representation.
 
     This layer constructs a bank of signals filtered in specific bands for each channel.
     It uses MNE's `create_filter` function to create the band-specific filters and
@@ -777,7 +777,7 @@ class FilterBankLayer(nn.Module):
         Returns
         -------
         torch.Tensor
-            Filtered output tensor of shape (batch_size, n_bands, filtered_time_points).
+            Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
         # Initialize a list to collect filtered outputs
         n_bands = self.n_bands
@@ -813,7 +813,9 @@ class FilterBankLayer(nn.Module):
         """
         # Shape: (nchans, filter_length)
         # Expand to (nchans, filter_length)
-        filt_expanded = filter["b"].unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+        filt_expanded = (
+            filter["b"].to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+        )
 
         # Check with MNE and filtering experts if we should do something more.
         filtered = fftconvolve(
@@ -849,8 +851,8 @@ class FilterBankLayer(nn.Module):
         # Apply filtering using torchaudio's filtfilt
         filtered = filtfilt(
             x,
-            a_coeffs=filter["a"].type_as(x),
-            b_coeffs=filter["b"].type_as(x),
+            a_coeffs=filter["a"].type_as(x).to(x.device),
+            b_coeffs=filter["b"].type_as(x).to(x.device),
             clamp=False,
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
