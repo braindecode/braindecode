@@ -696,7 +696,7 @@ def test_filter_bank_layer_frequency_response():
             band_filters, filter_bank_layer.filts.values())):
 
         # Extract filter coefficients
-        b = filt_dict['b'].detach().numpy()
+        b = filt_dict["filt"].detach().numpy()
         a = np.array([1.0])  # FIR filter, so a is [1.0]
 
         # Compute frequency response
