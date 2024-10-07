@@ -161,7 +161,7 @@ class CTNet(EEGModuleMixin, nn.Module):
             nn.Dropout(p=self.drop_prob_final),
         )
 
-        self.final_layers = nn.Linear(
+        self.final_layer = nn.Linear(
             in_features=emb_size * sequence_length, out_features=self.n_outputs
         )
 
@@ -186,7 +186,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         trans = self.trans(cnn)
         features = cnn + trans
         flatten_feature = self.flatten(features)
-        out = self.final_layers(flatten_feature)
+        out = self.final_layer(flatten_feature)
         return out
 
 
