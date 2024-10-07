@@ -161,7 +161,10 @@ class LMDANet(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
 
         # Initialize channel weights
-        self.channel_weight = nn.Conv2d(1, self.n_filters_time, (self.n_chans, 1), bias=False)
+        self.channel_weight = nn.Parameter(
+            torch.randn(self.n_filters_time, 1, self.n_chans), requires_grad=True
+        )
+        nn.init.xavier_uniform_(self.channel_weight.data)
 
         reduced_time = self.n_times - self.kernel_size_time + 1
         embedding_size = self.channel_depth_2 * (reduced_time // avg_pool_size)
@@ -264,12 +267,12 @@ class LMDANet(EEGModuleMixin, nn.Module):
 
         """
         x = self.ensure_dim(x)
-        x = self.channel_weight(x)
+        x = torch.einsum("bdcw, hdc->bhcw", x, self.channel_weight)  #
         # Channel weighting
         x_time = self.temporal_conv(x)  # Temporal convolution
         x_time = self.depth_attention(x_time)  # Depth-wise attention
         x = self.spatial_conv(x_time)  # Spatial convolution
         x = self.normalization(x)  # Normalization and dropout
         x = x.view(x.size(0), -1)  # Flatten
-        logits = self.final_layer(x)
-        return logits
+        out = self.final_layer(x)
+        return out
