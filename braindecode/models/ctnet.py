@@ -10,17 +10,75 @@ classification from Wei Zhao et al. (2024).
 from __future__ import annotations
 
 import math
-from typing import Any
 
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn, Tensor
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.eegconformer import _FeedForwardBlock, _MultiHeadAttention
+from braindecode.models.eegconformer import (
+    _FeedForwardBlock,
+    _MultiHeadAttention,
+)
 
 
 class CTNet(EEGModuleMixin, nn.Module):
+    """CTNet from Zhao, W et al (2024) [ctnet]_.
+
+    A Convolutional Transformer Network for EEG-Based Motor Imagery Classification
+
+
+    TODO: fill here..
+
+
+    .. figure:: https://raw.githubusercontent.com/snailpt/CTNet/main/architecture.png
+       :align: center
+       :alt: CTNet Architecture
+
+    Parameters
+    ----------
+    activation : nn.Module, default=nn.GELU
+        Activation function to use in the network.
+    heads : int, default=4
+        Number of attention heads in the transformer encoder.
+    emb_size : int, default=40
+        Embedding size for the transformer.
+    depth : int, default=6
+        Number of transformer encoder blocks.
+    n_filters_time : int, default=20
+        Number of filters in the first EEG convolutional layer.
+    kernel_size : int, default=64
+        Kernel size for the first EEG convolutional layer.
+    depth_multiplier : int, default=2
+        Depth multiplier for the EEG convolutional layers.
+    pool_size_1 : int, default=8
+        Pooling size for the first pooling layer in EEG convolution.
+    pool_size_2 : int, default=8
+        Pooling size for the second pooling layer in EEG convolution.
+    drop_prob_cnn : float, default=0.3
+        Dropout probability for the CNN layers.
+    drop_prob_posi : float, default=0.1
+        Dropout probability for the positional encoding.
+    drop_prob_final : float, default=0.5
+        Dropout probability for the final layers.
+
+
+    Notes
+    -----
+    This implementation is adapted from the original CTNet source code
+    [ctnetcode]_ to comply with Braindecode's model standards. More comments.
+
+    References
+    ----------
+    .. [ctnet] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
+        CTNet: a convolutional transformer network for EEG-based motor imagery
+        classification. Scientific Reports, 14(1), 20237.
+    .. [ctnetcode] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
+        CTNet: a convolutional transformer network for EEG-based motor imagery
+        classification.
+        https://github.com/snailpt/CTNet
+    """
+
     def __init__(
         self,
         # Base arguments
@@ -39,12 +97,11 @@ class CTNet(EEGModuleMixin, nn.Module):
         heads: int = 4,
         emb_size: int = 40,
         depth: int = 6,
-        eeg1_f1: int = 20,
-        eeg1_kernel_size: int = 64,
-        eeg1_D: int = 2,
-        eeg1_pooling_size1: int = 8,
-        eeg1_pooling_size2: int = 8,
-        flatten_eeg1: int = 600,
+        n_filters_time: int = 20,
+        kernel_size: int = 64,
+        depth_multiplier: int = 2,
+        pool_size_1: int = 8,
+        pool_size_2: int = 8,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -57,35 +114,56 @@ class CTNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.emb_size = emb_size
-        self.flatten_eeg1 = flatten_eeg1
         self.activation = activation
+        self.flatten_eeg1 = 600
+
+        self.n_filters_time = n_filters_time
+        self.drop_prob_cnn = drop_prob_cnn
+        self.pool_size_1 = pool_size_1
+        self.pool_size_2 = pool_size_2
+        self.depth_multiplier = depth_multiplier
+        self.kernel_size = kernel_size
+        self.drop_prob_posi = drop_prob_posi
+        self.drop_prob_final = drop_prob_final
+
+        # n_times - pool_size_1 / p
+        sequence_length = math.floor(
+            (
+                math.floor((self.n_times - self.pool_size_1) / self.pool_size_1 + 1)
+                - self.pool_size_2
+            )
+            / self.pool_size_2
+            + 1
+        )
 
         # Layers
         self.ensuredim = Rearrange("batch nchans time -> batch 1 nchans time")
         self.flatten = nn.Flatten()
 
-        self.cnn = _PatchEmbeddingCNN(
-            n_filters_time=eeg1_f1,
-            kernel_size=eeg1_kernel_size,
-            depth_multiplier=eeg1_D,
-            pool_size_1=eeg1_pooling_size1,
-            pool_size_2=eeg1_pooling_size2,
-            drop_prob=drop_prob_cnn,
+        self.cnn = _PatchEmbeddingEEGNet(
+            n_filters_time=self.n_filters_time,
+            kernel_size=self.kernel_size,
+            depth_multiplier=self.depth_multiplier,
+            pool_size_1=self.pool_size_1,
+            pool_size_2=self.pool_size_2,
+            drop_prob=self.drop_prob_cnn,
             n_chans=self.n_chans,
             activation=self.activation,
         )
 
-        self.position = _PositionalEncoding(emb_size, drop_prob=drop_prob_posi)
+        self.position = _PositionalEncoding(emb_size, drop_prob=self.drop_prob_posi)
         self.trans = _TransformerEncoder(
             heads, depth, emb_size, activation=self.activation
         )
 
         self.flatten_drop_layer = nn.Sequential(
             nn.Flatten(),
-            nn.Dropout(drop_prob_final),
+            nn.Dropout(p=self.drop_prob_final),
         )
 
-        self.final_layers = nn.Linear(self.flatten_eeg1, self.n_outputs)
+        self.final_layers = nn.Linear(
+            in_features=emb_size * sequence_length, out_features=self.n_outputs
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -112,7 +190,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         return out
 
 
-class _PatchEmbeddingCNN(nn.Module):
+class _PatchEmbeddingEEGNet(nn.Module):
     def __init__(
         self,
         n_filters_time: int = 16,
@@ -126,7 +204,7 @@ class _PatchEmbeddingCNN(nn.Module):
     ):
         super().__init__()
         n_filters_out = depth_multiplier * n_filters_time
-        self.cnn_module = nn.Sequential(
+        self.eegnet_module = nn.Sequential(
             # Temporal convolution
             nn.Conv2d(
                 in_channels=1,
@@ -185,7 +263,7 @@ class _PatchEmbeddingCNN(nn.Module):
         Tensor
             Embedded patches of shape (batch_size, num_patches, embedding_dim).
         """
-        x = self.cnn_module(x)
+        x = self.eegnet_module(x)
         x = self.projection(x)
         return x
 
@@ -221,32 +299,32 @@ class _ResidualAdd(nn.Module):
 class _TransformerEncoderBlock(nn.Module):
     def __init__(
         self,
-        emb_size: int,
+        dim_feedforward: int,
         num_heads: int = 4,
-        drop_p: float = 0.5,
+        drop_prob: float = 0.5,
         forward_expansion: int = 4,
         forward_drop_p: float = 0.5,
-        activation: nn.Module = nn.GELU(),
+        activation: nn.Module = nn.GELU,
     ):
         super().__init__()
         self.attention = _ResidualAdd(
             nn.Sequential(
-                _MultiHeadAttention(emb_size, num_heads, drop_p),
+                _MultiHeadAttention(dim_feedforward, num_heads, drop_prob),
             ),
-            emb_size,
-            drop_p,
+            dim_feedforward,
+            drop_prob,
         )
         self.feed_forward = _ResidualAdd(
             nn.Sequential(
                 _FeedForwardBlock(
-                    emb_size,
+                    dim_feedforward,
                     expansion=forward_expansion,
                     drop_p=forward_drop_p,
                     activation=activation,
                 ),
             ),
-            emb_size,
-            drop_p,
+            dim_feedforward,
+            drop_prob,
         )
 
     def forward(self, x: Tensor, **kwargs) -> Tensor:
@@ -273,17 +351,17 @@ class _TransformerEncoderBlock(nn.Module):
 class _TransformerEncoder(nn.Module):
     def __init__(
         self,
-        heads: int,
+        nheads: int,
         depth: int,
-        emb_size: int,
+        dim_feedforward: int,
         activation: nn.Module = nn.GELU,
     ):
         super().__init__()
         self.layers = nn.Sequential(
             *[
                 _TransformerEncoderBlock(
-                    emb_size=emb_size,
-                    num_heads=heads,
+                    dim_feedforward=dim_feedforward,
+                    num_heads=nheads,
                     activation=activation,
                 )
                 for _ in range(depth)
@@ -308,10 +386,10 @@ class _TransformerEncoder(nn.Module):
 
 
 class _PositionalEncoding(nn.Module):
-    def __init__(self, embedding: int, length: int = 100, drop_prob: float = 0.1):
+    def __init__(self, emb_size: int, length: int = 100, drop_prob: float = 0.1):
         super().__init__()
         self.dropout = nn.Dropout(drop_prob)
-        self.encoding = nn.Parameter(torch.randn(1, length, embedding))
+        self.encoding = nn.Parameter(torch.randn(1, length, emb_size))
 
     def forward(self, x: Tensor) -> Tensor:
         """
