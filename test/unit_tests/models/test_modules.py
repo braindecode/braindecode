@@ -330,6 +330,138 @@ def test_safelog_extra_repr(eps, expected_repr):
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
 
+
+
+@pytest.fixture
+def sample_input():
+    """Create a sample input tensor."""
+    batch_size = 2
+    n_chans = 8
+    time_points = 1000
+    return torch.randn(batch_size, n_chans, time_points)
+
+
+def test_default_band_filters(sample_input):
+    """Test that default band_filters are set correctly when None is provided."""
+    n_chans = 8
+    sfreq = 100
+    layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq, band_filters=None)
+
+    expected_band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
+    assert layer.band_filters == expected_band_filters, "Default band_filters not set correctly."
+    assert layer.n_bands == 9, "Number of bands should be 9."
+
+    output = layer(sample_input)
+    assert output.shape[1] == layer.n_bands, "Output band dimension mismatch."
+    assert output.shape[2] == n_chans, "Output channel dimension mismatch."
+
+
+def test_band_filters_as_int_warning(sample_input):
+    """Test that providing band_filters as int raises a warning and sets band_filters correctly."""
+    n_chans = 8
+    sfreq = 100
+    band_filters_int = 9
+    with pytest.warns(UserWarning,
+                      match="Creating the filter banks equally divided"):
+        layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
+                                band_filters=band_filters_int)
+
+    expected_intervals = torch.linspace(4, 40, steps=band_filters_int + 1)
+    expected_band_filters = [(low.item(), high.item()) for low, high in
+                             zip(expected_intervals[:-1],
+                                 expected_intervals[1:])]
+
+    assert layer.band_filters == expected_band_filters, "band_filters not correctly set from int."
+    assert layer.n_bands == band_filters_int, "Number of bands should match the provided int."
+
+
+def test_invalid_band_filters_raises_value_error():
+    """Test that providing invalid band_filters raises a ValueError."""
+    n_chans = 8
+    sfreq = 100
+    invalid_band_filters = "invalid_type"  # Not a list or int
+
+    with pytest.raises(ValueError,
+                       match="`band_filters` should be a list of tuples"):
+        FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
+                        band_filters=invalid_band_filters)
+
+
+def test_band_filters_none_defaults(sample_input):
+    """
+    Test that when band_filters is None and no n_bands or band_width are provided,
+    the default 9 bands with 4Hz bandwidth are correctly initialized.
+    """
+    n_chans = 8
+    sfreq = 100
+    layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq, band_filters=None)
+
+    # Define the expected default band_filters
+    expected_band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
+
+    # Assertions to verify band_filters and number of bands
+    assert layer.band_filters == expected_band_filters, "Default band_filters not set correctly when band_filters=None."
+    assert layer.n_bands == 9, "Number of bands should be 9 when band_filters=None."
+
+    # Forward pass to ensure output shape is correct
+    output = layer(sample_input)
+    assert output.shape == (
+        sample_input.shape[0], layer.n_bands, n_chans,
+        sample_input.shape[2]
+    ), "Output shape is incorrect when band_filters=None."
+
+
+def test_band_filters_with_incorrect_tuple_length():
+    """Test that providing band_filters with tuples not of length 2 raises a ValueError."""
+    n_chans = 8
+    sfreq = 100
+    invalid_band_filters = [(4, 8), (12,)]  # Second tuple has only one element
+
+    with pytest.raises(ValueError,
+                       match="The band_filters items should be splitable in 2 values"):
+        FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
+                        band_filters=invalid_band_filters)
+
+
+def test_iir_params_output_sos_warning(sample_input):
+    """Test that providing iir_params with output='sos' raises a warning and modifies the output."""
+    n_chans = 8
+    sfreq = 100
+    iir_params = {"output": "sos"}
+
+    with pytest.warns(UserWarning,
+                      match="It is not possible to use second-order section"):
+        layer = FilterBankLayer(
+            n_chans=n_chans,
+            sfreq=sfreq,
+            band_filters=None,
+            method="iir",
+            iir_params=iir_params
+        )
+
+    assert layer.filts is not None, "Filters should be initialized."
+    assert layer.filts["band_0"][
+               "a"].dtype == torch.float64, "Filter coefficients should be float64."
+
+
+@pytest.mark.parametrize('method', ['iir', 'fir'])
+def test_forward_pass_filter_bank(method, sample_input):
+    """Test the forward pass of the FilterBankLayer with IIR filtering."""
+    n_chans = 8
+    sfreq = 100
+    layer = FilterBankLayer(
+        n_chans=n_chans,
+        sfreq=sfreq,
+        band_filters=None,
+        method=method,
+    )
+
+    output = layer(sample_input)
+    assert output.shape == (
+        sample_input.shape[0], layer.n_bands, n_chans, sample_input.shape[2]
+    ), f"Output shape is incorrect for {method} filtering."
+
+
 @pytest.mark.parametrize("ftype", ["butterworth", "cheby1", "cheby1", "cheby2", "butter"])
 @pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
 @pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
@@ -592,133 +724,3 @@ def test_filter_bank_layer_frequency_response():
         attenuation_threshold = -40 if h_freq <= 20 else -30
         assert np.all(stopband_gain < attenuation_threshold), \
             f"Stopband attenuation for filter {idx+1} is not sufficient."
-
-
-@pytest.fixture
-def sample_input():
-    """Create a sample input tensor."""
-    batch_size = 2
-    n_chans = 8
-    time_points = 1000
-    return torch.randn(batch_size, n_chans, time_points)
-
-
-def test_default_band_filters(sample_input):
-    """Test that default band_filters are set correctly when None is provided."""
-    n_chans = 8
-    sfreq = 100
-    layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq, band_filters=None)
-
-    expected_band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
-    assert layer.band_filters == expected_band_filters, "Default band_filters not set correctly."
-    assert layer.n_bands == 9, "Number of bands should be 9."
-
-    output = layer(sample_input)
-    assert output.shape[1] == layer.n_bands, "Output band dimension mismatch."
-    assert output.shape[2] == n_chans, "Output channel dimension mismatch."
-
-
-def test_band_filters_as_int_warning(sample_input):
-    """Test that providing band_filters as int raises a warning and sets band_filters correctly."""
-    n_chans = 8
-    sfreq = 100
-    band_filters_int = 9
-    with pytest.warns(UserWarning,
-                      match="Creating the filter banks equally divided"):
-        layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
-                                band_filters=band_filters_int)
-
-    expected_intervals = torch.linspace(4, 40, steps=band_filters_int + 1)
-    expected_band_filters = [(low.item(), high.item()) for low, high in
-                             zip(expected_intervals[:-1],
-                                 expected_intervals[1:])]
-
-    assert layer.band_filters == expected_band_filters, "band_filters not correctly set from int."
-    assert layer.n_bands == band_filters_int, "Number of bands should match the provided int."
-
-
-def test_invalid_band_filters_raises_value_error():
-    """Test that providing invalid band_filters raises a ValueError."""
-    n_chans = 8
-    sfreq = 100
-    invalid_band_filters = "invalid_type"  # Not a list or int
-
-    with pytest.raises(ValueError,
-                       match="`band_filters` should be a list of tuples"):
-        FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
-                        band_filters=invalid_band_filters)
-
-
-def test_band_filters_none_defaults(sample_input):
-    """
-    Test that when band_filters is None and no n_bands or band_width are provided,
-    the default 9 bands with 4Hz bandwidth are correctly initialized.
-    """
-    n_chans = 8
-    sfreq = 100
-    layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq, band_filters=None)
-
-    # Define the expected default band_filters
-    expected_band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
-
-    # Assertions to verify band_filters and number of bands
-    assert layer.band_filters == expected_band_filters, "Default band_filters not set correctly when band_filters=None."
-    assert layer.n_bands == 9, "Number of bands should be 9 when band_filters=None."
-
-    # Forward pass to ensure output shape is correct
-    output = layer(sample_input)
-    assert output.shape == (
-        sample_input.shape[0], layer.n_bands, n_chans,
-        sample_input.shape[2]
-    ), "Output shape is incorrect when band_filters=None."
-
-
-def test_band_filters_with_incorrect_tuple_length():
-    """Test that providing band_filters with tuples not of length 2 raises a ValueError."""
-    n_chans = 8
-    sfreq = 100
-    invalid_band_filters = [(4, 8), (12,)]  # Second tuple has only one element
-
-    with pytest.raises(ValueError,
-                       match="The band_filters items should be splitable in 2 values"):
-        FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
-                        band_filters=invalid_band_filters)
-
-
-def test_iir_params_output_sos_warning(sample_input):
-    """Test that providing iir_params with output='sos' raises a warning and modifies the output."""
-    n_chans = 8
-    sfreq = 100
-    iir_params = {"output": "sos"}
-
-    with pytest.warns(UserWarning,
-                      match="It is not possible to use second-order section"):
-        layer = FilterBankLayer(
-            n_chans=n_chans,
-            sfreq=sfreq,
-            band_filters=None,
-            method="iir",
-            iir_params=iir_params
-        )
-
-    assert layer.filts is not None, "Filters should be initialized."
-    assert layer.filts["band_0"][
-               "a"].dtype == torch.float64, "Filter coefficients should be float64."
-
-
-@pytest.mark.parametrize('method', ['iir', 'fir'])
-def test_forward_pass_filter_bank(method, sample_input):
-    """Test the forward pass of the FilterBankLayer with IIR filtering."""
-    n_chans = 8
-    sfreq = 100
-    layer = FilterBankLayer(
-        n_chans=n_chans,
-        sfreq=sfreq,
-        band_filters=None,
-        method=method,
-    )
-
-    output = layer(sample_input)
-    assert output.shape == (
-        sample_input.shape[0], layer.n_bands, n_chans, sample_input.shape[2]
-    ), f"Output shape is incorrect for {method} filtering."
