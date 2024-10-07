@@ -79,6 +79,7 @@ Models
     EEGResNet
     EEGSimpleConv
     EEGTCNet
+    FBEEGNet
     HybridNet
     Labram
     ShallowFBCSPNet
