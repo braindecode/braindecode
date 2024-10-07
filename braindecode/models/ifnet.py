@@ -402,12 +402,3 @@ class IFNetV2(EEGModuleMixin, nn.Module):
         x = self.final_layer(x)
 
         return x
-
-
-if __name__ == "__main__":
-    x = torch.randn(1, 22, 1001)
-
-    model = IFNetV2(n_chans=22, n_times=1001, n_outputs=2, sfreq=256)
-
-    with torch.no_grad():
-        out = model(x)
