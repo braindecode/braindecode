@@ -776,9 +776,9 @@ class FilterBankLayer(nn.Module):
             Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
         return torch.cat(
-            self._apply_filter_func(x, p_filt) for p_filt in self.filts.values(),
-            dim=1
-         )
+            (self._apply_filter_func(x, p_filt) for p_filt in self.filts.values()),
+            dim=1,
+        )
 
     @staticmethod
     def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
