@@ -59,12 +59,12 @@ class _EEGDepthAttention(nn.Module):
             Output tensor after applying depth-wise attention.
 
         """
-        x_pool = self.adaptive_pool(x)
-        x_transpose = x_pool.transpose(-2, -3)
-        y = self.conv(x_transpose)
-        y = self.softmax(y)
-        y = y.transpose(-2, -3)
-        return y * self.num_channels * x
+        x_pool = self.adaptive_pool(x)  # D' x 1 x num_times
+        x_transpose = x_pool.transpose(-2, -3)  # 1 x D' x num_times
+        y = self.conv(x_transpose)  # 1 x D' x num_times
+        y = self.softmax(y)  # 1 x D' x num_times
+        y = y.transpose(-2, -3)  # D' x 1 x num_times
+        return y * self.num_channels * x  # D' x num_channels x num_times
 
 
 class LMDANet(EEGModuleMixin, nn.Module):
@@ -161,10 +161,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
         self.drop_prob = drop_prob
 
         # Initialize channel weights
-        self.channel_weight = nn.Parameter(
-            torch.randn(self.n_filters_time, 1, self.n_chans), requires_grad=True
-        )
-        nn.init.xavier_uniform_(self.channel_weight.data)
+        self.channel_weight = nn.Conv2d(1, self.n_filters_time, (self.n_chans, 1), bias=False)
 
         reduced_time = self.n_times - self.kernel_size_time + 1
         embedding_size = self.channel_depth_2 * (reduced_time // avg_pool_size)
@@ -267,7 +264,7 @@ class LMDANet(EEGModuleMixin, nn.Module):
 
         """
         x = self.ensure_dim(x)
-        x = torch.einsum("bdcw, hdc->bhcw", x, self.channel_weight)  #
+        x = self.channel_weight(x)
         # Channel weighting
         x_time = self.temporal_conv(x)  # Temporal convolution
         x_time = self.depth_attention(x_time)  # Depth-wise attention
