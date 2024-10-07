@@ -75,7 +75,6 @@ class CTNet(EEGModuleMixin, nn.Module):
         drop_prob_posi=0.1,
         drop_prob_final=0.5,
         flatten_eeg1=600,
-        # Other ways to initialize the model
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -93,7 +92,6 @@ class CTNet(EEGModuleMixin, nn.Module):
             sfreq,
         )
 
-        self.number_class, self.number_channel = 2, 22
         self.emb_size = emb_size
         self.flatten_eeg1 = flatten_eeg1
 
