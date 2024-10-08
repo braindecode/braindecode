@@ -5,10 +5,13 @@
 * https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
 """
 
+from functools import partial
+
 import torch
 import torch.nn.functional as F
-from torch.fft import fftfreq
+from einops.layers.torch import Rearrange
 from torch import nn
+from torch.fft import fftfreq
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -191,9 +194,12 @@ class GeneralizedGaussianFilter(nn.Module):
         return x
 
 
-class MagEEGminer(EEGModuleMixin, nn.Module):
+class EEGMiner(EEGModuleMixin, nn.Module):
+    """ """
+
     def __init__(
         self,  # Signal related parameters
+        method: str = "plv",
         n_chans=None,
         n_outputs=None,
         n_times=None,
@@ -224,23 +230,52 @@ class MagEEGminer(EEGModuleMixin, nn.Module):
         self.n_filters = len(self.filter_f_mean)
         self.group_delay = group_delay
         self.clamp_f_mean = clamp_f_mean
+        self.method = method.lower()
+
+        if self.method == "mag" or self.method == "corr":
+            inverse_fourier = True
+            in_channels = self.n_chans
+            out_channels = self.n_chans * self.n_filters
+        else:
+            inverse_fourier = False
+            in_channels = 1
+            out_channels = 1 * self.n_filters
+
         # Generalized Gaussian Filter
         self.filter = GeneralizedGaussianFilter(
-            self.n_chans,
-            self.n_chans * self.n_filters,
-            self.n_times,
+            in_channels=in_channels,
+            out_channels=out_channels,
+            sequence_length=self.n_times,
             sample_rate=self.sfreq,
             f_mean=self.filter_f_mean,
             bandwidth=self.filter_bandwidth,
             shape=self.filter_shape,
             affine_group_delay=False,
-            inverse_fourier=True,
+            inverse_fourier=inverse_fourier,
             group_delay=self.group_delay,
             clamp_f_mean=self.clamp_f_mean,
         )
 
+        # Forward method
+        if self.method == "mag":
+            self.method_forward = self._apply_mag_forward
+            self.n_features = self.n_chans * self.n_filters
+            self.ensure_dim = nn.Identity()
+        elif self.method == "corr":
+            self.method_forward = partial(
+                self._apply_corr_forward,
+                n_chans=self.n_chans,
+                n_filters=self.n_filters,
+                n_times=self.n_times,
+            )
+            self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
+            self.ensure_dim = nn.Identity()
+        elif self.method == "plv":
+            self.method_forward = partial(self._apply_plv, n_chans=self.n_chans)
+            self.ensure_dim = Rearrange("... d -> ... 1 d")
+            self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
+
         # Classifier
-        self.n_features = self.n_chans * self.n_filters
         self.ft_bn = nn.BatchNorm1d(self.n_features, affine=False)
         self.final_layer = nn.Linear(self.n_features, self.n_outputs)
         nn.init.zeros_(self.final_layer.bias)
@@ -248,16 +283,12 @@ class MagEEGminer(EEGModuleMixin, nn.Module):
     def forward(self, x):
         """x: (batch, electrodes, time)"""
         batch = x.shape[0]
-
+        x = self.ensure_dim(x)
         # Apply Gaussian filters in frequency domain
         # x -> (batch, electrodes * filters, time)
         x = self.filter(x)
 
-        # Signal magnitude
-        x = x * x
-        x = x.mean(dim=-1)
-        x = torch.sqrt(x)
-
+        x = self.method_forward(x=x, batch=batch)
         # Classifier
         # Note that the order of dimensions before flattening the feature vector is important
         # for attributing feature weights during interpretation.
@@ -267,77 +298,17 @@ class MagEEGminer(EEGModuleMixin, nn.Module):
 
         return x
 
+    @staticmethod
+    def _apply_mag_forward(x, batch=None):
+        # Signal magnitude
+        x = x * x
+        x = x.mean(dim=-1)
+        x = torch.sqrt(x)
+        return x
 
-class CorrEEGminer(EEGModuleMixin, nn.Module):
-    def __init__(
-        self,  # Signal related parameters
-        n_chans=None,
-        n_outputs=None,
-        n_times=None,
-        chs_info=None,
-        input_window_seconds=None,
-        sfreq=None,
-        filter_f_mean=[23.0, 23.0],
-        filter_bandwidth=[44.0, 44.0],
-        filter_shape=[2.0, 2.0],
-        group_delay=(20.0, 20.0),
-        clamp_f_mean=(1.0, 45.0),
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
-        self.n_out = self.n_outputs
-
-        # Initialize filter parameters
-        self.filter_f_mean = filter_f_mean
-        self.filter_bandwidth = filter_bandwidth
-        self.filter_shape = filter_shape
-        self.group_delay = group_delay
-        self.clamp_f_mean = clamp_f_mean
-
-        self.n_filters = len(self.filter_f_mean)
-
-        # Generalized Gaussian Filter
-        self.filter = GeneralizedGaussianFilter(
-            self.n_chans,
-            self.n_chans * self.n_filters,
-            self.n_times,
-            sample_rate=self.sfreq,
-            f_mean=self.filter_f_mean,
-            bandwidth=self.filter_bandwidth,
-            shape=self.filter_shape,
-            inverse_fourier=True,
-            affine_group_delay=False,
-            group_delay=self.group_delay,
-            clamp_f_mean=self.clamp_f_mean,
-        )
-
-        # Classifier
-        self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
-        self.ft_bn = nn.BatchNorm1d(self.n_features, affine=False)
-        self.final_layer = nn.Linear(self.n_features, self.n_outputs)
-        nn.init.zeros_(self.final_layer.bias)
-
-    def forward(self, x):
-        """x: (batch, electrodes, time)"""
-        batch = x.shape[0]
-
-        # Apply Gaussian filters in frequency domain
-        # x -> (batch, electrodes * filters, time)
-        x = self.filter(x)
-
-        # Compute signal correlations
-        # x -> (batch, electrodes, electrodes, filters)
-        x = x.reshape(batch, self.n_chans, self.n_filters, self.n_times).transpose(
-            -3, -2
-        )
+    @staticmethod
+    def _apply_corr_forward(x, batch, n_chans, n_filters, n_times):
+        x = x.reshape(batch, n_chans, n_filters, n_times).transpose(-3, -2)
         x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
             x.var(dim=-1, keepdim=True) + 1e-6
         )
@@ -346,80 +317,13 @@ class CorrEEGminer(EEGModuleMixin, nn.Module):
         x = x.abs()
 
         # Get upper triu of symmetric connectivity matrix
-        triu = torch.triu_indices(self.n_chans, self.n_chans, 1)
+        triu = torch.triu_indices(n_chans, n_chans, 1)
         x = x[:, triu[0], triu[1], :]
-
-        # Classifier
-        # Note that the order of dimensions before flattening the feature vector is important
-        # for attributing feature weights during interpretation.
-        x = x.reshape(batch, self.n_features)
-        x = self.ft_bn(x)
-        x = self.final_layer(x)
 
         return x
 
-
-class PLVEEGminer(EEGModuleMixin, nn.Module):
-    def __init__(
-        self,  # Signal related parameters
-        n_chans=None,
-        n_outputs=None,
-        n_times=None,
-        chs_info=None,
-        input_window_seconds=None,
-        sfreq=None,
-        # Model related parameter
-        filter_shape=[2.0, 2.0],
-        filter_bandwidth=[44.0, 44.0],
-        filter_f_mean=[23.0, 23.0],
-        group_delay=(20.0, 20.0),
-        clamp_f_mean=(1.0, 45.0),
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
-        # Initialize filter parameters
-        self.filter_shape = filter_shape
-        self.filter_bandwidth = filter_bandwidth
-        self.filter_f_mean = filter_f_mean
-        self.group_delay = group_delay
-        self.clamp_f_mean = clamp_f_mean
-        self.n_filters = len(self.filter_f_mean)
-
-        # Generalized Gaussian Filter
-        self.filter = GeneralizedGaussianFilter(
-            1,
-            1 * self.n_filters,
-            self.n_times,
-            sample_rate=self.sfreq,
-            f_mean=self.filter_f_mean,
-            bandwidth=self.filter_bandwidth,
-            shape=self.filter_shape,
-            inverse_fourier=False,
-            affine_group_delay=False,
-            group_delay=self.group_delay,
-            clamp_f_mean=self.clamp_f_mean,
-        )
-
-        # Classifier
-        self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
-        self.ft_bn = nn.BatchNorm1d(self.n_features, affine=False)
-        self.final_layer = nn.Linear(self.n_features, self.n_outputs)
-        nn.init.zeros_(self.final_layer.bias)
-
-    def forward(self, x):
-        """x: (batch, electrodes, time)"""
-        # Apply Gaussian filters in frequency domain
-        # x -> (batch, electrodes, filters, n_freq, 2)
-        x = self.filter(x.unsqueeze(-2))
-
+    @staticmethod
+    def _apply_plv(x, n_chans, batch=None):
         # Compute PLV connectivity
         # x -> (batch, electrodes, electrodes, filters)
         x = x.transpose(-4, -3)  # swap electrodes and filters
@@ -427,15 +331,6 @@ class PLVEEGminer(EEGModuleMixin, nn.Module):
         x = x.transpose(-3, -2).transpose(-2, -1)  # move filter channels to the end
 
         # Get upper triu of symmetric connectivity matrix
-        triu = torch.triu_indices(self.n_chans, self.n_chans, 1)
+        triu = torch.triu_indices(n_chans, n_chans, 1)
         x = x[:, triu[0], triu[1], :]
-
-        # Classifier
-        # Note that the order of dimensions before flattening the feature vector is important
-        # for attributing feature weights during interpretation.
-
-        x = x.flatten(1)
-        x = self.ft_bn(x)
-        x = self.final_layer(x)
-
         return x
