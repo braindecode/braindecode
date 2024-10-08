@@ -556,6 +556,10 @@ class FilterBankLayer(nn.Module):
         List of frequency bands as (low_freq, high_freq) tuples. Each tuple defines
         the frequency range for one filter in the bank. If not provided, defaults
         to 9 non-overlapping bands with 4 Hz bandwidths spanning from 4 to 40 Hz.
+    method : str, default='fir'
+        ``'fir'`` will use FIR filtering, ``'iir'`` will use IIR
+        forward-backward filtering (via :func:`~scipy.signal.filtfilt`).
+        For more details, please check the `MNE Preprocessing Tutorial <https://mne.tools/stable/auto_tutorials/preprocessing/25_background_filtering.html>`_.
     filter_length : str | int
         Length of the FIR filter to use (if applicable):
 
@@ -586,9 +590,6 @@ class FilterBankLayer(nn.Module):
             min(max(h_freq * 0.25, 2.), info['sfreq'] / 2. - h_freq)
 
         Only used for ``method='fir'``.
-    method : str, default='fir'
-        ``'fir'`` will use FIR filtering, ``'iir'`` will use IIR
-        forward-backward filtering (via :func:`~scipy.signal.filtfilt`).
     phase : str, default='zero'
         Phase of the filter.
         When ``method='fir'``, symmetric linear-phase FIR filters are constructed
@@ -647,10 +648,10 @@ class FilterBankLayer(nn.Module):
         n_chans: int,
         sfreq: int,
         band_filters: Optional[List[Tuple[float, float]] | int] = None,
+        method: str = "fir",
         filter_length: str | float | int = "auto",
         l_trans_bandwidth: str | float | int = "auto",
         h_trans_bandwidth: str | float | int = "auto",
-        method: str = "fir",
         phase: str = "zero",
         iir_params: Optional[dict] = None,
         fir_window: str = "hamming",
@@ -726,8 +727,6 @@ class FilterBankLayer(nn.Module):
                         )
                         iir_params["output"] = "ba"
 
-        self._apply_filter_func = None
-
         filts = {}
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
@@ -746,8 +745,8 @@ class FilterBankLayer(nn.Module):
                 verbose=verbose,
             )
             if not self.method_iir:
-                b = from_numpy(filt).float()
-                filts[f"band_{idx}"] = {"b": b}
+                filt = from_numpy(filt).float()
+                filts[f"band_{idx}"] = {"filt": filt}
 
             else:
                 _check_coefficients((filt["b"], filt["a"]))
@@ -770,26 +769,17 @@ class FilterBankLayer(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape (batch_size, time_points).
-        n_chans: int
-            Number of chans passed internally inside the object
+            Input tensor of shape (batch_size, n_chans, time_points).
 
         Returns
         -------
         torch.Tensor
             Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
-        # Initialize a list to collect filtered outputs
-        n_bands = self.n_bands
-        output = []
-
-        for band_idx in range(n_bands):
-            filtered = self._apply_filter_func(x, self.filts[f"band_{band_idx}"])  # type: ignore
-            output.append(filtered)
-
-        # Shape: (batch_size, n_bands, nchans, time_points)
-        output = torch.cat(output, dim=1)
-        return output
+        return torch.cat(
+            [self._apply_filter_func(x, p_filt) for p_filt in self.filts.values()],
+            dim=1,
+        )
 
     @staticmethod
     def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
@@ -811,19 +801,25 @@ class FilterBankLayer(nn.Module):
         Tensor
             Filtered tensor of shape (batch_size, 1, n_chans, n_times).
         """
-        # Shape: (nchans, filter_length)
-        # Expand to (nchans, filter_length)
+        # Expand filter coefficients to match the number of channels
+        # Original 'b' shape: (filter_length,)
+        # After unsqueeze and repeat: (n_chans, filter_length)
+        # After final unsqueeze: (1, n_chans, filter_length)
         filt_expanded = (
-            filter["b"].to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+            filter["filt"].to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
         )
 
-        # Check with MNE and filtering experts if we should do something more.
+        # Perform FFT-based convolution
+        # Input x shape: (batch_size, n_chans, n_times)
+        # filt_expanded shape: (1, n_chans, filter_length)
+        # After convolution: (batch_size, n_chans, n_times)
+
         filtered = fftconvolve(
             x, filt_expanded, mode="same"
         )  # Shape: (batch_size, nchans, time_points)
 
-        # Add band dimension
-        # Shape: (batch_size, 1, nchans, time_points)
+        # Add a new dimension for the band
+        # Shape after unsqueeze: (batch_size, 1, n_chans, n_times)
         filtered = filtered.unsqueeze(1)
         # returning the filtered
         return filtered
