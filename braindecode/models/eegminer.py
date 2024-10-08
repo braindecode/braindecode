@@ -195,7 +195,77 @@ class GeneralizedGaussianFilter(nn.Module):
 
 
 class EEGMiner(EEGModuleMixin, nn.Module):
-    """ """
+    """EEGMiner from Ludwig et al (2024) [eegminer]_.
+
+    EEGMiner is a neural network model designed for EEG signal classification using
+    learnable generalized Gaussian filters. The model leverages frequency domain
+    filtering and connectivity metrics such as Phase Locking Value (PLV) to extract
+    meaningful features from EEG data, enabling effective classification tasks.
+
+    The model begins by applying generalized Gaussian filters in the frequency domain
+    to the input EEG signals. Depending on the selected method (`mag`, `corr`, or `plv`),
+    it computes either the magnitude, correlation, or phase locking value of the filtered signals.
+    These features are then normalized and passed through a batch normalization layer
+    before being fed into a final linear layer for classification.
+
+    The input to EEGMiner should be a three-dimensional tensor representing EEG signals:
+
+    ``(batch_size, n_channels, n_timesteps)``.
+
+    Notes
+    -----
+    EEGMiner incorporates learnable parameters for filter characteristics, allowing the
+    model to adaptively learn optimal frequency bands and phase delays for the classification task.
+    The use of PLV as a connectivity metric makes EEGMiner suitable for tasks requiring
+    the analysis of phase relationships between different EEG channels.
+
+    Recommended range for hyperparameters:
+
+    |    Parameter      | Recommended Range          |
+    |-------------------|----------------------------|
+    | filter_f_mean     | [1.0, 45.0] Hz             |
+    | filter_bandwidth  | [1.0, 44.0] Hz             |
+    | filter_shape      | [2.0, 3.0]                 |
+    | group_delay       | [20.0, 20.0] ms            |
+
+    The model have a patent [eegminercode]_.
+
+    .. versionadded:: 0.9
+
+    Parameters
+    ----------
+    method : str, default="plv"
+        The method used for feature extraction. Options are:
+        - "mag": Magnitude of the filtered signals.
+        - "corr": Correlation between filtered channels.
+        - "plv": Phase Locking Value connectivity metric.
+    filter_f_mean : list of float, default=[23.0, 23.0]
+        Mean frequencies for the generalized Gaussian filters.
+    filter_bandwidth : list of float, default=[44.0, 44.0]
+        Bandwidths for the generalized Gaussian filters.
+    filter_shape : list of float, default=[2.0, 2.0]
+        Shape parameters for the generalized Gaussian filters.
+    group_delay : tuple of float, default=(20.0, 20.0)
+        Group delay values for the filters in milliseconds.
+    clamp_f_mean : tuple of float, default=(1.0, 45.0)
+        Clamping range for the mean frequency parameters.
+
+    References
+    ----------
+    .. [eegminer] Ludwig, S., Bakas, S., Adamos, D. A., Laskaris, N., Panagakis,
+       Y., & Zafeiriou, S. (2024). EEGMiner: discovering interpretable features
+       of brain activity with learnable filters. Journal of Neural Engineering,
+       21(3), 036010.
+    .. [eegminercode] Ludwig, S., Bakas, S., Adamos, D. A., Laskaris, N., Panagakis,
+       Y., & Zafeiriou, S. (2024). EEGMiner: discovering interpretable features
+       of brain activity with learnable filters.
+       https://github.com/SMLudwig/EEGminer/.
+       Cogitat, Ltd. "Learnable filters for EEG classification."
+       Patent GB2609265.
+       https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
+
+
+    """
 
     def __init__(
         self,  # Signal related parameters
