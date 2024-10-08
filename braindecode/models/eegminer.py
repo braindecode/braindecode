@@ -5,12 +5,12 @@
 * https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
 """
 
-import numpy as np
-
 import torch
-from torch import nn
-from scipy.fftpack import fftfreq
 import torch.nn.functional as F
+from scipy.fftpack import fftfreq
+from torch import nn
+
+from braindecode.models.base import EEGModuleMixin
 
 
 def torch_hilbert_freq(x, forward_fourier=True):
@@ -186,14 +186,30 @@ class GeneralizedGaussianFilter(nn.Module):
             x = torch.view_as_complex(x)
             x = torch.fft.irfft(x, n=self.sequence_length, dim=-1)
 
+        x = x.to(dtype=torch.float32)
+
         return x
 
 
-class MagEEGminer(nn.Module):
-    def __init__(self, in_shape, n_out):
-        super(MagEEGminer, self).__init__()
-        self.in_shape = in_shape
-        self.n_out = n_out
+class MagEEGminer(EEGModuleMixin, nn.Module):
+    def __init__(
+        self,  # Signal related parameters
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         # Initialize filter parameters
         self.fs = 128
@@ -201,8 +217,8 @@ class MagEEGminer(nn.Module):
         self.filter_bandwidth = [44.0, 44.0]
         self.filter_shape = [2.0, 2.0]
         self.n_filters = len(self.filter_f_mean)
-        self.n_electrodes = in_shape[0]
-        self.time = in_shape[1]
+        self.n_electrodes = self.n_chans
+        self.time = self.n_times
 
         # Generalized Gaussian Filter
         self.filter = GeneralizedGaussianFilter(
@@ -222,7 +238,7 @@ class MagEEGminer(nn.Module):
         # Classifier
         self.n_features = self.n_electrodes * self.n_filters
         self.ft_bn = nn.BatchNorm1d(self.n_features, affine=False)
-        self.fc_out = nn.Linear(self.n_features, n_out)
+        self.fc_out = nn.Linear(self.n_features, self.n_outputs)
         nn.init.zeros_(self.fc_out.bias)
 
     def forward(self, x):
@@ -249,11 +265,27 @@ class MagEEGminer(nn.Module):
         return x
 
 
-class CorrEEGminer(nn.Module):
-    def __init__(self, in_shape, n_out):
-        super(CorrEEGminer, self).__init__()
-        self.in_shape = in_shape  # (electrodes, time)
-        self.n_out = n_out
+class CorrEEGminer(EEGModuleMixin, nn.Module):
+    def __init__(
+        self,  # Signal related parameters
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        self.n_out = self.n_outputs
 
         # Initialize filter parameters
         self.fs = 128
@@ -261,8 +293,8 @@ class CorrEEGminer(nn.Module):
         self.filter_bandwidth = [44.0, 44.0]
         self.filter_shape = [2.0, 2.0]
         self.n_filters = len(self.filter_f_mean)
-        self.n_electrodes = in_shape[0]
-        self.time = in_shape[1]
+        self.n_electrodes = self.n_chans
+        self.time = self.n_times
 
         # Generalized Gaussian Filter
         self.filter = GeneralizedGaussianFilter(
@@ -284,7 +316,7 @@ class CorrEEGminer(nn.Module):
             self.n_filters * self.n_electrodes * (self.n_electrodes - 1) // 2
         )
         self.ft_bn = nn.BatchNorm1d(self.n_features, affine=False)
-        self.fc_out = nn.Linear(self.n_features, n_out)
+        self.fc_out = nn.Linear(self.n_features, self.n_outputs)
         nn.init.zeros_(self.fc_out.bias)
 
     def forward(self, x):
@@ -322,11 +354,25 @@ class CorrEEGminer(nn.Module):
         return x
 
 
-class PLVEEGminer(nn.Module):
-    def __init__(self, in_shape, n_out):
-        super(PLVEEGminer, self).__init__()
-        self.in_shape = in_shape  # (electrodes, time)
-        self.n_out = n_out
+class PLVEEGminer(EEGModuleMixin, nn.Module):
+    def __init__(
+        self,  # Signal related parameters
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         # Initialize filter parameters
         self.fs = 128
@@ -334,8 +380,8 @@ class PLVEEGminer(nn.Module):
         self.filter_bandwidth = [44.0, 44.0]
         self.filter_shape = [2.0, 2.0]
         self.n_filters = len(self.filter_f_mean)
-        self.n_electrodes = in_shape[0]
-        self.time = in_shape[1]
+        self.n_electrodes = self.n_chans
+        self.time = self.n_times
 
         # Generalized Gaussian Filter
         self.filter = GeneralizedGaussianFilter(
@@ -357,7 +403,7 @@ class PLVEEGminer(nn.Module):
             self.n_filters * self.n_electrodes * (self.n_electrodes - 1) // 2
         )
         self.ft_bn = nn.BatchNorm1d(self.n_features, affine=False)
-        self.fc_out = nn.Linear(self.n_features, n_out)
+        self.fc_out = nn.Linear(self.n_features, self.n_outputs)
         nn.init.zeros_(self.fc_out.bias)
 
     def forward(self, x):
@@ -388,11 +434,3 @@ class PLVEEGminer(nn.Module):
         x = torch.sigmoid(x)
 
         return x
-
-
-if __name__ == "__main__":
-    x = torch.randn(16, 22, 1001)
-
-    model1 = CorrEEGminer(n_out=2, in_shape=[22, 1001])
-    with torch.no_grad():
-        out_1 = model1(x)
