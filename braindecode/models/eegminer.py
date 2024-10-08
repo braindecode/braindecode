@@ -260,7 +260,6 @@ class MagEEGminer(EEGModuleMixin, nn.Module):
         x = x.reshape(batch, self.n_features)
         x = self.ft_bn(x)
         x = self.fc_out(x)
-        x = torch.sigmoid(x)
 
         return x
 
@@ -349,7 +348,6 @@ class CorrEEGminer(EEGModuleMixin, nn.Module):
         x = x.reshape(batch, self.n_features)
         x = self.ft_bn(x)
         x = self.fc_out(x)
-        x = torch.sigmoid(x)
 
         return x
 
@@ -431,6 +429,5 @@ class PLVEEGminer(EEGModuleMixin, nn.Module):
         x = x.flatten(1)
         x = self.ft_bn(x)
         x = self.fc_out(x)
-        x = torch.sigmoid(x)
 
         return x
