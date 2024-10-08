@@ -1012,3 +1012,4 @@ class MaxLayer(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         max_val, _ = x.max(dim=self.dim, keepdim=True)
         return max_val
+
