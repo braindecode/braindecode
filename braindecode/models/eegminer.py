@@ -37,7 +37,7 @@ def torch_hilbert_freq(x, forward_fourier=True):
 
 
 def plv_time(x, forward_fourier=True):
-    """PLV metric in time domain.
+    """Phase Locking Value metric in time domain.
     x (..., channels, time/(freqs, 2)) -> (..., channels, channels)"""
     x_a = torch_hilbert_freq(x, forward_fourier)
     amp = torch.sqrt(x_a[..., 0] ** 2 + x_a[..., 1] ** 2 + 1e-6)
@@ -200,10 +200,12 @@ class MagEEGminer(EEGModuleMixin, nn.Module):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        #
+        # model related
         filter_f_mean=[23.0, 23.0],
         filter_bandwidth=[44.0, 44.0],
         filter_shape=[2.0, 2.0],
+        group_delay=(20.0, 20.0),
+        clamp_f_mean=(1.0, 45.0),
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -220,20 +222,21 @@ class MagEEGminer(EEGModuleMixin, nn.Module):
         self.filter_bandwidth = filter_bandwidth
         self.filter_shape = filter_shape
         self.n_filters = len(self.filter_f_mean)
-
+        self.group_delay = group_delay
+        self.clamp_f_mean = clamp_f_mean
         # Generalized Gaussian Filter
         self.filter = GeneralizedGaussianFilter(
             self.n_chans,
             self.n_chans * self.n_filters,
-            self.n_time,
+            self.n_times,
             sample_rate=self.sfreq,
             f_mean=self.filter_f_mean,
             bandwidth=self.filter_bandwidth,
             shape=self.filter_shape,
             affine_group_delay=False,
             inverse_fourier=True,
-            group_delay=(20.0, 20.0),
-            clamp_f_mean=(1.0, 45.0),
+            group_delay=self.group_delay,
+            clamp_f_mean=self.clamp_f_mean,
         )
 
         # Classifier
@@ -277,6 +280,8 @@ class CorrEEGminer(EEGModuleMixin, nn.Module):
         filter_f_mean=[23.0, 23.0],
         filter_bandwidth=[44.0, 44.0],
         filter_shape=[2.0, 2.0],
+        group_delay=(20.0, 20.0),
+        clamp_f_mean=(1.0, 45.0),
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -294,6 +299,9 @@ class CorrEEGminer(EEGModuleMixin, nn.Module):
         self.filter_f_mean = filter_f_mean
         self.filter_bandwidth = filter_bandwidth
         self.filter_shape = filter_shape
+        self.group_delay = group_delay
+        self.clamp_f_mean = clamp_f_mean
+
         self.n_filters = len(self.filter_f_mean)
 
         # Generalized Gaussian Filter
@@ -307,8 +315,8 @@ class CorrEEGminer(EEGModuleMixin, nn.Module):
             shape=self.filter_shape,
             inverse_fourier=True,
             affine_group_delay=False,
-            group_delay=(20.0, 20.0),
-            clamp_f_mean=(1.0, 45.0),
+            group_delay=self.group_delay,
+            clamp_f_mean=self.clamp_f_mean,
         )
 
         # Classifier
@@ -327,7 +335,7 @@ class CorrEEGminer(EEGModuleMixin, nn.Module):
 
         # Compute signal correlations
         # x -> (batch, electrodes, electrodes, filters)
-        x = x.reshape(batch, self.n_chans, self.n_filters, self.n_time).transpose(
+        x = x.reshape(batch, self.n_chans, self.n_filters, self.n_times).transpose(
             -3, -2
         )
         x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
@@ -364,6 +372,8 @@ class PLVEEGminer(EEGModuleMixin, nn.Module):
         filter_shape=[2.0, 2.0],
         filter_bandwidth=[44.0, 44.0],
         filter_f_mean=[23.0, 23.0],
+        group_delay=(20.0, 20.0),
+        clamp_f_mean=(1.0, 45.0),
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -379,22 +389,23 @@ class PLVEEGminer(EEGModuleMixin, nn.Module):
         self.filter_shape = filter_shape
         self.filter_bandwidth = filter_bandwidth
         self.filter_f_mean = filter_f_mean
-
+        self.group_delay = group_delay
+        self.clamp_f_mean = clamp_f_mean
         self.n_filters = len(self.filter_f_mean)
 
         # Generalized Gaussian Filter
         self.filter = GeneralizedGaussianFilter(
             1,
             1 * self.n_filters,
-            self.n_time,
+            self.n_times,
             sample_rate=self.sfreq,
             f_mean=self.filter_f_mean,
             bandwidth=self.filter_bandwidth,
             shape=self.filter_shape,
             inverse_fourier=False,
             affine_group_delay=False,
-            group_delay=(20.0, 20.0),
-            clamp_f_mean=(1.0, 45.0),
+            group_delay=self.group_delay,
+            clamp_f_mean=self.clamp_f_mean,
         )
 
         # Classifier
