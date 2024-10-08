@@ -76,6 +76,7 @@ Models
     EEGNetv1
     EEGNetv4
     EEGNeX
+    EEGMiner
     EEGResNet
     EEGSimpleConv
     EEGTCNet

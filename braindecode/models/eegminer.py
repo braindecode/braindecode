@@ -120,7 +120,8 @@ class GeneralizedGaussianFilter(nn.Module):
         # Construct filters from parameters
         self.filters = self.construct_filters()
 
-    def exponential_power(self, x, mean, fwhm, shape):
+    @staticmethod
+    def exponential_power(x, mean, fwhm, shape):
         mean = mean.unsqueeze(1)
         fwhm = fwhm.unsqueeze(1)
         shape = shape.unsqueeze(1)
@@ -149,15 +150,15 @@ class GeneralizedGaussianFilter(nn.Module):
 
         # Create phase response, scaled so that normalized group_delay=1
         # corresponds to group delay of 1000ms.
-        f = torch.linspace(
+        phase = torch.linspace(
             0,
             self.sample_rate,
             self.sequence_length // 2 + 1,
             device=mag_response.device,
             dtype=mag_response.dtype,
         )
-        f = f.expand(mag_response.shape[0], -1)  # repeat for filter channels
-        pha_response = -self.group_delay.unsqueeze(-1) * f * torch.pi
+        phase = phase.expand(mag_response.shape[0], -1)  # repeat for filter channels
+        pha_response = -self.group_delay.unsqueeze(-1) * phase * torch.pi
 
         # Create real and imaginary parts of the filters
         real = mag_response * torch.cos(pha_response)
@@ -197,6 +198,10 @@ class GeneralizedGaussianFilter(nn.Module):
 class EEGMiner(EEGModuleMixin, nn.Module):
     """EEGMiner from Ludwig et al (2024) [eegminer]_.
 
+    .. figure:: https://content.cld.iop.org/journals/1741-2552/21/3/036010/revision2/jnead44d7f1_hr.jpg
+       :align: center
+       :alt: EEGMiner Architecture
+
     EEGMiner is a neural network model designed for EEG signal classification using
     learnable generalized Gaussian filters. The model leverages frequency domain
     filtering and connectivity metrics such as Phase Locking Value (PLV) to extract
@@ -219,16 +224,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
     The use of PLV as a connectivity metric makes EEGMiner suitable for tasks requiring
     the analysis of phase relationships between different EEG channels.
 
-    Recommended range for hyperparameters:
-
-    |    Parameter      | Recommended Range          |
-    |-------------------|----------------------------|
-    | filter_f_mean     | [1.0, 45.0] Hz             |
-    | filter_bandwidth  | [1.0, 44.0] Hz             |
-    | filter_shape      | [2.0, 3.0]                 |
-    | group_delay       | [20.0, 20.0] ms            |
-
-    The model have a patent [eegminercode]_.
+    The model has a patent [eegminercode]_, and the code is CC BY-NC 4.0.
 
     .. versionadded:: 0.9
 
@@ -263,8 +259,6 @@ class EEGMiner(EEGModuleMixin, nn.Module):
        Cogitat, Ltd. "Learnable filters for EEG classification."
        Patent GB2609265.
        https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
-
-
     """
 
     def __init__(

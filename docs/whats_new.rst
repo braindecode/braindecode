@@ -53,6 +53,7 @@ Enhancements
 - Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
 - Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.EEGMiner` (:gh:`643` by `Bruno Aristimunha`_ )
 
 
 Bugs
