@@ -365,8 +365,6 @@ class LinearWithConstraint(nn.Linear):
         Size of each output sample.
     max_norm : float, default=1.0
         Maximum norm for weight normalization.
-    do_weight_norm : bool, default=True
-        Whether to apply weight normalization.
 
     Returns
     -------

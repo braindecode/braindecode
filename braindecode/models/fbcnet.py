@@ -72,9 +72,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     .. [fbcnet2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
         Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
         neural network for brain-computer interface. preprint arXiv:2104.01233.
-    .. [fbcnetcode2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
-        Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
-        neural network for brain-computer interface.
+    .. [fbcnetcode2021] Link to source-code:
         https://github.com/ravikiran-mane/FBCNet
     """
 
@@ -163,7 +161,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
 
         if self.n_times % self.stride_factor != 0:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
-            self.n_times_padded = self.n_times + self.padding
+            self.n_times_padded = self.n_times + self.padding_size
             self.padding_layer = partial(
                 self._apply_padding,
                 padding_size=self.padding_size,
@@ -171,6 +169,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         else:
             self.padding_layer = nn.Identity()
             self.n_times_padded = self.n_times
+
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
             in_features=self.n_filters_spat * self.n_bands * self.stride_factor,
