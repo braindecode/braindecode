@@ -32,6 +32,10 @@ _valid_layers = {
 class FBCNet(EEGModuleMixin, nn.Module):
     """FBCNet from Mane, R et al (2021) [fbcnet2021]_.
 
+        .. figure:: https://raw.githubusercontent.com/ravikiran-mane/FBCNet/refs/heads/master/FBCNet-V2.png 
+            :align: center 
+            :alt: FBCNet Architecture 
+ 
     The FBCNet model applies spatial convolution and variance calculation along
     the time axis, inspired by the Filter Bank Common Spatial Pattern (FBCSP)
     algorithm.
@@ -42,7 +46,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     by the original authors; it has only been reimplemented from the paper
     description and source code [fbcnetcode2021]_. There is a difference in the
     activation function; in the paper, the ELU is used as the activation function,
-    but in the original code, SiLU is used. We follow the paper.
+    but in the original code, SiLU is used. We follow the code.
 
     Parameters
     ----------
