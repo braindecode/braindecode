@@ -92,15 +92,19 @@ class SCCNet(EEGModuleMixin, nn.Module):
         self.n_filters_spat = n_filters_spat
         self.n_filters_spat_filt = n_filters_spat_filt
         self.drop_prob = drop_prob
+
         self.samples_100ms = int(math.floor(self.sfreq * 0.1))
-        self.padding_time = int(np.ceil((self.samples_100ms - 1) / 2))
+        self.kernel_size_pool = int(self.sfreq * 0.5)
+        # Equivalent to 0.5 seconds
 
-        # Layer calculation
         # Compute the number of features for the final linear layer
-        n_times_avgpool = self.n_times + 2 * self.padding_time - self.samples_100ms + 1
-        kernel_size_pool = int(self.sfreq / 2)
-
-        w_out_pool = int((n_times_avgpool - kernel_size_pool) / self.samples_100ms) + 1
+        w_out_conv2 = (
+            self.n_times - self.samples_100ms + 1  # After second conv layer
+        )
+        w_out_pool = (
+            (w_out_conv2 - self.kernel_size_pool) // self.samples_100ms + 1
+            # After pooling layer
+        )
         num_features = self.n_filters_spat_filt * w_out_pool
 
         # Layers
@@ -119,13 +123,19 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
         self.batch_norm1 = nn.BatchNorm2d(self.n_filters_spat)
 
-        self.spatial_filt_conv = nn.Conv2d(
-            in_channels=self.n_filters_spat,
-            out_channels=self.n_filters_spat_filt,
-            kernel_size=(1, self.samples_100ms),
-            padding=(0, self.padding_time),
+        self.permute = Rearrange(
+            "batch filspat nchans time -> batch nchans filspat time"
         )
-        self.batch_norm2 = nn.BatchNorm2d(self.n_filters_spat_filt)
+
+        self.spatial_filt_conv = nn.Conv2d(
+            in_channels=1,
+            out_channels=self.n_filters_spat_filt,
+            kernel_size=(self.n_filters_spat, self.samples_100ms),
+            padding=0,
+            bias=False,
+        )
+        # Momentum following keras
+        self.batch_norm = nn.BatchNorm2d(self.n_filters_spat_filt, momentum=0.9)
 
         self.dropout = nn.Dropout(self.drop_prob)
         self.temporal_smoothing = nn.AvgPool2d(
@@ -141,21 +151,22 @@ class SCCNet(EEGModuleMixin, nn.Module):
         # Shape: (batch_size, 1, n_chans, n_times)
         x = self.spatial_conv(x)
         # Shape: (batch_size, n_filters, 1, n_times)
-        x = self.batch_norm1(x)
-        # Shape: (batch_size, n_filters, 1, n_times)
+        x = self.permute(x)
+        # Shape: (batch_size, 1, n_filters, n_times)
         x = self.spatial_filt_conv(x)
-        # Shape: (batch_size, n_filters, 1, n_times)
-        x = self.batch_norm2(x)
-        # Shape: (batch_size, n_filters, 1, n_times)
+        # Shape: (batch_size, n_filters_filt, 1, n_times_reduced)
+        x = self.batch_norm(x)
+        # Shape: (batch_size, n_filters_filt, 1, n_times_reduced)
         x = torch.pow(x, 2)
-        # Shape: (batch_size, n_filters, 1, n_times)
+        # Shape: (batch_size, n_filters_filt, 1, n_times_reduced)
         x = self.dropout(x)
-        # Shape: (batch_size, n_filters, 1, n_times)
+        # Shape: (batch_size, n_filters_filt, 1, n_times_reduced)
         x = self.temporal_smoothing(x)
-        # Shape: (batch_size, n_filters, 1, pool_size)
+        # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
         x = self.activation(x)
-        # Shape: (batch_size, n_filters, 1, pool_size)
+        # Shape: (batch_size, n_filters_filt, 1, n_times_reduced_avg_pool)
         x = x.view(x.size(0), -1)
-        # Shape: (batch_size, n_outputs)
+        # Shape: (batch_size, n_filters_filt*n_times_reduced_avg_pool)
         x = self.final_layer(x)
+        # Shape: (batch_size, n_outputs)
         return x
