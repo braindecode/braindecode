@@ -379,18 +379,15 @@ class LinearWithConstraint(nn.Linear):
         in_features: int,
         out_features: int,
         max_norm: float = 1.0,
-        do_weight_norm: bool = True,
     ):
         super().__init__(in_features, out_features)
         self.max_norm = max_norm
-        self.do_weight_norm = do_weight_norm
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        if self.do_weight_norm:
-            with torch.no_grad():
-                self.weight.data = torch.renorm(
-                    self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-                )
+        with torch.no_grad():
+            self.weight.data = torch.renorm(
+                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
+            )
         return super().forward(x)
 
 
