@@ -116,7 +116,7 @@ class SafeLog(nn.Module):
 class LogActivation(nn.Module):
     """Logarithm activation function."""
 
-    def __init__(self, epsilon: float = 1e-6):
+    def __init__(self, epsilon: float = 1e-6, *args, **kwargs):
         """
 
         Parameters
@@ -124,6 +124,7 @@ class LogActivation(nn.Module):
         epsilon : float
             Small float to adjust the activation.
         """
+        super().__init__(*args, **kwargs)
         self.epsilon = epsilon
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

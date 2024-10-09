@@ -95,6 +95,14 @@ class SCCNet(EEGModuleMixin, nn.Module):
         self.samples_100ms = int(math.floor(self.sfreq * 0.1))
         self.padding_time = int(np.ceil((self.samples_100ms - 1) / 2))
 
+        # Layer calculation
+        # Compute the number of features for the final linear layer
+        n_times_avgpool = self.n_times + 2 * self.padding_time - self.samples_100ms + 1
+        kernel_size_pool = int(self.sfreq / 2)
+
+        w_out_pool = int((n_times_avgpool - kernel_size_pool) / self.samples_100ms) + 1
+        num_features = self.n_filters_spat_filt * w_out_pool
+
         # Layers
         self.ensure_dim = Rearrange("batch nchan times -> batch 1 nchan times")
 
@@ -125,17 +133,6 @@ class SCCNet(EEGModuleMixin, nn.Module):
             stride=(1, self.samples_100ms),
         )
 
-        # Compute the number of features for the final linear layer
-        n_times_pre_avgpool = (
-            self.n_times + 2 * self.padding_time - self.samples_100ms + 1
-        )
-        kernel_size_pool = int(self.sfreq / 2)
-
-        w_out_pool = (
-            int((n_times_pre_avgpool - kernel_size_pool) / self.samples_100ms) + 1
-        )
-        num_features = self.n_filters_spat_filt * w_out_pool
-
         self.final_layer = nn.Linear(num_features, self.n_outputs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -143,20 +140,22 @@ class SCCNet(EEGModuleMixin, nn.Module):
         x = self.ensure_dim(x)
         # Shape: (batch_size, 1, n_chans, n_times)
         x = self.spatial_conv(x)
-        # Shape: (batch_size, n_filters, 1, n_samples)
+        # Shape: (batch_size, n_filters, 1, n_times)
         x = self.batch_norm1(x)
-
+        # Shape: (batch_size, n_filters, 1, n_times)
         x = self.spatial_filt_conv(x)
+        # Shape: (batch_size, n_filters, 1, n_times)
         x = self.batch_norm2(x)
-
+        # Shape: (batch_size, n_filters, 1, n_times)
         x = torch.pow(x, 2)
-
+        # Shape: (batch_size, n_filters, 1, n_times)
         x = self.dropout(x)
-
+        # Shape: (batch_size, n_filters, 1, n_times)
         x = self.temporal_smoothing(x)
-
+        # Shape: (batch_size, n_filters, 1, pool_size)
         x = self.activation(x)
-
+        # Shape: (batch_size, n_filters, 1, pool_size)
         x = x.view(x.size(0), -1)
+        # Shape: (batch_size, n_outputs)
         x = self.final_layer(x)
         return x
