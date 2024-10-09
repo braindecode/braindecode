@@ -271,9 +271,9 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # model related
-        filter_f_mean=[23.0, 23.0],
-        filter_bandwidth=[44.0, 44.0],
-        filter_shape=[2.0, 2.0],
+        filter_f_mean=(23.0, 23.0),
+        filter_bandwidth=(44.0, 44.0),
+        filter_shape=(2.0, 2.0),
         group_delay=(20.0, 20.0),
         clamp_f_mean=(1.0, 45.0),
     ):
@@ -340,7 +340,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
             self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
 
         # Classifier
-        self.ft_bn = nn.BatchNorm1d(self.n_features, affine=False)
+        self.batch_layer = nn.BatchNorm1d(self.n_features, affine=False)
         self.final_layer = nn.Linear(self.n_features, self.n_outputs)
         nn.init.zeros_(self.final_layer.bias)
 
@@ -357,7 +357,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         # Note that the order of dimensions before flattening the feature vector is important
         # for attributing feature weights during interpretation.
         x = x.reshape(batch, self.n_features)
-        x = self.ft_bn(x)
+        x = self.batch_layer(x)
         x = self.final_layer(x)
 
         return x
