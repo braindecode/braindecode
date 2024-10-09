@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from mne.utils import warn
+from functools import partial
 
 import torch
 
-from torch import nn
+from torch import nn, Tensor
 
 from einops.layers.torch import Rearrange
 
@@ -32,10 +33,10 @@ _valid_layers = {
 class FBCNet(EEGModuleMixin, nn.Module):
     """FBCNet from Mane, R et al (2021) [fbcnet2021]_.
 
-        .. figure:: https://raw.githubusercontent.com/ravikiran-mane/FBCNet/refs/heads/master/FBCNet-V2.png 
-            :align: center 
-            :alt: FBCNet Architecture 
- 
+        .. figure:: https://raw.githubusercontent.com/ravikiran-mane/FBCNet/refs/heads/master/FBCNet-V2.png
+            :align: center
+            :alt: FBCNet Architecture
+
     The FBCNet model applies spatial convolution and variance calculation along
     the time axis, inspired by the Filter Bank Common Spatial Pattern (FBCSP)
     algorithm.
@@ -161,6 +162,14 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
 
         self.flatten_layer = Rearrange("batch ... -> batch (...)")
+        if self.n_times % self.stride_factor != 0:
+            self.padding_layer = partial(
+                self._apply_padding,
+                n_times=self.n_times,
+                stride_factor=self.stride_factor,
+            )
+        else:
+            self.padding_layer = nn.Identity()
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
@@ -187,13 +196,10 @@ class FBCNet(EEGModuleMixin, nn.Module):
         x = self.spectral_filtering(x)
 
         x = self.spatial_conv(x)
-        batch_size, channels, _, time = x.shape
+        batch_size, channels, _, _ = x.shape
+
         # Check if time is divisible by stride_factor
-        if time % self.stride_factor != 0:
-            # Pad x to make time divisible by stride_factor
-            padding = self.stride_factor - (time % self.stride_factor)
-            x = torch.nn.functional.pad(x, (0, padding))
-            time += padding  # Update the time dimension after padding
+        x, time = self.padding_layer(x)
 
         x = x.view(batch_size, channels, self.stride_factor, time // self.stride_factor)
 
@@ -201,3 +207,11 @@ class FBCNet(EEGModuleMixin, nn.Module):
         x = self.flatten_layer(x)
         x = self.final_layer(x)
         return x
+
+    @staticmethod
+    def _apply_padding(x: Tensor, n_times: int, stride_factor: int):
+        # Pad x to make time divisible by stride_factor
+        padding = stride_factor - (n_times % stride_factor)
+        x = torch.nn.functional.pad(x, (0, padding))
+        time = n_times + padding  # Update the time dimension after padding
+        return x, time
