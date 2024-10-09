@@ -1,24 +1,22 @@
 from __future__ import annotations
 
-from mne.utils import warn
 from functools import partial
 
 import torch
-
-from torch import nn, Tensor
-
 from einops.layers.torch import Rearrange
+from mne.utils import warn
+from torch import nn, Tensor
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.modules import (
     FilterBankLayer,
-    VarLayer,
-    StdLayer,
+    LinearWithConstraint,
     LogVarLayer,
     MaxLayer,
     MeanLayer,
-    LinearWithConstraint,
+    StdLayer,
+    VarLayer,
 )
 
 _valid_layers = {
@@ -162,15 +160,17 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
 
         self.flatten_layer = Rearrange("batch ... -> batch (...)")
+
         if self.n_times % self.stride_factor != 0:
+            self.padding_size = stride_factor - (self.n_times % stride_factor)
+            self.n_times_padded = self.n_times + self.padding
             self.padding_layer = partial(
                 self._apply_padding,
-                n_times=self.n_times,
-                stride_factor=self.stride_factor,
+                padding_size=self.padding_size,
             )
         else:
             self.padding_layer = nn.Identity()
-
+            self.n_times_padded = self.n_times
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
             in_features=self.n_filters_spat * self.n_bands * self.stride_factor,
@@ -199,9 +199,14 @@ class FBCNet(EEGModuleMixin, nn.Module):
         batch_size, channels, _, _ = x.shape
 
         # Check if time is divisible by stride_factor
-        x, time = self.padding_layer(x)
+        x = self.padding_layer(x)
 
-        x = x.view(batch_size, channels, self.stride_factor, time // self.stride_factor)
+        x = x.view(
+            batch_size,
+            channels,
+            self.stride_factor,
+            self.n_times_padded // self.stride_factor,
+        )
 
         x = self.temporal_layer(x)  # type: ignore[operator]
         x = self.flatten_layer(x)
@@ -209,9 +214,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         return x
 
     @staticmethod
-    def _apply_padding(x: Tensor, n_times: int, stride_factor: int):
-        # Pad x to make time divisible by stride_factor
-        padding = stride_factor - (n_times % stride_factor)
-        x = torch.nn.functional.pad(x, (0, padding))
-        time = n_times + padding  # Update the time dimension after padding
-        return x, time
+    def _apply_padding(x: Tensor, padding_size: int):
+        x = torch.nn.functional.pad(x, (0, padding_size))
+        return x
