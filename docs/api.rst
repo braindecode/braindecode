@@ -67,6 +67,7 @@ Models
     AttentionBaseNet
     BIOT
     ContraWR
+    CTNet
     Deep4Net
     DeepSleepNet
     EEGConformer
