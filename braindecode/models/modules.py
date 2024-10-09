@@ -382,11 +382,14 @@ class LinearWithConstraint(nn.Linear):
         self.max_norm = max_norm
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self._constraint()
+        return super().forward(x)
+
+    def _constraint(self):
         with torch.no_grad():
             self.weight.data = torch.renorm(
                 self.weight.data, p=2, dim=0, maxnorm=self.max_norm
             )
-        return super().forward(x)
 
 
 class CombinedConv(nn.Module):
