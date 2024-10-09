@@ -15,7 +15,7 @@ from torch import nn
 from braindecode.models.functions import drop_path
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed
+    MLP, SafeLog, TimeDistributed, LogActivation
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 
@@ -330,6 +330,58 @@ def test_safelog_extra_repr(eps, expected_repr):
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
 
+
+@pytest.fixture
+def epsilon():
+    return 1e-6
+
+
+def test_log_activation_forward_correctness(epsilon):
+    """
+    Test that LogActivation correctly computes torch.log(x + epsilon).
+    """
+    # Initialize the activation function
+    activation = LogActivation(epsilon=epsilon)
+
+    # Create a sample input tensor with positive values
+    input_tensor = torch.tensor([[1.0, 2.0, 3.0],
+                                 [4.0, 5.0, 6.0]], dtype=torch.float32)
+
+    # Expected output
+    expected_output = torch.log(input_tensor + epsilon)
+
+    # Compute the activation
+    output = activation(input_tensor)
+
+    # Assert that the output is close to the expected output
+    torch.testing.assert_allclose(output, expected_output, atol=1e-6,
+                                  rtol=1e-4)
+
+
+def test_log_activation_zero_input_stability(epsilon):
+    """
+    Test that LogActivation does not produce NaN or -inf when input contains zeros.
+    """
+    # Initialize the activation function
+    activation = LogActivation(epsilon=epsilon)
+
+    # Create a sample input tensor with zeros
+    input_tensor = torch.tensor([[0.0, 1.0, 2.0],
+                                 [3.0, 0.0, 4.0]], dtype=torch.float32)
+
+    # Compute the activation
+    output = activation(input_tensor)
+
+    # Check for NaNs
+    assert not torch.isnan(output).any(), "Output contains NaN values."
+
+    # Check for -inf
+    assert not torch.isinf(output).any(), "Output contains infinite values."
+
+    # Additionally, verify specific values
+    expected_output = torch.log(input_tensor + epsilon)
+    torch.testing.assert_allclose(output, expected_output, atol=1e-6,
+                                  rtol=1e-4)
 
 
 @pytest.fixture
