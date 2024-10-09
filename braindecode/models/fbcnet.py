@@ -1,23 +1,22 @@
 from __future__ import annotations
 
-from mne.utils import warn
+from functools import partial
 
 import torch
-
-from torch import nn
-
 from einops.layers.torch import Rearrange
+from mne.utils import warn
+from torch import nn, Tensor
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.modules import (
     FilterBankLayer,
-    VarLayer,
-    StdLayer,
+    LinearWithConstraint,
     LogVarLayer,
     MaxLayer,
     MeanLayer,
-    LinearWithConstraint,
+    StdLayer,
+    VarLayer,
 )
 
 _valid_layers = {
@@ -32,6 +31,10 @@ _valid_layers = {
 class FBCNet(EEGModuleMixin, nn.Module):
     """FBCNet from Mane, R et al (2021) [fbcnet2021]_.
 
+        .. figure:: https://raw.githubusercontent.com/ravikiran-mane/FBCNet/refs/heads/master/FBCNet-V2.png
+            :align: center
+            :alt: FBCNet Architecture
+
     The FBCNet model applies spatial convolution and variance calculation along
     the time axis, inspired by the Filter Bank Common Spatial Pattern (FBCSP)
     algorithm.
@@ -42,7 +45,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     by the original authors; it has only been reimplemented from the paper
     description and source code [fbcnetcode2021]_. There is a difference in the
     activation function; in the paper, the ELU is used as the activation function,
-    but in the original code, SiLU is used. We follow the paper.
+    but in the original code, SiLU is used. We follow the code.
 
     Parameters
     ----------
@@ -69,9 +72,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     .. [fbcnet2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
         Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
         neural network for brain-computer interface. preprint arXiv:2104.01233.
-    .. [fbcnetcode2021] Mane, R., Chew, E., Chua, K., Ang, K. K., Robinson, N.,
-        Vinod, A. P., ... & Guan, C. (2021). FBCNet: A multi-view convolutional
-        neural network for brain-computer interface.
+    .. [fbcnetcode2021] Link to source-code:
         https://github.com/ravikiran-mane/FBCNet
     """
 
@@ -158,6 +159,17 @@ class FBCNet(EEGModuleMixin, nn.Module):
 
         self.flatten_layer = Rearrange("batch ... -> batch (...)")
 
+        if self.n_times % self.stride_factor != 0:
+            self.padding_size = stride_factor - (self.n_times % stride_factor)
+            self.n_times_padded = self.n_times + self.padding_size
+            self.padding_layer = partial(
+                self._apply_padding,
+                padding_size=self.padding_size,
+            )
+        else:
+            self.padding_layer = nn.Identity()
+            self.n_times_padded = self.n_times
+
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
             in_features=self.n_filters_spat * self.n_bands * self.stride_factor,
@@ -183,17 +195,24 @@ class FBCNet(EEGModuleMixin, nn.Module):
         x = self.spectral_filtering(x)
 
         x = self.spatial_conv(x)
-        batch_size, channels, _, time = x.shape
-        # Check if time is divisible by stride_factor
-        if time % self.stride_factor != 0:
-            # Pad x to make time divisible by stride_factor
-            padding = self.stride_factor - (time % self.stride_factor)
-            x = torch.nn.functional.pad(x, (0, padding))
-            time += padding  # Update the time dimension after padding
+        batch_size, channels, _, _ = x.shape
 
-        x = x.view(batch_size, channels, self.stride_factor, time // self.stride_factor)
+        # Check if time is divisible by stride_factor
+        x = self.padding_layer(x)
+
+        x = x.view(
+            batch_size,
+            channels,
+            self.stride_factor,
+            self.n_times_padded // self.stride_factor,
+        )
 
         x = self.temporal_layer(x)  # type: ignore[operator]
         x = self.flatten_layer(x)
         x = self.final_layer(x)
+        return x
+
+    @staticmethod
+    def _apply_padding(x: Tensor, padding_size: int):
+        x = torch.nn.functional.pad(x, (0, padding_size))
         return x

@@ -331,6 +331,7 @@ def test_safelog_extra_repr(eps, expected_repr):
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
 
 
+
 @pytest.fixture
 def sample_input():
     """Create a sample input tensor."""
