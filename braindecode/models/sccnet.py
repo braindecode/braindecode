@@ -10,7 +10,6 @@ convolutional network (SCCNet) for motor-imagery EEG classification. In 2019
 """
 
 import math
-import numpy as np
 import torch
 from torch import nn
 
@@ -29,7 +28,17 @@ class SCCNet(EEGModuleMixin, nn.Module):
        :align: center
        :alt:  Spatial component-wise convolutional network
 
-    Fill here.
+
+    1. **Spatial Component Analysis**: Performs convolution spatial filtering
+        across all EEG channels to extract spatial components, effectively
+        reducing the channel dimension.
+    2. **Spatio-Temporal Filtering**: Applies convolution across the spatial
+        components and temporal domain to capture spatio-temporal patterns.
+    3. **Temporal Smoothing (Pooling)**: Uses average pooling over time to smooth the
+       features and reduce the temporal dimension, focusing on longer-term patterns.
+    4. **Classification**: Flattens the features and applies a fully connected
+       layer.
+
 
     Parameters
     ----------
