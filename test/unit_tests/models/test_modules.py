@@ -15,7 +15,7 @@ from torch import nn
 from braindecode.models.functions import drop_path
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed
+    MLP, SafeLog, TimeDistributed, LinearWithConstraint
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 
@@ -330,6 +330,70 @@ def test_safelog_extra_repr(eps, expected_repr):
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
 
+
+@pytest.fixture
+def input_linear_constraint():
+    torch.manual_seed(0)
+    return torch.randn(10, 5)  # Batch size of 10, input features of 5
+
+
+@pytest.fixture
+def layer_with_constraint():
+    torch.manual_seed(0)
+    return LinearWithConstraint(in_features=5, out_features=3, max_norm=1.0)
+
+
+def test_weight_norm_constraint(input_linear_constraint, layer_with_constraint):
+    """
+    Test whether the weight norms do not exceed max_norm after forward pass.
+    """
+    layer_with_constraint(input_linear_constraint)
+    # Calculate the L2 norm of each column (dim=0)
+    weight_norms = layer_with_constraint.weight.data.norm(p=2, dim=0)
+    assert torch.all(weight_norms <= layer_with_constraint.max_norm + 1e-6), (
+        f"Weight norms {weight_norms} exceed max_norm {layer_with_constraint.max_norm}"
+    )
+
+
+def test_no_constraint_if_within_norm():
+    """
+    Test that weights within the max_norm are not altered after forward pass.
+    """
+    in_features = 3
+    out_features = 2
+    max_norm = 2.0
+    layer = LinearWithConstraint(in_features, out_features, max_norm)
+
+    # Initialize weights with norms less than or equal to max_norm
+    with torch.no_grad():
+        layer.weight.data = torch.tensor([[1.0, 0.0, 0.0],
+                                         [0.0, 1.0, 0.0]])
+
+    input = torch.randn(1, in_features)
+    original_weights = layer.weight.data.clone()
+    layer(input)
+
+    # Weights should remain unchanged
+    assert torch.allclose(layer.weight.data, original_weights), "Weights were altered despite being within max_norm"
+
+
+@pytest.mark.parametrize("max_norm", [0.5, 1.0, 2.0])
+def test_max_norm_parameter(max_norm):
+    """
+    Test that different max_norm values are respected.
+    """
+    in_features = 3
+    out_features = 2
+    layer = LinearWithConstraint(in_features, out_features, max_norm)
+    with torch.no_grad():
+        layer.weight.data = torch.tensor([[3.0, 0.0, 0.0],
+                                         [0.0, 4.0, 0.0]])
+    input = torch.randn(1, in_features)
+    layer(input)
+    weight_norms = layer.weight.data.norm(p=2, dim=1)
+    assert torch.all(weight_norms <= max_norm + 1e-6), (
+        f"For max_norm {max_norm}, weight norms {weight_norms} exceed max_norm"
+    )
 
 
 @pytest.fixture
