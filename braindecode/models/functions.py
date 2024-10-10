@@ -1,11 +1,9 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-import warnings
 import math
 import torch
-from torch import Tensor
-from typing import Optional
+import torch.nn.functional as F
 
 
 def rescale_parameter(param, layer_id):
@@ -149,3 +147,143 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
     pdf = torch.exp(-0.5 * (x / sigma).pow(2))
     kernel1d = pdf / pdf.sum()
     return kernel1d
+
+
+def hilbert_freq(x, forward_fourier=True):
+    """
+    Compute the Hilbert transform using PyTorch, separating the real and
+    imaginary parts.
+
+    The analytic signal :math:`x_a(t)` of a real-valued signal :math:`x(t)`
+    is defined as:
+
+    .. math::
+
+        x_a(t) = x(t) + i y(t) = \mathcal{F}^{-1} \{ U(f) \mathcal{F}\{x(t)\} \}
+
+    where:
+    - :math:`\mathcal{F}` is the Fourier transform,
+    - :math:`U(f)` is the unit step function,
+    - :math:`y(t)` is the Hilbert transform of :math:`x(t)`.
+
+
+    Parameters
+    ----------
+    input : torch.Tensor
+        Input tensor. The expected shape depends on the `forward_fourier` parameter:
+
+        - If `forward_fourier` is True:
+            (..., seq_len)
+        - If `forward_fourier` is False:
+            (..., seq_len / 2 + 1, 2)
+
+    forward_fourier : bool, optional
+        Determines the format of the input tensor.
+        - If True, the input is in the forward Fourier domain.
+        - If False, the input contains separate real and imaginary parts.
+        Default is True.
+
+    Returns
+    -------
+    torch.Tensor
+        Output tensor with shape (..., seq_len, 2), where the last dimension represents
+        the real and imaginary parts of the Hilbert transform.
+
+    Examples
+    --------
+    >>> import torch
+    >>> input = torch.randn(10, 100)  # Example input tensor
+    >>> output = hilbert_transform(input)
+    >>> print(output.shape)
+    torch.Size([10, 100, 2])
+
+    Notes
+    -----
+    The implementation is matching scipy implementation, but using torch.
+    https://github.com/scipy/scipy/blob/v1.14.1/scipy/signal/_signaltools.py#L2287-L2394
+
+    """
+    if forward_fourier:
+        x = torch.fft.rfft(x, norm=None, dim=-1)
+        x = torch.view_as_real(x)
+    x = x * 2.0
+    x[..., 0, :] = x[..., 0, :] / 2.0  # Don't multiply the DC-term by 2
+    x = F.pad(
+        x, [0, 0, 0, x.shape[-2] - 2]
+    )  # Fill Fourier coefficients to retain shape
+    x = torch.view_as_complex(x)
+    x = torch.fft.ifft(x, norm=None, dim=-1)  # returns complex signal
+    x = torch.view_as_real(x)
+
+    return x
+
+
+def plv_time(x, forward_fourier=True):
+    """Compute the Phase Locking Value (PLV) metric in the time domain.
+
+    The Phase Locking Value (PLV) is a measure of the synchronization between
+    different channels by evaluating the consistency of phase differences
+    over time. It ranges from 0 (no synchronization) to 1 (perfect
+    synchronization) [1]_.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        Input tensor containing the signal data.
+        - If `forward_fourier` is `True`, the shape should be `(..., channels, time)`.
+        - If `forward_fourier` is `False`, the shape should be `(..., channels, freqs, 2)`,
+          where the last dimension represents the real and imaginary parts.
+    forward_fourier : bool, optional
+        Specifies the format of the input tensor `x`.
+        - If `True`, `x` is assumed to be in the time domain.
+        - If `False`, `x` is assumed to be in the Fourier domain with separate real and
+          imaginary components.
+        Default is `True`.
+
+    Returns
+    -------
+    plv : torch.Tensor
+        The Phase Locking Value matrix with shape `(..., channels, channels)`. Each
+        element `[i, j]` represents the PLV between channel `i` and channel `j`.
+
+    References
+    ----------
+    [1] Lachaux, J. P., Rodriguez, E., Martinerie, J., & Varela, F. J. (1999).
+        Measuring phase synchrony in brain signals. Human brain mapping,
+        8(4), 194-208.
+    """
+    # Compute the analytic signal using the Hilbert transform.
+    # x_a has separate real and imaginary parts.
+    analytic_signal = hilbert_freq(x, forward_fourier)
+    # Calculate the amplitude (magnitude) of the analytic signal.
+    # Adding a small epsilon (1e-6) to avoid division by zero.
+    amplitude = torch.sqrt(
+        analytic_signal[..., 0] ** 2 + analytic_signal[..., 1] ** 2 + 1e-6
+    )
+    # Normalize the analytic signal to obtain unit vectors (phasors).
+    unit_phasor = analytic_signal / amplitude.unsqueeze(-1)
+
+    # Compute the real part of the outer product between phasors of
+    # different channels.
+    real_real = torch.matmul(unit_phasor[..., 0], unit_phasor[..., 0].transpose(-2, -1))
+
+    # Compute the imaginary part of the outer product between phasors of
+    # different channels.
+    imag_imag = torch.matmul(unit_phasor[..., 1], unit_phasor[..., 1].transpose(-2, -1))
+
+    # Compute the cross-terms for the real and imaginary parts.
+    real_imag = torch.matmul(unit_phasor[..., 0], unit_phasor[..., 1].transpose(-2, -1))
+    imag_real = torch.matmul(unit_phasor[..., 1], unit_phasor[..., 0].transpose(-2, -1))
+
+    # Combine the real and imaginary parts to form the complex correlation.
+    correlation_real = real_real + imag_imag
+    correlation_imag = real_imag - imag_real
+
+    # Determine the number of time points (or frequency bins if in Fourier domain).
+    time = amplitude.shape[-1]
+
+    # Calculate the PLV by averaging the magnitude of the complex correlation over time.
+    # Adding a small epsilon (1e-6) to ensure numerical stability.
+    plv_matrix = 1 / time * torch.sqrt(correlation_real**2 + correlation_imag**2 + 1e-6)
+
+    return plv_matrix
