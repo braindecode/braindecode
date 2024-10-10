@@ -55,7 +55,7 @@ Enhancements
 - Adding :class:`braindecode.models.IFNet` (:gh:`660` by `Bruno Aristimunha`_ )
 - Creating the FilterBank module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
-- Adding :class:`braindecode.models.FBCNet` (:gh:`657` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBCNet` (:gh:`660` by `Bruno Aristimunha`_ )
 
 Bugs
 ~~~~
