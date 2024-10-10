@@ -3,15 +3,16 @@ from __future__ import annotations
 from functools import partial
 
 import torch
+import torch.nn.functional as F
+
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn, Tensor
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.eegnet import Conv2dWithConstraint
+
 from braindecode.models.modules import (
     FilterBankLayer,
-    LinearWithConstraint,
     LogVarLayer,
 )
 
@@ -43,7 +44,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
     stride_factor : int, default=4
         Stride factor for reshaping.
-    activation : nn.Module, default=Swish
+    activation : nn.Module, default=nn.ELU
         Activation function class to apply.
     verbose: bool, default False
         Verbose parameter to create the filter using mne
@@ -70,11 +71,15 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # models parameters
-        n_bands=9,
-        n_filters_spat: int = 32,
+        n_bands=8,
+        n_filters_spat: int = 32,  # It will be to the embedding space
         n_dim: int = 3,
-        stride_factor: int = 4,
-        activation: nn.Module = nn.SiLU,
+        stride_factor: int = 4,  # In the original code they perform n_time,
+        # I think factor is a little better, but we can discuss.
+        weight_softmax: bool = True,
+        bias: bool = False,
+        heads: int = 8,
+        activation: nn.Module = nn.ELU,
         verbose: bool = False,
         filter_parameters: dict = {},
     ):
@@ -95,6 +100,9 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.stride_factor = stride_factor
         self.activation = activation
         self.filter_parameters = filter_parameters
+        self.heads = heads
+        self.weight_softmax = weight_softmax
+        self.bias = bias
 
         # Checkers
         if self.n_times % self.stride_factor != 0:
@@ -124,11 +132,11 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.spatial_conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.n_bands,
-                out_channels=self.embed,
+                out_channels=self.n_filters_spat,
                 kernel_size=(self.n_chans, 1),
                 groups=self.n_bands,
             ),
-            nn.BatchNorm2d(self.embed),
+            nn.BatchNorm2d(self.n_filters_spat),
             self.activation(),
         )
 
@@ -148,11 +156,19 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             self.padding_layer = nn.Identity()
             self.n_times_padded = self.n_times
 
+        # LightWeightConv1D
+        self.conv = _LightweightConv1d(
+            self.n_filters_spat,
+            self.stride_factor,
+            heads=heads,
+            weight_softmax=weight_softmax,
+            bias=bias,
+        )
+
         # Final fully connected layer
-        self.final_layer = LinearWithConstraint(
-            in_features=self.embed,
+        self.final_layer = nn.Linear(
+            in_features=self.n_filters_spat,
             out_features=self.n_outputs,
-            max_norm=0.5,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -175,9 +191,6 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         x = self.spatial_conv(x)
         batch_size, channels, _, _ = x.shape
 
-        # Check if time is divisible by stride_factor
-        x = self.padding_layer(x)
-
         x = x.view(
             batch_size,
             channels,
@@ -194,3 +207,85 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
     def _apply_padding(x: Tensor, padding_size: int):
         x = torch.nn.functional.pad(x, (0, padding_size))
         return x
+
+
+class _LightweightConv1d(nn.Module):
+    """
+    Lightweight 1D Convolution Module.
+
+    Applies a convolution operation with multiple heads, allowing for
+    parallel filter applications. Optionally applies a softmax normalization
+    to the convolution weights.
+
+    Parameters
+    ----------
+    input_size : int
+        Number of channels of the input and output.
+    kernel_size : int, optional
+        Size of the convolution kernel. Default is `1`.
+    padding : int, optional
+        Amount of zero-padding added to both sides of the input. Default is `0`.
+    heads : int, optional
+        Number of attention heads used. The weight has shape `(heads, 1, kernel_size)`.
+        Default is `1`.
+    weight_softmax : bool, optional
+        If `True`, normalizes the convolution weights with softmax before applying the convolution.
+        Default is `False`.
+    bias : bool, optional
+        If `True`, adds a learnable bias to the output. Default is `False`.
+
+    """
+
+    def __init__(
+        self,
+        input_size,
+        kernel_size=1,
+        padding=0,
+        heads=1,
+        weight_softmax=False,
+        bias=False,
+    ):
+        super().__init__()
+        self.input_size = input_size
+        self.kernel_size = kernel_size
+        self.heads = heads
+        self.padding = padding
+        self.weight_softmax = weight_softmax
+        self.weight = nn.Parameter(torch.Tensor(heads, 1, kernel_size))
+
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(input_size))
+        else:
+            self.bias = None
+
+        self.init_parameters()
+
+    def init_parameters(self):
+        nn.init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            nn.init.constant_(self.bias, 0.0)
+
+    def forward(self, input):
+        B, C, T = input.size()
+        H = self.heads
+
+        weight = self.weight
+        if self.weight_softmax:
+            weight = F.softmax(weight, dim=-1)
+
+        input = input.view(-1, H, T)
+        output = F.conv1d(input, weight, padding=self.padding, groups=self.heads)
+        output = output.view(B, C, -1)
+        if self.bias is not None:
+            output = output + self.bias.view(1, -1, 1)
+
+        return output
+
+
+if __name__ == "__main__":
+    x = torch.zeros(1, 22, 1000)
+
+    model = FBLightConvNet(n_chans=22, n_times=1000, sfreq=256, n_outputs=2)
+
+    with torch.no_grad():
+        out = model(x)
