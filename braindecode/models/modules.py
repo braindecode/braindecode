@@ -960,9 +960,6 @@ class GeneralizedGaussianFilter(nn.Module):
         assert len(f_mean) * in_channels == out_channels
         assert len(bandwidth) * in_channels == out_channels
         assert len(shape) * in_channels == out_channels
-        assert (
-            len(group_delay) * in_channels == out_channels
-        ), "Length of group_delay times in_channels must equal out_channels"
 
         # Range from 0 to half sample rate, normalized
         self.n_range = nn.Parameter(

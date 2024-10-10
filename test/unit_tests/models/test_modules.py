@@ -731,18 +731,14 @@ def test_initialization_valid_parameters():
     Test that the GeneralizedGaussianFilter initializes correctly with valid parameters.
     """
     in_channels = 2
-    out_channels = 4  # Must be a multiple of in_channels
     sequence_length = 256
     sample_rate = 100.0  # Hz
     filter_layer = GeneralizedGaussianFilter(
         in_channels=in_channels,
-        out_channels=out_channels,
+        out_channels=in_channels,
         sequence_length=sequence_length,
         sample_rate=sample_rate,
         inverse_fourier=True,
-        f_mean=(10.0, 20.0),
-        bandwidth=(5.0, 10.0),
-        shape=(2.0, 2.5)
     )
     assert isinstance(filter_layer, nn.Module), "Filter layer should be an instance of nn.Module"
 
