@@ -13,6 +13,7 @@ import math
 
 import torch
 from einops.layers.torch import Rearrange
+from mne.utils import warn
 from torch import nn, Tensor
 
 from braindecode.models.base import EEGModuleMixin
@@ -25,58 +26,74 @@ from braindecode.models.eegconformer import (
 class CTNet(EEGModuleMixin, nn.Module):
     """CTNet from Zhao, W et al (2024) [ctnet]_.
 
-    A Convolutional Transformer Network for EEG-Based Motor Imagery Classification
+     A Convolutional Transformer Network for EEG-Based Motor Imagery Classification
 
-    .. figure:: https://raw.githubusercontent.com/snailpt/CTNet/main/architecture.png
-       :align: center
-       :alt: CTNet Architecture
-
-
-    TODO: fill here..
+     .. figure:: https://raw.githubusercontent.com/snailpt/CTNet/main/architecture.png
+        :align: center
+        :alt: CTNet Architecture
 
 
-    Parameters
-    ----------
-    activation : nn.Module, default=nn.GELU
-        Activation function to use in the network.
-    heads : int, default=4
-        Number of attention heads in the transformer encoder.
-    emb_size : int, default=40
-        Embedding size for the transformer.
-    depth : int, default=6
-        Number of transformer encoder blocks.
-    n_filters_time : int, default=20
-        Number of filters in the first EEG convolutional layer.
-    kernel_size : int, default=64
-        Kernel size for the first EEG convolutional layer.
-    depth_multiplier : int, default=2
-        Depth multiplier for the EEG convolutional layers.
-    pool_size_1 : int, default=8
-        Pooling size for the first pooling layer in EEG convolution.
-    pool_size_2 : int, default=8
-        Pooling size for the second pooling layer in EEG convolution.
-    drop_prob_cnn : float, default=0.3
-        Dropout probability for the CNN layers.
-    drop_prob_posi : float, default=0.1
-        Dropout probability for the positional encoding.
-    drop_prob_final : float, default=0.5
-        Dropout probability for the final layers.
+    CTNet is an end-to-end neural network architecture designed for classifying motor imagery (MI) tasks from EEG signals.
+     The model combines convolutional neural networks (CNNs) with a Transformer encoder to capture both local and global temporal dependencies in the EEG data.
+
+     The architecture consists of three main components:
+
+     1. **Convolutional Module**:
+        - Apply EEGNetV4 to perform some feature extraction, denoted here as
+        _PatchEmbeddingEEGNet module.
+
+     2. **Transformer Encoder Module**:
+        - Utilizes multi-head self-attention mechanisms as EEGConformer but
+        with residual blocks.
+
+     3. **Classifier Module**:
+        - Combines features from both the convolutional module
+        and the Transformer encoder.
+        - Flattens the combined features and applies dropout for regularization.
+        - Uses a fully connected layer to produce the final classification output.
 
 
-    Notes
-    -----
-    This implementation is adapted from the original CTNet source code
-    [ctnetcode]_ to comply with Braindecode's model standards. More comments.
+     Parameters
+     ----------
+     activation : nn.Module, default=nn.GELU
+         Activation function to use in the network.
+     heads : int, default=4
+         Number of attention heads in the transformer encoder.
+     emb_size : int, default=40
+         Embedding size for the transformer.
+     depth : int, default=6
+         Number of transformer encoder blocks.
+     n_filters_time : int, default=20
+         Number of filters in the first EEG convolutional layer.
+     kernel_size : int, default=64
+         Kernel size for the first EEG convolutional layer.
+     depth_multiplier : int, default=2
+         Depth multiplier for the EEG convolutional layers.
+     pool_size_1 : int, default=8
+         Pooling size for the first pooling layer in EEG convolution.
+     pool_size_2 : int, default=8
+         Pooling size for the second pooling layer in EEG convolution.
+     drop_prob_cnn : float, default=0.3
+         Dropout probability for the CNN layers.
+     drop_prob_posi : float, default=0.1
+         Dropout probability for the positional encoding.
+     drop_prob_final : float, default=0.5
+         Dropout probability for the final layers.
 
-    References
-    ----------
-    .. [ctnet] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
-        CTNet: a convolutional transformer network for EEG-based motor imagery
-        classification. Scientific Reports, 14(1), 20237.
-    .. [ctnetcode] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
-        CTNet: a convolutional transformer network for EEG-based motor imagery
-        classification.
-        https://github.com/snailpt/CTNet
+
+     Notes
+     -----
+     This implementation is adapted from the original CTNet source code
+     [ctnetcode]_ to comply with Braindecode's model standards.
+
+     References
+     ----------
+     .. [ctnet] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
+         CTNet: a convolutional transformer network for EEG-based motor imagery
+         classification. Scientific Reports, 14(1), 20237.
+     .. [ctnetcode] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
+         CTNet source code:
+         https://github.com/snailpt/CTNet
     """
 
     def __init__(
@@ -115,7 +132,6 @@ class CTNet(EEGModuleMixin, nn.Module):
 
         self.emb_size = emb_size
         self.activation = activation
-        self.flatten_eeg1 = 600
 
         self.n_filters_time = n_filters_time
         self.drop_prob_cnn = drop_prob_cnn
@@ -151,7 +167,13 @@ class CTNet(EEGModuleMixin, nn.Module):
             activation=self.activation,
         )
 
-        self.position = _PositionalEncoding(emb_size, drop_prob=self.drop_prob_posi)
+        self.position = _PositionalEncoding(
+            emb_size=emb_size,
+            drop_prob=self.drop_prob_posi,
+            n_times=self.n_times,
+            pool_size=self.pool_size_1,
+        )
+
         self.trans = _TransformerEncoder(
             heads, depth, emb_size, activation=self.activation
         )
@@ -386,8 +408,26 @@ class _TransformerEncoder(nn.Module):
 
 
 class _PositionalEncoding(nn.Module):
-    def __init__(self, emb_size: int, length: int = 100, drop_prob: float = 0.1):
+    def __init__(
+        self,
+        n_times: int,
+        emb_size: int,
+        length: int = 100,
+        drop_prob: float = 0.1,
+        pool_size: int = 8,
+    ):
         super().__init__()
+        self.pool_size = pool_size
+        self.n_times = n_times
+
+        if int(n_times / (pool_size * pool_size)) > length:
+            warn(
+                "the temporal dimensional is too long for this default length. "
+                "The length parameter will be automatically adjusted to "
+                "avoid inference issues."
+            )
+            length = int(n_times / (pool_size * pool_size))
+
         self.dropout = nn.Dropout(drop_prob)
         self.encoding = nn.Parameter(torch.randn(1, length, emb_size))
 
