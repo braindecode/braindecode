@@ -34,66 +34,66 @@ class CTNet(EEGModuleMixin, nn.Module):
 
 
     CTNet is an end-to-end neural network architecture designed for classifying motor imagery (MI) tasks from EEG signals.
-     The model combines convolutional neural networks (CNNs) with a Transformer encoder to capture both local and global temporal dependencies in the EEG data.
+    The model combines convolutional neural networks (CNNs) with a Transformer encoder to capture both local and global temporal dependencies in the EEG data.
 
-     The architecture consists of three main components:
+    The architecture consists of three main components:
 
-     1. **Convolutional Module**:
+    1. **Convolutional Module**:
         - Apply EEGNetV4 to perform some feature extraction, denoted here as
         _PatchEmbeddingEEGNet module.
 
-     2. **Transformer Encoder Module**:
+    2. **Transformer Encoder Module**:
         - Utilizes multi-head self-attention mechanisms as EEGConformer but
         with residual blocks.
 
-     3. **Classifier Module**:
+    3. **Classifier Module**:
         - Combines features from both the convolutional module
         and the Transformer encoder.
         - Flattens the combined features and applies dropout for regularization.
         - Uses a fully connected layer to produce the final classification output.
 
 
-     Parameters
-     ----------
-     activation : nn.Module, default=nn.GELU
-         Activation function to use in the network.
-     heads : int, default=4
-         Number of attention heads in the transformer encoder.
-     emb_size : int, default=40
-         Embedding size for the transformer.
-     depth : int, default=6
-         Number of transformer encoder blocks.
-     n_filters_time : int, default=20
-         Number of filters in the first EEG convolutional layer.
-     kernel_size : int, default=64
-         Kernel size for the first EEG convolutional layer.
-     depth_multiplier : int, default=2
-         Depth multiplier for the EEG convolutional layers.
-     pool_size_1 : int, default=8
-         Pooling size for the first pooling layer in EEG convolution.
-     pool_size_2 : int, default=8
-         Pooling size for the second pooling layer in EEG convolution.
-     drop_prob_cnn : float, default=0.3
-         Dropout probability for the CNN layers.
-     drop_prob_posi : float, default=0.1
-         Dropout probability for the positional encoding.
-     drop_prob_final : float, default=0.5
-         Dropout probability for the final layers.
+    Parameters
+    ----------
+    activation : nn.Module, default=nn.GELU
+        Activation function to use in the network.
+    heads : int, default=4
+        Number of attention heads in the Transformer encoder.
+    emb_size : int, default=40
+        Embedding size (dimensionality) for the Transformer encoder.
+    depth : int, default=6
+        Number of encoder layers in the Transformer.
+    n_filters_time : int, default=20
+        Number of temporal filters in the first convolutional layer.
+    kernel_size : int, default=64
+        Kernel size for the temporal convolutional layer.
+    depth_multiplier : int, default=2
+        Multiplier for the number of depth-wise convolutional filters.
+    pool_size_1 : int, default=8
+        Pooling size for the first average pooling layer.
+    pool_size_2 : int, default=8
+        Pooling size for the second average pooling layer.
+    drop_prob_cnn : float, default=0.3
+        Dropout probability after convolutional layers.
+    drop_prob_posi : float, default=0.1
+        Dropout probability for the positional encoding in the Transformer.
+    drop_prob_final : float, default=0.5
+        Dropout probability before the final classification layer.
 
 
-     Notes
-     -----
-     This implementation is adapted from the original CTNet source code
-     [ctnetcode]_ to comply with Braindecode's model standards.
+    Notes
+    -----
+    This implementation is adapted from the original CTNet source code
+    [ctnetcode]_ to comply with Braindecode's model standards.
 
-     References
-     ----------
-     .. [ctnet] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
-         CTNet: a convolutional transformer network for EEG-based motor imagery
-         classification. Scientific Reports, 14(1), 20237.
-     .. [ctnetcode] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
-         CTNet source code:
-         https://github.com/snailpt/CTNet
+    References
+    ----------
+    .. [ctnet] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
+        CTNet: a convolutional transformer network for EEG-based motor imagery
+        classification. Scientific Reports, 14(1), 20237.
+    .. [ctnetcode] Zhao, W., Jiang, X., Zhang, B., Xiao, S., & Weng, S. (2024).
+        CTNet source code:
+        https://github.com/snailpt/CTNet
     """
 
     def __init__(
