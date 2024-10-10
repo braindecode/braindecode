@@ -101,6 +101,7 @@ Models
    :toctree: generated/
 
     FilterBankLayer
+    GeneralizedGaussianFilter
 
 Training
 ========

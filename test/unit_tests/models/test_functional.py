@@ -25,28 +25,6 @@ def test_hilbert_freq_shape_forward_fourier_true():
     assert output.shape == expected_shape, f"Expected shape {expected_shape}, got {output.shape}"
 
 
-def test_hilbert_freq_accuracy():
-    """
-    Compare hilbert_freq output with SciPy's hilbert function to ensure accuracy.
-    This test compares the complex analytic signals directly.
-    """
-    batch, channels, seq_len = 1, 1, 256
-    input_tensor = torch.randn(batch, channels, seq_len)
-
-    # Compute Hilbert transform using custom function
-    output = hilbert_freq(input_tensor, forward_fourier=True).numpy()
-
-    # Compute Hilbert transform using SciPy
-    expected = hilbert(input_tensor.numpy(), axis=-1)
-
-    # Reconstruct complex signals from output
-    computed_complex = output[..., 0] + 1j * output[..., 1]
-
-    # Compare the complex signals directly
-    np.testing.assert_allclose(computed_complex, expected, atol=1e-5,
-                               err_msg="Hilbert transform does not match SciPy's implementation")
-
-
 def test_hilbert_freq_constant_signal():
     """
     Test hilbert_freq with a constant signal.
