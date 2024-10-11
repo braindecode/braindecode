@@ -11,9 +11,11 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class EEGSym(EEGModuleMixin, nn.Module):
-    """EEGSym from Sergio et al (2022) [eegsym2022]_.
+    """EEGSym from Pérez-Velasco et al (2022) [eegsym2022]_.
 
-    XXXXX.
+    .. figure:: https://raw.githubusercontent.com/Serpeve/EEGSym/refs/heads/main/EEGSym_scheme_online.png
+        :align: center
+        :alt: EEGSym Architecture
 
     TO-DO: Use more EEGInceptionERP components.
 
@@ -43,6 +45,8 @@ class EEGSym(EEGModuleMixin, nn.Module):
        Marcos-Martínez, D., & Hornero, R. (2022). EEGSym: Overcoming inter-subject
        variability in motor imagery based BCIs with deep learning. IEEE Transactions
        on Neural Systems and Rehabilitation Engineering, 30, 1766-1775.
+    .. [eegsym2022code] Pérez-Velasco, S., EEGSym source code.
+        https://github.com/Serpeve/EEGSym
     """
 
     def __init__(
@@ -82,12 +86,13 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Calculate scales in samples
         self.scales_samples = [int(s * self.sfreq / 1000) for s in scales_time]
 
-        if self.ch_info is None:
-            raise ValueError("ch_info must be provided when symmetric is True")
+        # if self.ch_info is None:
+        #     raise ValueError("ch_info must be provided when symmetric is True")
         if ch_lateral < self.n_chans // 2:
             self.superposition = True
         else:
             self.superposition = False
+
         self.n_channels_per_hemi = self.n_chans - ch_lateral
         self.division = 2
 
@@ -100,7 +105,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
             in_channels=1,
             scales_samples=self.scales_samples,
             filters_per_branch=self.filters_per_branch,
-            ncha=self.n_channels_per_hemi if self.symmetric else self.n_channels,
+            ncha=self.n_channels_per_hemi,
             average_pool=2,
             init=True,
         )
@@ -108,7 +113,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
             in_channels=self.filters_per_branch * len(self.scales_samples),
             scales_samples=[max(1, s // 4) for s in self.scales_samples],
             filters_per_branch=self.filters_per_branch,
-            ncha=self.n_channels_per_hemi if self.symmetric else self.n_channels,
+            ncha=self.n_channels_per_hemi,
             average_pool=2,
         )
 
@@ -142,7 +147,6 @@ class EEGSym(EEGModuleMixin, nn.Module):
                 kernel_size=4,
                 activation=self.activation,
                 drop_prob=self.drop_prob,
-                residual=self.residual,
             ),
             nn.AvgPool3d(kernel_size=(1, 2, 1)),
         )
@@ -154,7 +158,6 @@ class EEGSym(EEGModuleMixin, nn.Module):
             groups=int(self.filters_per_branch * len(self.scales_samples) / 8),
             activation=self.activation,
             drop_prob=self.drop_prob,
-            residual=self.residual,
         )
 
         # Temporal merging
@@ -164,7 +167,6 @@ class EEGSym(EEGModuleMixin, nn.Module):
             groups=int(self.filters_per_branch * len(self.scales_samples) / 4),
             activation=self.activation,
             drop_prob=self.drop_prob,
-            residual=self.residual,
         )
 
         # Output layers
@@ -173,18 +175,17 @@ class EEGSym(EEGModuleMixin, nn.Module):
                 in_channels=int(self.filters_per_branch * len(self.scales_samples) / 2),
                 activation=self.activation,
                 drop_prob=self.drop_prob,
-                residual=self.residual,
             ),
             nn.Flatten(),
         )
 
         # Final fully connected layer
-        self.final_layers = nn.Linear(
+        self.final_layer = nn.Linear(
             in_features=int(
                 int(self.filters_per_branch * len(self.scales_samples) / 2)
                 * self.division
             ),
-            out_features=self.n_classes,
+            out_features=self.n_outputs,
         )
 
     def _create_inception_block(
@@ -205,7 +206,6 @@ class EEGSym(EEGModuleMixin, nn.Module):
             drop_prob=self.drop_prob,
             average_pool=average_pool,
             spatial_resnet_repetitions=self.spatial_resnet_repetitions,
-            residual=self.residual,
             init=init,
         )
 
@@ -219,7 +219,6 @@ class EEGSym(EEGModuleMixin, nn.Module):
             activation=self.activation,
             drop_prob=self.drop_prob,
             average_pool=average_pool,
-            residual=self.residual,
         )
 
     def forward(self, x):
@@ -271,7 +270,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         x = torch.cat(x, dim=1)
 
         # Final fully connected layer
-        x = self.final_layers(x)
+        x = self.final_layer(x)
 
         return x
 
@@ -314,11 +313,9 @@ class InceptionBlock(nn.Module):
         drop_prob: float,
         average_pool: int,
         spatial_resnet_repetitions: int,
-        residual: bool,
         init: bool = False,
     ):
         super().__init__()
-        self.residual = residual
         self.activation = activation
         self.drop_prob = drop_prob
         self.average_pool = average_pool
@@ -368,8 +365,7 @@ class InceptionBlock(nn.Module):
             x_out = torch.cat(temp_outputs, dim=1)
 
             # Residual connection
-            if self.residual:
-                x_out = x_out + x
+            x_out = x_out + x
 
             # Average pooling
             if self.average_pool != 1:
@@ -378,11 +374,12 @@ class InceptionBlock(nn.Module):
             # Apply spatial convolutions
             if hasattr(self, "spatial_convs"):
                 for spatial_conv in self.spatial_convs:
-                    if self.residual:
+                    if self.init:
+                        x_out = spatial_conv(x_out)
+                    else:
                         x_spatial = spatial_conv(x_out)
                         x_out = x_out + x_spatial
-                    elif self.init:
-                        x_out = spatial_conv(x_out)
+
         outputs.append(x_out)
         return outputs
 
@@ -419,10 +416,8 @@ class ResidualBlock(nn.Module):
         activation: nn.Module,
         drop_prob: float,
         average_pool: int,
-        residual: bool,
     ):
         super().__init__()
-        self.residual = residual
         self.activation = activation
         self.drop_prob = drop_prob
 
@@ -444,8 +439,7 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x):
         x_res = self.temporal_conv(x)
-        if self.residual:
-            x_res = x_res + x
+        x_res = x_res + x
         x_out = self.avg_pool(x_res)
         return x_out
 
@@ -477,10 +471,8 @@ class TemporalBlock(nn.Module):
         kernel_size: int,
         activation: nn.Module,
         drop_prob: float,
-        residual: bool,
     ):
         super().__init__()
-        self.residual = residual
         self.activation = activation
         self.drop_prob = drop_prob
 
@@ -498,8 +490,7 @@ class TemporalBlock(nn.Module):
 
     def forward(self, x):
         x_res = self.conv(x)
-        if self.residual:
-            x_res = x_res + x
+        x_res = x_res + x
         return x_res
 
 
@@ -519,8 +510,6 @@ class ChannelMergingBlock(nn.Module):
         Activation function to use.
     drop_prob : float
         Dropout probability.
-    residual : bool
-        If True, includes residual connections.
     """
 
     def __init__(
@@ -530,10 +519,8 @@ class ChannelMergingBlock(nn.Module):
         groups: int,
         activation: nn.Module,
         drop_prob: float,
-        residual: bool,
     ):
         super().__init__()
-        self.residual = residual
         self.activation = activation
         self.drop_prob = drop_prob
 
@@ -552,8 +539,7 @@ class ChannelMergingBlock(nn.Module):
 
     def forward(self, x):
         x_res = self.conv(x)
-        if self.residual:
-            x_res = x_res + x
+        x_res = x_res + x
         return x_res
 
 
@@ -584,10 +570,8 @@ class TemporalMergingBlock(nn.Module):
         groups: int,
         activation: nn.Module,
         drop_prob: float,
-        residual: bool,
     ):
         super().__init__()
-        self.residual = residual
         self.activation = activation
         self.drop_prob = drop_prob
 
@@ -606,8 +590,7 @@ class TemporalMergingBlock(nn.Module):
 
     def forward(self, x):
         x_res = self.conv(x)
-        if self.residual:
-            x_res = x_res + x
+        x_res = x_res + x
         return x_res
 
 
@@ -632,10 +615,8 @@ class OutputBlock(nn.Module):
         in_channels: int,
         activation: nn.Module,
         drop_prob: float,
-        residual: bool,
     ):
         super().__init__()
-        self.residual = residual
         self.activation = activation
         self.drop_prob = drop_prob
 
@@ -658,14 +639,8 @@ class OutputBlock(nn.Module):
     def forward(self, x):
         for conv_block in self.conv_blocks:
             x_res = conv_block(x)
-            if self.residual:
-                x = x + x_res
-            else:
-                x = x_res
+            x = x + x_res
         return x
-
-
-#### Sérgio codigo
 
 
 def sort_channels_by_y(channels, front_to_back=True):
@@ -796,3 +771,12 @@ def division_channels_idx(channels, front_to_back=True):
     middle_idx = [list(channels).index(channel) for channel in middle]
 
     return left_idx, right_idx, middle_idx
+
+
+if __name__ == "__main__":
+    x = torch.zeros(1, 22, 1000)
+
+    model = EEGSym(n_chans=22, n_times=1000, n_outputs=2, sfreq=250)
+
+    with torch.no_grad():
+        out = model(x)

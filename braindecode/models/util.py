@@ -229,12 +229,5 @@ models_mandatory_parameters = [
     ("EEGNeX", ["n_chans", "n_outputs", "n_times"], None),
     ("TSceptionV1", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
-    # (
-    #     "EEGSym",
-    #     ["n_chans", "n_outputs", "n_times", "chs_info"],
-    #     # n_chans dividable by n_groups=2:
-    #     dict(
-    #         chs_info=[dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 5)]),
-    # ),
+    ("SyncNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
 ]
