@@ -22,7 +22,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
         .. figure:: https://raw.githubusercontent.com/Ma-Xinzhi/LightConvNet/refs/heads/main/network_architecture.png
             :align: center
-            :alt: LightConvNet
+            :alt: LightConvNet Neural Network
 
     A lightweight convolutional neural network incorporating temporal
     dependency learning and attention mechanisms. The architecture is
@@ -32,15 +32,15 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
     The network architecture consists of four main modules:
 
     1. **Spatial and Spectral Information Learning**:
-       Applies filterbank and spatial convolutions.
-       This module is followed by batch normalization and
-       an activation function to enhance feature representation.
+        Applies filterbank and spatial convolutions.
+        This module is followed by batch normalization and
+        an activation function to enhance feature representation.
 
     2. **Temporal Segmentation and Feature Extraction**:
-       Divides the processed data into non-overlapping temporal windows.
-       Within each window, a variance-based layer extracts discriminative features,
-       which are then log-transformed to stabilize variance before being
-       passed to the attention module.
+        Divides the processed data into non-overlapping temporal windows.
+        Within each window, a variance-based layer extracts discriminative features,
+        which are then log-transformed to stabilize variance before being
+        passed to the attention module.
 
     3. **Temporal Attention Module**: Utilizes a multi-head attention
         mechanism with depthwise separable convolutions to capture dependencies
