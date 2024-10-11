@@ -93,6 +93,14 @@ Models
     TIDNet
     USleep
 
+.. currentmodule:: braindecode.models.modules
+
+:py:mod:`braindecode.models.modules`:
+
+.. autosummary::
+   :toctree: generated/
+
+    FilterBankLayer
 
 Training
 ========
