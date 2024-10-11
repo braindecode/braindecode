@@ -24,6 +24,34 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             :align: center
             :alt: LightConvNet
 
+    A lightweight convolutional neural network incorporating temporal
+    dependency learning and attention mechanisms. The architecture is
+    designed to efficiently capture spatial and temporal features through
+    specialized convolutional layers and **multi-head attention**.
+
+    The network architecture consists of four main modules:
+
+    1. **Spatial and Spectral Information Learning**:
+       Applies filterbank and spatial convolutions.
+       This module is followed by batch normalization and
+       an activation function to enhance feature representation.
+
+    2. **Temporal Segmentation and Feature Extraction**:
+       Divides the processed data into non-overlapping temporal windows.
+       Within each window, a variance-based layer extracts discriminative features,
+       which are then log-transformed to stabilize variance before being
+       passed to the attention module.
+
+    3. **Temporal Attention Module**: Utilizes a multi-head attention
+        mechanism with depthwise separable convolutions to capture dependencies
+        across different temporal segments. The attention weights are normalized
+        using softmax and aggregated to form a comprehensive temporal
+        representation.
+
+    4. **Final Layer**: Flattens the aggregated features and passes them
+        through a linear layer to with kernel sizes matching the input
+        dimensions to integrate features across different channels generate the
+        final output predictions.
 
 
     Notes
@@ -35,21 +63,28 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_bands : int or None or List[Tuple[int, int]]], default=9
-        Number of frequency bands. Could
+    n_bands : int or None or list of tuple of int, default=8
+        Number of frequency bands or a list of frequency band tuples. If a list of tuples is provided,
+        each tuple defines the lower and upper bounds of a frequency band.
     n_filters_spat : int, default=32
-        The depth of the depthwise convolutional layer.
-    n_dim: int, default=3
-        Number of dimensions for the temporal reductor
-
+        Number of spatial filters in the depthwise convolutional layer.
+    n_dim : int, default=3
+        Number of dimensions for the temporal reduction layer.
     stride_factor : int, default=4
-        Stride factor for reshaping.
+        Stride factor used for reshaping the temporal dimension.
     activation : nn.Module, default=nn.ELU
-        Activation function class to apply.
-    verbose: bool, default False
-        Verbose parameter to create the filter using mne
-    filter_parameters: dict, default {}
-        Parameters for the FilterBankLayer
+        Activation function class to apply after convolutional layers.
+    verbose : bool, default=False
+        If True, enables verbose output during filter creation using mne.
+    filter_parameters : dict, default={}
+        Additional parameters for the FilterBankLayer.
+    heads : int, default=8
+        Number of attention heads in the multi-head attention mechanism.
+    weight_softmax : bool, default=True
+        If True, applies softmax to the attention weights.
+    bias : bool, default=False
+        If True, includes a bias term in the convolutional layers.
+
 
     References
     ----------
@@ -72,18 +107,17 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         sfreq=None,
         # models parameters
         n_bands=8,
-        n_filters_spat: int = 32,  # It will be to the embedding space
+        n_filters_spat: int = 32,
         n_dim: int = 3,
         stride_factor: int = 4,
         # In the original code they perform the number of points (250),
         # I think a factor is a little better, but we can discuss.
         heads: int = 8,
+        weight_softmax: bool = True,
+        bias: bool = False,
         activation: nn.Module = nn.ELU,
         verbose: bool = False,
         filter_parameters: dict = {},
-        # Model parameters
-        weight_softmax=True,
-        bias=False,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -158,7 +192,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.flatten_layer = Rearrange("batch ... -> batch (...)")
 
         # LightWeightConv1D
-        self.conv = _LightweightConv1d(
+        self.attn_conv = _LightweightConv1d(
             self.n_filters_spat,
             self.stride_factor,
             heads=self.heads,
@@ -200,7 +234,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         )
 
         x = self.temporal_layer(x)
-        x = self.conv(x)
+        x = self.attn_conv(x)
         x = self.flatten_layer(x)
         x = self.final_layer(x)
 
@@ -213,8 +247,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
 
 class _LightweightConv1d(nn.Module):
-    """
-    Lightweight 1D Convolution Module.
+    """Lightweight 1D Convolution Module.
 
     Applies a convolution operation with multiple heads, allowing for
     parallel filter applications. Optionally applies a softmax normalization
