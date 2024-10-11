@@ -130,8 +130,6 @@ class SCCNet(EEGModuleMixin, nn.Module):
             kernel_size=(self.n_chans, 1),
         )
 
-        self.batch_norm1 = nn.BatchNorm2d(self.n_filters_spat)
-
         self.permute = Rearrange(
             "batch filspat nchans time -> batch nchans filspat time"
         )
