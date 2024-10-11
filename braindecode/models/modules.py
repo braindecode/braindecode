@@ -948,20 +948,34 @@ class LogVarLayer(nn.Module):
     ----------
     dim : int
         The dimension along which to compute the variance.
-
+    keepdim: bool, default=True
+        If you want to keep the dim in variance calculation
+    min_var: float, default=1e-6
+        Variance min for clamp
+    max_var: float, default=1e6
+        Variance max for clamp
     Returns
     -------
     torch.Tensor
         The logarithm of the variance of the input tensor along the specified dimension.
     """
 
-    def __init__(self, dim: int):
+    def __init__(
+        self,
+        dim: int,
+        keepdim: bool = True,
+        min_var: float = 1e-6,
+        max_var: float = 1e6,
+    ):
         super().__init__()
         self.dim = dim
+        self.keepdim = keepdim
+        self.min_var = min_var
+        self.max_var = max_var
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        var = x.var(dim=self.dim, keepdim=True)
-        var_clamped = torch.clamp(var, min=1e-6, max=1e6)
+        var = x.var(dim=self.dim, keepdim=self.keepdim)
+        var_clamped = torch.clamp(var, min=self.min_var, max=self.max_var)
         return torch.log(var_clamped)
 
 
