@@ -946,7 +946,12 @@ class LogVarLayer(nn.Module):
     ----------
     dim : int
         The dimension along which to compute the variance.
-
+    keepdim: bool, default=True
+        If you want to keep the dim in variance calculation
+    min_var: float, default=1e-6
+        Variance min for clamp
+    max_var: float, default=1e6
+        Variance max for clamp
     Returns
     -------
     torch.Tensor
