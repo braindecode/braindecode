@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from functools import partial
-
 import torch
 import torch.nn.functional as F
 
 from einops.layers.torch import Rearrange
 from mne.utils import warn
-from torch import nn, Tensor
-
+from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 from braindecode.models.modules import (
@@ -106,12 +103,11 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # models parameters
-        n_bands=8,
+        n_bands=9,
         n_filters_spat: int = 32,
         n_dim: int = 3,
         stride_factor: int = 4,
-        # In the original code they perform the number of points (250),
-        # I think a factor is a little better, but we can discuss.
+        win_len: int = 250,  # We need to discuss about this (!)
         heads: int = 8,
         weight_softmax: bool = True,
         bias: bool = False,
@@ -134,6 +130,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.n_filters_spat = n_filters_spat
         self.n_dim = n_dim
         self.stride_factor = stride_factor
+        self.win_len = win_len
         self.activation = activation
         self.filter_parameters = filter_parameters
         self.heads = heads
@@ -141,15 +138,15 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.bias = bias
 
         # Checkers
-        need_padding = False
-        if self.n_times % self.stride_factor != 0:
+        self.n_times_trucated = self.n_times
+        if self.n_times % self.win_len != 0:
             warn(
                 f"Time dimension ({self.n_times}) is not divisible by"
-                f" stride_factor ({self.stride_factor}). Input will be "
-                f"truncated.",
+                f" win_len ({self.win_len}). Input will be "
+                f"truncated in {self.n_times % self.win_len} temporal points ",
                 UserWarning,
             )
-            need_padding = True
+            self.n_times_trucated = self.n_times - (self.n_times % self.win_len)
 
         # Layers
         # Following paper nomeclature
@@ -175,17 +172,10 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        if need_padding:
-            self.padding_size = stride_factor - (self.n_times % stride_factor)
-            self.n_times_padded = self.n_times + self.padding_size
-            self.padding_layer = partial(
-                self._apply_padding,
-                padding_size=self.padding_size,
-            )
-        else:
-            self.padding_layer = nn.Identity()
-            self.n_times_padded = self.n_times
-
+        self.patch_dim = Rearrange(
+            "batch filtersspat (n winlen) -> batch filtersspat n winlen",
+            winlen=self.win_len,
+        )
         # Temporal aggregator
         self.temporal_layer = LogVarLayer(dim=self.n_dim, keepdim=False)
 
@@ -194,7 +184,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         # LightWeightConv1D
         self.attn_conv = _LightweightConv1d(
             self.n_filters_spat,
-            self.stride_factor,
+            (self.n_times // self.win_len),
             heads=self.heads,
             weight_softmax=weight_softmax,
             bias=bias,
@@ -225,24 +215,16 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         x = self.spectral_filtering(x)
         # batch, nbands, n_chans, n_times
         x = self.spatial_conv(x)
-
-        x = x.view(
-            batch_size,
-            self.n_chans,
-            self.stride_factor,
-            self.n_times_padded // self.stride_factor,
-        )
+        # Truncating the input
+        # Soooo ugly, but I couldn't think something better today
+        x = x[::, ::, ::, : self.n_times_trucated]
+        x = x.reshape([batch_size, self.n_filters_spat, -1, self.win_len])
 
         x = self.temporal_layer(x)
         x = self.attn_conv(x)
         x = self.flatten_layer(x)
         x = self.final_layer(x)
 
-        return x
-
-    @staticmethod
-    def _apply_padding(x: Tensor, padding_size: int):
-        x = torch.nn.functional.pad(x, (0, padding_size))
         return x
 
 
