@@ -3,19 +3,17 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
+from functools import partial
+from typing import List, Optional, Tuple
+
 import numpy as np
 import torch
-
-from functools import partial
-from mne.filter import create_filter, _check_coefficients
-from mne.utils import warn
-
-from torch import Tensor, nn, from_numpy
 import torch.nn.functional as F
 
+from mne.filter import _check_coefficients, create_filter
+from mne.utils import warn
+from torch import from_numpy, nn, Tensor
 from torchaudio.functional import fftconvolve, filtfilt
-
-from typing import Optional, List, Tuple
 
 from braindecode.models.functions import (
     drop_path,
@@ -955,13 +953,22 @@ class LogVarLayer(nn.Module):
         The logarithm of the variance of the input tensor along the specified dimension.
     """
 
-    def __init__(self, dim: int):
+    def __init__(
+        self,
+        dim: int,
+        keepdim: bool = True,
+        min_var: float = 1e-6,
+        max_var: float = 1e6,
+    ):
         super().__init__()
         self.dim = dim
+        self.keepdim = keepdim
+        self.min_var = min_var
+        self.max_var = max_var
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        var = x.var(dim=self.dim, keepdim=True)
-        var_clamped = torch.clamp(var, min=1e-6, max=1e6)
+        var = x.var(dim=self.dim, keepdim=self.keepdim)
+        var_clamped = torch.clamp(var, min=self.min_var, max=self.max_var)
         return torch.log(var_clamped)
 
 

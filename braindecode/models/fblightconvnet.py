@@ -24,7 +24,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             :align: center
             :alt: LightConvNet
 
-    Fill here:
+
 
     Notes
     -----
@@ -74,14 +74,16 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         n_bands=8,
         n_filters_spat: int = 32,  # It will be to the embedding space
         n_dim: int = 3,
-        stride_factor: int = 4,  # In the original code they perform n_time,
-        # I think factor is a little better, but we can discuss.
-        weight_softmax: bool = True,
-        bias: bool = False,
+        stride_factor: int = 4,
+        # In the original code they perform the number of points (250),
+        # I think a factor is a little better, but we can discuss.
         heads: int = 8,
         activation: nn.Module = nn.ELU,
         verbose: bool = False,
         filter_parameters: dict = {},
+        # Model parameters
+        weight_softmax=True,
+        bias=False,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -105,6 +107,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.bias = bias
 
         # Checkers
+        need_padding = False
         if self.n_times % self.stride_factor != 0:
             warn(
                 f"Time dimension ({self.n_times}) is not divisible by"
@@ -112,6 +115,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
                 f"truncated.",
                 UserWarning,
             )
+            need_padding = True
 
         # Layers
         # Following paper nomeclature
@@ -127,25 +131,17 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.n_bands = self.spectral_filtering.n_bands
 
         # The convolution here is different.
-
-        # Spatial Convolution Block (SCB)
         self.spatial_conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.n_bands,
                 out_channels=self.n_filters_spat,
                 kernel_size=(self.n_chans, 1),
-                groups=self.n_bands,
             ),
             nn.BatchNorm2d(self.n_filters_spat),
             self.activation(),
         )
 
-        # Temporal aggregator
-        self.temporal_layer = LogVarLayer(dim=self.n_dim)
-
-        self.flatten_layer = Rearrange("batch ... -> batch (...)")
-
-        if self.n_times % self.stride_factor != 0:
+        if need_padding:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
             self.n_times_padded = self.n_times + self.padding_size
             self.padding_layer = partial(
@@ -156,16 +152,20 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             self.padding_layer = nn.Identity()
             self.n_times_padded = self.n_times
 
+        # Temporal aggregator
+        self.temporal_layer = LogVarLayer(dim=self.n_dim, keepdim=False)
+
+        self.flatten_layer = Rearrange("batch ... -> batch (...)")
+
         # LightWeightConv1D
         self.conv = _LightweightConv1d(
             self.n_filters_spat,
             self.stride_factor,
-            heads=heads,
+            heads=self.heads,
             weight_softmax=weight_softmax,
             bias=bias,
         )
 
-        # Final fully connected layer
         self.final_layer = nn.Linear(
             in_features=self.n_filters_spat,
             out_features=self.n_outputs,
@@ -185,22 +185,25 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor with shape (batch_size, n_outputs).
         """
+        batch_size, _, _ = x.shape
 
+        # batch, n_chans, n_times
         x = self.spectral_filtering(x)
-
+        # batch, nbands, n_chans, n_times
         x = self.spatial_conv(x)
-        batch_size, channels, _, _ = x.shape
 
         x = x.view(
             batch_size,
-            channels,
+            self.n_chans,
             self.stride_factor,
             self.n_times_padded // self.stride_factor,
         )
 
-        x = self.temporal_layer(x)  # type: ignore[operator]
+        x = self.temporal_layer(x)
+        x = self.conv(x)
         x = self.flatten_layer(x)
         x = self.final_layer(x)
+
         return x
 
     @staticmethod
@@ -280,12 +283,3 @@ class _LightweightConv1d(nn.Module):
             output = output + self.bias.view(1, -1, 1)
 
         return output
-
-
-if __name__ == "__main__":
-    x = torch.zeros(1, 22, 1000)
-
-    model = FBLightConvNet(n_chans=22, n_times=1000, sfreq=256, n_outputs=2)
-
-    with torch.no_grad():
-        out = model(x)
