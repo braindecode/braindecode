@@ -271,7 +271,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 if __name__ == "__main__":
     x = torch.zeros(1, 22, 1001)
 
-    model = SincShallowNet(n_outputs=2, n_chans=22, n_times=1001, sfreq=250)
+    model = SincShallowNet(n_outputs=2, n_chans=22, n_times=1000, sfreq=128)
 
     with torch.no_grad():
         out = model(x)

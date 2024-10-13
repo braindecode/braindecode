@@ -1,280 +1,191 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 import math
 
+import tensorflow as tf
+import keras
+from keras import layers
+from keras import constraints
 
-class SincConv2D(nn.Module):
-    """
-    PyTorch implementation of the SincConv2D layer.
 
-    This layer performs convolution with filters that are parametrized using
-    sinc functions, allowing for learnable band-pass filters.
+class SincFilter(layers.Layer):
+    """SincFilter."""
 
-    Parameters
-    ----------
-    N_filt : int
-        Number of filters.
-    Filt_dim : int
-        Filter dimension (length of the filters).
-    fs : int
-        Sampling frequency.
-    padding : str, optional
-        Padding mode ('same' or 'valid'). Default is 'same'.
-    """
+    def __init__(
+        self,
+        low_freqs,
+        kernel_size,
+        sample_rate,
+        bandwidth=4,
+        min_freq=1.0,
+        padding="SAME",
+    ):
+        super().__init__(name="sinc_filter_layer")
+        if kernel_size % 2 == 0:
+            raise ValueError("Kernel size must be odd.")
 
-    def __init__(self, N_filt, Filt_dim, fs, padding="same"):
-        super(SincConv2D, self).__init__()
-        self.N_filt = N_filt
-        self.Filt_dim = Filt_dim
-        self.fs = fs
-        self.padding = padding.lower()
+        self.num_filters = len(low_freqs)
+        self.kernel_size = kernel_size
+        self.sample_rate = sample_rate
+        self.min_freq = min_freq
+        self.padding = padding
+        self.ones = tf.ones((1, 1, 1, self.num_filters))
+        window = tf.signal.hamming_window(kernel_size, periodic=False)
+        # `self.window` has shape: [kernel_size // 2, 1].
+        self.window = tf.expand_dims(window[: kernel_size // 2], axis=-1)
+        # `self.n_pi` has shape: [kernel_size // 2, 1].
+        self.n_pi = tf.range(-(kernel_size // 2), 0, dtype=tf.float32) / sample_rate
+        self.n_pi *= 2 * math.pi
+        self.n_pi = tf.expand_dims(self.n_pi, axis=-1)
+        # `bandwidths` has shape: [1, num_filters].
+        bandwidths = tf.ones((1, self.num_filters)) * bandwidth
+        self.bandwidths = tf.Variable(bandwidths, name="bandwidths")
+        # `low_freqs` has shape: [1, num_filters].
+        self.low_freqs = tf.Variable([low_freqs], name="low_freqs", dtype=tf.float32)
 
-        # Initialize filter parameters
-        low_freq = 4
-        high_freq = 38
-
-        # Random initialization between low_freq and high_freq
-        low_hz = np.random.uniform(low_freq, high_freq, self.N_filt)
-        low_hz = low_hz / (self.fs / 2)  # Normalize between 0 and 1 (Nyquist frequency)
-
-        # Equally spaced frequency bands
-        hz_points = np.linspace(low_freq, high_freq, self.N_filt + 1)
-        band_hz = np.diff(hz_points)
-        band_hz = band_hz / (self.fs / 2)  # Normalize
-
-        # Convert to torch parameters
-        self.filt_b1 = nn.Parameter(torch.Tensor(low_hz).view(-1, 1))
-        self.filt_band = nn.Parameter(torch.Tensor(band_hz).view(-1, 1))
-
-        # Time axis for the filters
-        t_right = (
-            torch.linspace(1, (self.Filt_dim - 1) / 2, steps=(self.Filt_dim - 1) // 2)
-            / self.fs
+    def build_sinc_filters(self):
+        # `low_freqs` has shape: [1, num_filters].
+        low_freqs = self.min_freq + tf.math.abs(self.low_freqs)
+        # `high_freqs` has shape: [1, num_filters].
+        high_freqs = tf.clip_by_value(
+            low_freqs + tf.math.abs(self.bandwidths),
+            self.min_freq,
+            self.sample_rate / 2.0,
         )
-        self.register_buffer("t_right", t_right)
+        bandwidths = high_freqs - low_freqs
 
-        # Window function
-        n = np.linspace(0, self.Filt_dim - 1, self.Filt_dim)
-        window = 0.54 - 0.46 * np.cos(2 * np.pi * n / self.Filt_dim)
-        self.register_buffer("window", torch.Tensor(window.astype(np.float32)))
+        low = self.n_pi * low_freqs  # size [kernel_size // 2, num_filters].
+        high = self.n_pi * high_freqs  # size [kernel_size // 2, num_filters].
 
-    def forward(self, x):
-        """
-        Forward pass of the SincConv2D layer.
+        # `filters_left` has shape: [kernel_size // 2, num_filters].
+        filters_left = (tf.math.sin(high) - tf.math.sin(low)) / (self.n_pi / 2.0)
+        filters_left *= self.window
+        filters_left /= 2.0 * bandwidths
 
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of shape (batch_size, channels, height, width).
+        # `filters_left` has shape: [1, kernel_size // 2, 1, num_filters].
+        filters_left = filters_left[tf.newaxis, :, tf.newaxis, :]
+        # filters_left = tf.ensure_shape(filters_left,
+        #     shape=(1, self.kernel_size // 2, 1, self.num_filters))
+        filters_right = tf.experimental.numpy.flip(filters_left, axis=1)
 
-        Returns
-        -------
-        torch.Tensor
-            Output tensor after applying the sinc convolution.
-        """
-        # Compute filter frequencies
-        min_freq = 4 / (self.fs / 2)  # Normalize
-        min_band = 5 / (self.fs / 2)  # Normalize
+        # `filters` has shape: [1, kernel_size, 1, num_filters].
+        filters = tf.concat([filters_left, self.ones, filters_right], axis=1)
+        filters = filters / tf.math.reduce_std(filters)
+        return filters
 
-        filt_beg_freq = min_freq + torch.abs(self.filt_b1)
-        filt_end_freq = filt_beg_freq + min_band + torch.abs(self.filt_band)
-
-        _ = (self.Filt_dim - 1) // 2
-        t_right = self.t_right.to(x.device)
-
-        filters = []
-        for i in range(self.N_filt):
-            # Lower and upper cutoff frequencies
-            f1 = filt_beg_freq[i][0]
-            f2 = torch.clamp(filt_end_freq[i][0], f1 + min_band, 1.0)
-
-            # Sinc filters
-            band = self._sinc(f2 * (self.fs / 2), t_right) - self._sinc(
-                f1 * (self.fs / 2), t_right
-            )
-
-            band = band / torch.max(band)
-            band = band * self.window.to(x.device)
-
-            filters.append(band)
-
-        filters = torch.stack(filters)  # Shape: (N_filt, Filt_dim)
-        filters = filters.view(self.N_filt, 1, self.Filt_dim, 1)
-
-        # Adjust input shape to match Conv2d requirements
-        # Input x is expected to be (batch_size, channels, height, width)
-        # For EEG data, we can treat channels as height and time as width
-        # If x has shape (batch_size, C, T, 1), we need to permute it
-        x = x.permute(0, 3, 1, 2)  # Now x is (batch_size, 1, C, T)
-
-        # Apply padding
-        if self.padding == "same":
-            padding = (self.Filt_dim // 2, 0)
-        elif self.padding == "valid":
-            padding = (0, 0)
-        else:
-            raise ValueError("Unsupported padding mode: {}".format(self.padding))
-
-        # Apply convolution
-        out = F.conv2d(x, filters, stride=1, padding=padding)
-
-        # Permute back to original shape
-        out = out.permute(0, 2, 3, 1)  # Shape: (batch_size, C, T, N_filt)
-
-        return out
-
-    def _sinc(self, fc, t_right):
-        """
-        Helper function to compute sinc function.
-
-        Parameters
-        ----------
-        fc : torch.Tensor
-            Cutoff frequency.
-        t_right : torch.Tensor
-            Time axis.
-
-        Returns
-        -------
-        torch.Tensor
-            Sinc filter.
-        """
-        y_right = torch.sin(2 * math.pi * fc * t_right) / (2 * math.pi * fc * t_right)
-        y_left = torch.flip(y_right, dims=[0])
-        y = torch.cat([y_left, torch.tensor([1.0], device=fc.device), y_right])
-
-        return y
+    def call(self, inputs):
+        filters = self.build_sinc_filters()
+        # `inputs` has shape: [num_epochs, num_channels, num_samples, 1].
+        # `filtered` has shape: [num_epochs, num_channels, num_samples, num_filters]
+        filtered = tf.nn.convolution(inputs, filters, padding=self.padding)
+        return filtered
 
 
-class SincShallowNet(nn.Module):
-    """
-    PyTorch implementation of the SincShallowNet model.
+class SincShallowNet(keras.Model):
+    """Implementation of Sinc-ShallowNet [1] adapted to work with EEG sampled at
+    128 Hz, for that, average pooling filter size and strides were divided by 2.
 
-    This model is designed for EEG signal classification using Sinc-based convolutions.
-
-    Parameters
-    ----------
-    nb_classes : int
-        Number of output classes.
-    C : int
-        Number of EEG channels.
-    T : int
-        Number of time samples.
-    dropoutRate : float
-        Dropout rate.
-    kernLength : int
-        Kernel length for the SincConv2D layer.
-    F1 : int
-        Number of temporal filters.
-    D : int
-        Depth multiplier for the depthwise convolution.
-    F2 : int
-        Number of pointwise convolution filters.
-    norm_rate : float
-        Max-norm regularization rate.
-    dropoutType : str
-        Type of dropout ('Dropout' or 'SpatialDropout2D').
+    [1] Borra, D. et. al. (2020) Interpretable and lightweight convolutional
+    neural network for EEG decoding: Application to movement execution and
+    imagination.
     """
 
     def __init__(
         self,
-        nb_classes,
-        C,
-        T,
-        dropoutRate=0.5,
-        kernLength=32,
-        F1=8,
-        D=2,
-        dropoutType="Dropout",
+        num_classes,
+        num_channels,
+        num_temp_filters,
+        temp_filter_size,
+        sample_rate,
+        num_spatial_filters_x_temp,
     ):
-        super(SincShallowNet, self).__init__()
-
-        if dropoutType == "SpatialDropout2D":
-            self.dropout = nn.Dropout2d
-        elif dropoutType == "Dropout":
-            self.dropout = nn.Dropout
-        else:
-            raise ValueError("dropoutType must be one of SpatialDropout2D or Dropout.")
-
-        self.sinc_conv = SincConv2D(
-            N_filt=F1, Filt_dim=kernLength, fs=128, padding="same"
+        super().__init__()
+        self.block_1 = keras.Sequential(
+            [
+                build_sinc_layer(
+                    num_temp_filters,
+                    temp_filter_size,
+                    sample_rate,
+                    first_freq=5,
+                    freq_stride=1,
+                    padding="VALID",
+                ),
+                layers.BatchNormalization(name="block_1_batchnorm"),
+                layers.DepthwiseConv2D(
+                    kernel_size=(num_channels, 1),
+                    depth_multiplier=num_spatial_filters_x_temp,
+                    use_bias=False,
+                    name="spatial_filter",
+                ),
+            ],
+            name="block_1",
         )
-        self.batch_norm1 = nn.BatchNorm2d(F1)
 
-        # Depthwise convolution
-        self.depthwise_conv = nn.Conv2d(
-            F1, F1 * D, kernel_size=(C, 1), groups=F1, bias=False
+        self.block_2 = keras.Sequential(
+            [
+                layers.BatchNormalization(name="block_2_batchnorm"),
+                layers.ELU(),
+                layers.AveragePooling2D(pool_size=(1, 55), strides=(1, 12)),  # 128 Hz
+                # layers.AveragePooling2D(pool_size=(1, 109), strides=(1, 23)), # 250 Hz
+                layers.Dropout(0.5),
+            ],
+            name="block_2",
         )
-        self.batch_norm2 = nn.BatchNorm2d(F1 * D)
-        self.activation = nn.ELU()
 
-        # Pooling
-        self.avg_pool = nn.AvgPool2d(kernel_size=(1, 109), stride=(1, 23))
+        self.block_3 = keras.Sequential(
+            [layers.Flatten(), layers.Dense(num_classes, name="dense")], name="block_3"
+        )
 
-        # Dropout
-        self.drop = self.dropout(p=dropoutRate)
-
-        # Flatten
-        self.flatten = nn.Flatten()
-
-        # Fully connected layer
-        self.fc = nn.Linear(F1 * D * ((T - 109) // 23 + 1), nb_classes)
-        self.fc_constraint = nn.utils.weight_norm(self.fc, dim=None)
-
-        # Softmax
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, x):
-        """
-        Forward pass of the SincShallowNet model.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of shape (batch_size, C, T, 1).
-
-        Returns
-        -------
-        torch.Tensor
-            Output tensor with class probabilities.
-        """
-        # x shape: (batch_size, C, T, 1)
-        x = self.sinc_conv(x)
-        x = self.batch_norm1(x)
-        x = x.permute(0, 3, 1, 2)  # Change to (batch_size, channels, height, width)
-
-        x = self.depthwise_conv(x)
-        x = self.batch_norm2(x)
-        x = self.activation(x)
-        x = self.avg_pool(x)
-        x = self.drop(x)
-
-        x = self.flatten(x)
-        x = self.fc_constraint(x)
-        x = self.softmax(x)
-
-        return x
+    def call(self, epochs):
+        x = self.block_1(epochs)
+        x = self.block_2(x)
+        logits = self.block_3(x)
+        return logits
 
 
-# Instantiate the model
-C = 22
-T = 1001
-model = SincShallowNet(
-    nb_classes=4,
-    C=C,
-    T=T,
-    dropoutRate=0.25,
-    kernLength=33,
-    F1=32,
-    D=2,
-    dropoutType="Dropout",
-)
+def build_sinc_layer(
+    num_filters=8,
+    filter_size=33,
+    sample_rate=128,
+    first_freq=6,
+    freq_stride=4,
+    bandwidth=4,
+    padding="SAME",
+):
+    low_freqs = [first_freq]
+    for _ in range(num_filters - 1):
+        low_freqs.append(low_freqs[-1] + freq_stride)
 
-# Print the model summary
-print(model)
+    return SincFilter(low_freqs, filter_size, sample_rate, bandwidth, padding=padding)
 
-x = torch.zeros(1, 22, 1001)
 
-model(x)
+if __name__ == "__main__":
+    # Define example parameters
+    num_classes = 2
+    num_channels = 32
+    num_temp_filters = 8
+    temp_filter_size = 33
+    sample_rate = 128
+    num_spatial_filters_x_temp = 2
+
+    # Instantiate the model
+    model = SincShallowNet(
+        num_classes=num_classes,
+        num_channels=num_channels,
+        num_temp_filters=num_temp_filters,
+        temp_filter_size=temp_filter_size,
+        sample_rate=sample_rate,
+        num_spatial_filters_x_temp=num_spatial_filters_x_temp,
+    )
+
+    # Build the model by calling it on a dummy input
+    batch_size = 1
+    num_samples = 256  # Example number of samples; adjust as needed
+    dummy_input = tf.zeros((batch_size, num_channels, num_samples, 1), dtype=tf.float32)
+
+    # Forward pass
+    output = model(dummy_input)
+
+    # Print the output shape to verify
+    print("Output shape:", output.shape)
+
+    # Optionally, print the output tensor
+    print("Output tensor:", output.numpy())
