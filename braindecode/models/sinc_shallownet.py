@@ -147,10 +147,6 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    num_classes : int
-        Number of output classes.
-    num_channels : int
-        Number of EEG channels.
     num_temp_filters : int
         Number of temporal filters in the SincFilter layer.
     temp_filter_size : int
@@ -167,22 +163,35 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        num_classes: int,
-        num_channels: int,
-        num_temp_filters: int,
-        temp_filter_size: int,
-        sample_rate: float,
-        num_spatial_filters_x_temp: int,
-        activation: Optional[nn.Module] = None,
+        num_temp_filters: int = 32,
+        temp_filter_size: int = 33,
+        num_spatial_filters_x_temp: int = 2,
+        activation: Optional[nn.Module] = nn.ELU,
         drop_prob: float = 0.5,
+        first_freq: float = 5.0,
+        freq_stride: float = 1.0,
+        n_times=None,
+        n_outputs=None,
+        chs_info=None,
+        n_chans=None,
+        sfreq=None,
+        input_window_seconds=None,
     ):
-        super().__init__()
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
         if activation is None:
             activation = nn.ELU()
 
         # Define low frequencies for the SincFilter
-        first_freq = 5.0
-        freq_stride = 1.0
+
         low_freqs = torch.arange(
             first_freq,
             first_freq + num_temp_filters * freq_stride,
@@ -195,23 +204,23 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
             SincFilter(
                 low_freqs=low_freqs,
                 kernel_size=temp_filter_size,
-                sample_rate=sample_rate,
+                sample_rate=self.sfreq,
                 padding="valid",
             ),
-            nn.BatchNorm2d(num_channels),
+            nn.BatchNorm2d(self.n_chans),
             nn.Conv2d(
-                in_channels=num_channels,
-                out_channels=num_channels * num_spatial_filters_x_temp,
+                in_channels=self.n_chans,
+                out_channels=self.n_chans * num_spatial_filters_x_temp,
                 kernel_size=(1, 1),
-                groups=num_channels,
+                groups=self.n_chans,
                 bias=False,
             ),
         )
 
         # Block 2: Batch norm, activation, pooling, dropout
         self.block_2 = nn.Sequential(
-            nn.BatchNorm2d(num_channels * num_spatial_filters_x_temp),
-            activation,
+            nn.BatchNorm2d(self.n_chans * num_spatial_filters_x_temp),
+            activation(),
             nn.AvgPool2d(kernel_size=(1, 55), stride=(1, 12)),
             nn.Dropout(p=drop_prob),
         )
@@ -221,9 +230,9 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
             nn.Flatten(),
             nn.Linear(
                 self._calculate_flattened_size(
-                    num_channels, num_spatial_filters_x_temp
+                    self.n_chans, num_spatial_filters_x_temp
                 ),
-                num_classes,
+                self.n_outputs,
             ),
         )
 
@@ -257,3 +266,12 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         x = self.block_2(x)
         logits = self.final_layer(x)
         return logits
+
+
+if __name__ == "__main__":
+    x = torch.zeros(1, 22, 1001)
+
+    model = SincShallowNet(n_outputs=2, n_chans=22, n_times=1001, sfreq=250)
+
+    with torch.no_grad():
+        out = model(x)
