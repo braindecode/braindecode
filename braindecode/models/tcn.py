@@ -29,8 +29,6 @@ class TCN(EEGModuleMixin, nn.Module):
         kernel size of the convolutions
     drop_prob: float
         dropout probability
-    n_in_chans: int
-        Alias for `n_chans`.
     activation: nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
