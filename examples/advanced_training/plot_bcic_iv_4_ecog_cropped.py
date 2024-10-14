@@ -185,6 +185,7 @@ n_chans = train_set[0][0].shape[0] - 5
 model = ShallowFBCSPNet(
     n_chans,
     n_classes,
+    n_times=n_times,
     final_conv_length=2,
 )
 
