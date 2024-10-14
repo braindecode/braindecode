@@ -1,14 +1,15 @@
 # Authors: Yonghao Song <eeyhsong@gmail.com>
 #
 # License: BSD (3-clause)
+import warnings
+
 import torch
 import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn, Tensor
-import warnings
 
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
@@ -73,12 +74,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     activation_transfor: nn.Module
         Activation function as parameter, applied at the FeedForwardBlock module
         inside the transformer. Default is nn.GeLU
-    n_classes :
-        Alias for n_outputs.
-    n_channels :
-        Alias for n_chans.
-    input_window_samples :
-        Alias for n_times.
+
     References
     ----------
     .. [song2022] Song, Y., Zheng, Q., Liu, B. and Gao, X., 2022. EEG
@@ -110,17 +106,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        n_classes=None,
-        n_channels=None,
-        input_window_samples=None,
-        add_log_softmax=False,
     ):
-        n_outputs, n_chans, n_times = deprecated_args(
-            self,
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("n_channels", "n_chans", n_channels, n_chans),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -128,7 +114,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         self.mapping = {
             "classification_head.fc.6.weight": "final_layer.final_layer.0.weight",
@@ -136,7 +121,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         }
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_classes, n_channels, input_window_samples
         if not (self.n_chans <= 64):
             warnings.warn(
                 "This model has only been tested on no more "
@@ -174,7 +158,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         self.final_layer = _FinalLayer(
             n_classes=self.n_outputs,
             return_features=return_features,
-            add_log_softmax=self.add_log_softmax,
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -400,8 +383,6 @@ class _FullyConnected(nn.Module):
             Number of output channels for the second linear layer.
         return_features : bool
             Whether to return input features.
-        add_log_softmax: bool
-            Whether to add LogSoftmax non-linearity as the final layer.
         """
 
         super().__init__()
@@ -426,7 +407,6 @@ class _FinalLayer(nn.Module):
         n_classes,
         hidden_channels=32,
         return_features=False,
-        add_log_softmax=False,
     ):
         """Classification head for the transformer encoder.
 
@@ -438,8 +418,6 @@ class _FinalLayer(nn.Module):
             Number of output channels for the second linear layer.
         return_features : bool
             Whether to return input features.
-        add_log_softmax : bool
-            Adding LogSoftmax or not.
         """
 
         super().__init__()
@@ -447,10 +425,7 @@ class _FinalLayer(nn.Module):
             nn.Linear(hidden_channels, n_classes),
         )
         self.return_features = return_features
-        if add_log_softmax:
-            classification = nn.LogSoftmax(dim=1)
-        else:
-            classification = nn.Identity()
+        classification = nn.Identity()
         if not self.return_features:
             self.final_layer.add_module("classification", classification)
 

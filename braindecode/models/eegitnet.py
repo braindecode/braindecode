@@ -2,11 +2,11 @@
 #
 # License: BSD-3
 import torch
-from torch import nn
 from einops.layers.torch import Rearrange
+from torch import nn
 
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.modules import Ensure4d
-from braindecode.models.base import EEGModuleMixin, deprecated_args
 
 
 class _DepthwiseConv2d(torch.nn.Conv2d):
@@ -214,21 +214,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        n_classes=None,
-        in_channels=None,
-        input_window_samples=None,
-        add_log_softmax=False,
     ):
-        (
-            n_outputs,
-            n_chans,
-            n_times,
-        ) = deprecated_args(
-            self,
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("in_channels", "n_chans", in_channels, n_chans),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -236,7 +222,6 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         self.mapping = {
             "classification.1.weight": "final_layer.clf.weight",
@@ -244,7 +229,6 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         }
 
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_classes, in_channels, input_window_samples
 
         # ======== Handling EEG input ========================
         self.add_module(
@@ -348,10 +332,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             "clf", nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs)
         )
 
-        if self.add_log_softmax:
-            module.add_module("out_fun", nn.LogSoftmax(dim=1))
-        else:
-            module.add_module("out_fun", nn.Identity())
+        module.add_module("out_fun", nn.Identity())
 
         self.add_module("final_layer", module)
 
