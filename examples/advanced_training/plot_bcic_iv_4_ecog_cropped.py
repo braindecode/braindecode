@@ -147,7 +147,7 @@ target_sfreq = train_set.datasets[0].raw.info["temp"]["target_sfreq"]
 # choose 1000 samples, which is 1 second for the 1000 Hz sampling rate.
 #
 
-input_window_samples = 1000
+n_times = 1000
 
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
@@ -186,14 +186,13 @@ model = ShallowFBCSPNet(
     n_chans,
     n_classes,
     final_conv_length=2,
-    add_log_softmax=False,
 )
 
 # Send model to GPU
 if cuda:
     model.cuda()
 
-from braindecode.models import get_output_shape, to_dense_prediction_model
+from braindecode.models import to_dense_prediction_model
 
 to_dense_prediction_model(model)
 
@@ -201,7 +200,7 @@ to_dense_prediction_model(model)
 # To know the models’ receptive field, we calculate the shape of model
 # output for a dummy input.
 
-n_preds_per_input = get_output_shape(model, n_chans, input_window_samples)[2]
+n_preds_per_input = model.get_output_shape()[2]
 
 ######################################################################
 # Cut Compute Windows
@@ -217,7 +216,7 @@ train_set = create_fixed_length_windows(
     train_set,
     start_offset_samples=0,
     stop_offset_samples=None,
-    window_size_samples=input_window_samples,
+    window_size_samples=n_times,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
     targets_from="channels",
@@ -229,7 +228,7 @@ valid_set = create_fixed_length_windows(
     valid_set,
     start_offset_samples=0,
     stop_offset_samples=None,
-    window_size_samples=input_window_samples,
+    window_size_samples=n_times,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
     targets_from="channels",
@@ -241,7 +240,7 @@ test_set = create_fixed_length_windows(
     test_set,
     start_offset_samples=0,
     stop_offset_samples=None,
-    window_size_samples=input_window_samples,
+    window_size_samples=n_times,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
     targets_from="channels",

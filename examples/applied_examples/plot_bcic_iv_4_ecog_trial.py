@@ -214,14 +214,13 @@ set_random_seeds(seed=seed, cuda=cuda)
 n_out_chans = train_set[0][1].shape[0]
 # Extract number of chans and time steps from dataset
 n_chans = train_set[0][0].shape[0]
-input_window_samples = 1000  # 1 second long windows
+n_times = 1000  # 1 second long windows
 
 model = ShallowFBCSPNet(
     n_chans,
     n_out_chans,
-    input_window_samples=input_window_samples,
+    n_times=n_times,
     final_conv_length="auto",
-    add_log_softmax=False,
 )
 
 # Send model to GPU
