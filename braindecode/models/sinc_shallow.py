@@ -4,6 +4,8 @@ from typing import Optional
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops.layers.torch import Rearrange
+
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -17,7 +19,7 @@ class SincFilter(nn.Module):
         Initial low cutoff frequencies for each filter.
     kernel_size : int
         Size of the convolutional kernels (filters). Must be odd.
-    sample_rate : float
+    sfreq : float
         Sampling rate of the input signal.
     bandwidth : float, optional
         Initial bandwidth for each filter. Default is 4.0.
@@ -31,7 +33,7 @@ class SincFilter(nn.Module):
         self,
         low_freqs: torch.Tensor,
         kernel_size: int,
-        sample_rate: float,
+        sfreq: float,
         bandwidth: float = 4.0,
         min_freq: float = 1.0,
         padding: str = "same",
@@ -42,17 +44,18 @@ class SincFilter(nn.Module):
 
         self.num_filters = low_freqs.numel()
         self.kernel_size = kernel_size
-        self.sample_rate = sample_rate
+        self.sfreq = sfreq
         self.min_freq = min_freq
         self.padding = padding.lower()
 
         # Precompute constants
         window = torch.hamming_window(kernel_size, periodic=False)
+
         self.register_buffer("window", window[: kernel_size // 2].unsqueeze(-1))
 
         n_pi = (
             torch.arange(-(kernel_size // 2), 0, dtype=torch.float32)
-            / sample_rate
+            / sfreq
             * 2
             * math.pi
         )
@@ -72,7 +75,7 @@ class SincFilter(nn.Module):
         high_freqs = torch.clamp(
             low_freqs + torch.abs(self.bandwidths),
             min=self.min_freq,
-            max=self.sample_rate / 2.0,
+            max=self.sfreq / 2.0,
         )
         bandwidths = high_freqs - low_freqs
 
@@ -108,68 +111,88 @@ class SincFilter(nn.Module):
         torch.Tensor
             Filtered output tensor of shape [batch_size, num_channels, num_samples, num_filters].
         """
+        # torch.Size([1, 32, 256, 1]) vs TensorShape([1, 32, 256, 1])
         filters = self.build_sinc_filters().to(
             inputs.device
         )  # [1, kernel_size, 1, num_filters]
 
-        # Reshape filters to [num_filters, 1, kernel_size]
-        filters = filters.squeeze(0).squeeze(1).permute(3, 2, 1)
-
-        # Reshape inputs to [batch_size * num_channels, 1, num_samples]
-        inputs = inputs.squeeze(-1)  # [batch_size, num_channels, num_samples]
-        batch_size, num_channels, num_samples = inputs.shape
-        inputs = inputs.view(batch_size * num_channels, 1, num_samples)
-
+        # channels_last vs channels_first
+        # (I am not sure if I am doing the correct operation)
+        inputs = inputs.permute(0, 3, 1, 2)
+        # Permuting to match conv:
+        filters = filters.permute(3, 2, 0, 1)
         # Apply convolution
-        if self.padding == "same":
-            padding = self.kernel_size // 2
-            outputs = F.conv1d(inputs, filters, padding=padding)
-        elif self.padding == "valid":
-            outputs = F.conv1d(inputs, filters)
-        else:
-            raise ValueError(f"Unsupported padding mode: {self.padding}")
-
-        # Reshape outputs to [batch_size, num_channels, num_samples, num_filters]
-        output_length = outputs.shape[-1]
-        outputs = outputs.view(
-            batch_size, num_channels, self.num_filters, output_length
-        )
-        outputs = outputs.permute(
-            0, 1, 3, 2
-        )  # [batch_size, num_channels, num_samples, num_filters]
+        outputs = F.conv2d(inputs, filters, padding=self.padding)
+        # Changing the dimensional
+        outputs = outputs.permute(0, 2, 3, 1)
 
         return outputs
 
 
 class SincShallowNet(EEGModuleMixin, nn.Module):
-    """
-    Sinc-ShallowNet model adapted for EEG data sampled at 128 Hz.
+    """Sinc-ShallowNet from Borra, D et al (2020) [borra2020]_.
 
+    .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S0893608020302021-gr2_lrg.jpg
+        :align: center
+        :alt: SincShallowNet Architecture
+
+    Parameters
+    ----------
     Parameters
     ----------
     num_temp_filters : int
         Number of temporal filters in the SincFilter layer.
     temp_filter_size : int
         Size of the temporal filters.
-    sample_rate : float
-        Sampling rate of the input signal.
-    num_spatial_filters_x_temp : int
+    depth_multiplier : int
         Depth multiplier for spatial filtering.
     activation : nn.Module, optional
         Activation function to use. Default is nn.ELU().
     drop_prob : float, optional
         Dropout probability. Default is 0.5.
+    first_freq : float, optional
+        The starting frequency for the first Sinc filter. Default is 5.0.
+    min_freq : float, optional
+        Minimum frequency allowed for the low frequencies of the filters. Default is 1.0.
+    freq_stride : float, optional
+        Frequency stride for the Sinc filters. Controls the spacing between the filter frequencies. Default is 1.0.
+    padding : str, optional
+        Padding mode for convolution, either 'same' or 'valid'. Default is 'same'.
+    bandwidth : float, optional
+        Initial bandwidth for each Sinc filter. Default is 4.0.
+    pool_size : int, optional
+        Size of the pooling window for the average pooling layer. Default is 55.
+    pool_stride : int, optional
+        Stride of the pooling operation. Default is 12.
+
+    Notes
+    -----
+    This implementation is based on the implementation from [sincshallowcode]_.
+
+    References
+    ----------
+    .. [borra2020] Borra, D., Fantozzi, S., & Magosso, E. (2020). Interpretable
+       and lightweight convolutional neural network for EEG decoding: Application
+       to movement execution and imagination. Neural Networks, 129, 55-74.
+    .. [sincshallowcode] Sinc-ShallowNet source code:
+       https://github.com/marcellosicbaldi/SincNet-Tensorflow
     """
 
     def __init__(
         self,
         num_temp_filters: int = 32,
         temp_filter_size: int = 33,
-        num_spatial_filters_x_temp: int = 2,
+        depth_multiplier: int = 2,
         activation: Optional[nn.Module] = nn.ELU,
         drop_prob: float = 0.5,
         first_freq: float = 5.0,
+        min_freq: float = 1.0,
         freq_stride: float = 1.0,
+        padding: str = "same",
+        bandwidth: float = 4.0,
+        pool_size: int = 55,
+        pool_stride: int = 12,
+        # braindecode parameters
         n_times=None,
         n_outputs=None,
         chs_info=None,
@@ -187,66 +210,71 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        # Checkers and creating variables
         if activation is None:
             activation = nn.ELU()
 
         # Define low frequencies for the SincFilter
-
         low_freqs = torch.arange(
             first_freq,
             first_freq + num_temp_filters * freq_stride,
             freq_stride,
             dtype=torch.float32,
         )
+        self.n_filters = len(low_freqs)
 
-        # Block 1: Sinc filter, batch norm, depthwise spatial convolution
-        self.block_1 = nn.Sequential(
-            SincFilter(
-                low_freqs=low_freqs,
-                kernel_size=temp_filter_size,
-                sample_rate=self.sfreq,
-                padding="valid",
-            ),
-            nn.BatchNorm2d(self.n_chans),
+        if padding.lower() == "valid":
+            n_times_after_sinc_filter = self.n_times - temp_filter_size + 1
+        elif padding.lower() == "same":
+            n_times_after_sinc_filter = self.n_times
+        else:
+            raise ValueError("Padding must be 'valid' or 'same'.")
+
+        size_after_pooling = (
+            (n_times_after_sinc_filter - pool_size) // pool_stride
+        ) + 1
+        flattened_size = num_temp_filters * depth_multiplier * size_after_pooling
+
+        # Layers
+        self.ensuredims = Rearrange("batch chans times -> batch chans times 1")
+
+        # Block 1: Sinc filter
+        self.sinc_filter_layer = SincFilter(
+            low_freqs=low_freqs,
+            kernel_size=temp_filter_size,
+            sfreq=self.sfreq,
+            padding=padding,
+            bandwidth=bandwidth,
+            min_freq=min_freq,
+        )
+
+        self.depthwiseconv = nn.Sequential(
+            # Matching dim to depth wise conv!
+            Rearrange("batch timefil time nfilter -> batch nfilter timefil time"),
+            nn.BatchNorm2d(self.n_filters),
             nn.Conv2d(
-                in_channels=self.n_chans,
-                out_channels=self.n_chans * num_spatial_filters_x_temp,
-                kernel_size=(1, 1),
-                groups=self.n_chans,
+                in_channels=self.n_filters,
+                out_channels=depth_multiplier * self.n_filters,
+                kernel_size=(self.n_chans, 1),
+                groups=self.n_filters,
                 bias=False,
             ),
         )
 
         # Block 2: Batch norm, activation, pooling, dropout
-        self.block_2 = nn.Sequential(
-            nn.BatchNorm2d(self.n_chans * num_spatial_filters_x_temp),
+        self.reduction_layers = nn.Sequential(
+            nn.BatchNorm2d(depth_multiplier * self.n_filters),
             activation(),
-            nn.AvgPool2d(kernel_size=(1, 55), stride=(1, 12)),
+            nn.AvgPool2d(kernel_size=(1, pool_size), stride=(1, pool_stride)),
             nn.Dropout(p=drop_prob),
+            nn.Flatten(),
         )
 
         # Final classification layer
-        self.final_layer = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(
-                self._calculate_flattened_size(
-                    self.n_chans, num_spatial_filters_x_temp
-                ),
-                self.n_outputs,
-            ),
+        self.final_layer = nn.Linear(
+            flattened_size,
+            self.n_outputs,
         )
-
-    def _calculate_flattened_size(
-        self, num_channels: int, depth_multiplier: int
-    ) -> int:
-        """Calculates the flattened size after the convolutional and pooling layers."""
-        # Create a dummy input tensor
-        dummy_input = torch.zeros(
-            1, num_channels, 128, 1
-        )  # Assuming input length of 128 samples
-        x = self.block_1(dummy_input)
-        x = self.block_2(x)
-        return x.numel()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -255,23 +283,17 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input tensor of shape [batch_size, num_channels, num_samples, 1].
+            Input tensor of shape [batch_size, num_channels, num_samples].
 
         Returns
         -------
         torch.Tensor
             Output logits of shape [batch_size, num_classes].
         """
-        x = self.block_1(x)
-        x = self.block_2(x)
-        logits = self.final_layer(x)
-        return logits
+        x = self.ensuredims(x)
+        x = self.sinc_filter_layer(x)
+        x = self.depthwiseconv(x)
+        x = self.reduction_layers(x)
+        outputs = self.final_layer(x)
 
-
-if __name__ == "__main__":
-    x = torch.zeros(1, 22, 1001)
-
-    model = SincShallowNet(n_outputs=2, n_chans=22, n_times=1000, sfreq=128)
-
-    with torch.no_grad():
-        out = model(x)
+        return outputs

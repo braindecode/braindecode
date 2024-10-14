@@ -3,7 +3,6 @@ import math
 import tensorflow as tf
 import keras
 from keras import layers
-from keras import constraints
 
 
 class SincFilter(layers.Layer):
@@ -21,13 +20,14 @@ class SincFilter(layers.Layer):
         super().__init__(name="sinc_filter_layer")
         if kernel_size % 2 == 0:
             raise ValueError("Kernel size must be odd.")
-
+        # Variables
         self.num_filters = len(low_freqs)
         self.kernel_size = kernel_size
         self.sample_rate = sample_rate
         self.min_freq = min_freq
         self.padding = padding
         self.ones = tf.ones((1, 1, 1, self.num_filters))
+
         window = tf.signal.hamming_window(kernel_size, periodic=False)
         # `self.window` has shape: [kernel_size // 2, 1].
         self.window = tf.expand_dims(window[: kernel_size // 2], axis=-1)
@@ -107,7 +107,13 @@ class SincShallowNet(keras.Model):
                     first_freq=5,
                     freq_stride=1,
                     padding="VALID",
-                ),
+                )
+            ],
+            name="block_1",
+        )
+
+        self.block_11 = keras.Sequential(
+            [
                 layers.BatchNormalization(name="block_1_batchnorm"),
                 layers.DepthwiseConv2D(
                     kernel_size=(num_channels, 1),
@@ -116,7 +122,7 @@ class SincShallowNet(keras.Model):
                     name="spatial_filter",
                 ),
             ],
-            name="block_1",
+            name="block_11",
         )
 
         self.block_2 = keras.Sequential(
@@ -135,9 +141,15 @@ class SincShallowNet(keras.Model):
         )
 
     def call(self, epochs):
+        #  TensorShape([1, 32, 256, 1])
         x = self.block_1(epochs)
+        # TensorShape([1, 32, 224, 8])
+        x = self.block_11(x)
+        # TensorShape([1, 1, 224, 16])
         x = self.block_2(x)
+        # TensorShape([1, 1, 15, 16])
         logits = self.block_3(x)
+        # TensorShape([1, 2])
         return logits
 
 
