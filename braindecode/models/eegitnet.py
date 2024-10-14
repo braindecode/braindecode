@@ -331,8 +331,8 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "dim_reduction",
             nn.Sequential(
-                nn.Conv2d(tcn_kernel_size, tcn_kernel_size * 2, kernel_size=(1, 1)),
-                nn.BatchNorm2d(tcn_kernel_size * 2),
+                nn.Conv2d(tcn_in_channel, int(tcn_in_channel * 2), kernel_size=(1, 1)),
+                nn.BatchNorm2d(int(tcn_in_channel * 2)),
                 activation(),
                 nn.AvgPool2d((1, tcn_kernel_size)),
                 nn.Dropout(drop_prob),
@@ -342,11 +342,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # Moved flatten to another layer
         self.add_module("flatten", nn.Flatten())
 
-        num_features = (self.n_times // pool_kernel // pool_kernel) * (
-            tcn_kernel_size * 2
+        num_features = int(int(self.n_times / tcn_kernel_size) / 4) * int(
+            tcn_in_channel * 2
         )
 
-        self.add_module("final_layer", nn.Linear(int(num_features), self.n_outputs))
+        self.add_module("final_layer", nn.Linear(num_features, self.n_outputs))
 
     @staticmethod
     def _get_inception_branch(
@@ -375,3 +375,11 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             nn.BatchNorm2d(out_channels),
             activation(),
         )
+
+
+if __name__ == "__main__":
+    x = torch.zeros(1, 22, 1001)
+    model = EEGITNet(n_chans=22, n_outputs=2, n_times=1001, sfreq=256)
+
+    out = model(x)
+    print(out.shape)
