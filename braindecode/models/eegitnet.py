@@ -376,10 +376,3 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             activation(),
         )
 
-
-if __name__ == "__main__":
-    x = torch.zeros(1, 22, 1001)
-    model = EEGITNet(n_chans=22, n_outputs=2, n_times=1001, sfreq=256)
-
-    out = model(x)
-    print(out.shape)
