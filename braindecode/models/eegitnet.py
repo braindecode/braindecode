@@ -205,6 +205,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         n_outputs=None,
         n_chans=None,
         n_times=None,
+        n_filters_time: int = 2,
+        kernel_length: int = 16,
+        pool_kernel: int = 4,
+        tcn_in_channel: int = 14,
         drop_prob=0.4,
         activation: nn.Module = nn.ELU,
         chs_info=None,
@@ -250,32 +254,34 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # ======== Inception branches ========================
         block11 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=2,
-            kernel_length=16,
+            out_channels=n_filters_time,
+            kernel_length=kernel_length,
             activation=activation,
         )
         block12 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=4,
-            kernel_length=32,
+            out_channels=int(n_filters_time * 2),
+            kernel_length=int(kernel_length * 2),
             activation=activation,
         )
         block13 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=8,
-            kernel_length=64,
+            out_channels=int(n_filters_time * 4),
+            kernel_length=int(n_filters_time * 4),
             activation=activation,
         )
         self.add_module("inception_block", _InceptionBlock((block11, block12, block13)))
         self.pool1 = self.add_module(
             "pooling",
-            nn.Sequential(nn.AvgPool2d(kernel_size=(1, 4)), nn.Dropout(drop_prob)),
+            nn.Sequential(
+                nn.AvgPool2d(kernel_size=(1, pool_kernel)), nn.Dropout(drop_prob)
+            ),
         )
         # =========== TC blocks =====================
         self.add_module(
             "TC_block1",
             _TCBlock(
-                in_ch=14,
+                in_ch=tcn_in_channel,
                 kernel_length=4,
                 dialation=1,
                 padding=3,
