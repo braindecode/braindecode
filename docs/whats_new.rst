@@ -54,6 +54,7 @@ Enhancements
 - Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.SincShallowNet` (:gh:`671` by `Bruno Aristimunha`_ )
+- Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `itsaphel`_)
 
 
 Bugs
