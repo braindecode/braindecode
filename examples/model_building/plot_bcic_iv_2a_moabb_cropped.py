@@ -54,7 +54,7 @@ Cropped Decoding on BCIC IV 2a Dataset
 #        receptive field size, i.e., the number of timesteps the network uses
 #        to make a single prediction)
 #     -  The window size is a user-defined hyperparameter, called
-#        ``input_window_samples`` in Braindecode. It mostly affects runtime
+#        ``n_times`` in Braindecode. It mostly affects runtime
 #        (larger window sizes should be faster). As a rule of thumb, you can
 #        set it to two times the crop size.
 #     -  Crop size and window size together define how many predictions the
@@ -138,13 +138,13 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # choose 1000 samples, which are 4 seconds for the 250 Hz sampling rate.
 #
 
-input_window_samples = 1000
+n_times = 1000
 
 ######################################################################
 # Now we create the model. To enable it to be used in cropped decoding
 # efficiently, we manually set the length of the final convolution layer
 # to some length that makes the number of timesteps of the ConvNet smaller
-# than ``input_window_samples`` (see ``final_conv_length=30`` in the model
+# than ``n_times`` (see ``final_conv_length=30`` in the model
 # definition).
 #
 
@@ -174,7 +174,7 @@ n_chans = dataset[0][0].shape[0]
 model = ShallowFBCSPNet(
     n_chans,
     n_classes,
-    input_window_samples=input_window_samples,
+    n_times=n_times,
     final_conv_length=30,
 )
 
@@ -223,7 +223,7 @@ windows_dataset = create_windows_from_events(
     dataset,
     trial_start_offset_samples=trial_start_offset_samples,
     trial_stop_offset_samples=0,
-    window_size_samples=input_window_samples,
+    window_size_samples=n_times,
     window_stride_samples=n_preds_per_input,
     drop_last_window=False,
     preload=True,

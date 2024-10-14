@@ -2,15 +2,14 @@
 #          Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
-from numpy import prod
-
-from torch import nn
 from einops.layers.torch import Rearrange
+from numpy import prod
+from torch import nn
 
-from braindecode.models.base import EEGModuleMixin, deprecated_args
-from braindecode.models.modules import Ensure4d
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.eegitnet import _DepthwiseConv2d, _InceptionBlock
 from braindecode.models.eegnet import _glorot_weight_zero_bias
-from braindecode.models.eegitnet import _InceptionBlock, _DepthwiseConv2d
+from braindecode.models.modules import Ensure4d
 
 
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
@@ -66,12 +65,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
     pooling_sizes: list(int), optional
         Pooling sizes for the inception blocks. Defaults to 4, 2, 2 and 2, as
         in [santamaria2020]_.
-    in_channels : int
-        Alias for n_chans.
-    n_classes : int
-        Alias for n_outputs.
-    input_window_samples : int
-        Alias for n_times.
+
 
     References
     ----------
@@ -109,21 +103,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         pooling_sizes=(4, 2, 2, 2),
         chs_info=None,
         input_window_seconds=None,
-        in_channels=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=False,
     ):
-        (
-            n_chans,
-            n_outputs,
-            n_times,
-        ) = deprecated_args(
-            self,
-            ("in_channels", "n_chans", in_channels, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -131,10 +111,8 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_channels, n_classes, input_window_samples
         self.drop_prob = drop_prob
         self.n_filters = n_filters
         self.scales_samples_s = scales_samples_s
@@ -265,10 +243,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             nn.Linear(spatial_dim_last_layer * n_channels_last_layer, self.n_outputs),
         )
 
-        if self.add_log_softmax:
-            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
-        else:
-            module.add_module("identity", nn.Identity())
+        module.add_module("identity", nn.Identity())
 
         self.add_module("final_layer", module)
 
