@@ -201,10 +201,12 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         return x
 
     @staticmethod
-    def _apply_corr_forward(x, batch, n_chans, n_filters, n_times):
+    def _apply_corr_forward(
+        x, batch, n_chans, n_filters, n_times, epilson: float = 1e-6
+    ):
         x = x.reshape(batch, n_chans, n_filters, n_times).transpose(-3, -2)
         x = (x - x.mean(dim=-1, keepdim=True)) / torch.sqrt(
-            x.var(dim=-1, keepdim=True) + 1e-6
+            x.var(dim=-1, keepdim=True) + epilson
         )
         x = torch.matmul(x, x.transpose(-2, -1)) / x.shape[-1]
         x = x.transpose(-3, -2).transpose(-2, -1)  # move filter channels to the end
