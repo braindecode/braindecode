@@ -2,11 +2,11 @@
 #
 # License: BSD (3-clause)
 
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
 
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
@@ -71,25 +71,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         return_feats=False,
         chs_info=None,
         n_times=None,
-        n_channels=None,
-        input_size_s=None,
-        n_classes=None,
     ):
-        (
-            n_chans,
-            n_outputs,
-            input_window_seconds,
-        ) = deprecated_args(
-            self,
-            ("n_channels", "n_chans", n_channels, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_size_s",
-                "input_window_seconds",
-                input_size_s,
-                input_window_seconds,
-            ),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -99,7 +81,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_channels, n_classes, input_size_s
 
         self.mapping = {
             "fc.1.weight": "final_layer.1.weight",
