@@ -4,7 +4,7 @@
 import torch
 import torch.nn as nn
 
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
 
 
 class _SmallCNN(nn.Module):
@@ -203,8 +203,6 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         If True, return the features, i.e. the output of the feature extractor
         (before the final linear layer). If False, pass the features through
         the final linear layer.
-    n_classes :
-        Alias for n_outputs.
     drop_prob : float, default=0.5
         The dropout rate for regularization. Values should be between 0 and 1.
 
@@ -226,15 +224,10 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        n_classes=None,
         activation_large: nn.Module = nn.ELU,
         activation_small: nn.Module = nn.ReLU,
         drop_prob: float = 0.5,
     ):
-        (n_outputs,) = deprecated_args(
-            self,
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -244,7 +237,6 @@ class DeepSleepNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_classes
         self.cnn1 = _SmallCNN(activation=activation_small, drop_prob=drop_prob)
         self.cnn2 = _LargeCNN(activation=activation_large, drop_prob=drop_prob)
         self.dropout = nn.Dropout(0.5)

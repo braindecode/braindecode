@@ -121,19 +121,18 @@ model_name = "shallow"  # 'shallow' or 'deep'
 # Defining a CNN model
 if model_name in ["shallow", "Shallow", "ShallowConvNet"]:
     model = ShallowFBCSPNet(
-        in_chans=n_fake_chans,
-        n_classes=n_fake_targets,
-        input_window_samples=fake_sfreq * fake_duration,
+        n_chans=n_fake_chans,
+        n_outputs=n_fake_targets,
+        n_times=fake_sfreq * fake_duration,
         n_filters_time=40,
         n_filters_spat=40,
         final_conv_length=35,
-        add_log_softmax=False,
     )
 elif model_name in ["deep", "Deep", "DeepConvNet"]:
     model = Deep4Net(
-        in_chans=n_fake_chans,
-        n_classes=n_fake_targets,
-        input_window_samples=fake_sfreq * fake_duration,
+        n_chans=n_fake_chans,
+        n_outputs=n_fake_targets,
+        n_times=fake_sfreq * fake_duration,
         n_filters_time=25,
         n_filters_spat=25,
         stride_before_pool=True,
@@ -141,7 +140,6 @@ elif model_name in ["deep", "Deep", "DeepConvNet"]:
         n_filters_3=n_fake_chans * 4,
         n_filters_4=n_fake_chans * 8,
         final_conv_length=1,
-        add_log_softmax=False,
     )
 else:
     raise ValueError(f"{model_name} unknown")

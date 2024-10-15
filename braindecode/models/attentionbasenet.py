@@ -7,17 +7,17 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.modules import Ensure4d
 from braindecode.models.modules_attention import (
-    GSoP,
-    SqueezeAndExcitation,
-    FCA,
-    EncNet,
-    ECA,
-    GatherExcite,
-    GCT,
-    SRM,
-    CBAM,
     CAT,
     CATLite,
+    CBAM,
+    ECA,
+    EncNet,
+    FCA,
+    GatherExcite,
+    GCT,
+    GSoP,
+    SqueezeAndExcitation,
+    SRM,
 )
 
 
@@ -281,7 +281,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     pool_stride_inp : int, optional
         Stride of the pooling operation in the input layer. Controls the
         downsampling factor in the temporal dimension. Default is 15.
-    dropout_inp : float, optional
+    drop_prob_inp : float, optional
         Dropout rate applied after the input layer. This is the probability of
         zeroing out elements during training to prevent overfitting.
         Default is 0.5.
@@ -307,8 +307,8 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         The length of the window for the average pooling operation.
     pool_stride : int, default=8
         The stride of the average pooling operation.
-    dropout : float, default=0.5
-        The dropout rate for regularization. Values should be between 0 and 1.
+    drop_prob_attn : float, default=0.5
+        The dropout rate for regularization for the attention layer. Values should be between 0 and 1.
     reduction_rate : int, default=4
         The reduction rate used in the attention mechanism to reduce dimensionality
         and computational complexity.
@@ -358,7 +358,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         temp_filter_length: int = 15,
         pool_length: int = 8,
         pool_stride: int = 8,
-        drop_prob: float = 0.5,
+        drop_prob_attn: float = 0.5,
         attention_mode: str | None = None,
         reduction_rate: int = 4,
         use_mlp: bool = False,
@@ -412,7 +412,7 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             temp_filter_length=temp_filter_length,
             pool_length=pool_length,
             pool_stride=pool_stride,
-            drop_prob=drop_prob_inp,
+            drop_prob=drop_prob_attn,
             reduction_rate=reduction_rate,
             use_mlp=use_mlp,
             seq_len=seq_lengths[0],

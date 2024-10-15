@@ -2,12 +2,12 @@
 #          Omar Chehab <l-emir-omar.chehab@inria.fr>
 #
 # License: BSD (3-clause)
-from typing import Dict, Optional
 
 import numpy as np
 import torch
 from torch import nn
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+
+from braindecode.models.base import EEGModuleMixin
 
 
 def _crop_tensors_to_match(x1, x2, axis=-1):
@@ -162,12 +162,6 @@ class USleep(EEGModuleMixin, nn.Module):
         will be added to it to ensure it is odd, so that the decoder blocks can
         work. This can be useful when using different sampling rates from 128
         or 100 Hz.
-    in_chans : int
-        Alias for `n_chans`.
-    n_classes : int
-        Alias for `n_outputs`.
-    input_size_s : float
-        Alias for `input_window_seconds`.
     activation : nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
@@ -194,22 +188,7 @@ class USleep(EEGModuleMixin, nn.Module):
         activation: nn.Module = nn.ELU,
         chs_info=None,
         n_times=None,
-        in_chans=None,
-        n_classes=None,
-        input_size_s=None,
-        add_log_softmax=False,
     ):
-        n_chans, n_outputs, input_window_seconds = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_size_s",
-                "input_window_seconds",
-                input_size_s,
-                input_window_seconds,
-            ),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -217,10 +196,8 @@ class USleep(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_size_s
 
         self.mapping = {
             "clf.3.weight": "final_layer.0.weight",
@@ -321,7 +298,7 @@ class USleep(EEGModuleMixin, nn.Module):
                 stride=1,
                 padding=0,
             ),
-            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
+            nn.Identity(),
             # output is (B, n_classes, S)
         )
 
