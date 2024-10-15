@@ -150,11 +150,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        # Temporal aggregator
-        self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
-
-        self.flatten_layer = Rearrange("batch ... -> batch (...)")
-
+        # Padding layer
         if self.n_times % self.stride_factor != 0:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
             self.n_times_padded = self.n_times + self.padding_size
@@ -165,6 +161,12 @@ class FBCNet(EEGModuleMixin, nn.Module):
         else:
             self.padding_layer = nn.Identity()
             self.n_times_padded = self.n_times
+
+        # Temporal aggregator
+        self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
+
+        # Flatten layer
+        self.flatten_layer = Rearrange("batch ... -> batch (...)")
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
