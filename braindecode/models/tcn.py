@@ -2,17 +2,16 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
-
+import torch
 from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
 
-from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions import squeeze_final_output
 from braindecode.models.modules import Chomp1d, Ensure4d, Expression
 
 
-class TCN(EEGModuleMixin, nn.Module):
+class TCN(nn.Module):
     """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
@@ -50,21 +49,8 @@ class TCN(EEGModuleMixin, nn.Module):
         kernel_size=5,
         drop_prob=0.5,
         activation: nn.Module = nn.ReLU,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
     ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
+        super().__init__()
         self.mapping = {
             "fc.weight": "final_layer.fc.weight",
             "fc.bias": "final_layer.fc.bias",
@@ -72,7 +58,7 @@ class TCN(EEGModuleMixin, nn.Module):
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
-            n_inputs = self.n_chans if i == 0 else n_filters
+            n_inputs = n_chans if i == 0 else n_filters
             dilation_size = 2**i
             t_blocks.add_module(
                 "temporal_block_{:d}".format(i),
@@ -89,10 +75,9 @@ class TCN(EEGModuleMixin, nn.Module):
             )
         self.temporal_blocks = t_blocks
 
-        # Here, change to final_layer
         self.final_layer = _FinalLayer(
             in_features=n_filters,
-            out_features=self.n_outputs,
+            out_features=n_outputs,
         )
         self.min_len = 1
         for i in range(n_blocks):

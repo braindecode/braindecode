@@ -6,13 +6,12 @@ import torch
 from torch import nn
 from torch.nn import ConstantPad2d
 
-from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 
 
-class HybridNet(EEGModuleMixin, nn.Module):
+class HybridNet(nn.Module):
     """Hybrid ConvNet model from Schirrmeister et al 2017  [Schirrmeister2017]_.
 
     See [Schirrmeister2017]_ for details.
@@ -39,14 +38,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
         activation: nn.Module = nn.ELU,
         drop_prob: float = 0.5,
     ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            chs_info=chs_info,
-        )
         self.mapping = {
             "final_conv.weight": "final_layer.weight",
             "final_conv.bias": "final_layer.bias",
