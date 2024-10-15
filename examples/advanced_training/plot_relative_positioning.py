@@ -272,7 +272,7 @@ emb = SleepStagerChambon2018(
     n_outputs=emb_size,
     n_conv_chs=16,
     n_times=input_size_samples,
-    dropout=0,
+    drop_prob=0.0,
     apply_batch_norm=True,
 )
 

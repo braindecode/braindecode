@@ -1,13 +1,13 @@
 from math import ceil
 
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
-from einops.layers.torch import Rearrange
 
-from .modules import Ensure4d
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.modules import Ensure4d
 
 
 class _BatchNormZG(nn.BatchNorm2d):
@@ -311,9 +311,6 @@ class TIDNet(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_outputs=None,
         n_times=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
@@ -326,15 +323,8 @@ class TIDNet(EEGModuleMixin, nn.Module):
         temp_span=0.05,
         bottleneck=3,
         summary=-1,
-        add_log_softmax=False,
         activation: nn.Module = nn.LeakyReLU,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -342,10 +332,8 @@ class TIDNet(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
             chs_info=chs_info,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
-        del in_chans, n_classes, input_window_samples
 
         self.mapping = {
             "classify.1.weight": "final_layer.0.weight",
@@ -379,9 +367,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
         classifier = nn.Linear(incoming, n_outputs)
         init.xavier_normal_(classifier.weight)
         classifier.bias.data.zero_()
-        seq_clf = nn.Sequential(
-            classifier, nn.LogSoftmax(dim=-1) if self.add_log_softmax else nn.Identity()
-        )
+        seq_clf = nn.Sequential(classifier, nn.Identity())
 
         return seq_clf
 

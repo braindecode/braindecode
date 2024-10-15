@@ -3,11 +3,11 @@
 # License: BSD (3-clause)
 
 import torch
-from torch import nn
 from einops.layers.torch import Rearrange
+from torch import nn
 
-from .modules import Ensure4d
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.modules import Ensure4d
 
 
 class EEGInceptionMI(EEGModuleMixin, nn.Module):
@@ -46,12 +46,6 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         0.9 here for ``n_convs=5``). Defaults to 0.1 s.
     activation: nn.Module
         Activation function. Defaults to ReLU activation.
-    in_channels : int
-        Alias for `n_chans`.
-    n_classes : int
-        Alias for `n_outputs`.
-    input_window_s : float, optional
-        Alias for `input_window_seconds`.
 
     References
     ----------
@@ -73,26 +67,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         activation: nn.Module = nn.ReLU,
         chs_info=None,
         n_times=None,
-        in_channels=None,
-        n_classes=None,
-        input_window_s=None,
-        add_log_softmax=False,
     ):
-        (
-            n_chans,
-            n_outputs,
-            input_window_seconds,
-        ) = deprecated_args(
-            self,
-            ("in_channels", "n_chans", in_channels, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_window_s",
-                "input_window_seconds",
-                input_window_s,
-                input_window_seconds,
-            ),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -100,10 +75,8 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_channels, n_classes, input_window_s
 
         self.n_convs = n_convs
         self.n_filters = n_filters
@@ -196,10 +169,7 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
                 bias=True,
             ),
         )
-        if self.add_log_softmax:
-            module.add_module("out_fun", nn.LogSoftmax(dim=1))
-        else:
-            module.add_module("out_fun", nn.Identity())
+        module.add_module("out_fun", nn.Identity())
         self.final_layer = module
 
     def forward(

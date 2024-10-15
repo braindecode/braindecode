@@ -118,9 +118,11 @@ def load_example_data(preload, window_len_s, n_recordings=10):
     # Drop bad epochs
     # XXX: This could be parallelized.
     # XXX: Also, this could be implemented in the Dataset object itself.
-    for ds in windows_ds.datasets:
-        ds.windows.drop_bad()
-        assert ds.windows.preload == preload
+    # We don't support drop_bad since the last version braindecode,
+    # to optimize the dataset speed. If you know how to fix, please open a PR.
+    # for ds in windows_ds.datasets:
+    #    ds.raw.drop_bad()
+    #   assert ds.raw.preload == preload
 
     return windows_ds
 
@@ -156,7 +158,7 @@ def create_example_model(
         model = ShallowFBCSPNet(
             n_channels,
             n_classes,
-            input_window_samples=window_len_samples,
+            n_times=window_len_samples,
             n_filters_time=40,
             filter_time_length=25,
             n_filters_spat=40,
@@ -172,7 +174,7 @@ def create_example_model(
         model = Deep4Net(
             n_channels,
             n_classes,
-            input_window_samples=window_len_samples,
+            n_times=window_len_samples,
             final_conv_length="auto",
             n_filters_time=25,
             n_filters_spat=25,
@@ -188,7 +190,6 @@ def create_example_model(
             first_pool_mode="max",
             later_pool_mode="max",
             drop_prob=0.5,
-            double_time_convs=False,
             split_first_layer=True,
             batch_norm=True,
             batch_norm_alpha=0.1,
@@ -335,10 +336,9 @@ for (
         num_workers=num_workers,
         worker_init_fn=None,
     )
-
     # Instantiate model and optimizer
-    n_channels = len(dataset.datasets[0].windows.ch_names)
-    n_times = len(dataset.datasets[0].windows.times)
+    n_channels = dataset[0][0].shape[0]
+    n_times = dataset[0][0].shape[1]
     n_classes = 2
     model, loss, optimizer = create_example_model(
         n_channels, n_classes, n_times, kind=model_kind, cuda=cuda

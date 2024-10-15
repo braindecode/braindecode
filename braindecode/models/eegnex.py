@@ -23,7 +23,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         Number of filters in the first convolutional layer. Default is 8.
     filter_2 : int, optional
         Number of filters in the second convolutional layer. Default is 32.
-    drop_rate : float, optional
+    drop_prob: float, optional
         Dropout rate. Default is 0.5.
     kernel_block_4 : tuple[int, int], optional
         Kernel size for block 4. Default is (1, 16).
@@ -68,7 +68,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         depth_multiplier: int = 2,
         filter_1: int = 8,
         filter_2: int = 32,
-        drop_rate: float = 0.5,
+        drop_prob: float = 0.5,
         kernel_block_4: tuple[int, int] = (1, 16),
         dilation_block_4: tuple[int, int] = (1, 2),
         avg_pool_block4: tuple[int, int] = (1, 4),
@@ -90,7 +90,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         self.filter_1 = filter_1
         self.filter_2 = filter_2
         self.filter_3 = self.filter_2 * self.depth_multiplier
-        self.drop_rate = drop_rate
+        self.drop_prob = drop_prob
         self.activation = activation
 
         self.kernel_block_4 = kernel_block_4
@@ -150,7 +150,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
                 stride=self.avg_pool_block4,
                 padding=(0, 1),
             ),
-            nn.Dropout(p=self.drop_rate),
+            nn.Dropout(p=self.drop_prob),
         )
 
         self.block_4 = nn.Sequential(
@@ -180,7 +180,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
                 stride=self.avg_pool_block5,
                 padding=(0, 1),
             ),
-            nn.Dropout(p=self.drop_rate),
+            nn.Dropout(p=self.drop_prob),
             nn.Flatten(),
         )
 

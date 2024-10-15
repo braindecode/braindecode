@@ -13,9 +13,9 @@ The model offers competitive performances, with a low latency and is mainly comp
 
 import torch
 from torch import nn
+from torchaudio.transforms import Resample
 
-from .modules import Resample
-from .base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin
 
 
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):

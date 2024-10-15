@@ -2,15 +2,16 @@
 #
 # License: BSD (3-clause)
 
-import math
 import copy
-from copy import deepcopy
+import math
 import warnings
+from copy import deepcopy
 
 import torch
-from torch import nn
 import torch.nn.functional as F
-from .base import EEGModuleMixin, deprecated_args
+from torch import nn
+
+from braindecode.models.base import EEGModuleMixin
 
 
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
@@ -43,7 +44,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         input dimension of the second FC layer in the same.
     n_attn_heads : int
         Number of attention heads. It should be a factor of d_model
-    dropout : float
+    drop_prob : float
         Dropout rate in the PositionWiseFeedforward layer and the TCE layers.
     after_reduced_cnn_size : int
         Number of output channels produced by the convolution in the AFR module.
@@ -81,7 +82,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         d_model=80,
         d_ff=120,
         n_attn_heads=5,
-        dropout=0.1,
+        drop_prob=0.1,
         activation_mrcnn: nn.Module = nn.GELU,
         activation: nn.Module = nn.ReLU,
         input_window_seconds=None,
@@ -91,22 +92,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         chs_info=None,
         n_chans=None,
         n_times=None,
-        n_classes=None,
-        input_size_s=None,
     ):
-        (
-            n_outputs,
-            input_window_seconds,
-        ) = deprecated_args(
-            self,
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_size_s",
-                "input_window_seconds",
-                input_size_s,
-                input_window_seconds,
-            ),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -116,7 +102,6 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_classes, input_size_s
 
         self.mapping = {
             "fc.weight": "final_layer.weight",
@@ -150,10 +135,10 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
             activation_se=activation,
         )
         attn = _MultiHeadedAttention(n_attn_heads, d_model, after_reduced_cnn_size)
-        ff = _PositionwiseFeedForward(d_model, d_ff, dropout, activation=activation)
+        ff = _PositionwiseFeedForward(d_model, d_ff, drop_prob, activation=activation)
         tce = _TCE(
             _EncoderLayer(
-                d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size, dropout
+                d_model, deepcopy(attn), deepcopy(ff), after_reduced_cnn_size, drop_prob
             ),
             n_tce,
         )

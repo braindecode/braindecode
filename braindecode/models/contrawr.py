@@ -5,10 +5,10 @@ from typing import Any, List
 import torch
 import torch.nn as nn
 
-from .base import EEGModuleMixin
+from braindecode.models.base import EEGModuleMixin
 
 
-class ResBlock(nn.Module):
+class _ResBlock(nn.Module):
     """Convolutional Residual Block 2D.
 
     This block stacks two convolutional layers with batch normalization,
@@ -33,6 +33,8 @@ class ResBlock(nn.Module):
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
 
     Examples
     --------
@@ -56,7 +58,7 @@ class ResBlock(nn.Module):
         drop_prob=0.5,
         activation: nn.Module = nn.ReLU,
     ):
-        super(ResBlock, self).__init__()
+        super(_ResBlock, self).__init__()
         self.conv1 = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -137,6 +139,9 @@ class ContraWR(EEGModuleMixin, nn.Module):
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+
 
     .. versionadded:: 0.9
 
@@ -165,6 +170,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         res_channels: list[int] = [32, 64, 128],
         steps=20,
         activation: nn.Module = nn.ELU,
+        drop_prob: float = 0.5,
         # Another way to pass the EEG parameters
         chs_info: list[dict[Any, Any]] | None = None,
         n_times: int | None = None,
@@ -189,12 +195,13 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
         self.convs = nn.ModuleList(
             [
-                ResBlock(
+                _ResBlock(
                     in_channels=res_channels[i],
                     out_channels=res_channels[i + 1],
                     stride=2,
                     use_downsampling=True,
                     pooling=True,
+                    drop_prob=drop_prob,
                 )
                 for i in range(len(res_channels) - 1)
             ]

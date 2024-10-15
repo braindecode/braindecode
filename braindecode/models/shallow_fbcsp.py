@@ -2,14 +2,13 @@
 #
 # License: BSD (3-clause)
 
-import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
-from einops.layers.torch import Rearrange
 
-from .base import EEGModuleMixin, deprecated_args
-from .functions import square, squeeze_final_output
-from .modules import CombinedConv, Ensure4d, Expression, SafeLog
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.functions import square, squeeze_final_output
+from braindecode.models.modules import CombinedConv, Ensure4d, Expression, SafeLog
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -47,12 +46,6 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         Momentum for BatchNorm2d.
     drop_prob: float
         Dropout probability.
-    in_chans : int
-        Alias for `n_chans`.
-    n_classes: int
-        Alias for `n_outputs`.
-    input_window_samples: int | None
-        Alias for `n_times`.
 
     References
     ----------
@@ -86,17 +79,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=False,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -104,10 +87,8 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.n_filters_time = n_filters_time
@@ -194,9 +175,6 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                 bias=True,
             ),
         )
-
-        if self.add_log_softmax:
-            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 

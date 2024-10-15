@@ -6,10 +6,10 @@ import torch
 from torch import nn
 from torch.nn import ConstantPad2d
 
-from .deep4 import Deep4Net
-from .util import to_dense_prediction_model
-from .shallow_fbcsp import ShallowFBCSPNet
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.deep4 import Deep4Net
+from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
+from braindecode.models.util import to_dense_prediction_model
 
 
 class HybridNet(EEGModuleMixin, nn.Module):
@@ -33,21 +33,12 @@ class HybridNet(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_outputs=None,
         n_times=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=False,
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
         activation: nn.Module = nn.ELU,
+        drop_prob: float = 0.5,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -55,7 +46,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
             chs_info=chs_info,
-            add_log_softmax=add_log_softmax,
         )
         self.mapping = {
             "final_conv.weight": "final_layer.weight",
@@ -77,6 +67,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
             final_conv_length=2,
             activation_first_conv_nonlin=activation,
             activation_later_conv_nonlin=activation,
+            drop_prob=drop_prob,
         )
         shallow_model = ShallowFBCSPNet(
             n_chans=n_chans,
@@ -89,9 +80,9 @@ class HybridNet(EEGModuleMixin, nn.Module):
             n_filters_spat=40,
             filter_time_length=28,
             final_conv_length=29,
+            drop_prob=drop_prob,
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
-        del in_chans, n_classes, input_window_samples
 
         reduced_deep_model = nn.Sequential()
         for name, module in deep_model.named_children():
@@ -126,7 +117,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
 
         self.final_layer = nn.Sequential(
             nn.Conv2d(100, self.n_outputs, kernel_size=(1, 1), stride=1),
-            nn.LogSoftmax(dim=1) if self.add_log_softmax else nn.Identity(),
+            nn.Identity(),
         )
 
     def forward(self, x):

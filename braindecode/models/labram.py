@@ -14,9 +14,9 @@ from torch.nn.init import trunc_normal_
 from einops import rearrange
 from einops.layers.torch import Rearrange
 
-from .functions import rescale_parameter
-from .modules import MLP, DropPath
-from .base import EEGModuleMixin
+from braindecode.models.functions import rescale_parameter
+from braindecode.models.modules import MLP, DropPath
+from braindecode.models.base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):
@@ -79,11 +79,11 @@ class Labram(EEGModuleMixin, nn.Module):
     qk_scale : float (default=None)
         If not None, use this value as the scale factor. If None,
         use head_dim**-0.5, where head_dim = dim // num_heads.
-    drop_rate : float (default=0.0)
+    drop_prob : float (default=0.0)
         Dropout rate for the attention weights.
-    attn_drop_rate : float (default=0.0)
+    attn_drop_prob : float (default=0.0)
         Dropout rate for the attention weights.
-    drop_path_rate : float (default=0.0)
+    drop_path_prob : float (default=0.0)
         Dropout rate for the attention weights used on DropPath.
     norm_layer : Pytorch Normalize layer (default=nn.LayerNorm)
         The normalization layer to be used.
@@ -138,9 +138,9 @@ class Labram(EEGModuleMixin, nn.Module):
         qkv_bias=False,
         qk_norm=None,
         qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.0,
+        drop_prob=0.0,
+        attn_drop_prob=0.0,
+        drop_path_prob=0.0,
         norm_layer=nn.LayerNorm,
         init_values=None,
         use_abs_pos_emb=True,
@@ -236,10 +236,10 @@ class Labram(EEGModuleMixin, nn.Module):
             torch.zeros(1, self.patch_embed[0].n_patchs + 1, self.emb_size),
             requires_grad=True,
         )
-        self.pos_drop = nn.Dropout(p=drop_rate)
+        self.pos_drop = nn.Dropout(p=drop_prob)
 
         dpr = [
-            x.item() for x in torch.linspace(0, drop_path_rate, n_layers)
+            x.item() for x in torch.linspace(0, drop_path_prob, n_layers)
         ]  # stochastic depth decay rule
         self.blocks = nn.ModuleList(
             [
@@ -250,8 +250,8 @@ class Labram(EEGModuleMixin, nn.Module):
                     qkv_bias=qkv_bias,
                     qk_norm=qk_norm,
                     qk_scale=qk_scale,
-                    drop=drop_rate,
-                    attn_drop=attn_drop_rate,
+                    drop=drop_prob,
+                    attn_drop=attn_drop_prob,
                     drop_path=dpr[i],
                     norm_layer=norm_layer,
                     init_values=init_values,

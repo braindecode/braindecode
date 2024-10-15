@@ -30,9 +30,11 @@ from .eegsimpleconv import EEGSimpleConv
 from .sparcnet import SPARCNet
 from .contrawr import ContraWR
 from .eegnex import EEGNeX
+from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
 from .lggnet import LGGNet
+from .ctnet import CTNet
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.

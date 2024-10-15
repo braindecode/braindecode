@@ -46,10 +46,16 @@ Enhancements
 - Increasing moabb version to 1.1.0 (:gh:`632` by `Bruno Aristimunha`_)
 - Add MaskEncoding augmentation :class:`braindecode.augmentation.MaskEncoding` (:gh:`631` by `Gustavo Rodrigues`_)
 - Adding :class:`braindecode.models.EEGNex`  (:gh:`635` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.TSception`  (:gh:`641` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.EEGTCNet`  (:gh:`640` by `Bruno Aristimunha`_ )
 - Ensure consistency in the last layer using tests (:gh:`642` by `Bruno Aristimunha`_ )
 - Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
+- Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
+- Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.CTNet`  (:gh:`666` by `Bruno Aristimunha`_ )
+- Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `itsaphel`_)
+
 
 Bugs
 ~~~~
@@ -62,13 +68,14 @@ Bugs
 - Fix matplotlib colormaps deprecation (:gh:`608` by `Bruno Aristimunha`_)
 - Ensure mypy to work for every commit (:gh:`619` by `Bruno Aristimunha`_)
 - Deprecate moabb version 1.0.0 because of incorrect epoching (:gh:`627` by `Pierre Guetschel`_)
-
+- Fixing tutorial benchmark lazy eager loagin (:gh:`` by `Bruno Aristimunha`_ and `Aphel`_)
 
 API changes
 ~~~~~~~~~~~
 - Expose the ``use_mne_epochs parameter`` of :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
-
+- Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)
+- Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
 .. _changes_0_8_0:
 
 Current 0.8 (11-2022)
@@ -286,3 +293,4 @@ Authors
 .. _Yassine El Ouahidi: https://github.com/elouayas
 .. _John Muradeli: https://github.com/OverLordGoldDragon/
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
+.. _Aphel: https://github.com/itsaphel

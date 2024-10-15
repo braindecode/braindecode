@@ -67,6 +67,7 @@ Models
     AttentionBaseNet
     BIOT
     ContraWR
+    CTNet
     Deep4Net
     DeepSleepNet
     EEGConformer
@@ -89,9 +90,18 @@ Models
     SPARCNet
     SyncNet
     TCN
+    TSceptionV1
     TIDNet
     USleep
 
+.. currentmodule:: braindecode.models.modules
+
+:py:mod:`braindecode.models.modules`:
+
+.. autosummary::
+   :toctree: generated/
+
+    FilterBankLayer
 
 Training
 ========

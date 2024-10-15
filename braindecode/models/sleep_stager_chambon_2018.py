@@ -2,10 +2,11 @@
 #
 # License: BSD (3-clause)
 
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
-from .base import EEGModuleMixin, deprecated_args
+
+from braindecode.models.base import EEGModuleMixin
 
 
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
@@ -26,7 +27,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     pad_size_s : float
         Padding size, in seconds. Set to 0.25 in [Chambon2018]_ (half the
         temporal convolution kernel size).
-    dropout : float
+    drop_prob : float
         Dropout rate before the output dense layer.
     apply_batch_norm : bool
         If True, apply batch normalization after both temporal convolutional
@@ -65,30 +66,12 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         activation: nn.Module = nn.ReLU,
         input_window_seconds=None,
         n_outputs=5,
-        dropout=0.25,
+        drop_prob=0.25,
         apply_batch_norm=False,
         return_feats=False,
         chs_info=None,
         n_times=None,
-        n_channels=None,
-        input_size_s=None,
-        n_classes=None,
     ):
-        (
-            n_chans,
-            n_outputs,
-            input_window_seconds,
-        ) = deprecated_args(
-            self,
-            ("n_channels", "n_chans", n_channels, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_size_s",
-                "input_window_seconds",
-                input_size_s,
-                input_window_seconds,
-            ),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -98,7 +81,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_channels, n_classes, input_size_s
 
         self.mapping = {
             "fc.1.weight": "final_layer.1.weight",
@@ -132,7 +114,7 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
         # TODO: Add new way to handle return_features == True
         if not return_feats:
             self.final_layer = nn.Sequential(
-                nn.Dropout(dropout),
+                nn.Dropout(p=drop_prob),
                 nn.Linear(self.len_last_layer, self.n_outputs),
             )
 

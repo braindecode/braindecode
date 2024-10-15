@@ -4,15 +4,14 @@
 # License: BSD-3
 
 import numpy as np
-
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
-from einops.layers.torch import Rearrange
 
-from .functions import squeeze_final_output
-from .modules import Expression, AvgPool2dWithConv, Ensure4d
-from .base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.functions import squeeze_final_output
+from braindecode.models.modules import AvgPool2dWithConv, Ensure4d, Expression
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
@@ -58,17 +57,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
         sfreq=250,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=False,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -76,10 +65,8 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_window_samples
 
         if final_pool_length == "auto":
             assert self.n_times is not None
@@ -274,32 +261,29 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        if self.add_log_softmax:
-            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
-
         module.add_module("squeeze", Expression(squeeze_final_output))
 
         self.add_module("final_layer", module)
 
         # Initialize all weights
-        self.apply(lambda module: _weights_init(module, self.conv_weight_init_fn))
+        self.apply(lambda module: self._weights_init(module, self.conv_weight_init_fn))
 
         # Start in eval mode
         self.eval()
 
-
-def _weights_init(module, conv_weight_init_fn):
-    """
-    initialize weights
-    """
-    classname = module.__class__.__name__
-    if "Conv" in classname and classname != "AvgPool2dWithConv":
-        conv_weight_init_fn(module.weight)
-        if module.bias is not None:
+    @staticmethod
+    def _weights_init(module, conv_weight_init_fn):
+        """
+        initialize weights
+        """
+        classname = module.__class__.__name__
+        if "Conv" in classname and classname != "AvgPool2dWithConv":
+            conv_weight_init_fn(module.weight)
+            if module.bias is not None:
+                init.constant_(module.bias, 0)
+        elif "BatchNorm" in classname:
+            init.constant_(module.weight, 1)
             init.constant_(module.bias, 0)
-    elif "BatchNorm" in classname:
-        init.constant_(module.weight, 1)
-        init.constant_(module.bias, 0)
 
 
 class _ResidualBlock(nn.Module):
