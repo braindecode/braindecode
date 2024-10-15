@@ -221,12 +221,3 @@ class FBCNet(EEGModuleMixin, nn.Module):
     def _apply_padding(x: Tensor, padding_size: int, mode: str = "constant"):
         x = torch.nn.functional.pad(x, (0, padding_size), mode=mode)
         return x
-
-
-if __name__ == "__main__":
-    x = torch.zeros(1, 22, 1001)
-    model = FBCNet(n_chans=22, n_times=1001, n_outputs=2, sfreq=256)
-
-    out = model(x)
-
-    print(out.shape)
