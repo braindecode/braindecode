@@ -5,9 +5,8 @@
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
-from torch.nn.functional import elu
 
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions import identity, squeeze_final_output
 from braindecode.models.modules import (
     AvgPool2dWithConv,
@@ -72,12 +71,6 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         Momentum for BatchNorm2d.
     stride_before_pool: bool
         Stride before pooling.
-    in_chans :
-        Alias for n_chans.
-    n_classes:
-        Alias for n_outputs.
-    input_window_samples :
-        Alias for n_times.
 
 
     References
@@ -122,17 +115,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=False,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -140,14 +123,9 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del (
-            in_chans,
-            n_classes,
-            input_window_samples,
-        )
+
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.final_conv_length = final_conv_length
@@ -304,9 +282,6 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                 bias=True,
             ),
         )
-
-        if self.add_log_softmax:
-            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
 
         module.add_module("squeeze", Expression(squeeze_final_output))
 

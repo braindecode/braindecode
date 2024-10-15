@@ -13,19 +13,19 @@ from braindecode.util import set_random_seeds
 def test_tcn():
     set_random_seeds(0, False)
     tcn = TCN(
-        n_in_chans=21,
+        n_chans=21,
         n_outputs=2,
         n_filters=55,
         n_blocks=5,
         kernel_size=16,
         drop_prob=0.05270154233150525,
-        add_log_softmax=True,
     )
     # braindecode models are always in eval mode after initialization
     # original model implementation was not
     tcn.train()
     x = torch.rand(1, 21, 1000, 1)
     out = tcn(x)
+    out = torch.nn.functional.log_softmax(out, dim=1)
     # this is the output of the original model implementation using the same
     # initialization arguments as above
     expected = np.array(
