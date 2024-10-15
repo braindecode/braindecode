@@ -54,6 +54,7 @@ Enhancements
 - Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.CTNet`  (:gh:`666` by `Bruno Aristimunha`_ )
+- Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `itsaphel`_)
 
 
 Bugs
@@ -74,7 +75,7 @@ API changes
 - Expose the ``use_mne_epochs parameter`` of :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
 - Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)
-
+- Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
 .. _changes_0_8_0:
 
 Current 0.8 (11-2022)

@@ -81,13 +81,22 @@ class TUH(BaseConcatDataset):
                 # of recordings to load
                 recording_ids = range(recording_ids)
             descriptions = descriptions[recording_ids]
+
+        # workaround to ensure warnings are suppressed when running in parallel
+        def create_dataset(*args, **kwargs):
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore", message=".*not in description. '__getitem__'"
+                )
+                return self._create_dataset(*args, **kwargs)
+
         # this is the second loop (slow)
         # create datasets gathering more info about the files touching them
         # reading the raws and potentially preloading the data
         # disable joblib for tests. mocking seems to fail otherwise
         if n_jobs == 1:
             base_datasets = [
-                self._create_dataset(
+                create_dataset(
                     descriptions[i],
                     target_name,
                     preload,
@@ -99,7 +108,7 @@ class TUH(BaseConcatDataset):
             ]
         else:
             base_datasets = Parallel(n_jobs)(
-                delayed(self._create_dataset)(
+                delayed(create_dataset)(
                     descriptions[i],
                     target_name,
                     preload,
@@ -407,20 +416,16 @@ class TUHAbnormal(TUH):
         set_montage: bool = False,
         n_jobs: int = 1,
     ):
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore", message=".*not in description. '__getitem__'"
-            )
-            super().__init__(
-                path=path,
-                recording_ids=recording_ids,
-                preload=preload,
-                target_name=target_name,
-                add_physician_reports=add_physician_reports,
-                rename_channels=rename_channels,
-                set_montage=set_montage,
-                n_jobs=n_jobs,
-            )
+        super().__init__(
+            path=path,
+            recording_ids=recording_ids,
+            preload=preload,
+            target_name=target_name,
+            add_physician_reports=add_physician_reports,
+            rename_channels=rename_channels,
+            set_montage=set_montage,
+            n_jobs=n_jobs,
+        )
         additional_descriptions = []
         for file_path in self.description.path:
             additional_description = self._parse_additional_description_from_file_path(

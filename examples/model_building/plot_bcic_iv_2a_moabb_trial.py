@@ -181,12 +181,12 @@ n_classes = 4
 classes = list(range(n_classes))
 # Extract number of chans and time steps from dataset
 n_chans = train_set[0][0].shape[0]
-input_window_samples = train_set[0][0].shape[1]
+n_times = train_set[0][0].shape[1]
 
 model = ShallowFBCSPNet(
     n_chans,
     n_classes,
-    input_window_samples=input_window_samples,
+    n_times=n_times,
     final_conv_length="auto",
 )
 
