@@ -261,8 +261,8 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         )
         block12 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=int(n_filters_time * 2),
-            kernel_length=int(kernel_length * 2),
+            out_channels=n_filters_time * 2,
+            kernel_length=kernel_length * 2,
             activation=activation,
         )
         block13 = self._get_inception_branch(
