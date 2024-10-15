@@ -61,7 +61,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     stride_factor : int, default=4
         Stride factor for reshaping.
     activation : nn.Module, default=nn.SiLU
-        Activation function class to apply.
+        Activation function class to apply in Spatial Convolution Block.
     filter_parameters: dict, default {}
         Parameters for the FilterBankLayer
 
@@ -120,7 +120,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             warn(
                 f"Time dimension ({self.n_times}) is not divisible by"
                 f" stride_factor ({self.stride_factor}). Input will be "
-                f"truncated.",
+                f" padded.",
                 UserWarning,
             )
 
@@ -209,6 +209,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         return x
 
     @staticmethod
-    def _apply_padding(x: Tensor, padding_size: int):
-        x = torch.nn.functional.pad(x, (0, padding_size))
+    def _apply_padding(x: Tensor, padding_size: int, mode: str = "constant"):
+        x = torch.nn.functional.pad(x, (0, padding_size), mode=mode)
         return x
