@@ -101,8 +101,8 @@ class _TCBlock(nn.Module):
         Number of input channels.
     kernel_length : int
         Length of the convolutional kernels.
-    dilation : int
-        Dilation rate for the convolutions.
+    dilatation : int
+        Dilatation rate for the convolutions.
     padding : int
         Amount of padding to add to the input.
     drop_prob : float, optional
@@ -116,7 +116,7 @@ class _TCBlock(nn.Module):
         self,
         in_ch,
         kernel_length,
-        dialation,
+        dilatation,
         padding,
         drop_prob=0.4,
         activation: nn.Module = nn.ELU,
@@ -128,7 +128,7 @@ class _TCBlock(nn.Module):
                 in_ch,
                 kernel_size=(1, kernel_length),
                 depth_multiplier=1,
-                dilation=(1, dialation),
+                dilation=(1, dilatation),
                 bias=False,
                 padding="valid",
             ),
@@ -142,7 +142,7 @@ class _TCBlock(nn.Module):
                 in_ch,
                 kernel_size=(1, kernel_length),
                 depth_multiplier=1,
-                dilation=(1, dialation),
+                dilation=(1, dilatation),
                 bias=False,
                 padding="valid",
             ),
@@ -176,15 +176,27 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
     ----------
     drop_prob: float
         Dropout probability.
-    n_classes: int
-        Alias for n_outputs.
-    in_channels: int
-        Alias for n_chans.
-    input_window_samples : int
-        Alias for n_times.
     activation: nn.Module, default=nn.ELU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    kernel_length : int, optional
+        Kernel length for inception branches. Determines the temporal receptive field.
+        Default is 16.
+    pool_kernel : int, optional
+        Pooling kernel size for the average pooling layer. Default is 4.
+    tcn_in_channel : int, optional
+        Number of input channels for Temporal Convolutional (TC) blocks. Default is 14.
+    tcn_kernel_size : int, optional
+        Kernel size for the TC blocks. Determines the temporal receptive field.
+        Default is 4.
+    tcn_padding : int, optional
+        Padding size for the TC blocks to maintain the input dimensions. Default is 3.
+    drop_prob : float, optional
+        Dropout probability applied after certain layers to prevent overfitting.
+        Default is 0.4.
+    tcn_dilatation : int, optional
+        Dilation rate for the first TC block. Subsequent blocks will have
+        dilation rates multiplied by powers of 2. Default is 1.
 
     Notes
     -----
@@ -202,14 +214,23 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
 
     def __init__(
         self,
+        # Braindecode parameters
         n_outputs=None,
         n_chans=None,
         n_times=None,
-        drop_prob=0.4,
-        activation: nn.Module = nn.ELU,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
+        # Model parameters
+        n_filters_time: int = 2,
+        kernel_length: int = 16,
+        pool_kernel: int = 4,
+        tcn_in_channel: int = 14,
+        tcn_kernel_size: int = 4,
+        tcn_padding: int = 3,
+        drop_prob: float = 0.4,
+        tcn_dilatation: int = 1,
+        activation: nn.Module = nn.ELU,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -234,35 +255,37 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # ======== Inception branches ========================
         block11 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=2,
-            kernel_length=16,
+            out_channels=n_filters_time,
+            kernel_length=kernel_length,
             activation=activation,
         )
         block12 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=4,
-            kernel_length=32,
+            out_channels=n_filters_time * 2,
+            kernel_length=kernel_length * 2,
             activation=activation,
         )
         block13 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=8,
-            kernel_length=64,
+            out_channels=n_filters_time * 4,
+            kernel_length=n_filters_time * 4,
             activation=activation,
         )
         self.add_module("inception_block", _InceptionBlock((block11, block12, block13)))
         self.pool1 = self.add_module(
             "pooling",
-            nn.Sequential(nn.AvgPool2d(kernel_size=(1, 4)), nn.Dropout(drop_prob)),
+            nn.Sequential(
+                nn.AvgPool2d(kernel_size=(1, pool_kernel)), nn.Dropout(drop_prob)
+            ),
         )
         # =========== TC blocks =====================
         self.add_module(
             "TC_block1",
             _TCBlock(
-                in_ch=14,
-                kernel_length=4,
-                dialation=1,
-                padding=3,
+                in_ch=tcn_in_channel,
+                kernel_length=tcn_kernel_size,
+                dilatation=tcn_dilatation,
+                padding=tcn_padding,
                 drop_prob=drop_prob,
                 activation=activation,
             ),
@@ -271,10 +294,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "TC_block2",
             _TCBlock(
-                in_ch=14,
-                kernel_length=4,
-                dialation=2,
-                padding=6,
+                in_ch=tcn_in_channel,
+                kernel_length=tcn_kernel_size,
+                dilatation=tcn_dilatation * 2,
+                padding=tcn_padding * 2,
                 drop_prob=drop_prob,
                 activation=activation,
             ),
@@ -283,10 +306,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "TC_block3",
             _TCBlock(
-                in_ch=14,
-                kernel_length=4,
-                dialation=4,
-                padding=12,
+                in_ch=tcn_in_channel,
+                kernel_length=tcn_kernel_size,
+                dilatation=tcn_dilatation * 4,
+                padding=tcn_padding * 4,
                 drop_prob=drop_prob,
                 activation=activation,
             ),
@@ -295,10 +318,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "TC_block4",
             _TCBlock(
-                in_ch=14,
-                kernel_length=4,
-                dialation=8,
-                padding=24,
+                in_ch=tcn_in_channel,
+                kernel_length=tcn_kernel_size,
+                dilatation=tcn_dilatation * 8,
+                padding=tcn_padding * 8,
                 drop_prob=drop_prob,
                 activation=activation,
             ),
@@ -308,10 +331,10 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "dim_reduction",
             nn.Sequential(
-                nn.Conv2d(14, 28, kernel_size=(1, 1)),
-                nn.BatchNorm2d(28),
+                nn.Conv2d(tcn_in_channel, tcn_in_channel * 2, kernel_size=(1, 1)),
+                nn.BatchNorm2d(tcn_in_channel * 2),
                 activation(),
-                nn.AvgPool2d((1, 4)),
+                nn.AvgPool2d((1, tcn_kernel_size)),
                 nn.Dropout(drop_prob),
             ),
         )
@@ -319,16 +342,9 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # Moved flatten to another layer
         self.add_module("flatten", nn.Flatten())
 
-        # Incorporating classification module and subsequent ones in one final layer
-        module = nn.Sequential()
+        num_features = self.get_output_shape()[-1]
 
-        module.add_module(
-            "clf", nn.Linear(int(int(self.n_times / 4) / 4) * 28, self.n_outputs)
-        )
-
-        module.add_module("out_fun", nn.Identity())
-
-        self.add_module("final_layer", module)
+        self.add_module("final_layer", nn.Linear(num_features, self.n_outputs))
 
     @staticmethod
     def _get_inception_branch(
