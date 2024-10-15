@@ -1199,19 +1199,6 @@ def test_fbcnet_different_n_times(n_times):
     output = model(x)
 
     assert output.shape == (batch_size, n_outputs)
-
-
-def test_fbcnet_invalid_temporal_layer():
-    with pytest.raises(NotImplementedError):
-        FBCNet(
-            n_chans=22,
-            n_outputs=2,
-            n_times=1000,
-            temporal_layer='InvalidLayer',
-            sfreq=250,
-        )
-
-
 @pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
 def test_fbcnet_stride_factor_warning(stride_factor):
     n_chans = 22
@@ -1228,3 +1215,14 @@ def test_fbcnet_stride_factor_warning(stride_factor):
                 stride_factor=stride_factor,
                 sfreq=250,
             )
+
+
+def test_fbcnet_invalid_temporal_layer():
+    with pytest.raises(NotImplementedError):
+        FBCNet(
+            n_chans=22,
+            n_outputs=2,
+            n_times=1000,
+            temporal_layer='InvalidLayer',
+            sfreq=250,
+        )
