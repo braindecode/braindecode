@@ -38,6 +38,7 @@ class HybridNet(nn.Module):
         activation: nn.Module = nn.ELU,
         drop_prob: float = 0.5,
     ):
+        super().__init__()
         self.mapping = {
             "final_conv.weight": "final_layer.weight",
             "final_conv.bias": "final_layer.bias",
@@ -73,8 +74,6 @@ class HybridNet(nn.Module):
             final_conv_length=29,
             drop_prob=drop_prob,
         )
-        del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
-
         reduced_deep_model = nn.Sequential()
         for name, module in deep_model.named_children():
             if name == "final_layer":
@@ -107,7 +106,7 @@ class HybridNet(nn.Module):
         self.reduced_shallow_model = reduced_shallow_model
 
         self.final_layer = nn.Sequential(
-            nn.Conv2d(100, self.n_outputs, kernel_size=(1, 1), stride=1),
+            nn.Conv2d(100, n_outputs, kernel_size=(1, 1), stride=1),
             nn.Identity(),
         )
 
