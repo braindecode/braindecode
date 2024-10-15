@@ -26,14 +26,28 @@ class EEGMiner(EEGModuleMixin, nn.Module):
        :align: center
        :alt: EEGMiner Architecture
 
-    EEGMiner is a neural network model designed for EEG signal classification using
+    EEGMiner is a neural network model for EEG signal classification using
     learnable generalized Gaussian filters. The model leverages frequency domain
     filtering and connectivity metrics such as Phase Locking Value (PLV) to extract
     meaningful features from EEG data, enabling effective classification tasks.
 
-    The model begins by applying generalized Gaussian filters in the frequency domain
-    to the input EEG signals. Depending on the selected method (`mag`, `corr`, or `plv`),
-    it computes either the magnitude, correlation, or phase locking value of the filtered signals.
+    The model has the following steps:
+
+    - **Generalized Gaussian** filters in the frequency domain to the input EEG signals.
+
+    - **Connectivity estimators**, by default, we use phase locking value.
+        - `'mag'`: Computes the magnitude of the filtered signals.
+        - `'corr'`: Computes the correlation of the filtered signals.
+        - `'plv'`: Computes the phase locking value of the filtered signals.
+
+    - **Feature Normalization**
+        - Apply batch normalization.
+
+    - **Final Layer**
+        - Feeds the batch-normalized features into a final linear layer for classification.
+
+    Depending on the selected method (`mag`, `corr`, or `plv`),
+    it computes the filtered signals' magnitude, correlation, or phase locking value.
     These features are then normalized and passed through a batch normalization layer
     before being fed into a final linear layer for classification.
 
@@ -167,8 +181,9 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         elif self.method == "plv":
             self.method_forward = partial(self._apply_plv, n_chans=self.n_chans)
             self.ensure_dim = Rearrange("... d -> ... 1 d")
-            self.n_features = self.n_filters * self.n_chans * (self.n_chans - 1) // 2
+            self.n_features = (self.n_filters * self.n_chans * (self.n_chans - 1)) // 2
 
+        self.flatten_layer = nn.Flatten()
         # Classifier
         self.batch_layer = nn.BatchNorm1d(self.n_features, affine=False)
         self.final_layer = nn.Linear(self.n_features, self.n_outputs)
@@ -209,7 +224,10 @@ class EEGMiner(EEGModuleMixin, nn.Module):
             x.var(dim=-1, keepdim=True) + epilson
         )
         x = torch.matmul(x, x.transpose(-2, -1)) / x.shape[-1]
-        x = x.transpose(-3, -2).transpose(-2, -1)  # move filter channels to the end
+        # Original tensor shape: [batch, n_filters, chans, chans]
+        x = x.permute(0, 2, 3, 1)
+        # New tensor shape: [batch, chans, chans, n_filters]
+        # move filter channels to the end
         x = x.abs()
 
         # Get upper triu of symmetric connectivity matrix
@@ -222,9 +240,14 @@ class EEGMiner(EEGModuleMixin, nn.Module):
     def _apply_plv(x, n_chans, batch=None):
         # Compute PLV connectivity
         # x -> (batch, electrodes, electrodes, filters)
+        #  torch.Size([2, 36, 2, 501, 2])
         x = x.transpose(-4, -3)  # swap electrodes and filters
+        # adjusting to compute the plv
         x = F.plv_time(x, forward_fourier=False)
-        x = x.transpose(-3, -2).transpose(-2, -1)  # move filter channels to the end
+        # batch, number of filters, connectivity matrix
+        # Original tensor shape: [batch, n_filters, chans, chans]
+        x = x.permute(0, 2, 3, 1)
+        # New tensor shape: [batch, chans, chans, n_filters]
 
         # Get upper triu of symmetric connectivity matrix
         triu = torch.triu_indices(n_chans, n_chans, 1)
