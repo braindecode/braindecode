@@ -188,16 +188,16 @@ def test_eegnet_v4(input_sizes):
     model = EEGNetv4(
         input_sizes["n_channels"],
         input_sizes["n_classes"],
-        input_window_samples=input_sizes["n_in_times"],
+        n_times=input_sizes["n_in_times"],
     )
     check_forward_pass(model, input_sizes)
 
 
 def test_eegnet_v1(input_sizes):
     model = EEGNetv1(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_window_samples=input_sizes["n_in_times"],
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
+        n_times=input_sizes["n_in_times"],
     )
     check_forward_pass(
         model,
@@ -207,13 +207,12 @@ def test_eegnet_v1(input_sizes):
 
 def test_tcn(input_sizes):
     model = TCN(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
         n_filters=5,
         n_blocks=2,
         kernel_size=4,
         drop_prob=0.5,
-        add_log_softmax=True,
     )
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
@@ -391,16 +390,16 @@ def test_sleep_stager(n_channels, sfreq, n_classes, input_size_s):
 
 
 @pytest.mark.parametrize(
-    "in_chans,sfreq,n_classes,input_size_s",
+    "n_chans,sfreq,n_classes,input_size_s",
     [(20, 128, 5, 30), (10, 100, 4, 20), (1, 64, 2, 30)],
 )
-def test_usleep(in_chans, sfreq, n_classes, input_size_s):
+def test_usleep(n_chans, sfreq, n_classes, input_size_s):
     rng = np.random.RandomState(42)
     n_examples = 10
     seq_length = 3
 
     model = USleep(
-        n_chans=in_chans,
+        n_chans=n_chans,
         sfreq=sfreq,
         n_outputs=n_classes,
         input_window_seconds=input_size_s,
@@ -408,7 +407,7 @@ def test_usleep(in_chans, sfreq, n_classes, input_size_s):
     )
     model.eval()
 
-    X = rng.randn(n_examples, in_chans, int(sfreq * input_size_s))
+    X = rng.randn(n_examples, n_chans, int(sfreq * input_size_s))
     X = torch.from_numpy(X.astype(np.float32))
 
     y_pred1 = model(X)  # 3D inputs : (batch, channels, time)
@@ -590,9 +589,9 @@ def test_eegitnet_shape():
     n_classes = 3
     n_examples = 10
     model = EEGITNet(
-        n_classes=n_classes,
-        in_channels=n_channels,
-        input_window_samples=int(sfreq * input_size_s),
+        n_outputs=n_classes,
+        n_chans=n_channels,
+        n_times=int(sfreq * input_size_s),
     )
     model.eval()
 
@@ -691,7 +690,7 @@ def sample_input():
 
 @pytest.fixture
 def model():
-    return EEGConformer(n_classes=2, n_channels=12, n_times=1000)
+    return EEGConformer(n_outputs=2, n_chans=12, n_times=1000)
 
 
 def test_model_creation(model):
