@@ -240,7 +240,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
     def _apply_plv(x, n_chans, batch=None):
         # Compute PLV connectivity
         # x -> (batch, electrodes, electrodes, filters)
-        #  torch.Size([2, 36, 2, 501, 2])
+        # e.g. torch.Size([2, 36, 2, 501, 2])
         x = x.transpose(-4, -3)  # swap electrodes and filters
         # adjusting to compute the plv
         x = F.plv_time(x, forward_fourier=False)
