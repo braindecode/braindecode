@@ -342,8 +342,7 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         # Moved flatten to another layer
         self.add_module("flatten", nn.Flatten())
 
-        num_features = int(int(self.n_times / tcn_kernel_size) / 4) * int(
-            tcn_in_channel * 2
+        num_features = self.get_output_shape()
         )
 
         self.add_module("final_layer", nn.Linear(num_features, self.n_outputs))
