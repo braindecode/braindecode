@@ -16,7 +16,8 @@ from skorch.dataset import ValidSplit
 
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from braindecode import EEGClassifier
-from braindecode.models import SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, FBLightConvNet
+
+from braindecode.models import SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, FBLightConvNet, EEGInceptionMI
 
 
 # Generating the channel info
@@ -46,6 +47,7 @@ def get_epochs_y(signal_params=None, n_epochs=10):
     )
     epo = mne.EpochsArray(X, info)
     return epo, y
+
 
 
 def test_completeness__models_test_cases():
@@ -322,7 +324,7 @@ def test_model_has_drop_prob_parameter(model_class):
     named 'drop_prob' or any parameter that starts with 'activation'.
     """
 
-    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, FBLightConvNet]:
+    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep, EEGInceptionMI, FBCNet, FBLightConvNet]:
         pytest.skip(
             f"Skipping {model_class} as not dropout layer")
 

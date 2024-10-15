@@ -280,7 +280,7 @@ def test_post_epoch_train_scoring():
     )
     X = X.reshape(40, 3, 100).astype(np.float32)
 
-    in_chans = X.shape[1]
+    n_chans = X.shape[1]
 
     train_set = EEGDataSet(X, y)
 
@@ -306,9 +306,9 @@ def test_post_epoch_train_scoring():
     # final_conv_length = auto ensures
     # we only get a single output in the time dimension
     model = ShallowFBCSPNet(
-        in_chans=in_chans,
-        n_classes=n_classes,
-        input_window_samples=train_set.X.shape[2],
+        n_chans=n_chans,
+        n_outputs=n_classes,
+        n_times=train_set.X.shape[2],
         pool_time_stride=1,
         pool_time_length=2,
         final_conv_length="auto",
@@ -431,11 +431,11 @@ def test_predict_trials():
         drop_last_window=False,
     )
 
-    in_chans = windows_ds1[0][0].shape[0]
+    n_chans = windows_ds1[0][0].shape[0]
     n_classes = len(windows_ds1.get_metadata()["target"].unique())
     model = ShallowFBCSPNet(
-        in_chans=in_chans,
-        n_classes=n_classes,
+        n_chans=n_chans,
+        n_outputs=n_classes,
         n_times=window_size_samples,
     )
     model.to_dense_prediction_model()
