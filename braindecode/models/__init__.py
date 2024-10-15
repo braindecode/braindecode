@@ -34,6 +34,7 @@ from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
 from .eegsym import EEGSym
+from .ctnet import CTNet
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.

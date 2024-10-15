@@ -2,13 +2,12 @@
 #
 # License: BSD (3-clause)
 import numpy as np
-
 import torch
-from torch import nn
 from einops.layers.torch import Rearrange
+from torch import nn
 
-from braindecode.models.modules import Ensure4d, MaxNormLinear, CausalConv1d
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
+from braindecode.models.modules import CausalConv1d, Ensure4d, MaxNormLinear
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
@@ -82,12 +81,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
     max_norm_const : float
         Maximum L2-norm constraint imposed on weights of the last
         fully-connected layer. Defaults to 0.25.
-    n_channels:
-        Alias for n_chans.
-    n_classes:
-        Alias for n_outputs.
-    input_size_s:
-        Alias for input_window_seconds.
+
 
     References
     ----------
@@ -125,22 +119,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         max_norm_const=0.25,
         chs_info=None,
         n_times=None,
-        n_channels=None,
-        n_classes=None,
-        input_size_s=None,
-        add_log_softmax=False,
     ):
-        n_chans, n_outputs, input_window_seconds = deprecated_args(
-            self,
-            ("n_channels", "n_chans", n_channels, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_size_s",
-                "input_window_seconds",
-                input_size_s,
-                input_window_seconds,
-            ),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -148,10 +127,8 @@ class ATCNet(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_channels, n_classes, input_size_s
         self.conv_block_n_filters = conv_block_n_filters
         self.conv_block_kernel_length_1 = conv_block_kernel_length_1
         self.conv_block_kernel_length_2 = conv_block_kernel_length_2
@@ -250,10 +227,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 ]
             )
 
-        if self.add_log_softmax:
-            self.out_fun = nn.LogSoftmax(dim=1)
-        else:
-            self.out_fun = nn.Identity()
+        self.out_fun = nn.Identity()
 
     def forward(self, X):
         # Dimension: (batch_size, C, T)
