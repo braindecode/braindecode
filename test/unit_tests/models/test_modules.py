@@ -14,8 +14,9 @@ from torch import nn
 
 from braindecode.models.functions import drop_path
 from braindecode.models.labram import _SegmentPatch
+from braindecode.models.eegminer import GeneralizedGaussianFilter
 from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed, GeneralizedGaussianFilter
+    MLP, SafeLog, TimeDistributed
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 
