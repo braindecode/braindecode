@@ -647,7 +647,7 @@ def test_segmentation_reconstruction_with_EEGClassifier(dataset, probability):
 
     transform = SegmentationReconstruction(probability=probability)
 
-    model = ShallowFBCSPNet(n_times=750, n_chans=4, n_classes=2)
+    model = ShallowFBCSPNet(n_times=750, n_chans=4, n_outputs=2)
 
     clf = EEGClassifier(
         module=model,
