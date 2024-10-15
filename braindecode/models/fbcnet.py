@@ -60,7 +60,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         'LogVarLayer', 'MeanLayer', 'MaxLayer'.
     stride_factor : int, default=4
         Stride factor for reshaping.
-    activation : nn.Module, default=SiLU
+    activation : nn.Module, default=nn.SiLU
         Activation function class to apply.
     filter_parameters: dict, default {}
         Parameters for the FilterBankLayer
