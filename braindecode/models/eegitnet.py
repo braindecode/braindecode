@@ -375,4 +375,3 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             nn.BatchNorm2d(out_channels),
             activation(),
         )
-
