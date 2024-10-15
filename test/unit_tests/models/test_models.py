@@ -43,7 +43,7 @@ from braindecode.models import (
     AttentionBaseNet,
     SPARCNet,
     ContraWR,
-    FBCNet
+    FBCNet,
 )
 
 from braindecode.util import set_random_seeds

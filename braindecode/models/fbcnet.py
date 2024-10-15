@@ -45,7 +45,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     by the original authors; it has only been reimplemented from the paper
     description and source code [fbcnetcode2021]_. There is a difference in the
     activation function; in the paper, the ELU is used as the activation function,
-    but in the original code, SiLU is used. We follow the code.
+    but in the original code, SiLU is used. We followed the code.
 
     Parameters
     ----------
@@ -128,7 +128,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             )
 
         # Layers
-        # Following paper nomeclature
+        # Following paper nomenclature
         self.spectral_filtering = FilterBankLayer(
             n_chans=self.n_chans,
             sfreq=self.sfreq,
