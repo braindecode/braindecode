@@ -1206,7 +1206,7 @@ def test_fbcnet_stride_factor_warning(stride_factor):
     n_outputs = 2
 
     if n_times % stride_factor != 0:
-        with pytest.warns(UserWarning, match="Input will be truncated"):
+        with pytest.warns(UserWarning, match="Input will be padded."):
 
             _ = FBCNet(
                 n_chans=n_chans,

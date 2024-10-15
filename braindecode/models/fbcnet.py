@@ -119,8 +119,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         if self.n_times % self.stride_factor != 0:
             warn(
                 f"Time dimension ({self.n_times}) is not divisible by"
-                f" stride_factor ({self.stride_factor}). Input will be "
-                f" padded.",
+                f" stride_factor ({self.stride_factor}). Input will be padded.",
                 UserWarning,
             )
 
