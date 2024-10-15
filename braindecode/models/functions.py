@@ -218,7 +218,7 @@ def hilbert_freq(x, forward_fourier=True):
     return x
 
 
-def plv_time(x, forward_fourier=True):
+def plv_time(x, forward_fourier=True, epsilon: float = 1e-6):
     """Compute the Phase Locking Value (PLV) metric in the time domain.
 
     The Phase Locking Value (PLV) is a measure of the synchronization between
@@ -239,6 +239,8 @@ def plv_time(x, forward_fourier=True):
         - If `False`, `x` is assumed to be in the Fourier domain with separate real and
           imaginary components.
         Default is `True`.
+    epsilon : float, default 1e-6
+        Small numerical value to ensure positivity constraint on the complex part
 
     Returns
     -------
@@ -283,7 +285,9 @@ def plv_time(x, forward_fourier=True):
     time = amplitude.shape[-1]
 
     # Calculate the PLV by averaging the magnitude of the complex correlation over time.
-    # Adding a small epsilon (1e-6) to ensure numerical stability.
-    plv_matrix = 1 / time * torch.sqrt(correlation_real**2 + correlation_imag**2 + 1e-6)
+    # epsilon is small numerical value to ensure positivity constraint on the complex part
+    plv_matrix = (
+        1 / time * torch.sqrt(correlation_real**2 + correlation_imag**2 + epsilon)
+    )
 
     return plv_matrix
