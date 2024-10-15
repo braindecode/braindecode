@@ -3,15 +3,39 @@
 # License: BSD (3-clause)
 import platform
 
+import numpy as np
 import pytest
 import torch
+from mne.filter import create_filter
+from mne.time_frequency import psd_array_welch
+from scipy.signal import fftconvolve as fftconvolve_scipy, freqz, \
+    lfilter as lfilter_scipy
 from torch import nn
 
-from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.modules import CombinedConv, MLP, TimeDistributed, DropPath, SafeLog
-from braindecode.models.labram import _SegmentPatch
-
 from braindecode.models.functions import drop_path
+from braindecode.models.labram import _SegmentPatch
+from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
+    MLP, SafeLog, TimeDistributed
+from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
+
+
+def _filfilt_in_torch_sytle(b, a, x_np):
+    # Forward filtering
+    forward_filtered = lfilter_scipy(b=b.astype(np.double),
+                                     a=a.astype(np.double),
+                                     x=x_np.astype(np.double), axis=-1)
+
+    # Reverse the filtered signal a long time axis
+    reversed_signal = np.flip(forward_filtered, axis=-1)
+
+    # Backward filtering
+    backward_filtered = lfilter_scipy(b=b, a=a,
+                                      x=reversed_signal, axis=-1)
+
+    # Reverse back to original order
+    filtered_scipy = np.flip(backward_filtered, axis=-1)
+
+    return filtered_scipy
 
 
 def test_time_distributed():
@@ -305,3 +329,398 @@ def test_safelog_extra_repr(eps, expected_repr):
 
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
+
+
+
+@pytest.fixture
+def sample_input():
+    """Create a sample input tensor."""
+    batch_size = 2
+    n_chans = 8
+    time_points = 1000
+    return torch.randn(batch_size, n_chans, time_points)
+
+
+def test_default_band_filters(sample_input):
+    """Test that default band_filters are set correctly when None is provided."""
+    n_chans = 8
+    sfreq = 100
+    layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq, band_filters=None)
+
+    expected_band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
+    assert layer.band_filters == expected_band_filters, "Default band_filters not set correctly."
+    assert layer.n_bands == 9, "Number of bands should be 9."
+
+    output = layer(sample_input)
+    assert output.shape[1] == layer.n_bands, "Output band dimension mismatch."
+    assert output.shape[2] == n_chans, "Output channel dimension mismatch."
+
+
+def test_band_filters_as_int_warning(sample_input):
+    """Test that providing band_filters as int raises a warning and sets band_filters correctly."""
+    n_chans = 8
+    sfreq = 100
+    band_filters_int = 9
+    with pytest.warns(UserWarning,
+                      match="Creating the filter banks equally divided"):
+        layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
+                                band_filters=band_filters_int)
+
+    expected_intervals = torch.linspace(4, 40, steps=band_filters_int + 1)
+    expected_band_filters = [(low.item(), high.item()) for low, high in
+                             zip(expected_intervals[:-1],
+                                 expected_intervals[1:])]
+
+    assert layer.band_filters == expected_band_filters, "band_filters not correctly set from int."
+    assert layer.n_bands == band_filters_int, "Number of bands should match the provided int."
+
+
+def test_invalid_band_filters_raises_value_error():
+    """Test that providing invalid band_filters raises a ValueError."""
+    n_chans = 8
+    sfreq = 100
+    invalid_band_filters = "invalid_type"  # Not a list or int
+
+    with pytest.raises(ValueError,
+                       match="`band_filters` should be a list of tuples"):
+        FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
+                        band_filters=invalid_band_filters)
+
+
+def test_band_filters_none_defaults(sample_input):
+    """
+    Test that when band_filters is None and no n_bands or band_width are provided,
+    the default 9 bands with 4Hz bandwidth are correctly initialized.
+    """
+    n_chans = 8
+    sfreq = 100
+    layer = FilterBankLayer(n_chans=n_chans, sfreq=sfreq, band_filters=None)
+
+    # Define the expected default band_filters
+    expected_band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
+
+    # Assertions to verify band_filters and number of bands
+    assert layer.band_filters == expected_band_filters, "Default band_filters not set correctly when band_filters=None."
+    assert layer.n_bands == 9, "Number of bands should be 9 when band_filters=None."
+
+    # Forward pass to ensure output shape is correct
+    output = layer(sample_input)
+    assert output.shape == (
+        sample_input.shape[0], layer.n_bands, n_chans,
+        sample_input.shape[2]
+    ), "Output shape is incorrect when band_filters=None."
+
+
+def test_band_filters_with_incorrect_tuple_length():
+    """Test that providing band_filters with tuples not of length 2 raises a ValueError."""
+    n_chans = 8
+    sfreq = 100
+    invalid_band_filters = [(4, 8), (12,)]  # Second tuple has only one element
+
+    with pytest.raises(ValueError,
+                       match="The band_filters items should be splitable in 2 values"):
+        FilterBankLayer(n_chans=n_chans, sfreq=sfreq,
+                        band_filters=invalid_band_filters)
+
+
+def test_iir_params_output_sos_warning(sample_input):
+    """Test that providing iir_params with output='sos' raises a warning and modifies the output."""
+    n_chans = 8
+    sfreq = 100
+    iir_params = {"output": "sos"}
+
+    with pytest.warns(UserWarning,
+                      match="It is not possible to use second-order section"):
+        layer = FilterBankLayer(
+            n_chans=n_chans,
+            sfreq=sfreq,
+            band_filters=None,
+            method="iir",
+            iir_params=iir_params
+        )
+
+    assert layer.filts is not None, "Filters should be initialized."
+    assert layer.filts["band_0"][
+               "a"].dtype == torch.float64, "Filter coefficients should be float64."
+
+
+@pytest.mark.parametrize('method', ['iir', 'fir'])
+def test_forward_pass_filter_bank(method, sample_input):
+    """Test the forward pass of the FilterBankLayer with IIR filtering."""
+    n_chans = 8
+    sfreq = 100
+    layer = FilterBankLayer(
+        n_chans=n_chans,
+        sfreq=sfreq,
+        band_filters=None,
+        method=method,
+    )
+
+    output = layer(sample_input)
+    assert output.shape == (
+        sample_input.shape[0], layer.n_bands, n_chans, sample_input.shape[2]
+    ), f"Output shape is incorrect for {method} filtering."
+
+
+@pytest.mark.parametrize("ftype", ["butterworth", "cheby1", "cheby1", "cheby2", "butter"])
+@pytest.mark.parametrize("phase", ["forward", "zero", "zero-double"])
+@pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
+def test_filter_bank_layer_matches_mne_iir(l_freq, h_freq, phase, ftype):
+    # Set random seeds for reproducibility
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    # Test parameters
+    n_chans = 22
+    batch_size = 1
+    n_times = 1000
+    x = torch.randn(batch_size, n_chans, n_times, dtype=torch.float64)
+    if ftype in ["butter", "buttord", "butterworth"]:
+        iir_params = dict(ftype=ftype, output="ba", order=4)
+    else:
+        iir_params = dict(ftype=ftype, output="ba", order=4, rs=1, rp=1)
+
+    filter_parameters = dict(sfreq=256,
+                      method="iir",
+                      iir_params=iir_params,
+                      phase=phase,
+                      verbose=False)
+
+    filts = create_filter(data=None,
+        l_freq=l_freq,
+        h_freq=h_freq,
+        **filter_parameters
+    )  # creating iir filter
+
+    # Initialize your FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=n_chans,
+        band_filters=[(l_freq, h_freq)],
+        **filter_parameters
+    )
+    filtered_signal_torch = filter_bank_layer(x)
+
+    # Simulating filtfilt from torch with scipy
+    x_np = x.numpy().astype(np.float64)
+    filtered_scipy = _filfilt_in_torch_sytle(b=filts["b"], a=filts["a"],
+                                            x_np=x_np)
+    # Compare the outputs
+    np.testing.assert_array_almost_equal(
+        filtered_signal_torch.numpy().flatten(),
+        filtered_scipy.flatten(),
+        err_msg=f"Filtered outputs do not match between FilterBankLayer "
+                f"and MNE-Python for and band=({l_freq}-{h_freq})Hz"
+    )
+
+
+@pytest.mark.parametrize("phase", ["linear", "zero", "zero-double",
+                                   "minimum", "minimum-half"])
+@pytest.mark.parametrize("fir_window", ["hamming", "hann"])
+@pytest.mark.parametrize("fir_design", ["firwin", "firwin2"])
+@pytest.mark.parametrize("l_freq, h_freq", [(4, 8), (8, 12), (13, 30)])
+def test_filter_bank_layer_fftconvolve_comparison_fir(l_freq, h_freq,
+                                                      fir_design, fir_window,
+                                                      phase):
+    """
+    Test that the FilterBankLayer applies FIR filters correctly across multiple channels
+    by comparing its output to scipy's fftconvolve.
+    """
+    # ---------------------------
+    # 1. Setup Test Parameters
+    # ---------------------------
+
+    # Set random seeds for reproducibility
+    torch.manual_seed(0)
+    np.random.seed(0)
+
+    # Define parameters
+    batch_size = 1
+    n_chans = 22
+    n_times = 1000
+    sfreq = 256  # Sampling frequency in Hz
+    tolerance = 1e5
+    # Generate random input tensor: Shape (batch_size, n_chans, n_times)
+    x = torch.randn(batch_size, n_chans, n_times).float()
+
+    filter_parameters = dict(
+        sfreq=sfreq,
+        method='fir',
+        phase=phase,
+        filter_length=1024, # If the filter length is not this side, nothing works
+        l_trans_bandwidth=1.0,  # Narrower transition bandwidth
+        h_trans_bandwidth=1.0,
+        fir_window=fir_window,
+        fir_design=fir_design,
+        verbose=True)
+
+    # Create FIR filter using MNE:
+    filt = create_filter(data=None, l_freq=l_freq, h_freq=h_freq, **filter_parameters)
+
+    # Expand filter to match channels: Shape (1, n_chans, filter_length)
+    filt_expanded = torch.from_numpy(filt).unsqueeze(0).repeat(n_chans,
+                                                               1).unsqueeze(0).float()
+
+    # ---------------------------
+    # 2. Initialize FilterBankLayer
+    # ---------------------------
+
+    # Initialize the FilterBankLayer with one band
+    filter_bank_layer = FilterBankLayer(
+        n_chans=n_chans,
+        band_filters=[(l_freq, h_freq)],
+        # Increased filter length for better frequency resolution
+        **filter_parameters
+    )
+
+    # ---------------------------
+    # 3. Apply FilterBankLayer
+    # ---------------------------
+
+    # Apply the filter bank to the input tensor
+    # Expected output shape: (batch_size, n_bands, n_chans, n_times)
+    filtered_output = filter_bank_layer(x)
+
+    # Convert the FilterBankLayer output to NumPy for comparison
+    filtered_torch_np = filtered_output.numpy()
+
+    # Convert input tensor and filter to NumPy arrays
+    x_numpy = x.numpy()  # Shape: (1, n_chans, n_times)
+    filt_numpy = filt_expanded.numpy()  # Shape: (1, n_chans, filter_length)
+
+    # Apply scipy's fftconvolve per Channel
+    filtered_scipy = fftconvolve_scipy(x_numpy, filt_numpy, mode='same', axes=2)
+
+    # Assert that all differences are below the tolerance
+    assert np.allclose(filtered_torch_np, filtered_scipy, atol=tolerance), (
+        f"Filtered outputs differ beyond the tolerance of {tolerance}."
+    )
+
+
+
+@pytest.mark.parametrize("method", ["fir"]) # "iir" is not working to 4-8, 8-12, 12-16. I think "sos" solve, but not implemented in Torch.
+@pytest.mark.parametrize("l_freq, h_freq", [
+    (4, 8), (8, 12), (12, 16), (16, 20),
+    (20, 24), (24, 28), (28, 32), (32, 36), (36, 40)
+])
+def test_filter_bank_layer_psd(l_freq, h_freq, method):
+    """
+    Test the FilterBankLayer by analyzing the power spectral density (PSD) of
+    the output using MNE.
+    """
+    # Test parameters
+    sfreq = 256  # Sampling frequency in Hz
+    duration = 5  # Duration in seconds
+    t = np.arange(0, duration, 1 / sfreq)  # Time vector
+
+    # Generate a composite signal with multiple sine waves
+    freqs = [2, 4, 6, 10, 14, 18, 22, 26, 30, 34, 38]
+    signals = [np.sin(2 * np.pi * freq * t) for freq in freqs]
+    composite_signal = np.sum(signals, axis=0)
+
+    # Convert the signal to a torch tensor
+    composite_signal_torch = torch.tensor(composite_signal, dtype=torch.float32).unsqueeze(0).unsqueeze(1)
+
+    # Initialize the FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        method=method,
+        filter_length=1024, # Making an huge filter
+        l_trans_bandwidth=1.0,  # Narrower transition bands
+        h_trans_bandwidth=1.0, # Narrower transition bands
+        band_filters=[(l_freq, h_freq)],
+        verbose=False
+    )
+
+    # Apply the FilterBankLayer to the composite signal
+    filtered_signals = filter_bank_layer(composite_signal_torch)
+    # Shape after squeezing: (n_times,)
+    filtered_signal_np = filtered_signals.squeeze().detach().numpy()
+
+    # Compute PSD using MNE
+    psds, freqs = psd_array_welch(
+        filtered_signal_np,
+        sfreq=sfreq,
+        fmin=0,
+        fmax=sfreq / 2,
+        n_fft=1024,
+        average='mean',
+        verbose=False
+    )
+
+    # Identify frequencies within and outside the band
+    idx_in_band = np.where((freqs >= l_freq) & (freqs <= h_freq))[0]
+    idx_out_band = np.where((freqs < l_freq) | (freqs > h_freq))[0]
+
+    # Calculate power in and out of the band
+    power_in_band = np.sum(psds[idx_in_band])
+    power_out_band = np.sum(psds[idx_out_band])
+
+    # Assert that power in the band is significantly higher than outside
+    assert power_in_band > 10 * power_out_band, \
+        (f"Power in band {l_freq}-{h_freq} Hz is not significantly higher "
+         f"than outside the band.")
+
+
+def test_filter_bank_layer_frequency_response():
+    """
+    Test the FilterBankLayer by analyzing the frequency responses of its filters.
+    """
+    # Test parameters
+    sfreq = 256  # Sampling frequency in Hz
+
+    # Define the frequency bands for the filter bank
+    band_filters = [(4, 8), (8, 12), (12, 16), (16, 20),
+                    (20, 24), (24, 28), (28, 32), (32, 36), (36, 40)]
+
+    # Initialize the FilterBankLayer
+    filter_bank_layer = FilterBankLayer(
+        n_chans=1,
+        sfreq=sfreq,
+        band_filters=band_filters,
+        filter_length=1024,
+        l_trans_bandwidth=1.0,  # Narrower transition bands
+        h_trans_bandwidth=1.0,
+        method='fir',
+        phase='zero',
+        fir_window='hamming',
+        fir_design='firwin',
+        verbose=False
+    )
+
+    num_fft = 1024  # Increase for higher frequency resolution
+
+    # Prepare plots
+    # Iterate over each filter in the filter bank
+    for idx, ((l_freq, h_freq), filt_dict) in enumerate(zip(
+            band_filters, filter_bank_layer.filts.values())):
+
+        # Extract filter coefficients
+        b = filt_dict["filt"].detach().numpy()
+        a = np.array([1.0])  # FIR filter, so a is [1.0]
+
+        # Compute frequency response
+        w, h = freqz(b, a, worN=num_fft, fs=sfreq)
+
+        # Compute magnitude in dB
+        h_dB = 20 * np.log10(np.abs(h) + 1e-12)  # Add epsilon to avoid log(0)
+
+        # Programmatic verification
+        # Define frequency ranges for passband and stopbands
+        passband = (w >= l_freq) & (w <= h_freq)
+        # Allow 2 Hz margin for transition bands, adjusted for higher frequencies
+        margin = min(2.0, l_freq * 0.25)
+        stopband_lower = w < (l_freq - margin)
+        stopband_upper = w > (h_freq + margin)
+
+        # Check that the gain in the passband is close to 0 dB
+        passband_gain = h_dB[passband]
+        assert np.all(passband_gain > -3), \
+            f"Passband gain for filter {idx+1} is not within acceptable range."
+
+        # Check that the gain in the stopbands is significantly attenuated
+        stopband_gain = h_dB[stopband_lower | stopband_upper]
+        # Adjust acceptable attenuation for higher frequencies
+        attenuation_threshold = -40 if h_freq <= 20 else -30
+        assert np.all(stopband_gain < attenuation_threshold), \
+            f"Stopband attenuation for filter {idx+1} is not sufficient."

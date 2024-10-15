@@ -231,4 +231,5 @@ models_mandatory_parameters = [
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("LMDANet", ["n_chans", "n_outputs", "n_times"], None),
+    ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
 ]
