@@ -308,8 +308,8 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
             _TCBlock(
                 in_ch=tcn_in_channel,
                 kernel_length=tcn_kernel_size,
-                dilatation=int(tcn_dilatation * 4),
-                padding=int(tcn_padding * 4),
+                dilatation=tcn_dilatation * 4,
+                padding=tcn_padding * 4,
                 drop_prob=drop_prob,
                 activation=activation,
             ),
