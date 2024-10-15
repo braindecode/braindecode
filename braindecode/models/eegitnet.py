@@ -343,7 +343,6 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module("flatten", nn.Flatten())
 
         num_features = self.get_output_shape()
-        )
 
         self.add_module("final_layer", nn.Linear(num_features, self.n_outputs))
 
