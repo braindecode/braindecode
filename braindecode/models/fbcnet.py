@@ -187,28 +187,44 @@ class FBCNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor with shape (batch_size, n_outputs).
         """
-
+        # output: (batch_size, n_chans, n_times)
         x = self.spectral_filtering(x)
 
+        # output: (batch_size, n_bands, n_chans, n_times)
         x = self.spatial_conv(x)
         batch_size, channels, _, _ = x.shape
 
-        # Check if time is divisible by stride_factor
+        # shape: (batch_size, n_filters_spat * n_bands, 1, n_times)
         x = self.padding_layer(x)
 
+        # shape: (batch_size, n_filters_spat * n_bands, 1, n_times_padded)
         x = x.view(
             batch_size,
             channels,
             self.stride_factor,
             self.n_times_padded // self.stride_factor,
         )
-
+        # shape: batch_size, n_filters_spat * n_bands, stride, n_times_padded/stride
         x = self.temporal_layer(x)  # type: ignore[operator]
+
+        # shape: batch_size, n_filters_spat * n_bands, stride, 1
         x = self.flatten_layer(x)
+
+        # shape: batch_size, n_filters_spat * n_bands * stride
         x = self.final_layer(x)
+        # shape: batch_size, n_outputs
         return x
 
     @staticmethod
     def _apply_padding(x: Tensor, padding_size: int, mode: str = "constant"):
         x = torch.nn.functional.pad(x, (0, padding_size), mode=mode)
         return x
+
+
+if __name__ == "__main__":
+    x = torch.zeros(1, 22, 1001)
+    model = FBCNet(n_chans=22, n_times=1001, n_outputs=2, sfreq=256)
+
+    out = model(x)
+
+    print(out.shape)
