@@ -231,4 +231,5 @@ models_mandatory_parameters = [
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("FBEEGNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
 ]
