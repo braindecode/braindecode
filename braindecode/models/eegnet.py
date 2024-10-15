@@ -4,10 +4,10 @@
 
 import torch
 from einops.layers.torch import Rearrange
-from torch import nn
 from mne.utils import warn
+from torch import nn
 
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions import squeeze_final_output
 from braindecode.models.modules import Ensure4d, Expression
 
@@ -74,16 +74,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -93,7 +84,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_window_samples
         if final_conv_length == "auto":
             assert self.n_times is not None
         self.final_conv_length = final_conv_length
@@ -207,9 +197,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        if self.add_log_softmax:
-            module.add_module("logsoftmax", nn.LogSoftmax(dim=1))
-
         # Transpose back to the logic of braindecode,
         # so time in third dimension (axis=2)
         module.add_module(
@@ -269,17 +256,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
-        in_chans=None,
-        n_classes=None,
-        input_window_samples=None,
-        add_log_softmax=False,
     ):
-        n_chans, n_outputs, n_times = deprecated_args(
-            self,
-            ("in_chans", "n_chans", in_chans, n_chans),
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            ("input_window_samples", "n_times", input_window_samples, n_times),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -287,10 +264,8 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del in_chans, n_classes, input_window_samples
         warn(
             "The class EEGNetv1 is deprecated and will be removed in the "
             "release 1.0 of braindecode. Please use "
@@ -394,8 +369,6 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        if self.add_log_softmax:
-            module.add_module("softmax", nn.LogSoftmax(dim=1))
         # Transpose back to the logic of braindecode,
 
         # so time in third dimension (axis=2)

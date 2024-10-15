@@ -158,7 +158,7 @@ def create_example_model(
         model = ShallowFBCSPNet(
             n_channels,
             n_classes,
-            input_window_samples=window_len_samples,
+            n_times=window_len_samples,
             n_filters_time=40,
             filter_time_length=25,
             n_filters_spat=40,
@@ -174,7 +174,7 @@ def create_example_model(
         model = Deep4Net(
             n_channels,
             n_classes,
-            input_window_samples=window_len_samples,
+            n_times=window_len_samples,
             final_conv_length="auto",
             n_filters_time=25,
             n_filters_spat=25,

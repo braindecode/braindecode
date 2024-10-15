@@ -153,15 +153,15 @@ set_random_seeds(seed=seed, cuda=cuda)
 n_classes = 4
 classes = list(range(n_classes))
 # Extract number of chans and time steps from dataset
-n_channels = windows_dataset[0][0].shape[0]
-input_window_samples = windows_dataset[0][0].shape[1]
+n_chans = windows_dataset[0][0].shape[0]
+n_times = windows_dataset[0][0].shape[1]
 
 # The ShallowFBCSPNet is a `nn.Sequential` model
 
 model = ShallowFBCSPNet(
-    n_channels,
-    n_classes,
-    input_window_samples=input_window_samples,
+    n_chans=n_chans,
+    n_outputs=n_classes,
+    n_times=n_times,
     final_conv_length="auto",
 )
 

@@ -218,7 +218,7 @@ set_random_seeds(seed=seed, cuda=cuda)
 n_classes = 4
 # Extract number of chans and time steps from dataset
 n_chans = train_set[0][0].shape[0]
-input_window_samples = train_set[0][0].shape[1]
+n_times = train_set[0][0].shape[1]
 
 # To analyze the impact of the different parameters inside the torch model, we
 # need to create partial initialisations. This is because the
@@ -229,9 +229,9 @@ input_window_samples = train_set[0][0].shape[1]
 # error.
 model = partial(
     ShallowFBCSPNet,
-    n_chans,
-    n_classes,
-    input_window_samples=input_window_samples,
+    n_chans=n_chans,
+    n_outputs=n_classes,
+    n_times=n_times,
     final_conv_length="auto",
 )
 

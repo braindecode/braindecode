@@ -2,16 +2,16 @@
 #
 # License: BSD (3-clause)
 
-import math
 import copy
-from copy import deepcopy
+import math
 import warnings
+from copy import deepcopy
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.base import EEGModuleMixin
 
 
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
@@ -92,22 +92,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         chs_info=None,
         n_chans=None,
         n_times=None,
-        n_classes=None,
-        input_size_s=None,
     ):
-        (
-            n_outputs,
-            input_window_seconds,
-        ) = deprecated_args(
-            self,
-            ("n_classes", "n_outputs", n_classes, n_outputs),
-            (
-                "input_size_s",
-                "input_window_seconds",
-                input_size_s,
-                input_window_seconds,
-            ),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -117,7 +102,6 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_classes, input_size_s
 
         self.mapping = {
             "fc.weight": "final_layer.weight",
