@@ -267,8 +267,8 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         )
         block13 = self._get_inception_branch(
             in_channels=self.n_chans,
-            out_channels=int(n_filters_time * 4),
-            kernel_length=int(n_filters_time * 4),
+            out_channels=n_filters_time * 4,
+            kernel_length=n_filters_time * 4,
             activation=activation,
         )
         self.add_module("inception_block", _InceptionBlock((block11, block12, block13)))
