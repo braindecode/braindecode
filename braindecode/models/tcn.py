@@ -7,9 +7,9 @@ from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
 
-from braindecode.models.modules import Ensure4d, Expression, Chomp1d
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions import squeeze_final_output
-from braindecode.models.base import EEGModuleMixin, deprecated_args
+from braindecode.models.modules import Chomp1d, Ensure4d, Expression
 
 
 class TCN(EEGModuleMixin, nn.Module):
@@ -29,8 +29,6 @@ class TCN(EEGModuleMixin, nn.Module):
         kernel size of the convolutions
     drop_prob: float
         dropout probability
-    n_in_chans: int
-        Alias for `n_chans`.
     activation: nn.Module, default=nn.ReLU
         Activation function class to apply. Should be a PyTorch activation
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
@@ -56,13 +54,7 @@ class TCN(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         sfreq=None,
-        n_in_chans=None,
-        add_log_softmax=False,
     ):
-        (n_chans,) = deprecated_args(
-            self,
-            ("n_in_chans", "n_chans", n_in_chans, n_chans),
-        )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -70,10 +62,8 @@ class TCN(EEGModuleMixin, nn.Module):
             n_times=n_times,
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
-            add_log_softmax=add_log_softmax,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        del n_in_chans
 
         self.mapping = {
             "fc.weight": "final_layer.fc.weight",
@@ -103,7 +93,6 @@ class TCN(EEGModuleMixin, nn.Module):
         self.final_layer = _FinalLayer(
             in_features=n_filters,
             out_features=self.n_outputs,
-            add_log_softmax=add_log_softmax,
         )
         self.min_len = 1
         for i in range(n_blocks):
@@ -137,15 +126,12 @@ class TCN(EEGModuleMixin, nn.Module):
 
 
 class _FinalLayer(nn.Module):
-    def __init__(self, in_features, out_features, add_log_softmax=True):
+    def __init__(self, in_features, out_features):
         super().__init__()
 
         self.fc = nn.Linear(in_features=in_features, out_features=out_features)
 
-        if add_log_softmax:
-            self.out_fun = nn.LogSoftmax(dim=1)
-        else:
-            self.out_fun = nn.Identity()
+        self.out_fun = nn.Identity()
 
         self.squeeze = Expression(squeeze_final_output)
 
