@@ -52,7 +52,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
     n_bands : int or None or List[Tuple[int, int]]], default=9
         Number of frequency bands. Could
     n_filters_spat : int, default=32
-        The depth of the depthwise convolutional layer.
+        Number of spatial filters for the first convolution.
     n_dim: int, default=3
         Number of dimensions for the temporal reductor
     temporal_layer : str, default='LogVarLayer'
@@ -60,10 +60,8 @@ class FBCNet(EEGModuleMixin, nn.Module):
         'LogVarLayer', 'MeanLayer', 'MaxLayer'.
     stride_factor : int, default=4
         Stride factor for reshaping.
-    activation : nn.Module, default=Swish
+    activation : nn.Module, default=SiLU
         Activation function class to apply.
-    verbose: bool, default False
-        Verbose parameter to create the filter using mne
     filter_parameters: dict, default {}
         Parameters for the FilterBankLayer
 
@@ -92,7 +90,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         n_dim: int = 3,
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
-        verbose: bool = False,
         filter_parameters: dict = {},
     ):
         super().__init__(
@@ -133,7 +130,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.n_bands,
-            verbose=verbose,
             **filter_parameters,
         )
         # As we have an internal process to create the bands,

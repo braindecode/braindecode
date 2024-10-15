@@ -695,7 +695,7 @@ class FilterBankLayer(nn.Module):
         iir_params: Optional[dict] = None,
         fir_window: str = "hamming",
         fir_design: str = "firwin",
-        verbose: bool = True,
+        verbose: bool = False,
     ):
         super(FilterBankLayer, self).__init__()
 
