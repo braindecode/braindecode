@@ -240,14 +240,13 @@ class EEGMiner(EEGModuleMixin, nn.Module):
     def _apply_plv(x, n_chans, batch=None):
         # Compute PLV connectivity
         # x -> (batch, electrodes, electrodes, filters)
-        # e.g. torch.Size([2, 36, 2, 501, 2])
         x = x.transpose(-4, -3)  # swap electrodes and filters
         # adjusting to compute the plv
         x = F.plv_time(x, forward_fourier=False)
         # batch, number of filters, connectivity matrix
-        # Original tensor shape: [batch, n_filters, chans, chans]
+        # [batch, n_filters, chans, chans]
         x = x.permute(0, 2, 3, 1)
-        # New tensor shape: [batch, chans, chans, n_filters]
+        # [batch, chans, chans, n_filters]
 
         # Get upper triu of symmetric connectivity matrix
         triu = torch.triu_indices(n_chans, n_chans, 1)
