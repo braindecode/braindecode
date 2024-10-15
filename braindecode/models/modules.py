@@ -1,21 +1,24 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
+from __future__ import annotations
 
 import numpy as np
-
 import torch
-from torch import nn
+
+from functools import partial
+from mne.filter import create_filter, _check_coefficients
+from mne.utils import warn
+
+from torch import Tensor, nn, from_numpy
 import torch.nn.functional as F
 
-from torch import Tensor
-from typing import Optional
-import math
+from torchaudio.functional import fftconvolve, filtfilt
 
-from .functions import (
+from typing import Optional, List, Tuple
+
+from braindecode.models.functions import (
     drop_path,
-    _apply_sinc_resample_kernel,
-    _get_sinc_resample_kernel,
     safe_log,
 )
 from braindecode.util import np_to_th
@@ -528,102 +531,325 @@ class DropPath(nn.Module):
         return f"p={self.drop_prob}"
 
 
-class Resample(torch.nn.Module):
-    r"""Resample a signal from one frequency to another. A resampling method can be given.
+class FilterBankLayer(nn.Module):
+    """Apply multiple band-pass filters to generate multiview signal representation.
 
-    .. devices:: CPU CUDA
+    This layer constructs a bank of signals filtered in specific bands for each channel.
+    It uses MNE's `create_filter` function to create the band-specific filters and
+    applies them to multi-channel time-series data. Each filter in the bank corresponds to a
+    specific frequency band and is applied to all channels of the input data. The filtering is
+    performed using FFT-based convolution via the `fftconvolve` function from
+    :func:`torchaudio.functional if the method is FIR, and `filtfilt` function from
+    :func:`torchaudio.functional if the method is IIR.
 
-    .. properties:: Autograd TorchScript
+    The default configuration creates 9 non-overlapping frequency bands with a 4 Hz bandwidth,
+    spanning from 4 Hz to 40 Hz (i.e., 4-8 Hz, 8-12 Hz, ..., 36-40 Hz). This setup is based on the
+    reference: *FBCNet: A Multi-view Convolutional Neural Network for Brain-Computer Interface*.
 
-    Note:
-        If resampling on waveforms of higher precision than float32, there may be a small loss of precision
-        because the kernel is cached once as float32. If high precision resampling is important for your application,
-        the functional form will retain higher precision, but run slower because it does not cache the kernel.
-        Alternatively, you could rewrite a transform that caches a higher precision kernel.
+    Parameters
+    ----------
+    n_chans : int
+        Number of channels in the input signal.
+    sfreq : int
+        Sampling frequency of the input signal in Hz.
+    band_filters : Optional[List[Tuple[float, float]]] or int, default=None
+        List of frequency bands as (low_freq, high_freq) tuples. Each tuple defines
+        the frequency range for one filter in the bank. If not provided, defaults
+        to 9 non-overlapping bands with 4 Hz bandwidths spanning from 4 to 40 Hz.
+    method : str, default='fir'
+        ``'fir'`` will use FIR filtering, ``'iir'`` will use IIR
+        forward-backward filtering (via :func:`~scipy.signal.filtfilt`).
+        For more details, please check the `MNE Preprocessing Tutorial <https://mne.tools/stable/auto_tutorials/preprocessing/25_background_filtering.html>`_.
+    filter_length : str | int
+        Length of the FIR filter to use (if applicable):
 
-    Args:
-        orig_freq (int, optional): The original frequency of the signal. (Default: ``16000``)
-        new_freq (int, optional): The desired frequency. (Default: ``16000``)
-        resampling_method (str, optional): The resampling method to use.
-            Options: [``sinc_interp_hann``, ``sinc_interp_kaiser``] (Default: ``"sinc_interp_hann"``)
-        lowpass_filter_width (int, optional): Controls the sharpness of the filter, more == sharper
-            but less efficient. (Default: ``6``)
-        rolloff (float, optional): The roll-off frequency of the filter, as a fraction of the Nyquist.
-            Lower values reduce anti-aliasing, but also reduce some of the highest frequencies. (Default: ``0.99``)
-        beta (float or None, optional): The shape parameter used for kaiser window.
-        dtype (torch.device, optional):
-            Determnines the precision that resampling kernel is pre-computed and cached. If not provided,
-            kernel is computed with ``torch.float64`` then cached as ``torch.float32``.
-            If you need higher precision, provide ``torch.float64``, and the pre-computed kernel is computed and
-            cached as ``torch.float64``. If you use resample with lower precision, then instead of providing this
-            providing this argument, please use ``Resample.to(dtype)``, so that the kernel generation is still
-            carried out on ``torch.float64``.
+        * **'auto' (default)**: The filter length is chosen based
+          on the size of the transition regions (6.6 times the reciprocal
+          of the shortest transition band for fir_window='hamming'
+          and fir_design="firwin2", and half that for "firwin").
+        * **str**: A human-readable time in
+          units of "s" or "ms" (e.g., "10s" or "5500ms") will be
+          converted to that number of samples if ``phase="zero"``, or
+          the shortest power-of-two length at least that duration for
+          ``phase="zero-double"``.
+        * **int**: Specified length in samples. For fir_design="firwin",
+          this should not be used.
+    l_trans_bandwidth : Union[str, float, int], default='auto'
+        Width of the transition band at the low cut-off frequency in Hz
+        (high pass or cutoff 1 in bandpass). Can be "auto"
+        (default) to use a multiple of ``l_freq``::
 
-    Example
-        >>> waveform, sample_rate = torchaudio.load("test.wav", normalize=True)
-        >>> transform = transforms.Resample(sample_rate, sample_rate/10)
-        >>> waveform = transform(waveform)
+            min(max(l_freq * 0.25, 2), l_freq)
 
-    Notes
-    -----
-    Code copied and modified from Pytorch Audio:
-    https://pytorch.org/audio/main/generated/torchaudio.transforms.Resample.html
+        Only used for ``method='fir'``.
+    h_trans_bandwidth : Union[str, float, int], default='auto'
+        Width of the transition band at the high cut-off frequency in Hz
+        (low pass or cutoff 2 in bandpass). Can be "auto"
+        (default in 0.14) to use a multiple of ``h_freq``::
 
-    All rights reserved.
+            min(max(h_freq * 0.25, 2.), info['sfreq'] / 2. - h_freq)
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE.
+        Only used for ``method='fir'``.
+    phase : str, default='zero'
+        Phase of the filter.
+        When ``method='fir'``, symmetric linear-phase FIR filters are constructed
+        with the following behaviors when ``method="fir"``:
+
+        ``"zero"`` (default)
+            The delay of this filter is compensated for, making it non-causal.
+        ``"minimum"``
+            A minimum-phase filter will be constructed by decomposing the zero-phase filter
+            into a minimum-phase and all-pass systems, and then retaining only the
+            minimum-phase system (of the same length as the original zero-phase filter)
+            via :func:`scipy.signal.minimum_phase`.
+        ``"zero-double"``
+            *This is a legacy option for compatibility with MNE <= 0.13.*
+            The filter is applied twice, once forward, and once backward
+            (also making it non-causal).
+        ``"minimum-half"``
+            *This is a legacy option for compatibility with MNE <= 1.6.*
+            A minimum-phase filter will be reconstructed from the zero-phase filter with
+            half the length of the original filter.
+
+        When ``method='iir'``, ``phase='zero'`` (default) or equivalently ``'zero-double'``
+        constructs and applies IIR filter twice, once forward, and once backward (making it
+        non-causal) using :func:`~scipy.signal.filtfilt`; ``phase='forward'`` will apply
+        the filter once in the forward (causal) direction using
+        :func:`~scipy.signal.lfilter`.
+
+
+           The behavior for ``phase="minimum"`` was fixed to use a filter of the requested
+           length and improved suppression.
+    iir_params : Optional[dict], default=None
+        Dictionary of parameters to use for IIR filtering.
+        If ``iir_params=None`` and ``method="iir"``, 4th order Butterworth will be used.
+        For more information, see :func:`mne.filter.construct_iir_filter`.
+    fir_window : str, default='hamming'
+        The window to use in FIR design, can be "hamming" (default),
+        "hann" (default in 0.13), or "blackman".
+    fir_design : str, default='firwin'
+        Can be "firwin" (default) to use :func:`scipy.signal.firwin`,
+        or "firwin2" to use :func:`scipy.signal.firwin2`. "firwin" uses
+        a time-domain design technique that generally gives improved
+        attenuation using fewer samples than "firwin2".
+    pad : str, default='reflect_limited'
+        The type of padding to use. Supports all func:`numpy.pad()` mode options.
+        Can also be "reflect_limited", which pads with a reflected version of
+        each vector mirrored on the first and last values of the vector,
+        followed by zeros. Only used for ``method='fir'``.
+    verbose: bool | str | int | None, default=True
+        Control verbosity of the logging output. If ``None``, use the default
+        verbosity level. See the func:`mne.verbose` for details.
+        Should only be passed as a keyword argument.
     """
 
     def __init__(
         self,
-        orig_freq: int = 16000,
-        new_freq: int = 16000,
-        resampling_method: str = "sinc_interp_hann",
-        lowpass_filter_width: int = 6,
-        rolloff: float = 0.99,
-        beta: Optional[float] = None,
-        *,
-        dtype: Optional[torch.dtype] = None,
-    ) -> None:
-        super().__init__()
+        n_chans: int,
+        sfreq: int,
+        band_filters: Optional[List[Tuple[float, float]] | int] = None,
+        method: str = "fir",
+        filter_length: str | float | int = "auto",
+        l_trans_bandwidth: str | float | int = "auto",
+        h_trans_bandwidth: str | float | int = "auto",
+        phase: str = "zero",
+        iir_params: Optional[dict] = None,
+        fir_window: str = "hamming",
+        fir_design: str = "firwin",
+        verbose: bool = True,
+    ):
+        super(FilterBankLayer, self).__init__()
 
-        self.orig_freq = orig_freq
-        self.new_freq = new_freq
-        self.gcd = math.gcd(int(self.orig_freq), int(self.new_freq))
-        self.resampling_method = resampling_method
-        self.lowpass_filter_width = lowpass_filter_width
-        self.rolloff = rolloff
-        self.beta = beta
+        # The first step here is to check the band_filters
+        # We accept as None values.
+        if band_filters is None:
+            """
+            the filter bank is constructed using 9 filters with non-overlapping
+            frequency bands, each of 4Hz bandwidth, spanning from 4 to 40 Hz
+            (4-8, 8-12, …, 36-40 Hz)
 
-        if self.orig_freq != self.new_freq:
-            kernel, self.width = _get_sinc_resample_kernel(
-                self.orig_freq,
-                self.new_freq,
-                self.gcd,
-                self.lowpass_filter_width,
-                self.rolloff,
-                self.resampling_method,
-                beta,
-                dtype=dtype,
+            Based on the reference: FBCNet: A Multi-view Convolutional Neural
+            Network for Brain-Computer Interface
+            """
+            band_filters = [(low, low + 4) for low in range(4, 36 + 1, 4)]
+        # We accept as int.
+        if isinstance(band_filters, int):
+            warn(
+                "Creating the filter banks equally divided in the "
+                "interval 4Hz to 40Hz with almost equal bandwidths. "
+                "If you want a specific interval, "
+                "please specify 'band_filters' as a list of tuples.",
+                UserWarning,
             )
-            self.register_buffer("kernel", kernel)
+            start = 4
+            end = 40
 
-    def forward(self, waveform: Tensor) -> Tensor:
-        r"""
-        Args:
-            waveform (Tensor): Tensor of audio of dimension (..., time).
+            total_band_width = end - start  # 4 Hz to 40 Hz
 
-        Returns:
-            Tensor: Output signal of dimension (..., time).
+            band_width_calculated = total_band_width / band_filters
+            band_filters = [
+                (
+                    torch.tensor(start + i * band_width_calculated),
+                    torch.tensor(start + (i + 1) * band_width_calculated),
+                )
+                for i in range(band_filters)
+            ]
+
+        if not isinstance(band_filters, list):
+            raise ValueError(
+                "`band_filters` should be a list of tuples if you want to "
+                "use them this way."
+            )
+        else:
+            if any(len(bands) != 2 for bands in band_filters):
+                raise ValueError(
+                    "The band_filters items should be splitable in 2 values."
+                )
+
+        # and we accepted as
+        self.band_filters = band_filters
+        self.n_bands = len(band_filters)
+        self.phase = phase
+        self.method = method
+        self.n_chans = n_chans
+
+        self.method_iir = True if self.method == "iir" else False
+
+        if self.method_iir:
+            if iir_params is None:
+                iir_params = dict(output="ba")
+            else:
+                if "output" in iir_params:
+                    if iir_params["output"] == "sos":
+                        warn(
+                            "It is not possible to use second-order section filtering with Torch. Changing to filter ba",
+                            UserWarning,
+                        )
+                        iir_params["output"] = "ba"
+
+        filts = {}
+        for idx, (l_freq, h_freq) in enumerate(band_filters):
+            filt = create_filter(
+                data=None,
+                sfreq=sfreq,
+                l_freq=l_freq,
+                h_freq=h_freq,
+                filter_length=filter_length,
+                l_trans_bandwidth=l_trans_bandwidth,
+                h_trans_bandwidth=h_trans_bandwidth,
+                method=method,
+                iir_params=iir_params,
+                phase=phase,
+                fir_window=fir_window,
+                fir_design=fir_design,
+                verbose=verbose,
+            )
+            if not self.method_iir:
+                filt = from_numpy(filt).float()
+                filts[f"band_{idx}"] = {"filt": filt}
+
+            else:
+                _check_coefficients((filt["b"], filt["a"]))
+                b = torch.tensor(filt["b"], dtype=torch.float64)
+                a = torch.tensor(filt["a"], dtype=torch.float64)
+
+                filts[f"band_{idx}"] = {"b": b, "a": a}
+
+        self.filts = nn.ParameterDict(filts)
+
+        if self.method_iir:
+            self._apply_filter_func = self._apply_iir
+        else:
+            self._apply_filter_func = partial(self._apply_fir, n_chans=self.n_chans)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        if self.orig_freq == self.new_freq:
-            return waveform
-        return _apply_sinc_resample_kernel(
-            waveform, self.orig_freq, self.new_freq, self.gcd, self.kernel, self.width
+        Apply the filter bank to the input signal.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor of shape (batch_size, n_chans, time_points).
+
+        Returns
+        -------
+        torch.Tensor
+            Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
+        """
+        return torch.cat(
+            [self._apply_filter_func(x, p_filt) for p_filt in self.filts.values()],
+            dim=1,
         )
+
+    @staticmethod
+    def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
+        """
+        Apply an FIR filter to the input tensor.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+        filter : dict
+            Dictionary containing IIR filter coefficients.
+            - "b": Tensor of numerator coefficients.
+        n_chans: int
+            Number of channels
+
+        Returns
+        -------
+        Tensor
+            Filtered tensor of shape (batch_size, 1, n_chans, n_times).
+        """
+        # Expand filter coefficients to match the number of channels
+        # Original 'b' shape: (filter_length,)
+        # After unsqueeze and repeat: (n_chans, filter_length)
+        # After final unsqueeze: (1, n_chans, filter_length)
+        filt_expanded = (
+            filter["filt"].to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+        )
+
+        # Perform FFT-based convolution
+        # Input x shape: (batch_size, n_chans, n_times)
+        # filt_expanded shape: (1, n_chans, filter_length)
+        # After convolution: (batch_size, n_chans, n_times)
+
+        filtered = fftconvolve(
+            x, filt_expanded, mode="same"
+        )  # Shape: (batch_size, nchans, time_points)
+
+        # Add a new dimension for the band
+        # Shape after unsqueeze: (batch_size, 1, n_chans, n_times)
+        filtered = filtered.unsqueeze(1)
+        # returning the filtered
+        return filtered
+
+    @staticmethod
+    def _apply_iir(x: Tensor, filter: dict) -> Tensor:
+        """
+        Apply an IIR filter to the input tensor.
+
+        Parameters
+        ----------
+        x : Tensor
+            Input tensor of shape (batch_size, n_chans, n_times).
+        filter : dict
+            Dictionary containing IIR filter coefficients
+
+            - "b": Tensor of numerator coefficients.
+            - "a": Tensor of denominator coefficients.
+
+        Returns
+        -------
+        Tensor
+            Filtered tensor of shape (batch_size, 1, n_chans, n_times).
+        """
+        # Apply filtering using torchaudio's filtfilt
+        filtered = filtfilt(
+            x,
+            a_coeffs=filter["a"].type_as(x).to(x.device),
+            b_coeffs=filter["b"].type_as(x).to(x.device),
+            clamp=False,
+        )
+        # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
+        return filtered.unsqueeze(1)
