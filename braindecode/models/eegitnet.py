@@ -331,8 +331,8 @@ class EEGITNet(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "dim_reduction",
             nn.Sequential(
-                nn.Conv2d(tcn_in_channel, int(tcn_in_channel * 2), kernel_size=(1, 1)),
-                nn.BatchNorm2d(int(tcn_in_channel * 2)),
+                nn.Conv2d(tcn_in_channel, tcn_in_channel * 2, kernel_size=(1, 1)),
+                nn.BatchNorm2d(tcn_in_channel * 2),
                 activation(),
                 nn.AvgPool2d((1, tcn_kernel_size)),
                 nn.Dropout(drop_prob),
