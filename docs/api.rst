@@ -77,6 +77,7 @@ Models
     EEGNetv1
     EEGNetv4
     EEGNeX
+    EEGMiner
     EEGResNet
     EEGSimpleConv
     EEGTCNet
@@ -101,6 +102,7 @@ Models
     FilterBankLayer
     TCN
     HybridNet
+    GeneralizedGaussianFilter
 
 Training
 ========
