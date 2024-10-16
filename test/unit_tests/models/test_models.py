@@ -46,6 +46,7 @@ from braindecode.models import (
     ContraWR,
     FBCNet,
     EEGMiner,
+    IFNetV2,
 )
 from braindecode.util import set_random_seeds
 
@@ -1379,3 +1380,65 @@ def test_eegminer_plv_values_range():
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
         "PLV values should be in the range [0, 1]"
+
+
+@pytest.fixture
+def ifmodel():
+    return IFNetV2(
+        n_chans=22,
+        n_outputs=4,
+        n_times=1000,
+        sfreq=250,
+        bands=[(4.0, 16.0), (16.0, 40.0)],
+        n_filters_spat=64,
+        kernel_sizes=(63, 31),
+        patch_size=125,
+        drop_prob=0.5,
+        activation=torch.nn.GELU,
+        verbose=False,
+    )
+
+
+def test_ifnetv2_forward_pass(ifmodel):
+    x = torch.randn(8, 22, 1000)  # batch_size=8, n_chans=22, n_times=1000
+    output = ifmodel(x)
+    assert output.shape == (8, 4)  # batch_size=8, n_outputs=4
+
+
+def test_ifnetv2_padding_handling():
+    with pytest.warns(UserWarning,
+                      match="Time dimension \(1050\) is not divisible by patch_size \(125\)"):
+        model = IFNetV2(
+            n_chans=22,
+            n_outputs=4,
+            n_times=1050,
+            sfreq=250,
+            bands=[(4.0, 16.0), (16.0, 40.0)],
+            n_filters_spat=64,
+            kernel_sizes=(63, 31),
+            patch_size=125,
+            drop_prob=0.5,
+            verbose=False,
+        )
+    x = torch.randn(8, 22, 1050)  # n_times is not divisible by patch_size
+    output = model(x)
+    assert output.shape == (8, 4)  # Ensure padding does not break output shape
+
+
+def test_ifnetv2_number_of_parameters(ifmodel):
+    num_params = sum(
+        p.numel() for p in ifmodel.parameters() if p.requires_grad)
+    print(num_params)
+    # almost the same number of parameters
+    assert num_params == 11396
+
+
+
+def test_ifnetv2_dropout_effect(ifmodel):
+    ifmodel.eval()
+    x = torch.randn(8, 22, 1000)
+    with torch.no_grad():
+        output1 = ifmodel(x)
+        output2 = ifmodel(x)
+    assert torch.allclose(output1,
+                          output2)  # Dropout should be disabled in eval mode
