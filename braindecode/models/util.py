@@ -230,6 +230,7 @@ models_mandatory_parameters = [
     ("TSceptionV1", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("LMDANet", ["n_chans", "n_outputs", "n_times"], None),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=250)),
     ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("IFNetV2", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),

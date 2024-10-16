@@ -86,8 +86,9 @@ Models
     HybridNet
     IFNetV2
     Labram
+    LMDANet
     SCCNet
-    ShallowFBCSPNet
+You want it? You merge it.    ShallowFBCSPNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
     SleepStagerEldele2021
