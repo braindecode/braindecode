@@ -16,7 +16,7 @@
 .. |Braindecode| image:: https://user-images.githubusercontent.com/42702466/177958779-b00628aa-9155-4c51-96d1-d8c345aff575.svg
 .. _braindecode: braindecode.org/
 
-Braindecode
+Braindecode - Beta
 ===========
 
 Braindecode is an open-source Python toolbox for decoding raw electrophysiological brain
