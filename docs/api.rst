@@ -82,13 +82,14 @@ Models
     EEGSimpleConv
     EEGTCNet
     FBCNet
+    FBLightConvNet
     FBMSNet
     HybridNet
     IFNetV2
     Labram
     LMDANet
     SCCNet
-You want it? You merge it.    ShallowFBCSPNet
+    ShallowFBCSPNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
     SleepStagerEldele2021

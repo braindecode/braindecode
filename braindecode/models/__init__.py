@@ -38,6 +38,7 @@ from .sccnet import SCCNet
 from .fbcnet import FBCNet
 from .ifnet import IFNetV2
 from .eegminer import EEGMiner
+from .fblightconvnet import FBLightConvNet
 from .fbmsnet import FBMSNet
 from .ctnet import CTNet
 

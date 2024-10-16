@@ -59,6 +59,7 @@ Enhancements
 - Adding :class:`braindecode.models.SCCNet` (:gh:`668` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBCNet` (:gh:`660` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBCNet` (:gh:`657` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBLightConvNet` (:gh:`657` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBMSNet` (:gh:`658` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.EEGMiner` (:gh:`667` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.CTNet`  (:gh:`666` by `Bruno Aristimunha`_ )
