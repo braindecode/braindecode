@@ -87,6 +87,7 @@ Models
     HybridNet
     IFNetV2
     Labram
+    SincShallowNet
     LMDANet
     SCCNet
     ShallowFBCSPNet

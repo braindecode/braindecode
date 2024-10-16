@@ -33,6 +33,7 @@ from .eegnex import EEGNeX
 from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
+from .sinc_shallow import SincShallowNet
 from .lmda import LMDANet
 from .sccnet import SCCNet
 from .fbcnet import FBCNet

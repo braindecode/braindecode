@@ -44,6 +44,7 @@ from braindecode.models import (
     AttentionBaseNet,
     SPARCNet,
     ContraWR,
+    EEGMiner
     FBCNet,
     EEGMiner,
     IFNetV2,
@@ -1097,6 +1098,7 @@ def test_parameters_EEGTCNet():
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # 4.27 K according to the Table V from the original paper.
     assert np.round(n_params / 1e3, 1) == 4.2
+
 
 
 @pytest.mark.parametrize(
