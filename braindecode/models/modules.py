@@ -114,6 +114,24 @@ class SafeLog(nn.Module):
         return eps_str
 
 
+class LogActivation(nn.Module):
+    """Logarithm activation function."""
+
+    def __init__(self, epsilon: float = 1e-6, *args, **kwargs):
+        """
+
+        Parameters
+        ----------
+        epsilon : float
+            Small float to adjust the activation.
+        """
+        super().__init__(*args, **kwargs)
+        self.epsilon = epsilon
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
+
+
 class AvgPool2dWithConv(nn.Module):
     """
     Compute average pooling using a convolution, to have the dilation parameter.
@@ -352,6 +370,45 @@ class MaxNormLinear(nn.Linear):
             )
             desired = torch.clamp(norm, max=self._max_norm_val)
             self.weight *= desired / (self._eps + norm)
+
+
+class LinearWithConstraint(nn.Linear):
+    """
+    Fully connected layer with weight normalization constraint.
+
+    Parameters
+    ----------
+    in_features : int
+        Size of each input sample.
+    out_features : int
+        Size of each output sample.
+    max_norm : float, default=1.0
+        Maximum norm for weight normalization.
+
+    Returns
+    -------
+    torch.Tensor
+        Output tensor after applying the linear transformation.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        max_norm: float = 1.0,
+    ):
+        super().__init__(in_features, out_features)
+        self.max_norm = max_norm
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self._constraint()
+        return super().forward(x)
+
+    def _constraint(self):
+        with torch.no_grad():
+            self.weight.data = torch.renorm(
+                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
+            )
 
 
 class CombinedConv(nn.Module):
@@ -854,3 +911,183 @@ class FilterBankLayer(nn.Module):
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
         return filtered.unsqueeze(1)
+
+
+class MeanLayer(nn.Module):
+    """
+    Computes the mean of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the mean.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+
+    Returns
+    -------
+    torch.Tensor
+        The mean of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean(dim=self.dim, keepdim=self.keepdim)
+
+
+class MaxLayer(nn.Module):
+    """
+    Computes the maximum of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the maximum.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+
+    Returns
+    -------
+    torch.Tensor
+        The maximum of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        max_val, _ = x.max(dim=self.dim, keepdim=self.keepdim)
+        return max_val
+
+
+class VarLayer(nn.Module):
+    """
+    Computes the variance of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the variance.
+    keepdim : bool, default=True
+        If you want to keep the dim in variance calculation
+
+    Returns
+    -------
+    torch.Tensor
+        The variance of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.var(dim=self.dim, keepdim=self.keepdim)
+
+
+class StdLayer(nn.Module):
+    """
+    Computes the standard deviation of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the standard deviation.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+
+    Returns
+    -------
+    torch.Tensor
+        The standard deviation of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.std(dim=self.dim, keepdim=self.keepdim)
+
+
+class LogVarLayer(nn.Module):
+    """
+    Computes the logarithm of the variance of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the variance.
+    keepdim: bool, default=True
+        If you want to keep the dim in variance calculation
+    min_var: float, default=1e-6
+        Variance min for clamp
+    max_var: float, default=1e6
+        Variance max for clamp
+    Returns
+    -------
+    torch.Tensor
+        The logarithm of the variance of the input tensor along the specified dimension.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        keepdim: bool = True,
+        min_var: float = 1e-6,
+        max_var: float = 1e6,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.min_var = min_var
+        self.max_var = max_var
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        var = x.var(dim=self.dim, keepdim=self.keepdim)
+        var_clamped = torch.clamp(var, min=self.min_var, max=self.max_var)
+        return torch.log(var_clamped)
+
+
+class LogPowerLayer(nn.Module):
+    """
+    Layer that computes the logarithm of the power of the input signal.
+    """
+
+    def __init__(self, dim: int, log_min: float = 1e-4, log_max: float = 1e4):
+        """
+        Parameters
+        ----------
+        dim : int
+            Dimension over which to compute the power.
+        """
+        super().__init__()
+        self.dim = dim
+        self.log_min = log_min
+        self.log_max = log_max
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Log-power of the input tensor.
+        """
+        power = torch.mean(x**2, dim=self.dim)
+        log_power = torch.log(torch.clamp(power, min=self.log_min, max=self.log_max))
+        return log_power
