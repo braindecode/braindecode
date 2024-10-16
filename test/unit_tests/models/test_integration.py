@@ -330,7 +330,7 @@ def test_model_has_drop_prob_parameter(model_class):
     named 'drop_prob' or any parameter that starts with 'activation'.
     """
 
-    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, EEGMiner, EEGInceptionMI]:
+    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, EEGMiner, EEGInceptionMI, FBMSNet]:
         pytest.skip(
             f"Skipping {model_class} as not dropout layer")
 
