@@ -45,6 +45,9 @@ from braindecode.models import (
     SPARCNet,
     ContraWR,
     EEGMiner
+    FBCNet,
+    EEGMiner,
+    IFNetV2,
 )
 from braindecode.util import set_random_seeds
 
@@ -1097,6 +1100,139 @@ def test_parameters_EEGTCNet():
     assert np.round(n_params / 1e3, 1) == 4.2
 
 
+
+
+@pytest.mark.parametrize(
+    "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
+                       'MeanLayer', 'MaxLayer']
+)
+def test_fbcnet_forward_pass(temporal_layer):
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    batch_size = 8
+    n_bands = 9
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        temporal_layer=temporal_layer,
+        sfreq=250,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_bands, n_filters_spat, stride_factor",
+    [
+        (3, 9, 32, 4),
+        (22, 9, 32, 4),
+        (22, 5, 16, 2),
+        (64, 10, 64, 8),
+    ],
+)
+def test_fbcnet_num_parameters(n_chans, n_bands, n_filters_spat, stride_factor):
+    """
+    The calculation total is according to paper page 13.
+
+    Equation:
+
+    (n_filters_spat ∗ n_bands*n_chans + n_filters_spat ∗ n_bands) +
+    (2*n_filters_spat ∗ n_bands) +
+    (n_filters_spat ∗ n_bands ∗ stride_factor ∗ n_outputs + n_outputs)
+
+    Where
+    number of EEG channels, variable n_chans,
+    number of time points, variable n_time
+    number of frequency bands, variable n_bands
+    number of convolution filters per frequency band, variable n_filters_spat,
+    number of output classes, variable n_outputs
+    temporal window length, variable stride_factor
+
+    Returns
+    -------
+
+    """
+    n_times = 1000
+    n_outputs = 2
+    sfreq = 250
+
+    conv_params = (n_filters_spat * n_bands*n_chans + n_filters_spat * n_bands)
+
+    batchnorm_params = (2*n_filters_spat * n_bands)
+
+    linear_parameters = n_filters_spat * n_bands * stride_factor * n_outputs + n_outputs
+
+    total_parameters = conv_params + batchnorm_params + linear_parameters
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        n_filters_spat=n_filters_spat,
+        stride_factor=stride_factor,
+        sfreq=sfreq,
+    )
+
+    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    assert total_parameters == num_params
+
+
+@pytest.mark.parametrize("n_times", [100, 500, 1000, 5000, 10000])
+def test_fbcnet_different_n_times(n_times):
+    n_chans = 22
+    n_outputs = 2
+    batch_size = 8
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=9,
+        sfreq=250,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+@pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
+def test_fbcnet_stride_factor_warning(stride_factor):
+    n_chans = 22
+    n_times = 1003  # Not divisible by stride_factor when stride_factor > 1
+    n_outputs = 2
+
+    if n_times % stride_factor != 0:
+        with pytest.warns(UserWarning, match="Input will be padded."):
+
+            _ = FBCNet(
+                n_chans=n_chans,
+                n_outputs=n_outputs,
+                n_times=n_times,
+                stride_factor=stride_factor,
+                sfreq=250,
+            )
+
+
+def test_fbcnet_invalid_temporal_layer():
+    with pytest.raises(NotImplementedError):
+        FBCNet(
+            n_chans=22,
+            n_outputs=2,
+            n_times=1000,
+            temporal_layer='InvalidLayer',
+            sfreq=250,
+        )
+
+
 @pytest.mark.parametrize("method", ["plv", "mag", "corr"])
 def test_eegminer_initialization_and_forward(method):
     """
@@ -1247,3 +1383,66 @@ def test_eegminer_plv_values_range():
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
         "PLV values should be in the range [0, 1]"
+
+
+
+@pytest.fixture
+def ifmodel():
+    return IFNetV2(
+        n_chans=22,
+        n_outputs=4,
+        n_times=1000,
+        sfreq=250,
+        bands=[(4.0, 16.0), (16.0, 40.0)],
+        n_filters_spat=64,
+        kernel_sizes=(63, 31),
+        patch_size=125,
+        drop_prob=0.5,
+        activation=torch.nn.GELU,
+        verbose=False,
+    )
+
+
+def test_ifnetv2_forward_pass(ifmodel):
+    x = torch.randn(8, 22, 1000)  # batch_size=8, n_chans=22, n_times=1000
+    output = ifmodel(x)
+    assert output.shape == (8, 4)  # batch_size=8, n_outputs=4
+
+
+def test_ifnetv2_padding_handling():
+    with pytest.warns(UserWarning,
+                      match="Time dimension \(1050\) is not divisible by patch_size \(125\)"):
+        model = IFNetV2(
+            n_chans=22,
+            n_outputs=4,
+            n_times=1050,
+            sfreq=250,
+            bands=[(4.0, 16.0), (16.0, 40.0)],
+            n_filters_spat=64,
+            kernel_sizes=(63, 31),
+            patch_size=125,
+            drop_prob=0.5,
+            verbose=False,
+        )
+    x = torch.randn(8, 22, 1050)  # n_times is not divisible by patch_size
+    output = model(x)
+    assert output.shape == (8, 4)  # Ensure padding does not break output shape
+
+
+def test_ifnetv2_number_of_parameters(ifmodel):
+    num_params = sum(
+        p.numel() for p in ifmodel.parameters() if p.requires_grad)
+    print(num_params)
+    # almost the same number of parameters
+    assert num_params == 11396
+
+
+
+def test_ifnetv2_dropout_effect(ifmodel):
+    ifmodel.eval()
+    x = torch.randn(8, 22, 1000)
+    with torch.no_grad():
+        output1 = ifmodel(x)
+        output2 = ifmodel(x)
+    assert torch.allclose(output1,
+                          output2)  # Dropout should be disabled in eval mode
