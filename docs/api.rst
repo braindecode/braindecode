@@ -82,6 +82,7 @@ Models
     EEGSimpleConv
     EEGTCNet
     FBCNet
+    FBMSNet
     HybridNet
     IFNetV2
     Labram

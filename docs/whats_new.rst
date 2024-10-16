@@ -57,6 +57,7 @@ Enhancements
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.FBCNet` (:gh:`660` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBCNet` (:gh:`657` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBMSNet` (:gh:`658` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.EEGMiner` (:gh:`667` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.CTNet`  (:gh:`666` by `Bruno Aristimunha`_ )
 - Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `itsaphel`_)
