@@ -186,10 +186,6 @@ def test_model_integration_full(model_name, required_params, signal_params):
         The keys of this dictionary can only be among those of default_signal_params.
 
     """
-    model_cropped_only = ["TCN", "HybridNet"]
-
-    if model_name in model_cropped_only:
-        pytest.skip(f"Skipping {model_name} as it only supports cropped datasets")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
@@ -238,10 +234,6 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
         If 'final_layer' is not found among the last two layers of the model.
 
     """
-    model_cropped_only = ["TCN", "HybridNet"]
-
-    if model_name in model_cropped_only:
-        pytest.skip(f"Skipping {model_name} as it only supports cropped datasets")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
