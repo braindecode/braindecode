@@ -384,6 +384,7 @@ def test_log_activation_zero_input_stability(epsilon):
     torch.testing.assert_allclose(output, expected_output, atol=1e-6,
                                   rtol=1e-4)
 
+@pytest.fixture
 def input_linear_constraint():
     torch.manual_seed(0)
     return torch.randn(10, 5)  # Batch size of 10, input features of 5
