@@ -14,6 +14,7 @@ from torch import nn
 
 from braindecode.models.functions import drop_path
 from braindecode.models.labram import _SegmentPatch
+from braindecode.models.eegminer import GeneralizedGaussianFilter
 from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
     MLP, SafeLog, TimeDistributed, LogActivation
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
@@ -776,3 +777,120 @@ def test_filter_bank_layer_frequency_response():
         attenuation_threshold = -40 if h_freq <= 20 else -30
         assert np.all(stopband_gain < attenuation_threshold), \
             f"Stopband attenuation for filter {idx+1} is not sufficient."
+
+
+def test_initialization_valid_parameters():
+    """
+    Test that the GeneralizedGaussianFilter initializes correctly with valid parameters.
+    """
+    in_channels = 2
+    sequence_length = 256
+    sample_rate = 100.0  # Hz
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=in_channels,
+        out_channels=in_channels,
+        sequence_length=sequence_length,
+        sample_rate=sample_rate,
+        inverse_fourier=True,
+    )
+    assert isinstance(filter_layer, nn.Module), "Filter layer should be an instance of nn.Module"
+
+
+def test_initialization_invalid_parameters():
+    """
+    Test that the GeneralizedGaussianFilter raises an assertion error when initialized with invalid parameters.
+    """
+    in_channels = 2
+    out_channels = 5  # Not a multiple of in_channels
+    sequence_length = 256
+    sample_rate = 100.0  # Hz
+    with pytest.raises(AssertionError):
+        GeneralizedGaussianFilter(
+            in_channels=in_channels,
+            out_channels=out_channels,  # Should raise an error
+            sequence_length=sequence_length,
+            sample_rate=sample_rate,
+            inverse_fourier=True,
+            f_mean=(10.0, 20.0),
+            bandwidth=(5.0, 10.0),
+            shape=(2.0, 2.5)
+        )
+
+def test_filter_construction_clamping():
+    """
+    Test that the filter parameters are clamped correctly during filter construction.
+    """
+    in_channels = 1
+    out_channels = 1
+    sequence_length = 256
+    sample_rate = 100.0  # Hz
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        sequence_length=sequence_length,
+        sample_rate=sample_rate,
+        f_mean=(50.0,),  # Above the clamp maximum
+        bandwidth=(0.5,),  # Below the clamp minimum
+        shape=(1.5,)  # Below the clamp minimum
+    )
+    filter_layer.construct_filters()
+    f_mean_clamped = filter_layer.f_mean.data.item() * (sample_rate / 2)
+    bandwidth_clamped = filter_layer.bandwidth.data.item() * (sample_rate / 2)
+    shape_clamped = filter_layer.shape.data.item()
+    assert f_mean_clamped <= 45.0, "f_mean should be clamped to a maximum of 45.0 Hz"
+    assert np.round(bandwidth_clamped) >= 1.0, "bandwidth should be clamped to a minimum of 1.0 Hz"
+    assert shape_clamped >= 2.0, "shape should be clamped to a minimum of 2.0"
+
+def test_forward_pass_output_shape():
+    """
+    Test that the forward pass returns the correct output shape.
+    """
+    batch_size = 3
+    in_channels = 2
+    out_channels = 4  # Must be a multiple of in_channels
+    sequence_length = 256
+    sample_rate = 100.0  # Hz
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        sequence_length=sequence_length,
+        sample_rate=sample_rate,
+        inverse_fourier=True,
+        f_mean=(10.0, 20.0),
+        bandwidth=(5.0, 10.0),
+        shape=(2.0, 2.5),
+        group_delay = (10.0, 20.0)
+    )
+    input_tensor = torch.randn(batch_size, in_channels, sequence_length)
+    output = filter_layer(input_tensor)
+    expected_shape = (batch_size, out_channels, sequence_length)
+    assert output.shape == expected_shape, f"Expected output shape {expected_shape}, got {output.shape}"
+
+
+def test_forward_pass_no_inverse_fourier():
+    """
+    Test the forward pass when inverse_fourier is set to False, ensuring the output is in the frequency domain.
+    """
+    batch_size = 2
+    in_channels = 1
+    out_channels = 2
+    sequence_length = 128
+    sample_rate = 100.0  # Hz
+    filter_layer = GeneralizedGaussianFilter(
+        in_channels=in_channels,
+        out_channels=out_channels,
+        sequence_length=sequence_length,
+        sample_rate=sample_rate,
+        inverse_fourier=False,
+        f_mean=(15.0, 30.0),
+        bandwidth=(5.0, 5.0),
+        shape=(2.0, 2.0)
+    )
+    input_tensor = torch.randn(batch_size, in_channels, sequence_length)
+    output = filter_layer(input_tensor)
+    # Since inverse_fourier=False, output should be in frequency domain
+    freq_bins = sequence_length // 2 + 1
+    expected_shape = (batch_size, out_channels, freq_bins, 2)  # Last dimension is real and imaginary parts
+    assert output.shape == expected_shape, f"Expected output shape {expected_shape}, got {output.shape}"
+    # Verify that output is real-valued (since it's the real and imaginary parts)
+    assert output.dtype == torch.float32 or output.dtype == torch.float64, "Output should be real-valued tensor"
