@@ -696,7 +696,7 @@ class FilterBankLayer(nn.Module):
         iir_params: Optional[dict] = None,
         fir_window: str = "hamming",
         fir_design: str = "firwin",
-        verbose: bool = False,
+        verbose: bool = True,
     ):
         super(FilterBankLayer, self).__init__()
 
@@ -1037,3 +1037,39 @@ class LogVarLayer(nn.Module):
         var = x.var(dim=self.dim, keepdim=self.keepdim)
         var_clamped = torch.clamp(var, min=self.min_var, max=self.max_var)
         return torch.log(var_clamped)
+
+
+class LogPowerLayer(nn.Module):
+    """
+    Layer that computes the logarithm of the power of the input signal.
+    """
+
+    def __init__(self, dim: int, log_min: float = 1e-4, log_max: float = 1e4):
+        """
+        Parameters
+        ----------
+        dim : int
+            Dimension over which to compute the power.
+        """
+        super().__init__()
+        self.dim = dim
+        self.log_min = log_min
+        self.log_max = log_max
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Log-power of the input tensor.
+        """
+        power = torch.mean(x**2, dim=self.dim)
+        log_power = torch.log(torch.clamp(power, min=self.log_min, max=self.log_max))
+        return log_power

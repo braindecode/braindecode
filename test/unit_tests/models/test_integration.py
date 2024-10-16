@@ -16,7 +16,8 @@ from skorch.dataset import ValidSplit
 
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from braindecode import EEGClassifier
-from braindecode.models import SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, EEGInceptionMI, FBMSNet, EEGMiner
+
+from braindecode.models import SyncNet, EEGSimpleConv, EEGResNet, USleep, EEGInceptionMI, FBCNet, FBMSNet, EEGMiner
 
 
 # Generating the channel info

@@ -84,6 +84,7 @@ Models
     FBCNet
     FBMSNet
     HybridNet
+    IFNetV2
     Labram
     ShallowFBCSPNet
     SleepStagerBlanco2020
