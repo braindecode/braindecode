@@ -82,8 +82,15 @@ Models
     EEGSimpleConv
     EEGTCNet
     FBEEGNet
+    FBCNet
+    FBLightConvNet
+    FBMSNet
     HybridNet
+    IFNetV2
     Labram
+    SincShallowNet
+    LMDANet
+    SCCNet
     ShallowFBCSPNet
     SleepStagerBlanco2020
     SleepStagerChambon2018

@@ -232,5 +232,13 @@ models_mandatory_parameters = [
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
     ("FBEEGNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=250)),
+    ("LMDANet", ["n_chans", "n_outputs", "n_times"], None),
+    ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=250)),
+    ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("IFNetV2", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
 ]

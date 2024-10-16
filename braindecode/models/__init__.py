@@ -34,7 +34,14 @@ from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
 from .fbeegnet import FBEEGNet
+from .sinc_shallow import SincShallowNet
+from .lmda import LMDANet
+from .sccnet import SCCNet
+from .fbcnet import FBCNet
+from .ifnet import IFNetV2
 from .eegminer import EEGMiner
+from .fblightconvnet import FBLightConvNet
+from .fbmsnet import FBMSNet
 from .ctnet import CTNet
 
 
