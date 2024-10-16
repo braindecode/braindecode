@@ -45,14 +45,14 @@ class FBCNet(EEGModuleMixin, nn.Module):
     by the original authors; it has only been reimplemented from the paper
     description and source code [fbcnetcode2021]_. There is a difference in the
     activation function; in the paper, the ELU is used as the activation function,
-    but in the original code, SiLU is used. We follow the code.
+    but in the original code, SiLU is used. We followed the code.
 
     Parameters
     ----------
     n_bands : int or None or List[Tuple[int, int]]], default=9
         Number of frequency bands. Could
     n_filters_spat : int, default=32
-        The depth of the depthwise convolutional layer.
+        Number of spatial filters for the first convolution.
     n_dim: int, default=3
         Number of dimensions for the temporal reductor
     temporal_layer : str, default='LogVarLayer'
@@ -60,10 +60,8 @@ class FBCNet(EEGModuleMixin, nn.Module):
         'LogVarLayer', 'MeanLayer', 'MaxLayer'.
     stride_factor : int, default=4
         Stride factor for reshaping.
-    activation : nn.Module, default=Swish
-        Activation function class to apply.
-    verbose: bool, default False
-        Verbose parameter to create the filter using mne
+    activation : nn.Module, default=nn.SiLU
+        Activation function class to apply in Spatial Convolution Block.
     filter_parameters: dict, default {}
         Parameters for the FilterBankLayer
 
@@ -92,7 +90,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         n_dim: int = 3,
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
-        verbose: bool = False,
         filter_parameters: dict = {},
     ):
         super().__init__(
@@ -122,18 +119,16 @@ class FBCNet(EEGModuleMixin, nn.Module):
         if self.n_times % self.stride_factor != 0:
             warn(
                 f"Time dimension ({self.n_times}) is not divisible by"
-                f" stride_factor ({self.stride_factor}). Input will be "
-                f"truncated.",
+                f" stride_factor ({self.stride_factor}). Input will be padded.",
                 UserWarning,
             )
 
         # Layers
-        # Following paper nomeclature
+        # Following paper nomenclature
         self.spectral_filtering = FilterBankLayer(
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.n_bands,
-            verbose=verbose,
             **filter_parameters,
         )
         # As we have an internal process to create the bands,
@@ -154,11 +149,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        # Temporal aggregator
-        self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
-
-        self.flatten_layer = Rearrange("batch ... -> batch (...)")
-
+        # Padding layer
         if self.n_times % self.stride_factor != 0:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
             self.n_times_padded = self.n_times + self.padding_size
@@ -169,6 +160,12 @@ class FBCNet(EEGModuleMixin, nn.Module):
         else:
             self.padding_layer = nn.Identity()
             self.n_times_padded = self.n_times
+
+        # Temporal aggregator
+        self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
+
+        # Flatten layer
+        self.flatten_layer = Rearrange("batch ... -> batch (...)")
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
@@ -191,28 +188,35 @@ class FBCNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor with shape (batch_size, n_outputs).
         """
-
+        # output: (batch_size, n_chans, n_times)
         x = self.spectral_filtering(x)
 
+        # output: (batch_size, n_bands, n_chans, n_times)
         x = self.spatial_conv(x)
         batch_size, channels, _, _ = x.shape
 
-        # Check if time is divisible by stride_factor
+        # shape: (batch_size, n_filters_spat * n_bands, 1, n_times)
         x = self.padding_layer(x)
 
+        # shape: (batch_size, n_filters_spat * n_bands, 1, n_times_padded)
         x = x.view(
             batch_size,
             channels,
             self.stride_factor,
             self.n_times_padded // self.stride_factor,
         )
-
+        # shape: batch_size, n_filters_spat * n_bands, stride, n_times_padded/stride
         x = self.temporal_layer(x)  # type: ignore[operator]
+
+        # shape: batch_size, n_filters_spat * n_bands, stride, 1
         x = self.flatten_layer(x)
+
+        # shape: batch_size, n_filters_spat * n_bands * stride
         x = self.final_layer(x)
+        # shape: batch_size, n_outputs
         return x
 
     @staticmethod
-    def _apply_padding(x: Tensor, padding_size: int):
-        x = torch.nn.functional.pad(x, (0, padding_size))
+    def _apply_padding(x: Tensor, padding_size: int, mode: str = "constant"):
+        x = torch.nn.functional.pad(x, (0, padding_size), mode=mode)
         return x
