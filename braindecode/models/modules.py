@@ -11,6 +11,7 @@ from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
 
 from torch import Tensor, nn, from_numpy
+
 import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt

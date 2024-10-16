@@ -77,6 +77,7 @@ Models
     EEGNetv1
     EEGNetv4
     EEGNeX
+    EEGMiner
     EEGResNet
     EEGSimpleConv
     EEGTCNet
@@ -102,6 +103,7 @@ Models
    :toctree: generated/
 
     FilterBankLayer
+    GeneralizedGaussianFilter
 
 Training
 ========

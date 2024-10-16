@@ -54,9 +54,10 @@ Enhancements
 - Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.FBCNet` (:gh:`657` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.EEGMiner` (:gh:`667` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.CTNet`  (:gh:`666` by `Bruno Aristimunha`_ )
 - Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `itsaphel`_)
-
+- Exposing :class:`braindecode.models.EEGITNet` hyper-parameters (:gh:`672` by `Bruno Aristimunha`_)
 
 Bugs
 ~~~~
