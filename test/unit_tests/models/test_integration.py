@@ -17,7 +17,7 @@ from skorch.dataset import ValidSplit
 from braindecode.models.util import models_dict, models_mandatory_parameters
 from braindecode import EEGClassifier
 
-from braindecode.models import SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, FBLightConvNet, EEGInceptionMI
+from braindecode.models import SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, EEGInceptionMI, EEGMiner, FBLightConvNet
 
 
 # Generating the channel info
@@ -274,6 +274,9 @@ def test_model_has_activation_parameter(model_class):
     Test that checks if the model class's __init__ method has a parameter
     named 'activation' or any parameter that starts with 'activation'.
     """
+    if model_class in [EEGMiner]:
+        pytest.skip(
+            f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
     init_method = model_class.__init__
 
@@ -299,6 +302,10 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
     Test that checks if all parameters with default values in the model class's
     __init__ method are nn.Module classes and not initialized instances.
     """
+    if model_class in [EEGMiner]:
+        pytest.skip(
+            f"Skipping {model_class} as not activation layer")
+
     init_method = model_class.__init__
 
     sig = inspect.signature(init_method)
@@ -324,7 +331,7 @@ def test_model_has_drop_prob_parameter(model_class):
     named 'drop_prob' or any parameter that starts with 'activation'.
     """
 
-    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep, EEGInceptionMI, FBCNet, FBLightConvNet]:
+    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep, FBCNet, EEGMiner, EEGInceptionMI, FBLightConvNet]:
         pytest.skip(
             f"Skipping {model_class} as not dropout layer")
 

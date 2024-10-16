@@ -3,17 +3,20 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-from functools import partial
-from typing import List, Optional, Tuple
-
 import numpy as np
 import torch
+
+from functools import partial
+from mne.filter import create_filter, _check_coefficients
+from mne.utils import warn
+
+from torch import Tensor, nn, from_numpy
+
 import torch.nn.functional as F
 
-from mne.filter import _check_coefficients, create_filter
-from mne.utils import warn
-from torch import from_numpy, nn, Tensor
 from torchaudio.functional import fftconvolve, filtfilt
+
+from typing import Optional, List, Tuple
 
 from braindecode.models.functions import (
     drop_path,
@@ -693,7 +696,7 @@ class FilterBankLayer(nn.Module):
         iir_params: Optional[dict] = None,
         fir_window: str = "hamming",
         fir_design: str = "firwin",
-        verbose: bool = True,
+        verbose: bool = False,
     ):
         super(FilterBankLayer, self).__init__()
 
@@ -892,6 +895,59 @@ class FilterBankLayer(nn.Module):
         return filtered.unsqueeze(1)
 
 
+class MeanLayer(nn.Module):
+    """
+    Computes the mean of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the mean.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+
+    Returns
+    -------
+    torch.Tensor
+        The mean of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean(dim=self.dim, keepdim=self.keepdim)
+
+
+class MaxLayer(nn.Module):
+    """
+    Computes the maximum of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the maximum.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+
+    Returns
+    -------
+    torch.Tensor
+        The maximum of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        max_val, _ = x.max(dim=self.dim, keepdim=self.keepdim)
+        return max_val
+
+
 class VarLayer(nn.Module):
     """
     Computes the variance of the input tensor along a specified dimension.
@@ -900,6 +956,8 @@ class VarLayer(nn.Module):
     ----------
     dim : int
         The dimension along which to compute the variance.
+    keepdim : bool, default=True
+        If you want to keep the dim in variance calculation
 
     Returns
     -------
@@ -907,12 +965,13 @@ class VarLayer(nn.Module):
         The variance of the input tensor along the specified dimension.
     """
 
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, keepdim: bool = True):
         super().__init__()
         self.dim = dim
+        self.keepdim = keepdim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.var(dim=self.dim, keepdim=True)
+        return x.var(dim=self.dim, keepdim=self.keepdim)
 
 
 class StdLayer(nn.Module):
@@ -923,6 +982,8 @@ class StdLayer(nn.Module):
     ----------
     dim : int
         The dimension along which to compute the standard deviation.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
 
     Returns
     -------
@@ -930,12 +991,13 @@ class StdLayer(nn.Module):
         The standard deviation of the input tensor along the specified dimension.
     """
 
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, keepdim: bool = True):
         super().__init__()
         self.dim = dim
+        self.keepdim = keepdim
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.std(dim=self.dim, keepdim=True)
+        return x.std(dim=self.dim, keepdim=self.keepdim)
 
 
 class LogVarLayer(nn.Module):
@@ -975,50 +1037,3 @@ class LogVarLayer(nn.Module):
         var = x.var(dim=self.dim, keepdim=self.keepdim)
         var_clamped = torch.clamp(var, min=self.min_var, max=self.max_var)
         return torch.log(var_clamped)
-
-
-class MeanLayer(nn.Module):
-    """
-    Computes the mean of the input tensor along a specified dimension.
-
-    Parameters
-    ----------
-    dim : int
-        The dimension along which to compute the mean.
-
-    Returns
-    -------
-    torch.Tensor
-        The mean of the input tensor along the specified dimension.
-    """
-
-    def __init__(self, dim: int):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.mean(dim=self.dim, keepdim=True)
-
-
-class MaxLayer(nn.Module):
-    """
-    Computes the maximum of the input tensor along a specified dimension.
-
-    Parameters
-    ----------
-    dim : int
-        The dimension along which to compute the maximum.
-
-    Returns
-    -------
-    torch.Tensor
-        The maximum of the input tensor along the specified dimension.
-    """
-
-    def __init__(self, dim: int):
-        super().__init__()
-        self.dim = dim
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        max_val, _ = x.max(dim=self.dim, keepdim=True)
-        return max_val

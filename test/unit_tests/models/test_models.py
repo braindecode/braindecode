@@ -7,15 +7,16 @@
 #
 # License: BSD-3
 
+from collections import OrderedDict
 from functools import partial
 
-from collections import OrderedDict
+import numpy as np
+import pytest
+
+import torch
 from sklearn.utils import check_random_state
 from torch import nn
 
-import numpy as np
-import torch
-import pytest
 
 from braindecode.models import (
     Deep4Net,
@@ -43,9 +44,9 @@ from braindecode.models import (
     AttentionBaseNet,
     SPARCNet,
     ContraWR,
-    FBCNet
+    FBCNet,
+    EEGMiner,
 )
-
 from braindecode.util import set_random_seeds
 
 
@@ -1199,6 +1200,22 @@ def test_fbcnet_different_n_times(n_times):
     output = model(x)
 
     assert output.shape == (batch_size, n_outputs)
+@pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
+def test_fbcnet_stride_factor_warning(stride_factor):
+    n_chans = 22
+    n_times = 1003  # Not divisible by stride_factor when stride_factor > 1
+    n_outputs = 2
+
+    if n_times % stride_factor != 0:
+        with pytest.warns(UserWarning, match="Input will be padded."):
+
+            _ = FBCNet(
+                n_chans=n_chans,
+                n_outputs=n_outputs,
+                n_times=n_times,
+                stride_factor=stride_factor,
+                sfreq=250,
+            )
 
 
 def test_fbcnet_invalid_temporal_layer():
@@ -1212,19 +1229,153 @@ def test_fbcnet_invalid_temporal_layer():
         )
 
 
-@pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
-def test_fbcnet_stride_factor_warning(stride_factor):
-    n_chans = 22
-    n_times = 1003  # Not divisible by stride_factor when stride_factor > 1
+@pytest.mark.parametrize("method", ["plv", "mag", "corr"])
+def test_eegminer_initialization_and_forward(method):
+    """
+    Test EEGMiner initialization and forward pass for different methods ('plv', 'mag', 'corr').
+    """
+    batch_size = 4
+    n_chans = 8
+    n_times = 256
     n_outputs = 2
+    sfreq = 100.0  # Hz
+    input_tensor = torch.randn(batch_size, n_chans, n_times)
 
-    if n_times % stride_factor != 0:
-        with pytest.warns(UserWarning, match="Input will be truncated"):
+    eegminer = EEGMiner(
+        method=method,
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=n_outputs,
+        sfreq=sfreq,
+        filter_f_mean=[10.0, 20.0],
+        filter_bandwidth=[5.0, 5.0],
+        filter_shape=[2.0, 2.0],
+        group_delay=[20.0, 20.0],
+    )
 
-            _ = FBCNet(
-                n_chans=n_chans,
-                n_outputs=n_outputs,
-                n_times=n_times,
-                stride_factor=stride_factor,
-                sfreq=250,
-            )
+    output = eegminer(input_tensor)
+    assert output.shape == (batch_size, n_outputs), \
+        f"Output shape should be ({batch_size}, {n_outputs}) for method '{method}', got {output.shape}"
+
+
+def test_eegminer_invalid_parameters():
+    """
+    Test that EEGMiner raises an error when initialized with invalid parameters.
+    """
+    n_chans = 8
+    n_times = 256
+    n_outputs = 2
+    sfreq = 100.0  # Hz
+
+    # Invalid method
+    with pytest.raises(ValueError):
+        EEGMiner(
+            method="invalid_method",
+            n_chans=n_chans,
+            n_times=n_times,
+            n_outputs=n_outputs,
+            sfreq=sfreq,
+        )
+
+
+def test_eegminer_filter_clamping():
+    """
+    Test that EEGMiner's filters are constructed correctly and parameters are clamped.
+    """
+    n_chans = 4
+    n_times = 256
+    n_outputs = 2
+    sfreq = 100.0  # Hz
+
+    eegminer = EEGMiner(
+        method="mag",
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=n_outputs,
+        sfreq=sfreq,
+        filter_f_mean=[50.0, -10.0],  # Values outside clamp range
+        filter_bandwidth=[0.5, 100.0],  # Values outside clamp range
+        filter_shape=[1.5, 3.5],  # Values outside clamp range
+        group_delay=[20.0, 20.0],
+    )
+
+    # Construct filters
+    eegminer.filter.construct_filters()
+    f_mean = eegminer.filter.f_mean.data * (sfreq / 2)
+    bandwidth = eegminer.filter.bandwidth.data * (sfreq / 2)
+    shape = eegminer.filter.shape.data
+
+    # Check clamping
+    assert torch.all(f_mean >= 1.0) and torch.all(f_mean <= 45.0), \
+        f"f_mean should be clamped between 1.0 and 45.0 Hz, got {f_mean}"
+    assert torch.all(bandwidth >= 1.0) and torch.all(bandwidth <= 50.0), \
+        f"bandwidth should be clamped between 1.0 and 50.0 Hz, got {bandwidth}"
+    assert torch.all(shape >= 2.0) and torch.all(shape <= 3.0), \
+        f"shape should be clamped between 2.0 and 3.0, got {shape}"
+
+
+def test_eegminer_corr_output_size():
+    """
+    Test that EEGMiner produces the correct number of features for the 'corr' method.
+    """
+    batch_size = 2
+    n_chans = 6
+    n_times = 256
+    n_outputs = 2
+    sfreq = 100.0  # Hz
+    n_filters = 2
+
+    input_tensor = torch.randn(batch_size, n_chans, n_times)
+
+    eegminer = EEGMiner(
+        method="corr",
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=n_outputs,
+        sfreq=sfreq,
+        filter_f_mean=[10.0, 20.0],
+        filter_bandwidth=[5.0, 5.0],
+        filter_shape=[2.0, 2.0],
+        group_delay=[20.0, 20.0],
+    )
+
+    output = eegminer(input_tensor)
+    expected_n_features = n_filters * n_chans * (n_chans - 1) // 2
+    assert eegminer.n_features == expected_n_features, \
+        f"Expected {expected_n_features} features, got {eegminer.n_features}"
+    assert output.shape == (batch_size, n_outputs), \
+        f"Output shape should be ({batch_size}, {n_outputs}), got {output.shape}"
+
+
+def test_eegminer_plv_values_range():
+    """
+    Test that the PLV values computed by EEGMiner are within the valid range [0, 1].
+    """
+    batch_size = 1
+    n_chans = 4
+    n_times = 512
+    n_outputs = 2
+    sfreq = 256.0  # Hz
+
+    input_tensor = torch.randn(batch_size, n_chans, n_times)
+
+    eegminer = EEGMiner(
+        method="plv",
+        n_chans=n_chans,
+        n_times=n_times,
+        n_outputs=n_outputs,
+        sfreq=sfreq,
+        filter_f_mean=[8.0, 12.0],
+        filter_bandwidth=[2.0, 2.0],
+        filter_shape=[2.0, 2.0],
+        group_delay=[20.0, 20.0],
+    )
+
+    # Forward pass up to PLV computation
+    x = eegminer.ensure_dim(input_tensor)
+    x = eegminer.filter(x)
+    x = eegminer._apply_plv(x, n_chans=n_chans)
+
+    # PLV values should be in [0, 1]
+    assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
+        "PLV values should be in the range [0, 1]"
