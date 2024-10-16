@@ -77,7 +77,7 @@ API changes
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
 - Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)
 - Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
-- Moving :class:`braindecode.models.TCN` and :class:`braindecode.models.HybridNet`  are not longer models (:gh:`673` by `Bruno Aristimunha`_)
+- Moving :class:`braindecode.models.TCN` and :class:`braindecode.models.HybridNet` to module and not longer models (:gh:`673` by `Bruno Aristimunha`_)
 
 .. _changes_0_8_0:
 

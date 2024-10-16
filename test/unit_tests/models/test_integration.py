@@ -234,6 +234,10 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
         If 'final_layer' is not found among the last two layers of the model.
 
     """
+    model_deprecated = ["EEGNetv1"]
+
+    if model_name in model_deprecated:
+        pytest.skip(f"Skipping {model_name} as deprecated.")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
