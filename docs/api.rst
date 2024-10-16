@@ -81,7 +81,6 @@ Models
     EEGResNet
     EEGSimpleConv
     EEGTCNet
-    HybridNet
     Labram
     ShallowFBCSPNet
     SleepStagerBlanco2020
@@ -89,19 +88,20 @@ Models
     SleepStagerEldele2021
     SPARCNet
     SyncNet
-    TCN
     TSceptionV1
     TIDNet
     USleep
 
 .. currentmodule:: braindecode.models.modules
 
-:py:mod:`braindecode.models.modules`:
+:py:mod:`braindecode.models`:
 
 .. autosummary::
    :toctree: generated/
 
     FilterBankLayer
+    TCN
+    HybridNet
     GeneralizedGaussianFilter
 
 Training

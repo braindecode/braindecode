@@ -203,7 +203,6 @@ models_mandatory_parameters = [
     ("EEGNetv1", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGNetv4", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("HybridNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",
@@ -217,7 +216,6 @@ models_mandatory_parameters = [
         ["n_outputs", "n_times", "sfreq"],
         dict(sfreq=100, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
     ),  # 1 channel
-    ("TCN", ["n_chans", "n_outputs"], None),
     ("TIDNet", ["n_chans", "n_outputs", "n_times"], None),
     ("USleep", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=128)),
     ("BIOT", ["n_chans", "n_outputs", "sfreq"], None),
