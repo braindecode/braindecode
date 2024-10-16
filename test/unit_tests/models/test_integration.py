@@ -273,6 +273,9 @@ def test_model_has_activation_parameter(model_class):
     Test that checks if the model class's __init__ method has a parameter
     named 'activation' or any parameter that starts with 'activation'.
     """
+    if model_class in [EEGMiner]:
+        pytest.skip(
+            f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
     init_method = model_class.__init__
 
