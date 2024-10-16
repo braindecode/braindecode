@@ -45,7 +45,7 @@ from braindecode.models import (
     SPARCNet,
     ContraWR,
     FBCNet,
-    EEGMine,
+    EEGMiner,
 )
 from braindecode.util import set_random_seeds
 
@@ -1228,7 +1228,8 @@ def test_fbcnet_invalid_temporal_layer():
             sfreq=250,
         )
 
-        @pytest.mark.parametrize("method", ["plv", "mag", "corr"])
+
+@pytest.mark.parametrize("method", ["plv", "mag", "corr"])
 def test_eegminer_initialization_and_forward(method):
     """
     Test EEGMiner initialization and forward pass for different methods ('plv', 'mag', 'corr').
