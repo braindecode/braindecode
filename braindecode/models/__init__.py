@@ -34,6 +34,7 @@ from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
 from .fbcnet import FBCNet
+from .ifnet import IFNetV2
 from .eegminer import EEGMiner
 from .ctnet import CTNet
 

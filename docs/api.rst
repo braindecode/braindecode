@@ -83,6 +83,7 @@ Models
     EEGTCNet
     FBCNet
     HybridNet
+    IFNetV2
     Labram
     ShallowFBCSPNet
     SleepStagerBlanco2020
