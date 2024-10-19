@@ -1,6 +1,7 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
+from __future__ import annotations
 
 from einops.layers.torch import Rearrange
 from mne.utils import warn
@@ -58,14 +59,14 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         n_chans=None,
         n_outputs=None,
         n_times=None,
-        final_conv_length="auto",
-        pool_mode="mean",
-        F1=8,
-        D=2,
-        F2=16,
-        kernel_length=64,
+        final_conv_length: str | int = "auto",
+        pool_mode: str = "mean",
+        F1: int = 8,
+        D: int = 2,
+        F2: int = 16,
+        kernel_length: int = 64,
         *,
-        drop_prob=0.25,
+        drop_prob: float = 0.25,
         activation: nn.Module = nn.ELU,
         chs_info=None,
         input_window_seconds=None,
