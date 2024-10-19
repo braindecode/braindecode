@@ -33,6 +33,16 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         Depth multiplier for the depthwise convolution.
     F2 : int, default=16
         Number of pointwise filters in the separable convolution. Usually set to ``F1 * D``.
+    depthwise_kernel_length : int, default=16
+        Length of the depthwise convolution kernel in the separable convolution.
+    pool1_kernel_size : int, default=4
+        Kernel size of the first pooling layer.
+    pool1_stride_size : int, default=4
+        Stride size of the first pooling layer.
+    pool2_kernel_size : int, default=8
+        Kernel size of the second pooling layer.
+    pool2_stride_size : int, default=8
+        Stride size of the second pooling layer.
     kernel_length : int, default=64
         Length of the temporal convolution kernel.
     drop_prob : float, default=0.25
@@ -40,6 +50,14 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
     activation : nn.Module, default=nn.ELU
         Activation function to apply. Should be a PyTorch activation module like
         ``nn.ReLU`` or ``nn.ELU``.
+    batch_norm_momentum : float, default=0.01
+        Momentum for the batch normalization layers.
+    batch_norm_affine : bool, default=True
+        Whether to include learnable affine parameters in batch normalization layers.
+    batch_norm_eps : float, default=1e-3
+        Epsilon value for batch normalization layers.
+    conv_spatial_max_norm : float, default=1
+        Max norm constraint for the spatial convolution layer.
 
     Notes
     -----
@@ -66,8 +84,17 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         F2: int = 16,
         kernel_length: int = 64,
         *,
+        depthwise_kernel_length: int = 16,
+        pool1_kernel_size: int = 4,
+        pool1_stride_size: int = 4,
+        pool2_kernel_size: int = 8,
+        pool2_stride_size: int = 8,
         drop_prob: float = 0.25,
         activation: nn.Module = nn.ELU,
+        batch_norm_momentum: float = 0.01,
+        batch_norm_affine: bool = True,
+        batch_norm_eps: float = 1e-3,
+        conv_spatial_max_norm: int = 1,
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
@@ -89,7 +116,17 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.D = D
         self.F2 = F2
         self.kernel_length = kernel_length
+        self.depthwise_kernel_length = depthwise_kernel_length
+        self.pool1_kernel_size = pool1_kernel_size
+        self.pool1_stride_size = pool1_stride_size
+        self.pool2_kernel_size = pool2_kernel_size
+        self.pool2_stride_size = pool2_stride_size
         self.drop_prob = drop_prob
+        self.activation = activation
+        self.batch_norm_momentum = batch_norm_momentum
+        self.batch_norm_affine = batch_norm_affine
+        self.batch_norm_eps = batch_norm_eps
+        self.conv_spatial_max_norm = conv_spatial_max_norm
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
@@ -115,7 +152,12 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         )
         self.add_module(
             "bnorm_temporal",
-            nn.BatchNorm2d(self.F1, momentum=0.01, affine=True, eps=1e-3),
+            nn.BatchNorm2d(
+                self.F1,
+                momentum=self.batch_norm_momentum,
+                affine=self.batch_norm_affine,
+                eps=self.batch_norm_eps,
+            ),
         )
         self.add_module(
             "conv_spatial",
@@ -123,7 +165,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
                 self.F1,
                 self.F1 * self.D,
                 (self.n_chans, 1),
-                max_norm=1,
+                max_norm=self.conv_spatial_max_norm,
                 stride=1,
                 bias=False,
                 groups=self.F1,
@@ -133,11 +175,22 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         self.add_module(
             "bnorm_1",
-            nn.BatchNorm2d(self.F1 * self.D, momentum=0.01, affine=True, eps=1e-3),
+            nn.BatchNorm2d(
+                self.F1 * self.D,
+                momentum=self.batch_norm_momentum,
+                affine=self.batch_norm_affine,
+                eps=self.batch_norm_eps,
+            ),
         )
         self.add_module("elu_1", activation())
 
-        self.add_module("pool_1", pool_class(kernel_size=(1, 4), stride=(1, 4)))
+        self.add_module(
+            "pool_1",
+            pool_class(
+                kernel_size=(1, self.pool1_kernel_size),
+                stride=(1, self.pool1_stride_size),
+            ),
+        )
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
         # https://discuss.pytorch.org/t/how-to-modify-a-conv2d-to-depthwise-separable-convolution/15843/7
@@ -146,11 +199,11 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             nn.Conv2d(
                 self.F1 * self.D,
                 self.F1 * self.D,
-                (1, 16),
+                (1, self.depthwise_kernel_length),
                 stride=1,
                 bias=False,
                 groups=self.F1 * self.D,
-                padding=(0, 16 // 2),
+                padding=(0, self.depthwise_kernel_length // 2),
             ),
         )
         self.add_module(
@@ -167,10 +220,21 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         self.add_module(
             "bnorm_2",
-            nn.BatchNorm2d(self.F2, momentum=0.01, affine=True, eps=1e-3),
+            nn.BatchNorm2d(
+                self.F2,
+                momentum=self.batch_norm_momentum,
+                affine=self.batch_norm_affine,
+                eps=self.batch_norm_eps,
+            ),
         )
-        self.add_module("elu_2", activation())
-        self.add_module("pool_2", pool_class(kernel_size=(1, 8), stride=(1, 8)))
+        self.add_module("elu_2", self.activation())
+        self.add_module(
+            "pool_2",
+            pool_class(
+                kernel_size=(1, self.pool2_kernel_size),
+                stride=(1, self.pool2_stride_size),
+            ),
+        )
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
 
         output_shape = self.get_output_shape()
