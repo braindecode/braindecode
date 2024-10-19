@@ -2,46 +2,43 @@
 #
 # License: BSD (3-clause)
 
-import torch
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions import squeeze_final_output
-from braindecode.models.modules import Ensure4d, Expression
-
-
-class Conv2dWithConstraint(nn.Conv2d):
-    def __init__(self, *args, max_norm=1, **kwargs):
-        self.max_norm = max_norm
-        super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
-
-    def forward(self, x):
-        self.weight.data = torch.renorm(
-            self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-        )
-        return super(Conv2dWithConstraint, self).forward(x)
+from braindecode.models.modules import Ensure4d, Expression, Conv2dWithConstraint
 
 
 class EEGNetv4(EEGModuleMixin, nn.Sequential):
     """EEGNet v4 model from Lawhern et al. 2018 [EEGNet4]_.
 
+    .. figure:: https://content.cld.iop.org/journals/1741-2552/15/5/056013/revision2/jneaace8cf01_hr.jpg
+       :align: center
+       :alt: EEGNet4 Architecture
+
     See details in [EEGNet4]_.
 
     Parameters
     ----------
-    final_conv_length : int | "auto"
-        If int, final length of convolutional filters.
-    in_chans :
-        Alias for n_chans.
-    n_classes:
-        Alias for n_outputs.
-    input_window_samples :
-        Alias for n_times.
-    activate: nn.Module, default=nn.ELU
-        Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
+    final_conv_length : int or "auto", default="auto"
+        Length of the final convolution layer. If "auto", it is set based on the n_times.
+    pool_mode : str, {"mean", "max"}, default="mean"
+        Pooling method to use in pooling layers.
+    F1 : int, default=8
+        Number of temporal filters in the first convolutional layer.
+    D : int, default=2
+        Depth multiplier for the depthwise convolution.
+    F2 : int, default=16
+        Number of pointwise filters in the separable convolution. Usually set to ``F1 * D``.
+    kernel_length : int, default=64
+        Length of the temporal convolution kernel.
+    drop_prob : float, default=0.25
+        Dropout probability.
+    activation : nn.Module, default=nn.ELU
+        Activation function to apply. Should be a PyTorch activation module like
+        ``nn.ReLU`` or ``nn.ELU``.
 
     Notes
     -----
@@ -50,11 +47,10 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
     References
     ----------
-    .. [EEGNet4] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon,
-       S. M., Hung, C. P., & Lance, B. J. (2018).
-       EEGNet: A Compact Convolutional Network for EEG-based
-       Brain-Computer Interfaces.
-       arXiv preprint arXiv:1611.08024.
+    .. [EEGNet4] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon, S. M.,
+        Hung, C. P., & Lance, B. J. (2018). EEGNet: a compact convolutional
+        neural network for EEG-based brain–computer interfaces. Journal of
+        neural engineering, 15(5), 056013.
     """
 
     def __init__(
@@ -66,9 +62,9 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         pool_mode="mean",
         F1=8,
         D=2,
-        F2=16,  # usually set to F1*D (?)
+        F2=16,
         kernel_length=64,
-        third_kernel_size=(8, 4),
+        *,
         drop_prob=0.25,
         activation: nn.Module = nn.ELU,
         chs_info=None,
@@ -92,7 +88,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.D = D
         self.F2 = F2
         self.kernel_length = kernel_length
-        self.third_kernel_size = third_kernel_size
         self.drop_prob = drop_prob
         # For the load_state_dict
         # When padronize all layers,
