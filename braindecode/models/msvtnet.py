@@ -229,11 +229,11 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     References
     ----------
     .. [mvtnet] Liu, K., Yang, T., Yu, Z., Yi, W., Yu, H., Wang, G., & Wu, W. (2024).
-        MSVTNet: Multi-Scale Vision Transformer Neural Network for EEG-Based
-        Motor Imagery Decoding. IEEE Journal of Biomedical and Health Informatics.
-    .. [msvtnetcode] Liu, K., et al (2024). MSVTNet: Multi-Scale Vision
-        Transformer Neural Network for EEG-Based Motor Imagery Decoding
-        Source Code: https://github.com/SheepTAO/MSVTNet
+       MSVTNet: Multi-Scale Vision Transformer Neural Network for EEG-Based
+       Motor Imagery Decoding. *IEEE Journal of Biomedical and Health Informatics*.
+    .. [msvtnetcode] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
+       Transformer Neural Network for EEG-Based Motor Imagery Decoding.
+       Source Code: https://github.com/SheepTAO/MSVTNet
     """
 
     def __init__(
