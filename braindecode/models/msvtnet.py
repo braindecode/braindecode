@@ -9,7 +9,7 @@ from typing import List, Type, Union, Tuple
 from braindecode.models.base import EEGModuleMixin
 
 
-class TSConv(nn.Sequential):
+class _TSConv(nn.Sequential):
     """
     Time-Distributed Separable Convolution block.
 
@@ -82,7 +82,7 @@ class TSConv(nn.Sequential):
         )
 
 
-class PositionalEncoding(nn.Module):
+class _PositionalEncoding(nn.Module):
     """
     Positional encoding module that adds learnable positional embeddings.
 
@@ -105,7 +105,7 @@ class PositionalEncoding(nn.Module):
         return x
 
 
-class Transformer(nn.Module):
+class _Transformer(nn.Module):
     """
     Transformer encoder module with learnable class token and positional encoding.
 
@@ -136,7 +136,7 @@ class Transformer(nn.Module):
     ) -> None:
         super().__init__()
         self.cls_embedding = nn.Parameter(torch.zeros(1, 1, d_model))
-        self.pos_embedding = PositionalEncoding(seq_length + 1, d_model)
+        self.pos_embedding = _PositionalEncoding(seq_length + 1, d_model)
 
         dim_ff = int(d_model * feedforward_ratio)
         self.dropout = nn.Dropout(drop_prob)
@@ -161,7 +161,7 @@ class Transformer(nn.Module):
         return self.trans(x)[:, 0]
 
 
-class FinalLayers(nn.Sequential):
+class _FinalLayers(nn.Sequential):
     """
     Final classification layers.
 
@@ -181,10 +181,10 @@ class FinalLayers(nn.Sequential):
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
-    """MSVTNet model from Liu K et al (2024) from [mvtnet]_.
+    """MSVTNet model from Liu K et al (2024) from [1]_.
 
     This model implements a multi-scale convolutional transformer network
-    for EEG signal classification, as described in [mvtnet]_.
+    for EEG signal classification, as described in [1]_.
 
     .. figure:: https://raw.githubusercontent.com/SheepTAO/MSVTNet/refs/heads/main/MSVTNet_Arch.png
        :align: center
@@ -223,15 +223,14 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     Notes
     -----
     This implementation is not guaranteed to be correct, has not been checked
-    by original authors, only reimplemented bosed on the original code [msvtnetcode]_.
-
+    by original authors, only reimplemented bosed on the original code [2]_.
 
     References
     ----------
-    .. [mvtnet] Liu, K., Yang, T., Yu, Z., Yi, W., Yu, H., Wang, G., & Wu, W. (2024).
-       MSVTNet: Multi-Scale Vision Transformer Neural Network for EEG-Based
-       Motor Imagery Decoding. *IEEE Journal of Biomedical and Health Informatics*.
-    .. [msvtnetcode] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
+    . [1] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
+       Transformer Neural Network for EEG-Based Motor Imagery Decoding.
+       IEEE Journal of Biomedical and Health Informatics
+    . [2] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
        Transformer Neural Network for EEG-Based Motor Imagery Decoding.
        Source Code: https://github.com/SheepTAO/MSVTNet
     """
@@ -258,7 +257,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         drop_prob_trans: float = 0.5,
         num_layers: int = 2,
         activation: Type[nn.Module] = nn.ELU,
-        return_branch_preds: bool = True,
+        return_branch_preds: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -279,7 +278,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         self.mstsconv = nn.ModuleList(
             [
                 nn.Sequential(
-                    TSConv(
+                    _TSConv(
                         self.n_chans,
                         n_filters_list[b],
                         conv1_kernel_sizes[b],
@@ -298,13 +297,13 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         branch_linear_in = self._forward_flatten(cat=False)
         self.branch_head = nn.ModuleList(
             [
-                FinalLayers(branch_linear_in[b].shape[1], self.n_outputs)
+                _FinalLayers(branch_linear_in[b].shape[1], self.n_outputs)
                 for b in range(len(n_filters_list))
             ]
         )
 
         seq_len, d_model = self._forward_mstsconv().shape[1:3]  # type: ignore
-        self.transformer = Transformer(
+        self.transformer = _Transformer(
             seq_len,
             d_model,
             num_heads,
