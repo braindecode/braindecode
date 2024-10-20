@@ -181,10 +181,10 @@ class _FinalLayers(nn.Sequential):
 
 
 class MSVTNet(EEGModuleMixin, nn.Module):
-    """MSVTNet model from Liu K et al (2024) from [1]_.
+    """MSVTNet model from Liu K et al (2024) from [msvt2024]_.
 
     This model implements a multi-scale convolutional transformer network
-    for EEG signal classification, as described in [1]_.
+    for EEG signal classification, as described in [msvt2024]_.
 
     .. figure:: https://raw.githubusercontent.com/SheepTAO/MSVTNet/refs/heads/main/MSVTNet_Arch.png
        :align: center
@@ -223,14 +223,14 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     Notes
     -----
     This implementation is not guaranteed to be correct, has not been checked
-    by original authors, only reimplemented bosed on the original code [2]_.
+    by original authors, only reimplemented bosed on the original code [msvt2024code]_.
 
     References
     ----------
-    . [1] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
+    .. [msvt2024] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
        Transformer Neural Network for EEG-Based Motor Imagery Decoding.
-       IEEE Journal of Biomedical and Health Informatics
-    . [2] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
+       IEEE Journal of Biomedical an Health Informatics.
+    .. [msvt2024code] Liu, K., et al. (2024). MSVTNet: Multi-Scale Vision
        Transformer Neural Network for EEG-Based Motor Imagery Decoding.
        Source Code: https://github.com/SheepTAO/MSVTNet
     """
