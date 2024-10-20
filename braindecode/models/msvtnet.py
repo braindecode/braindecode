@@ -223,7 +223,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     Notes
     -----
     This implementation is not guaranteed to be correct, has not been checked
-    by original authors, only reimplemented bosed on the original code [msvt2024code]_.
+    by original authors, only reimplemented based on the original code [msvt2024code]_.
 
     References
     ----------
@@ -339,14 +339,21 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     def forward(
         self, x: torch.Tensor
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+        # x with shape: (batch, n_chans, n_times)
         x = self.ensure_dim(x)
+        # x with shape: (batch, 1, n_chans, n_times)
         x_list = [tsconv(x) for tsconv in self.mstsconv]
+        # x_list contains 4 tensors, each of shape: [batch_size, seq_len, embed_dim]
         branch_preds = [
             branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
         ]
+        # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
         x = torch.cat(x_list, dim=2)
+        # x shape after concatenation: [batch_size, seq_len, total_embed_dim]
         x = self.transformer(x)
-        x = self.final_layers(x)
+        # x shape after transformer: [batch_size, embed_dim]
+
+        x = self.final_layer(x)
         if self.return_branch_preds:
             return x, branch_preds
         else:
