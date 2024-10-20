@@ -218,7 +218,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     activation : Type[nn.Module], optional
         Activation function class to use, by default nn.ELU.
     return_branch_preds : bool, optional
-        Whether to return predictions from branch classifiers, by default True.
+        Whether to return predictions from branch classifiers, by default False.
 
     Notes
     -----
