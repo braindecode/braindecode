@@ -314,7 +314,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
         linear_in = self._forward_flatten().shape[1]  # type: ignore
         self.flatten_layer = nn.Flatten()
-        self.final_layers = nn.Linear(linear_in, self.n_outputs)
+        self.final_layer = nn.Linear(linear_in, self.n_outputs)
 
     def _forward_mstsconv(
         self, cat: bool = True
