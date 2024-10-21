@@ -26,17 +26,19 @@ jobs:
         with:
           path: ~/mne_data
           key: ${{ runner.os }}-v3
-      - uses: actions/setup-python@v4
+      # Install UV
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v3
         with:
-          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          version: "latest"
+      # Install python
+      - name: Install Python
+        run: uv python install ${{ matrix.python-version }}
       - name: Show Python Version
         run: python --version
-      # Update pip
-      - name: Update pip
-        run: pip install --upgrade pip
-      # Install with MOABB and docs dependencies
       - name: Install with doc dependencies
-        run: pip install -e .[moabb,docs]
+        run: uv pip install -e .[moabb,docs]
       # Show Braindecode Version
       - run: python -c "import braindecode; print(braindecode.__version__)"
 
