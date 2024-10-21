@@ -231,7 +231,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         Number of transformer encoder layers, by default 2.
     activation : Type[nn.Module], optional
         Activation function class to use, by default nn.ELU.
-    return_branch_preds : bool, optional
+    return_features : bool, optional
         Whether to return predictions from branch classifiers, by default False.
 
     Notes
@@ -271,7 +271,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         drop_prob_trans: float = 0.5,
         num_layers: int = 2,
         activation: Type[nn.Module] = nn.ELU,
-        return_branch_preds: bool = False,
+        return_features: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -283,7 +283,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        self.return_branch_preds = return_branch_preds
+        self.return_features = return_features
         assert len(n_filters_list) == len(
             conv1_kernel_sizes
         ), "The length of n_filters_list and conv1_kernel_sizes should be equal."
@@ -369,4 +369,4 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         # x shape after transformer: [batch_size, embed_dim]
 
         x = self.final_layer(x)
-        return (x, branch_preds) if self.return_branch_preds else x
+        return (x, branch_preds) if self.return_features else x
