@@ -35,8 +35,8 @@ jobs:
       # Install python
       - name: Install Python
         run: |
-          uv python install ${{ matrix.python-version }}
-          uv venv --python ${{ matrix.python-version }}
+          uv python install 3.10
+          uv venv --python 3.10
       - name: Show Python Version
         run: python --version
       - name: Install with doc dependencies
