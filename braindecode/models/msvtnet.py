@@ -175,7 +175,7 @@ class _Transformer(nn.Module):
         return self.trans(x)[:, 0]
 
 
-class _FinalLayers(nn.Sequential):
+class _DenseLayers(nn.Sequential):
     """
     Final classification layers.
 
@@ -311,7 +311,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         branch_linear_in = self._forward_flatten(cat=False)
         self.branch_head = nn.ModuleList(
             [
-                _FinalLayers(branch_linear_in[b].shape[1], self.n_outputs)
+                _DenseLayers(branch_linear_in[b].shape[1], self.n_outputs)
                 for b in range(len(n_filters_list))
             ]
         )
