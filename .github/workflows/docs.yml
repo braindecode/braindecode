@@ -35,6 +35,8 @@ jobs:
       # Install python
       - name: Install Python
         run: uv python install ${{ matrix.python-version }}
+      - name: pinned Python
+        run: uv python pin pypy@${{ matrix.python-version }}
       - name: Show Python Version
         run: python --version
       - name: Install with doc dependencies
