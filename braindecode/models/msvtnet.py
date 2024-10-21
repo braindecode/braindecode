@@ -13,6 +13,20 @@ class _TSConv(nn.Sequential):
     """
     Time-Distributed Separable Convolution block.
 
+    The architecture consists of:
+    - **Temporal Convolution**
+    - **Batch Normalization**
+    - **Depthwise Spatial Convolution**
+    - **Batch Normalization**
+    - **Activation Function**
+    - **First Pooling Layer**
+    - **Dropout**
+    - **Depthwise Temporal Convolution**
+    - **Batch Normalization**
+    - **Activation Function**
+    - **Second Pooling Layer**
+    - **Dropout**
+
     Parameters
     ----------
     n_channels : int
