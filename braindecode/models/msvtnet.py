@@ -348,13 +348,11 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
         ]
         # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
-        x = torch.cat(x_list, dim=2)
+        x = torch.stack(x_list, dim=2)
+        x = x.view(x.size(0), x.size(1), -1)
         # x shape after concatenation: [batch_size, seq_len, total_embed_dim]
         x = self.transformer(x)
         # x shape after transformer: [batch_size, embed_dim]
 
         x = self.final_layer(x)
-        if self.return_branch_preds:
-            return x, branch_preds
-        else:
-            return x
+        return (x, branch_preds) if self.return_branch_preds else x
