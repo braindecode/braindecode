@@ -204,9 +204,8 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         x = self.sinc_filter_layer(x)
         x = self.depthwiseconv(x)
         x = self.temporal_aggregation(x)
-        outputs = self.final_layer(x)
 
-        return outputs
+        return self.final_layer(x)
 
 
 class _SincFilter(nn.Module):
