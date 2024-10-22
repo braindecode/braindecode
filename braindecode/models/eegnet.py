@@ -120,7 +120,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             warn(
                 "The parameter `third_kernel_size` is deprecated "
                 "and will be removed in a future version.",
-                DeprecationWarning,
             )
         unexpected_kwargs = set(kwargs) - {"third_kernel_size"}
         if unexpected_kwargs:
