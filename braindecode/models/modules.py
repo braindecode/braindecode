@@ -393,6 +393,37 @@ class LinearWithConstraint(nn.Linear):
             )
 
 
+class Conv2dWithConstraint(nn.Conv2d):
+    """
+    Convolutional layer with weight normalization constraint.
+
+    Parameters
+    ----------
+    *args, **kwargs : list, dict 
+        Classical parameters for the nn.Conv2d Layer.
+    max_norm : float, default=1.0
+        Norm for weight normalization.
+
+    Returns
+    -------
+    torch.Tensor
+        Output tensor after applying the convolutional layer.
+    """
+    def __init__(self, *args, **kwargs, max_norm=1):
+        super().__init__(*args, **kwargs)
+        self.max_norm = max_norm
+
+    def forward(self, x):
+        self._constraint()
+        return super().forward(x)
+     
+    def _constraint(self):
+        with torch.no_grad():
+            self.weight.data = torch.renorm(
+                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
+            )
+
+
 class CombinedConv(nn.Module):
     """Merged convolutional layer for temporal and spatial convs in Deep4/ShallowFBCSP
 
