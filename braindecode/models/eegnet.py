@@ -10,7 +10,12 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions import squeeze_final_output
-from braindecode.models.modules import Ensure4d, Expression, Conv2dWithConstraint
+from braindecode.models.modules import (
+    Ensure4d,
+    Expression,
+    Conv2dWithConstraint,
+    LinearWithConstraint,
+)
 
 
 class EEGNetv4(EEGModuleMixin, nn.Sequential):
@@ -98,6 +103,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         batch_norm_affine: bool = True,
         batch_norm_eps: float = 1e-3,
         drop_prob: float = 0.25,
+        final_layer_conv: bool = True,
+        norm_rate: float = 0.25,
         # Other ways to construct the signal related parameters
         chs_info: Optional[List[Dict]] = None,
         input_window_seconds: Optional[float] = None,
@@ -146,6 +153,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.batch_norm_affine = batch_norm_affine
         self.batch_norm_eps = batch_norm_eps
         self.conv_spatial_max_norm = conv_spatial_max_norm
+        self.norm_rate = norm_rate
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
@@ -164,7 +172,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
                 1,
                 self.F1,
                 (1, self.kernel_length),
-                stride=1,
                 bias=False,
                 padding=(0, self.kernel_length // 2),
             ),
@@ -181,14 +188,12 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.add_module(
             "conv_spatial",
             Conv2dWithConstraint(
-                self.F1,
-                self.F1 * self.D,
-                (self.n_chans, 1),
+                in_channels=self.F1,
+                out_channels=self.F1 * self.D,
+                kernel_size=(self.n_chans, 1),
                 max_norm=self.conv_spatial_max_norm,
-                stride=1,
                 bias=False,
                 groups=self.F1,
-                padding=(0, 0),
             ),
         )
 
@@ -207,7 +212,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             "pool_1",
             pool_class(
                 kernel_size=(1, self.pool1_kernel_size),
-                stride=(1, self.pool1_stride_size),
             ),
         )
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
@@ -219,7 +223,6 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
                 self.F1 * self.D,
                 self.F1 * self.D,
                 (1, self.depthwise_kernel_length),
-                stride=1,
                 bias=False,
                 groups=self.F1 * self.D,
                 padding=(0, self.depthwise_kernel_length // 2),
@@ -230,10 +233,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             nn.Conv2d(
                 self.F1 * self.D,
                 self.F2,
-                (1, 1),
-                stride=1,
+                kernel_size=(1, 1),
                 bias=False,
-                padding=(0, 0),
             ),
         )
 
@@ -246,12 +247,10 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
                 eps=self.batch_norm_eps,
             ),
         )
-        self.add_module("elu_2", self.activation())
         self.add_module(
             "pool_2",
             pool_class(
                 kernel_size=(1, self.pool2_kernel_size),
-                stride=(1, self.pool2_stride_size),
             ),
         )
         self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
@@ -265,26 +264,35 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
+        if final_layer_conv:
+            module.add_module(
+                "conv_classifier",
+                nn.Conv2d(
+                    self.F2,
+                    self.n_outputs,
+                    (n_out_virtual_chans, self.final_conv_length),
+                    bias=True,
+                ),
+            )
 
-        module.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                self.F2,
-                self.n_outputs,
-                (n_out_virtual_chans, self.final_conv_length),
-                bias=True,
-            ),
-        )
+            # Transpose back to the logic of braindecode,
+            # so time in third dimension (axis=2)
+            module.add_module(
+                "permute_back",
+                Rearrange("batch x y z -> batch x z y"),
+            )
 
-        # Transpose back to the logic of braindecode,
-        # so time in third dimension (axis=2)
-        module.add_module(
-            "permute_back",
-            Rearrange("batch x y z -> batch x z y"),
-        )
-
-        module.add_module("squeeze", Expression(squeeze_final_output))
-
+            module.add_module("squeeze", Expression(squeeze_final_output))
+        else:
+            module.add_module("flatten", nn.Flatten())
+            module.add_module(
+                "linearconstraint",
+                LinearWithConstraint(
+                    in_features=output_shape[1] * output_shape[3],
+                    out_features=self.n_outputs,
+                    max_norm=norm_rate,
+                ),
+            )
         self.add_module("final_layer", module)
 
         _glorot_weight_zero_bias(self)

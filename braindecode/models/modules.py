@@ -354,6 +354,22 @@ class MaxNormLinear(nn.Linear):
             self.weight *= desired / (self._eps + norm)
 
 
+class LinearWithConstraint(nn.Linear):
+    """Linear layer with max-norm constraint on the weights."""
+
+    def __init__(self, *args, max_norm=1.0, **kwargs):
+        super(LinearWithConstraint, self).__init__(*args, **kwargs)
+        self.max_norm = max_norm
+
+    def forward(self, x):
+        with torch.no_grad():
+            # Apply max-norm constraint
+            self.weight.data = torch.renorm(
+                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
+            )
+        return super(LinearWithConstraint, self).forward(x)
+
+
 class CombinedConv(nn.Module):
     """Merged convolutional layer for temporal and spatial convs in Deep4/ShallowFBCSP
 
