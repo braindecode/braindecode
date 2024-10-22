@@ -2,6 +2,7 @@
 #
 # License: BSD (3-clause)
 from __future__ import annotations
+from typing import Optional, List, Dict
 
 from einops.layers.torch import Rearrange
 from mne.utils import warn
@@ -31,7 +32,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         Number of temporal filters in the first convolutional layer.
     D : int, default=2
         Depth multiplier for the depthwise convolution.
-    F2 : int, default=16
+    F2 : int or None, default=None
         Number of pointwise filters in the separable convolution. Usually set to ``F1 * D``.
     depthwise_kernel_length : int, default=16
         Length of the depthwise convolution kernel in the separable convolution.
@@ -45,19 +46,19 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         Stride size of the second pooling layer.
     kernel_length : int, default=64
         Length of the temporal convolution kernel.
-    drop_prob : float, default=0.25
-        Dropout probability.
+    conv_spatial_max_norm : float, default=1
+        Max norm constraint for the spatial convolution layer.
     activation : nn.Module, default=nn.ELU
         Activation function to apply. Should be a PyTorch activation module like
-        ``nn.ReLU`` or ``nn.ELU``.
+        ``nn.ReLU`` or ``nn.ELU`` after the batch normalization layer.
     batch_norm_momentum : float, default=0.01
         Momentum for the batch normalization layers.
     batch_norm_affine : bool, default=True
         Whether to include learnable affine parameters in batch normalization layers.
     batch_norm_eps : float, default=1e-3
         Epsilon value for batch normalization layers.
-    conv_spatial_max_norm : float, default=1
-        Max norm constraint for the spatial convolution layer.
+    drop_prob : float, default=0.25
+        Dropout probability after the second conv block and before the last layer.
 
     Notes
     -----
@@ -74,14 +75,16 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
     def __init__(
         self,
-        n_chans=None,
-        n_outputs=None,
-        n_times=None,
+        # signal's parameters
+        n_chans: Optional[int] = None,
+        n_outputs: Optional[int] = None,
+        n_times: Optional[int] = None,
+        # model's parameters
         final_conv_length: str | int = "auto",
         pool_mode: str = "mean",
         F1: int = 8,
         D: int = 2,
-        F2: int = 16,
+        F2: Optional[int | None] = None,
         kernel_length: int = 64,
         *,
         depthwise_kernel_length: int = 16,
@@ -89,15 +92,17 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         pool1_stride_size: int = 4,
         pool2_kernel_size: int = 8,
         pool2_stride_size: int = 8,
-        drop_prob: float = 0.25,
+        conv_spatial_max_norm: int = 1,
         activation: nn.Module = nn.ELU,
         batch_norm_momentum: float = 0.01,
         batch_norm_affine: bool = True,
         batch_norm_eps: float = 1e-3,
-        conv_spatial_max_norm: int = 1,
-        chs_info=None,
-        input_window_seconds=None,
-        sfreq=None,
+        drop_prob: float = 0.25,
+        # Other ways to construct the signal related parameters
+        chs_info: Optional[List[Dict]] = None,
+        input_window_seconds: Optional[float] = None,
+        sfreq: Optional[float] = None,
+        **kwargs,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -110,11 +115,26 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if final_conv_length == "auto":
             assert self.n_times is not None
+
+        if "third_kernel_size" in kwargs:
+            warn(
+                "The parameter `third_kernel_size` is deprecated "
+                "and will be removed in a future version.",
+                DeprecationWarning,
+            )
+        unexpected_kwargs = set(kwargs) - {"third_kernel_size"}
+        if unexpected_kwargs:
+            raise TypeError(f"Unexpected keyword arguments: {unexpected_kwargs}")
+
         self.final_conv_length = final_conv_length
         self.pool_mode = pool_mode
         self.F1 = F1
         self.D = D
+
+        if F2 is None:
+            F2 = self.F1 * self.D
         self.F2 = F2
+
         self.kernel_length = kernel_length
         self.depthwise_kernel_length = depthwise_kernel_length
         self.pool1_kernel_size = pool1_kernel_size
