@@ -399,7 +399,7 @@ class Conv2dWithConstraint(nn.Conv2d):
 
     Parameters
     ----------
-    *args, **kwargs : list, dict 
+    *args, **kwargs : list, dict
         Classical parameters for the nn.Conv2d Layer.
     max_norm : float, default=1.0
         Norm for weight normalization.
@@ -409,6 +409,7 @@ class Conv2dWithConstraint(nn.Conv2d):
     torch.Tensor
         Output tensor after applying the convolutional layer.
     """
+
     def __init__(self, *args, max_norm=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_norm = max_norm
@@ -416,7 +417,7 @@ class Conv2dWithConstraint(nn.Conv2d):
     def forward(self, x):
         self._constraint()
         return super().forward(x)
-     
+
     def _constraint(self):
         with torch.no_grad():
             self.weight.data = torch.renorm(
