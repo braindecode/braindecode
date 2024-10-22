@@ -328,8 +328,7 @@ class _SincFilter(nn.Module):
             inputs.device
         )  # [1, kernel_size, 1, num_filters]
 
-        # channels_last vs channels_first
-        # (I am not sure if I am doing the correct operation)
+        # Convert from channels_last to channels_first format
         inputs = inputs.permute(0, 3, 1, 2)
         # Permuting to match conv:
         filters = filters.permute(3, 2, 0, 1)
