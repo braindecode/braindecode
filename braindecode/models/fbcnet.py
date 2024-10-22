@@ -91,7 +91,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
         filter_parameters: dict = {},
-        padding_model: str = "constant",
     ):
         super().__init__(
             n_chans=n_chans,
@@ -157,7 +156,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
             self.padding_layer = partial(
                 self._apply_padding,
                 padding_size=self.padding_size,
-                mode=padding_model,
             )
         else:
             self.padding_layer = nn.Identity()
@@ -219,6 +217,6 @@ class FBCNet(EEGModuleMixin, nn.Module):
         return x
 
     @staticmethod
-    def _apply_padding(x: Tensor, padding_size: int, mode: str = "constant"):
-        x = torch.nn.functional.pad(x, (0, padding_size), mode=mode)
+    def _apply_padding(x: Tensor, padding_size: int):
+        x = torch.nn.functional.pad(x, (0, padding_size))
         return x
