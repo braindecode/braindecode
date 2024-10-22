@@ -409,7 +409,7 @@ class Conv2dWithConstraint(nn.Conv2d):
     torch.Tensor
         Output tensor after applying the convolutional layer.
     """
-    def __init__(self, *args, **kwargs, max_norm=1):
+    def __init__(self, *args, max_norm=1, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_norm = max_norm
 
