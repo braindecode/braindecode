@@ -854,3 +854,20 @@ class FilterBankLayer(nn.Module):
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
         return filtered.unsqueeze(1)
+
+
+class LogActivation(nn.Module):
+    """Logarithm activation function."""
+
+    def __init__(self, epsilon: float = 1e-6, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        epsilon : float
+            Small float to adjust the activation.
+        """
+        super().__init__(*args, **kwargs)
+        self.epsilon = epsilon
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
