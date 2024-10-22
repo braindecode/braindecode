@@ -91,6 +91,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
         filter_parameters: dict = {},
+        padding_model: str = "constant",
     ):
         super().__init__(
             n_chans=n_chans,
@@ -156,6 +157,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             self.padding_layer = partial(
                 self._apply_padding,
                 padding_size=self.padding_size,
+                mode=padding_model,
             )
         else:
             self.padding_layer = nn.Identity()
