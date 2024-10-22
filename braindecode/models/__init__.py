@@ -35,6 +35,7 @@ from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
 from .eegminer import EEGMiner
 from .ctnet import CTNet
+from .sinc_shallow import SincShallowNet
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
