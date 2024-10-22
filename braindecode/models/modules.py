@@ -862,7 +862,8 @@ class Conv2dWithConstraint(nn.Conv2d):
         super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
 
     def forward(self, x):
-        self.weight.data = torch.renorm(
-            self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-        )
+        with torch.no_grad():
+            self.weight.data = torch.renorm(
+                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
+            )
         return super(Conv2dWithConstraint, self).forward(x)
