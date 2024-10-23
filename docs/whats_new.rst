@@ -78,6 +78,7 @@ API changes
 - Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)
 - Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
 - Removing dead parameters from :class:`braindecode.models.EEGNetv4` (:gh:`676` by `Bruno Aristimunha`_)
+- Including Linear Layer at the end :class:`braindecode.models.EEGNetv4` (:gh:`680` by `Bruno Aristimunha`_)
 
 .. _changes_0_8_0:
 
