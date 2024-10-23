@@ -194,6 +194,7 @@ def _init_models_dict():
 ################################################################
 models_mandatory_parameters = [
     ("ATCNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("BDTCN", ["n_chans", "n_outputs"], None),
     ("Deep4Net", ["n_chans", "n_outputs", "n_times"], None),
     ("DeepSleepNet", ["n_outputs"], None),
     ("EEGConformer", ["n_chans", "n_outputs", "n_times"], None),

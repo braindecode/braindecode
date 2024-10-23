@@ -65,6 +65,7 @@ Models
 
     ATCNet
     AttentionBaseNet
+    BDTCN
     BIOT
     ContraWR
     CTNet
