@@ -154,6 +154,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.batch_norm_eps = batch_norm_eps
         self.conv_spatial_max_norm = conv_spatial_max_norm
         self.norm_rate = norm_rate
+
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
