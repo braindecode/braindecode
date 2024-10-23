@@ -43,12 +43,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         Length of the depthwise convolution kernel in the separable convolution.
     pool1_kernel_size : int, default=4
         Kernel size of the first pooling layer.
-    pool1_stride_size : int, default=4
-        Stride size of the first pooling layer.
     pool2_kernel_size : int, default=8
         Kernel size of the second pooling layer.
-    pool2_stride_size : int, default=8
-        Stride size of the second pooling layer.
     kernel_length : int, default=64
         Length of the temporal convolution kernel.
     conv_spatial_max_norm : float, default=1
@@ -94,9 +90,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         *,
         depthwise_kernel_length: int = 16,
         pool1_kernel_size: int = 4,
-        pool1_stride_size: int = 4,
         pool2_kernel_size: int = 8,
-        pool2_stride_size: int = 8,
         conv_spatial_max_norm: int = 1,
         activation: nn.Module = nn.ELU,
         batch_norm_momentum: float = 0.01,
@@ -144,9 +138,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         self.kernel_length = kernel_length
         self.depthwise_kernel_length = depthwise_kernel_length
         self.pool1_kernel_size = pool1_kernel_size
-        self.pool1_stride_size = pool1_stride_size
         self.pool2_kernel_size = pool2_kernel_size
-        self.pool2_stride_size = pool2_stride_size
         self.drop_prob = drop_prob
         self.activation = activation
         self.batch_norm_momentum = batch_norm_momentum
