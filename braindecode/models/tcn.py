@@ -258,20 +258,11 @@ class BDTCN(EEGModuleMixin, nn.Module):
             activation=activation,
         )
 
-        self.avg_pool_layer = torch.nn.Sequential(
+        self.final_layer = torch.nn.Sequential(
             torch.nn.AdaptiveAvgPool1d(1), torch.nn.Flatten()
         )
 
     def forward(self, x):
         x = self.base_tcn(x)
-        x = self.avg_pool_layer(x)
-
+        x = self.final_layer(x)
         return x
-
-
-if __name__ == "__main__":
-    x = torch.zeros(1, 22, 1001)
-    model = BDTCN(n_chans=22, n_times=1001, n_outputs=4)
-    with torch.no_grad():
-        out = model(x)
-        print(out.shape)
