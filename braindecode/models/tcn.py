@@ -199,6 +199,10 @@ class _TemporalBlock(nn.Module):
 class BDTCN(EEGModuleMixin, nn.Module):
     """Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
 
+    .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S1053811920305073-gr3_lrg.jpg
+       :align: center
+       :alt: Braindecode TCN Architecture
+
     See [gemein2020]_ for details.
 
     Parameters
