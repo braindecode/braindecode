@@ -1,7 +1,6 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-# License: BSD (3-clause)
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
@@ -207,10 +206,10 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     n_filters_list : List[int], optional
-        List of filter numbers for each TSConv block, by default [9, 9, 9, 9].
+        List of filter numbers for each TSConv block, by default (9, 9, 9, 9).
     conv1_kernels_size : List[int], optional
         List of kernel sizes for the first convolution in each TSConv block,
-        by default [15, 31, 63, 125].
+        by default (15, 31, 63, 125).
     conv2_kernel_size : int, optional
         Kernel size for the second convolution in TSConv blocks, by default 15.
     depth_multiplier : int, optional
@@ -259,8 +258,8 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         sfreq=None,
         chs_info=None,
         # Model's parameters
-        n_filters_list: List[int] = [9, 9, 9, 9],
-        conv1_kernel_sizes: List[int] = [15, 31, 63, 125],
+        n_filters_list: Tuple[int, ...] = (9, 9, 9, 9),
+        conv1_kernels_size: Tuple[int, ...] = (15, 31, 63, 125),
         conv2_kernel_size: int = 15,
         depth_multiplier: int = 2,
         pool1_size: int = 8,
@@ -285,7 +284,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
         self.return_features = return_features
         assert len(n_filters_list) == len(
-            conv1_kernel_sizes
+            conv1_kernels_size
         ), "The length of n_filters_list and conv1_kernel_sizes should be equal."
 
         self.ensure_dim = Rearrange("batch chans time -> batch 1 chans time")
@@ -295,7 +294,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
                     _TSConv(
                         self.n_chans,
                         n_filters_list[b],
-                        conv1_kernel_sizes[b],
+                        conv1_kernels_size[b],
                         conv2_kernel_size,
                         depth_multiplier,
                         pool1_size,
