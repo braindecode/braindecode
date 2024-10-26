@@ -4,7 +4,7 @@
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
-from typing import List, Type, Union, Tuple
+from typing import List, Type, Union, Tuple, Optional, Dict
 from braindecode.models.base import EEGModuleMixin
 
 
@@ -251,12 +251,12 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         # braindecode parameters
-        n_times=None,
-        n_chans=None,
-        n_outputs=None,
-        input_window_seconds=None,
-        sfreq=None,
-        chs_info=None,
+        n_chans: Optional[int] = None,
+        n_outputs: Optional[int] = None,
+        n_times: Optional[int] = None,
+        input_window_seconds: Optional[float] = None,
+        sfreq: Optional[float] = None,
+        chs_info: Optional[List[Dict]] = None,
         # Model's parameters
         n_filters_list: Tuple[int, ...] = (9, 9, 9, 9),
         conv1_kernels_size: Tuple[int, ...] = (15, 31, 63, 125),
