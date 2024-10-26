@@ -619,7 +619,6 @@ class FilterBankLayer(nn.Module):
         the filter once in the forward (causal) direction using
         :func:`~scipy.signal.lfilter`.
 
-
            The behavior for ``phase="minimum"`` was fixed to use a filter of the requested
            length and improved suppression.
     iir_params : Optional[dict], default=None

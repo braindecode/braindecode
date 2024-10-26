@@ -51,6 +51,7 @@ class Labram(EEGModuleMixin, nn.Module):
         - WindowsAttentionBlock: Apply a windows attention block to the data;
         - LayerNorm: Apply layer normalization to the data;
         - Linear: An head linear layer to transformer the data into classes.
+
     else:
         - PatchEmbed: Apply a patch embedding to the input data;
         - Residual adding cls, temporal and position embeddings (optional);

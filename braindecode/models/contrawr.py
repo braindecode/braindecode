@@ -142,7 +142,6 @@ class ContraWR(EEGModuleMixin, nn.Module):
     drop_prob : float, default=0.5
         The dropout rate for regularization. Values should be between 0 and 1.
 
-
     .. versionadded:: 0.9
 
     Notes
