@@ -872,6 +872,7 @@ class LogActivation(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
 
+
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
         self.max_norm = max_norm
