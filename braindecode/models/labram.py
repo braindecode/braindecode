@@ -24,13 +24,12 @@ class Labram(EEGModuleMixin, nn.Module):
 
     .. figure:: https://arxiv.org/html/2405.18765v1/x1.png
         :align: center
-        :alt: Labram Architecture
-
+        :alt: Labram Architecture.
 
     Large Brain Model for Learning Generic Representations with Tremendous
     EEG Data in BCI from [Jiang2024]_
 
-    This an **adaptation** of the code [Code2024]_ from the Labram model.
+    This is an **adaptation** of the code [Code2024]_ from the Labram model.
 
     The model is transformer architecture with **strong** inspiration from
     BEiTv2 [BeiTv2]_.
