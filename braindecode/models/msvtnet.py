@@ -208,7 +208,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     ----------
     n_filters_list : List[int], optional
         List of filter numbers for each TSConv block, by default [9, 9, 9, 9].
-    conv1_kernel_sizes : List[int], optional
+    conv1_kernels_size : List[int], optional
         List of kernel sizes for the first convolution in each TSConv block,
         by default [15, 31, 63, 125].
     conv2_kernel_size : int, optional
