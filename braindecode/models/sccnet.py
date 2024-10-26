@@ -38,7 +38,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
     ----------
     n_spatial_filters : int, optional
         Number of spatial filters in the first convolutional layer. Default is 22.
-    n_filters_spat_filt : int, optional
+    n_spatial_filters_smooth : int, optional
         Number of spatial filters used as filter in the second convolutional
         layer. Default is 20.
     drop_prob : float, optional
@@ -77,8 +77,8 @@ class SCCNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # Model related parameters
-        n_filters_spat: int = 22,
-        n_filters_spat_filt: int = 20,
+        n_spatial_filters: int = 22,
+        n_spatial_filters_smooth: int = 20,
         drop_prob: float = 0.5,
         activation: nn.Module = LogActivation,
     ):
@@ -92,8 +92,8 @@ class SCCNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # Parameters
-        self.n_filters_spat = n_filters_spat
-        self.n_filters_spat_filt = n_filters_spat_filt
+        self.n_filters_spat = n_spatial_filters
+        self.n_spatial_filters_smooth = n_spatial_filters_smooth
         self.drop_prob = drop_prob
 
         self.samples_100ms = int(math.floor(self.sfreq * 0.1))
@@ -108,7 +108,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
             (w_out_conv2 - self.kernel_size_pool) // self.samples_100ms + 1
             # After pooling layer
         )
-        num_features = self.n_filters_spat_filt * w_out_pool
+        num_features = self.n_spatial_filters_smooth * w_out_pool
 
         # Layers
         self.ensure_dim = Rearrange("batch nchan times -> batch 1 nchan times")
@@ -127,13 +127,13 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
         self.spatial_filt_conv = nn.Conv2d(
             in_channels=1,
-            out_channels=self.n_filters_spat_filt,
+            out_channels=self.n_spatial_filters_smooth,
             kernel_size=(self.n_filters_spat, self.samples_100ms),
             padding=0,
             bias=False,
         )
         # Momentum following keras
-        self.batch_norm = nn.BatchNorm2d(self.n_filters_spat_filt, momentum=0.9)
+        self.batch_norm = nn.BatchNorm2d(self.n_spatial_filters_smooth, momentum=0.9)
 
         self.dropout = nn.Dropout(self.drop_prob)
         self.temporal_smoothing = nn.AvgPool2d(
