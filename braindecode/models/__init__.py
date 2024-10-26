@@ -23,7 +23,7 @@ from .sleep_stager_eldele_2021 import SleepStagerEldele2021
 from .tidnet import TIDNet
 from .usleep import USleep
 from .util import get_output_shape, to_dense_prediction_model
-from .modules import TimeDistributed, LogActivation
+from .modules import TimeDistributed, LogActivation, GeneralizedGaussianFilter
 from .util import _init_models_dict, models_mandatory_parameters
 from .labram import Labram
 from .eegsimpleconv import EEGSimpleConv

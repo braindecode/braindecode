@@ -35,7 +35,6 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         - *Dropout Layer*
         - *Flatten Layer*
 
-
     3. **Block 3: Classification**
         - *Fully Connected Layer*: Maps the feature vector to n_outputs.
 

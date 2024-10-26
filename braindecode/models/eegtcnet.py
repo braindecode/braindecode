@@ -196,6 +196,10 @@ class _TCNBlock(nn.Module):
 class EEGTCNet(EEGModuleMixin, nn.Module):
     """EEGTCNet model from Ingolfsson et al. (2020) [ingolfsson2020]_.
 
+    .. figure:: https://braindecode.org/dev/_images/model/eegnex.jpg
+        :align: center
+        :alt: EEGTCNet Architecture
+
     Combining EEGNet and TCN blocks.
 
     Parameters

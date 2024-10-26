@@ -15,6 +15,10 @@ class ATCNet(EEGModuleMixin, nn.Module):
 
     Pytorch implementation based on official tensorflow code [2]_.
 
+    .. figure:: https://user-images.githubusercontent.com/25565236/185449791-e8539453-d4fa-41e1-865a-2cf7e91f60ef.png
+       :align: center
+       :alt: ATCNet Architecture
+
     Parameters
     ----------
     input_window_seconds : float, optional
