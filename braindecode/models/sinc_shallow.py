@@ -88,8 +88,8 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        num_temp_filters: int = 32,
-        temp_filter_size: int = 33,
+        num_time_filters: int = 32,
+        time_filter_len: int = 33,
         depth_multiplier: int = 2,
         activation: Optional[nn.Module] = nn.ELU,
         drop_prob: float = 0.5,
@@ -125,14 +125,14 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         # Define low frequencies for the SincFilter
         low_freqs = torch.arange(
             first_freq,
-            first_freq + num_temp_filters * freq_stride,
+            first_freq + num_time_filters * freq_stride,
             freq_stride,
             dtype=torch.float32,
         )
         self.n_filters = len(low_freqs)
 
         if padding.lower() == "valid":
-            n_times_after_sinc_filter = self.n_times - temp_filter_size + 1
+            n_times_after_sinc_filter = self.n_times - time_filter_len + 1
         elif padding.lower() == "same":
             n_times_after_sinc_filter = self.n_times
         else:
@@ -141,7 +141,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         size_after_pooling = (
             (n_times_after_sinc_filter - pool_size) // pool_stride
         ) + 1
-        flattened_size = num_temp_filters * depth_multiplier * size_after_pooling
+        flattened_size = num_time_filters * depth_multiplier * size_after_pooling
 
         # Layers
         self.ensuredims = Rearrange("batch chans times -> batch chans times 1")
@@ -149,7 +149,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         # Block 1: Sinc filter
         self.sinc_filter_layer = _SincFilter(
             low_freqs=low_freqs,
-            kernel_size=temp_filter_size,
+            kernel_size=time_filter_len,
             sfreq=self.sfreq,
             padding=padding,
             bandwidth=bandwidth,
@@ -299,7 +299,7 @@ class _SincFilter(nn.Module):
         filters_left /= 2.0 * bandwidths
 
         # [1, kernel_size // 2, 1, num_filters]
-        filters_left = filters_left.unsqueeze(0).unsqueeze(2)  
+        filters_left = filters_left.unsqueeze(0).unsqueeze(2)
         filters_right = torch.flip(filters_left, dims=[1])
 
         filters = torch.cat(
