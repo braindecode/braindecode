@@ -47,9 +47,9 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    num_temp_filters : int
+    num_time_filters : int
         Number of temporal filters in the SincFilter layer.
-    temp_filter_size : int
+    time_filter_len : int
         Size of the temporal filters.
     depth_multiplier : int
         Depth multiplier for spatial filtering.
@@ -298,9 +298,8 @@ class _SincFilter(nn.Module):
         filters_left *= self.window
         filters_left /= 2.0 * bandwidths
 
-        filters_left = filters_left.unsqueeze(0).unsqueeze(
-            2
-        )  # [1, kernel_size // 2, 1, num_filters]
+        # [1, kernel_size // 2, 1, num_filters]
+        filters_left = filters_left.unsqueeze(0).unsqueeze(2)  
         filters_right = torch.flip(filters_left, dims=[1])
 
         filters = torch.cat(
@@ -323,7 +322,6 @@ class _SincFilter(nn.Module):
         torch.Tensor
             Filtered output tensor of shape [batch_size, num_channels, num_samples, num_filters].
         """
-        # torch.Size([1, 32, 256, 1]) vs TensorShape([1, 32, 256, 1])
         filters = self.build_sinc_filters().to(
             inputs.device
         )  # [1, kernel_size, 1, num_filters]
