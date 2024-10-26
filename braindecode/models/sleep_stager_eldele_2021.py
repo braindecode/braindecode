@@ -17,6 +17,10 @@ from braindecode.models.base import EEGModuleMixin
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
     """Sleep Staging Architecture from Eldele et al. 2021 [Eldele2021]_.
 
+    .. figure:: https://raw.githubusercontent.com/emadeldeen24/AttnSleep/refs/heads/main/imgs/AttnSleep.png
+        :align: center
+        :alt: SleepStagerEldele2021 Architecture
+
     Attention based Neural Net for sleep staging as described in [Eldele2021]_.
     The code for the paper and this model is also available at [1]_.
     Takes single channel EEG as input.

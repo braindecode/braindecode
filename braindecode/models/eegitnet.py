@@ -162,7 +162,11 @@ class _TCBlock(nn.Module):
 
 
 class EEGITNet(EEGModuleMixin, nn.Sequential):
-    """EEG-ITNet from Salami, et al. [Salami2022]_
+    """EEG-ITNet from Salami, et al (2022) [Salami2022]_
+
+    .. figure:: https://braindecode.org/dev/_images/model/eegitnet.jpg
+        :align: center
+        :alt: EEG-ITNet Architecture
 
     EEG-ITNet: An Explainable Inception Temporal
     Convolutional Network for motor imagery classification from

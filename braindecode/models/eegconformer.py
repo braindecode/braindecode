@@ -15,6 +15,10 @@ from braindecode.models.base import EEGModuleMixin
 class EEGConformer(EEGModuleMixin, nn.Module):
     """EEG Conformer from Song et al. (2022) from [song2022]_.
 
+     .. figure:: https://raw.githubusercontent.com/eeyhsong/EEG-Conformer/refs/heads/main/visualization/Fig1.png
+        :align: center
+        :alt: EEGConformer Architecture
+
     Convolutional Transformer for EEG decoding.
 
     The paper and original code with more details about the methodological

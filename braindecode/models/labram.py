@@ -20,7 +20,12 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram from [Jiang2024]_.
+    """Labram from Jiang, W. B. et al (2024) [Jiang2024]_.
+
+    .. figure:: https://arxiv.org/html/2405.18765v1/x1.png
+        :align: center
+        :alt: Labram Architecture
+
 
     Large Brain Model for Learning Generic Representations with Tremendous
     EEG Data in BCI from [Jiang2024]_
