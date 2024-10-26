@@ -83,6 +83,8 @@ Models
     EEGTCNet
     HybridNet
     Labram
+    MSVTNet
+    SCCNet
     SincShallowNet
     ShallowFBCSPNet
     SleepStagerBlanco2020

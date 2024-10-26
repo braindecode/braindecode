@@ -23,7 +23,7 @@ from .sleep_stager_eldele_2021 import SleepStagerEldele2021
 from .tidnet import TIDNet
 from .usleep import USleep
 from .util import get_output_shape, to_dense_prediction_model
-from .modules import TimeDistributed
+from .modules import TimeDistributed, LogActivation
 from .util import _init_models_dict, models_mandatory_parameters
 from .labram import Labram
 from .eegsimpleconv import EEGSimpleConv
@@ -33,9 +33,11 @@ from .eegnex import EEGNeX
 from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
+from .msvtnet import MSVTNet
 from .eegminer import EEGMiner
 from .ctnet import CTNet
 from .sinc_shallow import SincShallowNet
+from .sccnet import SCCNet
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.

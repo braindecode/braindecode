@@ -51,6 +51,7 @@ Enhancements
 - Ensure consistency in the last layer using tests (:gh:`642` by `Bruno Aristimunha`_ )
 - Ensuring consistency on the expose of the activation function (:gh:`637` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SyncNet` (:gh:`643` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.MSVTNet` (:gh:`659` by `Bruno Aristimunha`_ )
 - Creating the `FilterBanklayer` module for new models (:gh:`656` by `Bruno Aristimunha`_ )
 - Including PytorchAudio as dependency and remove copied code (:gh:`661` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.EEGMiner` (:gh:`667` by `Bruno Aristimunha`_ )
@@ -58,6 +59,7 @@ Enhancements
 - Fix warnings not being suppressed when creating a TUHAbnormal dataset in parallel (:gh:`670` by `itsaphel`_)
 - Exposing :class:`braindecode.models.EEGITNet` hyper-parameters (:gh:`672` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.SincShallowNet` (:gh:`678` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.SCCNet` (:gh:`679` by `Bruno Aristimunha`_ )
 
 Bugs
 ~~~~
@@ -78,6 +80,8 @@ API changes
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
 - Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)
 - Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
+- Removing dead parameters from :class:`braindecode.models.EEGNetv4` (:gh:`676` by `Bruno Aristimunha`_)
+
 .. _changes_0_8_0:
 
 Current 0.8 (11-2022)
