@@ -1,5 +1,5 @@
 import math
-from typing import Optional
+from typing import Optional, List, Dict
 
 import torch
 import torch.nn as nn
@@ -82,7 +82,7 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
     .. [borra2020] Borra, D., Fantozzi, S., & Magosso, E. (2020). Interpretable
        and lightweight convolutional neural network for EEG decoding: Application
        to movement execution and imagination. Neural Networks, 129, 55-74.
-    .. [sincshallowcode] Sinc-ShallowNet source code:
+    .. [sincshallowcode] Sinc-ShallowNet re-implementation source code:
        https://github.com/marcellosicbaldi/SincNet-Tensorflow
     """
 
@@ -101,12 +101,12 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         pool_size: int = 55,
         pool_stride: int = 12,
         # braindecode parameters
-        n_times=None,
-        n_outputs=None,
-        chs_info=None,
-        n_chans=None,
-        sfreq=None,
-        input_window_seconds=None,
+        n_chans: Optional[int] = None,
+        n_outputs: Optional[int] = None,
+        n_times: Optional[int] = None,
+        input_window_seconds: Optional[float] = None,
+        sfreq: Optional[float] = None,
+        chs_info: Optional[List[Dict]] = None,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -282,7 +282,7 @@ class _SincFilter(nn.Module):
         """Builds the sinc filters based on current parameters."""
         # Computing the low frequencies of the filters
         low_freqs = self.min_freq + torch.abs(self.low_freqs)
-        # Setting minimum band and minimum freq
+        # Setting a minimum band and minimum freq
         high_freqs = torch.clamp(
             low_freqs + torch.abs(self.bandwidths),
             min=self.min_freq,
