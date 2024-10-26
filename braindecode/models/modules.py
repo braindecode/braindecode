@@ -856,6 +856,23 @@ class FilterBankLayer(nn.Module):
         return filtered.unsqueeze(1)
 
 
+class LogActivation(nn.Module):
+    """Logarithm activation function."""
+
+    def __init__(self, epsilon: float = 1e-6, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        epsilon : float
+            Small float to adjust the activation.
+        """
+        super().__init__(*args, **kwargs)
+        self.epsilon = epsilon
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
+
+
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
         self.max_norm = max_norm

@@ -84,6 +84,7 @@ Models
     HybridNet
     Labram
     MSVTNet
+    SCCNet
     ShallowFBCSPNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
