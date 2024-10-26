@@ -186,7 +186,7 @@ class _BiLSTM(nn.Module):
 
 
 class DeepSleepNet(EEGModuleMixin, nn.Module):
-    """Sleep staging architecture from Supratak et al. 2017 [Supratak2017]_.
+    """Sleep staging architecture from Supratak et al. (2017) [Supratak2017]_.
 
      .. figure:: https://raw.githubusercontent.com/akaraspt/deepsleepnet/refs/heads/master/img/deepsleepnet.png
         :align: center

@@ -15,7 +15,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
-    """Sleep Staging Architecture from Eldele et al. 2021 [Eldele2021]_.
+    """Sleep Staging Architecture from Eldele et al. (2021) [Eldele2021]_.
 
     .. figure:: https://raw.githubusercontent.com/emadeldeen24/AttnSleep/refs/heads/main/imgs/AttnSleep.png
         :align: center

@@ -20,7 +20,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram from Jiang, W. B. et al (2024) [Jiang2024]_.
+    """Labram from Jiang, W B et al (2024) [Jiang2024]_.
 
     .. figure:: https://arxiv.org/html/2405.18765v1/x1.png
         :align: center
