@@ -1,13 +1,7 @@
-"""Spatial component-wise convolutional network (SCCNet) for motor-imagery EEG
-    classification.
-Authors: Chun-Shu Wei
-         Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
-
-Wei, C. S., Koike-Akino, T., & Wang, Y. (2019, March). Spatial component-wise
-convolutional network (SCCNet) for motor-imagery EEG classification. In 2019
-9th International IEEE/EMBS Conference on Neural Engineering (NER) (pp. 328-331).
-IEEE.
-"""
+# Authors: Chun-Shu Wei
+#         Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
+#
+# License: BSD (3-clause)
 
 import math
 import torch
@@ -42,7 +36,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_filters_spat : int, optional
+    n_spatial_filters : int, optional
         Number of spatial filters in the first convolutional layer. Default is 22.
     n_filters_spat_filt : int, optional
         Number of spatial filters used as filter in the second convolutional
@@ -57,7 +51,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
     -----
     This implementation is not guaranteed to be correct, has not been checked
     by original authors, only reimplemented from the paper description and
-    source that we are not sure if it is correct [sccnetcode]_.
+    the source that have not been tested [sccnetcode]_.
 
 
     References
