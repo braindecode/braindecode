@@ -33,6 +33,7 @@ from .eegnex import EEGNeX
 from .tsinception import TSceptionV1
 from .eegtcnet import EEGTCNet
 from .syncnet import SyncNet
+from .msvtnet import MSVTNet
 from .eegminer import EEGMiner
 from .ctnet import CTNet
 from .sccnet import SCCNet
