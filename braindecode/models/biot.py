@@ -329,7 +329,7 @@ class _BIOTEncoder(nn.Module):
 class BIOT(EEGModuleMixin, nn.Module):
     """BIOT from Yang et al. (2023) [Yang2023]_
 
-    .. figure:: https://braindecode.org/dev/_images/model/biot.jpg
+    .. figure:: https://braindecode.org/dev/_static/model/biot.jpg
        :align: center
        :alt: BioT
 

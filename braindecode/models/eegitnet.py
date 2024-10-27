@@ -164,7 +164,7 @@ class _TCBlock(nn.Module):
 class EEGITNet(EEGModuleMixin, nn.Sequential):
     """EEG-ITNet from Salami, et al (2022) [Salami2022]_
 
-    .. figure:: https://braindecode.org/dev/_images/model/eegitnet.jpg
+    .. figure:: https://braindecode.org/dev/_static/model/eegitnet.jpg
         :align: center
         :alt: EEG-ITNet Architecture
 

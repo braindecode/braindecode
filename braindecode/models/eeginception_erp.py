@@ -15,7 +15,7 @@ from braindecode.models.modules import Ensure4d
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
     """EEG Inception for ERP-based from Santamaria-Vazquez et al (2020) [santamaria2020]_.
 
-    .. figure:: https://braindecode.org/dev/_images/model/eeginceptionerp.jpg
+    .. figure:: https://braindecode.org/dev/_static/model/eeginceptionerp.jpg
         :align: center
         :alt: EEGInceptionERP Architecture
 
