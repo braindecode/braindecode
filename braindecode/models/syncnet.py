@@ -11,7 +11,7 @@ from braindecode.models.base import EEGModuleMixin
 class SyncNet(EEGModuleMixin, nn.Module):
     """Synchronization Network (SyncNet) from Li, Y et al (2017) [Li2017]_.
 
-    .. figure:: https://braindecode.org/dev/_images/model/SyncNet.png
+    .. figure:: https://braindecode.org/dev/_static/model/SyncNet.png
         :align: center
         :alt: SyncNet Architecture
 

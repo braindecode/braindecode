@@ -12,7 +12,7 @@ from braindecode.models.base import EEGModuleMixin
 class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
     """Sleep staging architecture from Chambon et al. (2018) [Chambon2018]_.
 
-    .. figure:: https://braindecode.org/dev/_images/model/SleepStagerChambon2018.jpg
+    .. figure:: https://braindecode.org/dev/_static/model/SleepStagerChambon2018.jpg
         :align: center
         :alt: SleepStagerChambon2018 Architecture
 
