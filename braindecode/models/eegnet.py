@@ -240,6 +240,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
                 eps=self.batch_norm_eps,
             ),
         )
+        self.add_module("elu_2", self.activation())
         self.add_module(
             "pool_2",
             pool_class(
@@ -483,3 +484,11 @@ def _glorot_weight_zero_bias(model):
         if hasattr(module, "bias"):
             if module.bias is not None:
                 nn.init.constant_(module.bias, 0)
+
+
+if __name__ == "__main__":
+    model = EEGNetv4(n_times=500, n_chans=22, n_outputs=4)
+    from torchinfo import summary
+
+    # (1, T, C, 1)
+    print(model)  # , input_size=[1, 22, 500])
