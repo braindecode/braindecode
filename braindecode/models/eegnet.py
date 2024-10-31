@@ -14,7 +14,7 @@ from braindecode.models.modules import Ensure4d, Expression, Conv2dWithConstrain
 
 
 class EEGNetv4(EEGModuleMixin, nn.Sequential):
-    """EEGNet v4 model from Lawhern et al. 2018 [EEGNet4]_.
+    """EEGNet v4 model from Lawhern et al. (2018) [EEGNet4]_.
 
     .. figure:: https://content.cld.iop.org/journals/1741-2552/15/5/056013/revision2/jneaace8cf01_hr.jpg
        :align: center

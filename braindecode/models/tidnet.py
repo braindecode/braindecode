@@ -255,7 +255,11 @@ class _TIDNetFeatures(nn.Module):
 
 
 class TIDNet(EEGModuleMixin, nn.Module):
-    """Thinker Invariance DenseNet model from Kostas et al. 2020 [TIDNet]_.
+    """Thinker Invariance DenseNet model from Kostas et al. (2020) [TIDNet]_.
+
+    .. figure:: https://content.cld.iop.org/journals/1741-2552/17/5/056008/revision3/jneabb7a7f1_hr.jpg
+        :align: center
+        :alt: TIDNet Architecture
 
     See [TIDNet]_ for details.
 

@@ -329,6 +329,10 @@ class _BIOTEncoder(nn.Module):
 class BIOT(EEGModuleMixin, nn.Module):
     """BIOT from Yang et al. (2023) [Yang2023]_
 
+    .. figure:: https://braindecode.org/dev/_static/model/biot.jpg
+       :align: center
+       :alt: BioT
+
     BIOT: Cross-data Biosignal Learning in the Wild.
 
     BIOT is a large language model for biosignal classification. It is

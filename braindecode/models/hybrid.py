@@ -12,7 +12,7 @@ from braindecode.models.util import to_dense_prediction_model
 
 
 class HybridNet(nn.Module):
-    """Hybrid ConvNet model from Schirrmeister et al 2017  [Schirrmeister2017]_.
+    """Hybrid ConvNet model from Schirrmeister, R T et al (2017)  [Schirrmeister2017]_.
 
     See [Schirrmeister2017]_ for details.
 

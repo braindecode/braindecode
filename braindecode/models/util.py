@@ -229,6 +229,9 @@ models_mandatory_parameters = [
     ("TSceptionV1", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("EEGTCNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SyncNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("MSVTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGMiner", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
+    ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=250)),
+    ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
 ]

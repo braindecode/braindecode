@@ -21,6 +21,10 @@ from braindecode.models.base import EEGModuleMixin
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     """EEGSimpleConv from Ouahidi, YE et al. (2023) [Yassine2023]_.
 
+    .. figure:: https://raw.githubusercontent.com/elouayas/EEGSimpleConv/refs/heads/main/architecture.png
+        :align: center
+        :alt: EEGSimpleConv Architecture
+
     EEGSimpleConv is a 1D Convolutional Neural Network originally designed
     for decoding motor imagery from EEG signals. The model aims to have a
     very simple and straightforward architecture that allows a low latency,

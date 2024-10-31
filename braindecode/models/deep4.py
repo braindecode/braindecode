@@ -17,7 +17,11 @@ from braindecode.models.modules import (
 
 
 class Deep4Net(EEGModuleMixin, nn.Sequential):
-    """Deep ConvNet model from Schirrmeister et al 2017 [Schirrmeister2017]_.
+    """Deep ConvNet model from Schirrmeister et al (2017) [Schirrmeister2017]_.
+
+     .. figure:: https://onlinelibrary.wiley.com/cms/asset/fc200ccc-d8c4-45b4-8577-56ce4d15999a/hbm23730-fig-0001-m.jpg
+        :align: center
+        :alt: CTNet Architecture
 
     Model described in [Schirrmeister2017]_.
 

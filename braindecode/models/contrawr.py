@@ -120,7 +120,7 @@ class _ResBlock(nn.Module):
 
 
 class ContraWR(EEGModuleMixin, nn.Module):
-    """Contrast with the World Representation ContraWR from Yang et al. 2021 [Yang2021]_.
+    """Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
 
     This model is a convolutional neural network that uses a spectral
     representation with a series of convolutional layers and residual blocks.
@@ -141,7 +141,6 @@ class ContraWR(EEGModuleMixin, nn.Module):
         module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
     drop_prob : float, default=0.5
         The dropout rate for regularization. Values should be between 0 and 1.
-
 
     .. versionadded:: 0.9
 

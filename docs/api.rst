@@ -83,6 +83,9 @@ Models
     EEGSimpleConv
     EEGTCNet
     Labram
+    MSVTNet
+    SCCNet
+    SincShallowNet
     ShallowFBCSPNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
