@@ -2,7 +2,7 @@
 #          Lukas Gemein <l.gemein@gmail.com>
 #
 # License: BSD-3
-
+import torch
 from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
@@ -12,7 +12,7 @@ from braindecode.models.functions import squeeze_final_output
 from braindecode.models.modules import Chomp1d, Ensure4d, Expression
 
 
-class TCN(EEGModuleMixin, nn.Module):
+class TCN(nn.Module):
     """Temporal Convolutional Network (TCN) from Bai et al. 2018 [Bai2018]_.
 
     See [Bai2018]_ for details.
@@ -50,21 +50,8 @@ class TCN(EEGModuleMixin, nn.Module):
         kernel_size=5,
         drop_prob=0.5,
         activation: nn.Module = nn.ReLU,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
     ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
+        super().__init__()
         self.mapping = {
             "fc.weight": "final_layer.fc.weight",
             "fc.bias": "final_layer.fc.bias",
@@ -72,7 +59,7 @@ class TCN(EEGModuleMixin, nn.Module):
         self.ensuredims = Ensure4d()
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
-            n_inputs = self.n_chans if i == 0 else n_filters
+            n_inputs = n_chans if i == 0 else n_filters
             dilation_size = 2**i
             t_blocks.add_module(
                 "temporal_block_{:d}".format(i),
@@ -89,10 +76,9 @@ class TCN(EEGModuleMixin, nn.Module):
             )
         self.temporal_blocks = t_blocks
 
-        # Here, change to final_layer
         self.final_layer = _FinalLayer(
             in_features=n_filters,
-            out_features=self.n_outputs,
+            out_features=n_outputs,
         )
         self.min_len = 1
         for i in range(n_blocks):
@@ -208,3 +194,79 @@ class _TemporalBlock(nn.Module):
         out = self.dropout2(out)
         res = x if self.downsample is None else self.downsample(x)
         return self.relu(out + res)
+
+
+class BDTCN(EEGModuleMixin, nn.Module):
+    """Braindecode TCN from Gemein, L et al (2020) [gemein2020]_.
+
+    .. figure:: https://ars.els-cdn.com/content/image/1-s2.0-S1053811920305073-gr3_lrg.jpg
+       :align: center
+       :alt: Braindecode TCN Architecture
+
+    See [gemein2020]_ for details.
+
+    Parameters
+    ----------
+    n_filters: int
+        number of output filters of each convolution
+    n_blocks: int
+        number of temporal blocks in the network
+    kernel_size: int
+        kernel size of the convolutions
+    drop_prob: float
+        dropout probability
+    activation: nn.Module, default=nn.ReLU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+
+    References
+    ----------
+    .. [gemein2020] Gemein, L. A., Schirrmeister, R. T., Chrabąszcz, P., Wilson, D.,
+       Boedecker, J., Schulze-Bonhage, A., ... & Ball, T. (2020). Machine-learning-based
+       diagnostics of EEG pathology. NeuroImage, 220, 117021.
+    """
+
+    def __init__(
+        self,
+        # Braindecode parameters
+        n_chans=None,
+        n_outputs=None,
+        chs_info=None,
+        n_times=None,
+        sfreq=None,
+        input_window_seconds=None,
+        # Model's parameters
+        n_blocks=3,
+        n_filters=30,
+        kernel_size=5,
+        drop_prob=0.5,
+        activation: nn.Module = nn.ReLU,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
+
+        self.base_tcn = TCN(
+            n_chans=self.n_chans,
+            n_outputs=self.n_outputs,
+            n_blocks=n_blocks,
+            n_filters=n_filters,
+            kernel_size=kernel_size,
+            drop_prob=drop_prob,
+            activation=activation,
+        )
+
+        self.final_layer = torch.nn.Sequential(
+            torch.nn.AdaptiveAvgPool1d(1), torch.nn.Flatten()
+        )
+
+    def forward(self, x):
+        x = self.base_tcn(x)
+        x = self.final_layer(x)
+        return x
