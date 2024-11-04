@@ -104,8 +104,6 @@ Models
    :toctree: generated/
 
     FilterBankLayer
-    TCN
-    HybridNet
     GeneralizedGaussianFilter
 
 Training
