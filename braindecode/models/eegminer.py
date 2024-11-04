@@ -261,7 +261,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
 
 class GeneralizedGaussianFilter(nn.Module):
-    """Generalized Gaussian Filter from [eegminer]_.
+    """Generalized Gaussian Filter from Ludwig et al (2024) [eegminer]_.
 
     Implements trainable temporal filters based on generalized Gaussian functions
     in the frequency domain.
@@ -273,6 +273,28 @@ class GeneralizedGaussianFilter(nn.Module):
     The filters are applied to the input signal in the frequency domain, and can
     be optionally transformed back to the time domain using the inverse
     Fourier transform.
+
+    The generalized Gaussian function in the frequency domain is defined as:
+
+    .. math::
+
+        F(x) = \\exp\\left( - \\left( \\frac{abs(x - \\mu)}{\\alpha} \\right)^{\\beta} \\right)
+
+    where:
+      - μ (mu) is the center frequency (`f_mean`).
+
+      - α (alpha) is the scale parameter, reparameterized in terms of the full width at half maximum (FWHM) `h` as:
+
+      .. math::
+
+          \\alpha = \\frac{h}{2 \\left( \\ln(2) \\right)^{1/\\beta}}
+
+      - β (beta) is the shape parameter (`shape`), controlling the shape of the filter.
+
+    The filters are constructed in the frequency domain to allow full control
+    over the magnitude and phase responses.
+
+    A linear phase response is used, with an optional trainable group delay (`group_delay`).
 
     Parameters
     ----------
@@ -304,28 +326,7 @@ class GeneralizedGaussianFilter(nn.Module):
 
     Notes
     -----
-    The generalized Gaussian function in the frequency domain is defined as:
-
-        F(x) = exp(- (|x - μ| / α) ** β)
-
-    where:
-    - μ (mu) is the center frequency (`f_mean`).
-    - α (alpha) is the scale parameter, reparameterized in terms of the full
-    width at half maximum (FWHM) `h` as:
-
-        α = h / (2 * (ln(2)) ** (1/β))
-
-    - β (beta) is the shape parameter (`shape`), controlling the shape of the filter.
-
-    The filters are constructed in the frequency domain to allow full control
-    over the magnitude and phase responses.
-
-    A linear phase response is used, with an optional trainable group delay (`group_delay`).
-
-    Notes
-    -----
-    The model and the module have a patent [eegminercode]_, and the code is CC BY-NC 4.0.
-
+    The model and the module **have a patent** [eegminercode]_, and the **code is CC BY-NC 4.0**.
 
     .. versionadded:: 0.9
 
@@ -413,19 +414,19 @@ class GeneralizedGaussianFilter(nn.Module):
 
         .. math::
 
-            F(x) = exp( - ( \frac{|x - \mu|}{\alpha} \right)^{\beta} \right)
+             F(x) = \\exp\\left( - \\left( \\frac{|x - \\mu|}{\\alpha} \\right)^{\\beta} \\right)
 
         where:
 
-          - :math:`\mu` is the mean (`mean`).
+          - :math:`\\mu` is the mean (`mean`).
 
-          - :math:`\alpha` is the scale parameter, reparameterized using the FWHM :math:`h` as:
+          - :math:`\\alpha` is the scale parameter, reparameterized using the FWHM :math:`h` as:
 
-          .. math::
+            .. math::
 
-              \alpha = \frac{h}{2 \left( \ln(2) \right)^{1/\beta}}
+                \\alpha = \\frac{h}{2 \\left( \\ln(2) \\right)^{1/\\beta}}
 
-           - :math:`\beta` is the shape parameter (`shape`).
+          - :math:`\\beta` is the shape parameter (`shape`).
 
         Parameters
         ----------
