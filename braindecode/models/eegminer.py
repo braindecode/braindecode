@@ -37,13 +37,9 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
     - **Generalized Gaussian** filters in the frequency domain to the input EEG signals.
 
-    - **Connectivity estimators**, by default, we use phase locking value.
+    - **Connectivity estimators** (corr, plv) or **Electrode-Wise Band Power** (mag), by default (plv).
         - `'corr'`: Computes the correlation of the filtered signals.
         - `'plv'`: Computes the phase locking value of the filtered signals.
-
-    or
-
-    --**Electrode-Wise Band Power**
         - `'mag'`: Computes the magnitude of the filtered signals.
 
     - **Feature Normalization**
