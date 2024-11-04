@@ -413,18 +413,19 @@ class GeneralizedGaussianFilter(nn.Module):
 
         .. math::
 
-            F(x) = exp\left( - \left( \frac{|x - \mu|}{\alpha} \right)^{\beta} \right)
+            F(x) = exp( - ( \frac{|x - \mu|}{\alpha} \right)^{\beta} \right)
 
         where:
 
-        - :math:`\mu` is the mean (`mean`).
-        - :math:`\alpha` is the scale parameter, reparameterized using the FWHM :math:`h` as:
+          - :math:`\mu` is the mean (`mean`).
+
+          - :math:`\alpha` is the scale parameter, reparameterized using the FWHM :math:`h` as:
 
           .. math::
 
               \alpha = \frac{h}{2 \left( \ln(2) \right)^{1/\beta}}
 
-        - :math:`\beta` is the shape parameter (`shape`).
+           - :math:`\beta` is the shape parameter (`shape`).
 
         Parameters
         ----------
