@@ -12,6 +12,8 @@ The following components are licensed under the Creative Commons Attribution-Non
 
 - `braindecode/models/eegminer.py`
 
+As well as class later imported into the `braindecode.models.module` named as GeneralizedGaussianFilter.
+
 ## License Links
 
 - [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause)
