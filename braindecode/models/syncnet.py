@@ -9,7 +9,11 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SyncNet(EEGModuleMixin, nn.Module):
-    """Synchronization Network (SyncNet) from [Li2017]_.
+    """Synchronization Network (SyncNet) from Li, Y et al (2017) [Li2017]_.
+
+    .. figure:: https://braindecode.org/dev/_static/model/SyncNet.png
+        :align: center
+        :alt: SyncNet Architecture
 
     SyncNet uses parameterized 1-dimensional convolutional filters inspired by
     the Morlet wavelet to extract features from EEG signals. The filters are

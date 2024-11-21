@@ -29,17 +29,18 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
     EEGMiner is a neural network model for EEG signal classification using
     learnable generalized Gaussian filters. The model leverages frequency domain
-    filtering and connectivity metrics such as Phase Locking Value (PLV) to extract
-    meaningful features from EEG data, enabling effective classification tasks.
+    filtering and connectivity metrics or feature extraction, such as Phase Locking
+    Value (PLV) to extract meaningful features from EEG data, enabling effective
+    classification tasks.
 
     The model has the following steps:
 
     - **Generalized Gaussian** filters in the frequency domain to the input EEG signals.
 
-    - **Connectivity estimators**, by default, we use phase locking value.
-        - `'mag'`: Computes the magnitude of the filtered signals.
+    - **Connectivity estimators** (corr, plv) or **Electrode-Wise Band Power** (mag), by default (plv).
         - `'corr'`: Computes the correlation of the filtered signals.
         - `'plv'`: Computes the phase locking value of the filtered signals.
+        - `'mag'`: Computes the magnitude of the filtered signals.
 
     - **Feature Normalization**
         - Apply batch normalization.
@@ -60,10 +61,10 @@ class EEGMiner(EEGModuleMixin, nn.Module):
     -----
     EEGMiner incorporates learnable parameters for filter characteristics, allowing the
     model to adaptively learn optimal frequency bands and phase delays for the classification task.
-    The use of PLV as a connectivity metric makes EEGMiner suitable for tasks requiring
+    By default, using the PLV as a connectivity metric makes EEGMiner suitable for tasks requiring
     the analysis of phase relationships between different EEG channels.
 
-    The model has a patent [eegminercode]_, and the code is CC BY-NC 4.0.
+    The model and the module have patent [eegminercode]_, and the code is CC BY-NC 4.0.
 
     .. versionadded:: 0.9
 
@@ -71,7 +72,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
     ----------
     method : str, default="plv"
         The method used for feature extraction. Options are:
-        - "mag": Magnitude of the filtered signals.
+        - "mag": Electrode-Wise band power of the filtered signals.
         - "corr": Correlation between filtered channels.
         - "plv": Phase Locking Value connectivity metric.
     filter_f_mean : list of float, default=[23.0, 23.0]
@@ -256,7 +257,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
 
 class GeneralizedGaussianFilter(nn.Module):
-    """Generalized Gaussian Filter from [eegminer]_.
+    """Generalized Gaussian Filter from Ludwig et al (2024) [eegminer]_.
 
     Implements trainable temporal filters based on generalized Gaussian functions
     in the frequency domain.
@@ -268,6 +269,28 @@ class GeneralizedGaussianFilter(nn.Module):
     The filters are applied to the input signal in the frequency domain, and can
     be optionally transformed back to the time domain using the inverse
     Fourier transform.
+
+    The generalized Gaussian function in the frequency domain is defined as:
+
+    .. math::
+
+        F(x) = \\exp\\left( - \\left( \\frac{abs(x - \\mu)}{\\alpha} \\right)^{\\beta} \\right)
+
+    where:
+      - μ (mu) is the center frequency (`f_mean`).
+
+      - α (alpha) is the scale parameter, reparameterized in terms of the full width at half maximum (FWHM) `h` as:
+
+      .. math::
+
+          \\alpha = \\frac{h}{2 \\left( \\ln(2) \\right)^{1/\\beta}}
+
+      - β (beta) is the shape parameter (`shape`), controlling the shape of the filter.
+
+    The filters are constructed in the frequency domain to allow full control
+    over the magnitude and phase responses.
+
+    A linear phase response is used, with an optional trainable group delay (`group_delay`).
 
     Parameters
     ----------
@@ -296,30 +319,12 @@ class GeneralizedGaussianFilter(nn.Module):
         Minimum and maximum allowable values for the center frequency `f_mean` in Hz.
         Specified as (min_f_mean, max_f_mean). Default is (1.0, 45.0).
 
-    Methods
-    -------
-    forward(x)
-        Applies the filters to the input tensor `x` and returns the filtered signal.
 
     Notes
     -----
-    The generalized Gaussian function in the frequency domain is defined as:
+    The model and the module **have a patent** [eegminercode]_, and the **code is CC BY-NC 4.0**.
 
-        F(x) = exp(- (|x - μ| / α) ** β)
-
-    where:
-    - μ (mu) is the center frequency (`f_mean`).
-    - α (alpha) is the scale parameter, reparameterized in terms of the full
-    width at half maximum (FWHM) `h` as:
-
-        α = h / (2 * (ln(2)) ** (1/β))
-
-    - β (beta) is the shape parameter (`shape`), controlling the shape of the filter.
-
-    The filters are constructed in the frequency domain to allow full control
-    over the magnitude and phase responses.
-
-    A linear phase response is used, with an optional trainable group delay (`group_delay`).
+    .. versionadded:: 0.9
 
     References
     ----------
@@ -327,7 +332,13 @@ class GeneralizedGaussianFilter(nn.Module):
        Y., & Zafeiriou, S. (2024). EEGMiner: discovering interpretable features
        of brain activity with learnable filters. Journal of Neural Engineering,
        21(3), 036010.
-
+    .. [eegminercode] Ludwig, S., Bakas, S., Adamos, D. A., Laskaris, N., Panagakis,
+       Y., & Zafeiriou, S. (2024). EEGMiner: discovering interpretable features
+       of brain activity with learnable filters.
+       https://github.com/SMLudwig/EEGminer/.
+       Cogitat, Ltd. "Learnable filters for EEG classification."
+       Patent GB2609265.
+       https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
     """
 
     def __init__(
@@ -399,18 +410,19 @@ class GeneralizedGaussianFilter(nn.Module):
 
         .. math::
 
-            F(x) = \exp\left( - \left( \frac{|x - \mu|}{\alpha} \right)^{\beta} \right)
+             F(x) = \\exp\\left( - \\left( \\frac{|x - \\mu|}{\\alpha} \\right)^{\\beta} \\right)
 
         where:
 
-        - :math:`\mu` is the mean (`mean`).
-        - :math:`\alpha` is the scale parameter, reparameterized using the FWHM :math:`h` as:
+          - :math:`\\mu` is the mean (`mean`).
 
-          .. math::
+          - :math:`\\alpha` is the scale parameter, reparameterized using the FWHM :math:`h` as:
 
-              \alpha = \frac{h}{2 \left( \ln(2) \right)^{1/\beta}}
+            .. math::
 
-        - :math:`\beta` is the shape parameter (`shape`).
+                \\alpha = \\frac{h}{2 \\left( \\ln(2) \\right)^{1/\\beta}}
+
+          - :math:`\\beta` is the shape parameter (`shape`).
 
         Parameters
         ----------

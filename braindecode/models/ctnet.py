@@ -32,7 +32,6 @@ class CTNet(EEGModuleMixin, nn.Module):
         :align: center
         :alt: CTNet Architecture
 
-
     CTNet is an end-to-end neural network architecture designed for classifying motor imagery (MI) tasks from EEG signals.
     The model combines convolutional neural networks (CNNs) with a Transformer encoder to capture both local and global temporal dependencies in the EEG data.
 
@@ -51,7 +50,6 @@ class CTNet(EEGModuleMixin, nn.Module):
         and the Transformer encoder.
         - Flattens the combined features and applies dropout for regularization.
         - Uses a fully connected layer to produce the final classification output.
-
 
     Parameters
     ----------
@@ -79,7 +77,6 @@ class CTNet(EEGModuleMixin, nn.Module):
         Dropout probability for the positional encoding in the Transformer.
     drop_prob_final : float, default=0.5
         Dropout probability before the final classification layer.
-
 
     Notes
     -----

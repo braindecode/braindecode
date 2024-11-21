@@ -13,6 +13,10 @@ from braindecode.models.base import EEGModuleMixin
 class EEGNeX(EEGModuleMixin, nn.Module):
     """EEGNeX model from Chen et al. (2024) [eegnex]_.
 
+    .. figure:: https://braindecode.org/dev/_static/model/eegnex.jpg
+        :align: center
+        :alt: EEGNeX Architecture
+
     Parameters
     ----------
     activation : nn.Module, optional

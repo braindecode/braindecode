@@ -23,6 +23,7 @@ from braindecode.models.functions import (
     safe_log,
 )
 from braindecode.util import np_to_th
+from braindecode.models.eegminer import GeneralizedGaussianFilter
 
 
 class Ensure4d(nn.Module):
@@ -448,7 +449,7 @@ class MLP(nn.Sequential):
     over feature vectors :math:`h_i`, with the input and output feature vectors
     :math:`x = h_0` and :math:`y = h_L`, respectively. The non-linear functions
     :math:`a_i` are called activation functions. The trainable parameters of an
-    MLP are its weights and biases :math:`\phi = \{W_i, b_i | i = 1, \dots, L\}`.
+    MLP are its weights and biases :math:`\\phi = \{W_i, b_i | i = 1, \dots, L\}`.
 
     Parameters:
     -----------
@@ -633,7 +634,6 @@ class FilterBankLayer(nn.Module):
         non-causal) using :func:`~scipy.signal.filtfilt`; ``phase='forward'`` will apply
         the filter once in the forward (causal) direction using
         :func:`~scipy.signal.lfilter`.
-
 
            The behavior for ``phase="minimum"`` was fixed to use a filter of the requested
            length and improved suppression.
@@ -870,6 +870,23 @@ class FilterBankLayer(nn.Module):
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
         return filtered.unsqueeze(1)
+
+
+class LogActivation(nn.Module):
+    """Logarithm activation function."""
+
+    def __init__(self, epsilon: float = 1e-6, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        epsilon : float
+            Small float to adjust the activation.
+        """
+        super().__init__(*args, **kwargs)
+        self.epsilon = epsilon
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
 
 
 class Conv2dWithConstraint(nn.Conv2d):

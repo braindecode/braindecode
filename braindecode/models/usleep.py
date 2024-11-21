@@ -119,7 +119,11 @@ class _DecoderBlock(nn.Module):
 
 class USleep(EEGModuleMixin, nn.Module):
     """
-    Sleep staging architecture from Perslev et al. 2021 [1]_.
+    Sleep staging architecture from Perslev et al. (2021) [1]_.
+
+    .. figure:: https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41746-021-00440-5/MediaObjects/41746_2021_440_Fig2_HTML.png
+        :align: center
+        :alt: USleep Architecture
 
     U-Net (autoencoder with skip connections) feature-extractor for sleep
     staging described in [1]_.
