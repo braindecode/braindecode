@@ -213,7 +213,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.ModuleList(
                 [
                     MaxNormLinear(
-                        in_features=self.F2 * self.n_windows,
+                        in_features=self.tcn_n_filters * self.n_windows,
                         out_features=self.n_outputs,
                         max_norm_val=self.max_norm_const,
                     )
@@ -223,7 +223,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.ModuleList(
                 [
                     MaxNormLinear(
-                        in_features=self.F2,
+                        in_features=self.tcn_n_filters,
                         out_features=self.n_outputs,
                         max_norm_val=self.max_norm_const,
                     )
