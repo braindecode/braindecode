@@ -44,8 +44,6 @@ dependencies = [
     'matplotlib',
     'h5py',
     'skorch',
-    # TODO: remove this once skorch release
-    'scikit-learn<1.6',
     'torch',
     'torchaudio',
     'einops',
