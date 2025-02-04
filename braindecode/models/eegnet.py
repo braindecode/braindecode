@@ -119,7 +119,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         if not final_layer_linear:
             warn(
                 "Parameter 'final_layer_linear=False' is deprecated and will be "
-                "removed in a future release. Please use `final_layer_conv=True`.",
+                "removed in a future release. Please use `final_layer_linear=True`.",
                 DeprecationWarning,
             )
 
