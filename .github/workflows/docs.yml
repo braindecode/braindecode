@@ -33,6 +33,7 @@ jobs:
           key: ${{ runner.os }}-mne-data-v1-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-mne_data-v1-
+            ${{ runner.os }}-v3
 
 
       - name: Debug cache action
@@ -53,9 +54,6 @@ jobs:
         run: pip install -e .[moabb,docs]
       # Show Braindecode Version
       - run: python -c "import braindecode; print(braindecode.__version__)"
-
-      - name: Checking Out Repository
-        uses: actions/checkout@v4
       - name: Create Docs
         run: |
           cd docs
