@@ -39,9 +39,8 @@ jobs:
         run: |
           . .venv/bin/activate
           echo PATH=$PATH >> $GITHUB_ENV
-      # Show Braindecode Version
-      - run: python -c "import braindecode; print(braindecode.__version__)"
-
+          python -c "import braindecode; print(braindecode.__version__)"
+        shell: bash
       - name: Checking Out Repository
         uses: actions/checkout@v4
       - name: Create Docs
