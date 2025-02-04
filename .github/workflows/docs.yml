@@ -17,6 +17,11 @@ jobs:
       ## Install Braindecode
       - name: Checking Out Repository
         uses: actions/checkout@v4
+      # Install python with caching pip dependencies
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip' # caching pip dependencies
       # Cache MNE Data
       # The cache key here is fixed except for os
       # so if you download a new mne dataset in the code, best to manually increment the key below
@@ -25,7 +30,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/mne_data
-          key: ${{ runner.os }}-v3
+          key: ${{ runner.os }}-mne-data-v1-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-mne_data-v1-
+
+
       - name: Debug cache action
         run: |
           ls ~/
