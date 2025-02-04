@@ -43,13 +43,13 @@ jobs:
         uv venv
         uv pip install -e .[moabb,docs]
 
-    - name: Activate virtualenv
+    - name: Activate venv & test
+      # Notice we must do everything in a single run block
       run: |
-        . .venv/bin/activate
-        echo PATH=$PATH >> $GITHUB_ENV
-
-    # Show Braindecode Version
-    - run: python -c "import braindecode; print(braindecode.__version__)"
+        source .venv/bin/activate
+        python -c "import braindecode; print(braindecode.__version__)"
+        pytest --cov=braindecode test/ --cov-report term --cov-report xml:coverage.xml
+      shell: bash
 
     ## Run Tests
     - name: Run Tests # See https://stackoverflow.com/a/59959080/1469195 for the cov-report logic
