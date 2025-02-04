@@ -30,8 +30,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
     Parameters
     ----------
     final_conv_length : int or "auto", default="auto"
-        Length of the final convolution layer. If "auto", it is set based on the n_times.
-    pool_mode : str, {"mean", "max"}, default="mean"
+        Length of the final convolution layer. If "auto", it is set based on n_times.
+    pool_mode : {"mean", "max"}, default="mean"
         Pooling method to use in pooling layers.
     F1 : int, default=8
         Number of temporal filters in the first convolutional layer.
@@ -48,23 +48,22 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
     kernel_length : int, default=64
         Length of the temporal convolution kernel.
     conv_spatial_max_norm : float, default=1
-        Max norm constraint for the spatial convolution layer.
+        Maximum norm constraint for the spatial (depthwise) convolution.
     activation : nn.Module, default=nn.ELU
-        Activation function to apply. Should be a PyTorch activation module like
-        ``nn.ReLU`` or ``nn.ELU`` after the batch normalization layer.
+        Non-linear activation function to be used in the layers.
     batch_norm_momentum : float, default=0.01
-        Momentum for the batch normalization layers.
+        Momentum for instance normalization in batch norm layers.
     batch_norm_affine : bool, default=True
-        Whether to include learnable affine parameters in batch normalization layers.
+        If True, batch norm has learnable affine parameters.
     batch_norm_eps : float, default=1e-3
-        Epsilon value for batch normalization layers.
+        Epsilon for numeric stability in batch norm layers.
     drop_prob : float, default=0.25
-        Dropout probability after the second conv block and before the last layer.
-
-    Notes
-    -----
-    This implementation is not guaranteed to be correct, has not been checked
-    by original authors, only reimplemented from the paper description.
+        Dropout probability.
+    final_layer_conv : bool, default=True
+        If ``True``, uses a convolution-based classification layer. If ``False``,
+        apply a flattened linear layer as the final classification step.
+    norm_rate : float, default=0.25
+        Max-norm constraint value for the linear layer (used if ``final_layer_conv=False``).
 
     References
     ----------
@@ -116,6 +115,13 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         if final_conv_length == "auto":
             assert self.n_times is not None
+
+        if final_layer_conv:
+            warn(
+                "Parameter 'final_layer_conv=True' is deprecated and will be "
+                "removed in a future release. Please use `final_layer_conv=False`.",
+                DeprecationWarning,
+            )
 
         if "third_kernel_size" in kwargs:
             warn(
