@@ -22,7 +22,7 @@ jobs:
       # so if you download a new mne dataset in the code, best to manually increment the key below
       - name: Create/Restore MNE Data Cache
         id: cache-mne_data
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ~/mne_data
           key: ${{ runner.os }}-v3
