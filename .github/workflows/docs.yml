@@ -39,9 +39,9 @@ jobs:
         run: |
           ls ~/
           echo "mne data"
-          ls ~/mne_data/
+          ls ~/mne_data/ | echo "cache miss"
           echo "*******  BNCI2024  *******"
-          ls ~/mne_data/MNE-bnci-data/database/data-sets/001-2014/
+          ls ~/mne_data/MNE-bnci-data/database/data-sets/001-2014/ | echo "cache miss"
 
       - name: Show Python Version
         run: python --version
