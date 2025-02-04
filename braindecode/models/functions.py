@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 
 def rescale_parameter(param, layer_id):
-    """Recaling the l-th transformer layer.
+    r"""Recaling the l-th transformer layer.
 
     Rescales the parameter tensor by the inverse square root of the layer id.
     Made inplace. :math:`\frac{1}{\sqrt{2 \cdot \text{layer\_id}}}` [Beit2022]
@@ -150,7 +150,7 @@ def _get_gaussian_kernel1d(kernel_size: int, sigma: float) -> torch.Tensor:
 
 
 def hilbert_freq(x, forward_fourier=True):
-    """
+    r"""
     Compute the Hilbert transform using PyTorch, separating the real and
     imaginary parts.
 
