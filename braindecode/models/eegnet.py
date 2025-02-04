@@ -59,8 +59,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         Epsilon for numeric stability in batch norm layers.
     drop_prob : float, default=0.25
         Dropout probability.
-    final_layer_conv : bool, default=True
-        If ``True``, uses a convolution-based classification layer. If ``False``,
+    final_layer_linear : bool, default=False
+        If ``False``, uses a convolution-based classification layer. If ``True``,
         apply a flattened linear layer as the final classification step.
     norm_rate : float, default=0.25
         Max-norm constraint value for the linear layer (used if ``final_layer_conv=False``).
@@ -96,7 +96,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         batch_norm_affine: bool = True,
         batch_norm_eps: float = 1e-3,
         drop_prob: float = 0.25,
-        final_layer_conv: bool = True,
+        final_layer_linear: bool = False,
         norm_rate: float = 0.25,
         # Other ways to construct the signal related parameters
         chs_info: Optional[List[Dict]] = None,
@@ -116,10 +116,10 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         if final_conv_length == "auto":
             assert self.n_times is not None
 
-        if final_layer_conv:
+        if not final_layer_linear:
             warn(
-                "Parameter 'final_layer_conv=True' is deprecated and will be "
-                "removed in a future release. Please use `final_layer_conv=False`.",
+                "Parameter 'final_layer_linear=False' is deprecated and will be "
+                "removed in a future release. Please use `final_layer_conv=True`.",
                 DeprecationWarning,
             )
 
@@ -264,7 +264,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
-        if final_layer_conv:
+        if not final_layer_linear:
             module.add_module(
                 "conv_classifier",
                 nn.Conv2d(
