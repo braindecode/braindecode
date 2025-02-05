@@ -23,8 +23,6 @@ jobs:
           python-version: '3.12'
           cache: 'pip' # caching pip dependencies
       # Cache MNE Data
-      # The cache key here is fixed except for os
-      # so if you download a new mne dataset in the code, best to manually increment the key below
       - name: Create/Restore MNE Data Cache
         id: cache-mne_data
         uses: actions/cache@v4
@@ -33,18 +31,6 @@ jobs:
           key: ${{ runner.os }}-mne-data-v1-${{ github.run_id }}
           restore-keys: |
             ${{ runner.os }}-mne-data-v1-
-
-
-      - name: Debug cache action
-        run: |
-          ls ~/
-          echo "mne data"
-          ls ~/mne_data/ | echo "cache miss"
-          echo "*******  BNCI2024  *******"
-          ls ~/mne_data/MNE-bnci-data/database/data-sets/001-2014/ | echo "cache miss"
-
-      - name: Show Python Version
-        run: python --version
       # Update pip
       - name: Update pip
         run: pip install --upgrade pip
