@@ -77,7 +77,7 @@ class Expression(nn.Module):
 
 
 class SafeLog(nn.Module):
-    """
+    r"""
     Safe logarithm activation function module.
 
     :math:\text{SafeLog}(x) = \log\left(\max(x, \epsilon)\right)
@@ -439,7 +439,7 @@ class CombinedConv(nn.Module):
 
 
 class MLP(nn.Sequential):
-    """Multilayer Perceptron (MLP) with GELU activation and optional dropout.
+    r"""Multilayer Perceptron (MLP) with GELU activation and optional dropout.
 
     Also known as fully connected feedforward network, an MLP is a sequence of
     non-linear parametric functions
