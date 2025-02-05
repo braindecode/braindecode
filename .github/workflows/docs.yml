@@ -32,8 +32,7 @@ jobs:
           path: ~/mne_data
           key: ${{ runner.os }}-mne-data-v1-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-mne_data-v1-
-            ${{ runner.os }}-v3
+            ${{ runner.os }}-mne-data-v1-
 
 
       - name: Debug cache action
