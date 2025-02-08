@@ -9,6 +9,7 @@ import sys
 import pytest
 import numpy as np
 import pandas as pd
+import warnings
 
 from braindecode.datasets import BaseConcatDataset, MOABBDataset
 from braindecode.preprocessing import (
