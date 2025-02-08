@@ -280,6 +280,9 @@ class EEGWindowsDataset(BaseDataset):
             dataset description.
         """
         description = _create_description(description)
+        if self._description is None:
+            self._description = description
+            return
         for key, value in description.items():
             # if they key is already in the existing description, drop it
             if key in self._description:
@@ -404,6 +407,9 @@ class WindowsDataset(BaseDataset):
             dataset description.
         """
         description = _create_description(description)
+        if self._description is None:
+            self._description = description
+            return
         for key, value in description.items():
             # if they key is already in the existing description, drop it
             if key in self._description:
