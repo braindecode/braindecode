@@ -308,6 +308,7 @@ def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
         loaded_concat_raw_dataset = load_concat_dataset(
             path=tmpdir, preload=False, n_jobs=2
         )
+        warnings.warn("", UserWarning)
         assert len(raised_warnings) >= 0
     assert len(concat_raw_dataset) == len(loaded_concat_raw_dataset)
     assert len(concat_raw_dataset.datasets) == len(
