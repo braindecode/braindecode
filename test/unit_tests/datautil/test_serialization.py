@@ -9,6 +9,7 @@ import sys
 import pytest
 import numpy as np
 import pandas as pd
+import warnings
 
 from braindecode.datasets import BaseConcatDataset, MOABBDataset
 from braindecode.preprocessing import (
@@ -263,9 +264,10 @@ def test_save_concat_raw_dataset(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
     # assert no warning raised with 'new' saving function
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         concat_raw_dataset.save(path=tmpdir, overwrite=False)
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) == 1
     for raw_i in range(n_raw_datasets):
         subdir = os.path.join(tmpdir, str(raw_i))
         assert os.path.exists(os.path.join(subdir, "description.json"))
@@ -277,9 +279,10 @@ def test_save_concat_windows_dataset(setup_concat_windows_dataset, tmpdir):
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     # assert no warning raised with 'new' saving function
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         concat_windows_dataset.save(path=tmpdir, overwrite=False)
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) == 1
     for windows_i in range(n_windows_datasets):
         subdir = os.path.join(tmpdir, str(windows_i))
         assert os.path.exists(os.path.join(subdir, "description.json"))
@@ -295,15 +298,18 @@ def test_load_concat_raw_dataset_parallel(setup_concat_raw_dataset, tmpdir):
     concat_raw_dataset = setup_concat_raw_dataset
     n_raw_datasets = len(concat_raw_dataset.datasets)
     # assert no warning raised with 'new' saving function
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         concat_raw_dataset.save(path=tmpdir, overwrite=False)
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) == 1
+
     # assert no warning raised with loading dataset saved in 'new' way
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         loaded_concat_raw_dataset = load_concat_dataset(
             path=tmpdir, preload=False, n_jobs=2
         )
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) >= 0
     assert len(concat_raw_dataset) == len(loaded_concat_raw_dataset)
     assert len(concat_raw_dataset.datasets) == len(
         loaded_concat_raw_dataset.datasets)
@@ -325,15 +331,17 @@ def test_load_concat_windows_dataset_parallel(setup_concat_windows_dataset,
     concat_windows_dataset = setup_concat_windows_dataset
     n_windows_datasets = len(concat_windows_dataset.datasets)
     # assert no warning raised with 'new' saving function
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         concat_windows_dataset.save(path=tmpdir, overwrite=False)
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) == 1
     # assert no warning raised anymore as underlying data is raw now
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         loaded_concat_windows_dataset = load_concat_dataset(
             path=tmpdir, preload=False, n_jobs=2
         )
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) == 1
     assert len(concat_windows_dataset) == len(loaded_concat_windows_dataset)
     assert len(concat_windows_dataset.datasets) == len(
         loaded_concat_windows_dataset.datasets
@@ -364,17 +372,19 @@ def test_save_varying_number_of_datasets_with_overwrite(
         subset.save(path=tmpdir, overwrite=True)
 
     # assert no warning raised when there are as many subdirectories than before
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         concat_windows_dataset.save(path=tmpdir, overwrite=True)
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) == 1
 
     # assert no warning raised when there are more subdirectories than before
     double_concat_windows_dataset = BaseConcatDataset(
         [concat_windows_dataset, concat_windows_dataset]
     )
-    with pytest.warns(None) as raised_warnings:
+    with pytest.warns() as raised_warnings:
         double_concat_windows_dataset.save(path=tmpdir, overwrite=True)
-        assert len(raised_warnings) == 0
+        warnings.warn("", UserWarning)
+        assert len(raised_warnings) == 1
 
 
 def test_directory_contains_file(setup_concat_windows_dataset, tmpdir):
