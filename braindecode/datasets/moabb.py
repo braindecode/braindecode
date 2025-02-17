@@ -56,8 +56,13 @@ def _fetch_and_unpack_moabb_data(dataset, subject_ids=None, dataset_load_kwargs=
 
 
 def _annotations_from_moabb_stim_channel(raw, dataset):
-    # find events from stim channel
-    events = mne.find_events(raw)
+    # find events from the stim channel
+    stim_channels = mne.utils._get_stim_channel(None, raw.info, raise_error=False)
+    if len(stim_channels) > 0:
+        # returns an empty array if none found
+        events = mne.find_events(raw, shortest_event=0, verbose=False)
+    else:
+        events, _ = mne.events_from_annotations(raw, verbose=False)
 
     # get annotations from events
     event_desc = {k: v for v, k in dataset.event_id.items()}
@@ -141,7 +146,7 @@ class MOABBDataset(BaseConcatDataset):
         dataset_load_kwargs: dict[str, Any] | None = None,
     ):
         # soft dependency on moabb
-        from moabb import __version__ as moabb_version
+        from moabb import __version__ as moabb_version  # type: ignore[attr-defined]
 
         if moabb_version == "1.0.0":
             warnings.warn(
