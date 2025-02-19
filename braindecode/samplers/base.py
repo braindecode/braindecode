@@ -9,7 +9,9 @@ Sampler classes.
 
 import numpy as np
 from torch.utils.data.sampler import Sampler
+from torch.utils.data.distributed import DistributedSampler
 from sklearn.utils import check_random_state
+from typing import Optional
 
 
 class RecordingSampler(Sampler):
@@ -110,6 +112,118 @@ class RecordingSampler(Sampler):
     def n_recordings(self):
         return self.info.shape[0]
 
+class DistributedRecordingSampler(DistributedSampler):
+    """Base sampler simplifying sampling from recordings in distributed setting.
+
+    Parameters
+    ----------
+    metadata : pd.DataFrame
+        DataFrame with at least one of {subject, session, run} columns for each
+        window in the BaseConcatDataset to sample examples from. Normally
+        obtained with `BaseConcatDataset.get_metadata()`. For instance,
+        `metadata.head()` might look like this:
+
+           i_window_in_trial  i_start_in_trial  i_stop_in_trial  target  subject    session    run
+        0                  0                 0              500      -1        4  session_T  run_0
+        1                  1               500             1000      -1        4  session_T  run_0
+        2                  2              1000             1500      -1        4  session_T  run_0
+        3                  3              1500             2000      -1        4  session_T  run_0
+        4                  4              2000             2500      -1        4  session_T  run_0
+
+    random_state : np.RandomState | int | None
+        Random state.
+
+    Attributes
+    ----------
+    info : pd.DataFrame
+        Series with MultiIndex index which contains the subject, session, run
+        and window indices information in an easily accessible structure for
+        quick sampling of windows.
+    n_recordings : int
+        Number of recordings available.
+    """
+    def __init__(
+            self, 
+            metadata,
+            random_state=None,
+    ):
+        self.metadata = metadata
+        self.info = self._init_info(metadata)
+        self.rng = check_random_state(random_state)
+        # send information to DistributedSampler parent to handle data splitting among workers
+        super().__init__(self.info, random_state)
+         # super iter should contain only indices of datasets specific to the current process
+        self._iterator = list(super().__iter__())
+
+    def _init_info(self, metadata, required_keys=None):
+        """Initialize ``info`` DataFrame.
+
+        Parameters
+        ----------
+        required_keys : list(str) | None
+            List of additional columns of the metadata DataFrame that we should
+            groupby when creating ``info``.
+
+        Returns
+        -------
+            See class attributes.
+        """
+        keys = [k for k in ["subject", "session", "run"] if k in self.metadata.columns]
+        if not keys:
+            raise ValueError(
+                "metadata must contain at least one of the following columns: "
+                "subject, session or run."
+            )
+
+        if required_keys is not None:
+            missing_keys = [k for k in required_keys if k not in self.metadata.columns]
+            if len(missing_keys) > 0:
+                raise ValueError(f"Columns {missing_keys} were not found in metadata.")
+            keys += required_keys
+
+        metadata = metadata.reset_index().rename(columns={"index": "window_index"})
+        info = (
+            metadata.reset_index()
+            .groupby(keys)[["index", "i_start_in_trial"]]
+            .agg(["unique"])
+        )
+        info.columns = info.columns.get_level_values(0)
+
+        return info
+
+    def sample_recording(self):
+        """Return a random recording index.
+        self._iterator contains indices of datasets specific to the current process
+        determined by the DistributedSampler
+        """
+        # XXX docstring missing
+        return self.rng.choice(self._iterator)
+
+    def sample_window(self, rec_ind=None):
+        """Return a specific window.
+        """
+        # XXX docstring missing
+        if rec_ind is None:
+            rec_ind = self.sample_recording()
+        win_ind = self.rng.choice(self.info.iloc[rec_ind]['index'])
+        return win_ind, rec_ind
+
+    def sample_recording(self):
+        """Return a random recording index."""
+        # XXX docstring missing
+        return self.rng.choice(self.n_recordings)
+
+    def sample_window(self, rec_ind=None):
+        """Return a specific window."""
+        # XXX docstring missing
+        if rec_ind is None:
+            rec_ind = self.sample_recording()
+        win_ind = self.rng.choice(self.info.iloc[rec_ind]["index"])
+        return win_ind, rec_ind
+
+    @property
+    def n_recordings(self):
+        return self.__len__()
 
 class SequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.
