@@ -146,12 +146,13 @@ class DistributedRecordingSampler(DistributedSampler):
             self, 
             metadata,
             random_state=None,
+            shuffle=None,
     ):
         self.metadata = metadata
         self.info = self._init_info(metadata)
         self.rng = check_random_state(random_state)
         # send information to DistributedSampler parent to handle data splitting among workers
-        super().__init__(self.info, random_state)
+        super().__init__(self.info, shuffle=shuffle)
          # super iter should contain only indices of datasets specific to the current process
         self._iterator = list(super().__iter__())
 
@@ -223,7 +224,7 @@ class DistributedRecordingSampler(DistributedSampler):
 
     @property
     def n_recordings(self):
-        return self.__len__()
+        return len(self._iterator)
 
 class SequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.

@@ -230,6 +230,6 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
                 yield self.examples[i]
             else:
                 yield self._sample_pair()
-
+                
     def __len__(self):
         return self.n_examples
