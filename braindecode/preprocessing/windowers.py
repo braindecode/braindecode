@@ -546,10 +546,20 @@ def _create_windows_from_events(
         # We could also just say we just assume window size=trial size
         # in case not given, without this condition...
         # but then would have to change functions overall
-        # to deal with varying window sizes hmmhmh
-        assert np.all(this_trial_sizes == window_size_samples), (
-            "All trial sizes should be the same if you do not supply a window " "size."
-        )
+        # to deal with varying windevents[:, -1]ow sizes hmmhmh
+        this_trial_sizes[-1] = this_trial_sizes[-1] - 1
+
+        checker_trials_size = this_trial_sizes == window_size_samples
+
+        if not np.all(checker_trials_size):
+            trials_drops = int(len(this_trial_sizes) - sum(checker_trials_size))
+            warnings.warn(
+                f"Dropping trials with different windows size {trials_drops}",
+            )
+            bads_size_trials = checker_trials_size
+            events = events[checker_trials_size]
+            onsets = onsets[checker_trials_size]
+            stops = stops[checker_trials_size]
 
     description = events[:, -1]
 
