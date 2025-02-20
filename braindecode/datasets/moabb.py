@@ -61,11 +61,12 @@ def _annotations_from_moabb_stim_channel(raw, dataset):
     if len(stim_channels) > 0:
         # returns an empty array if none found
         events = mne.find_events(raw, shortest_event=0, verbose=False)
+        event_id = dataset.event_id
     else:
-        events, _ = mne.events_from_annotations(raw, verbose=False)
+        events, event_id = mne.events_from_annotations(raw, verbose=False)
 
     # get annotations from events
-    event_desc = {k: v for v, k in dataset.event_id.items()}
+    event_desc = {k: v for v, k in event_id.items()}
     annots = mne.annotations_from_events(events, raw.info["sfreq"], event_desc)
 
     # set trial on and offset given by moabb
