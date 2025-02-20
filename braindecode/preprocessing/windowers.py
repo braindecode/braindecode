@@ -546,8 +546,6 @@ def _create_windows_from_events(
         # We could also just say we just assume window size=trial size
         # in case not given, without this condition...
         # but then would have to change functions overall
-        # to deal with varying windevents[:, -1]
-        this_trial_sizes[-1] = this_trial_sizes[-1] - 1
 
         checker_trials_size = this_trial_sizes == window_size_samples
 
