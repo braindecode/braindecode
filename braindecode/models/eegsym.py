@@ -1,3 +1,7 @@
+from __future__ import annotations
+import re
+from math import ceil
+
 import torch
 
 import numpy as np
@@ -32,12 +36,16 @@ class EEGSym(EEGModuleMixin, nn.Module):
         Dropout probability. Default is 0.25.
     activation : nn.Module, optional
         Activation function to use. Default is nn.ELU().
-    ch_lateral : int, optional
-        Number of channels attributed to one hemisphere of the head. Default is 3.
     spatial_resnet_repetitions : int, optional
         Number of repetitions of the spatial analysis operations at each step.
         Default is 1.
-
+    left_right_chs : list of tuple of str, optional
+        Optional list of tuples with the names of the left and right hemisphere channels.
+        If not provided, the channels will be split using function division_channels_idx,
+        and left/right channels will be matched by the function match_hemisphere_chans.
+    middle_chs : list of str, optional
+        Optional list of the names of the middle channels. If not provided, the channels
+        will be split using function division_channels_idx.
 
     References
     ----------
@@ -63,9 +71,14 @@ class EEGSym(EEGModuleMixin, nn.Module):
         scales_time: Tuple[int, int, int] = (500, 250, 125),
         drop_prob: float = 0.25,
         activation: nn.Module = nn.ELU(),
-        ch_lateral: int = 3,
         spatial_resnet_repetitions: int = 1,
+        left_right_chs: list[tuple[str, str]] | None = None,
+        middle_chs: list[str] | None = None,
     ):
+        if (left_right_chs is None) != (middle_chs is None):
+            raise ValueError(
+                "Either both or none of left_right_chs and middle_chs must be provided."
+            )
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -80,21 +93,23 @@ class EEGSym(EEGModuleMixin, nn.Module):
         self.scales_time = scales_time
         self.drop_prob = drop_prob
         self.activation = activation
-        self.ch_lateral = ch_lateral
         self.spatial_resnet_repetitions = spatial_resnet_repetitions
 
         # Calculate scales in samples
-        self.scales_samples = [int(s * self.sfreq / 1000) for s in scales_time]
+        self.scales_samples = [int(s * self.sfreq / 2000) * 2 + 1 for s in scales_time]
 
-        # if self.ch_info is None:
-        #     raise ValueError("ch_info must be provided when symmetric is True")
-        if ch_lateral < self.n_chans // 2:
-            self.superposition = True
+        ch_names = [ch["name"] for ch in self.chs_info]
+        if left_right_chs is None:
+            left_chs, right_chs, middle_chs = division_channels_idx(ch_names)
+            left_chs, right_chs = zip(*match_hemisphere_chans(left_chs, right_chs))
         else:
-            self.superposition = False
+            left_chs, right_chs = zip(*left_right_chs)
+        self.left_idx, self.right_idx, self.middle_idx = [
+            [ch_names.index(ch) for ch in ch_subset]
+            for ch_subset in (left_chs, right_chs, middle_chs)
+        ]
 
-        self.n_channels_per_hemi = self.n_chans - ch_lateral
-        self.division = 2
+        self.n_channels_per_hemi = len(self.left_idx) + len(self.middle_idx)
 
         # Build the model
         self._build_model()
@@ -113,7 +128,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
             in_channels=self.filters_per_branch * len(self.scales_samples),
             scales_samples=[max(1, s // 4) for s in self.scales_samples],
             filters_per_branch=self.filters_per_branch,
-            ncha=self.n_channels_per_hemi,
+            ncha=1,
             average_pool=2,
         )
 
@@ -182,8 +197,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Final fully connected layer
         self.final_layer = nn.Linear(
             in_features=int(
-                int(self.filters_per_branch * len(self.scales_samples) / 2)
-                * self.division
+                int(self.filters_per_branch * len(self.scales_samples) / 2) * 2
             ),
             out_features=self.n_outputs,
         )
@@ -236,16 +250,11 @@ class EEGSym(EEGModuleMixin, nn.Module):
             Output tensor of shape (batch_size, n_classes).
         """
         # Reshape and split into left and right hemispheres
-        x = x.unsqueeze(1)  # (batch_size, 1, n_channels, n_times)
-        left = x[:, :, : self.ch_lateral, :]
-        right = x[:, :, -self.ch_lateral :, :]
-
-        if self.superposition:
-            central = x[:, :, self.ch_lateral : -self.ch_lateral, :]
-            left = torch.cat((left, central), dim=2)
-            right = torch.cat((right, central), dim=2)
-
-        x = torch.cat((left.unsqueeze(1), right.unsqueeze(1)), dim=1)
+        x = x[  # (batch_size, 1, 2, n_channels_per_hemi, n_times)
+            :,
+            (self.left_idx + self.middle_idx, self.right_idx + self.middle_idx),
+            :,
+        ].unsqueeze(1)
 
         # Initial inception modules
         x = self.inception_block1([x])
@@ -329,8 +338,8 @@ class InceptionBlock(nn.Module):
                     nn.Conv3d(
                         in_channels=in_channels,
                         out_channels=filters_per_branch,
-                        kernel_size=(1, scale, 1),
-                        padding=(0, scale // 2, 0),
+                        kernel_size=(1, 1, scale),
+                        padding=(0, 0, scale // 2),
                     ),
                     nn.BatchNorm3d(filters_per_branch),
                     activation,
@@ -347,7 +356,7 @@ class InceptionBlock(nn.Module):
                         nn.Conv3d(
                             in_channels=filters_per_branch * len(scales_samples),
                             out_channels=filters_per_branch * len(scales_samples),
-                            kernel_size=(1, 1, ncha),
+                            kernel_size=(1, ncha, 1),
                             groups=filters_per_branch * len(scales_samples),
                             padding=(0, 0, 0),
                         ),
@@ -356,6 +365,12 @@ class InceptionBlock(nn.Module):
                         nn.Dropout(drop_prob),
                     )
                 )
+
+        self.pool = (
+            nn.AvgPool3d(kernel_size=(1, 1, average_pool))
+            if average_pool != 1
+            else nn.Identity()
+        )
 
     def forward(self, x_list):
         outputs = []
@@ -368,8 +383,7 @@ class InceptionBlock(nn.Module):
             x_out = x_out + x
 
             # Average pooling
-            if self.average_pool != 1:
-                x_out = nn.AvgPool3d(kernel_size=(1, self.average_pool, 1))(x_out)
+            x_out = self.pool(x_out)
 
             # Apply spatial convolutions
             if hasattr(self, "spatial_convs"):
@@ -426,8 +440,8 @@ class ResidualBlock(nn.Module):
             nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
-                kernel_size=(1, kernel_size, 1),
-                padding=(0, kernel_size // 2, 0),
+                kernel_size=(1, 1, kernel_size),
+                padding=(0, 0, kernel_size // 2),
             ),
             nn.BatchNorm3d(filters),
             activation,
@@ -435,11 +449,11 @@ class ResidualBlock(nn.Module):
         )
 
         # Average pooling
-        self.avg_pool = nn.AvgPool3d(kernel_size=(1, average_pool, 1))
+        self.avg_pool = nn.AvgPool3d(kernel_size=(1, 1, average_pool))
 
     def forward(self, x):
         x_res = self.temporal_conv(x)
-        x_res = x_res + x
+        x_res = x_res[..., : x.shape[-1]] + x
         x_out = self.avg_pool(x_res)
         return x_out
 
@@ -480,8 +494,8 @@ class TemporalBlock(nn.Module):
             nn.Conv3d(
                 in_channels=in_channels,
                 out_channels=filters,
-                kernel_size=(1, kernel_size, 1),
-                padding=(0, kernel_size // 2, 0),
+                kernel_size=(1, 1, kernel_size),
+                padding=(0, 0, kernel_size // 2),
             ),
             nn.BatchNorm3d(filters),
             activation,
@@ -643,104 +657,70 @@ class OutputBlock(nn.Module):
         return x
 
 
-def sort_channels_by_y(channels, front_to_back=True):
-    """Sort a list of EEG channels based on their y-coordinate position in the
-    10-05 system.
+def match_hemisphere_chans(left_chs, right_chs):
+    """
+    This function matches the channels of the left and right hemispheres based on their names.
+    It returns a list of tuples with matched channel names.
 
     Parameters
-    ------------
-    channels: list
-        List of EEG channel names.
-    front_to_back: bool, optional
-        Determines the sorting order, from front to back or from back to front.
-        Defaults to True.
+    ----------
+    left_chs : list of str
+        A list of channel names from the left hemisphere.
+    right_chs : list of str
+        A list of channel names from the right hemisphere.
 
     Returns
-    ------------
-    sorted_channels: list
-        Sorted list of EEG channel names.
-
+    -------
+    list of tuples
+        Returns a list of tuples with matched channel names from the left and right hemispheres.
+    Raises
+    ------
+    ValueError
+        If the left anr right channels do not match.
     """
-    montage = make_standard_montage("standard_1005", head_size=1)
-    channels_temp = montage.ch_names.copy()
-    for item in ["T3", "T4", "T5", "T6"]:
-        channels_temp.pop(channels_temp.index(item))
-    info = mne.create_info(ch_names=channels_temp, sfreq=120, ch_types="eeg")
-    info.set_montage("standard_1005")
-    eeg_layout = mne.channels.make_eeg_layout(info)
-    layout_names = [ch.upper() for ch in eeg_layout.names]
-    positions = eeg_layout.pos[:, :2]
-    positions[:, 0] = positions[:, 0] - 0.5
-
-    # montage_2 = mne.channels.montage.transform_to_head(montage)
-    # eeg_dictionary_temp = montage_2._get_ch_pos()
-    # eeg_dictionary = {key.upper(): value for key, value in eeg_dictionary_temp.items()}
-
-    region_channels = {}
-    for channel in channels:
-        match = search(r"^[a-zA-Z]+(?=[\d|z|Z])", channel)
-        if match:
-            prefix = match.group()
-            # Replace 'C' with 'T' in the prefix to treat them as the same
-            normalized_prefix = prefix.replace("C", "T")
-            if normalized_prefix not in region_channels:
-                region_channels[normalized_prefix] = []
-            region_channels[normalized_prefix].append(channel)
-
-    # sorted_channels = sorted(channels, key=lambda x: (np.mean([
-    #     eeg_dictionary[ch.upper()][1] for ch in region_channels[search(r'^['
-    #                                                                r'a-zA-Z]+(?=[\d|z|Z])', x).group().replace('C',
-    #                                                                             'T')]]),
-    #                                                   (int(search(r'\d+', x).group()) if search(r'\d+', x) else 0,
-    #              'h' not in x),
-    #                          reverse=front_to_back)
-    sorted_channels = sorted(
-        channels,
-        key=lambda x: (
-            np.mean(
-                [
-                    positions[layout_names.index(ch.upper())][1]
-                    for ch in region_channels[
-                        search(r"^[a-zA-Z]+(?=[\d|z|Z])", x).group().replace("C", "T")
-                    ]
-                ]
-            ),
-            (
-                int(search(r"\d+", x).group()) if search(r"\d+", x) else 0,
-                "h" not in x,
-            ),  # Sorting by number in descending order and prioritizing channels without 'h'
-        ),
-        reverse=front_to_back,
-    )
-
-    return sorted_channels
+    if len(left_chs) != len(right_chs):
+        raise ValueError("Left and right channels do not match.")
+    right_chs = list(right_chs)
+    regexp = r"\d+"
+    out = []
+    for left in left_chs:
+        match = re.search(regexp, left)
+        if match is None:
+            raise ValueError(f"Channel '{left}' does not contain a number.")
+        chan_idx = 1 + int(match.group())
+        target_r = re.sub(regexp, str(chan_idx), left)
+        for right in right_chs:
+            if right == target_r:
+                out.append((left, right))
+                right_chs.remove(right)
+                break
+        else:
+            raise ValueError(
+                f"Found no right hemisphere matching channel for '{left}'."
+            )
+    return out
 
 
-def division_channels_idx(channels, front_to_back=True):
+def division_channels_idx(ch_names):
     """
     This function divides a list of EEG channel names into three lists: left,
-    right, and middle, based on their indices.  It categorizes each channel
+    right, and middle, based on their names.  It categorizes each channel
     by its number: odd-numbered channels go into the left list, even-numbered
     channels into the right list, and channels without numbers into the
-    middle list. Each list is then sorted by their y-coordinates if specified by
-    'front_to_back'. Finally, it returns the indices of the channels in the
-    original list for each category.
+    middle list.
 
-     Parameters
+    Parameters
     ----------
-    channels : list of str
+    ch_names : list of str
         A list of EEG channel names to be divided based on their numbering and arranged.
-    front_to_back : bool, optional
-        A boolean flag that indicates whether the channels should be sorted from front to back based on their y-coordinates.
-        Default is True.
 
     Returns
     -------
     tuple of lists
-        Returns three lists containing the indices of left, right, and middle channel names in the original list:
-        - left_idx: Indices of odd-numbered channels.
-        - right_idx: Indices of even-numbered channels.
-        - middle_idx: Indices of channels that do not contain numbers.
+        Returns three lists containing the left, right, and middle channel names in the original list:
+        - left: Odd-numbered channels.
+        - right: Even-numbered channels.
+        - middle: Channels that do not contain numbers.
 
     Notes
     -----
@@ -752,31 +732,25 @@ def division_channels_idx(channels, front_to_back=True):
     --------
     >>> channels = ['FP1', 'FP2', 'O1', 'O2', 'FZ']
     >>> division_channels_idx(channels)
-    ([0, 2], [1, 3], [4])
+    (['FP1, 'O1'], ['FP2', 'O2'], ['Fz'])
     """
     left, right, middle = [], [], []
-    for channel in channels:
-        number = search(r"\d+", channel)
+    for ch in ch_names:
+        number = search(r"\d+", ch)
         if number is not None:
-            (left if int(number[0]) % 2 else right).append(channel)
+            (left if int(number[0]) % 2 else right).append(ch)
         else:
-            middle.append(channel)
+            middle.append(ch)
 
-    left = sort_channels_by_y(left, front_to_back=front_to_back)
-    right = sort_channels_by_y(right, front_to_back=front_to_back)
-    middle = sort_channels_by_y(middle, front_to_back=front_to_back)
-
-    left_idx = [list(channels).index(channel) for channel in left]
-    right_idx = [list(channels).index(channel) for channel in right]
-    middle_idx = [list(channels).index(channel) for channel in middle]
-
-    return left_idx, right_idx, middle_idx
+    return left, right, middle
 
 
 if __name__ == "__main__":
-    x = torch.zeros(1, 22, 1000)
+    ch_names = ["FP1", "FP2", "O1", "O2", "FZ"]
+    chs_info = [{"name": ch} for ch in ch_names]
+    x = torch.zeros(1, 5, 1000)
 
-    model = EEGSym(n_chans=22, n_times=1000, n_outputs=2, sfreq=250)
+    model = EEGSym(chs_info=chs_info, n_times=1000, n_outputs=2, sfreq=250)
 
     with torch.no_grad():
         out = model(x)
