@@ -98,7 +98,7 @@ class EEGSym(EEGModuleMixin, nn.Module):
         # Calculate scales in samples
         self.scales_samples = [int(s * self.sfreq / 2000) * 2 + 1 for s in scales_time]
 
-        ch_names = [ch["name"] for ch in self.chs_info]
+        ch_names = [ch["ch_name"] for ch in self.chs_info]
         if left_right_chs is None:
             left_chs, right_chs, middle_chs = division_channels_idx(ch_names)
             left_chs, right_chs = zip(*match_hemisphere_chans(left_chs, right_chs))
@@ -747,7 +747,7 @@ def division_channels_idx(ch_names):
 
 if __name__ == "__main__":
     ch_names = ["FP1", "FP2", "O1", "O2", "FZ"]
-    chs_info = [{"name": ch} for ch in ch_names]
+    chs_info = [{"ch_name": ch} for ch in ch_names]
     x = torch.zeros(1, 5, 1000)
 
     model = EEGSym(chs_info=chs_info, n_times=1000, n_outputs=2, sfreq=250)
