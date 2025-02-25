@@ -1252,7 +1252,7 @@ def test_eegminer_plv_values_range():
 def test_eegnetv4_final_layer_linear_true():
     """Test that final_layer_linear=True uses a conv-based classifier without warning."""
     model = EEGNetv4(
-        final_layer_linear=True,
+        final_layer_with_constraint=True,
         n_chans=4,
         n_times=128,
         n_outputs=2

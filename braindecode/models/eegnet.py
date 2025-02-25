@@ -264,7 +264,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
         # Incorporating classification module and subsequent ones in one final layer
         module = nn.Sequential()
-        if not final_layer_linear:
+        if not final_layer_with_constraint:
             module.add_module(
                 "conv_classifier",
                 nn.Conv2d(
