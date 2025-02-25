@@ -108,7 +108,7 @@ def _pad_shift_array(x, stride=1):
     """
     if x.ndim != 3:
         raise NotImplementedError(
-            "x must be of shape (n_rows, n_classes, n_windows), got " f"{x.shape}"
+            f"x must be of shape (n_rows, n_classes, n_windows), got {x.shape}"
         )
     x_padded = np.pad(x, ((0, 0), (0, 0), (0, (x.shape[0] - 1) * stride)))
     orig_strides = x_padded.strides

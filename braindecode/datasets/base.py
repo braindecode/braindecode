@@ -29,7 +29,7 @@ def _create_description(description) -> pd.Series:
     if description is not None:
         if not isinstance(description, pd.Series) and not isinstance(description, dict):
             raise ValueError(
-                f"'{description}' has to be either a " f"pandas.Series or a dict."
+                f"'{description}' has to be either a pandas.Series or a dict."
             )
         if isinstance(description, dict):
             description = pd.Series(description)
@@ -621,7 +621,7 @@ class BaseConcatDataset(ConcatDataset):
         if not (
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
-            raise ValueError("dataset should have either raw or windows " "attribute")
+            raise ValueError("dataset should have either raw or windows attribute")
         file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, "description.json")
         target_file_name = os.path.join(path, "target_name.json")
@@ -738,7 +738,7 @@ class BaseConcatDataset(ConcatDataset):
         if not (
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
-            raise ValueError("dataset should have either raw or windows " "attribute")
+            raise ValueError("dataset should have either raw or windows attribute")
         path_contents = os.listdir(path)
         n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
         for i_ds, ds in enumerate(self.datasets):

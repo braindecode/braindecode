@@ -39,9 +39,9 @@ def trial_preds_from_window_preds(preds, i_window_in_trials, i_stop_in_trials):
         Predictions in each trial, duplicates removed
 
     """
-    assert (
-        len(preds) == len(i_window_in_trials) == len(i_stop_in_trials)
-    ), f"{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}"
+    assert len(preds) == len(i_window_in_trials) == len(i_stop_in_trials), (
+        f"{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}"
+    )
 
     # Algorithm for assigning window predictions to trials
     # while removing duplicate predictions:

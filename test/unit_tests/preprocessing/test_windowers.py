@@ -492,7 +492,7 @@ def test_lazy_dataframe():
     assert all(df[i, "a"] == 2 * i for i in range(10))
     assert all((df[i] == pd.Series(dict(a=2 * i))).all() for i in range(10))
     assert all((df[i, :] == pd.Series(dict(a=2 * i))).all() for i in range(10))
-    with pytest.raises(IndexError, match="index must be either \[row\] or"):
+    with pytest.raises(IndexError, match="index must be either \\[row\\] or"):
         _ = df[0, 0, 0]
     with pytest.raises(IndexError, match="All columns must be present in the dataframe"):
         _ = df[0, "b"]

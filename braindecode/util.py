@@ -403,7 +403,7 @@ def read_all_file_names(directory, extension):
     """
     assert extension.startswith(".")
     file_paths = glob.glob(directory + "**/*" + extension, recursive=True)
-    assert (
-        len(file_paths) > 0
-    ), f"something went wrong. Found no {extension} files in {directory}"
+    assert len(file_paths) > 0, (
+        f"something went wrong. Found no {extension} files in {directory}"
+    )
     return file_paths
