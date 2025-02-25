@@ -283,9 +283,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.return_features = return_features
-        assert len(n_filters_list) == len(
-            conv1_kernels_size
-        ), "The length of n_filters_list and conv1_kernel_sizes should be equal."
+        assert len(n_filters_list) == len(conv1_kernels_size), (
+            "The length of n_filters_list and conv1_kernel_sizes should be equal."
+        )
 
         self.ensure_dim = Rearrange("batch chans time -> batch 1 chans time")
         self.mstsconv = nn.ModuleList(

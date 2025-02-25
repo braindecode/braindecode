@@ -92,7 +92,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             and n_times != int(input_window_seconds * sfreq)
         ):
             raise ValueError(
-                f"{n_times=} different from " f"{input_window_seconds=} * {sfreq=}"
+                f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
             )
         self._n_outputs = n_outputs
         self._n_chans = n_chans

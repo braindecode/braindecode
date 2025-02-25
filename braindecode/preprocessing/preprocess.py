@@ -420,9 +420,7 @@ def filterbank(
         Please refer to mne for a detailed explanation.
     """
     if not frequency_bands:
-        raise ValueError(
-            f"Expected at least one frequency band, got" f" {frequency_bands}"
-        )
+        raise ValueError(f"Expected at least one frequency band, got {frequency_bands}")
     if not all([len(ch_name) < 8 for ch_name in raw.ch_names]):
         warn(
             "Try to use shorter channel names, since frequency band "
