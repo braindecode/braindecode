@@ -364,7 +364,19 @@ class LinearWithConstraint(nn.Linear):
 
     def forward(self, x):
         with torch.no_grad():
-            # Apply max-norm constraint
+            # In PyTorch, the weight matrix of nn.Linear is of shape (out_features, in_features),
+            # which is the transpose of TensorFlow's typical kernel shape.
+            #
+            # The torch.renorm function applies a re-normalization to slices of the tensor:
+            # - 'p=2' specifies that we are using the Euclidean (L2) norm.
+            # - 'dim=0' indicates that the tensor will be split along the first dimension.
+            #   This corresponds to each "row" in the weight matrix, which in this context
+            #   represents a weight vector for each output neuron.
+            # - 'maxnorm=self.max_norm' sets the maximum allowed norm for each of these sub-tensors.
+            #
+            # Note: In TensorFlow's max_norm constraint, the axis parameter determines along which
+            # dimension the norm is computed. Here, due to the difference in kernel shape and axis
+            # interpretation, we use torch.renorm with dim=0 to match TensorFlow's behavior.
             self.weight.data = torch.renorm(
                 self.weight.data, p=2, dim=0, maxnorm=self.max_norm
             )
