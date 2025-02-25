@@ -18,6 +18,10 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
 
     TSception: A deep learning framework for emotion detection using EEG.
 
+    .. figure:: https://user-images.githubusercontent.com/58539144/74716976-80415e00-526a-11ea-9433-02ab2b753f6b.PNG
+        :align: center
+        :alt: TIDNet Architecture
+
     The model consists of temporal and spatial convolutional layers
     (Tception and Sception) designed to learn temporal and spatial features
     from EEG data.

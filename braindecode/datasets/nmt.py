@@ -155,10 +155,8 @@ class NMT(BaseConcatDataset):
             ]
         else:
             base_datasets = Parallel(n_jobs)(
-                delayed(
-                    self._create_dataset(d, target_name, preload)
-                    for recording_id, d in description.iterrows()
-                )
+                delayed(self._create_dataset)(d, target_name, preload)
+                for recording_id, d in description.iterrows()
             )
 
         super().__init__(base_datasets)

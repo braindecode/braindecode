@@ -17,6 +17,10 @@ from braindecode.models.modules import AvgPool2dWithConv, Ensure4d, Expression
 class EEGResNet(EEGModuleMixin, nn.Sequential):
     """EEGResNet from Schirrmeister et al. 2017 [Schirrmeister2017]_.
 
+    .. figure:: https://onlinelibrary.wiley.com/cms/asset/bed1b768-809f-4bc6-b942-b36970d81271/hbm23730-fig-0003-m.jpg
+        :align: center
+        :alt: EEGResNet Architecture
+
     Model described in [Schirrmeister2017]_.
 
     Parameters

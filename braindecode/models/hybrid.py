@@ -6,14 +6,13 @@ import torch
 from torch import nn
 from torch.nn import ConstantPad2d
 
-from braindecode.models.base import EEGModuleMixin
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.models.util import to_dense_prediction_model
 
 
-class HybridNet(EEGModuleMixin, nn.Module):
-    """Hybrid ConvNet model from Schirrmeister et al 2017  [Schirrmeister2017]_.
+class HybridNet(nn.Module):
+    """Hybrid ConvNet model from Schirrmeister, R T et al (2017)  [Schirrmeister2017]_.
 
     See [Schirrmeister2017]_ for details.
 
@@ -39,14 +38,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
         activation: nn.Module = nn.ELU,
         drop_prob: float = 0.5,
     ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            chs_info=chs_info,
-        )
+        super().__init__()
         self.mapping = {
             "final_conv.weight": "final_layer.weight",
             "final_conv.bias": "final_layer.bias",
@@ -82,8 +74,6 @@ class HybridNet(EEGModuleMixin, nn.Module):
             final_conv_length=29,
             drop_prob=drop_prob,
         )
-        del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
-
         reduced_deep_model = nn.Sequential()
         for name, module in deep_model.named_children():
             if name == "final_layer":
@@ -116,7 +106,7 @@ class HybridNet(EEGModuleMixin, nn.Module):
         self.reduced_shallow_model = reduced_shallow_model
 
         self.final_layer = nn.Sequential(
-            nn.Conv2d(100, self.n_outputs, kernel_size=(1, 1), stride=1),
+            nn.Conv2d(100, n_outputs, kernel_size=(1, 1), stride=1),
             nn.Identity(),
         )
 

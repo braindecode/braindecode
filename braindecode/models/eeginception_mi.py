@@ -13,6 +13,11 @@ from braindecode.models.modules import Ensure4d
 class EEGInceptionMI(EEGModuleMixin, nn.Module):
     """EEG Inception for Motor Imagery, as proposed in Zhang et al. (2021) [1]_
 
+    .. figure:: https://content.cld.iop.org/journals/1741-2552/18/4/046014/revision3/jneabed81f1_hr.jpg
+        :align: center
+        :alt: EEGInceptionMI Architecture
+
+
     The model is strongly based on the original InceptionNet for computer
     vision. The main goal is to extract features in parallel with different
     scales. The network has two blocks made of 3 inception modules with a skip

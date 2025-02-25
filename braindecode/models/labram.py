@@ -20,12 +20,16 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):
-    """Labram from [Jiang2024]_.
+    """Labram from Jiang, W B et al (2024) [Jiang2024]_.
+
+    .. figure:: https://arxiv.org/html/2405.18765v1/x1.png
+        :align: center
+        :alt: Labram Architecture.
 
     Large Brain Model for Learning Generic Representations with Tremendous
     EEG Data in BCI from [Jiang2024]_
 
-    This an **adaptation** of the code [Code2024]_ from the Labram model.
+    This is an **adaptation** of the code [Code2024]_ from the Labram model.
 
     The model is transformer architecture with **strong** inspiration from
     BEiTv2 [BeiTv2]_.
@@ -47,6 +51,7 @@ class Labram(EEGModuleMixin, nn.Module):
         - WindowsAttentionBlock: Apply a windows attention block to the data;
         - LayerNorm: Apply layer normalization to the data;
         - Linear: An head linear layer to transformer the data into classes.
+
     else:
         - PatchEmbed: Apply a patch embedding to the input data;
         - Residual adding cls, temporal and position embeddings (optional);

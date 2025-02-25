@@ -11,6 +11,7 @@ from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
 
 from torch import Tensor, nn, from_numpy
+
 import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt
@@ -22,6 +23,7 @@ from braindecode.models.functions import (
     safe_log,
 )
 from braindecode.util import np_to_th
+from braindecode.models.eegminer import GeneralizedGaussianFilter
 
 
 class Ensure4d(nn.Module):
@@ -75,7 +77,7 @@ class Expression(nn.Module):
 
 
 class SafeLog(nn.Module):
-    """
+    r"""
     Safe logarithm activation function module.
 
     :math:\text{SafeLog}(x) = \log\left(\max(x, \epsilon)\right)
@@ -421,7 +423,7 @@ class CombinedConv(nn.Module):
 
 
 class MLP(nn.Sequential):
-    """Multilayer Perceptron (MLP) with GELU activation and optional dropout.
+    r"""Multilayer Perceptron (MLP) with GELU activation and optional dropout.
 
     Also known as fully connected feedforward network, an MLP is a sequence of
     non-linear parametric functions
@@ -431,7 +433,7 @@ class MLP(nn.Sequential):
     over feature vectors :math:`h_i`, with the input and output feature vectors
     :math:`x = h_0` and :math:`y = h_L`, respectively. The non-linear functions
     :math:`a_i` are called activation functions. The trainable parameters of an
-    MLP are its weights and biases :math:`\phi = \{W_i, b_i | i = 1, \dots, L\}`.
+    MLP are its weights and biases :math:`\\phi = \{W_i, b_i | i = 1, \dots, L\}`.
 
     Parameters:
     -----------
@@ -616,7 +618,6 @@ class FilterBankLayer(nn.Module):
         non-causal) using :func:`~scipy.signal.filtfilt`; ``phase='forward'`` will apply
         the filter once in the forward (causal) direction using
         :func:`~scipy.signal.lfilter`.
-
 
            The behavior for ``phase="minimum"`` was fixed to use a filter of the requested
            length and improved suppression.
@@ -853,3 +854,33 @@ class FilterBankLayer(nn.Module):
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
         return filtered.unsqueeze(1)
+
+
+class LogActivation(nn.Module):
+    """Logarithm activation function."""
+
+    def __init__(self, epsilon: float = 1e-6, *args, **kwargs):
+        """
+        Parameters
+        ----------
+        epsilon : float
+            Small float to adjust the activation.
+        """
+        super().__init__(*args, **kwargs)
+        self.epsilon = epsilon
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
+
+
+class Conv2dWithConstraint(nn.Conv2d):
+    def __init__(self, *args, max_norm=1, **kwargs):
+        self.max_norm = max_norm
+        super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
+
+    def forward(self, x):
+        with torch.no_grad():
+            self.weight.data = torch.renorm(
+                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
+            )
+        return super(Conv2dWithConstraint, self).forward(x)
