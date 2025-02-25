@@ -97,8 +97,7 @@ def plt_histogram(df_of_ages_genders, alpha=0.5, fs=24, ylim=1.5, show_title=Tru
     plt.axhline(
         np.mean(male_df["age"]),
         color="black",
-        label=f"mean age {np.mean(male_df['age']):.1f} "
-        f"(±{np.std(male_df['age']):.1f})",
+        label=f"mean age {np.mean(male_df['age']):.1f} (±{np.std(male_df['age']):.1f})",
     )
     plt.barh(
         np.mean(male_df["age"]),

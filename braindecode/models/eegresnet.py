@@ -311,7 +311,7 @@ class _ResidualBlock(nn.Module):
         time_padding = int(time_padding // 2)
         dilation = (int(dilation[0]), int(dilation[1]))
         assert (out_num_filters - in_filters) % 2 == 0, (
-            "Need even number of extra channels in order to be able to " "pad correctly"
+            "Need even number of extra channels in order to be able to pad correctly"
         )
         self.n_pad_chans = out_num_filters - in_filters
 

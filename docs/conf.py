@@ -430,7 +430,7 @@ for icon, classes in icons.items():
     prolog += f"""
 .. |{icon}| raw:: html
 
-    <i class="{' '.join(classes)} fa-{icon}"></i>
+    <i class="{" ".join(classes)} fa-{icon}"></i>
 """
 
 prolog += """

@@ -141,7 +141,7 @@ class MOABBDataset(BaseConcatDataset):
         dataset_load_kwargs: dict[str, Any] | None = None,
     ):
         # soft dependency on moabb
-        from moabb import __version__ as moabb_version
+        from moabb import __version__ as moabb_version  # type: ignore
 
         if moabb_version == "1.0.0":
             warnings.warn(
