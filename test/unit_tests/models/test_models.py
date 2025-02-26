@@ -1274,7 +1274,7 @@ def test_eegnetv4_final_layer_linear_false():
     """Test that final_layer_conv=False raises a DeprecationWarning and uses
     a linear layer."""
     with pytest.warns(DeprecationWarning,
-                      match="Parameter 'final_layer_linear=False' is deprecated"):
+                      match="Parameter 'final_layer_with_constraint=False' is deprecated"):
         model = EEGNetv4(
             final_layer_with_constraint=False,
             n_chans=4,
