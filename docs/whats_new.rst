@@ -268,6 +268,7 @@ API changes
 Authors
 ~~~~~~~
 
+.. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
