@@ -13,6 +13,7 @@ from warnings import warn
 from functools import partial
 from collections.abc import Iterable
 import sys
+import platform
 
 if sys.version_info < (3, 9):
     from typing import Callable
@@ -153,7 +154,6 @@ def preprocess(
 
     parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
-    import platform
     job_prefer = "threads" if platform.system() == "Windows" else None
     list_of_ds = Parallel(n_jobs=n_jobs, prefer=job_prefer)(
         delayed(_preprocess)(
