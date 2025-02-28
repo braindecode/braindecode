@@ -22,7 +22,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
-
+- Fix error when using n_njobs > 1 on Windows (:gh:`700` by `Arnaud Delorme`_)
 - Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`572` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
 - Adding an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
@@ -85,6 +85,7 @@ API changes
 - Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
 - Moving :class:`braindecode.models.TCN` and :class:`braindecode.models.HybridNet` to module and creating :class:`braindecode.models.BDTCN` (:gh:`673` by `Bruno Aristimunha`_)
 - Removing dead parameters from :class:`braindecode.models.EEGNetv4` (:gh:`676` by `Bruno Aristimunha`_)
+- Including Linear Layer at the end :class:`braindecode.models.EEGNetv4` (:gh:`680` by `Bruno Aristimunha`_)
 
 .. _changes_0_8_0:
 
@@ -269,6 +270,7 @@ API changes
 Authors
 ~~~~~~~
 
+.. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl

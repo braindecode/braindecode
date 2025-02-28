@@ -235,9 +235,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             if k in all_module_kwargs:
                 module_kwargs[k] = v
             else:
-                self.log.warning(
-                    f"Module {self.module!r} " f"is missing parameter {k!r}."
-                )
+                self.log.warning(f"Module {self.module!r} is missing parameter {k!r}.")
 
         # save kwargs to self:
         self.log.info(

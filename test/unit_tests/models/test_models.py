@@ -1247,3 +1247,49 @@ def test_eegminer_plv_values_range():
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
         "PLV values should be in the range [0, 1]"
+
+
+def test_eegnetv4_final_layer_linear_true():
+    """Test that final_layer_linear=True uses a conv-based classifier without warning."""
+    model = EEGNetv4(
+        final_layer_with_constraint=True,
+        n_chans=4,
+        n_times=128,
+        n_outputs=2
+    )
+
+    X = torch.randn(2, 4, 128)  # (batch_size=2, channels=4, time=128)
+    y = model(X)
+
+    # Check output shape: should be (batch_size, n_outputs)
+    assert y.shape == (2, 2), f"Unexpected output shape {y.shape}"
+
+    # Check final layer is Conv2d instead of Flatten/LinearWithConstraint
+    final_layer = dict(model.named_modules())["final_layer"]
+    # Inside final_layer for conv-based approach, we expect "conv_classifier" as the first sub-module:
+    assert hasattr(final_layer,
+                   "linearconstraint"), "Expected a 'linear constraint' sub-module."
+
+def test_eegnetv4_final_layer_linear_false():
+    """Test that final_layer_conv=False raises a DeprecationWarning and uses
+    a linear layer."""
+    with pytest.warns(DeprecationWarning,
+                      match="Parameter 'final_layer_with_constraint=False' is deprecated"):
+        model = EEGNetv4(
+            final_layer_with_constraint=False,
+            n_chans=4,
+            n_times=128,
+            n_outputs=2
+        )
+
+    X = torch.randn(2, 4, 128)
+    y = model(X)
+
+    # Check output shape: should be (batch_size, n_outputs)
+    assert y.shape == (2, 2), f"Unexpected output shape {y.shape}"
+
+    # Check final layer is Flatten + LinearWithConstraint (no "conv_classifier")
+    final_layer = dict(model.named_modules())["final_layer"]
+    submodule_names = list(dict(final_layer.named_children()).keys())
+    assert "conv_classifier" in submodule_names, "Did expect a convolutional classifier."
+    assert "linearconstraint" not in submodule_names, "Did not expected a linearconstraint sub-module."
