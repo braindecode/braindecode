@@ -13,6 +13,7 @@ from warnings import warn
 from functools import partial
 from collections.abc import Iterable
 import sys
+import platform
 
 if sys.version_info < (3, 9):
     from typing import Callable
@@ -153,7 +154,8 @@ def preprocess(
 
     parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
-    list_of_ds = Parallel(n_jobs=n_jobs)(
+    job_prefer = "threads" if platform.system() == "Windows" else None
+    list_of_ds = Parallel(n_jobs=n_jobs, prefer=job_prefer)(
         delayed(_preprocess)(
             ds,
             i + offset,
@@ -420,9 +422,7 @@ def filterbank(
         Please refer to mne for a detailed explanation.
     """
     if not frequency_bands:
-        raise ValueError(
-            f"Expected at least one frequency band, got" f" {frequency_bands}"
-        )
+        raise ValueError(f"Expected at least one frequency band, got {frequency_bands}")
     if not all([len(ch_name) < 8 for ch_name in raw.ch_names]):
         warn(
             "Try to use shorter channel names, since frequency band "

@@ -56,9 +56,9 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
     """
     # assume we have a single concat dataset to load
     is_raw = (path / "0-raw.fif").is_file()
-    assert not (
-        not is_raw and target_name is not None
-    ), "Setting a new target is only supported for raws."
+    assert not (not is_raw and target_name is not None), (
+        "Setting a new target is only supported for raws."
+    )
     is_epochs = (path / "0-epo.fif").is_file()
     paths = [path]
     # assume we have multiple concat datasets to load
@@ -72,7 +72,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
         ids_to_load = None
     # if we have neither a single nor multiple datasets, something went wrong
     assert is_raw or is_epochs, (
-        f"Expect either raw or epo to exist in {path} or in " f'{path / "0"}'
+        f"Expect either raw or epo to exist in {path} or in {path / '0'}"
     )
 
     datasets = []

@@ -316,7 +316,7 @@ def test_model(dataloader: DataLoader, model: Module, loss_fn, print_batch_stats
 
         if print_batch_stats:
             progress_bar.set_description(
-                f"Batch {batch_idx + 1}/{len(dataloader)}, " f"Loss: {batch_loss:.6f}"
+                f"Batch {batch_idx + 1}/{len(dataloader)}, Loss: {batch_loss:.6f}"
             )
 
     test_loss /= n_batches
