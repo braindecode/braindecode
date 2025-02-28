@@ -146,12 +146,6 @@ class BIDSDataset(BaseConcatDataset):
     n_jobs: int = 1
 
     def __post_init__(self):
-        from mne_bids import __version__ as mne_bids_version
-
-        assert (
-            mne_bids_version >= "0.16"
-        ), f"mne-bids version must be >= 0.16, got {mne_bids_version}"
-
         bids_paths = mne_bids.find_matching_paths(
             root=self.root,
             subjects=self.subjects,
