@@ -113,6 +113,7 @@ class RecordingSampler(Sampler):
     def n_recordings(self):
         return self.info.shape[0]
 
+
 class DistributedRecordingSampler(DistributedSampler):
     """Base sampler simplifying sampling from recordings in distributed setting.
 
@@ -146,11 +147,12 @@ class DistributedRecordingSampler(DistributedSampler):
         Additional keyword arguments to pass to torch DistributedSampler.
         See https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler
     """
+
     def __init__(
-            self, 
-            metadata,
-            random_state=None,
-            **kwargs,
+        self,
+        metadata,
+        random_state=None,
+        **kwargs,
     ):
         self.metadata = metadata
         self.info = self._init_info(metadata)
@@ -203,15 +205,6 @@ class DistributedRecordingSampler(DistributedSampler):
         return self.rng.choice(list(super().__iter__()))
 
     def sample_window(self, rec_ind=None):
-        """Return a specific window.
-        """
-        # XXX docstring missing
-        if rec_ind is None:
-            rec_ind = self.sample_recording()
-        win_ind = self.rng.choice(self.info.iloc[rec_ind]['index'])
-        return win_ind, rec_ind
-
-    def sample_window(self, rec_ind=None):
         """Return a specific window."""
         # XXX docstring missing
         if rec_ind is None:
@@ -222,6 +215,7 @@ class DistributedRecordingSampler(DistributedSampler):
     @property
     def n_recordings(self):
         return super().__len__()
+
 
 class SequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.

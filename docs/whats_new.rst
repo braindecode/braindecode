@@ -61,6 +61,7 @@ Enhancements
 - Adding :class:`braindecode.models.SincShallowNet` (:gh:`678` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SCCNet` (:gh:`679` by `Bruno Aristimunha`_ )
 - Fix error when using NMT dataset with n_jobs > 1 (:gh:`690` by `Aphel`_)
+- Adding support for distributed samplers (:gh:`695` by `Young Truong`_)
 
 Bugs
 ~~~~
@@ -303,3 +304,4 @@ Authors
 .. _John Muradeli: https://github.com/OverLordGoldDragon/
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
 .. _Aphel: https://github.com/itsaphel
+.. _Young Truong: https://github.com/dungscout96

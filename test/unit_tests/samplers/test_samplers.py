@@ -100,7 +100,7 @@ def test_recording_sampler(windows_ds):
 def dist_sampler_init_process(rank, world_size, windows_ds):
     """Initialize the process group for multi-CPU training."""
     dist.init_process_group(
-        backend="gloo", 
+        backend="gloo",
         init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
         rank=rank,
         world_size=world_size
@@ -111,7 +111,7 @@ def dist_sampler_init_process(rank, world_size, windows_ds):
     if world_size == 1:
         sampler_single = RecordingSampler(windows_ds.get_metadata(), random_state=87)
         assert sampler.n_recordings == windows_ds.description.shape[0] == sampler_single.n_recordings
-    assert len(sampler.dataset) == windows_ds.description.shape[0] 
+    assert len(sampler.dataset) == windows_ds.description.shape[0]
     assert sampler.n_recordings <= windows_ds.description.shape[0] // world_size
     print(f"Rank {rank} has {sampler.n_recordings} datasets after splitting")
 
@@ -209,13 +209,13 @@ def test_relative_positioning_sampler_presample(windows_ds):
 
 def distributed_relative_positioning_sampler_init_process(rank, world_size, windows_ds, same_rec_neg):
     dist.init_process_group(
-        backend="gloo", 
+        backend="gloo",
         init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
         rank=rank,
         world_size=world_size
     )
     print(f"Process {rank} initialized")
-    
+
     tau_pos, tau_neg = 2000, 3000
     n_examples = 100
     sampler = DistributedRelativePositioningSampler(
@@ -256,7 +256,7 @@ def distributed_relative_positioning_sampler_init_process(rank, world_size, wind
 
 @pytest.mark.parametrize("same_rec_neg", [True, False])
 def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg):
-    world_size = 1  
+    world_size = 1
     mp.spawn(distributed_relative_positioning_sampler_init_process, args=(world_size, windows_ds, same_rec_neg), nprocs=world_size, join=True)
 
 @pytest.mark.parametrize("n_windows,n_windows_stride", [[10, 5], [10, 100], [1, 1]])
