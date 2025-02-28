@@ -21,7 +21,8 @@ from braindecode.models import (SyncNet, EEGSimpleConv, EEGResNet, USleep, EEGIn
 
 
 # Generating the channel info
-chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
+ch_names = [f"C{i}" for i in range(1, 3)] + ["Cz"]
+chs_info = [dict(ch_name=ch, kind="eeg") for ch in ch_names]
 # Generating the signal parameters
 default_signal_params = dict(
     n_times=1000,
