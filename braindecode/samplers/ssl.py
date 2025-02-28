@@ -8,6 +8,7 @@ Self-supervised learning samplers.
 # License: BSD (3-clause)
 
 import numpy as np
+import warnings
 
 from . import RecordingSampler, DistributedRecordingSampler
 import torch.distributed as dist
@@ -184,8 +185,10 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
         self.same_rec_neg = same_rec_neg
 
         self.n_examples = n_examples // self.info.shape[0] * self.n_recordings
-        print(f"Rank {dist.get_rank()} - Number of datasets:", self.n_recordings)
-        print(f"Rank {dist.get_rank()} - Number of samples:", self.n_examples)
+        warnings.warn(
+            f"Rank {dist.get_rank()} - Number of datasets:", self.n_recordings
+        )
+        warnings.warn(f"Rank {dist.get_rank()} - Number of samples:", self.n_examples)
 
         if not same_rec_neg and self.n_recordings < 2:
             raise ValueError(
