@@ -81,6 +81,7 @@ Models
     EEGMiner
     EEGResNet
     EEGSimpleConv
+    EEGSym
     EEGTCNet
     Labram
     MSVTNet
