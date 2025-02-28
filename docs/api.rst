@@ -199,8 +199,10 @@ Samplers
    :toctree: generated/
 
    RecordingSampler
+   DistributedRecordingSampler
    SequenceSampler
    RelativePositioningSampler
+   DistributedRelativePositioningSampler
    BalancedSequenceSampler
 
 .. _augmentation_api:

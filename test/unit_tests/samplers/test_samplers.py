@@ -3,6 +3,7 @@ Test for samplers.
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Young Truong <dt.young112@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -14,10 +15,11 @@ import pandas as pd
 
 from braindecode.samplers import (
     RecordingSampler,
+    DistributedRecordingSampler,
     SequenceSampler,
     BalancedSequenceSampler,
 )
-from braindecode.samplers.ssl import RelativePositioningSampler
+from braindecode.samplers.ssl import RelativePositioningSampler, DistributedRelativePositioningSampler
 from braindecode.datasets import BaseDataset, BaseConcatDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
@@ -25,6 +27,8 @@ from braindecode.preprocessing.windowers import (
     create_windows_from_events,
 )
 
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
 @pytest.fixture(scope="module")
 def windows_ds():
@@ -93,6 +97,53 @@ def test_recording_sampler(windows_ds):
         win_ind, rec_ind = sampler.sample_window(rec_ind=None)
         assert rec_ind in range(windows_ds.description.shape[0])
 
+def dist_sampler_init_process(rank, world_size, windows_ds):
+    """Initialize the process group for multi-CPU training."""
+    dist.init_process_group(
+        backend="gloo", 
+        init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
+        rank=rank,
+        world_size=world_size
+    )
+    print(f"Process {rank} initialized")
+
+    sampler = DistributedRecordingSampler(windows_ds.get_metadata(), random_state=87)
+    if world_size == 1:
+        sampler_single = RecordingSampler(windows_ds.get_metadata(), random_state=87)
+        assert sampler.n_recordings == windows_ds.description.shape[0] == sampler_single.n_recordings
+    assert len(sampler.dataset) == windows_ds.description.shape[0] 
+    assert sampler.n_recordings <= windows_ds.description.shape[0] // world_size
+    print(f"Rank {rank} has {sampler.n_recordings} datasets after splitting")
+
+    # Test info attribute
+    assert isinstance(sampler.info, pd.DataFrame)
+    assert isinstance(sampler.info.index, pd.MultiIndex)
+    inds = np.concatenate(sampler.info["index"].values)
+    assert len(inds) == len(windows_ds)
+    assert len(inds) == len(set(inds))
+
+    # Test methods
+    for _ in range(100):
+        rec_ind = sampler.sample_recording()
+        assert rec_ind in range(windows_ds.description.shape[0])
+
+        win_ind, rec_ind2 = sampler.sample_window(rec_ind=rec_ind)
+        dataset_ind = find_dataset_ind(windows_ds, win_ind)
+        assert rec_ind2 == rec_ind == dataset_ind
+
+        X, y, z = windows_ds[win_ind]
+
+        win_ind, rec_ind = sampler.sample_window(rec_ind=None)
+        assert rec_ind in range(windows_ds.description.shape[0])
+
+    # Cleanup
+    dist.destroy_process_group()
+
+def test_distributed_recording_sampler(windows_ds):
+    world_size = 1  # Test single process - no dataset splitting
+    mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
+    world_size = 3  # Test multiple processes - dataset splitting
+    mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
 
 @pytest.mark.parametrize("same_rec_neg", [True, False])
 def test_relative_positioning_sampler(windows_ds, same_rec_neg):
@@ -134,7 +185,6 @@ def test_relative_positioning_sampler(windows_ds, same_rec_neg):
         assert all(pairs_df.loc[pairs_df["y"] == 1, "same_rec"] == True)  # noqa: E712
     assert abs(np.diff(pairs_df["y"].value_counts())) < 20
 
-
 def test_relative_positioning_sampler_presample(windows_ds):
     tau_pos, tau_neg = 2000, 3000
     n_examples = 100
@@ -157,6 +207,57 @@ def test_relative_positioning_sampler_presample(windows_ds):
     assert np.array_equal(sampler.examples, pairs)
     assert np.array_equal(sampler.examples, pairs2)
 
+def distributed_relative_positioning_sampler_init_process(rank, world_size, windows_ds, same_rec_neg):
+    dist.init_process_group(
+        backend="gloo", 
+        init_method="tcp://127.0.0.1:29500",  # Localhost for single machine
+        rank=rank,
+        world_size=world_size
+    )
+    print(f"Process {rank} initialized")
+    
+    tau_pos, tau_neg = 2000, 3000
+    n_examples = 100
+    sampler = DistributedRelativePositioningSampler(
+        windows_ds.get_metadata(),
+        tau_pos=tau_pos,
+        tau_neg=tau_neg,
+        n_examples=n_examples,
+        tau_max=None,
+        same_rec_neg=same_rec_neg,
+        random_state=33,
+    )
+
+    pairs = [pair for pair in sampler]
+    pairs_df = pd.DataFrame(pairs, columns=["win_ind1", "win_ind2", "y"])
+    pairs_df["diff"] = pairs_df.apply(
+        lambda x: abs(
+            windows_ds[int(x["win_ind1"])][2][1] - windows_ds[int(x["win_ind2"])][2][1]
+        ),
+        axis=1,
+    )
+    pairs_df["same_rec"] = pairs_df.apply(
+        lambda x: (
+            find_dataset_ind(windows_ds, int(x["win_ind1"]))
+            == find_dataset_ind(windows_ds, int(x["win_ind2"]))
+        ),
+        axis=1,
+    )
+
+    assert len(pairs) == len(sampler) <= n_examples // world_size
+    assert all(pairs_df.loc[pairs_df["y"] == 1, "diff"] <= tau_pos)
+    if same_rec_neg:
+        assert all(pairs_df.loc[pairs_df["y"] == 0, "diff"] >= tau_neg)
+        assert all(pairs_df["same_rec"] == same_rec_neg)
+    else:
+        assert all(pairs_df.loc[pairs_df["y"] == 0, "same_rec"] == False)  # noqa: E712
+        assert all(pairs_df.loc[pairs_df["y"] == 1, "same_rec"] == True)  # noqa: E712
+    assert abs(np.diff(pairs_df["y"].value_counts())) < 20
+
+@pytest.mark.parametrize("same_rec_neg", [True, False])
+def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg):
+    world_size = 1  
+    mp.spawn(distributed_relative_positioning_sampler_init_process, args=(world_size, windows_ds, same_rec_neg), nprocs=world_size, join=True)
 
 @pytest.mark.parametrize("n_windows,n_windows_stride", [[10, 5], [10, 100], [1, 1]])
 def test_sequence_sampler(windows_ds, n_windows, n_windows_stride):

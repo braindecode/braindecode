@@ -4,6 +4,7 @@ Sampler classes.
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #          Theo Gnassounou <>
+#          Young Truong <dt.young112@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -141,20 +142,21 @@ class DistributedRecordingSampler(DistributedSampler):
         quick sampling of windows.
     n_recordings : int
         Number of recordings available.
+    kwargs : dict
+        Additional keyword arguments to pass to torch DistributedSampler.
+        See https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler
     """
     def __init__(
             self, 
             metadata,
             random_state=None,
-            shuffle=None,
+            **kwargs,
     ):
         self.metadata = metadata
         self.info = self._init_info(metadata)
         self.rng = check_random_state(random_state)
         # send information to DistributedSampler parent to handle data splitting among workers
-        super().__init__(self.info, shuffle=shuffle)
-         # super iter should contain only indices of datasets specific to the current process
-        self._iterator = list(super().__iter__())
+        super().__init__(self.info, seed=random_state, **kwargs)
 
     def _init_info(self, metadata, required_keys=None):
         """Initialize ``info`` DataFrame.
@@ -194,11 +196,11 @@ class DistributedRecordingSampler(DistributedSampler):
 
     def sample_recording(self):
         """Return a random recording index.
-        self._iterator contains indices of datasets specific to the current process
+        super().__iter__() contains indices of datasets specific to the current process
         determined by the DistributedSampler
         """
         # XXX docstring missing
-        return self.rng.choice(self._iterator)
+        return self.rng.choice(list(super().__iter__()))
 
     def sample_window(self, rec_ind=None):
         """Return a specific window.
@@ -208,11 +210,6 @@ class DistributedRecordingSampler(DistributedSampler):
             rec_ind = self.sample_recording()
         win_ind = self.rng.choice(self.info.iloc[rec_ind]['index'])
         return win_ind, rec_ind
-
-    def sample_recording(self):
-        """Return a random recording index."""
-        # XXX docstring missing
-        return self.rng.choice(self.n_recordings)
 
     def sample_window(self, rec_ind=None):
         """Return a specific window."""
@@ -224,7 +221,7 @@ class DistributedRecordingSampler(DistributedSampler):
 
     @property
     def n_recordings(self):
-        return len(self._iterator)
+        return super().__len__()
 
 class SequenceSampler(RecordingSampler):
     """Sample sequences of consecutive windows.

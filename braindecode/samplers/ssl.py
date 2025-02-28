@@ -3,6 +3,7 @@ Self-supervised learning samplers.
 """
 
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
+#          Young Truong <dt.young112@gmail.com>
 #
 # License: BSD (3-clause)
 
@@ -128,7 +129,7 @@ class RelativePositioningSampler(RecordingSampler):
         return self.n_examples
 
 class DistributedRelativePositioningSampler(DistributedRecordingSampler):
-    """Sample examples for the relative positioning task from [Banville2020]_.
+    """Sample examples for the relative positioning task from [Banville2020]_. in distributed mode.
 
     Sample examples as tuples of two window indices, with a label indicating
     whether the windows are close or far, as defined by tau_pos and tau_neg.
@@ -153,28 +154,38 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
         False, sample negative pairs from two different recordings.
     random_state : None | np.RandomState | int
         Random state.
-
+    kwargs: dict
+        Additional keyword arguments to pass to torch DistributedSampler.
+        See https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler
     References
     ----------
     .. [Banville2020] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A.,
-           & Gramfort, A. (2020). Uncovering the structure of clinical EEG
-           signals with self-supervised learning.
-           arXiv preprint arXiv:2007.16104.
+        & Gramfort, A. (2020). Uncovering the structure of clinical EEG
+        signals with self-supervised learning.
+        arXiv preprint arXiv:2007.16104.
     """
-    def __init__(self, metadata, tau_pos, tau_neg, n_samples_per_dataset, 
-                 tau_max=None, same_rec_neg=True, random_state=None, shuffle=True):
-        super().__init__(metadata, random_state=random_state, shuffle=shuffle)
+    def __init__(self, 
+                metadata,
+                tau_pos,
+                tau_neg,
+                n_examples,
+                tau_max=None,
+                same_rec_neg=True,
+                random_state=None,
+                **kwargs):
+        super().__init__(metadata, random_state=random_state, **kwargs)
         self.tau_pos = tau_pos
         self.tau_neg = tau_neg
         self.tau_max = np.inf if tau_max is None else tau_max
         self.same_rec_neg = same_rec_neg
+
+        self.n_examples = n_examples // self.info.shape[0] * self.n_recordings
+        print(f"Rank {dist.get_rank()} - Number of datasets:", self.n_recordings)
+        print(f"Rank {dist.get_rank()} - Number of samples:", self.n_examples) 
+
         if not same_rec_neg and self.n_recordings < 2:
             raise ValueError('More than one recording must be available when '
-                             'using across-recording negative sampling.')
-
-        self.n_examples = n_samples_per_dataset * len(self._iterator)
-        print(f"rank {dist.get_rank()} - Number of datasets:", len(self._iterator))
-        print(f"rank {dist.get_rank()} - Number of samples:", self.n_examples) 
+                            'using across-recording negative sampling.')
 
     def _sample_pair(self):
         """Sample a pair of two windows.
