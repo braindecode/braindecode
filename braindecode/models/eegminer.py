@@ -363,9 +363,9 @@ class GeneralizedGaussianFilter(nn.Module):
         self.inverse_fourier = inverse_fourier
         self.affine_group_delay = affine_group_delay
         self.clamp_f_mean = clamp_f_mean
-        assert (
-            out_channels % in_channels == 0
-        ), "out_channels has to be multiple of in_channels"
+        assert out_channels % in_channels == 0, (
+            "out_channels has to be multiple of in_channels"
+        )
         assert len(f_mean) * in_channels == out_channels
         assert len(bandwidth) * in_channels == out_channels
         assert len(shape) * in_channels == out_channels

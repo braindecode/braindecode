@@ -122,7 +122,7 @@ class BBCIDataset(object):
     def _determine_chan_inds(all_sensor_names, sensor_names):
         assert sensor_names is not None
         chan_inds = [all_sensor_names.index(s) for s in sensor_names]
-        assert len(chan_inds) == len(sensor_names), "All" "sensors should be there."
+        assert len(chan_inds) == len(sensor_names), "Allsensors should be there."
         assert len(set(chan_inds)) == len(chan_inds), "No duplicated sensors wanted."
         return chan_inds
 

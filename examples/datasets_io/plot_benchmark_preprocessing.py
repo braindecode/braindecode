@@ -167,9 +167,7 @@ for (save, n_jobs), sub_df in df.groupby(["save", "n_jobs"]):
 ax.legend()
 ax.set_xlabel("Execution time (s)")
 ax.set_ylabel("Memory usage (MiB)")
-ax.set_title(
-    f"Loading and preprocessing {all_n_recs} recordings from Sleep " "Physionet"
-)
+ax.set_title(f"Loading and preprocessing {all_n_recs} recordings from Sleep Physionet")
 plt.show()
 
 
