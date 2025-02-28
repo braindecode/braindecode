@@ -38,6 +38,7 @@ readme = "README.rst"
 requires-python = ">3.9"
 dependencies = [
     'mne', # because of python 3.12
+    'mne_bids>=0.16',
     'numpy',
     'pandas',
     'scipy',
@@ -79,7 +80,8 @@ docs = [
     'sphinx_design',
     'lightning',
     'seaborn',
-    'pre-commit'
+    'pre-commit',
+    'openneuro-py'
 ]
 
 [build-system]

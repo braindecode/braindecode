@@ -3,6 +3,7 @@ Loader code for some datasets.
 """
 
 from .base import WindowsDataset, BaseDataset, BaseConcatDataset
+from .bids import BIDSDataset, BIDSEpochsDataset
 from .moabb import MOABBDataset, HGD, BNCI2014001
 from .mne import create_from_mne_raw, create_from_mne_epochs
 from .tuh import TUH, TUHAbnormal
@@ -16,6 +17,8 @@ __all__ = [
     "WindowsDataset",
     "BaseDataset",
     "BaseConcatDataset",
+    "BIDSDataset",
+    "BIDSEpochsDataset",
     "MOABBDataset",
     "HGD",
     "BNCI2014001",
