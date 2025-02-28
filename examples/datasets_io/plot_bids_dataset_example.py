@@ -21,7 +21,7 @@ from braindecode.datasets import BIDSDataset
 
 # import tempfile
 # data_dir = tempfile.mkdtemp()
-data_dir = Path("~/data_local/openneuro/").expanduser()
+data_dir = Path("~/mne_data/openneuro/").expanduser()
 dataset_name = "ds004745"  # 200Mb dataset
 dataset_root = data_dir / dataset_name
 
