@@ -13,10 +13,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from joblib import Parallel, delayed
 
+import pandas as pd
 import mne
 import mne_bids
+import numpy as np
 
-from .base import BaseDataset, BaseConcatDataset, EEGWindowsDataset
+from .base import BaseDataset, BaseConcatDataset, WindowsDataset
 
 
 def _descriptiion_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
@@ -198,7 +200,22 @@ class BIDSEpochsDataset(BIDSDataset):
             **kwargs,
         )
 
+    def _set_metadata(self, epochs: mne.BaseEpochs) -> None:
+        # events = mne.events_from_annotations(epochs
+        n_times = epochs.times.shape[0]
+        # id_event = {v: k for k, v in epochs.event_id.items()}
+        annotations = epochs.annotations
+        assert annotations is not None
+        metadata_dict = {
+            "i_window_in_trial": np.zeros(len(epochs)),
+            "i_start_in_trial": np.zeros(len(epochs)),
+            "i_stop_in_trial": np.zeros(len(epochs)) + n_times,
+            "target": annotations.description,
+        }
+        epochs.metadata = pd.DataFrame(metadata_dict)
+
     def _get_dataset(self, bids_path):
         description = _descriptiion_from_bids_path(bids_path)
         epochs = mne.read_epochs(bids_path.fpath)
-        return EEGWindowsDataset(epochs, description)
+        self._set_metadata(epochs)
+        return WindowsDataset(epochs, description=description, targets_from="metadata")
