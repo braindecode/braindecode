@@ -39,7 +39,7 @@ def bids_dataset_root(tmpdir_factory):
 
 
 def test_bids_dataset(bids_dataset_root):
-    dataset = BIDSDataset(bids_dataset_root, check=False)
+    dataset = BIDSDataset(bids_dataset_root)
     assert len(dataset.datasets) == 1
     assert len(dataset.datasets[0].raw.ch_names) == 3
     assert len(dataset.datasets[0].raw.annotations) == 60

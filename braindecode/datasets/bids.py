@@ -99,11 +99,6 @@ class BIDSDataset(BaseConcatDataset):
         (default), the ``.check`` attribute of the returned
         :class:`mne_bids.BIDSPath` object will be set to ``True`` for paths that
         do conform to BIDS, and to ``False`` for those that don't.
-    ignore_json : bool
-        If ``True``, ignores json files. Defaults to ``False``.
-    ignore_nosub : bool
-        If ``True``, ignores all files that are not of the form ``root/sub-*``.
-        Defaults to ``False``.
     preload : bool
         If True, preload the data. Defaults to False.
     n_jobs : int
@@ -142,8 +137,6 @@ class BIDSDataset(BaseConcatDataset):
     )
     datatypes: str | list[str] | None = "eeg"
     check: bool = False
-    ignore_json: bool = True
-    ignore_nosub: bool = False
     preload: bool = False
     n_jobs: int = 1
 
@@ -164,9 +157,10 @@ class BIDSDataset(BaseConcatDataset):
             extensions=self.extensions,
             datatypes=self.datatypes,
             check=self.check,
-            ignore_json=self.ignore_json,
-            ignore_nosub=self.ignore_nosub,
         )
+        # Filter out .json files:
+        # (argument ignore_json only available in mne-bids>=0.16)
+        bids_paths = [bids_path for bids_path in bids_paths if bids_path.extension != ".json"]
         all_base_ds = Parallel(n_jobs=self.n_jobs)(
             delayed(self._get_dataset)(bids_path) for bids_path in bids_paths
         )
