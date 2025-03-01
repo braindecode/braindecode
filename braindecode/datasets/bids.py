@@ -160,7 +160,9 @@ class BIDSDataset(BaseConcatDataset):
         )
         # Filter out .json files:
         # (argument ignore_json only available in mne-bids>=0.16)
-        bids_paths = [bids_path for bids_path in bids_paths if bids_path.extension != ".json"]
+        bids_paths = [
+            bids_path for bids_path in bids_paths if bids_path.extension != ".json"
+            ]
         all_base_ds = Parallel(n_jobs=self.n_jobs)(
             delayed(self._get_dataset)(bids_path) for bids_path in bids_paths
         )
