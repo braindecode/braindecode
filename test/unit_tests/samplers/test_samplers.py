@@ -140,6 +140,9 @@ def dist_sampler_init_process(rank, world_size, windows_ds):
     # Cleanup
     dist.destroy_process_group()
 
+
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows because of use_libuv compatibility")
 def test_distributed_recording_sampler(windows_ds):
     world_size = 1  # Test single process - no dataset splitting
     mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
