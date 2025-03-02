@@ -8,6 +8,7 @@ Test for samplers.
 # License: BSD (3-clause)
 
 import bisect
+import platform
 
 import pytest
 import numpy as np
@@ -255,6 +256,9 @@ def distributed_relative_positioning_sampler_init_process(rank, world_size, wind
         assert all(pairs_df.loc[pairs_df["y"] == 1, "same_rec"] == True)  # noqa: E712
     assert abs(np.diff(pairs_df["y"].value_counts())) < 20
 
+
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="Not supported on Windows because of use_libuv compatibility")
 @pytest.mark.parametrize("same_rec_neg", [True, False])
 def test_distributed_relative_positioning_sampler(windows_ds, same_rec_neg):
     world_size = 1
