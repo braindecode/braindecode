@@ -61,6 +61,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.1.1"]
+bids = ['mne_bids>=0.14']
 tests = [
     'pytest',
     'pytest-cov',
@@ -79,7 +80,8 @@ docs = [
     'sphinx_design',
     'lightning',
     'seaborn',
-    'pre-commit'
+    'pre-commit',
+    'openneuro-py'
 ]
 
 [build-system]
