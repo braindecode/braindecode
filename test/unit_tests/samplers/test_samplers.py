@@ -145,6 +145,7 @@ def test_distributed_recording_sampler(windows_ds):
     world_size = 3  # Test multiple processes - dataset splitting
     mp.spawn(dist_sampler_init_process, args=(world_size,windows_ds), nprocs=world_size, join=True)
 
+
 @pytest.mark.parametrize("same_rec_neg", [True, False])
 def test_relative_positioning_sampler(windows_ds, same_rec_neg):
     tau_pos, tau_neg = 2000, 3000

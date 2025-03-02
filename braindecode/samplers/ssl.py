@@ -112,13 +112,17 @@ class RelativePositioningSampler(RecordingSampler):
         return self
 
     def __iter__(self):
-        """Iterate over pairs.
+        """
+        Iterate over pairs.
 
         Yields
         ------
-            (int): position of the first window in the dataset.
-            (int): position of the second window in the dataset.
-            (float): 0 for negative pair, 1 for positive pair.
+        int
+            Position of the first window in the dataset.
+        int
+            Position of the second window in the dataset.
+        float
+            0 for a negative pair, 1 for a positive pair.
         """
         for i in range(self.n_examples):
             if hasattr(self, "examples"):
@@ -131,7 +135,7 @@ class RelativePositioningSampler(RecordingSampler):
 
 
 class DistributedRelativePositioningSampler(DistributedRecordingSampler):
-    """Sample examples for the relative positioning task from [Banville2020]_. in distributed mode.
+    """Sample examples for the relative positioning task from [Banville2020]_ in distributed mode.
 
     Sample examples as tuples of two window indices, with a label indicating
     whether the windows are close or far, as defined by tau_pos and tau_neg.
@@ -159,6 +163,7 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
     kwargs: dict
         Additional keyword arguments to pass to torch DistributedSampler.
         See https://pytorch.org/docs/stable/data.html#torch.utils.data.distributed.DistributedSampler
+
     References
     ----------
     .. [Banville2020] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A.,
@@ -188,7 +193,7 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
         warnings.warn(
             f"Rank {dist.get_rank()} - Number of datasets:", self.n_recordings
         )
-        warnings.warn(f"Rank {dist.get_rank()} - Number of samples:", self.n_examples)
+        warnings.warn(f"Rank {dist.get_rank()} - Number of samples: {self.n_examples}")
 
         if not same_rec_neg and self.n_recordings < 2:
             raise ValueError(
@@ -235,13 +240,17 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
         return self
 
     def __iter__(self):
-        """Iterate over pairs.
+        """
+        Iterate over pairs.
 
         Yields
         ------
-            (int): position of the first window in the dataset.
-            (int): position of the second window in the dataset.
-            (float): 0 for negative pair, 1 for positive pair.
+        int
+            Position of the first window in the dataset.
+        int
+            Position of the second window in the dataset.
+        float
+            0 for a negative pair, 1 for a positive pair.
         """
         for i in range(self.n_examples):
             if hasattr(self, "examples"):
