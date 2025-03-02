@@ -191,7 +191,7 @@ class DistributedRelativePositioningSampler(DistributedRecordingSampler):
 
         self.n_examples = n_examples // self.info.shape[0] * self.n_recordings
         warnings.warn(
-            f"Rank {dist.get_rank()} - Number of datasets:", self.n_recordings
+            f"Rank {dist.get_rank()} - Number of datasets: {self.n_recordings}"
         )
         warnings.warn(f"Rank {dist.get_rank()} - Number of samples: {self.n_examples}")
 
