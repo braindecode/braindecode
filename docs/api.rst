@@ -137,6 +137,8 @@ Datasets
 
     BaseDataset
     BaseConcatDataset
+    BIDSDataset
+    BIDSEpochsDataset
     WindowsDataset
     MOABBDataset
     HGD
