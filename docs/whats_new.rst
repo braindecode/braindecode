@@ -61,7 +61,7 @@ Enhancements
 - Adding :class:`braindecode.models.SincShallowNet` (:gh:`678` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SCCNet` (:gh:`679` by `Bruno Aristimunha`_ )
 - Fix error when using NMT dataset with n_jobs > 1 (:gh:`690` by `Aphel`_)
-- Add :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` by `Pierre Guetschel`_ )
+- Add :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` and :gh:`702` by `Pierre Guetschel`_ )
 
 Bugs
 ~~~~
