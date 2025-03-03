@@ -234,4 +234,8 @@ models_mandatory_parameters = [
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=250)),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    # ("SignalJEPA", ["chs_info"], None),
+    ("SignalJEPA_Contextual", ["chs_info", 'n_times', 'n_outputs'], None),
+    ("SignalJEPA_PostLocal", ["n_chans", 'n_times', 'n_outputs'], None),
+    ("SignalJEPA_PreLocal", ["n_chans", 'n_times', 'n_outputs'], None),
 ]

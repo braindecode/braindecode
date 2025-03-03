@@ -46,6 +46,7 @@ dependencies = [
     'skorch',
     'torch',
     'torchaudio',
+    'torchtext>=0.16.1',
     'einops',
     'joblib',
     'torchinfo',
