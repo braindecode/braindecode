@@ -85,6 +85,10 @@ Models
     Labram
     MSVTNet
     SCCNet
+    SignalJEPA
+    SignalJEPA_Contextual
+    SignalJEPA_PostLocal
+    SignalJEPA_PreLocal
     SincShallowNet
     ShallowFBCSPNet
     SleepStagerBlanco2020
