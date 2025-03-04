@@ -2,19 +2,16 @@
 #
 # License: BSD (3-clause)
 from __future__ import annotations
-from collections import Counter, OrderedDict
 from typing import Any
 import math
 from copy import deepcopy
 
 import torch
 from torch import nn
-from torchtext.vocab import vocab
-from torchtext.transforms import VocabTransform, ToTensor
 
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import TransposeLast, ToDevice
+from braindecode.models.modules import TransposeLast
 
 
 def pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
@@ -327,7 +324,6 @@ class PosEncoder(nn.Module):
             Number of dimensions to use to encode the temporal position of the patch.
         ch_names: list[str]
             List of all the EEG channel names that could be encountered in the data.
-            The channel names will be used to retrieve a corresponding channel embedding.
         ch_locs: list of list of float or 2d array
             List of the n-dimensions locations of the EEG channels.
         sfreq_features: float
@@ -338,7 +334,6 @@ class PosEncoder(nn.Module):
     """
 
     max_seconds: float = 600.0  # 10 minutes
-    unk_token: str = "<unk>"
     fixed_ch_names: list[str] | None = None
 
     def __init__(
@@ -353,19 +348,10 @@ class PosEncoder(nn.Module):
         assert len(ch_names) == len(ch_locs)
         super().__init__()
         spat_kwargs = spat_kwargs or {}
-        chan_vocab = vocab(
-            OrderedDict(Counter(ch_names)),
-            specials=[self.unk_token],
-            special_first=True,
-        )
-        chan_vocab.set_default_index(chan_vocab[self.unk_token])
-        ch_locs = [None] + list(ch_locs)
-        chan_emb = ChannelEmbedding(ch_locs, spat_dim, **spat_kwargs)
-        self.pos_encoder_spat = nn.Sequential(
-            VocabTransform(chan_vocab),
-            ToTensor(),
-            ToDevice(),
-            chan_emb,
+        ch_locs: list[list[float] | None] = [None] + list(ch_locs)
+        self.ch_names = ch_names
+        self.pos_encoder_spat = ChannelEmbedding(
+            ch_locs, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
         self.spat_dim = spat_dim
         self.time_dim = time_dim
@@ -389,9 +375,9 @@ class PosEncoder(nn.Module):
             batch: dict with keys:
 
                 * local_features: (batch_size, n_chans * n_times_out, emb_dim)
-                * ch_names: list of list of str (n_chans, batch_size)
-                    n_chans dim first makes it easier to use wit torch's default_collate.
-                    Only needed if ``set_fixed_ch_names`` has not been called.
+                * ch_idxs: (batch_size, n_chans)
+                    Indices of the channels to use in the ``ch_names`` list passed
+                    as argument. Only needed if ``set_fixed_ch_names`` has not been called.
 
         Returns
         -------
@@ -400,14 +386,9 @@ class PosEncoder(nn.Module):
                 and the following ``time_dim`` dimensions encode the temporal positional encoding.
         """
         local_features = batch["local_features"]
-        ch_names = self.get_ch_names(batch)
+        ch_idxs = self.get_ch_idxs(batch).to(local_features.device)
         batch_size, n_chans_times, emb_dim = local_features.shape
-        batch_size_chs = len(ch_names[0])  # ==1 if fixed_ch_names
-        n_chans = len(ch_names)
-        assert all(len(c) == batch_size_chs for c in ch_names)
-        ch_names = [
-            list(c) for c in zip(*ch_names)
-        ]  # transpose to (batch_size, n_chans)
+        batch_size_chs, n_chans = ch_idxs.shape  # ==(1,_) if fixed_ch_names
         assert emb_dim >= self.spat_dim + self.time_dim
         assert n_chans_times % n_chans == 0
         n_times = n_chans_times // n_chans
@@ -416,7 +397,7 @@ class PosEncoder(nn.Module):
             (batch_size_chs, n_chans, n_times, emb_dim)
         )
         # Channel pos. encoding
-        pos_encoding[:, :, :, : self.spat_dim] = self.pos_encoder_spat(ch_names)[
+        pos_encoding[:, :, :, : self.spat_dim] = self.pos_encoder_spat(ch_idxs)[
             :, :, None, :
         ]
         # Temporal pos. encoding
@@ -440,10 +421,12 @@ class PosEncoder(nn.Module):
         """
         self.fixed_ch_names = None
 
-    def get_ch_names(self, batch):
+    def get_ch_idxs(self, batch):
         if self.fixed_ch_names is not None:
-            return [[c] for c in self.fixed_ch_names]
-        return batch["ch_names"]
+            return torch.tensor(
+                [self.ch_names.index(c) for c in self.fixed_ch_names]
+            ).unsqueeze(0)
+        return batch["ch_idxs"]
 
 
 def n_times_out(conv_layers_spec, n_times):
