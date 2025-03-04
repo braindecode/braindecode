@@ -150,9 +150,9 @@ class ConvFeatureEncoder(nn.Module):
                 nn.init.kaiming_normal_(conv.weight)
                 return conv
 
-            assert not (
-                is_layer_norm and is_group_norm
-            ), "layer norm and group norm are exclusive"
+            assert not (is_layer_norm and is_group_norm), (
+                "layer norm and group norm are exclusive"
+            )
 
             if is_layer_norm:
                 return nn.Sequential(
@@ -815,7 +815,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         *,
         n_spat_filters: int = 4,
         # feature_encoder
-        feature_encoder__conv_layers_spec: list[
+        feature_encoder__conv_layers_spec: Sequence[
             tuple[int, int, int]
         ] = _DEFAULT_CONV_LAYER_SPEC,
         drop_prob: float = 0.0,
@@ -916,7 +916,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         *,
         n_spat_filters: int = 4,
         # feature_encoder
-        feature_encoder__conv_layers_spec: list[
+        feature_encoder__conv_layers_spec: Sequence[
             tuple[int, int, int]
         ] = _DEFAULT_CONV_LAYER_SPEC,
         drop_prob: float = 0.0,
