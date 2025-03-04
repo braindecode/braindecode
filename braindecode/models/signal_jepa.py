@@ -15,63 +15,563 @@ from einops import rearrange, parse_shape
 from braindecode.models.base import EEGModuleMixin
 
 
-def _pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
-    """1-dimensional positional encoding.
+_DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
+    (8, 32, 8),
+    (16, 2, 2),
+    (32, 2, 2),
+    (64, 2, 2),
+    (64, 2, 2),
+)
+
+
+class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
+    """Base class for the SignalJEPA models
 
     Parameters
     ----------
-        n_times: int
-            Number of time samples to encode.
-        n_dim: int
-            Number of dimensions of the positional encoding. Must be even.
-        max_n_times: int
-            The largest possible number of time samples to encode.
-            Used to scale the positional encoding.
-        device: str
-            Device to put the output on.
-    Returns
-    -------
-        pos_encoding: (n_times, n_dim)
+    feature_encoder__conv_layers_spec: list of tuples (dim, k, stride) where:
+
+        * dim: number of output channels of the layer (unrelated to EEG channels);
+        * k: temporal length of the layer's kernel;
+        * stride: temporal stride of the layer's kernel.
+
+    drop_prob: float
+    feature_encoder__mode: str
+        Normalisation mode. Either``default`` or ``layer_norm``.
+    feature_encoder__conv_bias: bool
+    activation: nn.Module
+        Activation layer for the feature encoder.
+    pos_encoder__spat_dim: int
+        Number of dimensions to use to encode the spatial position of the patch,
+        i.e. the EEG channel.
+    pos_encoder__time_dim: int
+        Number of dimensions to use to encode the temporal position of the patch.
+    pos_encoder__sfreq_features: float
+        The "downsampled" sampling frequency returned by the feature encoder.
+    pos_encoder__spat_kwargs: dict
+        Additional keyword arguments to pass to the :class:`nn.Embedding` layer used to
+        embed the channel names.
+    transformer__d_model: int
+        The number of expected features in the encoder/decoder inputs.
+    transformer__num_encoder_layers: int
+        The number of encoder layers in the transformer.
+    transformer__num_decoder_layers: int
+        The number of decoder layers in the transformer.
+    transformer__nhead: int
+        The number of heads in the multiheadattention models.
+    _init_feature_encoder : bool
+        Do not change the default value (used for internal purposes).
+    _init_transformer : bool
+        Do not change the default value (used for internal purposes).
     """
-    assert n_dim % 2 == 0
-    position = torch.arange(n_times, device=device).unsqueeze(1)
-    div_term = torch.exp(
-        torch.arange(0, n_dim, 2, device=device) * (-math.log(max_n_times) / n_dim)
-    )
-    pos_encoding = torch.empty((n_times, n_dim), dtype=torch.float32, device=device)
-    pos_encoding[:, 0::2] = torch.sin(position * div_term)
-    pos_encoding[:, 1::2] = torch.cos(position * div_term)
-    return pos_encoding
+
+    feature_encoder: _ConvFeatureEncoder | None
+    pos_encoder: _PosEncoder | None
+    transformer: nn.Transformer | None
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        *,
+        # feature_encoder
+        feature_encoder__conv_layers_spec: Sequence[
+            tuple[int, int, int]
+        ] = _DEFAULT_CONV_LAYER_SPEC,
+        drop_prob: float = 0.0,
+        feature_encoder__mode: str = "default",
+        feature_encoder__conv_bias: bool = False,
+        activation: type[nn.Module] = nn.GELU,
+        # pos_encoder
+        pos_encoder__spat_dim: int = 30,
+        pos_encoder__time_dim: int = 34,
+        pos_encoder__sfreq_features: float = 1.0,
+        pos_encoder__spat_kwargs: dict | None = None,
+        # transformer
+        transformer__d_model: int = 64,
+        transformer__num_encoder_layers: int = 8,
+        transformer__num_decoder_layers: int = 4,
+        transformer__nhead: int = 8,
+        # other
+        _init_feature_encoder: bool,
+        _init_transformer: bool,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        self.feature_encoder = None
+        self.pos_encoder = None
+        self.transformer = None
+        if _init_feature_encoder:
+            self.feature_encoder = _ConvFeatureEncoder(
+                conv_layers_spec=feature_encoder__conv_layers_spec,
+                drop_prob=drop_prob,
+                mode=feature_encoder__mode,
+                conv_bias=feature_encoder__conv_bias,
+                activation=activation,
+            )
+
+        if _init_transformer:
+            ch_names = [ch["ch_name"] for ch in self.chs_info]
+            ch_locs = [ch["loc"] for ch in self.chs_info]
+            self.pos_encoder = _PosEncoder(
+                spat_dim=pos_encoder__spat_dim,
+                time_dim=pos_encoder__time_dim,
+                ch_names=ch_names,
+                ch_locs=ch_locs,
+                sfreq_features=pos_encoder__sfreq_features,
+                spat_kwargs=pos_encoder__spat_kwargs,
+            )
+            self.pos_encoder.set_fixed_ch_names(ch_names)
+            self.transformer = nn.Transformer(
+                d_model=transformer__d_model,
+                nhead=transformer__nhead,
+                num_encoder_layers=transformer__num_encoder_layers,
+                num_decoder_layers=transformer__num_decoder_layers,
+                batch_first=True,
+            )
 
 
-def _pos_encode_contineous(x, x_min, x_max, n_dim, device="cpu"):
-    """1-dimensional positional encoding.
+class SignalJEPA(_BaseSignalJEPA):
+    """Architecture introduced in signal-JEPA [sJEPA]_ and used for SSL pre-training, Guetschel, P et al (2024) [sJEPA]_
+
+    This model is not meant for classification but for SSL pre-training.
+    Its output shape depends on the input shape.
+
+    .. versionadded:: 0.9
+
+    References
+    ----------
+    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
+        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
+    """
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        *,
+        # feature_encoder
+        feature_encoder__conv_layers_spec: Sequence[
+            tuple[int, int, int]
+        ] = _DEFAULT_CONV_LAYER_SPEC,
+        drop_prob: float = 0.0,
+        feature_encoder__mode: str = "default",
+        feature_encoder__conv_bias: bool = False,
+        activation: type[nn.Module] = nn.GELU,
+        # pos_encoder
+        pos_encoder__spat_dim: int = 30,
+        pos_encoder__time_dim: int = 34,
+        pos_encoder__sfreq_features: float = 1.0,
+        pos_encoder__spat_kwargs: dict | None = None,
+        # transformer
+        transformer__d_model: int = 64,
+        transformer__num_encoder_layers: int = 8,
+        transformer__num_decoder_layers: int = 4,
+        transformer__nhead: int = 8,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
+            drop_prob=drop_prob,
+            feature_encoder__mode=feature_encoder__mode,
+            feature_encoder__conv_bias=feature_encoder__conv_bias,
+            activation=activation,
+            pos_encoder__spat_dim=pos_encoder__spat_dim,
+            pos_encoder__time_dim=pos_encoder__time_dim,
+            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
+            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
+            transformer__d_model=transformer__d_model,
+            transformer__num_encoder_layers=transformer__num_encoder_layers,
+            transformer__num_decoder_layers=transformer__num_decoder_layers,
+            transformer__nhead=transformer__nhead,
+            _init_feature_encoder=True,
+            _init_transformer=True,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self.final_layer = nn.Identity()
+
+    def forward(self, X):
+        batch = {"X": X}
+        local_features = self.feature_encoder(batch)
+        pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
+        local_features += pos_encoding
+        contextual_features = self.transformer.encoder(local_features)
+        y = self.final_layer(contextual_features)
+        return y
+
+
+class SignalJEPA_Contextual(_BaseSignalJEPA):
+    """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+
+    .. figure:: https://braindecode.org/dev/_static/model/sjepa_contextual.jpg
+        :align: center
+        :alt: sJEPA Contextual.
 
     Parameters
     ----------
-        x: float
-            The position to encode.
-        x_min: float
-            The minimum possible value of x.
-        x_max: float
-            The maximum possible value of x.
-        n_dim: int
-            Number of dimensions of the positional encoding. Must be even.
-         device: str
-            Device to put the output on.
-    Returns
-    -------
-        pos_encoding: (n_dim,)
+    n_spat_filters : int
+        Number of spatial filters.
+
+    .. versionadded:: 0.9
+
+    References
+    ----------
+    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
+        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
-    assert n_dim % 2 == 0
-    div_term = torch.exp(
-        (1 - torch.arange(0, n_dim, 2, device=device) / n_dim) * 2 * math.pi
-    )
-    pos_encoding = torch.empty((n_dim,), dtype=torch.float32, device=device)
-    xx = (x - x_min) / (x_max - x_min)
-    pos_encoding[0::2] = torch.sin(xx * div_term)
-    pos_encoding[1::2] = torch.cos(xx * div_term)
-    return pos_encoding
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        *,
+        n_spat_filters: int = 4,
+        # feature_encoder
+        feature_encoder__conv_layers_spec: Sequence[
+            tuple[int, int, int]
+        ] = _DEFAULT_CONV_LAYER_SPEC,
+        drop_prob: float = 0.0,
+        feature_encoder__mode: str = "default",
+        feature_encoder__conv_bias: bool = False,
+        activation: type[nn.Module] = nn.GELU,
+        # pos_encoder
+        pos_encoder__spat_dim: int = 30,
+        pos_encoder__time_dim: int = 34,
+        pos_encoder__sfreq_features: float = 1.0,
+        pos_encoder__spat_kwargs: dict | None = None,
+        # transformer
+        transformer__d_model: int = 64,
+        transformer__num_encoder_layers: int = 8,
+        transformer__num_decoder_layers: int = 4,
+        transformer__nhead: int = 8,
+        # other
+        _init_feature_encoder: bool = True,
+        _init_transformer: bool = True,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
+            drop_prob=drop_prob,
+            feature_encoder__mode=feature_encoder__mode,
+            feature_encoder__conv_bias=feature_encoder__conv_bias,
+            activation=activation,
+            pos_encoder__spat_dim=pos_encoder__spat_dim,
+            pos_encoder__time_dim=pos_encoder__time_dim,
+            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
+            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
+            transformer__d_model=transformer__d_model,
+            transformer__num_encoder_layers=transformer__num_encoder_layers,
+            transformer__num_decoder_layers=transformer__num_decoder_layers,
+            transformer__nhead=transformer__nhead,
+            _init_feature_encoder=_init_feature_encoder,
+            _init_transformer=_init_transformer,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self.final_layer = _get_separable_clf_layer(
+            conv_layers_spec=feature_encoder__conv_layers_spec,
+            n_chans=self.n_chans,
+            n_times=self.n_times,
+            n_classes=self.n_outputs,
+            n_spat_filters=n_spat_filters,
+        )
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        model: SignalJEPA,
+        n_outputs: int,
+        n_spat_filters: int = 4,
+        chs_info: list[dict[str, Any]] | None = None,
+    ):
+        feature_encoder = model.feature_encoder
+        pos_encoder = model.pos_encoder
+        transformer = model.transformer
+        assert feature_encoder is not None
+        assert pos_encoder is not None
+        assert transformer is not None
+
+        new_model = cls(
+            n_outputs=n_outputs,
+            n_chans=model.n_chans,
+            n_times=model.n_times,
+            chs_info=chs_info,
+            n_spat_filters=n_spat_filters,
+            feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
+            _init_feature_encoder=False,
+            _init_transformer=False,
+        )
+        new_model.feature_encoder = deepcopy(feature_encoder)
+        new_model.pos_encoder = deepcopy(pos_encoder)
+        new_model.transformer = deepcopy(transformer)
+
+        if chs_info is not None:
+            ch_names = [ch["ch_name"] for ch in chs_info]
+            new_model.pos_encoder.set_fixed_ch_names(ch_names)
+
+        return new_model
+
+    def forward(self, X):
+        batch = {"X": X}
+        local_features = self.feature_encoder(batch)
+        pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
+        local_features += pos_encoding
+        contextual_features = self.transformer.encoder(local_features)
+        y = self.final_layer(contextual_features)
+        return y
+
+
+class SignalJEPA_PostLocal(_BaseSignalJEPA):
+    """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+
+    .. figure:: https://braindecode.org/dev/_static/model/sjepa_post-local.jpg
+        :align: center
+        :alt: sJEPA Pre-Local.
+
+    Parameters
+    ----------
+    n_spat_filters : int
+        Number of spatial filters.
+
+    .. versionadded:: 0.9
+
+    References
+    ----------
+    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
+        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
+    """
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        *,
+        n_spat_filters: int = 4,
+        # feature_encoder
+        feature_encoder__conv_layers_spec: Sequence[
+            tuple[int, int, int]
+        ] = _DEFAULT_CONV_LAYER_SPEC,
+        drop_prob: float = 0.0,
+        feature_encoder__mode: str = "default",
+        feature_encoder__conv_bias: bool = False,
+        activation: type[nn.Module] = nn.GELU,
+        # pos_encoder
+        pos_encoder__spat_dim: int = 30,
+        pos_encoder__time_dim: int = 34,
+        pos_encoder__sfreq_features: float = 1.0,
+        pos_encoder__spat_kwargs: dict | None = None,
+        # transformer
+        transformer__d_model: int = 64,
+        transformer__num_encoder_layers: int = 8,
+        transformer__num_decoder_layers: int = 4,
+        transformer__nhead: int = 8,
+        # other
+        _init_feature_encoder: bool = True,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
+            drop_prob=drop_prob,
+            feature_encoder__mode=feature_encoder__mode,
+            feature_encoder__conv_bias=feature_encoder__conv_bias,
+            activation=activation,
+            pos_encoder__spat_dim=pos_encoder__spat_dim,
+            pos_encoder__time_dim=pos_encoder__time_dim,
+            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
+            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
+            transformer__d_model=transformer__d_model,
+            transformer__num_encoder_layers=transformer__num_encoder_layers,
+            transformer__num_decoder_layers=transformer__num_decoder_layers,
+            transformer__nhead=transformer__nhead,
+            _init_feature_encoder=_init_feature_encoder,
+            _init_transformer=False,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self.final_layer = _get_separable_clf_layer(
+            conv_layers_spec=feature_encoder__conv_layers_spec,
+            n_chans=self.n_chans,
+            n_times=self.n_times,
+            n_classes=self.n_outputs,
+            n_spat_filters=n_spat_filters,
+        )
+
+    @classmethod
+    def from_pretrained(
+        cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
+    ):
+        feature_encoder = model.feature_encoder
+        assert feature_encoder is not None
+        new_model = cls(
+            n_outputs=n_outputs,
+            n_chans=model.n_chans,
+            n_times=model.n_times,
+            n_spat_filters=n_spat_filters,
+            feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
+            _init_feature_encoder=False,
+        )
+        new_model.feature_encoder = deepcopy(feature_encoder)
+        return new_model
+
+    def forward(self, X):
+        local_features = self.feature_encoder({"X": X})
+        y = self.final_layer(local_features)
+        return y
+
+
+class SignalJEPA_PreLocal(_BaseSignalJEPA):
+    """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+
+    .. figure:: https://braindecode.org/dev/_static/model/sjepa_pre-local.jpg
+        :align: center
+        :alt: sJEPA Pre-Local.
+
+    Parameters
+    ----------
+    n_spat_filters : int
+        Number of spatial filters.
+
+    .. versionadded:: 0.9
+
+    References
+    ----------
+    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
+        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
+    """
+
+    def __init__(
+        self,
+        n_outputs=None,
+        n_chans=None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        *,
+        n_spat_filters: int = 4,
+        # feature_encoder
+        feature_encoder__conv_layers_spec: Sequence[
+            tuple[int, int, int]
+        ] = _DEFAULT_CONV_LAYER_SPEC,
+        drop_prob: float = 0.0,
+        feature_encoder__mode: str = "default",
+        feature_encoder__conv_bias: bool = False,
+        activation: type[nn.Module] = nn.GELU,
+        # pos_encoder
+        pos_encoder__spat_dim: int = 30,
+        pos_encoder__time_dim: int = 34,
+        pos_encoder__sfreq_features: float = 1.0,
+        pos_encoder__spat_kwargs: dict | None = None,
+        # transformer
+        transformer__d_model: int = 64,
+        transformer__num_encoder_layers: int = 8,
+        transformer__num_decoder_layers: int = 4,
+        transformer__nhead: int = 8,
+        # other
+        _init_feature_encoder: bool = True,
+    ):
+        super().__init__(
+            n_outputs=n_outputs,
+            n_chans=n_chans,
+            chs_info=chs_info,
+            n_times=n_times,
+            input_window_seconds=input_window_seconds,
+            sfreq=sfreq,
+            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
+            drop_prob=drop_prob,
+            feature_encoder__mode=feature_encoder__mode,
+            feature_encoder__conv_bias=feature_encoder__conv_bias,
+            activation=activation,
+            pos_encoder__spat_dim=pos_encoder__spat_dim,
+            pos_encoder__time_dim=pos_encoder__time_dim,
+            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
+            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
+            transformer__d_model=transformer__d_model,
+            transformer__num_encoder_layers=transformer__num_encoder_layers,
+            transformer__num_decoder_layers=transformer__num_decoder_layers,
+            transformer__nhead=transformer__nhead,
+            _init_feature_encoder=_init_feature_encoder,
+            _init_transformer=False,
+        )
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+        self.spatial_conv = nn.Sequential(
+            Rearrange("b channels time -> b 1 channels time"),
+            nn.Conv2d(1, n_spat_filters, (self.n_chans, 1)),
+            Rearrange("b spat_filters 1 time -> b spat_filters time"),
+        )
+        out_emb_dim = _get_out_emb_dim(
+            conv_layers_spec=feature_encoder__conv_layers_spec,
+            n_times=self.n_times,
+            n_spat_filters=n_spat_filters,
+        )
+        self.final_layer = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(out_emb_dim, self.n_outputs),
+        )
+
+    @classmethod
+    def from_pretrained(
+        cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
+    ):
+        feature_encoder = model.feature_encoder
+        assert feature_encoder is not None
+        new_model = cls(
+            n_outputs=n_outputs,
+            n_chans=model.n_chans,
+            n_times=model.n_times,
+            n_spat_filters=n_spat_filters,
+            feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
+            _init_feature_encoder=False,
+        )
+        new_model.feature_encoder = deepcopy(feature_encoder)
+        return new_model
+
+    def forward(self, X):
+        X = self.spatial_conv(X)
+        local_features = self.feature_encoder({"X": X})
+        y = self.final_layer(local_features)
+        return y
 
 
 class _ConvFeatureEncoder(nn.Module):
@@ -214,18 +714,6 @@ class _ConvFeatureEncoder(nn.Module):
         )
         return x
 
-    @property
-    def receptive_fields(self):
-        rf = 1
-        receptive_fields = [rf]
-        for _, width, stride in reversed(self.conv_layers_spec):
-            rf = (rf - 1) * stride + width  # assumes no padding and no dilation
-            receptive_fields.append(rf)
-        return list(reversed(receptive_fields))
-
-    def n_times_out(self, n_times):
-        return _n_times_out(self.conv_layers_spec, n_times)
-
 
 class _ChannelEmbedding(nn.Embedding):
     """Embedding layer for EEG channels.
@@ -261,8 +749,9 @@ class _ChannelEmbedding(nn.Embedding):
         self.max_abs_coordinate = max(abs(global_min), abs(global_max))
         self.embedding_dim_per_coordinate = embedding_dim // len(self.coordinate_ranges)
         self.channel_locations = list(channel_locations)
-        print(f"{self.coordinate_ranges=}")
+
         assert embedding_dim % len(self.coordinate_ranges) == 0
+
         super().__init__(len(channel_locations), embedding_dim, **kwargs)
 
     def reset_parameters(self):
@@ -447,537 +936,60 @@ def _get_separable_clf_layer(
     return clf_layer
 
 
-_DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
-    (8, 32, 8),
-    (16, 2, 2),
-    (32, 2, 2),
-    (64, 2, 2),
-    (64, 2, 2),
-)
-
-
-class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
-    """Base class for the SignalJEPA models.
+def _pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
+    """1-dimensional positional encoding.
 
     Parameters
     ----------
-    feature_encoder__conv_layers_spec: list of tuples (dim, k, stride) where:
-
-        * dim: number of output channels of the layer (unrelated to EEG channels);
-        * k: temporal length of the layer's kernel;
-        * stride: temporal stride of the layer's kernel.
-
-    drop_prob: float
-    feature_encoder__mode: str
-        Normalisation mode. Either``default`` or ``layer_norm``.
-    feature_encoder__conv_bias: bool
-    activation: nn.Module
-        Activation layer for the feature encoder.
-    pos_encoder__spat_dim: int
-        Number of dimensions to use to encode the spatial position of the patch,
-        i.e. the EEG channel.
-    pos_encoder__time_dim: int
-        Number of dimensions to use to encode the temporal position of the patch.
-    pos_encoder__sfreq_features: float
-        The "downsampled" sampling frequency returned by the feature encoder.
-    pos_encoder__spat_kwargs: dict
-        Additional keyword arguments to pass to the :class:`nn.Embedding` layer used to
-        embed the channel names.
-    transformer__d_model: int
-        The number of expected features in the encoder/decoder inputs.
-    transformer__num_encoder_layers: int
-        The number of encoder layers in the transformer.
-    transformer__num_decoder_layers: int
-        The number of decoder layers in the transformer.
-    transformer__nhead: int
-        The number of heads in the multiheadattention models.
-    _init_feature_encoder : bool
-        Do not change the default value (used for internal purposes).
-    _init_transformer : bool
-        Do not change the default value (used for internal purposes).
+        n_times: int
+            Number of time samples to encode.
+        n_dim: int
+            Number of dimensions of the positional encoding. Must be even.
+        max_n_times: int
+            The largest possible number of time samples to encode.
+            Used to scale the positional encoding.
+        device: str
+            Device to put the output on.
+    Returns
+    -------
+        pos_encoding: (n_times, n_dim)
     """
-
-    feature_encoder: _ConvFeatureEncoder | None
-    pos_encoder: _PosEncoder | None
-    transformer: nn.Transformer | None
-
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        *,
-        # feature_encoder
-        feature_encoder__conv_layers_spec: Sequence[
-            tuple[int, int, int]
-        ] = _DEFAULT_CONV_LAYER_SPEC,
-        drop_prob: float = 0.0,
-        feature_encoder__mode: str = "default",
-        feature_encoder__conv_bias: bool = False,
-        activation: type[nn.Module] = nn.GELU,
-        # pos_encoder
-        pos_encoder__spat_dim: int = 30,
-        pos_encoder__time_dim: int = 34,
-        pos_encoder__sfreq_features: float = 1.0,
-        pos_encoder__spat_kwargs: dict | None = None,
-        # transformer
-        transformer__d_model: int = 64,
-        transformer__num_encoder_layers: int = 8,
-        transformer__num_decoder_layers: int = 4,
-        transformer__nhead: int = 8,
-        # other
-        _init_feature_encoder: bool,
-        _init_transformer: bool,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-
-        self.feature_encoder = None
-        self.pos_encoder = None
-        self.transformer = None
-        if _init_feature_encoder:
-            self.feature_encoder = _ConvFeatureEncoder(
-                conv_layers_spec=feature_encoder__conv_layers_spec,
-                drop_prob=drop_prob,
-                mode=feature_encoder__mode,
-                conv_bias=feature_encoder__conv_bias,
-                activation=activation,
-            )
-
-        if _init_transformer:
-            ch_names = [ch["ch_name"] for ch in self.chs_info]
-            ch_locs = [ch["loc"] for ch in self.chs_info]
-            self.pos_encoder = _PosEncoder(
-                spat_dim=pos_encoder__spat_dim,
-                time_dim=pos_encoder__time_dim,
-                ch_names=ch_names,
-                ch_locs=ch_locs,
-                sfreq_features=pos_encoder__sfreq_features,
-                spat_kwargs=pos_encoder__spat_kwargs,
-            )
-            self.pos_encoder.set_fixed_ch_names(ch_names)
-            self.transformer = nn.Transformer(
-                d_model=transformer__d_model,
-                nhead=transformer__nhead,
-                num_encoder_layers=transformer__num_encoder_layers,
-                num_decoder_layers=transformer__num_decoder_layers,
-                batch_first=True,
-            )
+    assert n_dim % 2 == 0
+    position = torch.arange(n_times, device=device).unsqueeze(1)
+    div_term = torch.exp(
+        torch.arange(0, n_dim, 2, device=device) * (-math.log(max_n_times) / n_dim)
+    )
+    pos_encoding = torch.empty((n_times, n_dim), dtype=torch.float32, device=device)
+    pos_encoding[:, 0::2] = torch.sin(position * div_term)
+    pos_encoding[:, 1::2] = torch.cos(position * div_term)
+    return pos_encoding
 
 
-class SignalJEPA(_BaseSignalJEPA):
-    """Architecture introduced in signal-JEPA [sJEPA]_ and used for SSL pre-training.
-
-    This model is not meant for classification but for SSL pre-training.
-    Its output shape depends on the input shape.
-
-    References
-    ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
-        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
-        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
-    """
-
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        *,
-        # feature_encoder
-        feature_encoder__conv_layers_spec: Sequence[
-            tuple[int, int, int]
-        ] = _DEFAULT_CONV_LAYER_SPEC,
-        drop_prob: float = 0.0,
-        feature_encoder__mode: str = "default",
-        feature_encoder__conv_bias: bool = False,
-        activation: type[nn.Module] = nn.GELU,
-        # pos_encoder
-        pos_encoder__spat_dim: int = 30,
-        pos_encoder__time_dim: int = 34,
-        pos_encoder__sfreq_features: float = 1.0,
-        pos_encoder__spat_kwargs: dict | None = None,
-        # transformer
-        transformer__d_model: int = 64,
-        transformer__num_encoder_layers: int = 8,
-        transformer__num_decoder_layers: int = 4,
-        transformer__nhead: int = 8,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
-            drop_prob=drop_prob,
-            feature_encoder__mode=feature_encoder__mode,
-            feature_encoder__conv_bias=feature_encoder__conv_bias,
-            activation=activation,
-            pos_encoder__spat_dim=pos_encoder__spat_dim,
-            pos_encoder__time_dim=pos_encoder__time_dim,
-            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
-            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
-            transformer__d_model=transformer__d_model,
-            transformer__num_encoder_layers=transformer__num_encoder_layers,
-            transformer__num_decoder_layers=transformer__num_decoder_layers,
-            transformer__nhead=transformer__nhead,
-            _init_feature_encoder=True,
-            _init_transformer=True,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.final_layer = nn.Identity()
-
-    def forward(self, X):
-        batch = {"X": X}
-        local_features = self.feature_encoder(batch)
-        pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
-        local_features += pos_encoding
-        contextual_features = self.transformer.encoder(local_features)
-        y = self.final_layer(contextual_features)
-        return y
-
-
-class SignalJEPA_Contextual(_BaseSignalJEPA):
-    """Contextual downstream architecture introduced in signal-JEPA [sJEPA]_.
+def _pos_encode_contineous(x, x_min, x_max, n_dim, device="cpu"):
+    """1-dimensional positional encoding.
 
     Parameters
     ----------
-    n_spat_filters : int
-        Number of spatial filters.
-
-    References
-    ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
-        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
-        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
+        x: float
+            The position to encode.
+        x_min: float
+            The minimum possible value of x.
+        x_max: float
+            The maximum possible value of x.
+        n_dim: int
+            Number of dimensions of the positional encoding. Must be even.
+         device: str
+            Device to put the output on.
+    Returns
+    -------
+        pos_encoding: (n_dim,)
     """
-
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        *,
-        n_spat_filters: int = 4,
-        # feature_encoder
-        feature_encoder__conv_layers_spec: Sequence[
-            tuple[int, int, int]
-        ] = _DEFAULT_CONV_LAYER_SPEC,
-        drop_prob: float = 0.0,
-        feature_encoder__mode: str = "default",
-        feature_encoder__conv_bias: bool = False,
-        activation: type[nn.Module] = nn.GELU,
-        # pos_encoder
-        pos_encoder__spat_dim: int = 30,
-        pos_encoder__time_dim: int = 34,
-        pos_encoder__sfreq_features: float = 1.0,
-        pos_encoder__spat_kwargs: dict | None = None,
-        # transformer
-        transformer__d_model: int = 64,
-        transformer__num_encoder_layers: int = 8,
-        transformer__num_decoder_layers: int = 4,
-        transformer__nhead: int = 8,
-        # other
-        _init_feature_encoder: bool = True,
-        _init_transformer: bool = True,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
-            drop_prob=drop_prob,
-            feature_encoder__mode=feature_encoder__mode,
-            feature_encoder__conv_bias=feature_encoder__conv_bias,
-            activation=activation,
-            pos_encoder__spat_dim=pos_encoder__spat_dim,
-            pos_encoder__time_dim=pos_encoder__time_dim,
-            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
-            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
-            transformer__d_model=transformer__d_model,
-            transformer__num_encoder_layers=transformer__num_encoder_layers,
-            transformer__num_decoder_layers=transformer__num_decoder_layers,
-            transformer__nhead=transformer__nhead,
-            _init_feature_encoder=_init_feature_encoder,
-            _init_transformer=_init_transformer,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.final_layer = _get_separable_clf_layer(
-            conv_layers_spec=feature_encoder__conv_layers_spec,
-            n_chans=self.n_chans,
-            n_times=self.n_times,
-            n_classes=self.n_outputs,
-            n_spat_filters=n_spat_filters,
-        )
-
-    @classmethod
-    def from_pretrained(
-        cls,
-        model: SignalJEPA,
-        n_outputs: int,
-        n_spat_filters: int = 4,
-        chs_info: list[dict[str, Any]] | None = None,
-    ):
-        feature_encoder = model.feature_encoder
-        pos_encoder = model.pos_encoder
-        transformer = model.transformer
-        assert feature_encoder is not None
-        assert pos_encoder is not None
-        assert transformer is not None
-        new_model = cls(
-            n_outputs=n_outputs,
-            n_chans=model.n_chans,
-            n_times=model.n_times,
-            chs_info=chs_info,
-            n_spat_filters=n_spat_filters,
-            feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
-            _init_feature_encoder=False,
-            _init_transformer=False,
-        )
-        new_model.feature_encoder = deepcopy(feature_encoder)
-        new_model.pos_encoder = deepcopy(pos_encoder)
-        new_model.transformer = deepcopy(transformer)
-        if chs_info is not None:
-            ch_names = [ch["ch_name"] for ch in chs_info]
-            new_model.pos_encoder.set_fixed_ch_names(ch_names)
-        return new_model
-
-    def forward(self, X):
-        batch = {"X": X}
-        local_features = self.feature_encoder(batch)
-        pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
-        local_features += pos_encoding
-        contextual_features = self.transformer.encoder(local_features)
-        y = self.final_layer(contextual_features)
-        return y
-
-
-class SignalJEPA_PostLocal(_BaseSignalJEPA):
-    """Post-local downstream architecture introduced in signal-JEPA [sJEPA]_.
-
-    Parameters
-    ----------
-    n_spat_filters : int
-        Number of spatial filters.
-
-    References
-    ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
-        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
-        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
-    """
-
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        *,
-        n_spat_filters: int = 4,
-        # feature_encoder
-        feature_encoder__conv_layers_spec: Sequence[
-            tuple[int, int, int]
-        ] = _DEFAULT_CONV_LAYER_SPEC,
-        drop_prob: float = 0.0,
-        feature_encoder__mode: str = "default",
-        feature_encoder__conv_bias: bool = False,
-        activation: type[nn.Module] = nn.GELU,
-        # pos_encoder
-        pos_encoder__spat_dim: int = 30,
-        pos_encoder__time_dim: int = 34,
-        pos_encoder__sfreq_features: float = 1.0,
-        pos_encoder__spat_kwargs: dict | None = None,
-        # transformer
-        transformer__d_model: int = 64,
-        transformer__num_encoder_layers: int = 8,
-        transformer__num_decoder_layers: int = 4,
-        transformer__nhead: int = 8,
-        # other
-        _init_feature_encoder: bool = True,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
-            drop_prob=drop_prob,
-            feature_encoder__mode=feature_encoder__mode,
-            feature_encoder__conv_bias=feature_encoder__conv_bias,
-            activation=activation,
-            pos_encoder__spat_dim=pos_encoder__spat_dim,
-            pos_encoder__time_dim=pos_encoder__time_dim,
-            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
-            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
-            transformer__d_model=transformer__d_model,
-            transformer__num_encoder_layers=transformer__num_encoder_layers,
-            transformer__num_decoder_layers=transformer__num_decoder_layers,
-            transformer__nhead=transformer__nhead,
-            _init_feature_encoder=_init_feature_encoder,
-            _init_transformer=False,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.final_layer = _get_separable_clf_layer(
-            conv_layers_spec=feature_encoder__conv_layers_spec,
-            n_chans=self.n_chans,
-            n_times=self.n_times,
-            n_classes=self.n_outputs,
-            n_spat_filters=n_spat_filters,
-        )
-
-    @classmethod
-    def from_pretrained(
-        cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
-    ):
-        feature_encoder = model.feature_encoder
-        assert feature_encoder is not None
-        new_model = cls(
-            n_outputs=n_outputs,
-            n_chans=model.n_chans,
-            n_times=model.n_times,
-            n_spat_filters=n_spat_filters,
-            feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
-            _init_feature_encoder=False,
-        )
-        new_model.feature_encoder = deepcopy(feature_encoder)
-        return new_model
-
-    def forward(self, X):
-        local_features = self.feature_encoder({"X": X})
-        y = self.final_layer(local_features)
-        return y
-
-
-class SignalJEPA_PreLocal(_BaseSignalJEPA):
-    """Pre-local downstream architecture introduced in signal-JEPA [sJEPA]_.
-
-    Parameters
-    ----------
-    n_spat_filters : int
-        Number of spatial filters.
-
-    References
-    ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
-        S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
-        In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
-    """
-
-    def __init__(
-        self,
-        n_outputs=None,
-        n_chans=None,
-        chs_info=None,
-        n_times=None,
-        input_window_seconds=None,
-        sfreq=None,
-        *,
-        n_spat_filters: int = 4,
-        # feature_encoder
-        feature_encoder__conv_layers_spec: Sequence[
-            tuple[int, int, int]
-        ] = _DEFAULT_CONV_LAYER_SPEC,
-        drop_prob: float = 0.0,
-        feature_encoder__mode: str = "default",
-        feature_encoder__conv_bias: bool = False,
-        activation: type[nn.Module] = nn.GELU,
-        # pos_encoder
-        pos_encoder__spat_dim: int = 30,
-        pos_encoder__time_dim: int = 34,
-        pos_encoder__sfreq_features: float = 1.0,
-        pos_encoder__spat_kwargs: dict | None = None,
-        # transformer
-        transformer__d_model: int = 64,
-        transformer__num_encoder_layers: int = 8,
-        transformer__num_decoder_layers: int = 4,
-        transformer__nhead: int = 8,
-        # other
-        _init_feature_encoder: bool = True,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-            feature_encoder__conv_layers_spec=feature_encoder__conv_layers_spec,
-            drop_prob=drop_prob,
-            feature_encoder__mode=feature_encoder__mode,
-            feature_encoder__conv_bias=feature_encoder__conv_bias,
-            activation=activation,
-            pos_encoder__spat_dim=pos_encoder__spat_dim,
-            pos_encoder__time_dim=pos_encoder__time_dim,
-            pos_encoder__sfreq_features=pos_encoder__sfreq_features,
-            pos_encoder__spat_kwargs=pos_encoder__spat_kwargs,
-            transformer__d_model=transformer__d_model,
-            transformer__num_encoder_layers=transformer__num_encoder_layers,
-            transformer__num_decoder_layers=transformer__num_decoder_layers,
-            transformer__nhead=transformer__nhead,
-            _init_feature_encoder=_init_feature_encoder,
-            _init_transformer=False,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.spatial_conv = nn.Sequential(
-            Rearrange("b channels time -> b 1 channels time"),
-            nn.Conv2d(1, n_spat_filters, (self.n_chans, 1)),
-            Rearrange("b spat_filters 1 time -> b spat_filters time"),
-        )
-        out_emb_dim = _get_out_emb_dim(
-            conv_layers_spec=feature_encoder__conv_layers_spec,
-            n_times=self.n_times,
-            n_spat_filters=n_spat_filters,
-        )
-        self.final_layer = nn.Sequential(
-            nn.Flatten(start_dim=1),
-            nn.Linear(out_emb_dim, self.n_outputs),
-        )
-
-    @classmethod
-    def from_pretrained(
-        cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
-    ):
-        feature_encoder = model.feature_encoder
-        assert feature_encoder is not None
-        new_model = cls(
-            n_outputs=n_outputs,
-            n_chans=model.n_chans,
-            n_times=model.n_times,
-            n_spat_filters=n_spat_filters,
-            feature_encoder__conv_layers_spec=feature_encoder.conv_layers_spec,
-            _init_feature_encoder=False,
-        )
-        new_model.feature_encoder = deepcopy(feature_encoder)
-        return new_model
-
-    def forward(self, X):
-        X = self.spatial_conv(X)
-        local_features = self.feature_encoder({"X": X})
-        y = self.final_layer(local_features)
-        return y
+    assert n_dim % 2 == 0
+    div_term = torch.exp(
+        (1 - torch.arange(0, n_dim, 2, device=device) / n_dim) * 2 * math.pi
+    )
+    pos_encoding = torch.empty((n_dim,), dtype=torch.float32, device=device)
+    xx = (x - x_min) / (x_max - x_min)
+    pos_encoding[0::2] = torch.sin(xx * div_term)
+    pos_encoding[1::2] = torch.cos(xx * div_term)
+    return pos_encoding
