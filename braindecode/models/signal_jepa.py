@@ -130,8 +130,8 @@ class _ConvFeatureEncoder(nn.Module):
                 return conv
 
             assert not (is_layer_norm and is_group_norm), (
-                    "layer norm and group norm are exclusive"
-                )
+                "layer norm and group norm are exclusive"
+            )
 
             if is_layer_norm:
                 return nn.Sequential(
