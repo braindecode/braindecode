@@ -9,12 +9,13 @@ from copy import deepcopy
 import torch
 from torch import nn
 from einops.layers.torch import Rearrange
+from einops import rearrange, parse_shape
 
 
 from braindecode.models.base import EEGModuleMixin
 
 
-def pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
+def _pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
     """1-dimensional positional encoding.
 
     Parameters
@@ -43,7 +44,7 @@ def pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
     return pos_encoding
 
 
-def pos_encode_contineous(x, x_min, x_max, n_dim, device="cpu"):
+def _pos_encode_contineous(x, x_min, x_max, n_dim, device="cpu"):
     """1-dimensional positional encoding.
 
     Parameters
@@ -109,22 +110,28 @@ class _ConvFeatureEncoder(nn.Module):
         super().__init__()
 
         def block(
-            n_in,
-            n_out,
-            k,
+            input_channels,
+            output_channels,
+            kernel_size,
             stride,
             is_layer_norm=False,
             is_group_norm=False,
             conv_bias=False,
         ):
             def make_conv():
-                conv = nn.Conv1d(n_in, n_out, k, stride=stride, bias=conv_bias)
+                conv = nn.Conv1d(
+                    input_channels,
+                    output_channels,
+                    kernel_size,
+                    stride=stride,
+                    bias=conv_bias,
+                )
                 nn.init.kaiming_normal_(conv.weight)
                 return conv
 
-            assert not (is_layer_norm and is_group_norm), (
-                "layer norm and group norm are exclusive"
-            )
+            assert not (
+                is_layer_norm and is_group_norm
+            ), "layer norm and group norm are exclusive"
 
             if is_layer_norm:
                 return nn.Sequential(
@@ -132,7 +139,7 @@ class _ConvFeatureEncoder(nn.Module):
                     nn.Dropout(p=drop_prob),
                     nn.Sequential(
                         Rearrange("... channels time -> ... time channels"),
-                        nn.LayerNorm(dim, elementwise_affine=True),
+                        nn.LayerNorm(output_channels, elementwise_affine=True),
                         Rearrange("... time channels -> ... channels time"),
                     ),
                     activation(),
@@ -141,7 +148,7 @@ class _ConvFeatureEncoder(nn.Module):
                 return nn.Sequential(
                     make_conv(),
                     nn.Dropout(p=drop_prob),
-                    nn.GroupNorm(dim, dim, affine=True),
+                    nn.GroupNorm(output_channels, output_channels, affine=True),
                     activation(),
                 )
             else:
@@ -166,12 +173,21 @@ class _ConvFeatureEncoder(nn.Module):
             )
             input_channels = output_channels
 
-        self.emb_dim = output_channels  # last output dimension becomes the embedding dimension
+        self.emb_dim = (
+            output_channels  # last output dimension becomes the embedding dimension
+        )
         self.conv_layers_spec = conv_layers_spec
-        self.cnn = nn.Sequential(*conv_layers)
+        self.cnn = nn.Sequential(
+            Rearrange("b channels time -> (b channels) 1 time"),
+            *conv_layers,
+        )
 
     def forward(self, batch):
         """
+        ``n_times_out`` is the temporal length of the signal after passing
+        through the convolutional layers. This length can be predicted with
+        the method ``_ConvFeatureEncoder.n_times_out()``.
+
         Parameters
         ----------
         batch: dict with keys:
@@ -187,12 +203,14 @@ class _ConvFeatureEncoder(nn.Module):
             ``conv_layers_spec``.
         """
         x = batch["X"]
-        batch_size, n_chans, n_times = x.shape
-        x = x.view(batch_size * n_chans, 1, n_times)
-        x: torch.Tensor = self.cnn(x)  # (batch_size * n_chans, emb_dim, n_times_out)
-        x = x.transpose(1, 2)
-        x = x.reshape(batch_size, -1, self.emb_dim)
-        return x  # (batch_size, n_chans * n_times_out, emb_dim)
+        shapes = parse_shape(x, "b channels _")
+        x = self.cnn(x)
+        x = rearrange(
+            x,
+            "(b channels) emb_dim time_out -> b (channels time_out) emb_dim",
+            **shapes,
+        )
+        return x
 
     @property
     def receptive_fields(self):
@@ -204,7 +222,7 @@ class _ConvFeatureEncoder(nn.Module):
         return list(reversed(receptive_fields))
 
     def n_times_out(self, n_times):
-        return n_times_out(self.conv_layers_spec, n_times)
+        return _n_times_out(self.conv_layers_spec, n_times)
 
     def description(self, sfreq=None, n_times=None):
         dims, _, strides = zip(*self.conv_layers_spec)
@@ -230,7 +248,7 @@ class _ConvFeatureEncoder(nn.Module):
         return desc
 
 
-class ChannelEmbedding(nn.Embedding):
+class _ChannelEmbedding(nn.Embedding):
     """Embedding layer for EEG channels.
 
     The difference with a regular :class:`nn.Embedding` is that the embedding
@@ -276,7 +294,7 @@ class ChannelEmbedding(nn.Embedding):
                         self.weight[
                             i, j * self.coord_dim : (j + 1) * self.coord_dim
                         ].copy_(
-                            pos_encode_contineous(
+                            _pos_encode_contineous(
                                 x,
                                 0,
                                 10 * self.x_max,
@@ -286,7 +304,7 @@ class ChannelEmbedding(nn.Embedding):
                         )
 
 
-class PosEncoder(nn.Module):
+class _PosEncoder(nn.Module):
     """Positional encoder for EEG data.
 
     Parameters
@@ -324,7 +342,7 @@ class PosEncoder(nn.Module):
         spat_kwargs = spat_kwargs or {}
         ch_locs_plus_ukn = [None] + list(ch_locs)
         self.ch_names = ch_names
-        self.pos_encoder_spat = ChannelEmbedding(
+        self.pos_encoder_spat = _ChannelEmbedding(
             ch_locs_plus_ukn, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
         self.spat_dim = spat_dim
@@ -335,7 +353,7 @@ class PosEncoder(nn.Module):
     def _check_encoding_time(self, n_times):
         if self.encoding_time.size(0) < n_times:
             self.encoding_time = self.encoding_time.new_empty((n_times, self.time_dim))
-            self.encoding_time[:] = pos_encode_time(
+            self.encoding_time[:] = _pos_encode_time(
                 n_times=n_times,
                 n_dim=self.time_dim,
                 max_n_times=self.max_n_times,
@@ -407,7 +425,7 @@ class PosEncoder(nn.Module):
         return batch["ch_idxs"]
 
 
-def n_times_out(conv_layers_spec, n_times):
+def _n_times_out(conv_layers_spec, n_times):
     # it would be equal to n_times//ds_factor without edge effects:
     n_times_out_ = n_times
     for _, width, stride in conv_layers_spec:
@@ -415,16 +433,16 @@ def n_times_out(conv_layers_spec, n_times):
     return n_times_out_
 
 
-def get_out_emb_dim(conv_layers_spec, n_times, n_spat_filters=4):
-    n_time_out = n_times_out(conv_layers_spec, n_times)
+def _get_out_emb_dim(conv_layers_spec, n_times, n_spat_filters=4):
+    n_time_out = _n_times_out(conv_layers_spec, n_times)
     emb_dim = conv_layers_spec[-1][0]
     return n_spat_filters * n_time_out * emb_dim
 
 
-def get_separable_clf_layer(
+def _get_separable_clf_layer(
     conv_layers_spec, n_chans, n_times, n_classes, n_spat_filters=4
 ):
-    out_emb_dim = get_out_emb_dim(
+    out_emb_dim = _get_out_emb_dim(
         conv_layers_spec=conv_layers_spec,
         n_times=n_times,
         n_spat_filters=n_spat_filters,
@@ -491,7 +509,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     """
 
     feature_encoder: _ConvFeatureEncoder | None
-    pos_encoder: PosEncoder | None
+    pos_encoder: _PosEncoder | None
     transformer: nn.Transformer | None
 
     def __init__(
@@ -550,7 +568,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         if _init_transformer:
             ch_names = [ch["ch_name"] for ch in self.chs_info]
             ch_locs = [ch["loc"] for ch in self.chs_info]
-            self.pos_encoder = PosEncoder(
+            self.pos_encoder = _PosEncoder(
                 spat_dim=pos_encoder__spat_dim,
                 time_dim=pos_encoder__time_dim,
                 ch_names=ch_names,
@@ -716,7 +734,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
             _init_transformer=_init_transformer,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.final_layer = get_separable_clf_layer(
+        self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_chans=self.n_chans,
             n_times=self.n_times,
@@ -836,7 +854,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
             _init_transformer=False,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.final_layer = get_separable_clf_layer(
+        self.final_layer = _get_separable_clf_layer(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_chans=self.n_chans,
             n_times=self.n_times,
@@ -942,7 +960,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
             nn.Conv2d(1, n_spat_filters, (self.n_chans, 1)),
             Rearrange("b spat_filters 1 time -> b spat_filters time"),
         )
-        out_emb_dim = get_out_emb_dim(
+        out_emb_dim = _get_out_emb_dim(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_times=self.n_times,
             n_spat_filters=n_spat_filters,
