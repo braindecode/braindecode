@@ -11,6 +11,6 @@ jobs:
   check-whats-news:
     runs-on: ubuntu-latest
     steps:
-      - uses: tarides/changelog-check-action@v2
+      - uses: tarides/changelog-check-action@v3
         with:
           changelog: docs/whats_new.rst
