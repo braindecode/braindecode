@@ -135,7 +135,7 @@ class BIDSDataset(BaseConcatDataset):
             ".nwb",
         ]
     )
-    datatypes: str | list[str] | None = "eeg"
+    datatypes: str | list[str] | None = None
     check: bool = False
     preload: bool = False
     n_jobs: int = 1
@@ -184,14 +184,14 @@ class BIDSEpochsDataset(BIDSDataset):
     The files must end with ``_epo.fif``.
 
     This class has the same parameters as :class:`BIDSDataset` except for arguments
-    ``datatypes``, ``extensions`` and ``check`` which are fixed.
+    ``suffixes``, ``extensions`` and ``check`` which are fixed.
     """
 
     def __init__(self, *args, **kwargs):
         super().__init__(
             *args,
             extensions=".fif",
-            datatypes="epo",
+            suffixes="epo",
             check=False,
             **kwargs,
         )
