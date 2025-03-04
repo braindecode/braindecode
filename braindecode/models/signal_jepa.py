@@ -130,8 +130,9 @@ class _ConvFeatureEncoder(nn.Module):
                 return conv
 
             assert not (
-                is_layer_norm and is_group_norm
-            ), "layer norm and group norm are exclusive"
+                is_layer_norm and is_group_norm), (
+                    "layer norm and group norm are exclusive"
+                )
 
             if is_layer_norm:
                 return nn.Sequential(
@@ -256,49 +257,54 @@ class _ChannelEmbedding(nn.Embedding):
 
     Parameters
     ----------
-    locs: list of (list of float or None)
+    channel_locations: list of (list of float or None)
         List of the n-dimensions locations of the EEG channels.
     embedding_dim: int
         Dimensionality of the embedding vectors. Must be a multiple of the number
         of dimensions of the channel locations.
     """
 
-    def __init__(self, locs: list[list[float] | None], embedding_dim: int, **kwargs):
-        self.ranges = [
-            (min(col), max(col))
-            for col in zip(
+    def __init__(
+        self, channel_locations: list[list[float] | None], embedding_dim: int, **kwargs
+    ):
+        self.coordinate_ranges = [
+            (min(coords), max(coords))
+            for coords in zip(
                 *[
-                    row[3:6] if len(row) == 12 else row
-                    for row in locs
-                    if row is not None
+                    loc[3:6] if len(loc) == 12 else loc
+                    for loc in channel_locations
+                    if loc is not None
                 ]
             )
         ]
-        x_min_list, x_max_list = zip(*self.ranges)
-        x_min = min(x_min_list)
-        x_max = max(x_max_list)
-        self.x_max = max(abs(x_min), abs(x_max))
-        self.coord_dim = embedding_dim // len(self.ranges)
-        self.locs = list(locs)
-        print(f"{self.ranges=}")
-        assert embedding_dim % len(self.ranges) == 0
-        super().__init__(len(locs), embedding_dim, **kwargs)
+        channel_mins, channel_maxs = zip(*self.coordinate_ranges)
+        global_min = min(channel_mins)
+        global_max = max(channel_maxs)
+        self.max_abs_coordinate = max(abs(global_min), abs(global_max))
+        self.embedding_dim_per_coordinate = embedding_dim // len(self.coordinate_ranges)
+        self.channel_locations = list(channel_locations)
+        print(f"{self.coordinate_ranges=}")
+        assert embedding_dim % len(self.coordinate_ranges) == 0
+        super().__init__(len(channel_locations), embedding_dim, **kwargs)
 
     def reset_parameters(self):
-        for i, loc in enumerate(self.locs):
+        for i, loc in enumerate(self.channel_locations):
             if loc is None:
                 nn.init.zeros_(self.weight[i])
             else:
-                for j, (x, (x0, x1)) in enumerate(zip(loc, self.ranges)):
+                for j, (x, (x0, x1)) in enumerate(zip(loc, self.coordinate_ranges)):
                     with torch.no_grad():
                         self.weight[
-                            i, j * self.coord_dim : (j + 1) * self.coord_dim
+                            i,
+                            j
+                            * self.embedding_dim_per_coordinate : (j + 1)
+                            * self.embedding_dim_per_coordinate,
                         ].copy_(
                             _pos_encode_contineous(
                                 x,
                                 0,
-                                10 * self.x_max,
-                                self.coord_dim,
+                                10 * self.max_abs_coordinate,
+                                self.embedding_dim_per_coordinate,
                                 device=self.weight.device,
                             ),
                         )
@@ -347,12 +353,12 @@ class _PosEncoder(nn.Module):
         self.spat_dim = spat_dim
         self.time_dim = time_dim
         self.max_n_times = int(max_seconds * sfreq_features)
-        
+
         # Positional encoder for the spatial dimension:
         self.pos_encoder_spat = _ChannelEmbedding(
             ch_locs_plus_ukn, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
-        
+
         # Pre-computed tensor for positional encoding on the time dimension:
         self.encoding_time = torch.zeros(0, dtype=torch.float32, requires_grad=False)
 

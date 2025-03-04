@@ -912,5 +912,3 @@ class Conv2dWithConstraint(nn.Conv2d):
                 self.weight.data, p=2, dim=0, maxnorm=self.max_norm
             )
         return super(Conv2dWithConstraint, self).forward(x)
-
-
