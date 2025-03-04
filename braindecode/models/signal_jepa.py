@@ -323,9 +323,10 @@ class _PosEncoder(nn.Module):
     spat_kwargs: dict
         Additional keyword arguments to pass to the :class:`nn.Embedding` layer used to
         embed the channel names.
+    max_seconds: float
+        Maximum number of seconds to consider for the temporal encoding.
     """
 
-    max_seconds: float = 600.0  # 10 minutes
     fixed_ch_names: list[str] | None = None
 
     def __init__(
@@ -336,18 +337,23 @@ class _PosEncoder(nn.Module):
         ch_locs: list[list[float]],
         sfreq_features: float,
         spat_kwargs: dict | None = None,
+        max_seconds: float = 600.0,  # 10 minutes
     ):
         assert len(ch_names) == len(ch_locs)
         super().__init__()
         spat_kwargs = spat_kwargs or {}
         ch_locs_plus_ukn = [None] + list(ch_locs)
         self.ch_names = ch_names
+        self.spat_dim = spat_dim
+        self.time_dim = time_dim
+        self.max_n_times = int(max_seconds * sfreq_features)
+        
+        # Positional encoder for the spatial dimension:
         self.pos_encoder_spat = _ChannelEmbedding(
             ch_locs_plus_ukn, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
-        self.spat_dim = spat_dim
-        self.time_dim = time_dim
-        self.max_n_times = int(self.max_seconds * sfreq_features)
+        
+        # Pre-computed tensor for positional encoding on the time dimension:
         self.encoding_time = torch.zeros(0, dtype=torch.float32, requires_grad=False)
 
     def _check_encoding_time(self, n_times):
