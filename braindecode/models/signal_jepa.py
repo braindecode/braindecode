@@ -224,29 +224,6 @@ class _ConvFeatureEncoder(nn.Module):
     def n_times_out(self, n_times):
         return _n_times_out(self.conv_layers_spec, n_times)
 
-    def description(self, sfreq=None, n_times=None):
-        dims, _, strides = zip(*self.conv_layers_spec)
-        receptive_fields = self.receptive_fields
-        rf = receptive_fields[0]
-        desc = f"Receptive field: {rf} samples"
-        if sfreq is not None:
-            desc += f", {rf / sfreq:.2f} seconds"
-
-        ds_factor = math.prod(strides)
-        desc += f" | Downsampled by {ds_factor}"
-        if sfreq is not None:
-            desc += f", new sfreq: {sfreq / ds_factor:.2f} Hz"
-        desc += f" | Overlap of {rf - ds_factor} samples"
-        if n_times is not None:
-            n_times_out = self.n_times_out(n_times)
-            desc += f" | {n_times_out} encoded samples/trial"
-
-        n_features = [
-            f"{dim}*{rf}" for dim, rf in zip([1] + list(dims), receptive_fields)
-        ]
-        desc += f" | #features/sample at each layer (n_channels*n_times): [{', '.join(n_features)}] = {[eval(x) for x in n_features]}"
-        return desc
-
 
 class _ChannelEmbedding(nn.Embedding):
     """Embedding layer for EEG channels.
