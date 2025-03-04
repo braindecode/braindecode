@@ -14,14 +14,27 @@ import pytest
 from torch import nn
 from skorch.dataset import ValidSplit
 
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import models_dict, models_mandatory_parameters, non_classification_models
 from braindecode import EEGClassifier
-from braindecode.models import (SyncNet, EEGSimpleConv, EEGResNet, USleep, EEGInceptionMI,
-                                EEGMiner)
+from braindecode.models import (
+    SyncNet,
+    EEGSimpleConv,
+    EEGResNet,
+    USleep,
+    EEGInceptionMI,
+    EEGMiner,
+)
 
-
+rng = np.random.default_rng(12)
 # Generating the channel info
-chs_info = [dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 4)]
+chs_info = [
+    {
+        "ch_name": f"C{i}",
+        "kind": "eeg",
+        "loc": rng.random(12),
+    }
+    for i in range(1, 4)
+]
 # Generating the signal parameters
 default_signal_params = dict(
     n_times=1000,
@@ -45,9 +58,11 @@ def get_epochs_y(signal_params=None, n_epochs=10):
         sfreq=sp["sfreq"],
         ch_types=["eeg"] * len(sp["chs_info"]),
     )
+    for dest, source in zip(info["chs"], sp["chs_info"]):
+        if "loc" in source:
+            dest["loc"][:] = source["loc"]
     epo = mne.EpochsArray(X, info)
     return epo, y
-
 
 
 def test_completeness__models_test_cases():
@@ -133,7 +148,10 @@ def test_model_integration(model_name, required_params, signal_params):
                 input_window_seconds=sp["input_window_seconds"],
             )
         )
-    if "n_times" not in required_params and "input_window_seconds" not in required_params:
+    if (
+        "n_times" not in required_params
+        and "input_window_seconds" not in required_params
+    ):
         time_kwargs.append(
             dict(n_times=None, sfreq=sp["sfreq"], input_window_seconds=None)
         )
@@ -159,10 +177,14 @@ def test_model_integration(model_name, required_params, signal_params):
         model = model_class(**model_kwargs)
         # test forward pass:
         out = model(X)
+
+        # Skip the output shape test for non-classification models
+        if model_name  in non_classification_models:
+            continue
+
         # test output shape
         assert out.shape[:2] == (batch_size, sp["n_outputs"])
         # We add a "[:2]" because some models return a 3D tensor.
-
 
 
 @pytest.mark.parametrize(
@@ -186,6 +208,8 @@ def test_model_integration_full(model_name, required_params, signal_params):
         The keys of this dictionary can only be among those of default_signal_params.
 
     """
+    if model_name in non_classification_models:
+        pytest.skip(f"Skipping {model_name} as not meant for classification")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
@@ -207,6 +231,7 @@ def test_model_integration_full(model_name, required_params, signal_params):
     )
 
     clf.fit(X=epo, y=y)
+
 
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
@@ -234,6 +259,9 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
         If 'final_layer' is not found among the last two layers of the model.
 
     """
+    if model_name in non_classification_models:
+        pytest.skip(f"Skipping {model_name} as not meant for classification")
+
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
     LEARNING_RATE = 0.0625 * 0.01
@@ -259,15 +287,14 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
     assert len([name for name, _ in last_layers_name if name == "final_layer"]) > 0
 
 
-@pytest.mark.parametrize('model_class', models_dict.values())
+@pytest.mark.parametrize("model_class", models_dict.values())
 def test_model_has_activation_parameter(model_class):
     """
     Test that checks if the model class's __init__ method has a parameter
     named 'activation' or any parameter that starts with 'activation'.
     """
     if model_class in [EEGMiner]:
-        pytest.skip(
-            f"Skipping {model_class} as not activation layer")
+        pytest.skip(f"Skipping {model_class} as not activation layer")
     # Get the __init__ method of the class
     init_method = model_class.__init__
 
@@ -275,10 +302,10 @@ def test_model_has_activation_parameter(model_class):
     sig = inspect.signature(init_method)
 
     # Get the parameter names, excluding 'self'
-    param_names = [param_name for param_name in sig.parameters if param_name != 'self']
+    param_names = [param_name for param_name in sig.parameters if param_name != "self"]
 
     # Check if any parameter name contains 'activation'
-    has_activation_param = any('activation' in name for name in param_names)
+    has_activation_param = any("activation" in name for name in param_names)
 
     # Assert that the activation parameter exists
     assert has_activation_param, (
@@ -287,15 +314,14 @@ def test_model_has_activation_parameter(model_class):
     )
 
 
-@pytest.mark.parametrize('model_class', models_dict.values())
+@pytest.mark.parametrize("model_class", models_dict.values())
 def test_activation_default_parameters_are_nn_module_classes(model_class):
     """
     Test that checks if all parameters with default values in the model class's
     __init__ method are nn.Module classes and not initialized instances.
     """
     if model_class in [EEGMiner]:
-        pytest.skip(
-            f"Skipping {model_class} as not activation layer")
+        pytest.skip(f"Skipping {model_class} as not activation layer")
 
     init_method = model_class.__init__
 
@@ -303,8 +329,7 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
 
     # Filtering parameters with 'activation' in their names
     activation_list = [
-        value for key, value in sig.parameters.items()
-        if 'activation' in key.lower()
+        value for key, value in sig.parameters.items() if "activation" in key.lower()
     ]
     for activation in activation_list:
 
@@ -315,16 +340,22 @@ def test_activation_default_parameters_are_nn_module_classes(model_class):
         )
 
 
-@pytest.mark.parametrize('model_class', models_dict.values())
+@pytest.mark.parametrize("model_class", models_dict.values())
 def test_model_has_drop_prob_parameter(model_class):
     """
     Test that checks if the model class's __init__ method has a parameter
     named 'drop_prob' or any parameter that starts with 'activation'.
     """
 
-    if model_class in [SyncNet, EEGSimpleConv, EEGResNet, USleep, EEGMiner, EEGInceptionMI]:
-        pytest.skip(
-            f"Skipping {model_class} as not dropout layer")
+    if model_class in [
+        SyncNet,
+        EEGSimpleConv,
+        EEGResNet,
+        USleep,
+        EEGMiner,
+        EEGInceptionMI,
+    ]:
+        pytest.skip(f"Skipping {model_class} as not dropout layer")
 
     # Get the __init__ method of the class
     init_method = model_class.__init__
@@ -333,10 +364,10 @@ def test_model_has_drop_prob_parameter(model_class):
     sig = inspect.signature(init_method)
 
     # Get the parameter names, excluding 'self'
-    param_names = [param_name for param_name in sig.parameters if param_name != 'self']
+    param_names = [param_name for param_name in sig.parameters if param_name != "self"]
 
     # Check if any parameter name contains 'activation'
-    has_drop_prob_param = any('drop_prob' in name for name in param_names)
+    has_drop_prob_param = any("drop_prob" in name for name in param_names)
 
     # Assert that the activation parameter exists
     assert has_drop_prob_param, (

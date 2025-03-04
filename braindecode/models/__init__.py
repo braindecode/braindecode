@@ -38,6 +38,12 @@ from .eegminer import EEGMiner
 from .ctnet import CTNet
 from .sinc_shallow import SincShallowNet
 from .sccnet import SCCNet
+from .signal_jepa import (
+    SignalJEPA_Contextual,
+    SignalJEPA_PostLocal,
+    SignalJEPA_PreLocal,
+    SignalJEPA,
+)
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.

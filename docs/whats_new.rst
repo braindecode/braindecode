@@ -63,6 +63,7 @@ Enhancements
 - Fix error when using NMT dataset with n_jobs > 1 (:gh:`690` by `Aphel`_)
 - Adding support for distributed samplers (:gh:`695` by `Young Truong`_)
 - Add :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` and :gh:`702` by `Pierre Guetschel`_ )
+- Add :class:`braindecode.models.SignalJEPA` plus downstream architectures (:gh:`703` by `Pierre Guetschel`_ )
 
 Bugs
 ~~~~
