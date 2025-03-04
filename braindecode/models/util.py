@@ -234,8 +234,18 @@ models_mandatory_parameters = [
     ("CTNet", ["n_chans", "n_outputs", "n_times"], None),
     ("SincShallowNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=250)),
     ("SCCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
-    # ("SignalJEPA", ["chs_info"], None),
+    ("SignalJEPA", ["chs_info"], None),
     ("SignalJEPA_Contextual", ["chs_info", "n_times", "n_outputs"], None),
     ("SignalJEPA_PostLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
+]
+
+################################################################
+# List of models that are not meant for classification
+#
+# Their output shape may difer from the expected output shape
+# for classification models.
+################################################################
+non_classification_models = [
+    "SignalJEPA",
 ]

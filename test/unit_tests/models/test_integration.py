@@ -14,7 +14,7 @@ import pytest
 from torch import nn
 from skorch.dataset import ValidSplit
 
-from braindecode.models.util import models_dict, models_mandatory_parameters
+from braindecode.models.util import models_dict, models_mandatory_parameters, non_classification_models
 from braindecode import EEGClassifier
 from braindecode.models import (
     SyncNet,
@@ -177,6 +177,11 @@ def test_model_integration(model_name, required_params, signal_params):
         model = model_class(**model_kwargs)
         # test forward pass:
         out = model(X)
+
+        # Skip the output shape test for non-classification models
+        if model_name  in non_classification_models:
+            continue
+            
         # test output shape
         assert out.shape[:2] == (batch_size, sp["n_outputs"])
         # We add a "[:2]" because some models return a 3D tensor.
@@ -203,6 +208,8 @@ def test_model_integration_full(model_name, required_params, signal_params):
         The keys of this dictionary can only be among those of default_signal_params.
 
     """
+    if model_name in non_classification_models:
+        pytest.skip(f"Skipping {model_name} as not meant for classification")
 
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
@@ -252,6 +259,9 @@ def test_model_integration_full_last_layer(model_name, required_params, signal_p
         If 'final_layer' is not found among the last two layers of the model.
 
     """
+    if model_name in non_classification_models:
+        pytest.skip(f"Skipping {model_name} as not meant for classification")
+
     epo, y = get_epochs_y(signal_params, n_epochs=10)
 
     LEARNING_RATE = 0.0625 * 0.01
