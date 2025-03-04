@@ -201,12 +201,16 @@ class BIDSEpochsDataset(BIDSDataset):
         n_times = epochs.times.shape[0]
         # id_event = {v: k for k, v in epochs.event_id.items()}
         annotations = epochs.annotations
-        assert annotations is not None
+        if annotations is not None:
+            target = annotations.description
+        else:
+            id_events = {v: k for k, v in epochs.event_id.items()}
+            target = [id_events[event_id] for event_id in epochs.events[:, -1]]
         metadata_dict = {
             "i_window_in_trial": np.zeros(len(epochs)),
             "i_start_in_trial": np.zeros(len(epochs)),
             "i_stop_in_trial": np.zeros(len(epochs)) + n_times,
-            "target": annotations.description,
+            "target": target,
         }
         epochs.metadata = pd.DataFrame(metadata_dict)
 
