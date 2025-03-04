@@ -2,7 +2,7 @@
 #
 # License: BSD (3-clause)
 from __future__ import annotations
-from typing import Any
+from typing import Any, Sequence
 import math
 from copy import deepcopy
 
@@ -126,7 +126,7 @@ class ConvFeatureEncoder(nn.Module):
 
     def __init__(
         self,
-        conv_layers_spec: list[tuple[int, int, int]],
+        conv_layers_spec: Sequence[tuple[int, int, int]],
         drop_prob: float = 0.0,
         mode: str = "default",
         conv_bias: bool = False,
@@ -240,7 +240,7 @@ class ConvFeatureEncoder(nn.Module):
         if sfreq is not None:
             desc += f", {rf / sfreq:.2f} seconds"
 
-        ds_factor = prod(strides)
+        ds_factor = math.prod(strides)
         desc += f" | Downsampled by {ds_factor}"
         if sfreq is not None:
             desc += f", new sfreq: {sfreq / ds_factor:.2f} Hz"
@@ -348,10 +348,10 @@ class PosEncoder(nn.Module):
         assert len(ch_names) == len(ch_locs)
         super().__init__()
         spat_kwargs = spat_kwargs or {}
-        ch_locs: list[list[float] | None] = [None] + list(ch_locs)
+        ch_locs_plus_ukn = [None] + list(ch_locs)
         self.ch_names = ch_names
         self.pos_encoder_spat = ChannelEmbedding(
-            ch_locs, spat_dim, **spat_kwargs
+            ch_locs_plus_ukn, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
         self.spat_dim = spat_dim
         self.time_dim = time_dim
@@ -377,7 +377,8 @@ class PosEncoder(nn.Module):
                 * local_features: (batch_size, n_chans * n_times_out, emb_dim)
                 * ch_idxs: (batch_size, n_chans)
                     Indices of the channels to use in the ``ch_names`` list passed
-                    as argument. Only needed if ``set_fixed_ch_names`` has not been called.
+                    as argument plus one. Index 0 is reserved for an unknown channel.
+                    Only needed if ``set_fixed_ch_names`` has not been called.
 
         Returns
         -------
@@ -423,18 +424,21 @@ class PosEncoder(nn.Module):
 
     def get_ch_idxs(self, batch):
         if self.fixed_ch_names is not None:
-            return torch.tensor(
-                [self.ch_names.index(c) for c in self.fixed_ch_names]
-            ).unsqueeze(0)
+            return (
+                torch.tensor(
+                    [self.ch_names.index(c) for c in self.fixed_ch_names]
+                ).unsqueeze(0)
+                + 1  # 0 is reserved for unknown channel
+            )
         return batch["ch_idxs"]
 
 
 def n_times_out(conv_layers_spec, n_times):
     # it would be equal to n_times//ds_factor without edge effects:
-    n_times_out = n_times
+    n_times_out_ = n_times
     for _, width, stride in conv_layers_spec:
-        n_times_out = int((n_times_out - width) / stride) + 1
-    return n_times_out
+        n_times_out_ = int((n_times_out_ - width) / stride) + 1
+    return n_times_out_
 
 
 def get_out_emb_dim(conv_layers_spec, n_times, n_spat_filters=4):
@@ -509,6 +513,10 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         Do not change the default value (used for internal purposes).
     """
 
+    feature_encoder: ConvFeatureEncoder | None
+    pos_encoder: PosEncoder | None
+    transformer: nn.Transformer | None
+
     def __init__(
         self,
         n_outputs=None,
@@ -519,7 +527,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         sfreq=None,
         *,
         # feature_encoder
-        feature_encoder__conv_layers_spec: list[
+        feature_encoder__conv_layers_spec: Sequence[
             tuple[int, int, int]
         ] = _DEFAULT_CONV_LAYER_SPEC,
         drop_prob: float = 0.0,
@@ -550,6 +558,9 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
+        self.feature_encoder = None
+        self.pos_encoder = None
+        self.transformer = None
         if _init_feature_encoder:
             self.feature_encoder = ConvFeatureEncoder(
                 conv_layers_spec=feature_encoder__conv_layers_spec,
@@ -558,8 +569,6 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 conv_bias=feature_encoder__conv_bias,
                 activation=activation,
             )
-        else:
-            self.feature_encoder = None
 
         if _init_transformer:
             ch_names = [ch["ch_name"] for ch in self.chs_info]
@@ -580,9 +589,6 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
                 num_decoder_layers=transformer__num_decoder_layers,
                 batch_first=True,
             )
-        else:
-            self.pos_encoder = None
-            self.transformer = None
 
 
 class SignalJEPA(_BaseSignalJEPA):
@@ -608,7 +614,7 @@ class SignalJEPA(_BaseSignalJEPA):
         sfreq=None,
         *,
         # feature_encoder
-        feature_encoder__conv_layers_spec: list[
+        feature_encoder__conv_layers_spec: Sequence[
             tuple[int, int, int]
         ] = _DEFAULT_CONV_LAYER_SPEC,
         drop_prob: float = 0.0,
@@ -688,7 +694,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         *,
         n_spat_filters: int = 4,
         # feature_encoder
-        feature_encoder__conv_layers_spec: list[
+        feature_encoder__conv_layers_spec: Sequence[
             tuple[int, int, int]
         ] = _DEFAULT_CONV_LAYER_SPEC,
         drop_prob: float = 0.0,
