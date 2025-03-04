@@ -147,24 +147,26 @@ class _ConvFeatureEncoder(nn.Module):
             else:
                 return nn.Sequential(make_conv(), nn.Dropout(p=drop_prob), activation())
 
-        in_d = 1
+        input_channels = 1
         conv_layers = []
-        for i, cl in enumerate(conv_layers_spec):
-            assert len(cl) == 3, "invalid conv definition: " + str(cl)
-            (dim, k, stride) = cl
+        for i, layer_spec in enumerate(conv_layers_spec):
+            # Each layer_spec should be a tuple: (output_channels, kernel_size, stride)
+            assert len(layer_spec) == 3, "Invalid conv definition: " + str(layer_spec)
+            output_channels, kernel_size, stride = layer_spec
             conv_layers.append(
                 block(
-                    in_d,
-                    dim,
-                    k,
+                    input_channels,
+                    output_channels,
+                    kernel_size,
                     stride,
-                    is_layer_norm=mode == "layer_norm",
-                    is_group_norm=mode == "default" and i == 0,
+                    is_layer_norm=(mode == "layer_norm"),
+                    is_group_norm=(mode == "default" and i == 0),
                     conv_bias=conv_bias,
                 )
             )
-            in_d = dim
-        self.emb_dim = dim  # last dim
+            input_channels = output_channels
+
+        self.emb_dim = output_channels  # last output dimension becomes the embedding dimension
         self.conv_layers_spec = conv_layers_spec
         self.cnn = nn.Sequential(*conv_layers)
 
