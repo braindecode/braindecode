@@ -109,51 +109,6 @@ class _ConvFeatureEncoder(nn.Module):
         assert mode in {"default", "layer_norm"}
         super().__init__()
 
-        def block(
-            input_channels,
-            output_channels,
-            kernel_size,
-            stride,
-            is_layer_norm=False,
-            is_group_norm=False,
-            conv_bias=False,
-        ):
-            def make_conv():
-                conv = nn.Conv1d(
-                    input_channels,
-                    output_channels,
-                    kernel_size,
-                    stride=stride,
-                    bias=conv_bias,
-                )
-                nn.init.kaiming_normal_(conv.weight)
-                return conv
-
-            assert not (is_layer_norm and is_group_norm), (
-                "layer norm and group norm are exclusive"
-            )
-
-            if is_layer_norm:
-                return nn.Sequential(
-                    make_conv(),
-                    nn.Dropout(p=drop_prob),
-                    nn.Sequential(
-                        Rearrange("... channels time -> ... time channels"),
-                        nn.LayerNorm(output_channels, elementwise_affine=True),
-                        Rearrange("... time channels -> ... channels time"),
-                    ),
-                    activation(),
-                )
-            elif is_group_norm:
-                return nn.Sequential(
-                    make_conv(),
-                    nn.Dropout(p=drop_prob),
-                    nn.GroupNorm(output_channels, output_channels, affine=True),
-                    activation(),
-                )
-            else:
-                return nn.Sequential(make_conv(), nn.Dropout(p=drop_prob), activation())
-
         input_channels = 1
         conv_layers = []
         for i, layer_spec in enumerate(conv_layers_spec):
@@ -161,11 +116,13 @@ class _ConvFeatureEncoder(nn.Module):
             assert len(layer_spec) == 3, "Invalid conv definition: " + str(layer_spec)
             output_channels, kernel_size, stride = layer_spec
             conv_layers.append(
-                block(
+                self._get_block(
                     input_channels,
                     output_channels,
                     kernel_size,
                     stride,
+                    drop_prob,
+                    activation,
                     is_layer_norm=(mode == "layer_norm"),
                     is_group_norm=(mode == "default" and i == 0),
                     conv_bias=conv_bias,
@@ -181,6 +138,51 @@ class _ConvFeatureEncoder(nn.Module):
             Rearrange("b channels time -> (b channels) 1 time"),
             *conv_layers,
         )
+
+    @staticmethod
+    def _get_block(
+        input_channels,
+        output_channels,
+        kernel_size,
+        stride,
+        drop_prob,
+        activation,
+        is_layer_norm=False,
+        is_group_norm=False,
+        conv_bias=False,
+    ):
+        assert not (is_layer_norm and is_group_norm), (
+            "layer norm and group norm are exclusive"
+        )
+
+        conv = nn.Conv1d(
+            input_channels,
+            output_channels,
+            kernel_size,
+            stride=stride,
+            bias=conv_bias,
+        )
+        nn.init.kaiming_normal_(conv.weight)
+        if is_layer_norm:
+            return nn.Sequential(
+                conv,
+                nn.Dropout(p=drop_prob),
+                nn.Sequential(
+                    Rearrange("... channels time -> ... time channels"),
+                    nn.LayerNorm(output_channels, elementwise_affine=True),
+                    Rearrange("... time channels -> ... channels time"),
+                ),
+                activation(),
+            )
+        elif is_group_norm:
+            return nn.Sequential(
+                conv,
+                nn.Dropout(p=drop_prob),
+                nn.GroupNorm(output_channels, output_channels, affine=True),
+                activation(),
+            )
+        else:
+            return nn.Sequential(conv, nn.Dropout(p=drop_prob), activation())
 
     def forward(self, batch):
         """
