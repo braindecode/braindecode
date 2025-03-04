@@ -110,7 +110,7 @@ class TestPosEncoderModule:
         batch2 = batch.copy()
         batch2.pop("ch_idxs")
         y1 = model(batch1)
-        ch_names = ['A',"B","C","D"] # C and D are unknown chanels
+        ch_names = ['A',"B","C","D"] # C and D are unknown channels
         model.set_fixed_ch_names(ch_names)
         y2 = model(batch2)
         assert (y1 == y2).all()
