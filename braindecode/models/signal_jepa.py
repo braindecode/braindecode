@@ -684,6 +684,9 @@ class _ConvFeatureEncoder(nn.Module):
         else:
             return nn.Sequential(conv, nn.Dropout(p=drop_prob), activation())
 
+    def n_times_out(self, n_times):
+        return _n_times_out(self.conv_layers_spec, n_times)
+
     def forward(self, batch):
         """
         ``n_times_out`` is the temporal length of the signal after passing
@@ -894,12 +897,12 @@ class _PosEncoder(nn.Module):
 
     def get_ch_idxs(self, batch):
         if self.fixed_ch_names is not None:
-            return (
-                torch.tensor(
-                    [self.ch_names.index(c) for c in self.fixed_ch_names]
-                ).unsqueeze(0)
-                + 1  # 0 is reserved for unknown channel
-            )
+            return torch.tensor(
+                [
+                    self.ch_names.index(c) + 1 if c in self.ch_names else 0
+                    for c in self.fixed_ch_names
+                ]
+            ).unsqueeze(0)
         return batch["ch_idxs"]
 
 
