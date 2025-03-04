@@ -914,16 +914,3 @@ class Conv2dWithConstraint(nn.Conv2d):
         return super(Conv2dWithConstraint, self).forward(x)
 
 
-class ToDevice(nn.Module):
-    def __init__(self, device=None):
-        super().__init__()
-        self.p = nn.Parameter(torch.empty((), device=device))
-
-    def forward(self, x: torch.Tensor):
-        return x.to(self.p.device)
-
-
-class TransposeLast(nn.Module):
-    @staticmethod
-    def forward(self, x: torch.Tensor):
-        return x.transpose(-1, -2)

@@ -8,10 +8,10 @@ from copy import deepcopy
 
 import torch
 from torch import nn
+from einops.layers.torch import Rearrange
 
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import TransposeLast
 
 
 def pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
@@ -73,34 +73,7 @@ def pos_encode_contineous(x, x_min, x_max, n_dim, device="cpu"):
     return pos_encoding
 
 
-class UnflattenTokens(nn.Module):
-    def __init__(self, n_chans: int):
-        super().__init__()
-        self.n_chans = n_chans
-
-    def forward(self, x: torch.Tensor):
-        batch_size, _, emb_dim = x.shape
-        return x.view(batch_size, 1, self.n_chans, -1, emb_dim)
-
-
-class ReshapeConv2d(nn.Module):
-    """Conv 2d layer for EEG spatial filtering. Also packs the batch."""
-
-    def __init__(self, n_chs, n_spat_filters, **kwargs):
-        super().__init__()
-        self.conv = nn.Conv2d(1, n_spat_filters, (n_chs, 1), **kwargs)
-        self.n_spat_filters = n_spat_filters
-
-    def forward(self, X):
-        assert X.ndim == 3
-        batch_size, n_chs, n_times = X.shape
-        X = X.view(batch_size, 1, n_chs, n_times)
-        X = self.conv(X)
-        X = X.view(batch_size, self.n_spat_filters, n_times)
-        return X
-
-
-class ConvFeatureEncoder(nn.Module):
+class _ConvFeatureEncoder(nn.Module):
     """Convolutional feature encoder for EEG data.
 
     Computes successive 1D convolutions (with activations) over the time
@@ -111,17 +84,17 @@ class ConvFeatureEncoder(nn.Module):
 
     Parameters
     ----------
-        conv_layers_spec: list of tuples (dim, k, stride) where:
+    conv_layers_spec: list of tuples (dim, k, stride) where:
 
-            * dim: number of output channels of the layer (unrelated to EEG channels);
-            * k: temporal length of the layer's kernel;
-            * stride: temporal stride of the layer's kernel.
+        * dim: number of output channels of the layer (unrelated to EEG channels);
+        * k: temporal length of the layer's kernel;
+        * stride: temporal stride of the layer's kernel.
 
-        drop_prob: float
-        mode: str
-            Normalisation mode. Either``default`` or ``layer_norm``.
-        conv_bias: bool
-        activation: nn.Module
+    drop_prob: float
+    mode: str
+        Normalisation mode. Either``default`` or ``layer_norm``.
+    conv_bias: bool
+    activation: nn.Module
     """
 
     def __init__(
@@ -158,9 +131,9 @@ class ConvFeatureEncoder(nn.Module):
                     make_conv(),
                     nn.Dropout(p=drop_prob),
                     nn.Sequential(
-                        TransposeLast(),
+                        Rearrange("... channels time -> ... time channels"),
                         nn.LayerNorm(dim, elementwise_affine=True),
-                        TransposeLast(),
+                        Rearrange("... time channels -> ... channels time"),
                     ),
                     activation(),
                 )
@@ -199,17 +172,17 @@ class ConvFeatureEncoder(nn.Module):
         """
         Parameters
         ----------
-            batch: dict with keys:
+        batch: dict with keys:
 
-                * X: (batch_size, n_chans, n_times)
-                    Batched EEG signal.
+            * X: (batch_size, n_chans, n_times)
+                Batched EEG signal.
 
         Returns
         -------
-            local_features: (batch_size, n_chans * n_times_out, emb_dim)
-                Local features extracted from the EEG signal.
-                ``emb_dim`` corresponds to the ``dim`` of the last element of
-                ``conv_layers_spec``.
+        local_features: (batch_size, n_chans * n_times_out, emb_dim)
+            Local features extracted from the EEG signal.
+            ``emb_dim`` corresponds to the ``dim`` of the last element of
+            ``conv_layers_spec``.
         """
         x = batch["X"]
         batch_size, n_chans, n_times = x.shape
@@ -263,11 +236,11 @@ class ChannelEmbedding(nn.Embedding):
 
     Parameters
     ----------
-        locs: list of (list of float or None)
-            List of the n-dimensions locations of the EEG channels.
-        embedding_dim: int
-            Dimensionality of the embedding vectors. Must be a multiple of the number
-            of dimensions of the channel locations.
+    locs: list of (list of float or None)
+        List of the n-dimensions locations of the EEG channels.
+    embedding_dim: int
+        Dimensionality of the embedding vectors. Must be a multiple of the number
+        of dimensions of the channel locations.
     """
 
     def __init__(self, locs: list[list[float] | None], embedding_dim: int, **kwargs):
@@ -316,20 +289,20 @@ class PosEncoder(nn.Module):
 
     Parameters
     ----------
-        spat_dim: int
-            Number of dimensions to use to encode the spatial position of the patch,
-            i.e. the EEG channel.
-        time_dim: int
-            Number of dimensions to use to encode the temporal position of the patch.
-        ch_names: list[str]
-            List of all the EEG channel names that could be encountered in the data.
-        ch_locs: list of list of float or 2d array
-            List of the n-dimensions locations of the EEG channels.
-        sfreq_features: float
-            The "downsampled" sampling frequency returned by the feature encoder.
-        spat_kwargs: dict
-            Additional keyword arguments to pass to the :class:`nn.Embedding` layer used to
-            embed the channel names.
+    spat_dim: int
+        Number of dimensions to use to encode the spatial position of the patch,
+        i.e. the EEG channel.
+    time_dim: int
+        Number of dimensions to use to encode the temporal position of the patch.
+    ch_names: list[str]
+        List of all the EEG channel names that could be encountered in the data.
+    ch_locs: list of list of float or 2d array
+        List of the n-dimensions locations of the EEG channels.
+    sfreq_features: float
+        The "downsampled" sampling frequency returned by the feature encoder.
+    spat_kwargs: dict
+        Additional keyword arguments to pass to the :class:`nn.Embedding` layer used to
+        embed the channel names.
     """
 
     max_seconds: float = 600.0  # 10 minutes
@@ -371,19 +344,19 @@ class PosEncoder(nn.Module):
         """
         Parameters
         ----------
-            batch: dict with keys:
+        batch: dict with keys:
 
-                * local_features: (batch_size, n_chans * n_times_out, emb_dim)
-                * ch_idxs: (batch_size, n_chans)
-                    Indices of the channels to use in the ``ch_names`` list passed
-                    as argument plus one. Index 0 is reserved for an unknown channel.
-                    Only needed if ``set_fixed_ch_names`` has not been called.
+            * local_features: (batch_size, n_chans * n_times_out, emb_dim)
+            * ch_idxs: (batch_size, n_chans)
+                Indices of the channels to use in the ``ch_names`` list passed
+                as argument plus one. Index 0 is reserved for an unknown channel.
+                Only needed if ``set_fixed_ch_names`` has not been called.
 
         Returns
         -------
-            pos_encoding: (batch_size, n_chans * n_times_out, emb_dim)
-                The first ``spat_dim`` dimensions encode the channels positional encoding
-                and the following ``time_dim`` dimensions encode the temporal positional encoding.
+        pos_encoding: (batch_size, n_chans * n_times_out, emb_dim)
+            The first ``spat_dim`` dimensions encode the channels positional encoding
+            and the following ``time_dim`` dimensions encode the temporal positional encoding.
         """
         local_features = batch["local_features"]
         ch_idxs = self.get_ch_idxs(batch).to(local_features.device)
@@ -455,7 +428,10 @@ def get_separable_clf_layer(
         n_spat_filters=n_spat_filters,
     )
     clf_layer = nn.Sequential()
-    clf_layer.add_module("unflatter_tokens", UnflattenTokens(n_chans))
+    clf_layer.add_module(
+        "unflatten_tokens",
+        Rearrange("b (n_chans tokens) d -> b 1 n_chans tokens d", n_chans=n_chans),
+    )
     clf_layer.add_module("spat_conv", nn.Conv3d(1, n_spat_filters, (n_chans, 1, 1)))
     clf_layer.add_module("flatten", nn.Flatten(start_dim=1))
     clf_layer.add_module("linear", nn.Linear(out_emb_dim, n_classes))
@@ -512,7 +488,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         Do not change the default value (used for internal purposes).
     """
 
-    feature_encoder: ConvFeatureEncoder | None
+    feature_encoder: _ConvFeatureEncoder | None
     pos_encoder: PosEncoder | None
     transformer: nn.Transformer | None
 
@@ -561,7 +537,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         self.pos_encoder = None
         self.transformer = None
         if _init_feature_encoder:
-            self.feature_encoder = ConvFeatureEncoder(
+            self.feature_encoder = _ConvFeatureEncoder(
                 conv_layers_spec=feature_encoder__conv_layers_spec,
                 drop_prob=drop_prob,
                 mode=feature_encoder__mode,
@@ -959,7 +935,11 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
             _init_transformer=False,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        self.spatial_conv = ReshapeConv2d(self.n_chans, n_spat_filters)
+        self.spatial_conv = nn.Sequential(
+            Rearrange("b channels time -> b 1 channels time"),
+            nn.Conv2d(1, n_spat_filters, (self.n_chans, 1)),
+            Rearrange("b spat_filters 1 time -> b spat_filters time"),
+        )
         out_emb_dim = get_out_emb_dim(
             conv_layers_spec=feature_encoder__conv_layers_spec,
             n_times=self.n_times,
