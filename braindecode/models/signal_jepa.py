@@ -129,8 +129,7 @@ class _ConvFeatureEncoder(nn.Module):
                 nn.init.kaiming_normal_(conv.weight)
                 return conv
 
-            assert not (
-                is_layer_norm and is_group_norm), (
+            assert not (is_layer_norm and is_group_norm), (
                     "layer norm and group norm are exclusive"
                 )
 
@@ -296,8 +295,7 @@ class _ChannelEmbedding(nn.Embedding):
                     with torch.no_grad():
                         self.weight[
                             i,
-                            j
-                            * self.embedding_dim_per_coordinate : (j + 1)
+                            j * self.embedding_dim_per_coordinate : (j + 1)
                             * self.embedding_dim_per_coordinate,
                         ].copy_(
                             _pos_encode_contineous(
