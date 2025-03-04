@@ -59,7 +59,8 @@ def get_epochs_y(signal_params=None, n_epochs=10):
         ch_types=["eeg"] * len(sp["chs_info"]),
     )
     for dest, source in zip(info["chs"], sp["chs_info"]):
-        dest["loc"][:] = source["loc"]
+        if "loc" in source:
+            dest["loc"][:] = source["loc"]
     epo = mne.EpochsArray(X, info)
     return epo, y
 
