@@ -181,7 +181,7 @@ def test_model_integration(model_name, required_params, signal_params):
         # Skip the output shape test for non-classification models
         if model_name  in non_classification_models:
             continue
-            
+
         # test output shape
         assert out.shape[:2] == (batch_size, sp["n_outputs"])
         # We add a "[:2]" because some models return a 3D tensor.
