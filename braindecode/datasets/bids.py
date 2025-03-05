@@ -50,7 +50,7 @@ class BIDSDataset(BaseConcatDataset):
     More information on BIDS (Brain Imaging Data Structure)
     can be found at https://bids.neuroimaging.io
 
-    .. Note:: 
+    .. Note::
         For loading "unofficial" BIDS datasets containing epoched data,
         you can use :class:`BIDSEpochsDataset`.
 
@@ -186,7 +186,7 @@ class BIDSEpochsDataset(BIDSDataset):
 
     The files must end with ``_epo.fif``.
 
-    .. Warning:: 
+    .. Warning::
         Epoched data is not officially supported in BIDS.
 
     .. Parameters::
