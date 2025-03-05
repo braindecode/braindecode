@@ -140,10 +140,14 @@ class BIDSDataset(BaseConcatDataset):
             ".nwb",
         ]
     )
-    datatypes: str | list[str] | None = "eeg"
+    datatypes: str | list[str] | None = None
     check: bool = False
     preload: bool = False
     n_jobs: int = 1
+
+    @property
+    def _filter_out_epochs(self):
+        return True
 
     def __post_init__(self):
         bids_paths = mne_bids.find_matching_paths(
@@ -163,11 +167,19 @@ class BIDSDataset(BaseConcatDataset):
             datatypes=self.datatypes,
             check=self.check,
         )
-        # Filter out .json files:
+        # Filter out .json files files:
         # (argument ignore_json only available in mne-bids>=0.16)
         bids_paths = [
             bids_path for bids_path in bids_paths if bids_path.extension != ".json"
         ]
+        # Filter out _epo.fif files:
+        if self._filter_out_epochs:
+            bids_paths = [
+                bids_path
+                for bids_path in bids_paths
+                if not (bids_path.suffix == "epo" and bids_path.extension == ".fif")
+            ]
+
         all_base_ds = Parallel(n_jobs=self.n_jobs)(
             delayed(self._get_dataset)(bids_path) for bids_path in bids_paths
         )
@@ -194,11 +206,15 @@ class BIDSEpochsDataset(BIDSDataset):
         ``datatypes``, ``extensions`` and ``check`` which are fixed.
     """
 
+    @property
+    def _filter_out_epochs(self):
+        return False
+
     def __init__(self, *args, **kwargs):
         super().__init__(
             *args,
             extensions=".fif",
-            datatypes="epo",
+            suffixes="epo",
             check=False,
             **kwargs,
         )
@@ -208,12 +224,16 @@ class BIDSEpochsDataset(BIDSDataset):
         n_times = epochs.times.shape[0]
         # id_event = {v: k for k, v in epochs.event_id.items()}
         annotations = epochs.annotations
-        assert annotations is not None
+        if annotations is not None:
+            target = annotations.description
+        else:
+            id_events = {v: k for k, v in epochs.event_id.items()}
+            target = [id_events[event_id] for event_id in epochs.events[:, -1]]
         metadata_dict = {
             "i_window_in_trial": np.zeros(len(epochs)),
             "i_start_in_trial": np.zeros(len(epochs)),
             "i_stop_in_trial": np.zeros(len(epochs)) + n_times,
-            "target": annotations.description,
+            "target": target,
         }
         epochs.metadata = pd.DataFrame(metadata_dict)
 
