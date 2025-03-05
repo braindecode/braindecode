@@ -151,12 +151,12 @@ class SignalJEPA(_BaseSignalJEPA):
     Its output shape depends on the input shape.
     For classification purposes, three variants of this model are available:
 
-        * :class:`braindecode.models.SignalJEPA_Contextual`
-        * :class:`braindecode.models.SignalJEPA_PostLocal`
-        * :class:`braindecode.models.SignalJEPA_PreLocal`
+        * :class:`SignalJEPA_Contextual`
+        * :class:`SignalJEPA_PostLocal`
+        * :class:`SignalJEPA_PreLocal`
 
     The classification architectures can either be instantiated from scratch 
-    (random parameters) or from a pre-trained :class:`braindecode.models.SignalJEPA` model.
+    (random parameters) or from a pre-trained :class:`SignalJEPA` model.
 
     .. versionadded:: 0.9
 
@@ -234,7 +234,7 @@ class SignalJEPA(_BaseSignalJEPA):
 class SignalJEPA_Contextual(_BaseSignalJEPA):
     """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
-    This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
+    This architecture is one of the variants of :class:`SignalJEPA` 
     that can be used for classification purposes.
 
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_contextual.jpg
@@ -327,7 +327,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         n_spat_filters: int = 4,
         chs_info: list[dict[str, Any]] | None = None,
     ):
-        """Instantiate a new model from a pre-trained :class:`braindecode.models.SignalJEPA` model.
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
 
         Parameters
         ----------
@@ -381,7 +381,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
     """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
-    This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
+    This architecture is one of the variants of :class:`SignalJEPA` 
     that can be used for classification purposes.
 
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_post-local.jpg
@@ -469,7 +469,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
     def from_pretrained(
         cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
     ):
-        """Instantiate a new model from a pre-trained :class:`braindecode.models.SignalJEPA` model.
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
 
         Parameters
         ----------
@@ -505,7 +505,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 class SignalJEPA_PreLocal(_BaseSignalJEPA):
     """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
-    This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
+    This architecture is one of the variants of :class:`SignalJEPA` 
     that can be used for classification purposes.
 
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_pre-local.jpg
@@ -600,7 +600,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
     def from_pretrained(
         cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
     ):
-        """Instantiate a new model from a pre-trained :class:`braindecode.models.SignalJEPA` model.
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
 
         Parameters
         ----------
