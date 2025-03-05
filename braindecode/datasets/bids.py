@@ -44,7 +44,7 @@ def _descriptiion_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]
 class BIDSDataset(BaseConcatDataset):
     """Dataset for loading BIDS.
 
-    This class has the same parameters as the :function:`mne_bids.find_matching_paths` function
+    This class has the same parameters as the :func:`mne_bids.find_matching_paths` function
     as it will be used to find the files to load. The default parameters were changed.
 
     More information on BIDS (Brain Imaging Data Structure) can be found at https://bids.neuroimaging.io
@@ -90,7 +90,7 @@ class BIDSDataset(BaseConcatDataset):
         'beh', 'physio', 'stim'
     extensions : str | array-like of str | None
         The extension of the filename. E.g., ``'.json'``.
-        By default, uses the ones accepted by :function:`mne_bids.read_raw_bids`.
+        By default, uses the ones accepted by :func:`mne_bids.read_raw_bids`.
     datatypes : str | array-like of str | None
         The BIDS data type, e.g., ``'anat'``, ``'func'``, ``'eeg'``, ``'meg'``,
         ``'ieeg'``.
