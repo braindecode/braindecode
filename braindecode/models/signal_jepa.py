@@ -29,11 +29,12 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    feature_encoder__conv_layers_spec: list of tuples (dim, k, stride) where:
+    feature_encoder__conv_layers_spec: list of tuple
+        Tuples have shape ``(dim, k, stride)`` where:
 
-        * dim: number of output channels of the layer (unrelated to EEG channels);
-        * k: temporal length of the layer's kernel;
-        * stride: temporal stride of the layer's kernel.
+            * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
+            * ``k`` : temporal length of the layer's kernel;
+            * ``stride`` : temporal stride of the layer's kernel.
 
     drop_prob: float
     feature_encoder__mode: str
@@ -635,11 +636,12 @@ class _ConvFeatureEncoder(nn.Module):
 
     Parameters
     ----------
-    conv_layers_spec: list of tuples (dim, k, stride) where:
+    conv_layers_spec: list of tuple
+        Tuples have shape ``(dim, k, stride)`` where:
 
-        * dim: number of output channels of the layer (unrelated to EEG channels);
-        * k: temporal length of the layer's kernel;
-        * stride: temporal stride of the layer's kernel.
+            * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
+            * ``k`` : temporal length of the layer's kernel;
+            * ``stride`` : temporal stride of the layer's kernel.
 
     drop_prob: float
     mode: str
