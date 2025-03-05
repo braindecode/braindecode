@@ -37,7 +37,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
     drop_prob: float
     feature_encoder__mode: str
-        Normalisation mode. Either``default`` or ``layer_norm``.
+        Normalisation mode. Either ``default`` or ``layer_norm``.
     feature_encoder__conv_bias: bool
     activation: nn.Module
         Activation layer for the feature encoder.
@@ -144,10 +144,18 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
 
 class SignalJEPA(_BaseSignalJEPA):
-    """Architecture introduced in signal-JEPA [sJEPA]_ and used for SSL pre-training, Guetschel, P et al (2024) [sJEPA]_
+    """Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [sJEPA]_
 
     This model is not meant for classification but for SSL pre-training.
     Its output shape depends on the input shape.
+    For classification purposes, three variants of this model are available:
+
+        * :class:`braindecode.models.SignalJEPA_Contextual`
+        * :class:`braindecode.models.SignalJEPA_PostLocal`
+        * :class:`braindecode.models.SignalJEPA_PreLocal`
+
+    The classification architectures can either be instantiated from scratch 
+    (random parameters) or from a pre-trained :class:`braindecode.models.SignalJEPA` model.
 
     .. versionadded:: 0.9
 
@@ -229,12 +237,12 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         :align: center
         :alt: sJEPA Contextual.
 
+    .. versionadded:: 0.9
+
     Parameters
     ----------
     n_spat_filters : int
         Number of spatial filters.
-
-    .. versionadded:: 0.9
 
     References
     ----------
@@ -315,6 +323,20 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         n_spat_filters: int = 4,
         chs_info: list[dict[str, Any]] | None = None,
     ):
+        """Instantiate a new model from a pre-trained :class:`braindecode.models.SignalJEPA` model.
+
+        Parameters
+        ----------
+        model: SignalJEPA
+            Pre-trained model.
+        n_outputs: int
+            Number of classes for the new model.
+        n_spat_filters: int
+            Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        """
         feature_encoder = model.feature_encoder
         pos_encoder = model.pos_encoder
         transformer = model.transformer
@@ -359,12 +381,12 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         :align: center
         :alt: sJEPA Pre-Local.
 
+    .. versionadded:: 0.9
+
     Parameters
     ----------
     n_spat_filters : int
         Number of spatial filters.
-
-    .. versionadded:: 0.9
 
     References
     ----------
@@ -440,6 +462,20 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
     def from_pretrained(
         cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
     ):
+        """Instantiate a new model from a pre-trained :class:`braindecode.models.SignalJEPA` model.
+
+        Parameters
+        ----------
+        model: SignalJEPA
+            Pre-trained model.
+        n_outputs: int
+            Number of classes for the new model.
+        n_spat_filters: int
+            Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        """
         feature_encoder = model.feature_encoder
         assert feature_encoder is not None
         new_model = cls(
@@ -466,12 +502,12 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         :align: center
         :alt: sJEPA Pre-Local.
 
+    .. versionadded:: 0.9
+
     Parameters
     ----------
     n_spat_filters : int
         Number of spatial filters.
-
-    .. versionadded:: 0.9
 
     References
     ----------
@@ -554,6 +590,20 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
     def from_pretrained(
         cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
     ):
+        """Instantiate a new model from a pre-trained :class:`braindecode.models.SignalJEPA` model.
+
+        Parameters
+        ----------
+        model: SignalJEPA
+            Pre-trained model.
+        n_outputs: int
+            Number of classes for the new model.
+        n_spat_filters: int
+            Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        """
         feature_encoder = model.feature_encoder
         assert feature_encoder is not None
         new_model = cls(
@@ -593,7 +643,7 @@ class _ConvFeatureEncoder(nn.Module):
 
     drop_prob: float
     mode: str
-        Normalisation mode. Either``default`` or ``layer_norm``.
+        Normalisation mode. Either ``default`` or ``layer_norm``.
     conv_bias: bool
     activation: nn.Module
     """
