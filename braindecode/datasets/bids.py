@@ -201,9 +201,9 @@ class BIDSEpochsDataset(BIDSDataset):
     .. Warning::
         Epoched data is not officially supported in BIDS.
 
-    .. Parameters::
-        This class has the same parameters as :class:`BIDSDataset` except for arguments
-        ``datatypes``, ``extensions`` and ``check`` which are fixed.
+    .. Note::
+        **Parameters:** This class has the same parameters as :class:`BIDSDataset` except
+        for arguments ``datatypes``, ``extensions`` and ``check`` which are fixed.
     """
 
     @property
