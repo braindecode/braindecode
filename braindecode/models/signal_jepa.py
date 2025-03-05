@@ -32,9 +32,9 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     feature_encoder__conv_layers_spec: list of tuple
         Tuples have shape ``(dim, k, stride)`` where:
 
-            * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
-            * ``k`` : temporal length of the layer's kernel;
-            * ``stride`` : temporal stride of the layer's kernel.
+        * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
+        * ``k`` : temporal length of the layer's kernel;
+        * ``stride`` : temporal stride of the layer's kernel.
 
     drop_prob: float
     feature_encoder__mode: str
@@ -151,9 +151,9 @@ class SignalJEPA(_BaseSignalJEPA):
     Its output shape depends on the input shape.
     For classification purposes, three variants of this model are available:
 
-        * :class:`SignalJEPA_Contextual`
-        * :class:`SignalJEPA_PostLocal`
-        * :class:`SignalJEPA_PreLocal`
+    * :class:`SignalJEPA_Contextual`
+    * :class:`SignalJEPA_PostLocal`
+    * :class:`SignalJEPA_PreLocal`
 
     The classification architectures can either be instantiated from scratch
     (random parameters) or from a pre-trained :class:`SignalJEPA` model.
@@ -648,9 +648,9 @@ class _ConvFeatureEncoder(nn.Module):
     conv_layers_spec: list of tuple
         Tuples have shape ``(dim, k, stride)`` where:
 
-            * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
-            * ``k`` : temporal length of the layer's kernel;
-            * ``stride`` : temporal stride of the layer's kernel.
+        * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
+        * ``k`` : temporal length of the layer's kernel;
+        * ``stride`` : temporal stride of the layer's kernel.
 
     drop_prob: float
     mode: str
