@@ -64,6 +64,9 @@ Enhancements
 - Adding support for distributed samplers (:gh:`695` by `Young Truong`_)
 - Adding :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` :gh:`702` :gh:`704` by `Pierre Guetschel`_ )
 - Add :class:`braindecode.models.SignalJEPA` plus downstream architectures (:gh:`703` by `Pierre Guetschel`_ )
+- Various improvements on documentation:
+
+  * :gh:`706` by `Pierre Guetschel`_
 
 Bugs
 ~~~~

@@ -44,10 +44,15 @@ def _descriptiion_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]
 class BIDSDataset(BaseConcatDataset):
     """Dataset for loading BIDS.
 
-    This class has the same parameters as the :function:`mne_bids.find_matching_paths` function
-    as it will be used to find the files to load. The default parameters were changed.
+    This class has the same parameters as the :func:`mne_bids.find_matching_paths` function
+    as it will be used to find the files to load. The default ``extensions`` parameter was changed.
 
-    More information on BIDS (Brain Imaging Data Structure) can be found at https://bids.neuroimaging.io
+    More information on BIDS (Brain Imaging Data Structure)
+    can be found at https://bids.neuroimaging.io
+
+    .. Note::
+        For loading "unofficial" BIDS datasets containing epoched data,
+        you can use :class:`BIDSEpochsDataset`.
 
     Parameters
     ----------
@@ -90,7 +95,7 @@ class BIDSDataset(BaseConcatDataset):
         'beh', 'physio', 'stim'
     extensions : str | array-like of str | None
         The extension of the filename. E.g., ``'.json'``.
-        By default, uses the ones accepted by :function:`mne_bids.read_raw_bids`.
+        By default, uses the ones accepted by :func:`mne_bids.read_raw_bids`.
     datatypes : str | array-like of str | None
         The BIDS data type, e.g., ``'anat'``, ``'func'``, ``'eeg'``, ``'meg'``,
         ``'ieeg'``.
@@ -189,14 +194,16 @@ class BIDSDataset(BaseConcatDataset):
 
 
 class BIDSEpochsDataset(BIDSDataset):
-    """**Experimental** dataset for loading mne.Epochs saved in BIDS.
-
-    Warning: epoched data are not officially supported in BIDS.
+    """**Experimental** dataset for loading :class:`mne.Epochs` organised in BIDS.
 
     The files must end with ``_epo.fif``.
 
-    This class has the same parameters as :class:`BIDSDataset` except for arguments
-    ``suffixes``, ``extensions`` and ``check`` which are fixed.
+    .. Warning::
+        Epoched data is not officially supported in BIDS.
+
+    .. Note::
+        **Parameters:** This class has the same parameters as :class:`BIDSDataset` except
+        for arguments ``datatypes``, ``extensions`` and ``check`` which are fixed.
     """
 
     @property

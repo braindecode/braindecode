@@ -29,15 +29,16 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    feature_encoder__conv_layers_spec: list of tuples (dim, k, stride) where:
+    feature_encoder__conv_layers_spec: list of tuple
+        Tuples have shape ``(dim, k, stride)`` where:
 
-        * dim: number of output channels of the layer (unrelated to EEG channels);
-        * k: temporal length of the layer's kernel;
-        * stride: temporal stride of the layer's kernel.
+        * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
+        * ``k`` : temporal length of the layer's kernel;
+        * ``stride`` : temporal stride of the layer's kernel.
 
     drop_prob: float
     feature_encoder__mode: str
-        Normalisation mode. Either``default`` or ``layer_norm``.
+        Normalisation mode. Either ``default`` or ``layer_norm``.
     feature_encoder__conv_bias: bool
     activation: nn.Module
         Activation layer for the feature encoder.
@@ -144,16 +145,24 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
 
 class SignalJEPA(_BaseSignalJEPA):
-    """Architecture introduced in signal-JEPA [sJEPA]_ and used for SSL pre-training, Guetschel, P et al (2024) [sJEPA]_
+    """Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
 
     This model is not meant for classification but for SSL pre-training.
     Its output shape depends on the input shape.
+    For classification purposes, three variants of this model are available:
+
+    * :class:`SignalJEPA_Contextual`
+    * :class:`SignalJEPA_PostLocal`
+    * :class:`SignalJEPA_PreLocal`
+
+    The classification architectures can either be instantiated from scratch
+    (random parameters) or from a pre-trained :class:`SignalJEPA` model.
 
     .. versionadded:: 0.9
 
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
@@ -223,22 +232,25 @@ class SignalJEPA(_BaseSignalJEPA):
 
 
 class SignalJEPA_Contextual(_BaseSignalJEPA):
-    """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+    """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+
+    This architecture is one of the variants of :class:`SignalJEPA`
+    that can be used for classification purposes.
 
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_contextual.jpg
         :align: center
         :alt: sJEPA Contextual.
+
+    .. versionadded:: 0.9
 
     Parameters
     ----------
     n_spat_filters : int
         Number of spatial filters.
 
-    .. versionadded:: 0.9
-
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
@@ -315,6 +327,20 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
         n_spat_filters: int = 4,
         chs_info: list[dict[str, Any]] | None = None,
     ):
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
+
+        Parameters
+        ----------
+        model: SignalJEPA
+            Pre-trained model.
+        n_outputs: int
+            Number of classes for the new model.
+        n_spat_filters: int
+            Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        """
         feature_encoder = model.feature_encoder
         pos_encoder = model.pos_encoder
         transformer = model.transformer
@@ -353,22 +379,25 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
-    """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+    """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+
+    This architecture is one of the variants of :class:`SignalJEPA`
+    that can be used for classification purposes.
 
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_post-local.jpg
         :align: center
         :alt: sJEPA Pre-Local.
+
+    .. versionadded:: 0.9
 
     Parameters
     ----------
     n_spat_filters : int
         Number of spatial filters.
 
-    .. versionadded:: 0.9
-
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
@@ -440,6 +469,20 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
     def from_pretrained(
         cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
     ):
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
+
+        Parameters
+        ----------
+        model: SignalJEPA
+            Pre-trained model.
+        n_outputs: int
+            Number of classes for the new model.
+        n_spat_filters: int
+            Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        """
         feature_encoder = model.feature_encoder
         assert feature_encoder is not None
         new_model = cls(
@@ -460,22 +503,25 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
 
 class SignalJEPA_PreLocal(_BaseSignalJEPA):
-    """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+    """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
+
+    This architecture is one of the variants of :class:`SignalJEPA`
+    that can be used for classification purposes.
 
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_pre-local.jpg
         :align: center
         :alt: sJEPA Pre-Local.
+
+    .. versionadded:: 0.9
 
     Parameters
     ----------
     n_spat_filters : int
         Number of spatial filters.
 
-    .. versionadded:: 0.9
-
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
@@ -554,6 +600,20 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
     def from_pretrained(
         cls, model: SignalJEPA, n_outputs: int, n_spat_filters: int = 4
     ):
+        """Instantiate a new model from a pre-trained :class:`SignalJEPA` model.
+
+        Parameters
+        ----------
+        model: SignalJEPA
+            Pre-trained model.
+        n_outputs: int
+            Number of classes for the new model.
+        n_spat_filters: int
+            Number of spatial filters.
+        chs_info: list of dict | None
+            Information about each individual EEG channel. This should be filled with
+            ``info["chs"]``. Refer to :class:`mne.Info` for more details.
+        """
         feature_encoder = model.feature_encoder
         assert feature_encoder is not None
         new_model = cls(
@@ -585,15 +645,16 @@ class _ConvFeatureEncoder(nn.Module):
 
     Parameters
     ----------
-    conv_layers_spec: list of tuples (dim, k, stride) where:
+    conv_layers_spec: list of tuple
+        Tuples have shape ``(dim, k, stride)`` where:
 
-        * dim: number of output channels of the layer (unrelated to EEG channels);
-        * k: temporal length of the layer's kernel;
-        * stride: temporal stride of the layer's kernel.
+        * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
+        * ``k`` : temporal length of the layer's kernel;
+        * ``stride`` : temporal stride of the layer's kernel.
 
     drop_prob: float
     mode: str
-        Normalisation mode. Either``default`` or ``layer_norm``.
+        Normalisation mode. Either ``default`` or ``layer_norm``.
     conv_bias: bool
     activation: nn.Module
     """
