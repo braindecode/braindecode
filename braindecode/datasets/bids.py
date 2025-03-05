@@ -140,6 +140,10 @@ class BIDSDataset(BaseConcatDataset):
     preload: bool = False
     n_jobs: int = 1
 
+    @property
+    def _filter_out_epochs(self):
+        return True
+
     def __post_init__(self):
         bids_paths = mne_bids.find_matching_paths(
             root=self.root,
@@ -158,14 +162,19 @@ class BIDSDataset(BaseConcatDataset):
             datatypes=self.datatypes,
             check=self.check,
         )
-        # Filter out .json files and _epo.fif files:
+        # Filter out .json files files:
         # (argument ignore_json only available in mne-bids>=0.16)
         bids_paths = [
-            bids_path
-            for bids_path in bids_paths
-            if bids_path.extension != ".json"
-            and not (bids_path.suffix == "epo" and bids_path.extension == ".fif")
+            bids_path for bids_path in bids_paths if bids_path.extension != ".json"
         ]
+        # Filter out _epo.fif files:
+        if self._filter_out_epochs:
+            bids_paths = [
+                bids_path
+                for bids_path in bids_paths
+                if not (bids_path.suffix == "epo" and bids_path.extension == ".fif")
+            ]
+
         all_base_ds = Parallel(n_jobs=self.n_jobs)(
             delayed(self._get_dataset)(bids_path) for bids_path in bids_paths
         )
@@ -189,6 +198,10 @@ class BIDSEpochsDataset(BIDSDataset):
     This class has the same parameters as :class:`BIDSDataset` except for arguments
     ``suffixes``, ``extensions`` and ``check`` which are fixed.
     """
+
+    @property
+    def _filter_out_epochs(self):
+        return False
 
     def __init__(self, *args, **kwargs):
         super().__init__(
