@@ -145,7 +145,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
 
 
 class SignalJEPA(_BaseSignalJEPA):
-    """Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [sJEPA]_
+    """Architecture introduced in signal-JEPA for self-supervised pre-training, Guetschel, P et al (2024) [1]_
 
     This model is not meant for classification but for SSL pre-training.
     Its output shape depends on the input shape.
@@ -162,7 +162,7 @@ class SignalJEPA(_BaseSignalJEPA):
 
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
@@ -232,7 +232,7 @@ class SignalJEPA(_BaseSignalJEPA):
 
 
 class SignalJEPA_Contextual(_BaseSignalJEPA):
-    """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+    """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
     This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
     that can be used for classification purposes.
@@ -250,7 +250,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
@@ -379,7 +379,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
-    """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+    """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
     This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
     that can be used for classification purposes.
@@ -397,7 +397,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
@@ -503,7 +503,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
 
 class SignalJEPA_PreLocal(_BaseSignalJEPA):
-    """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+    """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [1]_.
 
     This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
     that can be used for classification purposes.
@@ -521,7 +521,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     References
     ----------
-    .. [sJEPA] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
+    .. [1] Guetschel, P., Moreau, T., & Tangermann, M. (2024).
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
