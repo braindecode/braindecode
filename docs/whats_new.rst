@@ -66,7 +66,7 @@ Enhancements
 - Add :class:`braindecode.models.SignalJEPA` plus downstream architectures (:gh:`703` by `Pierre Guetschel`_ )
 - Various improvements on documentation:
 
-  * :gh:`706` by `Pierre Guetschel`_ 
+  * :gh:`706` by `Pierre Guetschel`_
 
 Bugs
 ~~~~
