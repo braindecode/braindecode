@@ -158,10 +158,13 @@ class BIDSDataset(BaseConcatDataset):
             datatypes=self.datatypes,
             check=self.check,
         )
-        # Filter out .json files:
+        # Filter out .json files and _epo.fif files:
         # (argument ignore_json only available in mne-bids>=0.16)
         bids_paths = [
-            bids_path for bids_path in bids_paths if bids_path.extension != ".json"
+            bids_path
+            for bids_path in bids_paths
+            if bids_path.extension != ".json"
+            and not (bids_path.suffix == "epo" and bids_path.extension == ".fif")
         ]
         all_base_ds = Parallel(n_jobs=self.n_jobs)(
             delayed(self._get_dataset)(bids_path) for bids_path in bids_paths
