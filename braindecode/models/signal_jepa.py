@@ -234,6 +234,9 @@ class SignalJEPA(_BaseSignalJEPA):
 class SignalJEPA_Contextual(_BaseSignalJEPA):
     """Contextual downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
 
+    This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
+    that can be used for classification purposes.
+
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_contextual.jpg
         :align: center
         :alt: sJEPA Contextual.
@@ -378,6 +381,9 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
     """Post-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
 
+    This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
+    that can be used for classification purposes.
+
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_post-local.jpg
         :align: center
         :alt: sJEPA Pre-Local.
@@ -498,6 +504,9 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
 
 class SignalJEPA_PreLocal(_BaseSignalJEPA):
     """Pre-local downstream architecture introduced in signal-JEPA Guetschel, P et al (2024) [sJEPA]_.
+
+    This architecture is one of the variants of :class:`braindecode.models.SignalJEPA` 
+    that can be used for classification purposes.
 
     .. figure:: https://braindecode.org/dev/_static/model/sjepa_pre-local.jpg
         :align: center
