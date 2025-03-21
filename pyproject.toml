@@ -60,7 +60,7 @@ repository = "https://github.com/braindecode/braindecode"
 documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
-moabb = ["moabb>=1.1.1"]
+moabb = ["moabb>=1.2.0"]
 bids = ['mne_bids>=0.14']
 tests = [
     'pytest',
