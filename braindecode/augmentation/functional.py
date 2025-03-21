@@ -5,8 +5,10 @@
 # License: BSD (3-clause)
 
 from numbers import Real
+from typing import Literal, cast
 
 import numpy as np
+import numpy.typing as npt
 from scipy.interpolate import Rbf
 from sklearn.utils import check_random_state
 import torch
@@ -15,7 +17,7 @@ from torch.nn.functional import pad, one_hot
 from mne.filter import notch_filter
 
 
-def identity(X, y):
+def identity(X: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Identity operation.
 
     Parameters
@@ -35,7 +37,7 @@ def identity(X, y):
     return X, y
 
 
-def time_reverse(X, y):
+def time_reverse(X: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Flip the time axis of each input.
 
     Parameters
@@ -55,7 +57,7 @@ def time_reverse(X, y):
     return torch.flip(X, [-1]), y
 
 
-def sign_flip(X, y):
+def sign_flip(X: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Flip the sign axis of each input.
 
     Parameters
@@ -75,7 +77,7 @@ def sign_flip(X, y):
     return -X, y
 
 
-def _new_random_fft_phase_odd(batch_size, c, n, device, random_state):
+def _new_random_fft_phase_odd(batch_size: int, c: int, n: int, device: torch.device, random_state: int | np.random.Generator | None) -> torch.Tensor:
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
         2j * np.pi * rng.random((batch_size, c, (n - 1) // 2))
@@ -90,7 +92,7 @@ def _new_random_fft_phase_odd(batch_size, c, n, device, random_state):
     )
 
 
-def _new_random_fft_phase_even(batch_size, c, n, device, random_state):
+def _new_random_fft_phase_even(batch_size: int, c: int, n: int, device: torch.device, random_state: int | np.random.Generator | None) -> torch.Tensor:
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
         2j * np.pi * rng.random((batch_size, c, n // 2 - 1))
@@ -109,7 +111,13 @@ def _new_random_fft_phase_even(batch_size, c, n, device, random_state):
 _new_random_fft_phase = {0: _new_random_fft_phase_even, 1: _new_random_fft_phase_odd}
 
 
-def ft_surrogate(X, y, phase_noise_magnitude, channel_indep, random_state=None):
+def ft_surrogate(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    phase_noise_magnitude: float,
+    channel_indep: bool,
+    random_state: int | np.random.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
     Function copied from https://github.com/cliffordlab/sleep-convolutions-tf
@@ -175,7 +183,7 @@ def ft_surrogate(X, y, phase_noise_magnitude, channel_indep, random_state=None):
     return transformed_X, y
 
 
-def _pick_channels_randomly(X, p_pick, random_state):
+def _pick_channels_randomly(X: torch.Tensor, p_pick: float, random_state: int | np.random.Generator | None) -> torch.Tensor:
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
     # allows to use the same RNG
@@ -188,7 +196,12 @@ def _pick_channels_randomly(X, p_pick, random_state):
     return torch.sigmoid(1000 * (unif_samples - p_pick))
 
 
-def channels_dropout(X, y, p_drop, random_state=None):
+def channels_dropout(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    p_drop: float,
+    random_state: int | np.random.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Randomly set channels to flat signal.
 
     Part of the CMSAugment policy proposed in [1]_
@@ -222,7 +235,7 @@ def channels_dropout(X, y, p_drop, random_state=None):
     return X * mask.unsqueeze(-1), y
 
 
-def _make_permutation_matrix(X, mask, random_state):
+def _make_permutation_matrix(X: torch.Tensor, mask: torch.Tensor, random_state: int | np.random.Generator | None) -> torch.Tensor:
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
     hard_mask = mask.round()
@@ -241,7 +254,12 @@ def _make_permutation_matrix(X, mask, random_state):
     return batch_permutations
 
 
-def channels_shuffle(X, y, p_shuffle, random_state=None):
+def channels_shuffle(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    p_shuffle: float,
+    random_state: int | np.random.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Randomly shuffle channels in EEG data matrix.
 
     Part of the CMSAugment policy proposed in [1]_
@@ -280,7 +298,12 @@ def channels_shuffle(X, y, p_shuffle, random_state=None):
     return torch.matmul(batch_permutations, X), y
 
 
-def gaussian_noise(X, y, std, random_state=None):
+def gaussian_noise(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    std: float,
+    random_state: int | np.random.Generator | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Randomly add white Gaussian noise to all channels.
 
     Suggested e.g. in [1]_, [2]_ and [3]_
@@ -332,7 +355,11 @@ def gaussian_noise(X, y, std, random_state=None):
     return transformed_X, y
 
 
-def channels_permute(X, y, permutation):
+def channels_permute(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    permutation: list[int]
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Permute EEG channels according to fixed permutation matrix.
 
     Suggested e.g. in [1]_
@@ -362,7 +389,12 @@ def channels_permute(X, y, permutation):
     return X[..., permutation, :], y
 
 
-def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
+def smooth_time_mask(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    mask_start_per_sample: torch.Tensor,
+    mask_len_samples: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Smoothly replace a contiguous part of all channels by zeros.
 
     Originally proposed in [1]_ and [2]_
@@ -412,7 +444,13 @@ def smooth_time_mask(X, y, mask_start_per_sample, mask_len_samples):
     return X * mask, y
 
 
-def bandstop_filter(X, y, sfreq, bandwidth, freqs_to_notch):
+def bandstop_filter(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    sfreq: float,
+    bandwidth: float,
+    freqs_to_notch: npt.ArrayLike | None,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Apply a band-stop filter with desired bandwidth at the desired frequency
     position.
 
@@ -469,7 +507,7 @@ def bandstop_filter(X, y, sfreq, bandwidth, freqs_to_notch):
     return transformed_X, y
 
 
-def _analytic_transform(x):
+def _analytic_transform(x: torch.Tensor) -> torch.Tensor:
     if torch.is_complex(x):
         raise ValueError("x must be real.")
 
@@ -486,12 +524,12 @@ def _analytic_transform(x):
     return ifft(f * h, dim=-1)
 
 
-def _nextpow2(n):
+def _nextpow2(n: int) -> int:
     """Return the first integer N such that 2**N >= abs(n)."""
     return int(np.ceil(np.log2(np.abs(n))))
 
 
-def _frequency_shift(X, fs, f_shift):
+def _frequency_shift(X: torch.Tensor, fs: float, f_shift: float) -> torch.Tensor:
     """
     Shift the specified signal by the specified frequency.
 
@@ -504,6 +542,7 @@ def _frequency_shift(X, fs, f_shift):
     t = torch.arange(N_padded, device=X.device) / fs
     padded = pad(X, (0, N_padded - N_orig))
     analytical = _analytic_transform(padded)
+    # TODO: mypy is confused about types here
     if isinstance(f_shift, (float, int, np.ndarray, list)):
         f_shift = torch.as_tensor(f_shift).float()
     f_shift_stack = f_shift.repeat(N_padded, n_channels, 1)
@@ -514,7 +553,12 @@ def _frequency_shift(X, fs, f_shift):
     return shifted[..., :N_orig].real.float()
 
 
-def frequency_shift(X, y, delta_freq, sfreq):
+def frequency_shift(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    delta_freq: float,
+    sfreq: float
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Adds a shift in the frequency domain to all channels.
 
     Note that here, the shift is the same for all channels of a single example.
@@ -545,7 +589,7 @@ def frequency_shift(X, y, delta_freq, sfreq):
     return transformed_X, y
 
 
-def _torch_normalize_vectors(rr):
+def _torch_normalize_vectors(rr: torch.Tensor) -> torch.Tensor:
     """Normalize surface vertices."""
     norm = torch.linalg.norm(rr, axis=1, keepdim=True)
     mask = norm > 0
@@ -554,7 +598,7 @@ def _torch_normalize_vectors(rr):
     return new_rr
 
 
-def _torch_legval(x, c, tensor=True):
+def _torch_legval(x: torch.Tensor, c: torch.Tensor, tensor: bool = True) -> torch.Tensor:
     """
     Evaluate a Legendre series at points x.
     If `c` is of length `n + 1`, this function returns the value:
@@ -662,7 +706,11 @@ def _torch_legval(x, c, tensor=True):
     return c0 + c1 * x
 
 
-def _torch_calc_g(cosang, stiffness=4, n_legendre_terms=50):
+def _torch_calc_g(
+    cosang: torch.Tensor,
+    stiffness: float = 4,
+    n_legendre_terms: int = 50
+) -> torch.Tensor:
     """Calculate spherical spline g function between points on a sphere.
 
     Parameters
@@ -718,23 +766,23 @@ def _torch_calc_g(cosang, stiffness=4, n_legendre_terms=50):
     return _torch_legval(cosang, [0] + factors)
 
 
-def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
+def _torch_make_interpolation_matrix(pos_from: torch.Tensor, pos_to: torch.Tensor, alpha: float = 1e-5) -> torch.Tensor:
     """Compute interpolation matrix based on spherical splines.
 
     Implementation based on [1]_
 
     Parameters
     ----------
-    pos_from : np.ndarray of float, shape(n_good_sensors, 3)
+    pos_from : torch.Tensor of float, shape(n_good_sensors, 3)
         The positions to interpolate from.
-    pos_to : np.ndarray of float, shape(n_bad_sensors, 3)
+    pos_to : torch.Tensor of float, shape(n_bad_sensors, 3)
         The positions to interpolate.
     alpha : float
         Regularization parameter. Defaults to 1e-5.
 
     Returns
     -------
-    interpolation : np.ndarray of float, shape(len(pos_from), len(pos_to))
+    interpolation : torch.Tensor of float, shape(len(pos_from), len(pos_to))
         The interpolation matrix that maps good signals to the location
         of bad signals.
 
@@ -822,7 +870,12 @@ def _torch_make_interpolation_matrix(pos_from, pos_to, alpha=1e-5):
     return interpolation
 
 
-def _rotate_signals(X, rotations, sensors_positions_matrix, spherical=True):
+def _rotate_signals(
+    X: torch.Tensor,
+    rotations: list[torch.Tensor],
+    sensors_positions_matrix: torch.Tensor,
+    spherical: bool = True,
+) -> torch.Tensor:
     sensors_positions_matrix = sensors_positions_matrix.to(X.device)
     rot_sensors_matrices = [
         rotation.matmul(sensors_positions_matrix) for rotation in rotations
@@ -853,15 +906,21 @@ def _rotate_signals(X, rotations, sensors_positions_matrix, spherical=True):
         return transformed_X
 
 
-def _make_rotation_matrix(axis, angle, degrees=True):
+def _make_rotation_matrix(
+    axis: Literal["x", "y", "z"],
+    angle: float | int | np.ndarray | list,
+    degrees: bool = True,
+) -> torch.Tensor:
     assert axis in ["x", "y", "z"], "axis should be either x, y or z."
 
     if isinstance(angle, (float, int, np.ndarray, list)):
         angle = torch.as_tensor(angle)
+    # TODO: else?
 
     if degrees:
         angle = angle * np.pi / 180
 
+    # TODO: mypy is confused about types here
     device = angle.device
     zero = torch.zeros(1, device=device)
     rot = torch.stack(
@@ -881,7 +940,14 @@ def _make_rotation_matrix(axis, angle, degrees=True):
         return rot[:, [1, 2, 0]]
 
 
-def sensors_rotation(X, y, sensors_positions_matrix, axis, angles, spherical_splines):
+def sensors_rotation(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    sensors_positions_matrix: torch.Tensor,
+    axis: Literal["x", "y", "z"],
+    angles: npt.ArrayLike,
+    spherical_splines: bool,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Interpolates EEG signals over sensors rotated around the desired axis
     with the desired angle.
 
@@ -893,7 +959,7 @@ def sensors_rotation(X, y, sensors_positions_matrix, axis, angles, spherical_spl
         EEG input example or batch.
     y : torch.Tensor
         EEG labels for the example or batch.
-    sensors_positions_matrix : numpy.ndarray
+    sensors_positions_matrix : torch.Tensor
         Matrix giving the positions of each sensor in a 3D cartesian coordinate
         system. Should have shape (3, n_channels), where n_channels is the
         number of channels. Standard 10-20 positions can be obtained from
@@ -924,7 +990,12 @@ def sensors_rotation(X, y, sensors_positions_matrix, axis, angles, spherical_spl
     return rotated_X, y
 
 
-def mixup(X, y, lam, idx_perm):
+def mixup(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    lam: torch.Tensor,
+    idx_perm: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Mixes two channels of EEG data.
 
     See [1]_ for details.
@@ -973,8 +1044,13 @@ def mixup(X, y, lam, idx_perm):
 
 
 def segmentation_reconstruction(
-    X, y, n_segments, data_classes, rand_indices, idx_shuffle
-):
+    X: torch.Tensor,
+    y: torch.Tensor,
+    n_segments: int,
+    data_classes: list[tuple[int, torch.Tensor]],
+    rand_indices: npt.ArrayLike,
+    idx_shuffle: npt.ArrayLike,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Segment and reconstruct EEG data from [1]_.
 
     See [1]_ for details.
@@ -987,6 +1063,8 @@ def segmentation_reconstruction(
         EEG labels for the example or batch.
     n_segments : int
         Number of segments to use in the batch.
+    data_classes: list[tuple[int, torch.Tensor]]
+        List of tuples. Each tuple contains the class index and the corresponding EEG data.
     rand_indices: array-like
         Array of indices that indicates which trial to use in each segment.
     idx_shuffle: array-like
@@ -1005,8 +1083,8 @@ def segmentation_reconstruction(
     """
 
     # Initialize lists to store augmented data and corresponding labels
-    aug_data = []
-    aug_label = []
+    aug_data: list[torch.Tensor] = []
+    aug_label: list[torch.Tensor] = []
 
     # Iterate through each class to separate and augment data
     for class_index, X_class in data_classes:
@@ -1030,20 +1108,26 @@ def segmentation_reconstruction(
         aug_data.append(X_aug)
         aug_label.append(torch.full((n_trials,), class_index))
     # Concatenate the augmented data and labels
-    aug_data = torch.cat(aug_data, dim=0)
-    aug_data = aug_data.to(dtype=X.dtype, device=X.device)
-    aug_data = aug_data[idx_shuffle]
+    concat_aug_data = torch.cat(aug_data, dim=0)
+    concat_aug_data = concat_aug_data.to(dtype=X.dtype, device=X.device)
+    concat_aug_data = concat_aug_data[idx_shuffle]
 
     if y is not None:
-        aug_label = torch.cat(aug_label, dim=0)
-        aug_label = aug_label.to(dtype=y.dtype, device=y.device)
-        aug_label = aug_label[idx_shuffle]
-        return aug_data, aug_label
+        concat_label = torch.cat(aug_label, dim=0)
+        concat_label = concat_label.to(dtype=y.dtype, device=y.device)
+        concat_label = concat_label[idx_shuffle]
+        return concat_aug_data, concat_label
 
-    return aug_data, y
+    return concat_aug_data, None
 
 
-def mask_encoding(X, y, time_start, segment_length, n_segments):
+def mask_encoding(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    time_start: torch.Tensor,
+    segment_length: int,
+    n_segments: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Mark encoding from Ding et al. (2024) from [ding2024]_.
 
     Replaces a contiguous part (or parts) of all channels by zeros
