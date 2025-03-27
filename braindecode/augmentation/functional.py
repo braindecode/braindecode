@@ -4,6 +4,7 @@
 #
 # License: BSD (3-clause)
 
+from __future__ import annotations
 from numbers import Real
 from typing import Literal, cast
 
@@ -542,10 +543,13 @@ def _frequency_shift(X: torch.Tensor, fs: float, f_shift: float) -> torch.Tensor
     t = torch.arange(N_padded, device=X.device) / fs
     padded = pad(X, (0, N_padded - N_orig))
     analytical = _analytic_transform(padded)
-    # TODO: mypy is confused about types here
-    if isinstance(f_shift, (float, int, np.ndarray, list)):
-        f_shift = torch.as_tensor(f_shift).float()
-    f_shift_stack = f_shift.repeat(N_padded, n_channels, 1)
+    if isinstance(f_shift, torch.Tensor):
+        _f_shift = f_shift
+    elif isinstance(f_shift, (float, int, np.ndarray, list)):
+        _f_shift = torch.as_tensor(f_shift).float()
+    else:
+        raise ValueError(f"Invalid f_shift type: {type(f_shift)}")
+    f_shift_stack = _f_shift.repeat(N_padded, n_channels, 1)
     reshaped_f_shift = f_shift_stack.permute(
         *torch.arange(f_shift_stack.ndim - 1, -1, -1)
     )
@@ -912,22 +916,23 @@ def _make_rotation_matrix(
     degrees: bool = True,
 ) -> torch.Tensor:
     assert axis in ["x", "y", "z"], "axis should be either x, y or z."
-
-    if isinstance(angle, (float, int, np.ndarray, list)):
-        angle = torch.as_tensor(angle)
-    # TODO: else?
+    if isinstance(angle, torch.Tensor):
+        _angle = angle
+    elif isinstance(angle, (float, int, np.ndarray, list)):
+        _angle = torch.as_tensor(angle)
+    else:
+        raise ValueError(f"Invalid angle type: {type(angle)}")
 
     if degrees:
-        angle = angle * np.pi / 180
+        _angle = _angle * np.pi / 180
 
-    # TODO: mypy is confused about types here
-    device = angle.device
+    device = _angle.device
     zero = torch.zeros(1, device=device)
     rot = torch.stack(
         [
             torch.as_tensor([1, 0, 0], device=device),
-            torch.hstack([zero, torch.cos(angle), -torch.sin(angle)]),
-            torch.hstack([zero, torch.sin(angle), torch.cos(angle)]),
+            torch.hstack([zero, torch.cos(_angle), -torch.sin(_angle)]),
+            torch.hstack([zero, torch.sin(_angle), torch.cos(_angle)]),
         ]
     )
     if axis == "x":
