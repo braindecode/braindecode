@@ -374,3 +374,19 @@ def test_model_has_drop_prob_parameter(model_class):
         f"{model_class.__name__} does not have an drop_prob parameter."
         f" Found parameters: {param_names}"
     )
+
+
+@pytest.mark.parametrize(
+    "model_name, required_params, signal_params", models_mandatory_parameters
+)
+def test_model_torchscript(model_name, required_params, signal_params):
+    """
+    Verifies that all models can be torch scriptable
+    """
+    model_class = models_dict[model_name]
+    sp = deepcopy(default_signal_params)
+    if signal_params is not None:
+        sp.update(signal_params)
+    model = model_class(**sp)
+    torchscript_model_class = torch.jit.script(model)
+    assert torchscript_model_class is not None
