@@ -22,6 +22,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding model page (:gh:`700` by `Lucas Heck`_)
 - Fix error when using n_njobs > 1 on Windows (:gh:`700` by `Arnaud Delorme`_)
 - Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`572` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
@@ -313,3 +314,4 @@ Authors
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
 .. _Aphel: https://github.com/itsaphel
 .. _Young Truong: https://github.com/dungscout96
+.. _Lucas Heck: https://github.com/lucas-heck
