@@ -28,6 +28,6 @@ SleepStagerChambon2018,Sleep Staging,Classification,128,"n_chans, n_outputs, n_t
 SleepStagerEldele2021,Sleep Staging,Classification,100,"n_chans, n_outputs, n_times, sfreq",719925,"SleepStagerEldele2021(n_chans=2, n_outputs=5, n_times=3000, sfreq=100)"
 SPARCNet,Epilepsy,Classification,200,"n_chans, n_outputs, n_times",1141921,"SPARCNet(n_chans=16, n_outputs=6, n_times=2000, sfreq=200)"
 SyncNet,"Emotion Recognition, Alcoholism",Classification,256,"n_chans, n_outputs, n_times",554,"SyncNet(n_chans=62, n_outputs=3, n_times=5120, sfreq=256)"
-TSnceptionV1,Emotion Recognition,Classification,256,"n_chans, n_outputs, n_times, sfreq",2187206,"TSceptionV1(n_chans=62, n_outputs=3, n_times=5120, sfreq=256)"
+TSceptionV1,Emotion Recognition,Classification,256,"n_chans, n_outputs, n_times, sfreq",2187206,"TSceptionV1(n_chans=62, n_outputs=3, n_times=5120, sfreq=256)"
 TIDNet,General,Classification,250,"n_chans, n_outputs, n_times",240404,"TIDNet(n_chans=22,  n_outputs=4,  n_times=1000)"
 USleep,Sleep Staging,Classification,128,"n_chans, n_outputs, n_times, sfreq",2482011,"USleep(n_chans=2, n_outputs=5, n_times=3000, sfreq=100)"
