@@ -41,7 +41,7 @@ html-pattern:
 	@echo
 	@echo "Build finished. The HTML pages are in _build/html"
 
-html-noplot: 
+html-noplot:
 	@python prepare_summary_tables.py ../braindecode/models ${BUILDDIR}
 	@$(SPHINXBUILD) -D plot_gallery=0 -b html $(ALLSPHINXOPTS) _build/html
 	@echo

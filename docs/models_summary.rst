@@ -34,7 +34,7 @@ We are continually expanding this collection and welcome contributions! If you h
 
 Columns definitions:
     - **Model**: The name of the model.
-    - **Paradigm**: The paradigm(s) the model is typically used for (e.g., Motor Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple paradigms or no specific paradigm focus.    
+    - **Paradigm**: The paradigm(s) the model is typically used for (e.g., Motor Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple paradigms or no specific paradigm focus.
     - **Type**: The model's primary function (e.g., Classification, Regression, Embedding).
     - **Freq (Hz)**: The data sampling rate (in Hertz) the model is designed for. Note that this might be adaptable depending on the specific dataset and application.
     - **Hyperparameters**: The mandatory hyperparameters required for instantiating the model class. These may include `n_chans` (number of channels), `n_outputs` (number of output classes or regression targets), `n_times` (number of time points in the input window), or `sfreq` (sampling frequency). Also, `n_times` can be derived implicitly by providing both `sfreq` and `input_window_seconds`.
@@ -66,4 +66,3 @@ Want to contribute a new model to Braindecode? Great! You can propose a new mode
      });
     });
    </script>
-
