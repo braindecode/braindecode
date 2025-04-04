@@ -253,7 +253,7 @@ non_classification_models = [
 
 
 ################################################################
-def get_summary_table(dir_name: str | Path | None = None):
+def get_summary_table(dir_name=None):
     if dir_name is None:
         dir_path = Path(__file__).parent
     else:
