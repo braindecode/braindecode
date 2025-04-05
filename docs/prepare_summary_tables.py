@@ -20,9 +20,7 @@ def gen_models_visualization(df: pd.DataFrame):
         data=df.sort_values("#Parameters", ascending=False),
         x="#Parameters",
         y="Model",
-        palette="viridis_r",
-        hue="log_#Parameters",
-        legend=False,
+        palette="viridis",
     )
     plt.xscale("log")
     plt.xlabel("Number of Parameters (log scale)", fontsize=12)
@@ -37,13 +35,14 @@ def gen_models_visualization(df: pd.DataFrame):
         "Paradigms"
     )
     paradigm_counts = df_paradigms["Paradigms"].value_counts()
+    color_mapping = dict(
+        zip(paradigm_counts, sns.color_palette("rocket", len(paradigm_counts)))
+    )
 
     sns.barplot(
         x=paradigm_counts.values,
         y=paradigm_counts.index,
-        palette="rocket",
-        hue=-1 * paradigm_counts.values,
-        legend=False,
+        palette=[color_mapping[v] for v in paradigm_counts.values],
     )
     plt.title("Model Distribution by Paradigm", fontsize=14)
     plt.xlabel("Number of Models", fontsize=12)
@@ -85,9 +84,10 @@ def main(source_dir: str, target_dir: str):
         gen_models_visualization(df)
         df["Model"] = df["Model"].apply(wrap_model_name)
         df["Paradigm"] = df["Paradigm"].apply(wrap_tags)
-        df.to_csv(target_file, index=False)
         html_table = df.to_html(classes="sortable", index=False, escape=False)
-        with open("_build/models_summary_table.html", "w", encoding="utf-8") as f:
+        with open(
+            f"{target_dir}/models_summary_table.html", "w", encoding="utf-8"
+        ) as f:
             f.write(html_table)
 
 
