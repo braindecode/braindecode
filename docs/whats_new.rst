@@ -22,6 +22,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Adding model page (:gh:`715` by `Lucas Heck`_)
 - Inference of shape for string module when using :class:`skorch.helper.SliceDataset` (:gh:`716` by `Bruno Aristimunha`_)
 - Fix error when using n_njobs > 1 on Windows (:gh:`700` by `Arnaud Delorme`_)
 - Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`572` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
@@ -314,3 +315,4 @@ Authors
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
 .. _Aphel: https://github.com/itsaphel
 .. _Young Truong: https://github.com/dungscout96
+.. _Lucas Heck: https://github.com/lucas-heck

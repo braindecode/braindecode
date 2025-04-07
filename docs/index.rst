@@ -42,8 +42,9 @@ Braindecode Homepage
    :hidden:
 
    Install <install/install>
+   Models <models_summary>
    Cite <cite>
    Tutorial and Examples <auto_examples/index>
-   API Reference <api>
+   API <api>
    Get help <help>
    What’s new <whats_new>

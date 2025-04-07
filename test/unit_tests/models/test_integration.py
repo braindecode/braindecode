@@ -24,6 +24,7 @@ from braindecode.models import (
     EEGInceptionMI,
     EEGMiner,
 )
+from braindecode.models.util import _summary_table
 
 rng = np.random.default_rng(12)
 # Generating the channel info
@@ -373,4 +374,12 @@ def test_model_has_drop_prob_parameter(model_class):
     assert has_drop_prob_param, (
         f"{model_class.__name__} does not have an drop_prob parameter."
         f" Found parameters: {param_names}"
+    )
+
+@pytest.mark.parametrize("model_class", models_dict.values())
+def test_completeness_summary_table(model_class):
+
+    assert model_class.__name__ in _summary_table.index, (
+        f"{model_class.__name__} is not in the summary table. "
+        f"Please add it to the summary table."
     )
