@@ -41,7 +41,7 @@ Columns definitions:
     - **#Parameters**: The approximate total number of trainable parameters in the model, calculated using a consistent configuration (see note below).
 
 .. raw:: html
-   :file: _build/models_summary_table.html
+   :file: generated/models_summary_table.html
 
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
 
