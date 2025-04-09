@@ -1,4 +1,5 @@
 .. _data_summary:
+
 .. raw:: html
 
    <style>
@@ -41,10 +42,14 @@ Columns definitions:
     - **#Parameters**: The approximate total number of trainable parameters in the model, calculated using a consistent configuration (see note below).
 
 .. raw:: html
+
+   <!-- Dropdown filter container -->
+   <div id="custom-filters" style="margin-bottom: 15px;"></div>
+
+.. raw:: html
    :file: generated/models_summary_table.html
 
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
-
 
 Submit a new model
 ~~~~~~~~~~~~~~~~~~~~
@@ -55,14 +60,64 @@ Want to contribute a new model to Braindecode? Great! You can propose a new mode
 
    <script type="text/javascript" src="https://cdn.datatables.net/v/bm/dt-1.13.4/datatables.min.js"></script>
    <script type="text/javascript">
-    $(document).ready(function() {
-     var table = $('.sortable').DataTable({
-       "paging": false,
-       "searching": true,
-       "info": false,
-       language: {
-         "search": "Filter models:"
-       }
-     });
+    $(document).ready(function () {
+      var table = $('.sortable').DataTable({
+        paging: false,
+        searching: true,
+        info: false,
+        language: {
+          search: "Filter models:"
+        }
+      });
+
+      var filterColumns = {
+        1: "Select Paradigm",
+        2: "Choose Model Type",
+        4: "Select Required Hyperparameter"
+      };
+
+      var $filterContainer = $('#custom-filters');
+      var dropdowns = {};
+
+      $.each(filterColumns, function (colIdx, label) {
+        var select = $('<select><option value="" disabled selected>' + label + '</option></select>')
+          .css({ 'margin-right': '10px', 'padding': '5px', 'margin-bottom': '10px' });
+
+        var uniqueTags = new Set();
+
+        table.column(colIdx).data().each(function (d) {
+          if (d) {
+            var plainText = $('<div>').html(d).text();  // Remove HTML tags
+            plainText.split(/[,/]/).forEach(function (tag) {
+              tag = tag.trim();
+              if (tag) uniqueTags.add(tag);
+            });
+          }
+        });
+
+        Array.from(uniqueTags).sort().forEach(function (tag) {
+          select.append('<option value="' + tag + '">' + tag + '</option>');
+        });
+
+        select.on('change', function () {
+          var val = $(this).val();
+          table.column(colIdx).search(val ? val : '', true, false).draw();
+        });
+
+        dropdowns[colIdx] = select;
+        $filterContainer.append(select);
+      });
+
+      // Clear filters button
+      var clearBtn = $('<button>Clear Filters</button>')
+        .css({ 'margin-left': '10px', 'padding': '5px 10px', 'cursor': 'pointer' })
+        .on('click', function () {
+          $.each(dropdowns, function (colIdx, select) {
+            select.prop('selectedIndex', 0);
+            table.column(colIdx).search('').draw();
+          });
+        });
+
+      $filterContainer.append(clearBtn);
     });
    </script>
