@@ -1,4 +1,5 @@
 .. _data_summary:
+
 .. raw:: html
 
    <style>
@@ -20,7 +21,7 @@
 .. currentmodule:: braindecode.models
 
 Models Summary
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~
 
 This page offers a summary of many implemented models. Please note that this list may not be exhaustive. For the definitive and most current list, including detailed class documentation, please consult the :doc:`API documentation <api>`.
 
@@ -30,7 +31,7 @@ We are continually expanding this collection and welcome contributions! If you h
    :alt: Braindecode Models
    :align: center
 
-   Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental they were designed for (right plot).
+   Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental paradigm they were designed for (right plot).
 
 Columns definitions:
     - **Model**: The name of the model.
@@ -41,13 +42,17 @@ Columns definitions:
     - **#Parameters**: The approximate total number of trainable parameters in the model, calculated using a consistent configuration (see note below).
 
 .. raw:: html
+
+   <!-- Dropdown filter container -->
+   <div id="custom-filters" style="margin-bottom: 15px;"></div>
+
+.. raw:: html
    :file: generated/models_summary_table.html
 
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
 
-
 Submit a new model
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 
 Want to contribute a new model to Braindecode? Great! You can propose a new model by opening an `issue <https://github.com/braindecode/braindecode/issues>`__ (please include a link to the relevant publication or description) or, even better, directly submit your implementation via a `pull request <https://github.com/braindecode/braindecode/pulls>`__. We appreciate your contributions to expanding the library!
 
@@ -55,14 +60,77 @@ Want to contribute a new model to Braindecode? Great! You can propose a new mode
 
    <script type="text/javascript" src="https://cdn.datatables.net/v/bm/dt-1.13.4/datatables.min.js"></script>
    <script type="text/javascript">
-    $(document).ready(function() {
-     var table = $('.sortable').DataTable({
-       "paging": false,
-       "searching": true,
-       "info": false,
-       language: {
-         "search": "Filter models:"
-       }
-     });
+    $(document).ready(function () {
+      var table = $('.sortable').DataTable({
+        paging: false,
+        searching: true,
+        info: false,
+        language: {
+          search: "Filter models:"
+        }
+      });
+
+      var filterColumns = {
+        1: "Select Paradigm",
+        2: "Choose Model Type",
+        4: "Select Required Hyperparameter"
+      };
+
+      var $filterContainer = $('#custom-filters');
+      var dropdowns = {};
+
+      $.each(filterColumns, function (colIdx, label) {
+        var select = $('<select><option value="" disabled selected>' + label + '</option></select>')
+          .css({ 'margin-right': '10px', 'padding': '5px', 'margin-bottom': '10px' });
+
+        var uniqueTags = new Set();
+
+        table.column(colIdx).data().each(function (d) {
+          if (d) {
+            var tags = [];
+            var $temp = $('<div>' + d + '</div>');
+            var $foundTags = $temp.find('.tag');
+
+            if ($foundTags.length > 0) {
+              $foundTags.each(function () {
+                var tag = $(this).text().trim();
+                if (tag) tags.push(tag);
+              });
+            } else {
+              var plainText = $temp.text();
+              tags = plainText.split(/,\s*|\s+/).map(function (tag) {
+                return tag.trim();
+              });
+            }
+
+            tags.forEach(function (tag) {
+              if (tag) uniqueTags.add(tag);
+            });
+          }
+        });
+
+        Array.from(uniqueTags).sort().forEach(function (tag) {
+          select.append('<option value="' + tag + '">' + tag + '</option>');
+        });
+
+        select.on('change', function () {
+          var val = $(this).val();
+          table.column(colIdx).search(val ? val : '', true, false).draw();
+        });
+
+        dropdowns[colIdx] = select;
+        $filterContainer.append(select);
+      });
+
+      var clearBtn = $('<button>Clear Filters</button>')
+        .css({ 'margin-left': '10px', 'padding': '5px 10px', 'cursor': 'pointer' })
+        .on('click', function () {
+          $.each(dropdowns, function (colIdx, select) {
+            select.prop('selectedIndex', 0);
+            table.column(colIdx).search('').draw();
+          });
+        });
+
+      $filterContainer.append(clearBtn);
     });
    </script>
