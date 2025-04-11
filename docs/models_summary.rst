@@ -21,7 +21,7 @@
 .. currentmodule:: braindecode.models
 
 Models Summary
-~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~
 
 This page offers a summary of many implemented models. Please note that this list may not be exhaustive. For the definitive and most current list, including detailed class documentation, please consult the :doc:`API documentation <api>`.
 
@@ -31,7 +31,7 @@ We are continually expanding this collection and welcome contributions! If you h
    :alt: Braindecode Models
    :align: center
 
-   Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental they were designed for (right plot).
+   Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental paradigm they were designed for (right plot).
 
 Columns definitions:
     - **Model**: The name of the model.
@@ -52,7 +52,7 @@ Columns definitions:
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
 
 Submit a new model
-~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~
 
 Want to contribute a new model to Braindecode? Great! You can propose a new model by opening an `issue <https://github.com/braindecode/braindecode/issues>`__ (please include a link to the relevant publication or description) or, even better, directly submit your implementation via a `pull request <https://github.com/braindecode/braindecode/pulls>`__. We appreciate your contributions to expanding the library!
 
@@ -87,9 +87,23 @@ Want to contribute a new model to Braindecode? Great! You can propose a new mode
 
         table.column(colIdx).data().each(function (d) {
           if (d) {
-            var plainText = $('<div>').html(d).text();  // Remove HTML tags
-            plainText.split(/[,/]/).forEach(function (tag) {
-              tag = tag.trim();
+            var tags = [];
+            var $temp = $('<div>' + d + '</div>');
+            var $foundTags = $temp.find('.tag');
+
+            if ($foundTags.length > 0) {
+              $foundTags.each(function () {
+                var tag = $(this).text().trim();
+                if (tag) tags.push(tag);
+              });
+            } else {
+              var plainText = $temp.text();
+              tags = plainText.split(/,\s*|\s+/).map(function (tag) {
+                return tag.trim();
+              });
+            }
+
+            tags.forEach(function (tag) {
               if (tag) uniqueTags.add(tag);
             });
           }
@@ -108,7 +122,6 @@ Want to contribute a new model to Braindecode? Great! You can propose a new mode
         $filterContainer.append(select);
       });
 
-      // Clear filters button
       var clearBtn = $('<button>Clear Filters</button>')
         .css({ 'margin-left': '10px', 'padding': '5px 10px', 'cursor': 'pointer' })
         .on('click', function () {
