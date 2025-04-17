@@ -912,3 +912,139 @@ class Conv2dWithConstraint(nn.Conv2d):
                 self.weight.data, p=2, dim=0, maxnorm=self.max_norm
             )
         return super(Conv2dWithConstraint, self).forward(x)
+
+
+class MeanLayer(nn.Module):
+    """
+    Computes the mean of the input tensor along a specified dimension.
+
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the mean.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+    Returns
+    -------
+    torch.Tensor
+        The mean of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.mean(dim=self.dim, keepdim=self.keepdim)
+
+
+class MaxLayer(nn.Module):
+    """
+    Computes the maximum of the input tensor along a specified dimension.
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the maximum.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+    Returns
+    -------
+    torch.Tensor
+        The maximum of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        max_val, _ = x.max(dim=self.dim, keepdim=self.keepdim)
+        return max_val
+
+
+class VarLayer(nn.Module):
+    """
+    Computes the variance of the input tensor along a specified dimension.
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the variance.
+    keepdim : bool, default=True
+        If you want to keep the dim in variance calculation
+    Returns
+    -------
+    torch.Tensor
+        The variance of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.var(dim=self.dim, keepdim=self.keepdim)
+
+
+class StdLayer(nn.Module):
+    """
+    Computes the standard deviation of the input tensor along a specified dimension.
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the standard deviation.
+    keepdim : bool, default=True
+        If you want to keep the dim in std calculation
+    Returns
+    -------
+    torch.Tensor
+        The standard deviation of the input tensor along the specified dimension.
+    """
+
+    def __init__(self, dim: int, keepdim: bool = True):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.std(dim=self.dim, keepdim=self.keepdim)
+
+
+class LogVarLayer(nn.Module):
+    """
+    Computes the logarithm of the variance of the input tensor along a specified dimension.
+    Parameters
+    ----------
+    dim : int
+        The dimension along which to compute the variance.
+    keepdim: bool, default=True
+        If you want to keep the dim in variance calculation
+    min_var: float, default=1e-6
+        Variance min for clamp
+    max_var: float, default=1e6
+        Variance max for clamp
+    Returns
+    -------
+    torch.Tensor
+        The logarithm of the variance of the input tensor along the specified dimension.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        keepdim: bool = True,
+        min_var: float = 1e-6,
+        max_var: float = 1e6,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.keepdim = keepdim
+        self.min_var = min_var
+        self.max_var = max_var
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        var = x.var(dim=self.dim, keepdim=self.keepdim)
+        var_clamped = torch.clamp(var, min=self.min_var, max=self.max_var)
+        return torch.log(var_clamped)

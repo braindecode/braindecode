@@ -44,6 +44,7 @@ from .signal_jepa import (
     SignalJEPA_PreLocal,
     SignalJEPA,
 )
+from .fbcnet import FBCNet
 
 # Call this last in order to make sure the dataset list is populated with
 # the models imported in this file.
