@@ -86,7 +86,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # models parameters
-        n_bands=9,
+        n_bands: int = 9,
         n_filters_spat: int = 36,
         temporal_layer: str = "LogVarLayer",
         n_dim: int = 3,
@@ -242,12 +242,12 @@ class _MixedConv2d(nn.ModuleDict):
 
     def __init__(
         self,
-        in_channels,
-        out_channels,
+        in_channels: int,
+        out_channels: int,
         kernel_size=[(1, 15), (1, 31), (1, 63), (1, 125)],
-        stride=1,
-        dilation=1,
-        depthwise=False,
+        stride: int = 1,
+        dilation: int = 1,
+        depthwise: bool = False,
     ):
         super().__init__()
 
