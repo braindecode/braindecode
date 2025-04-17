@@ -170,7 +170,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             self.n_times_padded = self.n_times
 
         # Temporal aggregator
-        self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)
+        self.temporal_layer = _valid_layers[temporal_layer](dim=self.n_dim)  # type: ignore
 
         # Flatten layer
         self.flatten_layer = Rearrange("batch ... -> batch (...)")

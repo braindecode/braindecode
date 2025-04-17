@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
+from typing import Callable
 import numpy as np
 import torch
 
@@ -917,7 +918,6 @@ class Conv2dWithConstraint(nn.Conv2d):
 class StatLayer(nn.Module):
     """
     Generic layer to compute a statistical function along a specified dimension.
-
     Parameters
     ----------
     stat_fn : Callable
@@ -931,13 +931,13 @@ class StatLayer(nn.Module):
     apply_log : bool, default=False
         Whether to apply log after computation (used for LogVarLayer).
     """
-    
+
     def __init__(
         self,
         stat_fn: Callable,
         dim: int,
         keepdim: bool = True,
-        clamp_range: tuple[float, float] = None,
+        clamp_range: tuple[float, float] | None = None,
         apply_log: bool = False,
     ):
         super().__init__()
@@ -954,27 +954,27 @@ class StatLayer(nn.Module):
         if self.apply_log:
             out = torch.log(out)
         return out
-        
-        
-  def MeanLayer(dim, keepdim=True):
-      return StatLayer(torch.mean, dim, keepdim)
-  
-  def MaxLayer(dim, keepdim=True):
-      return StatLayer(lambda x, dim, keepdim: x.max(dim=dim, keepdim=keepdim)[0], dim, keepdim)
-  
-  def VarLayer(dim, keepdim=True):
-      return StatLayer(torch.var, dim, keepdim)
-  
-  def StdLayer(dim, keepdim=True):
-      return StatLayer(torch.std, dim, keepdim)
-  
-  def LogVarLayer(dim, keepdim=True, min_var=1e-6, max_var=1e6):
-      return StatLayer(
-          torch.var,
-          dim,
-          keepdim,
-          clamp_range=(min_var, max_var),
-          apply_log=True
-      )
-        
-        
+
+
+def MeanLayer(dim, keepdim=True):
+    return StatLayer(torch.mean, dim, keepdim)
+
+
+def MaxLayer(dim, keepdim=True):
+    return StatLayer(
+        lambda x, dim, keepdim: x.max(dim=dim, keepdim=keepdim)[0], dim, keepdim
+    )
+
+
+def VarLayer(dim, keepdim=True):
+    return StatLayer(torch.var, dim, keepdim)
+
+
+def StdLayer(dim, keepdim=True):
+    return StatLayer(torch.std, dim, keepdim)
+
+
+def LogVarLayer(dim, keepdim=True, min_var=1e-6, max_var=1e6):
+    return StatLayer(
+        torch.var, dim, keepdim, clamp_range=(min_var, max_var), apply_log=True
+    )
