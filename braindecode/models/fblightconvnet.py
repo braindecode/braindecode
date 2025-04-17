@@ -137,7 +137,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         self.filter_parameters = filter_parameters or {}
 
         # Checkers
-        self.n_times_trucated = self.n_times
+        self.n_times_truncated = self.n_times
         if self.n_times % self.win_len != 0:
             warn(
                 f"Time dimension ({self.n_times}) is not divisible by"
@@ -145,7 +145,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
                 f"truncated in {self.n_times % self.win_len} temporal points ",
                 UserWarning,
             )
-            self.n_times_trucated = self.n_times - (self.n_times % self.win_len)
+            self.n_times_truncated = self.n_times - (self.n_times % self.win_len)
 
         # Layers
         # Following paper nomeclature
@@ -192,7 +192,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass of the FBCLightConvNet model.
+        Forward pass of the FBLightConvNet model.
         Parameters
         ----------
         x : torch.Tensor
@@ -210,7 +210,7 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         x = self.spatial_conv(x)
 
         # batch, n_filters_spat, n_times
-        x = x[::, ::, ::, : self.n_times_trucated]
+        x = x[:, :, :, : self.n_times_truncated]
         # batch, n_filters_spat, n_times_trucated
         x = x.reshape([batch_size, self.n_filters_spat, -1, self.win_len])
         # batch, n_filters_spat, n_windows, win_len
