@@ -238,7 +238,11 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
 
 class _MixedConv2d(nn.Module):
-    """Mixed Grouped Convolution for multiscale feature extraction."""
+    """
+    Mixed‐kernel convolution for multiscale feature extraction.
+    Splits the input channels, applies (1×k) convolutions in parallel
+    with “same” padding, then concatenates the outputs.
+    """
 
     def __init__(
         self,
@@ -251,8 +255,8 @@ class _MixedConv2d(nn.Module):
     ):
         super().__init__()
 
-        # normalize parameters to tuples
-        kernel_sizes = [_pair((1, k)) for k in kernel_widths]
+        # build (1,k) tuples from widths
+        kernel_sizes = [(1, k) for k in kernel_widths]
         stride = _pair(stride)
         dilation = _pair(dilation)
 
@@ -263,13 +267,14 @@ class _MixedConv2d(nn.Module):
         self.convs = nn.ModuleList()
         for ks, in_ch, out_ch in zip(kernel_sizes, self.in_splits, out_splits):
             groups = out_ch if depthwise else 1
+            pad = _get_same_padding(ks, stride, dilation)
             self.convs.append(
                 nn.Conv2d(
                     in_ch,
                     out_ch,
                     kernel_size=ks,
                     stride=stride,
-                    padding="same",
+                    padding=pad,
                     dilation=dilation,
                     groups=groups,
                     bias=False,
@@ -277,10 +282,21 @@ class _MixedConv2d(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # split along channel dimension, apply each conv, then concat
+        # split along channel dim, apply each conv, then concat back
         xs = torch.split(x, self.in_splits, dim=1)
         outs = [conv(xi) for conv, xi in zip(self.convs, xs)]
         return torch.cat(outs, dim=1)
+
+
+def _get_same_padding(
+    kernel_size,
+    stride,
+    dilation,
+):
+    # exactly the same formula your old code used:
+    return tuple(
+        ((s - 1) + d * (k - 1)) // 2 for k, s, d in zip(kernel_size, stride, dilation)
+    )
 
 
 def _split_channels(total_channels: int, num_groups: int):
