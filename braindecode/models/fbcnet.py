@@ -129,6 +129,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             n_chans=self.n_chans,
             sfreq=self.sfreq,
             band_filters=self.n_bands,
+            verbose=False,
             **filter_parameters,
         )
         # As we have an internal process to create the bands,

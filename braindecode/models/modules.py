@@ -358,7 +358,7 @@ class MaxNormLinear(nn.Linear):
 class LinearWithConstraint(nn.Linear):
     """Linear layer with max-norm constraint on the weights."""
 
-    def __init__(self, max_norm=1.0, *args, **kwargs):
+    def __init__(self, *args, max_norm=1.0, **kwargs):
         super(LinearWithConstraint, self).__init__(*args, **kwargs)
         self.max_norm = max_norm
 
