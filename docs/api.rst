@@ -82,6 +82,7 @@ Models
     EEGResNet
     EEGSimpleConv
     EEGTCNet
+    FBCNet
     Labram
     MSVTNet
     SCCNet
