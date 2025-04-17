@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
+from typing import Any
 
 import torch
 from einops.layers.torch import Rearrange
@@ -62,8 +63,12 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Stride factor for reshaping.
     activation : nn.Module, default=nn.SiLU
         Activation function class to apply in Spatial Convolution Block.
-    filter_parameters: dict, default {}
+    filter_parameters: dict, default None
         Parameters for the FilterBankLayer
+    cnn_max_norm : float, default=2.0
+        Maximum norm for the spatial convolution layer.
+    linear_max_norm : float, default=0.5
+        Maximum norm for the final linear layer.
 
     References
     ----------
@@ -90,7 +95,9 @@ class FBCNet(EEGModuleMixin, nn.Module):
         n_dim: int = 3,
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
-        filter_parameters: dict = {},
+        filter_parameters: dict[Any, Any] | None = None,
+        linear_max_norm: float = 0.5,
+        cnn_max_norm: float = 2.0,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -108,7 +115,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.n_dim = n_dim
         self.stride_factor = stride_factor
         self.activation = activation
-        self.filter_parameters = filter_parameters
+        self.filter_parameters = filter_parameters or {}
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -130,7 +137,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
             sfreq=self.sfreq,
             band_filters=self.n_bands,
             verbose=False,
-            **filter_parameters,
+            **self.filter_parameters,
         )
         # As we have an internal process to create the bands,
         # we get the values from the filterbank
@@ -143,7 +150,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
                 out_channels=self.n_filters_spat * self.n_bands,
                 kernel_size=(self.n_chans, 1),
                 groups=self.n_bands,
-                max_norm=2,
+                max_norm=cnn_max_norm,
                 padding=0,
             ),
             nn.BatchNorm2d(self.n_filters_spat * self.n_bands),
@@ -172,7 +179,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
         self.final_layer = LinearWithConstraint(
             in_features=self.n_filters_spat * self.n_bands * self.stride_factor,
             out_features=self.n_outputs,
-            max_norm=0.5,
+            max_norm=linear_max_norm,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
