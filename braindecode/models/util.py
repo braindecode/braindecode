@@ -3,7 +3,8 @@
 #
 # License: BSD (3-clause)
 import inspect
-
+import pandas as pd
+from pathlib import Path
 import numpy as np
 import torch
 from scipy.special import log_softmax
@@ -249,3 +250,24 @@ models_mandatory_parameters = [
 non_classification_models = [
     "SignalJEPA",
 ]
+
+
+################################################################
+def get_summary_table(dir_name=None):
+    if dir_name is None:
+        dir_path = Path(__file__).parent
+    else:
+        dir_path = Path(dir_name) if not isinstance(dir_name, Path) else dir_name
+
+    path = dir_path / "summary.csv"
+
+    df = pd.read_csv(
+        path,
+        header=0,
+        index_col="Model",
+        skipinitialspace=True,
+    )
+    return df
+
+
+_summary_table = get_summary_table()

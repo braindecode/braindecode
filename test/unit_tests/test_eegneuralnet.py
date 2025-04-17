@@ -13,6 +13,7 @@ from scipy.special import softmax
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
 from skorch.utils import to_tensor
+from skorch.helper import SliceDataset
 from torch import optim
 from torch.nn.functional import nll_loss
 
@@ -128,6 +129,10 @@ def windows_dataset_channels(epochs):
         description={},
     )
 
+@pytest.fixture
+def slice_dataset(windows_dataset_channels):
+    X = SliceDataset(windows_dataset_channels)
+    return X
 
 @pytest.fixture
 def concat_dataset_metadata(windows_dataset_metadata):
@@ -527,3 +532,28 @@ def test_cropped_trial_epoch_scoring(net):
 def test_get_n_outputs():
     with pytest.raises(TypeError):
         _EEGNeuralNet()._get_n_outputs(None, None)
+
+
+def test_set_signal_params_slice_dataset(
+    eegneuralnet_cls, preds, slice_dataset
+):
+    if eegneuralnet_cls != EEGClassifier:
+        n_outputs = 1
+        y_train = np.array([0, 1, 2, 3, 4])
+    else:
+        n_outputs = 5
+        y_train = np.array([0, 1, 2, 3, 4]) # dummy values for y_train
+
+    net = eegneuralnet_cls(
+        MockModuleFinalLayer,
+        module__preds=preds,
+        cropped=False,
+        optimizer=optim.Adam,
+        batch_size=32,
+        train_split=None,
+        max_epochs=1,
+    )
+    net.fit(slice_dataset, y=y_train)
+    assert net.module_.n_times == 10
+    assert net.module_.n_chans == 3
+    assert net.module_.n_outputs == n_outputs

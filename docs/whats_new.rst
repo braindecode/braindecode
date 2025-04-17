@@ -22,6 +22,9 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Added dropdown menus for selecting `paradigm`, `type`, and `hyperparameters` on the model summary page. (:gh:`718` by `Ganasekhar Kalla`)
+- Adding model page (:gh:`715` by `Lucas Heck`_)
+- Inference of shape for string module when using :class:`skorch.helper.SliceDataset` (:gh:`716` by `Bruno Aristimunha`_)
 - Fix error when using n_njobs > 1 on Windows (:gh:`700` by `Arnaud Delorme`_)
 - Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`572` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
@@ -313,3 +316,5 @@ Authors
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
 .. _Aphel: https://github.com/itsaphel
 .. _Young Truong: https://github.com/dungscout96
+.. _Lucas Heck: https://github.com/lucas-heck
+.. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif

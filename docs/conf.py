@@ -17,21 +17,20 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 
-import os
-import sys
 import inspect
+import os
 import os.path as op
+import sys
 
 import matplotlib
 
 matplotlib.use("agg")
-from datetime import datetime, timezone
 import faulthandler
+from datetime import datetime, timezone
 
 import sphinx_gallery  # noqa
-from sphinx_gallery.sorting import FileNameSortKey, ExplicitOrder
-
-from numpydoc import numpydoc, docscrape  # noqa
+from numpydoc import docscrape, numpydoc  # noqa
+from sphinx_gallery.sorting import ExplicitOrder, FileNameSortKey
 
 # -- General configuration ------------------------------------------------
 
@@ -349,6 +348,13 @@ html_context = {
     "github_repo": "braindecode",
     "github_version": "main",
     "doc_path": "docs",
+}
+
+html_sidebars = {
+    "models_summary": [],
+    "cite": [],
+    "help": [],
+    "whats_new": [],
 }
 
 # -- Options for LaTeX output ---------------------------------------------
