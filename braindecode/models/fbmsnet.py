@@ -59,8 +59,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         Number of output channels from the MixedConv2d layer.
     dilatability : int, default=8
         Expansion factor for the spatial convolution block.
-    stride_factor : int, default=4
-        Stride factor for reshaping.
     activation : nn.Module, default=nn.SiLU
         Activation function class to apply.
     verbose: bool, default False
@@ -189,7 +187,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
-            in_features=self.n_filters_spat * self.dilatability * (self.n_times_padded // self.stride_factor),
+            in_features=self.n_filters_spat
+            * self.dilatability
+            * (self.n_times_padded // self.stride_factor),
             out_features=self.n_outputs,
             max_norm=0.5,
         )
