@@ -24,6 +24,7 @@ from braindecode.models import (
     EEGInceptionMI,
     EEGMiner,
     FBCNet,
+    FBMSNet
 )
 from braindecode.models.util import _summary_table
 
@@ -357,6 +358,7 @@ def test_model_has_drop_prob_parameter(model_class):
         EEGMiner,
         EEGInceptionMI,
         FBCNet,
+        FBMSNet,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
