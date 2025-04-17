@@ -1,12 +1,12 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, Sequence
 from functools import partial
 from mne.utils import warn
 
 import torch
 
 from torch import nn
-
+from torch.nn.modules.utils import _pair
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
@@ -147,7 +147,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             _MixedConv2d(
                 in_channels=self.n_bands,
                 out_channels=self.n_filters_spat,
-                kernel_size=[(1, 15), (1, 31), (1, 63), (1, 125)],
+                kernel_widths=(15, 31, 63, 125),
                 stride=1,
                 dilation=1,
                 depthwise=False,
@@ -237,64 +237,55 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         return x
 
 
-class _MixedConv2d(nn.ModuleDict):
+class _MixedConv2d(nn.Module):
     """Mixed Grouped Convolution for multiscale feature extraction."""
 
     def __init__(
         self,
         in_channels: int,
         out_channels: int,
-        kernel_size=[(1, 15), (1, 31), (1, 63), (1, 125)],
-        stride: int = 1,
-        dilation: int = 1,
+        kernel_widths: Sequence[int] = (15, 31, 63, 125),
+        stride: int | tuple[int, int] = 1,
+        dilation: int | tuple[int, int] = 1,
         depthwise: bool = False,
     ):
         super().__init__()
 
-        num_groups = len(kernel_size)
-        in_splits = self._split_channels(in_channels, num_groups)
-        out_splits = self._split_channels(out_channels, num_groups)
-        self.splits = in_splits
+        # normalize parameters to tuples
+        kernel_sizes = [_pair((1, k)) for k in kernel_widths]
+        stride = _pair(stride)
+        dilation = _pair(dilation)
 
-        for idx, (k, in_ch, out_ch) in enumerate(
-            zip(kernel_size, in_splits, out_splits)
-        ):
-            conv_groups = out_ch if depthwise else 1
-            padding_value = self._get_padding_value(k, stride, dilation)
-            self.add_module(
-                str(idx),
+        num_groups = len(kernel_sizes)
+        self.in_splits = _split_channels(in_channels, num_groups)
+        out_splits = _split_channels(out_channels, num_groups)
+
+        self.convs = nn.ModuleList()
+        for ks, in_ch, out_ch in zip(kernel_sizes, self.in_splits, out_splits):
+            groups = out_ch if depthwise else 1
+            self.convs.append(
                 nn.Conv2d(
-                    in_channels=in_ch,
-                    out_channels=out_ch,
-                    kernel_size=k,
+                    in_ch,
+                    out_ch,
+                    kernel_size=ks,
                     stride=stride,
-                    padding=padding_value,
+                    padding="same",
                     dilation=dilation,
-                    groups=conv_groups,
+                    groups=groups,
                     bias=False,
-                ),
+                )
             )
 
-    @staticmethod
-    def _split_channels(num_chan, num_groups):
-        split = [num_chan // num_groups for _ in range(num_groups)]
-        split[0] += num_chan - sum(split)
-        return split
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # split along channel dimension, apply each conv, then concat
+        xs = torch.split(x, self.in_splits, dim=1)
+        outs = [conv(xi) for conv, xi in zip(self.convs, xs)]
+        return torch.cat(outs, dim=1)
 
-    @staticmethod
-    def _get_padding_value(kernel_size, stride, dilation):
-        padding = []
-        for k, s, d in zip(
-            kernel_size,
-            stride if isinstance(stride, tuple) else (stride, stride),
-            dilation if isinstance(dilation, tuple) else (dilation, dilation),
-        ):
-            pad = ((s - 1) + d * (k - 1)) // 2
-            padding.append(pad)
-        return tuple(padding)
 
-    def forward(self, x):
-        x_split = torch.split(x, self.splits, 1)
-        x_out = [conv(x_split[i]) for i, conv in enumerate(self.values())]
-        x = torch.cat(x_out, 1)
-        return x
+def _split_channels(total_channels: int, num_groups: int):
+    base = total_channels // num_groups
+    splits = [base] * num_groups
+    # give the remainder to the first group
+    splits[0] += total_channels - base * num_groups
+    return splits
