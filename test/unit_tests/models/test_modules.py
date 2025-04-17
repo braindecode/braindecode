@@ -896,7 +896,7 @@ def test_max_norm_parameter(max_norm):
     """
     in_features = 3
     out_features = 2
-    layer = LinearWithConstraint(in_features, out_features, max_norm)
+    layer = LinearWithConstraint(in_features=in_features, out_features=out_features, max_norm=max_norm)
     with torch.no_grad():
         layer.weight.data = torch.tensor([[3.0, 0.0, 0.0],
                                          [0.0, 4.0, 0.0]])
