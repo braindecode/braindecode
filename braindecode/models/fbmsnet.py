@@ -189,7 +189,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
-            in_features=self.n_filters_spat * self.dilatability * self.stride_factor,
+            in_features=self.n_filters_spat * self.dilatability * (self.n_times_padded // self.stride_factor),
             out_features=self.n_outputs,
             max_norm=0.5,
         )
