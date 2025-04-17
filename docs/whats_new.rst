@@ -22,7 +22,8 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
-- Adding :class:`braindecode.models.FBCNet` (:gh:`721` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBLightConvNet` (:gh:`723` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBCNet` (:gh:`722` by `Bruno Aristimunha`_ )
 - Added dropdown menus for selecting `paradigm`, `type`, and `hyperparameters` on the model summary page. (:gh:`718` by `Ganasekhar Kalla`)
 - Adding model page (:gh:`715` by `Lucas Heck`_)
 - Inference of shape for string module when using :class:`skorch.helper.SliceDataset` (:gh:`716` by `Bruno Aristimunha`_)
