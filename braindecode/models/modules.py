@@ -934,12 +934,12 @@ class StatLayer(nn.Module):
 
     def __init__(
         self,
-        stat_fn: Callable,
+        stat_fn: Callable[..., torch.Tensor],
         dim: int,
         keepdim: bool = True,
-        clamp_range: tuple[float, float] | None = None,
+        clamp_range: Optional[Tuple[float, float]] = None,
         apply_log: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         self.stat_fn = stat_fn
         self.dim = dim
@@ -956,25 +956,30 @@ class StatLayer(nn.Module):
         return out
 
 
-def MeanLayer(dim, keepdim=True):
-    return StatLayer(torch.mean, dim, keepdim)
+# make things more simple
+def _max_fn(x: torch.Tensor, dim: int, keepdim: bool) -> torch.Tensor:
+    return x.max(dim=dim, keepdim=keepdim)[0]
 
 
-def MaxLayer(dim, keepdim=True):
-    return StatLayer(
-        lambda x, dim, keepdim: x.max(dim=dim, keepdim=keepdim)[0], dim, keepdim
-    )
+def _power_fn(x: torch.Tensor, dim: int, keepdim: bool) -> torch.Tensor:
+    # compute mean of squared values along `dim`
+    return torch.mean(x**2, dim=dim, keepdim=keepdim)
 
 
-def VarLayer(dim, keepdim=True):
-    return StatLayer(torch.var, dim, keepdim)
+MeanLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.mean)
+MaxLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, _max_fn)
+VarLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.var)
+StdLayer: Callable[[int, bool], StatLayer] = partial(StatLayer, torch.std)
+LogVarLayer: Callable[[int, bool], StatLayer] = partial(
+    StatLayer,
+    torch.var,
+    clamp_range=(1e-6, 1e6),
+    apply_log=True,
+)
 
-
-def StdLayer(dim, keepdim=True):
-    return StatLayer(torch.std, dim, keepdim)
-
-
-def LogVarLayer(dim, keepdim=True, min_var=1e-6, max_var=1e6):
-    return StatLayer(
-        torch.var, dim, keepdim, clamp_range=(min_var, max_var), apply_log=True
-    )
+LogPowerLayer: Callable[[int, bool], StatLayer] = partial(
+    StatLayer,
+    _power_fn,
+    clamp_range=(1e-4, 1e4),
+    apply_log=True,
+)

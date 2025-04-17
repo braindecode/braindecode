@@ -241,6 +241,7 @@ models_mandatory_parameters = [
     ("SignalJEPA_PreLocal", ["n_chans", "n_times", "n_outputs"], None),
     ("FBCNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
     ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
+    ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200)),
 ]
 
 ################################################################
