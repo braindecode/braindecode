@@ -63,12 +63,12 @@ class FBCNet(EEGModuleMixin, nn.Module):
         Stride factor for reshaping.
     activation : nn.Module, default=nn.SiLU
         Activation function class to apply in Spatial Convolution Block.
-    filter_parameters: dict, default None
-        Parameters for the FilterBankLayer
     cnn_max_norm : float, default=2.0
         Maximum norm for the spatial convolution layer.
     linear_max_norm : float, default=0.5
         Maximum norm for the final linear layer.
+    filter_parameters: dict, default None
+        Parameters for the FilterBankLayer
 
     References
     ----------
@@ -95,9 +95,9 @@ class FBCNet(EEGModuleMixin, nn.Module):
         n_dim: int = 3,
         stride_factor: int = 4,
         activation: nn.Module = nn.SiLU,
-        filter_parameters: dict[Any, Any] | None = None,
         linear_max_norm: float = 0.5,
         cnn_max_norm: float = 2.0,
+        filter_parameters: dict[Any, Any] | None = None,
     ):
         super().__init__(
             n_chans=n_chans,
