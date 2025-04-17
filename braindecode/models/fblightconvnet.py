@@ -203,22 +203,33 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             Output tensor with shape (batch_size, n_outputs).
         """
         batch_size, _, _ = x.shape
+        # x.shape: batch, n_chans, n_times
 
-        # batch, n_chans, n_times
         x = self.spectral_filtering(x)
-        # batch, nbands, n_chans, n_times
-        x = self.spatial_conv(x)
+        # x.shape: batch, nbands, n_chans, n_times
 
-        # batch, n_filters_spat, n_times
+        x = self.spatial_conv(x)
+        # x.shape: batch, n_filters_spat, n_times
+
         x = x[:, :, :, : self.n_times_truncated]
         # batch, n_filters_spat, n_times_trucated
+
         x = x.reshape([batch_size, self.n_filters_spat, -1, self.win_len])
         # batch, n_filters_spat, n_windows, win_len
-        x = self.temporal_layer(x)
-        x = self.attn_conv(x)
-        x = self.flatten_layer(x)
-        x = self.final_layer(x)
+        # where the n_windows = n_times_truncated / win_len
+        # and win_len = 250 by default
 
+        x = self.temporal_layer(x)
+        # x.shape : batch, n_filters_spat, n_windows
+
+        x = self.attn_conv(x)
+        # x.shape : batch, n_filters_spat, 1
+
+        x = self.flatten_layer(x)
+        # x.shape : batch, n_filters_spat
+
+        x = self.final_layer(x)
+        # x.shape : batch, n_outputs
         return x
 
 
@@ -249,12 +260,12 @@ class _LightweightConv1d(nn.Module):
 
     def __init__(
         self,
-        input_size,
-        kernel_size=1,
-        padding=0,
-        heads=1,
-        weight_softmax=False,
-        bias=False,
+        input_size: int,
+        kernel_size: int = 1,
+        padding: int = 0,
+        heads: int = 1,
+        weight_softmax: bool = False,
+        bias: bool = False,
     ):
         super().__init__()
         self.input_size = input_size
@@ -269,28 +280,35 @@ class _LightweightConv1d(nn.Module):
         else:
             self.bias = None
 
-        self.init_parameters()
+        self._init_parameters()
 
-    def init_parameters(self):
+    def _init_parameters(self):
         nn.init.xavier_uniform_(self.weight)
         if self.bias is not None:
             nn.init.constant_(self.bias, 0.0)
 
     def forward(self, input):
+        # batch, n_filters_spat, n_windows
         B, C, T = input.size()
+
         H = self.heads
 
         weight = self.weight
         if self.weight_softmax:
             weight = F.softmax(weight, dim=-1)
+            # shape: (heads, 1, kernel_size)
 
+        # reshape input so each head is its own “batch”
+        # original C = H * (C/H), so view to (B * (C/H), H, T) then transpose
+        # but since C/H == 1 here per head-channel grouping, .view(-1, H, T) works
+        # new shape: (B * channels_per_head, H, T)
         input = input.view(-1, H, T)
-
         output = F.conv1d(input, weight, padding=self.padding, groups=self.heads)
-
+        # 4, 8, 1
         output = output.view(B, C, -1)
-
+        # 1, 32, 1
         if self.bias is not None:
+            # Add bias if it exists
             output = output + self.bias.view(1, -1, 1)
-
+        # final shape: batch, n_filters_spat
         return output
