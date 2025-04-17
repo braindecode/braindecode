@@ -171,10 +171,6 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
             self.activation(),
         )
 
-        self.patch_dim = Rearrange(
-            "batch filtersspat (n winlen) -> batch filtersspat n winlen",
-            winlen=self.win_len,
-        )
         # Temporal aggregator
         self.temporal_layer = LogVarLayer(self.n_dim, False)
 
@@ -213,9 +209,11 @@ class FBLightConvNet(EEGModuleMixin, nn.Module):
         # batch, nbands, n_chans, n_times
         x = self.spatial_conv(x)
 
+        # batch, n_filters_spat, n_times
         x = x[::, ::, ::, : self.n_times_trucated]
+        # batch, n_filters_spat, n_times_trucated
         x = x.reshape([batch_size, self.n_filters_spat, -1, self.win_len])
-
+        # batch, n_filters_spat, n_windows, win_len
         x = self.temporal_layer(x)
         x = self.attn_conv(x)
         x = self.flatten_layer(x)
