@@ -970,7 +970,7 @@ def test_matches_padded_conv(batch, in_ch, out_ch, length, kernel, dilation):
     (1, 1, 1, 20, 3, 1),
     (2, 3, 4, 50, 5, 2),
 ])
-def test_gradients_match(batch, in_ch, out_ch, length, kernel, dilation):
+def test_gradients_match_casual_conv(batch, in_ch, out_ch, length, kernel, dilation):
     torch.manual_seed(0)
     # new implementation
     causal_new = CausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
