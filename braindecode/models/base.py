@@ -97,7 +97,9 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         add_log_softmax: Optional[bool] = False,
     ):
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
-            raise ValueError(f"{n_chans=} different from {chs_info=} length")
+            raise ValueError(
+                f"{n_chans=} different from {chs_info}={len(chs_info)} length"
+            )
         if (
             n_times is not None
             and input_window_seconds is not None
@@ -332,8 +334,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
 
-    def forward(self, *args, **kwargs):
-        return super().forward(*args, **kwargs)
+    def forward(self, *args):
+        return super().forward(*args)
 
     def parameters(self):
         return super().parameters()

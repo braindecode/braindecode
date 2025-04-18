@@ -268,6 +268,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         drop_prob_trans: float = 0.5,
         num_layers: int = 2,
         activation: Type[nn.Module] = nn.ELU,
+        return_features: bool = False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -283,6 +284,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             "The length of n_filters_list and conv1_kernel_sizes should be equal."
         )
 
+        self.return_features = return_features
         self.ensure_dim = Rearrange("batch chans time -> batch 1 chans time")
         self.mstsconv = nn.ModuleList(
             [
@@ -353,9 +355,12 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         # x with shape: (batch, 1, n_chans, n_times)
         x_list = [tsconv(x) for tsconv in self.mstsconv]
         # x_list contains 4 tensors, each of shape: [batch_size, seq_len, embed_dim]
-        # branch_preds = [
-        #     branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
-        # ]
+        branch_preds = [
+            branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
+        ]
+        # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
+        if self.return_features:
+            return branch_preds
         # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
         x = torch.stack(x_list, dim=2)
         x = x.view(x.size(0), x.size(1), -1)
@@ -364,5 +369,4 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         # x shape after transformer: [batch_size, embed_dim]
 
         x = self.final_layer(x)
-        # return (x, branch_preds) if self.return_features else x
         return x

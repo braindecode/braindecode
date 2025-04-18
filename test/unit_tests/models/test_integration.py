@@ -411,7 +411,6 @@ def test_model_has_drop_prob_parameter(model_class):
     )
 
 
-@pytest.skip("Skipping this test as not torchscriptable YET")
 @pytest.mark.parametrize(
     "model_class",
     model_instances,
@@ -420,7 +419,7 @@ def test_model_torchscript(model_class):
     """
     Verifies that all models can be torch scriptable
     """
-    if "Sleep" in model_class.__name__:
+    if "Sleep" in model_class.__class__.__name__:
         # Sleep models are not compatible with torchscript
         pytest.skip(f"Skipping {model_class} as not torchscriptable")
 
