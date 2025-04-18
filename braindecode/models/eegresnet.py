@@ -10,8 +10,7 @@ from torch import nn
 from torch.nn import init
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import squeeze_final_output
-from braindecode.models.modules import AvgPool2dWithConv, Ensure4d, Expression
+from braindecode.models.modules import AvgPool2dWithConv, Ensure4d, SqueezeFinalOutput
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
@@ -265,7 +264,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 

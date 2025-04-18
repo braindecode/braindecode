@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
+from einops.layers.torch import Rearrange
 
 from typing import Optional, List, Tuple
 from torch.nn.utils.parametrize import register_parametrization
@@ -437,18 +438,30 @@ class CombinedConv(nn.Module):
         if not self.bias_spat and not self.bias_time:
             bias = None
         else:
-            bias = 0
-            if self.bias_time:
+            out_ch = combined_weight.size(0)
+            bias = x.new_zeros(out_ch)  # same device/dtype as input
+
+            # Pull attribute into a local for refinement
+            bias_time_opt = self.conv_time.bias
+            # Local None‑check refines Optional[Tensor] → Tensor
+            if bias_time_opt is not None:
+                bias_time = bias_time_opt  # now a real Tensor
                 bias += (
                     self.conv_spat.weight.squeeze()
                     .sum(-1)
-                    .mm(self.conv_time.bias.unsqueeze(-1))
+                    .mm(bias_time.unsqueeze(-1))
                     .squeeze()
                 )
-            if self.bias_spat:
-                bias += self.conv_spat.bias
+            bias_spat_opt = self.conv_spat.bias
+            if bias_spat_opt is not None:
+                bias += bias_spat_opt
 
-        return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
+        return F.conv2d(
+            x,
+            weight=combined_weight,
+            bias=bias,
+            stride=(1, 1),
+        )
 
 
 class MLP(nn.Sequential):
@@ -913,3 +926,37 @@ class Conv2dWithConstraint(nn.Conv2d):
                 self.weight.data, p=2, dim=0, maxnorm=self.max_norm
             )
         return super(Conv2dWithConstraint, self).forward(x)
+
+
+class SqueezeFinalOutput(nn.Module):
+    """
+
+    Removes empty dimension at end and potentially removes empty time
+    dimension. It does  not just use squeeze as we never want to remove
+    first dimension.
+
+    Returns
+    -------
+    x: torch.Tensor
+        squeezed tensor
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.squeeze = Rearrange("b c t 1 -> b c t")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1) drop feature dim
+        x = self.squeeze(x)
+        # 2) drop time dim if singleton
+        if x.shape[-1] == 1:
+            x = x.squeeze(-1)
+        return x
+
+
+class Square(nn.Module):
+    """Element-wise square."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * x

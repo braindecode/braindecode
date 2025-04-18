@@ -9,10 +9,9 @@ from mne.utils import warn
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import squeeze_final_output
 from braindecode.models.modules import (
     Ensure4d,
-    Expression,
+    SqueezeFinalOutput,
     Conv2dWithConstraint,
     LinearWithConstraint,
 )
@@ -282,7 +281,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
                 Rearrange("batch x y z -> batch x z y"),
             )
 
-            module.add_module("squeeze", Expression(squeeze_final_output))
+            module.add_module("squeeze", SqueezeFinalOutput())
         else:
             module.add_module("flatten", nn.Flatten())
             module.add_module(
@@ -387,7 +386,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         )
         self.add_module("elu_1", activation())
         # transpose to examples x 1 x (virtual, not EEG) channels x time
-        self.add_module("permute_1", Expression(lambda x: x.permute(0, 3, 1, 2)))
+        self.add_module("permute_1", Rearrange("batch x y z -> batch z x y"))
 
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 
@@ -464,7 +463,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             Rearrange("batch x y z -> batch x z y"),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 
