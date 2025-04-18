@@ -1025,9 +1025,9 @@ def test_weight_norm_constraint(input_linear_constraint, layer_with_constraint):
     """
     layer_with_constraint(input_linear_constraint)
     # Calculate the L2 norm of each column (dim=0)
-    weight_norms = layer_with_constraint.weight.data.norm(p=2, dim=0)
-    assert torch.all(weight_norms <= layer_with_constraint.max_norm + 1e-6), (
-        f"Weight norms {weight_norms} exceed max_norm {layer_with_constraint.max_norm}"
+    weight_norms = layer_with_constraint.weight.data.norm(p=2, dim=1)
+    assert torch.all(weight_norms <= layer_with_constraint._max_norm + 1e-6), (
+        f"Weight norms {weight_norms} exceed max_norm {layer_with_constraint._max_norm}"
     )
 
 

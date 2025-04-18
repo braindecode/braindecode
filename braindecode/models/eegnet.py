@@ -482,9 +482,7 @@ def _glorot_weight_zero_bias(model):
     """
     for module in model.modules():
         if hasattr(module, "weight"):
-            if "BatchNorm" not in module.__class__.__name__:
-                nn.init.xavier_uniform_(module.weight, gain=1)
-            else:
+            if "BatchNorm" in module.__class__.__name__:
                 nn.init.constant_(module.weight, 1)
         if hasattr(module, "bias"):
             if module.bias is not None:

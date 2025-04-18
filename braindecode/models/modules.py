@@ -27,7 +27,7 @@ from braindecode.models.functions import (
 )
 from braindecode.util import np_to_th
 from braindecode.models.eegminer import GeneralizedGaussianFilter
-from braindecode.models.parametrization import MaxNorm
+from braindecode.models.parametrization import MaxNorm, MaxNormParametriza
 
 
 class Ensure4d(nn.Module):
@@ -355,35 +355,32 @@ class MaxNormLinear(nn.Linear):
         )
         self._max_norm_val = max_norm_val
         self._eps = eps
-        register_parametrization(self, "weight", MaxNorm(max_norm_val, eps))
+        register_parametrization(self, "weight", MaxNorm(self._max_norm_val, eps))
 
 
 class LinearWithConstraint(nn.Linear):
     """Linear layer with max-norm constraint on the weights."""
 
     def __init__(self, *args, max_norm=1.0, **kwargs):
-        super(LinearWithConstraint, self).__init__(*args, **kwargs)
-        self.max_norm = max_norm
+        super().__init__(*args, **kwargs)
+        self._max_norm = max_norm
+        # initialize the weights
+        nn.init.xavier_uniform_(self.weight, gain=1)
+        nn.init.constant_(self.bias, 0)
+        # register the parametrization
+        register_parametrization(self, "weight", MaxNormParametriza(self._max_norm))
 
-    def forward(self, x):
-        with torch.no_grad():
-            # In PyTorch, the weight matrix of nn.Linear is of shape (out_features, in_features),
-            # which is the transpose of TensorFlow's typical kernel shape.
-            #
-            # The torch.renorm function applies a re-normalization to slices of the tensor:
-            # - 'p=2' specifies that we are using the Euclidean (L2) norm.
-            # - 'dim=0' indicates that the tensor will be split along the first dimension.
-            #   This corresponds to each "row" in the weight matrix, which in this context
-            #   represents a weight vector for each output neuron.
-            # - 'maxnorm=self.max_norm' sets the maximum allowed norm for each of these sub-tensors.
-            #
-            # Note: In TensorFlow's max_norm constraint, the axis parameter determines along which
-            # dimension the norm is computed. Here, due to the difference in kernel shape and axis
-            # interpretation, we use torch.renorm with dim=0 to match TensorFlow's behavior.
-            self.weight.data = torch.renorm(
-                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-            )
-        return super(LinearWithConstraint, self).forward(x)
+
+class Conv2dWithConstraint(nn.Conv2d):
+    """Conv2d layer with max-norm constraint on the weights."""
+
+    def __init__(self, *args, max_norm=1.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._max_norm = max_norm
+        # initialize the weights
+        nn.init.xavier_uniform_(self.weight, gain=1)
+
+        register_parametrization(self, "weight", MaxNormParametriza(self._max_norm))
 
 
 class CombinedConv(nn.Module):
@@ -916,19 +913,6 @@ class LogActivation(nn.Module):
         return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
 
 
-class Conv2dWithConstraint(nn.Conv2d):
-    def __init__(self, *args, max_norm=1, **kwargs):
-        self.max_norm = max_norm
-        super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
-
-    def forward(self, x):
-        with torch.no_grad():
-            self.weight.data = torch.renorm(
-                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-            )
-        return super(Conv2dWithConstraint, self).forward(x)
-
-
 class SqueezeFinalOutput(nn.Module):
     """
 
@@ -961,6 +945,7 @@ class Square(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x * x
+
 
 class StatLayer(nn.Module):
     """
