@@ -294,7 +294,7 @@ class _ResidualAdd(nn.Module):
         self.drop = nn.Dropout(drop_p)
         self.layernorm = nn.LayerNorm(emb_size)
 
-    def forward(self, x: Tensor, **kwargs) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Forward pass with residual connection.
 
@@ -310,7 +310,7 @@ class _ResidualAdd(nn.Module):
         Tensor
             Output tensor after applying residual connection.
         """
-        res = self.module(x, **kwargs)
+        res = self.module(x)
         out = self.layernorm(self.drop(res) + x)
         return out
 
@@ -346,7 +346,7 @@ class _TransformerEncoderBlock(nn.Module):
             drop_prob,
         )
 
-    def forward(self, x: Tensor, **kwargs) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Forward pass of the transformer encoder block.
 
@@ -362,8 +362,8 @@ class _TransformerEncoderBlock(nn.Module):
         Tensor
             Output tensor after transformer encoder block.
         """
-        x = self.attention(x, **kwargs)
-        x = self.feed_forward(x, **kwargs)
+        x = self.attention(x)
+        x = self.feed_forward(x)
         return x
 
 

@@ -360,7 +360,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         ]
         # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
         if self.return_features:
-            return branch_preds
+            return torch.stack(branch_preds)
         # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
         x = torch.stack(x_list, dim=2)
         x = x.view(x.size(0), x.size(1), -1)
