@@ -46,6 +46,7 @@ from braindecode.models import (
     ContraWR,
     EEGMiner,
     FBCNet,
+    IFNet
 )
 from braindecode.util import set_random_seeds
 
@@ -1421,3 +1422,30 @@ def test_fbcnet_invalid_temporal_layer():
             temporal_layer='InvalidLayer',
             sfreq=250,
         )
+
+
+def test_initialize_weights_linear():
+    linear = nn.Linear(10, 5)
+    IFNet._initialize_weights(linear)
+    assert torch.allclose(linear.bias, torch.zeros_like(linear.bias))
+    assert linear.weight.std().item() <= 0.02  # Checking trunc_normal_ std
+
+
+def test_initialize_weights_norm():
+    layer_norm = nn.LayerNorm(10)
+    IFNet._initialize_weights(layer_norm)
+    assert torch.allclose(layer_norm.weight, torch.ones_like(layer_norm.weight))
+    assert torch.allclose(layer_norm.bias, torch.zeros_like(layer_norm.bias))
+
+    batch_norm = nn.BatchNorm1d(10)
+    IFNet._initialize_weights(batch_norm)
+    assert torch.allclose(batch_norm.weight, torch.ones_like(batch_norm.weight))
+    assert torch.allclose(batch_norm.bias, torch.zeros_like(batch_norm.bias))
+
+
+def test_initialize_weights_conv():
+    conv = nn.Conv1d(3, 6, kernel_size=3)
+    IFNet._initialize_weights(conv)
+    assert conv.weight.std().item() <= 0.02  # Checking trunc_normal_ std
+    if conv.bias is not None:
+        assert torch.allclose(conv.bias, torch.zeros_like(conv.bias))

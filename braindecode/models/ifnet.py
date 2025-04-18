@@ -13,7 +13,6 @@ doi: 10.1109/TNSRE.2023.3257319.
 from __future__ import annotations
 from typing import Optional
 
-from functools import partial
 from mne.utils import warn
 
 import torch
@@ -355,10 +354,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         if self.n_times % self.stride_factor != 0:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
             self.n_times_padded = self.n_times + self.padding_size
-            self.padding_layer = partial(
-                self._apply_padding,
-                padding_size=self.padding_size,
-            )
+            self.padding_layer = nn.ConstantPad1d((0, self.padding_size), 0.0)
         else:
             self.padding_layer = nn.Identity()
             self.n_times_padded = self.n_times
@@ -415,9 +411,4 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         # Dropout
         x = self.dropout_layer(x)
 
-        return x
-
-    @staticmethod
-    def _apply_padding(x: torch.Tensor, padding_size: int):
-        x = torch.nn.functional.pad(x, (0, padding_size))
         return x

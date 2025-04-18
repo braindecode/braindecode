@@ -6,7 +6,6 @@ from mne.utils import warn
 import torch
 
 from torch import nn
-from torch.nn.modules.utils import _pair
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
@@ -181,10 +180,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         if self.n_times % self.stride_factor != 0:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
             self.n_times_padded = self.n_times + self.padding_size
-            self.padding_layer = partial(
-                self._apply_padding,
-                padding_size=self.padding_size,
-            )
+            self.padding_layer = nn.ConstantPad1d((0, self.padding_size), 0.0)
         else:
             self.padding_layer = nn.Identity()
             self.n_times_padded = self.n_times
@@ -247,11 +243,6 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         x = self.final_layer(x)
         # shape: (batch, n_outputs)
-        return x
-
-    @staticmethod
-    def _apply_padding(x: torch.Tensor, padding_size: int):
-        x = torch.nn.functional.pad(x, (0, padding_size))
         return x
 
 
