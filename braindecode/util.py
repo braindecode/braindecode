@@ -6,6 +6,7 @@ import glob
 import os
 import random
 from warnings import warn
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import h5py
 import mne
@@ -407,3 +408,18 @@ def read_all_file_names(directory, extension):
         f"something went wrong. Found no {extension} files in {directory}"
     )
     return file_paths
+
+
+def convert_chs_info_to_torch(chs_info) -> List[Dict[str, torch.Tensor]]:
+    processed: List[Dict[str, torch.Tensor]] = []
+    for info in chs_info or []:
+        d: Dict[str, torch.Tensor] = {}
+
+        for key, val in info.items():
+            if isinstance(val, np.ndarray):
+                d[key] = torch.from_numpy(val)
+            elif isinstance(val, (float, int)):
+                d[key] = torch.tensor(val)
+            # skip strings or other non‑numeric fields
+            processed.append(d)
+    return processed

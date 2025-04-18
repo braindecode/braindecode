@@ -282,6 +282,8 @@ class CausalConv1d(nn.Conv1d):
     .. [2] https://gist.github.com/paultsw/7a9d6e3ce7b70e9e2c61bc9287addefc
     """
 
+    padding: Tensor
+
     def __init__(
         self,
         in_channels,

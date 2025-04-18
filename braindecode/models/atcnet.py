@@ -1,7 +1,8 @@
 # Authors: Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
-import numpy as np
+import math
+
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
@@ -629,7 +630,7 @@ class _MHA(nn.Module):
         # Attention weights of size (num_heads * batch_size, n, m):
         # measures how similar each pair of Q and K is.
         W = torch.softmax(
-            Q_.bmm(K_.transpose(-2, -1)) / np.sqrt(self.head_dim),
+            Q_.bmm(K_.transpose(-2, -1)) / math.sqrt(self.head_dim),
             -1,  # (B', D', S)
         )  # (B', N, M)
 
