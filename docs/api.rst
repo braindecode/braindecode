@@ -75,30 +75,33 @@ Models
     EEGInceptionERP
     EEGInceptionMI
     EEGITNet
+    EEGMiner
     EEGNetv1
     EEGNetv4
     EEGNeX
-    EEGMiner
     EEGResNet
     EEGSimpleConv
     EEGTCNet
     FBCNet
+    FBLightConvNet
+    FBMSNet
+    IFNet
     Labram
     MSVTNet
     SCCNet
+    ShallowFBCSPNet
     SignalJEPA
     SignalJEPA_Contextual
     SignalJEPA_PostLocal
     SignalJEPA_PreLocal
     SincShallowNet
-    ShallowFBCSPNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
     SleepStagerEldele2021
     SPARCNet
     SyncNet
-    TSceptionV1
     TIDNet
+    TSceptionV1
     USleep
 
 .. currentmodule:: braindecode.models.modules
