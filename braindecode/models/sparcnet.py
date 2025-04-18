@@ -48,49 +48,51 @@ class _DenseLayer(nn.Sequential):
         in_channels: int,
         growth_rate: int,
         bottleneck_size: int,
-        drop_prob=0.5,
-        conv_bias=True,
-        batch_norm=True,
+        drop_prob: float = 0.5,
+        conv_bias: bool = True,
+        batch_norm: bool = True,
         activation: nn.Module = nn.ELU,
     ):
-        super(_DenseLayer, self).__init__()
+        super().__init__()
         if batch_norm:
-            (self.add_module("norm1", nn.BatchNorm1d(in_channels)),)
-        (self.add_module("elu1", activation()),)
-        (
-            self.add_module(
-                "conv1",
-                nn.Conv1d(
-                    in_channels=in_channels,
-                    out_channels=bottleneck_size * growth_rate,
-                    kernel_size=1,
-                    stride=1,
-                    bias=conv_bias,
-                ),
+            self.add_module("norm1", nn.BatchNorm1d(in_channels))
+
+        self.add_module("elu1", activation())
+        self.add_module(
+            "conv1",
+            nn.Conv1d(
+                in_channels=in_channels,
+                out_channels=bottleneck_size * growth_rate,
+                kernel_size=1,
+                stride=1,
+                bias=conv_bias,
             ),
         )
         if batch_norm:
-            (self.add_module("norm2", nn.BatchNorm1d(bottleneck_size * growth_rate)),)
-        (self.add_module("elu2", activation()),)
-        (
-            self.add_module(
-                "conv2",
-                nn.Conv1d(
-                    in_channels=bottleneck_size * growth_rate,
-                    out_channels=growth_rate,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                    bias=conv_bias,
-                ),
+            self.add_module("norm2", nn.BatchNorm1d(bottleneck_size * growth_rate))
+        self.add_module("elu2", activation())
+        self.add_module(
+            "conv2",
+            nn.Conv1d(
+                in_channels=bottleneck_size * growth_rate,
+                out_channels=growth_rate,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=conv_bias,
             ),
         )
         self.drop_prob = drop_prob
 
-    def forward(self, x):
-        new_features = super(_DenseLayer, self).forward(x)
-        new_features = F.dropout(new_features, p=self.drop_prob, training=self.training)
-        return torch.cat([x, new_features], 1)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Manually pass through each submodule
+        out = x
+        for layer in self:
+            out = layer(out)
+        # apply dropout using the functional API
+        out = F.dropout(out, p=self.drop_prob, training=self.training)
+        # concatenate input and new features
+        return torch.cat([x, out], dim=1)
 
 
 class _DenseBlock(nn.Sequential):
