@@ -38,4 +38,4 @@ USleep,Sleep Staging,Classification,128,"n_chans, n_outputs, n_times, sfreq",248
 FBCNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",11812,"FCNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)"
 FBMSNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",16231,"FBMSNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)"
 FBLightConvNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",6596,"FBLightConvNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)"
-IFNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",11396,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)"
+IFNet,Motor Imagery,Classification,250,"n_chans, n_outputs, n_times, sfreq",9860,"IFNet(n_chans=22, n_outputs=4, n_times=1000, sfreq=250)"

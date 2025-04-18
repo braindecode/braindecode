@@ -10,7 +10,7 @@ Transactions on Neural Systems and Rehabilitation Engineering,
 doi: 10.1109/TNSRE.2023.3257319.
 """
 
-from __future__ import annotations
+from typing import Optional
 
 from functools import partial
 from mne.utils import warn
@@ -29,7 +29,7 @@ from braindecode.models.modules import (
 
 
 class IFNet(EEGModuleMixin, nn.Module):
-    """IFNet from Wang J et al (2023) [ifnet]_.
+    """IFNetV2 from Wang J et al (2023) [ifnet]_.
 
     .. figure:: https://raw.githubusercontent.com/Jiaheng-Wang/IFNet/main/IFNet.png
         :align: center
@@ -113,9 +113,10 @@ class IFNet(EEGModuleMixin, nn.Module):
         kernel_sizes: tuple[int, int] = (63, 31),
         stride_factor: int = 8,
         drop_prob: float = 0.5,
-        activation: nn.Module = nn.GELU,
+        linear_max_norm: float = 0.5,
+        activation: type[nn.Module] = nn.GELU,
         verbose: bool = False,
-        filter_parameters: dict = {},
+        filter_parameters: Optional[dict] = None,
     ):
         super().__init__(
             n_chans=n_chans,
@@ -135,7 +136,8 @@ class IFNet(EEGModuleMixin, nn.Module):
         self.filter_parameters = filter_parameters
         self.drop_prob = drop_prob
         self.activation = activation
-        self.filter_parameters = filter_parameters
+        self.linear_max_norm = linear_max_norm
+        self.filter_parameters = filter_parameters or {}
 
         # Layers
         # Following paper nomenclature
@@ -158,23 +160,24 @@ class IFNet(EEGModuleMixin, nn.Module):
 
         # SpatioTemporal Feature Block
         self.feature_block = _SpatioTemporalFeatureBlock(
-            in_channels=self.n_chans * self.spectral_filtering.n_bands,
+            in_channels=self.n_chans * self.n_bands,
             out_channels=self.n_filters_spat,
             kernel_sizes=self.kernel_sizes,
             stride_factor=self.stride_factor,
-            n_bands=self.spectral_filtering.n_bands,
+            n_bands=self.n_bands,
             drop_prob=self.drop_prob,
             activation=self.activation,
             n_times=self.n_times,
         )
 
         # Final classification layer
-        self.final_layer = nn.LazyLinear(
-            # LinearWithConstraint(
-            # in_features=self.n_filters_spat * (self.n_times // self.patch_size),
+        self.final_layer = LinearWithConstraint(
+            in_features=self.n_filters_spat * stride_factor,
             out_features=self.n_outputs,
-            # max_norm=0.5,
+            max_norm=self.linear_max_norm,
         )
+
+        self.flatten = Rearrange("batch ... -> batch (...)")
 
         # Initialize parameters
         self._initialize_weights(self)
@@ -225,7 +228,7 @@ class IFNet(EEGModuleMixin, nn.Module):
         x = self.feature_block(x)
 
         # Flatten and pass through the final layer
-        x = x.flatten(1)
+        x = self.flatten(x)
 
         x = self.final_layer(x)
 
@@ -314,12 +317,12 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         # Spatial convolution
         self.spatial_conv = nn.Conv1d(
             in_channels=self.in_channels,
-            out_channels=self.out_channels * self.n_bands,
+            out_channels=self.out_channels,
             kernel_size=1,
             groups=self.n_bands,
             bias=False,
         )
-        self.spatial_bn = nn.BatchNorm1d(self.out_channels * self.n_bands)
+        self.spatial_bn = nn.BatchNorm1d(self.out_channels)
 
         # Temporal convolutions for each radix
         self.temporal_convs = nn.ModuleList()
