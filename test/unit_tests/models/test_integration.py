@@ -73,6 +73,25 @@ def test_completeness__models_test_cases():
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
+# fixture to test the model initialization
+@pytest.fixture
+def model_class_list():
+    model_list = []
+
+    for model_name, required_params, signal_params in models_mandatory_parameters:
+        # Skip the test for non-classification models
+
+        model_class = models_dict[model_name]
+        sp = deepcopy(default_signal_params)
+        if signal_params is not None:
+            sp.update(signal_params)
+        model = model_class(**sp)
+
+        if model.__class__.__name__ not in non_classification_models:
+            model_list.append(model)
+    return model_list
+
+
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
 )
@@ -390,3 +409,23 @@ def test_model_torchscript(model_name, required_params, signal_params):
     model = model_class(**sp)
     torchscript_model_class = torch.jit.script(model)
     assert torchscript_model_class is not None
+
+
+@pytest.mark.parametrize("model", model_class_list)
+def test_model_compiled(model):
+    """
+    Verifies that all models can be torch compiled without issue
+    """
+    # Check if the model is in the list of non-classification models
+
+    # Create a random input tensorp
+    input_tensor = torch.randn(1, model.n_chans, model.n_times)
+
+    # Compile the model
+    compiled_model = torch.compile(model)
+
+    # Perform a forward pass with the compiled model
+    output = compiled_model(input_tensor)
+
+    # Check if the output shape is correct
+    assert output.shape == (1, model.n_outputs)
