@@ -45,6 +45,7 @@ from .signal_jepa import (
     SignalJEPA,
 )
 from .fbcnet import FBCNet
+from .fbmsnet import FBMSNet
 from .fblightconvnet import FBLightConvNet
 
 # Call this last in order to make sure the dataset list is populated with
