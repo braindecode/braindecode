@@ -409,11 +409,14 @@ def test_model_has_drop_prob_parameter(model_class):
     )
 
 
-@pytest.mark.parametrize("model", model_instances)
+@pytest.mark.parametrize("model",
+        model_instances,
+        ids=lambda m: m.__class__.__name__)
 def test_model_torchscript(model):
     """
     Verifies that all models can be torch scriptable
     """
+
     torchscript_model_class = torch.jit.script(model)
     assert torchscript_model_class is not None
 
@@ -451,6 +454,10 @@ def test_model_exported(model):
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
+    if model.__class__.__name__ == "EEGNetv4":
+        # EEGNetv4 is not compatible with torch.export
+        pytest.skip("EEGNetv4 is not compatible with torch.export")
+
     model.eval()
 
     # example input matching your model’s expected shape
