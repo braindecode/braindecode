@@ -10,6 +10,7 @@ Transactions on Neural Systems and Rehabilitation Engineering,
 doi: 10.1109/TNSRE.2023.3257319.
 """
 
+from __future__ import annotations
 from typing import Optional
 
 from functools import partial
