@@ -244,7 +244,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
         module.add_module(
             "fc",
-            nn.Linear(spatial_dim_last_layer * n_channels_last_layer, self.n_outputs),
+            nn.Linear(
+                int(spatial_dim_last_layer * n_channels_last_layer), self.n_outputs
+            ),
         )
 
         module.add_module("identity", nn.Identity())
