@@ -308,7 +308,15 @@ class CausalConv1d(nn.Conv1d):
         )
 
     def forward(self, X):
-        out = super().forward(X)
+        out = F.conv1d(
+            X,
+            self.weight,
+            self.bias,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+        )
         return out[..., : -self.padding[0]]
 
 
