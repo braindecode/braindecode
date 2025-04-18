@@ -32,9 +32,9 @@ _valid_layers = {
 class FBCNet(EEGModuleMixin, nn.Module):
     """FBCNet from Mane, R et al (2021) [fbcnet2021]_.
 
-        .. figure:: https://raw.githubusercontent.com/ravikiran-mane/FBCNet/refs/heads/master/FBCNet-V2.png
-            :align: center
-            :alt: FBCNet Architecture
+    .. figure:: https://raw.githubusercontent.com/ravikiran-mane/FBCNet/refs/heads/master/FBCNet-V2.png
+        :align: center
+        :alt: FBCNet Architecture
 
     The FBCNet model applies spatial convolution and variance calculation along
     the time axis, inspired by the Filter Bank Common Spatial Pattern (FBCSP)

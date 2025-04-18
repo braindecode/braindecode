@@ -19,6 +19,10 @@ from braindecode.models.modules import LinearWithConstraint, FilterBankLayer
 class FBMSNet(EEGModuleMixin, nn.Module):
     """FBMSNet from Liu et al (2022) [fbmsnet]_.
 
+    .. figure:: https://raw.githubusercontent.com/Want2Vanish/FBMSNet/refs/heads/main/FBMSNet.png
+        :align: center
+        :alt: FBMSNet Architecture
+
     0. **FilterBank Layer**: Applying filterbank to transform the input.
 
     1. **Temporal Convolution Block**: Utilizes mixed depthwise convolution
@@ -93,6 +97,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         stride_factor: int = 4,
         dilatability: int = 8,
         activation: nn.Module = nn.SiLU,
+        kernels_weights: Sequence[int] = (15, 31, 63, 125),
+        cnn_max_norm: float = 2,
+        linear_max_norm: float = 0.5,
         verbose: bool = False,
         filter_parameters: Optional[dict] = None,
     ):
@@ -113,7 +120,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.stride_factor = stride_factor
         self.activation = activation
         self.dilatability = dilatability
+        self.kernels_weights = kernels_weights
         self.filter_parameters = filter_parameters or {}
+        self.out_channels_spatial = self.n_filters_spat * self.dilatability
 
         # Checkers
         if temporal_layer not in _valid_layers:
@@ -124,8 +133,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         if self.n_times % self.stride_factor != 0:
             warn(
                 f"Time dimension ({self.n_times}) is not divisible by"
-                f" stride_factor ({self.stride_factor}). Input will be "
-                f"truncated.",
+                f" stride_factor ({self.stride_factor}). Input will be padded.",
                 UserWarning,
             )
 
@@ -147,10 +155,10 @@ class FBMSNet(EEGModuleMixin, nn.Module):
             _MixedConv2d(
                 in_channels=self.n_bands,
                 out_channels=self.n_filters_spat,
-                kernel_widths=(15, 31, 63, 125),
                 stride=1,
                 dilation=1,
                 depthwise=False,
+                kernels_weights=kernels_weights,
             ),
             nn.BatchNorm2d(self.n_filters_spat),
         )
@@ -159,15 +167,16 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         self.spatial_conv = nn.Sequential(
             Conv2dWithConstraint(
                 in_channels=self.n_filters_spat,
-                out_channels=self.n_filters_spat * self.dilatability,
+                out_channels=self.out_channels_spatial,
                 kernel_size=(self.n_chans, 1),
                 groups=self.n_filters_spat,
-                max_norm=2,
+                max_norm=cnn_max_norm,
                 padding=0,
             ),
-            nn.BatchNorm2d(self.n_filters_spat * self.dilatability),
+            nn.BatchNorm2d(self.out_channels_spatial),
             self.activation(),
         )
+
         # Padding layer
         if self.n_times % self.stride_factor != 0:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
@@ -187,11 +196,9 @@ class FBMSNet(EEGModuleMixin, nn.Module):
 
         # Final fully connected layer
         self.final_layer = LinearWithConstraint(
-            in_features=self.n_filters_spat
-            * self.dilatability
-            * (self.n_times_padded // self.stride_factor),
+            in_features=self.out_channels_spatial * self.stride_factor,
             out_features=self.n_outputs,
-            max_norm=0.5,
+            max_norm=linear_max_norm,
         )
 
     def forward(self, x):
@@ -208,27 +215,38 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output tensor with shape (batch_size, n_outputs).
         """
+        batch, _, _ = x.shape
+
+        # shape: (batch, n_chans, n_times)
         x = self.spectral_filtering(x)
+        # shape: (batch, n_bands, n_chans, n_times)
+
         # Mixed convolution
         x = self.mix_conv(x)
+        # shape: (batch, self.n_filters_spat, n_chans, n_times)
+
         # Spatial convolution block
         x = self.spatial_conv(x)
+        # shape: (batch, self.out_channels_spatial, 1, n_times)
 
-        batch_size, channels, _, time = x.shape
-
-        # shape: (batch_size, n_filters_spat * n_bands, 1, n_times)
+        # Apply some padding to the input to make it divisible by the stride factor
         x = self.padding_layer(x)
-        # shape: (batch_size, n_filters_spat * n_bands, 1, n_times_padded)
-        x = x.view(
-            batch_size,
-            channels,
-            self.stride_factor,
-            self.n_times_padded // self.stride_factor,
-        )
+        # shape: (batch, self.out_channels_spatial, 1, n_times_padded)
 
-        x = self.temporal_layer(x)  # type: ignore[operator]
+        # Reshape for temporal layer
+        x = x.view(batch, self.out_channels_spatial, self.stride_factor, -1)
+        # shape: (batch, self.out_channels_spatial, self.stride_factor, n_times/self.stride_factor)
+
+        # Temporal aggregation
+        x = self.temporal_layer(x)
+        # shape: (batch, self.out_channels_spatial, self.stride_factor, 1)
+
+        # Flatten and classify
         x = self.flatten_layer(x)
+        # shape: (batch, self.out_channels_spatial*self.stride_factor)
+
         x = self.final_layer(x)
+        # shape: (batch, n_outputs)
         return x
 
     @staticmethod
@@ -237,71 +255,80 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         return x
 
 
-class _MixedConv2d(nn.Module):
-    """
-    Mixed‐kernel convolution for multiscale feature extraction.
-    Splits the input channels, applies (1×k) convolutions in parallel
-    with “same” padding, then concatenates the outputs.
-    """
+class _MixedConv2d(nn.ModuleDict):
+    """Mixed Grouped Convolution for multiscale feature extraction."""
 
     def __init__(
         self,
-        in_channels: int,
-        out_channels: int,
-        kernel_widths: Sequence[int] = (15, 31, 63, 125),
-        stride: int | tuple[int, int] = 1,
-        dilation: int | tuple[int, int] = 1,
-        depthwise: bool = False,
+        in_channels,
+        out_channels,
+        kernels_weights=(15, 31, 63, 125),
+        stride=1,
+        dilation=1,
+        depthwise=False,
     ):
         super().__init__()
 
-        # build (1,k) tuples from widths
-        kernel_sizes = [(1, k) for k in kernel_widths]
-        stride = _pair(stride)
-        dilation = _pair(dilation)
+        num_groups = len(kernels_weights)
+        in_splits = self._split_channels(in_channels, num_groups)
+        out_splits = self._split_channels(out_channels, num_groups)
+        self.splits = in_splits
 
-        num_groups = len(kernel_sizes)
-        self.in_splits = _split_channels(in_channels, num_groups)
-        out_splits = _split_channels(out_channels, num_groups)
-
-        self.convs = nn.ModuleList()
-        for ks, in_ch, out_ch in zip(kernel_sizes, self.in_splits, out_splits):
-            groups = out_ch if depthwise else 1
-            pad = _get_same_padding(ks, stride, dilation)
-            self.convs.append(
+        for idx, (k, in_ch, out_ch) in enumerate(
+            zip(kernels_weights, in_splits, out_splits)
+        ):
+            conv_groups = out_ch if depthwise else 1
+            self.add_module(
+                str(idx),
                 nn.Conv2d(
-                    in_ch,
-                    out_ch,
-                    kernel_size=ks,
+                    in_channels=in_ch,
+                    out_channels=out_ch,
+                    kernel_size=(1, k),
                     stride=stride,
-                    padding=pad,
+                    padding="same",
                     dilation=dilation,
-                    groups=groups,
+                    groups=conv_groups,
                     bias=False,
-                )
+                ),
             )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # split along channel dim, apply each conv, then concat back
-        xs = torch.split(x, self.in_splits, dim=1)
-        outs = [conv(xi) for conv, xi in zip(self.convs, xs)]
-        return torch.cat(outs, dim=1)
+    @staticmethod
+    def _split_channels(num_chan, num_groups):
+        """
+        Splits the total number of channels into a specified
+        number of groups as evenly as possible.
 
+        Parameters
+        ----------
+        num_chan : int
+            The total number of channels to split.
+        num_groups : int
+            The number of groups to split the channels into.
 
-def _get_same_padding(
-    kernel_size,
-    stride,
-    dilation,
-):
-    # exactly the same formula your old code used:
-    return tuple(
-        ((s - 1) + d * (k - 1)) // 2 for k, s, d in zip(kernel_size, stride, dilation)
-    )
+        Returns
+        -------
+        list of int
+            A list containing the number of channels in each group.
+            The first group may have more channels if the division is not even.
+        """
+        split = [num_chan // num_groups for _ in range(num_groups)]
+        split[0] += num_chan - sum(split)
+        return split
 
+    def forward(self, x):
+        # Split the input tensor `x` along the channel dimension (dim=1) into groups.
+        # The size of each group is defined by `self.splits`, which is calculated
+        # based on the number of input channels and the number of kernel sizes.
+        x_split = torch.split(x, self.splits, 1)
 
-def _split_channels(total_channels: int, num_groups: int):
-    base = total_channels // num_groups
-    splits = [base] * num_groups
-    # give the remainder to the first group
-    splits[0] += total_channels - base * num_groups
-    return splits
+        # For each split group, apply the corresponding convolutional layer.
+        # `self.values()` returns the convolutional layers in the order they were added.
+        # The result is a list of output tensors, one for each group.
+        x_out = [conv(x_split[i]) for i, conv in enumerate(self.values())]
+
+        # Concatenate the outputs from all groups along the channel dimension (dim=1)
+        # to form a single output tensor.
+        x = torch.cat(x_out, 1)
+
+        # Return the concatenated tensor as the output of the mixed convolution.
+        return x
