@@ -93,25 +93,6 @@ def test_completeness__models_test_cases():
     ), f"Models missing from models_test_cases: {all_models - models_tested}"
 
 
-# fixture to test the model initialization
-@pytest.fixture
-def model_class_list():
-    model_list = []
-
-    for model_name, required_params, signal_params in models_mandatory_parameters:
-        # Skip the test for non-classification models
-
-        model_class = models_dict[model_name]
-        sp = deepcopy(default_signal_params)
-        if signal_params is not None:
-            sp.update(signal_params)
-        model = model_class(**sp)
-
-        if model.__class__.__name__ not in non_classification_models:
-            model_list.append(model)
-    return model_list
-
-
 @pytest.mark.parametrize(
     "model_name, required_params, signal_params", models_mandatory_parameters
 )
