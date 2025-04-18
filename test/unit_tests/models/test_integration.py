@@ -25,7 +25,11 @@ from braindecode.models import (
     USleep,
     EEGInceptionMI,
     EEGMiner,
+    FBCNet,
+    FBMSNet,
+    FBLightConvNet,
 )
+from braindecode.models.util import _summary_table
 
 rng = np.random.default_rng(12)
 # Generating the channel info
@@ -389,6 +393,9 @@ def test_model_has_drop_prob_parameter(model_class):
         USleep,
         EEGMiner,
         EEGInceptionMI,
+        FBCNet,
+        FBMSNet,
+        FBLightConvNet,
     ]:
         pytest.skip(f"Skipping {model_class} as not dropout layer")
 
@@ -411,7 +418,6 @@ def test_model_has_drop_prob_parameter(model_class):
     )
 
 
-@pytest.skip("Skipping this test as not torchscriptable YET")
 @pytest.mark.parametrize(
     "model_class",
     model_instances,
@@ -477,3 +483,11 @@ def test_model_exported(model):
 
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
+
+@pytest.mark.parametrize("model_class", models_dict.values())
+def test_completeness_summary_table(model_class):
+
+    assert model_class.__name__ in _summary_table.index, (
+        f"{model_class.__name__} is not in the summary table. "
+        f"Please add it to the summary table."
+    )
