@@ -255,7 +255,7 @@ class FBMSNet(EEGModuleMixin, nn.Module):
         return x
 
 
-class _MixedConv2d(nn.ModuleDict):
+class _MixedConv2d(nn.Module):
     """Mixed Grouped Convolution for multiscale feature extraction."""
 
     def __init__(
@@ -274,23 +274,21 @@ class _MixedConv2d(nn.ModuleDict):
         out_splits = self._split_channels(out_channels, num_groups)
         self.splits = in_splits
 
-        for idx, (k, in_ch, out_ch) in enumerate(
-            zip(kernels_weights, in_splits, out_splits)
-        ):
+        self.convs = nn.ModuleList()
+        # Create a convolutional layer for each kernel size
+        for k, in_ch, out_ch in zip(kernels_weights, in_splits, out_splits):
             conv_groups = out_ch if depthwise else 1
-            self.add_module(
-                str(idx),
-                nn.Conv2d(
-                    in_channels=in_ch,
-                    out_channels=out_ch,
-                    kernel_size=(1, k),
-                    stride=stride,
-                    padding="same",
-                    dilation=dilation,
-                    groups=conv_groups,
-                    bias=False,
-                ),
+            conv = nn.Conv2d(
+                in_channels=in_ch,
+                out_channels=out_ch,
+                kernel_size=(1, k),
+                stride=stride,
+                padding="same",
+                dilation=dilation,
+                groups=conv_groups,
+                bias=False,
             )
+            self.convs.append(conv)
 
     @staticmethod
     def _split_channels(num_chan, num_groups):
@@ -324,7 +322,7 @@ class _MixedConv2d(nn.ModuleDict):
         # For each split group, apply the corresponding convolutional layer.
         # `self.values()` returns the convolutional layers in the order they were added.
         # The result is a list of output tensors, one for each group.
-        x_out = [conv(x_split[i]) for i, conv in enumerate(self.values())]
+        x_out = [conv(x_split[i]) for i, conv in enumerate(self.convs)]
 
         # Concatenate the outputs from all groups along the channel dimension (dim=1)
         # to form a single output tensor.
