@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from torch import nn
+from torch.export import export, ExportedProgram
 from skorch.dataset import ValidSplit
 
 from braindecode.models.util import models_dict, models_mandatory_parameters, non_classification_models
@@ -43,6 +44,18 @@ default_signal_params = dict(
     chs_info=chs_info,
 )
 
+def build_model_list():
+    models = []
+    for name, req, sig_params in models_mandatory_parameters:
+        if name not in non_classification_models:
+            sp = deepcopy(default_signal_params)
+            if sig_params is not None:
+                sp.update(sig_params)
+            models.append(models_dict[name](**sp))
+    return models
+
+# call it once, at import time:
+model_instances = build_model_list()
 
 def get_epochs_y(signal_params=None, n_epochs=10):
     """
@@ -395,37 +408,54 @@ def test_model_has_drop_prob_parameter(model_class):
     )
 
 
-@pytest.mark.parametrize(
-    "model_name, required_params, signal_params", models_mandatory_parameters
-)
-def test_model_torchscript(model_name, required_params, signal_params):
+@pytest.mark.parametrize("model", model_instances)
+def test_model_torchscript(model):
     """
     Verifies that all models can be torch scriptable
     """
-    model_class = models_dict[model_name]
-    sp = deepcopy(default_signal_params)
-    if signal_params is not None:
-        sp.update(signal_params)
-    model = model_class(**sp)
     torchscript_model_class = torch.jit.script(model)
     assert torchscript_model_class is not None
 
 
-@pytest.mark.parametrize("model", model_class_list)
+@pytest.mark.parametrize(
+    "model",
+    model_instances,
+    ids=lambda m: m.__class__.__name__ )
 def test_model_compiled(model):
     """
     Verifies that all models can be torch compiled without issue
+    and if the outputs are the same.
     """
-    # Check if the model is in the list of non-classification models
-
-    # Create a random input tensorp
     input_tensor = torch.randn(1, model.n_chans, model.n_times)
-
-    # Compile the model
+    # Set the model to evaluation mode
+    model = model.eval()
+    not_compiled_model = model
     compiled_model = torch.compile(model)
 
-    # Perform a forward pass with the compiled model
-    output = compiled_model(input_tensor)
+    output = not_compiled_model(input_tensor)
+    output_compiled = compiled_model(input_tensor)
 
-    # Check if the output shape is correct
     assert output.shape == (1, model.n_outputs)
+    assert output_compiled.shape == (1, model.n_outputs)
+    assert output_compiled.allclose(output, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "model",
+    model_instances,
+    ids=lambda m: m.__class__.__name__ )
+def test_model_exported(model):
+    """
+    Verifies that all models can be torch export without issue
+    using torch.export.export()
+    """
+    model.eval()
+
+    # example input matching your model’s expected shape
+    example_input = torch.randn(1, model.n_chans, model.n_times)
+
+    # this will raise if the model isn’t fully traceable
+    exported_prog: ExportedProgram = export(model, args=(example_input,))
+
+    # sanity check: we got the right return type
+    assert isinstance(exported_prog, ExportedProgram)
