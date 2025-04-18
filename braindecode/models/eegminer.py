@@ -6,7 +6,7 @@
 """
 
 from functools import partial
-
+from typing import Literal, Dict, List
 import torch
 
 import braindecode.models.functions as F
@@ -101,9 +101,10 @@ class EEGMiner(EEGModuleMixin, nn.Module):
        https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
     """
 
+    method: str
+
     def __init__(
         self,  # Signal related parameters
-        method: str = "plv",
         n_chans=None,
         n_outputs=None,
         n_times=None,
@@ -111,11 +112,12 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # model related
-        filter_f_mean=(23.0, 23.0),
-        filter_bandwidth=(44.0, 44.0),
-        filter_shape=(2.0, 2.0),
-        group_delay=(20.0, 20.0),
-        clamp_f_mean=(1.0, 45.0),
+        method: str = "plv",
+        filter_f_mean: tuple[float, ...] = (23.0, 23.0),
+        filter_bandwidth: tuple[float, ...] = (44.0, 44.0),
+        filter_shape: tuple[float, ...] = (2.0, 2.0),
+        group_delay: tuple[float, ...] = (20.0, 20.0),
+        clamp_f_mean: tuple[float, float] = (1.0, 45.0),
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -168,7 +170,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
         # Forward method
         if self.method == "mag":
-            self.method_forward = self._apply_mag_forward
+            self.method_forwar = self._apply_mag_forward
             self.n_features = self.n_chans * self.n_filters
             self.ensure_dim = nn.Identity()
         elif self.method == "corr":
@@ -199,7 +201,18 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         # x -> (batch, electrodes * filters, time)
         x = self.filter(x)
 
-        x = self.method_forward(x=x, batch=batch)
+        if self.method == "mag":
+            x = self._apply_mag_forward(x, batch)
+        elif self.method == "corr":
+            # pass all needed args explicitly
+            x = self._apply_corr_forward(
+                x, batch, self.n_chans, self.n_filters, self.n_times
+            )
+        elif self.method == "plv":
+            x = self._apply_plv(x, self.n_chans, batch)
+        else:
+            # should never happen if __init__ validated `self.method`
+            raise RuntimeError(f"Unknown method {self.method}")
         # Classifier
         # Note that the order of dimensions before flattening the feature vector is important
         # for attributing feature weights during interpretation.
@@ -401,7 +414,14 @@ class GeneralizedGaussianFilter(nn.Module):
         )
 
         # Construct filters from parameters
-        self.filters = self.construct_filters()
+        # filters = self.construct_filters()
+        # self.register_buffer("filters", filters)
+        self.register_buffer(
+            "filters",
+            self.construct_filters(
+                f_mean=self.f_mean, bandwidth=self.bandwidth, shape=self.shape
+            ),
+        )
 
     @staticmethod
     def exponential_power(x, mean, fwhm, shape):
@@ -449,7 +469,7 @@ class GeneralizedGaussianFilter(nn.Module):
         # Add small constant to difference between x and mean since grad of 0 ** shape is nan
         return torch.exp(-((((x - mean).abs() + 1e-8) / scale) ** shape))
 
-    def construct_filters(self):
+    def construct_filters(self, f_mean=None, bandwidth=None, shape=None):
         """
         Constructs the filters in the frequency domain based on current parameters.
 
@@ -460,19 +480,22 @@ class GeneralizedGaussianFilter(nn.Module):
 
         """
         # Clamp parameters
-        self.f_mean.data = torch.clamp(
-            self.f_mean.data,
-            min=self.clamp_f_mean[0] / (self.sample_rate / 2),
-            max=self.clamp_f_mean[1] / (self.sample_rate / 2),
-        )
-        self.bandwidth.data = torch.clamp(
-            self.bandwidth.data, min=1.0 / (self.sample_rate / 2), max=1.0
-        )
-        self.shape.data = torch.clamp(self.shape.data, min=2.0, max=3.0)
+        # self.f_mean.data = torch.clamp(
+        #     self.f_mean.data,
+        #     min=self.clamp_f_mean[0] / (self.sample_rate / 2),
+        #     max=self.clamp_f_mean[1] / (self.sample_rate / 2),
+        # )
+        # self.bandwidth.data = torch.clamp(
+        #     self.bandwidth.data, min=1.0 / (self.sample_rate / 2), max=1.0
+        # )
+        # self.shape.data = torch.clamp(self.shape.data, min=2.0, max=3.0)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
+        # mag_response = self.exponential_power(
+        #     self.n_range, self.f_mean, self.bandwidth, self.shape * 8 - 14
+        # )
         mag_response = self.exponential_power(
-            self.n_range, self.f_mean, self.bandwidth, self.shape * 8 - 14
+            self.n_range, f_mean, bandwidth, shape * 8 - 14
         )
         mag_response = mag_response / mag_response.max(dim=-1, keepdim=True)[0]
 
@@ -515,8 +538,16 @@ class GeneralizedGaussianFilter(nn.Module):
             frequency domain with shape `(..., out_channels, freq_bins, 2)`.
 
         """
+        # Local clamps—no in-place on leaf Parameters
+        f_mean_c = torch.clamp(
+            self.f_mean,
+            min=self.clamp_f_mean[0] / (self.sample_rate / 2),
+            max=self.clamp_f_mean[1] / (self.sample_rate / 2),
+        )
+        bw_c = torch.clamp(self.bandwidth, min=1.0 / (self.sample_rate / 2), max=1.0)
+        shape_c = torch.clamp(self.shape, min=2.0, max=3.0)
         # Construct filters from parameters
-        self.filters = self.construct_filters()
+        self.filters = self.construct_filters(f_mean_c, bw_c, shape_c)
         # Preserving the original dtype.
         dtype = x.dtype
         # Apply FFT -> (..., channels, freqs, 2)
