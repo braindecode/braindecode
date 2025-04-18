@@ -24,7 +24,7 @@ from braindecode.models import (
     EEGInceptionMI,
     EEGMiner,
     FBCNet,
-    FBMSNet
+    FBMSNet,
     FBLightConvNet,
 )
 from braindecode.models.util import _summary_table
