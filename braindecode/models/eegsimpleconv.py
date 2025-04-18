@@ -109,6 +109,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         chs_info=None,
         n_times=None,
         input_window_seconds=None,
+        return_feature=False,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -120,6 +121,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
+        self.return_feature = return_feature
         self.resample = (
             Resample(orig_freq=self.sfreq, new_freq=resampling_freq)
             if self.sfreq != resampling_freq
@@ -187,6 +189,9 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             Output tensor of shape (batch_size, n_outputs)
         """
         feat = self.forward_features(x)
+        if self.return_feature:
+            # If return_feature is True, return the features
+            return feat
 
         return self.final_layer(feat)
 
