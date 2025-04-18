@@ -6,17 +6,18 @@ from __future__ import annotations
 import numpy as np
 import torch
 
+from typing import Optional, List, Tuple
+from torch.nn.utils.parametrize import register_parametrization
 from functools import partial
+
 from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
 
 from torch import Tensor, nn, from_numpy
-
 import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt
 
-from typing import Optional, List, Tuple
 
 from braindecode.models.functions import (
     drop_path,
@@ -341,18 +342,29 @@ class MaxNormLinear(nn.Linear):
         )
         self._max_norm_val = max_norm_val
         self._eps = eps
+        register_parametrization(self, "weight", MaxNorm(max_norm_val, eps))
+
+
+class MaxNorm(nn.Module):
+    def __init__(self, max_norm_val=2.0, eps=1e-5):
+        super().__init__()
+        self.max_norm_val = max_norm_val
+        self.eps = eps
 
     def forward(self, X):
-        self._max_norm()
-        return super().forward(X)
+        norm = X.norm(2, dim=0, keepdim=True)
+        denom = norm.clamp(min=self.max_norm_val / 2)
+        number = denom.clamp(max=self.max_norm_val)
+        return X * (number / (denom + self.eps))
 
-    def _max_norm(self):
-        with torch.no_grad():
-            norm = self.weight.norm(2, dim=0, keepdim=True).clamp(
-                min=self._max_norm_val / 2
-            )
-            desired = torch.clamp(norm, max=self._max_norm_val)
-            self.weight *= desired / (self._eps + norm)
+    def right_inverse(self, X):
+        # Assuming the forward scales X by a factor s,
+        # the right inverse would scale it back by 1/s.
+        norm = X.norm(2, dim=0, keepdim=True)
+        denom = norm.clamp(min=self.max_norm_val / 2)
+        number = denom.clamp(max=self.max_norm_val)
+        scale = number / (denom + self.eps)
+        return X / scale
 
 
 class LinearWithConstraint(nn.Linear):

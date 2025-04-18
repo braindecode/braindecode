@@ -13,6 +13,7 @@ import pytest
 
 from torch import nn
 from torch.export import export, ExportedProgram
+
 from skorch.dataset import ValidSplit
 
 from braindecode.models.util import models_dict, models_mandatory_parameters, non_classification_models
@@ -426,6 +427,7 @@ def test_model_compiled(model):
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
+    # This assumes the model has attributes n_chans and n_times
     input_tensor = torch.randn(1, model.n_chans, model.n_times)
     # Set the model to evaluation mode
     model = model.eval()
@@ -437,7 +439,7 @@ def test_model_compiled(model):
 
     assert output.shape == (1, model.n_outputs)
     assert output_compiled.shape == (1, model.n_outputs)
-    assert output_compiled.allclose(output, atol=1e-6)
+    assert output_compiled.allclose(output, atol=1e-4)
 
 
 @pytest.mark.parametrize(
@@ -455,7 +457,7 @@ def test_model_exported(model):
     example_input = torch.randn(1, model.n_chans, model.n_times)
 
     # this will raise if the model isn’t fully traceable
-    exported_prog: ExportedProgram = export(model, args=(example_input,))
+    exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
 
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)

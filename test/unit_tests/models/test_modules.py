@@ -16,7 +16,7 @@ from braindecode.models.functions import drop_path
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.eegminer import GeneralizedGaussianFilter
 from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed
+    MLP, SafeLog, TimeDistributed, MaxNormLinear
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 
@@ -331,6 +331,15 @@ def test_safelog_extra_repr(eps, expected_repr):
     # Assert that the extra_repr output matches the expected string
     assert repr_output == expected_repr, f"Expected '{expected_repr}', got '{repr_output}'"
 
+
+def old_maxnorm(weight: torch.Tensor,
+                max_norm_val: float = 2.0,
+                eps: float = 1e-5) -> torch.Tensor:
+    w = weight.clone()
+    # clamp denominator ≥ max_norm_val/2, numerator ≤ max_norm_val
+    denom  = w.norm(2, dim=0, keepdim=True).clamp(min=max_norm_val / 2)
+    number  = denom.clamp(max=max_norm_val)
+    return w * (number / (denom + eps))
 
 
 @pytest.fixture
@@ -842,3 +851,32 @@ def test_forward_pass_no_inverse_fourier():
     assert output.shape == expected_shape, f"Expected output shape {expected_shape}, got {output.shape}"
     # Verify that output is real-valued (since it's the real and imaginary parts)
     assert output.dtype == torch.float32 or output.dtype == torch.float64, "Output should be real-valued tensor"
+
+
+@pytest.mark.parametrize("out_in", [
+    (4,  8),
+    (8, 16),
+    (16,32),
+])
+def test_new_vs_old_maxnorm_are_identical(out_in):
+    out_features, in_features = out_in
+    torch.manual_seed(0)
+    W = torch.randn(out_features, in_features, requires_grad=True)
+
+    W_ref = old_maxnorm(W, max_norm_val=2.0, eps=1e-5)
+
+    layer = MaxNormLinear(
+        in_features=in_features,
+        out_features=out_features,
+        max_norm_val=2.0,
+        eps=1e-5,
+        bias=True,
+    )
+
+    layer.weight = W.clone()
+
+    W_new = layer.weight
+
+    assert torch.allclose(W_ref, W_new, atol=1e-6), (
+        f"MaxNorm mismatch: max|W_ref - W_new| = {(W_ref - W_new).abs().max():.3e}"
+    )
