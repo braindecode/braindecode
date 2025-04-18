@@ -104,7 +104,6 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         n_convs=2,
         resampling_freq=80,
         kernel_size=8,
-        return_feature=False,
         activation: nn.Module = nn.ReLU,
         # Other ways to initialize the model
         chs_info=None,
@@ -121,7 +120,6 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
-        self.return_feature = return_feature
         self.resample = (
             Resample(orig_freq=self.sfreq, new_freq=resampling_freq)
             if self.sfreq != resampling_freq
@@ -174,7 +172,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         self.blocks = torch.nn.ModuleList(self.blocks)
         self.final_layer = torch.nn.Linear(old_feature_maps, self.n_outputs)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
@@ -188,12 +186,27 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         PyTorch Tensor (optional)
             Output tensor of shape (batch_size, n_outputs)
         """
+        feat = self.forward_features(x)
+
+        return self.final_layer(feat)
+
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the model to get the features.
+
+        Parameters
+        ----------
+        x: PyTorch Tensor
+            Input tensor of shape (batch_size, n_channels, n_times)
+
+        Returns
+        -------
+        PyTorch Tensor
+            Output tensor of shape (batch_size, n_outputs)
+        """
         x_rs = self.resample(x.contiguous())
         feat = torch.relu(self.bn(self.conv(x_rs)))
         for seq in self.blocks:
             feat = seq(feat)
         feat = feat.mean(dim=2)
-        if self.return_feature:
-            return self.final_layer(feat), feat
-        else:
-            return self.final_layer(feat)
+        return feat
