@@ -16,9 +16,64 @@ from braindecode.models.functions import drop_path
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.eegminer import GeneralizedGaussianFilter
 from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed, MaxNormLinear
+    MLP, SafeLog, TimeDistributed, MaxNormLinear, CausalConv1d
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
+
+class OldCausalConv1d(nn.Conv1d):
+    """Causal 1-dimensional convolution
+
+    Code modified from [1]_ and [2]_.
+
+    Parameters
+    ----------
+    in_channels : int
+        Input channels.
+    out_channels : int
+        Output channels (number of filters).
+    kernel_size : int
+        Kernel size.
+    dilation : int, optional
+        Dilation (number of elements to skip within kernel multiplication).
+        Default to 1.
+    **kwargs :
+        Other keyword arguments to pass to torch.nn.Conv1d, except for
+        `padding`!!
+
+    References
+    ----------
+    .. [1] https://discuss.pytorch.org/t/causal-convolution/3456/4
+    .. [2] https://gist.github.com/paultsw/7a9d6e3ce7b70e9e2c61bc9287addefc
+    """
+
+    padding: torch.Tensor
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        dilation=1,
+        **kwargs,
+    ):
+        assert "padding" not in kwargs, (
+            "The padding parameter is controlled internally by "
+            f"{type(self).__name__} class. You should not try to override this"
+            " parameter."
+        )
+
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            dilation=dilation,
+            padding=(kernel_size - 1) * dilation,
+            **kwargs,
+        )
+
+    def forward(self, X):
+        out = super().forward(X)
+        return out[..., : -self.padding[0]]
 
 def _filfilt_in_torch_sytle(b, a, x_np):
     # Forward filtering
@@ -880,3 +935,74 @@ def test_new_vs_old_maxnorm_are_identical(out_in):
     assert torch.allclose(W_ref, W_new, atol=1e-6), (
         f"MaxNorm mismatch: max|W_ref - W_new| = {(W_ref - W_new).abs().max():.3e}"
     )
+
+
+@pytest.mark.parametrize("batch,in_ch,out_ch,length,kernel,dilation", [
+    (1, 1, 1, 20, 3, 1),
+    (2, 3, 4, 50, 5, 2),
+    (4, 2, 2, 30, 7, 3),
+])
+def test_matches_padded_conv(batch, in_ch, out_ch, length, kernel, dilation):
+    torch.manual_seed(0)
+    # instantiate causal conv
+    causal_new = CausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+    # clone weights/bias for reference conv
+    causal_old = OldCausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+
+    causal_old.weight.data.copy_(causal_new.weight.data)
+    causal_old.bias.data.copy_(causal_new.bias.data)
+
+    # random input
+    x = torch.randn(batch, in_ch, length)
+
+    # causal output
+    y_causal = causal_new(x)
+    # reference: padded conv then trim right
+    y_ref = causal_old(x)[..., : length]
+
+    assert y_causal.shape == (batch, out_ch, length)
+    assert torch.allclose(y_causal, y_ref, atol=1e-6), "CausalConv1d differs from trimmed padded Conv1d"
+
+
+
+
+@pytest.mark.parametrize("batch,in_ch,out_ch,length,kernel,dilation", [
+    (1, 1, 1, 20, 3, 1),
+    (2, 3, 4, 50, 5, 2),
+])
+def test_gradients_match(batch, in_ch, out_ch, length, kernel, dilation):
+    torch.manual_seed(0)
+    # new implementation
+    causal_new = CausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+    # old implementation
+    causal_old = OldCausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+
+    # sync parameters
+    causal_old.weight.data.copy_(causal_new.weight.data)
+    causal_old.bias.data.copy_(causal_new.bias.data)
+
+    # random input with gradient tracking
+    x_new = torch.randn(batch, in_ch, length, requires_grad=True)
+    x_old = x_new.clone().detach().requires_grad_(True)
+
+    # forward + backward new
+    y_new = causal_new(x_new)
+    loss_new = y_new.sum()
+    loss_new.backward()
+
+    # forward + backward old
+    y_old = causal_old(x_old)[..., :length]
+    loss_old = y_old.sum()
+    loss_old.backward()
+
+    # compare input gradients
+    assert torch.allclose(x_new.grad, x_old.grad, atol=1e-6), \
+        "Input gradients differ between new and old implementations"
+
+    # compare weight gradients
+    assert torch.allclose(causal_new.weight.grad, causal_old.weight.grad, atol=1e-6), \
+        "Weight gradients differ between new and old implementations"
+
+    # compare bias gradients
+    assert torch.allclose(causal_new.bias.grad, causal_old.bias.grad, atol=1e-6), \
+        "Bias gradients differ between new and old implementations"
