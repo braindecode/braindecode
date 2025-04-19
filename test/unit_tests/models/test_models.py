@@ -730,7 +730,7 @@ def test_conformer_forward_pass(sample_input, model):
     )
     output = model_with_feature(sample_input)
 
-    assert isinstance(output, tuple) and len(output) == 2
+    assert isinstance(output, torch.Tensor) and output.shape == torch.Size([16, 61, 40])
 
 
 def test_patch_embedding(sample_input, model):

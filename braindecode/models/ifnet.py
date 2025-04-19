@@ -325,7 +325,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
             if self.n_bands > len(self.kernel_sizes):
                 self.n_bands = len(self.kernel_sizes)
                 warn(
-                    f"Reducing number of bands to {self.n_bands} to match the number of kernels.",
+                    f"Reducing number of bands to {len(self.kernel_sizes)} to match the number of kernels.",
                     UserWarning,
                 )
             elif self.n_bands < len(self.kernel_sizes):
@@ -414,8 +414,8 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         x_split = self.unpack_bands(x)
 
         x_t = []
-        for _, conv in enumerate(self.temporal_convs):
-            x_t.append(conv(x_split[_]))
+        for idx, conv in enumerate(self.temporal_convs):
+            x_t.append(conv(x_split[::, idx]))
 
         # Inter-frequency interaction
         x = self.inter_frequency(x_t)

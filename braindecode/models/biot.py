@@ -241,7 +241,9 @@ class _BIOTEncoder(nn.Module):
         )
         return torch.abs(spectral)
 
-    def forward(self, x, n_channel_offset=0, perturb=False):
+    def forward(
+        self, x: torch.Tensor, n_channel_offset: int = 0, perturb: bool = False
+    ) -> torch.Tensor:
         """
         Forward pass of the BIOT encoder.
 
@@ -478,6 +480,6 @@ class BIOT(EEGModuleMixin, nn.Module):
         x = self.final_layer(emb)
 
         if self.return_feature:
-            return x, emb
+            return emb
         else:
             return x

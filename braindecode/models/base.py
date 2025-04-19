@@ -115,9 +115,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             self._chs_info = torch.jit.Attribute(
                 convert_chs_info_to_torch(chs_info), List[Dict[str, torch.Tensor]]
             )
-        else:
-            self._chs_info = convert_chs_info_to_torch(chs_info)
 
+        self._chs_info = chs_info  # type: ignore[assignment]
         self._n_outputs = n_outputs  # type: ignore[assignment]
         self._n_chans = n_chans  # type: ignore[assignment]
         self._n_times = n_times  # type: ignore[assignment]
@@ -143,7 +142,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    @torch.jit.ignore
     def chs_info(self) -> List[Dict[str, torch.Tensor]]:
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
