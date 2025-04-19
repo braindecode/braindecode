@@ -97,6 +97,8 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
 
         if self.n_chans > 1:
             self.spatial_conv = nn.Conv2d(1, self.n_chans, (self.n_chans, 1))
+        else:
+            self.spatial_conv = nn.Identity()
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 
