@@ -167,7 +167,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         self.feature_extractor.train()
         return len(out.flatten())
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
@@ -184,9 +184,9 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
 
         if self.return_feats:
             return encoded_features
-        else:
-            final_output = self.final_layer(encoded_features)
-            return final_output
+
+        final_output = self.final_layer(encoded_features)
+        return final_output
 
 
 class _SELayer(nn.Module):
@@ -200,7 +200,7 @@ class _SELayer(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the SE layer.
 
@@ -246,7 +246,7 @@ class _SEBasicBlock(nn.Module):
             self.conv1, self.bn1, self.relu, self.conv2, self.bn2, self.se
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the SE layer.
 
@@ -347,7 +347,7 @@ class _MRCNN(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x1 = self.features1(x)
         x2 = self.features2(x)
         x_concat = torch.cat((x1, x2), dim=2)
@@ -391,7 +391,7 @@ class _MultiHeadedAttention(nn.Module):
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value):
+    def forward(self, query, key, value: torch.Tensor) -> torch.Tensor:
         """Implements Multi-head attention"""
         nbatches = query.size(0)
 
@@ -445,7 +445,7 @@ class _TCE(nn.Module):
         self.layers = _clones(layer, n)
         self.norm = nn.LayerNorm(layer.size, eps=1e-6)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
             x = layer(x)
         return self.norm(x)
@@ -474,7 +474,7 @@ class _EncoderLayer(nn.Module):
             dilation=1,
         )
 
-    def forward(self, x_in):
+    def forward(self, x_in: torch.Tensor) -> torch.Tensor:
         """Transformer Encoder"""
         query = self.conv(x_in)
         # Encoder self-attention
@@ -492,6 +492,6 @@ class _PositionwiseFeedForward(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.activate = activation()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Implements FFN equation."""
         return self.w_2(self.dropout(self.activate(self.w_1(x))))
