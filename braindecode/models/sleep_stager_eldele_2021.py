@@ -6,6 +6,7 @@ import copy
 import math
 import warnings
 from copy import deepcopy
+from typing import Tuple, Optional, Callable
 
 import torch
 import torch.nn.functional as F
@@ -359,16 +360,16 @@ class _MRCNN(nn.Module):
 ##########################################################################################
 
 
-def _attention(query, key, value, dropout=None):
+def _attention(
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Implementation of Scaled dot product attention"""
     # d_k - dimension of the query and key vectors
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-
-    p_attn = F.softmax(scores, dim=-1)
-    if dropout is not None:
-        p_attn = dropout(p_attn)
-    return torch.matmul(p_attn, value), p_attn
+    p_attn = F.softmax(scores, dim=-1)  # attention weights
+    output = torch.matmul(p_attn, value)  # (B, h, T, d_k)
+    return output, p_attn
 
 
 class _MultiHeadedAttention(nn.Module):
@@ -405,30 +406,57 @@ class _MultiHeadedAttention(nn.Module):
             .transpose(1, 2)
         )
 
-        x, self.attn = _attention(query, key, value, dropout=self.dropout)
+        x_raw, attn_weights = _attention(query, key, value)
+        # apply dropout to the *weights*
+        attn = self.dropout(attn_weights)
+        # recompute the weighted sum with dropped weights
+        x = torch.matmul(attn, value)
 
+        # stash the pre‑dropout weights if you need them
+        self.attn = attn_weights
+
+        # merge heads and project
         x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_per_head)
 
         return self.linear(x)
 
 
-class _ResidualLayerNorm(nn.Module):
+class _ResidualLayerNormAttn(nn.Module):
     """
     A residual connection followed by a layer norm.
     """
 
-    def __init__(self, size, dropout):
+    def __init__(self, size, dropout, fn_attn):
         super().__init__()
         self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
+        self.fn_attn = fn_attn
 
-    def forward(
-        self, x: torch.Tensor, sublayer: nn.Module, *args: torch.Tensor
-    ) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, key=None, value=None) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
         x_norm = self.norm(x)
 
-        out = sublayer(x_norm, *args)
+        out = self.fn_attn(x_norm, key, value)
+
+        return x + self.dropout(out)
+
+
+class _ResidualLayerNormFF(nn.Module):
+    """
+    A residual connection followed by a layer norm.
+    """
+
+    def __init__(self, size, dropout, fn_ff):
+        super().__init__()
+        self.norm = nn.LayerNorm(size, eps=1e-6)
+        self.dropout = nn.Dropout(dropout)
+        self.fn_ff = fn_ff
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply residual connection to any sublayer with the same size."""
+        x_norm = self.norm(x)
+
+        out = self.fn_ff(x_norm)
 
         return x + self.dropout(out)
 
@@ -463,13 +491,15 @@ class _EncoderLayer(nn.Module):
         self.self_attn = self_attn
         self.feed_forward = feed_forward
 
-        self.residual_self_attn = _ResidualLayerNorm(
-            size,
-            dropout,
+        self.residual_self_attn = _ResidualLayerNormAttn(
+            size=size,
+            dropout=dropout,
+            fn_attn=self_attn,
         )
-        self.residual_ff = _ResidualLayerNorm(
-            size,
-            dropout,
+        self.residual_ff = _ResidualLayerNormFF(
+            size=size,
+            dropout=dropout,
+            fn_ff=feed_forward,
         )
 
         self.conv = CausalConv1d(
@@ -484,8 +514,8 @@ class _EncoderLayer(nn.Module):
         """Transformer Encoder"""
         query = self.conv(x_in)
         # Encoder self-attention
-        x = self.residual_self_attn(query, self.self_attn, x_in, x_in)
-        x_ff = self.residual_ff(x, self.feed_forward)
+        x = self.residual_self_attn(query, x_in, x_in)
+        x_ff = self.residual_ff(x)
         return x_ff
 
 
