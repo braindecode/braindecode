@@ -4,7 +4,7 @@
 # License: BSD-3
 from __future__ import annotations
 import warnings
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, Any
 
 from collections import OrderedDict
 
@@ -73,24 +73,24 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
-    _chs_info: List[Dict[str, torch.Tensor]]  # type: ignore[assignment]
+    # _chs_info: List[Dict[str, torch.Tensor]]  # type: ignore[assignment]
     # we need to cast to torch.Tensor because
     # torch.jit.Attribute does not support np.ndarray
-    _sfreq: int  # type: ignore[assignment]
-    _n_outputs: int  # type: ignore[assignment]
-    _n_chans: int  # type: ignore[assignment]
-    _n_times: int  # type: ignore[assignment]
-    _add_log_softmax: bool  # type: ignore[assignment]
-    _input_window_seconds: float  # type: ignore[assignment]
-    _mapping: Dict[str, str]  # type: ignore[assignment]
-    _input_shape: Tuple[int, int, int]  # type: ignore[assignment]
-    _output_shape: Tuple[int, ...]  # type: ignore[assignment]
+    # _sfreq: int  # type: ignore[assignment]
+    # _n_outputs: int  # type: ignore[assignment]
+    # _n_chans: int  # type: ignore[assignment]
+    # _n_times: int  # type: ignore[assignment]
+    # _add_log_softmax: bool  # type: ignore[assignment]
+    # _input_window_seconds: float  # type: ignore[assignment]
+    # _mapping: Dict[str, str]  # type: ignore[assignment]
+    # _input_shape: Tuple[int, int, int]  # type: ignore[assignment]
+    # _output_shape: Tuple[int, ...]  # type: ignore[assignment]
 
     def __init__(
         self,
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
-        chs_info: Optional[List[Dict[str, np.array]]] = None,
+        chs_info: Optional[Any] = None,
         n_times: Optional[int] = None,
         input_window_seconds: Optional[float] = None,
         sfreq: Optional[float] = None,
@@ -108,12 +108,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         ):
             raise ValueError(
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
-            )
-
-        if torch.jit.is_scripting():
-            # Dummy empty list of dicts so JIT knows the type
-            self._chs_info = torch.jit.Attribute(
-                convert_chs_info_to_torch(chs_info), List[Dict[str, torch.Tensor]]
             )
 
         self._chs_info = chs_info  # type: ignore[assignment]
@@ -142,7 +136,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    def chs_info(self) -> List[Dict[str, torch.Tensor]]:
+    def chs_info(self):
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
         return self._chs_info
@@ -178,7 +172,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._input_window_seconds
 
     @property
-    def sfreq(self) -> int:
+    def sfreq(self) -> float:
         if (
             self._sfreq is None
             and self._input_window_seconds is not None
@@ -193,7 +187,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._sfreq
 
     @property
-    def add_log_softmax(self) -> bool:
+    def add_log_softmax(self) -> Optional[bool]:
         if self._add_log_softmax:
             warnings.warn(
                 "LogSoftmax final layer will be removed! "

@@ -687,7 +687,7 @@ class FilterBankLayer(nn.Module):
     def __init__(
         self,
         n_chans: int,
-        sfreq: int,
+        sfreq: float,
         band_filters: Optional[List[Tuple[float, float]] | int] = None,
         method: str = "fir",
         filter_length: str | float | int = "auto",
@@ -753,7 +753,7 @@ class FilterBankLayer(nn.Module):
         self.phase = phase
         self.method = method
         self.n_chans = n_chans
-
+        self.sfreq = sfreq
         self.method_iir = True if self.method == "iir" else False
 
         if self.method_iir:
@@ -772,7 +772,7 @@ class FilterBankLayer(nn.Module):
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
                 data=None,
-                sfreq=sfreq,
+                sfreq=self.sfreq,
                 l_freq=l_freq,
                 h_freq=h_freq,
                 filter_length=filter_length,
