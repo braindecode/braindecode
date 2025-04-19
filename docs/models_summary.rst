@@ -1,5 +1,3 @@
-.. _data_summary:
-
 .. raw:: html
 
    <style>
@@ -16,9 +14,7 @@
    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/v/bm/dt-1.13.4/datatables.min.css"/>
 
-.. automodule:: braindecode.models
-
-.. currentmodule:: braindecode.models
+.. _models-summary:
 
 Models Summary
 ~~~~~~~~~~~~~~
@@ -54,7 +50,7 @@ The parameter counts shown in the table were calculated using consistent hyperpa
 Submit a new model
 ~~~~~~~~~~~~~~~~~~
 
-Want to contribute a new model to Braindecode? Great! You can propose a new model by opening an `issue <https://github.com/braindecode/braindecode/issues>`__ (please include a link to the relevant publication or description) or, even better, directly submit your implementation via a `pull request <https://github.com/braindecode/braindecode/pulls>`__. We appreciate your contributions to expanding the library!
+Want to contribute a new model to Braindecode? Great! You can propose a new model by opening an `issue <braindecode-issues_>`_ (please include a link to the relevant publication or description) or, even better, directly submit your implementation via a `pull request <braindecode-pulls_>`_. We appreciate your contributions to expanding the library!
 
 .. raw:: html
 
@@ -134,3 +130,5 @@ Want to contribute a new model to Braindecode? Great! You can propose a new mode
       $filterContainer.append(clearBtn);
     });
    </script>
+
+.. include:: links.inc

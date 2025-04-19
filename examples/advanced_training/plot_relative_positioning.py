@@ -1,4 +1,6 @@
 """
+.. _self-supervised-learning-eeg:
+
 Self-supervised learning on EEG with relative positioning
 =========================================================
 
@@ -137,6 +139,7 @@ preprocess(windows_dataset, [Preprocessor(standard_scale, channel_wise=True)])
 
 import numpy as np
 from sklearn.model_selection import train_test_split
+
 from braindecode.datasets import BaseConcatDataset
 
 subjects = np.unique(windows_dataset.description["subject"])
@@ -186,15 +189,15 @@ for name, values in split_ids.items():
 # sample pairs of examples to train and validate our model with
 # self-supervision.
 #
-# The RP samplers have two main hyperparameters. `tau_pos` and `tau_neg`
+# The RP samplers have two main hyperparameters. ``tau_pos`` and ``tau_neg``
 # control the size of the "positive" and "negative" contexts, respectively.
-# Pairs of windows that are separated by less than `tau_pos` samples will be
-# given a label of `1`, while pairs of windows that are separated by more than
-# `tau_neg` samples will be given a label of `0`. Here, we use the same values
-# as in [1]_, i.e., `tau_pos`= 1 min and `tau_neg`= 15 mins.
+# Pairs of windows that are separated by less than ``tau_pos`` samples will be
+# given a label of ``1``, while pairs of windows that are separated by more than
+# ``tau_neg`` samples will be given a label of ``0``. Here, we use the same values
+# as in [1]_, i.e., ``tau_pos`` = 1 min and ``tau_neg`` = 15 mins.
 #
 # The samplers also control the number of pairs to be sampled (defined with
-# `n_examples`). This number can be large to help regularize the pretext task
+# ``n_examples``). This number can be large to help regularize the pretext task
 # training, for instance 2,000 pairs per recording as in [1]_. Here, we use a
 # lower number of 250 pairs per recording to reduce training time.
 
@@ -352,7 +355,7 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
-# Model training for a specified number of epochs. `y` is None as it is already
+# Model training for a specified number of epochs. ``y`` is None as it is already
 # supplied in the dataset.
 clf.fit(splitted["train"], y=None)
 clf.load_params(checkpoint=cp)  # Load the model with the lowest valid_loss

@@ -1,4 +1,7 @@
-"""MOABB Dataset Example
+"""
+.. _moabb-dataset-example:
+
+MOABB Dataset Example
 ========================
 
 In this example, we show how to fetch and prepare a MOABB dataset for usage
@@ -49,6 +52,6 @@ subsets = dataset.split("session")
 print({subset_name: len(subset) for subset_name, subset in subsets.items()})
 
 ##############################################################################
-# See our `Trialwise Decoding <../model_building/plot_bcic_iv_2a_moabb_trial.html>`__ and
-# `Cropped Decoding <../model_building/plot_bcic_iv_2a_moabb_cropped.html>`__ examples for
+# See our :ref:`Trialwise Decoding <bcic-iv-2a-moabb-trial>` and
+# :ref:`Cropped Decoding <bcic-iv-2a-moabb-cropped>` examples for
 # training with this dataset.

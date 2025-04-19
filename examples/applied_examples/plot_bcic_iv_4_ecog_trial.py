@@ -1,4 +1,6 @@
 """
+.. _bcic-iv-4-ecog-decoding:
+
 Fingers flexion decoding on BCIC IV 4 ECoG Dataset
 ==================================================
 
@@ -59,8 +61,7 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 ######################################################################
 # Now we apply preprocessing like bandpass filtering to our dataset. You
 # can either apply functions provided by
-# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
-# `mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`__
+# :class:`mne.io.Raw` or :class:`mne.Epochs`
 # or apply your own functions, either to the MNE object or the underlying
 # numpy array.
 #
@@ -72,8 +73,7 @@ dataset = BCICompetitionIVDataset4(subject_ids=[subject_id])
 # .. note::
 #    These prepocessings are now directly applied to the loaded
 #    data, and not on-the-fly applied as transformations in
-#    PyTorch-libraries like
-#    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
+#    PyTorch-libraries like `<torchvision_>`_.
 #
 
 
@@ -98,7 +98,7 @@ preprocess(dataset, [Preprocessor("crop", tmin=0, tmax=30)])
 # In time series targets setup, targets variables are stored in mne.Raw object as channels
 # of type `misc`. Thus those channels have to be selected for further processing. However,
 # many mne functions ignore `misc` channels and perform operations only on data channels
-# (see https://mne.tools/stable/glossary.html#term-data-channels).
+# (see `MNE's glossary on data channels <MNE-glossary-data-channels_>`_).
 preprocessors = [
     Preprocessor("pick_types", ecog=True, misc=True),
     Preprocessor(lambda x: x / 1e6, picks="ecog"),  # Convert from V to uV
@@ -157,8 +157,8 @@ windows_dataset.target_transform = lambda x: x[0:1]
 
 ######################################################################
 # We can easily split the dataset using additional info stored in the
-# description attribute, in this case ``session`` column. We select `train` dataset
-# for training and validation and `test` for final evaluation.
+# description attribute, in this case ``session`` column. We select ``train`` dataset
+# for training and validation and ``test`` for final evaluation.
 
 subsets = windows_dataset.split("session")
 train_set = subsets["train"]
@@ -166,7 +166,8 @@ test_set = subsets["test"]
 
 ######################################################################
 # We can split train dataset into training and validation datasets using
-# ``sklearn.model_selection.train_test_split`` and ``torch.utils.data.Subset``.
+# :func:`sklearn.model_selection.train_test_split` and :class:`torch.utils.data.Subset`.
+
 import torch
 from sklearn.model_selection import train_test_split
 
@@ -190,9 +191,9 @@ train_set = torch.utils.data.Subset(train_set, idx_train)
 # time-domain EEG. Here, we use the shallow ConvNet model from `Deep
 # learning with convolutional neural networks for EEG decoding and
 # visualization <https://arxiv.org/abs/1703.05051>`__. These models are
-# pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
+# pure `PyTorch <pytorch_>`_ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
-# `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
+# :class:`torch.nn.Module`.
 
 
 from braindecode.models import ShallowFBCSPNet
@@ -235,10 +236,10 @@ if cuda:
 
 
 ######################################################################
-# Now we train the network! EEGRegressor is a Braindecode object
-# responsible for managing the training of neural networks. It inherits
-# from skorch.NeuralNetRegressor, so the training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# Now we train the network! :class:`braindecode.regressor.EEGRegressor`
+# is a Braindecode object responsible for managing the training of neural networks.
+# It inherits from :class:`skorch.regressor.NeuralNetRegressor`, so the training
+# logic is the same as in `<skorch_>`_.
 #
 # .. note::
 #    In this tutorial, we use some default parameters that we
@@ -418,3 +419,7 @@ handles.append(
 )
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc="center right")
 plt.tight_layout()
+
+######################################################################
+#
+# .. include:: /links.inc
