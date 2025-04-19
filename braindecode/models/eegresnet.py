@@ -10,8 +10,7 @@ from torch import nn
 from torch.nn import init
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import squeeze_final_output
-from braindecode.models.modules import AvgPool2dWithConv, Ensure4d, Expression
+from braindecode.models.modules import AvgPool2dWithConv, Ensure4d, SqueezeFinalOutput
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
@@ -265,7 +264,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 
@@ -351,11 +350,11 @@ class _ResidualBlock(nn.Module):
         stack_1 = self.nonlinearity(self.bn1(self.conv_1(x)))
         stack_2 = self.bn2(self.conv_2(stack_1))  # next nonlin after sum
         if self.n_pad_chans != 0:
-            zeros_for_padding = torch.autograd.Variable(
-                x.new_zeros(
-                    (x.size()[0], self.n_pad_chans // 2, x.size()[2], x.size()[3])
-                )
-            )
-            x = torch.cat((zeros_for_padding, x, zeros_for_padding), dim=1)
+            pad = self.n_pad_chans // 2
+            # new_zeros is preferred: same dtype/device as x
+            zeros = x.new_zeros((x.size(0), pad, x.size(2), x.size(3)))
+            # if you really need requires_grad matching x:
+            # zeros = zeros.requires_grad_(x.requires_grad)
+            x = torch.cat((zeros, x, zeros), dim=1)
         out = self.nonlinearity(x + stack_2)
         return out

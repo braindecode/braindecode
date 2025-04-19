@@ -2,10 +2,9 @@
 #          Maciej Sliwowski
 #
 # License: BSD-3
-
 from __future__ import annotations
 import warnings
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, Any
 
 from collections import OrderedDict
 
@@ -13,6 +12,7 @@ import numpy as np
 import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
+from braindecode.util import convert_chs_info_to_torch
 
 
 def deprecated_args(obj, *old_new_args):
@@ -73,18 +73,33 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
+    # _chs_info: List[Dict[str, torch.Tensor]]  # type: ignore[assignment]
+    # we need to cast to torch.Tensor because
+    # torch.jit.Attribute does not support np.ndarray
+    # _sfreq: int  # type: ignore[assignment]
+    # _n_outputs: int  # type: ignore[assignment]
+    # _n_chans: int  # type: ignore[assignment]
+    # _n_times: int  # type: ignore[assignment]
+    # _add_log_softmax: bool  # type: ignore[assignment]
+    # _input_window_seconds: float  # type: ignore[assignment]
+    # _mapping: Dict[str, str]  # type: ignore[assignment]
+    # _input_shape: Tuple[int, int, int]  # type: ignore[assignment]
+    # _output_shape: Tuple[int, ...]  # type: ignore[assignment]
+
     def __init__(
         self,
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
-        chs_info: Optional[List[Dict]] = None,
+        chs_info: Optional[Any] = None,
         n_times: Optional[int] = None,
         input_window_seconds: Optional[float] = None,
         sfreq: Optional[float] = None,
         add_log_softmax: Optional[bool] = False,
     ):
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
-            raise ValueError(f"{n_chans=} different from {chs_info=} length")
+            raise ValueError(
+                f"{n_chans=} different from {chs_info}={len(chs_info)} length"
+            )
         if (
             n_times is not None
             and input_window_seconds is not None
@@ -94,23 +109,24 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             raise ValueError(
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
             )
-        self._n_outputs = n_outputs
-        self._n_chans = n_chans
-        self._chs_info = chs_info
-        self._n_times = n_times
-        self._input_window_seconds = input_window_seconds
-        self._sfreq = sfreq
-        self._add_log_softmax = add_log_softmax
+
+        self._chs_info = chs_info  # type: ignore[assignment]
+        self._n_outputs = n_outputs  # type: ignore[assignment]
+        self._n_chans = n_chans  # type: ignore[assignment]
+        self._n_times = n_times  # type: ignore[assignment]
+        self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
+        self._sfreq = sfreq  # type: ignore[assignment]
+        self._add_log_softmax = add_log_softmax  # type: ignore[assignment]
         super().__init__()
 
     @property
-    def n_outputs(self):
+    def n_outputs(self) -> int:
         if self._n_outputs is None:
             raise ValueError("n_outputs not specified.")
         return self._n_outputs
 
     @property
-    def n_chans(self):
+    def n_chans(self) -> int:
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
@@ -126,7 +142,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._chs_info
 
     @property
-    def n_times(self):
+    def n_times(self) -> int:
         if (
             self._n_times is None
             and self._input_window_seconds is not None
@@ -141,7 +157,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_times
 
     @property
-    def input_window_seconds(self):
+    def input_window_seconds(self) -> float:
         if (
             self._input_window_seconds is None
             and self._n_times is not None
@@ -156,7 +172,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._input_window_seconds
 
     @property
-    def sfreq(self):
+    def sfreq(self) -> float:
         if (
             self._sfreq is None
             and self._input_window_seconds is not None
@@ -171,7 +187,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._sfreq
 
     @property
-    def add_log_softmax(self):
+    def add_log_softmax(self) -> Optional[bool]:
         if self._add_log_softmax:
             warnings.warn(
                 "LogSoftmax final layer will be removed! "
@@ -313,8 +329,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
 
-    def forward(self, *args, **kwargs):
-        return super().forward(*args, **kwargs)
+    def forward(self, *args):
+        return super().forward(*args)
 
     def parameters(self):
         return super().parameters()

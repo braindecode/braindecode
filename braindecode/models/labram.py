@@ -642,12 +642,11 @@ class _SegmentPatch(nn.Module):
             # Assuming you want [batch, n_chs, n_patches, emb_dim]
             # as output, which keeps channel information
             # This treats each patch embedding as a feature alongside channels
-            x = rearrange(
-                x,
+            x = Rearrange(
                 pattern="(batch nchans) embed npatchs -> batch nchans npatchs embed",
                 batch=batch_size,
                 nchans=self.n_chans,
-            )
+            )(x)
         else:
             x = x.view(
                 batch_size,

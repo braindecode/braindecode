@@ -5,6 +5,7 @@ import warnings
 
 import torch
 import torch.nn.functional as F
+from typing import Optional
 from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import nn, Tensor
@@ -133,6 +134,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
 
+        self.return_features = return_features
+
         self.patch_embedding = _PatchEmbedding(
             n_filters_time=n_filters_time,
             filter_time_length=filter_time_length,
@@ -145,7 +148,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
         if final_fc_length == "auto":
             assert self.n_times is not None
-            final_fc_length = self.get_fc_size()
+            self.final_fc_length = self.get_fc_size()
 
         self.transformer = _TransformerEncoder(
             att_depth=att_depth,
@@ -156,19 +159,20 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         )
 
         self.fc = _FullyConnected(
-            final_fc_length=final_fc_length, activation=activation
+            final_fc_length=self.final_fc_length, activation=activation
         )
 
-        self.final_layer = _FinalLayer(
-            n_classes=self.n_outputs,
-            return_features=return_features,
-        )
+        self.final_layer = nn.Linear(self.fc.hidden_channels, self.n_outputs)
 
     def forward(self, x: Tensor) -> Tensor:
         x = torch.unsqueeze(x, dim=1)  # add one extra dimension
         x = self.patch_embedding(x)
-        x = self.transformer(x)
-        x = self.fc(x)
+        feature = self.transformer(x)
+
+        if self.return_features:
+            return feature
+
+        x = self.fc(feature)
         x = self.final_layer(x)
         return x
 
@@ -256,20 +260,28 @@ class _MultiHeadAttention(nn.Module):
         self.att_drop = nn.Dropout(dropout)
         self.projection = nn.Linear(emb_size, emb_size)
 
-    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
-        queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
-        keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
-        values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
+        self.rearrange_stack = Rearrange(
+            "b n (h d) -> b h n d",
+            h=num_heads,
+        )
+        self.rearrange_unstack = Rearrange(
+            "b h n d -> b n (h d)",
+        )
+
+    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        queries = self.rearrange_stack(self.queries(x))
+        keys = self.rearrange_stack(self.keys(x))
+        values = self.rearrange_stack(self.values(x))
         energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
         if mask is not None:
-            fill_value = torch.finfo(torch.float32).min
-            energy.mask_fill(~mask, fill_value)
+            fill_value = float("-inf")
+            energy = energy.masked_fill(~mask, fill_value)
 
         scaling = self.emb_size ** (1 / 2)
         att = F.softmax(energy / scaling, dim=-1)
         att = self.att_drop(att)
         out = torch.einsum("bhal, bhlv -> bhav ", att, values)
-        out = rearrange(out, "b h n d -> b n (h d)")
+        out = self.rearrange_unstack(out)
         out = self.projection(out)
         return out
 
@@ -279,9 +291,9 @@ class _ResidualAdd(nn.Module):
         super().__init__()
         self.fn = fn
 
-    def forward(self, x, **kwargs):
+    def forward(self, x):
         res = x
-        x = self.fn(x, **kwargs)
+        x = self.fn(x)
         x += res
         return x
 
@@ -390,6 +402,7 @@ class _FullyConnected(nn.Module):
         """
 
         super().__init__()
+        self.hidden_channels = hidden_channels
         self.fc = nn.Sequential(
             nn.Linear(final_fc_length, out_channels),
             activation(),
@@ -403,40 +416,3 @@ class _FullyConnected(nn.Module):
         x = x.contiguous().view(x.size(0), -1)
         out = self.fc(x)
         return out
-
-
-class _FinalLayer(nn.Module):
-    def __init__(
-        self,
-        n_classes,
-        hidden_channels=32,
-        return_features=False,
-    ):
-        """Classification head for the transformer encoder.
-
-        Parameters
-        ----------
-        n_classes : int
-            Number of classes for classification.
-        hidden_channels : int
-            Number of output channels for the second linear layer.
-        return_features : bool
-            Whether to return input features.
-        """
-
-        super().__init__()
-        self.final_layer = nn.Sequential(
-            nn.Linear(hidden_channels, n_classes),
-        )
-        self.return_features = return_features
-        classification = nn.Identity()
-        if not self.return_features:
-            self.final_layer.add_module("classification", classification)
-
-    def forward(self, x):
-        if self.return_features:
-            out = self.final_layer(x)
-            return out, x
-        else:
-            out = self.final_layer(x)
-            return out

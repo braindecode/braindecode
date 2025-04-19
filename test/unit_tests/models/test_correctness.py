@@ -87,7 +87,6 @@ def real_data():
 # TODO: adding this test for all the models when the issue #571 is closed
 @pytest.mark.skipif(check_http_issue(),
                     reason="HTTP issue occurred, skipping test.")
-
 def test_correctness_biot(real_data):
     seed = 20200220
     set_random_seeds(seed=seed, cuda=False)

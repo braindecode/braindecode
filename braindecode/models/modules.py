@@ -6,18 +6,20 @@ from __future__ import annotations
 from typing import Callable
 import numpy as np
 import torch
+from einops.layers.torch import Rearrange
 
+from typing import Optional, List, Tuple
+from torch.nn.utils.parametrize import register_parametrization
 from functools import partial
+
 from mne.filter import create_filter, _check_coefficients
 from mne.utils import warn
 
 from torch import Tensor, nn, from_numpy
-
 import torch.nn.functional as F
 
 from torchaudio.functional import fftconvolve, filtfilt
 
-from typing import Optional, List, Tuple
 
 from braindecode.models.functions import (
     drop_path,
@@ -25,6 +27,7 @@ from braindecode.models.functions import (
 )
 from braindecode.util import np_to_th
 from braindecode.models.eegminer import GeneralizedGaussianFilter
+from braindecode.models.parametrization import MaxNorm, MaxNormParametriza
 
 
 class Ensure4d(nn.Module):
@@ -281,6 +284,8 @@ class CausalConv1d(nn.Conv1d):
     .. [2] https://gist.github.com/paultsw/7a9d6e3ce7b70e9e2c61bc9287addefc
     """
 
+    padding: Tensor
+
     def __init__(
         self,
         in_channels,
@@ -305,7 +310,15 @@ class CausalConv1d(nn.Conv1d):
         )
 
     def forward(self, X):
-        out = super().forward(X)
+        out = F.conv1d(
+            X,
+            self.weight,
+            self.bias,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+        )
         return out[..., : -self.padding[0]]
 
 
@@ -342,46 +355,32 @@ class MaxNormLinear(nn.Linear):
         )
         self._max_norm_val = max_norm_val
         self._eps = eps
-
-    def forward(self, X):
-        self._max_norm()
-        return super().forward(X)
-
-    def _max_norm(self):
-        with torch.no_grad():
-            norm = self.weight.norm(2, dim=0, keepdim=True).clamp(
-                min=self._max_norm_val / 2
-            )
-            desired = torch.clamp(norm, max=self._max_norm_val)
-            self.weight *= desired / (self._eps + norm)
+        register_parametrization(self, "weight", MaxNorm(self._max_norm_val, eps))
 
 
 class LinearWithConstraint(nn.Linear):
     """Linear layer with max-norm constraint on the weights."""
 
     def __init__(self, *args, max_norm=1.0, **kwargs):
-        super(LinearWithConstraint, self).__init__(*args, **kwargs)
-        self.max_norm = max_norm
+        super().__init__(*args, **kwargs)
+        self._max_norm = max_norm
+        # initialize the weights
+        nn.init.xavier_uniform_(self.weight, gain=1)
+        nn.init.constant_(self.bias, 0)
+        # register the parametrization
+        register_parametrization(self, "weight", MaxNormParametriza(self._max_norm))
 
-    def forward(self, x):
-        with torch.no_grad():
-            # In PyTorch, the weight matrix of nn.Linear is of shape (out_features, in_features),
-            # which is the transpose of TensorFlow's typical kernel shape.
-            #
-            # The torch.renorm function applies a re-normalization to slices of the tensor:
-            # - 'p=2' specifies that we are using the Euclidean (L2) norm.
-            # - 'dim=0' indicates that the tensor will be split along the first dimension.
-            #   This corresponds to each "row" in the weight matrix, which in this context
-            #   represents a weight vector for each output neuron.
-            # - 'maxnorm=self.max_norm' sets the maximum allowed norm for each of these sub-tensors.
-            #
-            # Note: In TensorFlow's max_norm constraint, the axis parameter determines along which
-            # dimension the norm is computed. Here, due to the difference in kernel shape and axis
-            # interpretation, we use torch.renorm with dim=0 to match TensorFlow's behavior.
-            self.weight.data = torch.renorm(
-                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-            )
-        return super(LinearWithConstraint, self).forward(x)
+
+class Conv2dWithConstraint(nn.Conv2d):
+    """Conv2d layer with max-norm constraint on the weights."""
+
+    def __init__(self, *args, max_norm=1.0, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._max_norm = max_norm
+        # initialize the weights
+        nn.init.xavier_uniform_(self.weight, gain=1)
+
+        register_parametrization(self, "weight", MaxNormParametriza(self._max_norm))
 
 
 class CombinedConv(nn.Module):
@@ -437,18 +436,30 @@ class CombinedConv(nn.Module):
         if not self.bias_spat and not self.bias_time:
             bias = None
         else:
-            bias = 0
-            if self.bias_time:
+            out_ch = combined_weight.size(0)
+            bias = x.new_zeros(out_ch)  # same device/dtype as input
+
+            # Pull attribute into a local for refinement
+            bias_time_opt = self.conv_time.bias
+            # Local None‑check refines Optional[Tensor] → Tensor
+            if bias_time_opt is not None:
+                bias_time = bias_time_opt  # now a real Tensor
                 bias += (
                     self.conv_spat.weight.squeeze()
                     .sum(-1)
-                    .mm(self.conv_time.bias.unsqueeze(-1))
+                    .mm(bias_time.unsqueeze(-1))
                     .squeeze()
                 )
-            if self.bias_spat:
-                bias += self.conv_spat.bias
+            bias_spat_opt = self.conv_spat.bias
+            if bias_spat_opt is not None:
+                bias += bias_spat_opt
 
-        return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
+        return F.conv2d(
+            x,
+            weight=combined_weight,
+            bias=bias,
+            stride=(1, 1),
+        )
 
 
 class MLP(nn.Sequential):
@@ -676,7 +687,7 @@ class FilterBankLayer(nn.Module):
     def __init__(
         self,
         n_chans: int,
-        sfreq: int,
+        sfreq: float,
         band_filters: Optional[List[Tuple[float, float]] | int] = None,
         method: str = "fir",
         filter_length: str | float | int = "auto",
@@ -742,7 +753,7 @@ class FilterBankLayer(nn.Module):
         self.phase = phase
         self.method = method
         self.n_chans = n_chans
-
+        self.sfreq = sfreq
         self.method_iir = True if self.method == "iir" else False
 
         if self.method_iir:
@@ -761,7 +772,7 @@ class FilterBankLayer(nn.Module):
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
                 data=None,
-                sfreq=sfreq,
+                sfreq=self.sfreq,
                 l_freq=l_freq,
                 h_freq=h_freq,
                 filter_length=filter_length,
@@ -902,17 +913,38 @@ class LogActivation(nn.Module):
         return torch.log(x + self.epsilon)  # Adding epsilon to prevent log(0)
 
 
-class Conv2dWithConstraint(nn.Conv2d):
-    def __init__(self, *args, max_norm=1, **kwargs):
-        self.max_norm = max_norm
-        super(Conv2dWithConstraint, self).__init__(*args, **kwargs)
+class SqueezeFinalOutput(nn.Module):
+    """
 
-    def forward(self, x):
-        with torch.no_grad():
-            self.weight.data = torch.renorm(
-                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-            )
-        return super(Conv2dWithConstraint, self).forward(x)
+    Removes empty dimension at end and potentially removes empty time
+    dimension. It does  not just use squeeze as we never want to remove
+    first dimension.
+
+    Returns
+    -------
+    x: torch.Tensor
+        squeezed tensor
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.squeeze = Rearrange("b c t 1 -> b c t")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1) drop feature dim
+        x = self.squeeze(x)
+        # 2) drop time dim if singleton
+        if x.shape[-1] == 1:
+            x = x.squeeze(-1)
+        return x
+
+
+class Square(nn.Module):
+    """Element-wise square."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * x
 
 
 class StatLayer(nn.Module):

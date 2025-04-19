@@ -5,11 +5,10 @@
 import torch
 from torch import nn
 from torch.nn import init
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import squeeze_final_output
-from braindecode.models.modules import Chomp1d, Ensure4d, Expression
+from braindecode.models.modules import Chomp1d, Ensure4d, SqueezeFinalOutput
 
 
 class TCN(nn.Module):
@@ -60,7 +59,7 @@ class TCN(nn.Module):
         t_blocks = nn.Sequential()
         for i in range(n_blocks):
             n_inputs = n_chans if i == 0 else n_filters
-            dilation_size = 2**i
+            dilation_size = int(2**i)
             t_blocks.add_module(
                 "temporal_block_{:d}".format(i),
                 _TemporalBlock(
@@ -69,7 +68,7 @@ class TCN(nn.Module):
                     kernel_size=kernel_size,
                     stride=1,
                     dilation=dilation_size,
-                    padding=(kernel_size - 1) * dilation_size,
+                    padding=int((kernel_size - 1) * dilation_size),
                     drop_prob=drop_prob,
                     activation=activation,
                 ),
@@ -77,7 +76,7 @@ class TCN(nn.Module):
         self.temporal_blocks = t_blocks
 
         self.final_layer = _FinalLayer(
-            in_features=n_filters,
+            in_features=int(n_filters),
             out_features=n_outputs,
         )
         self.min_len = 1
@@ -119,9 +118,9 @@ class _FinalLayer(nn.Module):
 
         self.out_fun = nn.Identity()
 
-        self.squeeze = Expression(squeeze_final_output)
+        self.squeeze = SqueezeFinalOutput()
 
-    def forward(self, x, batch_size, time_size, min_len):
+    def forward(self, x: torch.Tensor, batch_size: int, time_size: int, min_len: int):
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))

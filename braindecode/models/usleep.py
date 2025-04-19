@@ -6,11 +6,14 @@
 import numpy as np
 import torch
 from torch import nn
+from typing import Tuple
 
 from braindecode.models.base import EEGModuleMixin
 
 
-def _crop_tensors_to_match(x1, x2, axis=-1):
+def _crop_tensors_to_match(
+    x1: torch.Tensor, x2: torch.Tensor, axis: int = -1
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """Crops two tensors to their lowest-common-dimension along an axis."""
     dim_cropped = min(x1.shape[axis], x2.shape[axis])
 
@@ -51,10 +54,10 @@ class _EncoderBlock(nn.Module):
             nn.BatchNorm1d(num_features=out_channels),
         )
 
-        self.pad = nn.ConstantPad1d(padding=1, value=0)
+        self.pad = nn.ConstantPad1d(padding=1, value=0.0)
         self.maxpool = nn.MaxPool1d(kernel_size=self.downsample, stride=self.downsample)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.block_prepool(x)
         residual = x
         if x.shape[-1] % 2:
@@ -106,13 +109,13 @@ class _DecoderBlock(nn.Module):
             nn.BatchNorm1d(num_features=out_channels),
         )
 
-    def forward(self, x, residual):
+    def forward(self, x: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
         x = self.block_preskip(x)
         if self.with_skip_connection:
             x, residual = _crop_tensors_to_match(
                 x, residual, axis=-1
             )  # in case of mismatch
-            x = torch.cat([x, residual], axis=1)  # (B, 2 * C, T)
+            x = torch.cat([x, residual], dim=1)  # (B, 2 * C, T)
         x = self.block_postskip(x)
         return x
 
@@ -229,18 +232,16 @@ class USleep(EEGModuleMixin, nn.Module):
         self.channels = channels
 
         # Instantiate encoder
-        encoder = list()
-        for idx in range(depth):
-            encoder += [
-                _EncoderBlock(
-                    in_channels=channels[idx],
-                    out_channels=channels[idx + 1],
-                    kernel_size=time_conv_size,
-                    downsample=max_pool_size,
-                    activation=activation,
-                )
-            ]
-        self.encoder = nn.Sequential(*encoder)
+        self.encoder_blocks = nn.ModuleList(
+            _EncoderBlock(
+                in_channels=channels[idx],
+                out_channels=channels[idx + 1],
+                kernel_size=time_conv_size,
+                downsample=max_pool_size,
+                activation=activation,
+            )
+            for idx in range(depth)
+        )
 
         # Instantiate bottom (channels increase, temporal dim stays the same)
         self.bottom = nn.Sequential(
@@ -255,20 +256,18 @@ class USleep(EEGModuleMixin, nn.Module):
         )
 
         # Instantiate decoder
-        decoder = list()
         channels_reverse = channels[::-1]
-        for idx in range(depth):
-            decoder += [
-                _DecoderBlock(
-                    in_channels=channels_reverse[idx],
-                    out_channels=channels_reverse[idx + 1],
-                    kernel_size=time_conv_size,
-                    upsample=max_pool_size,
-                    with_skip_connection=with_skip_connection,
-                    activation=activation,
-                )
-            ]
-        self.decoder = nn.Sequential(*decoder)
+        self.decoder_blocks = nn.ModuleList(
+            _DecoderBlock(
+                in_channels=channels_reverse[idx],
+                out_channels=channels_reverse[idx + 1],
+                kernel_size=time_conv_size,
+                upsample=max_pool_size,
+                with_skip_connection=with_skip_connection,
+                activation=activation,
+            )
+            for idx in range(depth)
+        )
 
         # The temporal dimension remains unchanged
         # (except through the AvgPooling which collapses it to 1)
@@ -306,7 +305,7 @@ class USleep(EEGModuleMixin, nn.Module):
             # output is (B, n_classes, S)
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """If input x has shape (B, S, C, T), return y_pred of shape (B, n_classes, S).
         If input x has shape (B, C, T), return y_pred of shape (B, n_classes).
         """
@@ -317,7 +316,7 @@ class USleep(EEGModuleMixin, nn.Module):
 
         # encoder
         residuals = []
-        for down in self.encoder:
+        for down in self.encoder_blocks:
             x, res = down(x)
             residuals.append(res)
 
@@ -325,9 +324,11 @@ class USleep(EEGModuleMixin, nn.Module):
         x = self.bottom(x)
 
         # decoder
-        residuals = residuals[::-1]  # flip order
-        for up, res in zip(self.decoder, residuals):
-            x = up(x, res)
+        num_blocks = len(self.decoder_blocks)  # statically known
+        for idx, dec in enumerate(self.decoder_blocks):
+            # pick the matching residual in reverse order
+            res = residuals[num_blocks - 1 - idx]
+            x = dec(x, res)
 
         # classifier
         x = self.clf(x)

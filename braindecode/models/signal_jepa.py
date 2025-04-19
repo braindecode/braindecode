@@ -2,7 +2,7 @@
 #
 # License: BSD (3-clause)
 from __future__ import annotations
-from typing import Any, Sequence
+from typing import Any, Sequence, Optional
 import math
 from copy import deepcopy
 
@@ -66,10 +66,6 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         Do not change the default value (used for internal purposes).
     """
 
-    feature_encoder: _ConvFeatureEncoder | None
-    pos_encoder: _PosEncoder | None
-    transformer: nn.Transformer | None
-
     def __init__(
         self,
         n_outputs=None,
@@ -111,9 +107,9 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        self.feature_encoder = None
-        self.pos_encoder = None
-        self.transformer = None
+        self.feature_encoder = nn.Identity()
+        self.pos_encoder = nn.Identity()
+        self.transformer = nn.Identity()
         if _init_feature_encoder:
             self.feature_encoder = _ConvFeatureEncoder(
                 conv_layers_spec=feature_encoder__conv_layers_spec,

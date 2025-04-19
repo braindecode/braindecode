@@ -6,7 +6,7 @@
 """
 
 from functools import partial
-
+from typing import Literal, Dict, List
 import torch
 
 import braindecode.models.functions as F
@@ -101,9 +101,10 @@ class EEGMiner(EEGModuleMixin, nn.Module):
        https://www.ipo.gov.uk/p-ipsum/Case/ApplicationNumber/GB2113420.0
     """
 
+    method: str
+
     def __init__(
         self,  # Signal related parameters
-        method: str = "plv",
         n_chans=None,
         n_outputs=None,
         n_times=None,
@@ -111,11 +112,12 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         # model related
-        filter_f_mean=(23.0, 23.0),
-        filter_bandwidth=(44.0, 44.0),
-        filter_shape=(2.0, 2.0),
-        group_delay=(20.0, 20.0),
-        clamp_f_mean=(1.0, 45.0),
+        method: str = "plv",
+        filter_f_mean: tuple[float, ...] = (23.0, 23.0),
+        filter_bandwidth: tuple[float, ...] = (44.0, 44.0),
+        filter_shape: tuple[float, ...] = (2.0, 2.0),
+        group_delay: tuple[float, ...] = (20.0, 20.0),
+        clamp_f_mean: tuple[float, float] = (1.0, 45.0),
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -168,7 +170,7 @@ class EEGMiner(EEGModuleMixin, nn.Module):
 
         # Forward method
         if self.method == "mag":
-            self.method_forward = self._apply_mag_forward
+            self.method_forwar = self._apply_mag_forward
             self.n_features = self.n_chans * self.n_filters
             self.ensure_dim = nn.Identity()
         elif self.method == "corr":
@@ -199,7 +201,18 @@ class EEGMiner(EEGModuleMixin, nn.Module):
         # x -> (batch, electrodes * filters, time)
         x = self.filter(x)
 
-        x = self.method_forward(x=x, batch=batch)
+        if self.method == "mag":
+            x = self._apply_mag_forward(x, batch)
+        elif self.method == "corr":
+            # pass all needed args explicitly
+            x = self._apply_corr_forward(
+                x, batch, self.n_chans, self.n_filters, self.n_times
+            )
+        elif self.method == "plv":
+            x = self._apply_plv(x, self.n_chans, batch)
+        else:
+            # should never happen if __init__ validated `self.method`
+            raise RuntimeError(f"Unknown method {self.method}")
         # Classifier
         # Note that the order of dimensions before flattening the feature vector is important
         # for attributing feature weights during interpretation.

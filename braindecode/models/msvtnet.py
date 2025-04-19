@@ -230,8 +230,6 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         Number of transformer encoder layers, by default 2.
     activation : Type[nn.Module], optional
         Activation function class to use, by default nn.ELU.
-    return_features : bool, optional
-        Whether to return predictions from branch classifiers, by default False.
 
     Notes
     -----
@@ -282,11 +280,11 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        self.return_features = return_features
         assert len(n_filters_list) == len(conv1_kernels_size), (
             "The length of n_filters_list and conv1_kernel_sizes should be equal."
         )
 
+        self.return_features = return_features
         self.ensure_dim = Rearrange("batch chans time -> batch 1 chans time")
         self.mstsconv = nn.ModuleList(
             [
@@ -361,6 +359,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             branch(x_list[idx]) for idx, branch in enumerate(self.branch_head)
         ]
         # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
+        if self.return_features:
+            return torch.stack(branch_preds)
+        # branch_preds contains 4 tensors, each of shape: [batch_size, num_classes]
         x = torch.stack(x_list, dim=2)
         x = x.view(x.size(0), x.size(1), -1)
         # x shape after concatenation: [batch_size, seq_len, total_embed_dim]
@@ -368,4 +369,4 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         # x shape after transformer: [batch_size, embed_dim]
 
         x = self.final_layer(x)
-        return (x, branch_preds) if self.return_features else x
+        return x

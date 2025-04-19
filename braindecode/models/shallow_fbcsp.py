@@ -7,8 +7,13 @@ from torch import nn
 from torch.nn import init
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import square, squeeze_final_output
-from braindecode.models.modules import CombinedConv, Ensure4d, Expression, SafeLog
+from braindecode.models.modules import (
+    CombinedConv,
+    Ensure4d,
+    SafeLog,
+    SqueezeFinalOutput,
+    Square,
+)
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -73,9 +78,9 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         pool_time_length=75,
         pool_time_stride=15,
         final_conv_length="auto",
-        conv_nonlin=square,
+        conv_nonlin: type[nn.Module] = Square,
         pool_mode="mean",
-        activation_pool_nonlin: nn.Module = SafeLog,
+        activation_pool_nonlin: type[nn.Module] = SafeLog,
         split_first_layer=True,
         batch_norm=True,
         batch_norm_alpha=0.1,
@@ -101,7 +106,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.pool_time_length = pool_time_length
         self.pool_time_stride = pool_time_stride
         self.final_conv_length = final_conv_length
-        self.conv_nonlin = conv_nonlin
+        self.conv_nonlin = conv_nonlin()
         self.pool_mode = pool_mode
         self.pool_nonlin = activation_pool_nonlin()
         self.split_first_layer = split_first_layer
@@ -153,7 +158,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                     n_filters_conv, momentum=self.batch_norm_alpha, affine=True
                 ),
             )
-        self.add_module("conv_nonlin_exp", Expression(self.conv_nonlin))
+        self.add_module("conv_nonlin_exp", self.conv_nonlin)
         self.add_module(
             "pool",
             pool_class(
@@ -180,7 +185,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 

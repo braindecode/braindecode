@@ -258,7 +258,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         """
         X = self.torch_stft(X)
 
-        for conv in self.convs[:-1]:
-            X = conv(X)
+        for _, conv in enumerate(self.convs[:-1]):
+            X = conv.forward(X)
         emb = self.convs[-1](X).squeeze(-1).squeeze(-1)
         return self.final_layer(emb)

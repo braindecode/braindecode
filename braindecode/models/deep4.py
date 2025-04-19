@@ -7,12 +7,11 @@ from torch import nn
 from torch.nn import init
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import identity, squeeze_final_output
 from braindecode.models.modules import (
     AvgPool2dWithConv,
     CombinedConv,
     Ensure4d,
-    Expression,
+    SqueezeFinalOutput,
 )
 
 
@@ -21,7 +20,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
 
      .. figure:: https://onlinelibrary.wiley.com/cms/asset/fc200ccc-d8c4-45b4-8577-56ce4d15999a/hbm23730-fig-0001-m.jpg
         :align: center
-        :alt: CTNet Architecture
+        :alt: Deep4Net Architecture
 
     Model described in [Schirrmeister2017]_.
 
@@ -105,12 +104,12 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         filter_length_3=10,
         n_filters_4=200,
         filter_length_4=10,
-        activation_first_conv_nonlin: nn.Module = nn.ELU,
+        activation_first_conv_nonlin: type[nn.Module] = nn.ELU,
         first_pool_mode="max",
-        first_pool_nonlin=identity,
-        activation_later_conv_nonlin: nn.Module = nn.ELU,
+        first_pool_nonlin: type[nn.Module] = nn.Identity,
+        activation_later_conv_nonlin: type[nn.Module] = nn.ELU,
         later_pool_mode="max",
-        later_pool_nonlin=identity,
+        later_pool_nonlin: type[nn.Module] = nn.Identity,
         drop_prob=0.5,
         split_first_layer=True,
         batch_norm=True,
@@ -221,7 +220,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                 kernel_size=(self.pool_time_length, 1), stride=(pool_stride, 1)
             ),
         )
-        self.add_module("pool_nonlin", Expression(self.first_pool_nonlin))
+        self.add_module("pool_nonlin", self.first_pool_nonlin())
 
         def add_conv_pool_block(
             model, n_filters_before, n_filters, filter_length, block_nr
@@ -257,7 +256,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
                     stride=(pool_stride, 1),
                 ),
             )
-            self.add_module("pool_nonlin" + suffix, Expression(self.later_pool_nonlin))
+            self.add_module("pool_nonlin" + suffix, self.later_pool_nonlin())
 
         add_conv_pool_block(
             self, n_filters_conv, self.n_filters_2, self.filter_length_2, 2
@@ -287,7 +286,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 
