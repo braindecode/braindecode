@@ -166,7 +166,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         self.feature_extractor.train()
         return len(out.flatten())
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
@@ -199,7 +199,7 @@ class _SELayer(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the SE layer.
 
@@ -245,7 +245,7 @@ class _SEBasicBlock(nn.Module):
             self.conv1, self.bn1, self.relu, self.conv2, self.bn2, self.se
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the SE layer.
 
@@ -383,7 +383,7 @@ class _CausalConv1d(torch.nn.Conv1d):
     ):
         self.__padding = (kernel_size - 1) * dilation
 
-        super(_CausalConv1d, self).__init__(
+        super().__init__(
             in_channels,
             out_channels,
             kernel_size=kernel_size,
@@ -404,7 +404,7 @@ class _CausalConv1d(torch.nn.Conv1d):
 class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
-        super(_MultiHeadedAttention, self).__init__()
+        super().__init__()
         assert d_model % h == 0
         self.d_per_head = d_model // h
         self.h = h
@@ -441,21 +441,6 @@ class _MultiHeadedAttention(nn.Module):
         return self.linear(x)
 
 
-class _SublayerOutput(nn.Module):
-    """
-    A residual connection followed by a layer norm.
-    """
-
-    def __init__(self, size, dropout):
-        super(_SublayerOutput, self).__init__()
-        self.norm = nn.LayerNorm(size, eps=1e-6)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x, sublayer):
-        """Apply residual connection to any sublayer with the same size."""
-        return x + self.dropout(sublayer(self.norm(x)))
-
-
 def _clones(module, n):
     """Produce n identical layers."""
     return nn.ModuleList([copy.deepcopy(module) for _ in range(n)])
@@ -468,7 +453,7 @@ class _TCE(nn.Module):
     """
 
     def __init__(self, layer, n):
-        super(_TCE, self).__init__()
+        super().__init__()
         self.layers = _clones(layer, n)
         self.norm = nn.LayerNorm(layer.size, eps=1e-6)
 
@@ -486,10 +471,9 @@ class _EncoderLayer(nn.Module):
     """
 
     def __init__(self, size, self_attn, feed_forward, after_reduced_cnn_size, dropout):
-        super(_EncoderLayer, self).__init__()
+        super().__init__()
         self.self_attn = self_attn
         self.feed_forward = feed_forward
-        self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
         self.size = size
         self.conv = _CausalConv1d(
             after_reduced_cnn_size,
@@ -499,24 +483,53 @@ class _EncoderLayer(nn.Module):
             dilation=1,
         )
 
-    def forward(self, x_in):
-        """Transformer Encoder"""
-        query = self.conv(x_in)
-        # Encoder self-attention
-        x = self.sublayer_output[0](query, lambda x: self.self_attn(query, x_in, x_in))
-        return self.sublayer_output[1](x, self.feed_forward)
+        # two LayerNorm + Dropout pairs
+        # note: LayerNorm normalizes over the *last* dimension,
+        # so we'll permute (B, C, T) ↔ (B, T, C) around it:
+        self.norm1 = nn.LayerNorm(size, eps=1e-6)
+        self.dropout1 = nn.Dropout(dropout)
+        self.norm2 = nn.LayerNorm(size, eps=1e-6)
+        self.dropout2 = nn.Dropout(dropout)
+
+    def forward(self, x_in: torch.Tensor) -> torch.Tensor:
+        # x_in: (B, C, T)
+        # 1) causal conv → query
+        query: torch.Tensor = self.conv(x_in)  # (B, C, T)
+
+        # 2) Self‑attention sublayer
+        #   a) layer‑norm over channel dim
+        # 2a) permute to (B, T, C), norm over C, then back
+        q_norm = query.permute(0, 2, 1)  # (B, 30, 80)
+        q_norm = self.norm1(q_norm)  # norm over last dim=80
+        q_norm = q_norm.permute(0, 2, 1)  # (B, 80, 30)
+
+        #   b) attention
+        attn_out: torch.Tensor = self.self_attn(q_norm, x_in, x_in)
+        #   c) dropout + residual
+        x: torch.Tensor = query + self.dropout1(attn_out)
+
+        # 3) Feed‑forward sublayer
+        #   a) layer‑norm over channel dim
+        x_norm = x.permute(0, 2, 1)  # (B, T, C)
+        x_norm = self.norm2(x_norm)
+        x_norm = x_norm.permute(0, 2, 1)  # (B, C, T)
+
+        #   b) feed‑forward
+        ff_out: torch.Tensor = self.feed_forward(x_norm)
+        #   c) dropout + residual
+        return x + self.dropout2(ff_out)
 
 
 class _PositionwiseFeedForward(nn.Module):
     """Positionwise feed-forward network."""
 
     def __init__(self, d_model, d_ff, dropout=0.1, activation: nn.Module = nn.ReLU):
-        super(_PositionwiseFeedForward, self).__init__()
+        super().__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
         self.activate = activation()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Implements FFN equation."""
         return self.w_2(self.dropout(self.activate(self.w_1(x))))
