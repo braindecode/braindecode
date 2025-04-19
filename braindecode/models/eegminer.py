@@ -414,14 +414,7 @@ class GeneralizedGaussianFilter(nn.Module):
         )
 
         # Construct filters from parameters
-        # filters = self.construct_filters()
-        # self.register_buffer("filters", filters)
-        self.register_buffer(
-            "filters",
-            self.construct_filters(
-                f_mean=self.f_mean, bandwidth=self.bandwidth, shape=self.shape
-            ),
-        )
+        self.filters = self.construct_filters()
 
     @staticmethod
     def exponential_power(x, mean, fwhm, shape):
@@ -469,7 +462,7 @@ class GeneralizedGaussianFilter(nn.Module):
         # Add small constant to difference between x and mean since grad of 0 ** shape is nan
         return torch.exp(-((((x - mean).abs() + 1e-8) / scale) ** shape))
 
-    def construct_filters(self, f_mean=None, bandwidth=None, shape=None):
+    def construct_filters(self):
         """
         Constructs the filters in the frequency domain based on current parameters.
 
@@ -480,22 +473,19 @@ class GeneralizedGaussianFilter(nn.Module):
 
         """
         # Clamp parameters
-        # self.f_mean.data = torch.clamp(
-        #     self.f_mean.data,
-        #     min=self.clamp_f_mean[0] / (self.sample_rate / 2),
-        #     max=self.clamp_f_mean[1] / (self.sample_rate / 2),
-        # )
-        # self.bandwidth.data = torch.clamp(
-        #     self.bandwidth.data, min=1.0 / (self.sample_rate / 2), max=1.0
-        # )
-        # self.shape.data = torch.clamp(self.shape.data, min=2.0, max=3.0)
+        self.f_mean.data = torch.clamp(
+            self.f_mean.data,
+            min=self.clamp_f_mean[0] / (self.sample_rate / 2),
+            max=self.clamp_f_mean[1] / (self.sample_rate / 2),
+        )
+        self.bandwidth.data = torch.clamp(
+            self.bandwidth.data, min=1.0 / (self.sample_rate / 2), max=1.0
+        )
+        self.shape.data = torch.clamp(self.shape.data, min=2.0, max=3.0)
 
         # Create magnitude response with gain=1 -> (channels, freqs)
-        # mag_response = self.exponential_power(
-        #     self.n_range, self.f_mean, self.bandwidth, self.shape * 8 - 14
-        # )
         mag_response = self.exponential_power(
-            self.n_range, f_mean, bandwidth, shape * 8 - 14
+            self.n_range, self.f_mean, self.bandwidth, self.shape * 8 - 14
         )
         mag_response = mag_response / mag_response.max(dim=-1, keepdim=True)[0]
 
@@ -538,16 +528,8 @@ class GeneralizedGaussianFilter(nn.Module):
             frequency domain with shape `(..., out_channels, freq_bins, 2)`.
 
         """
-        # Local clamps—no in-place on leaf Parameters
-        f_mean_c = torch.clamp(
-            self.f_mean,
-            min=self.clamp_f_mean[0] / (self.sample_rate / 2),
-            max=self.clamp_f_mean[1] / (self.sample_rate / 2),
-        )
-        bw_c = torch.clamp(self.bandwidth, min=1.0 / (self.sample_rate / 2), max=1.0)
-        shape_c = torch.clamp(self.shape, min=2.0, max=3.0)
         # Construct filters from parameters
-        self.filters = self.construct_filters(f_mean_c, bw_c, shape_c)
+        self.filters = self.construct_filters()
         # Preserving the original dtype.
         dtype = x.dtype
         # Apply FFT -> (..., channels, freqs, 2)
