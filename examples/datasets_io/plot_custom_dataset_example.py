@@ -1,4 +1,6 @@
 """
+.. _custom-dataset-example:
+
 Custom Dataset Example
 ======================
 
@@ -15,7 +17,7 @@ import mne
 from braindecode.datasets import create_from_X_y
 
 ###############################################################################
-# To set up the example, we first fetch some data using mne:
+# To set up the example, we first fetch some data using `MNE <MNE-Python_>`_:
 
 # 5, 6, 7, 10, 13, 14 are codes for executed and imagined hands/feet
 subject_id = 22
@@ -69,3 +71,6 @@ n_channels, n_times = x_i.shape  # the EEG data
 _, start_ind, stop_ind = window_ind
 print(f"n_channels={n_channels}  -- n_times={n_times} -- y_i={y_i}")
 print(f"start_ind={start_ind} -- stop_ind={stop_ind}")
+
+###############################################################################
+# .. include:: /links.inc

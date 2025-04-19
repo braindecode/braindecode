@@ -1,17 +1,19 @@
 """
+.. _train-model-in-pytorch:
+
 Training a Braindecode model in PyTorch
 =======================================
 
 This tutorial shows you how to train a Braindecode model with PyTorch. The data
 preparation and model instantiation steps are identical to that of the tutorial
-`How to train, test and tune your model <./plot_how_train_test_and_tune.html>`__
+:ref:`train-test-tune-model`.
 
 We will use the BCIC IV 2a dataset as a showcase example.
 
 The methods shown can be applied to any standard supervised trial-based decoding setting.
 This tutorial will include additional parts of code like loading and preprocessing,
 defining a model, and other details which are not exclusive to this page (compare
-`Cropped Decoding Tutorial <./plot_bcic_iv_2a_moabb_trial.html>`__). Therefore we
+:ref:`bcic-iv-2a-moabb-trial`). Therefore we
 will not further elaborate on these parts and you can feel free to skip them.
 
 The goal of this tutorial is to present braindecode in the PyTorch perceptive.
@@ -67,7 +69,7 @@ The goal of this tutorial is to present braindecode in the PyTorch perceptive.
 
 ######################################################################
 # Loading the Dataset Structure
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Here, we have a data structure with equal behavior to the Pytorch Dataset.
 
 from braindecode.datasets import MOABBDataset
@@ -185,7 +187,7 @@ if cuda:
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case the ``session`` column. We
-# select ``Train`` for training and ``test`` for testing.
+# select ``0train`` for training and ``1test`` for testing.
 # For other datasets, you might have to choose another column.
 #
 # .. note::
@@ -208,8 +210,8 @@ test_set = splitted["1test"]  # Session evaluation
 
 
 ######################################################################
-# `model` is an instance of `torch.nn.Module`, and can as such be trained
-# using PyTorch optimization capabilities.
+# ``model`` is an instance of :class:`torch.nn.Module`,
+# and can as such be trained using PyTorch optimization capabilities.
 # The following training scheme is simple as the dataset is only
 # split into two distinct sets (``train_set`` and ``test_set``).
 # This scheme uses no separate validation split and should only be
@@ -368,7 +370,7 @@ for epoch in range(1, n_epochs + 1):
 #    :alt: Pytorch Lightning logo
 
 ######################################################################
-# Alternatively, lightning provides a nice interface around torch modules
+# Alternatively, `<lightning_>`_ provides a nice interface around torch modules
 # which integrates the previous logic.
 
 
@@ -416,3 +418,7 @@ trainer.fit(lit_model, train_loader)
 
 # After training, you can test the model using the test DataLoader
 trainer.test(dataloaders=test_loader)
+
+######################################################################
+#
+# .. include:: /links.inc

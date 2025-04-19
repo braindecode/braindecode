@@ -1,4 +1,7 @@
-"""BIDS Dataset Example
+"""
+.. _bids-dataset-example:
+
+BIDS Dataset Example
 ========================
 
 In this example, we show how to fetch and prepare a BIDS dataset for usage

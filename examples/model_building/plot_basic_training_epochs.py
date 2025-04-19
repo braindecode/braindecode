@@ -1,4 +1,6 @@
 """
+.. _basic-training-epochs:
+
 Simple training on MNE epochs
 =============================
 
@@ -23,7 +25,7 @@ train one of the Braindecode models on it.
 # --------------------------
 #
 # Exploring the braindecode online documentation
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # Let's suppose you recently stumbled upon the Schirrmeister 2017 article [1]_.
 # In this article, the authors mention that their novel architecture ShallowConvNet
@@ -32,12 +34,10 @@ train one of the Braindecode models on it.
 # architecture on Braindecode!
 #
 # In order to use this architecture, you first need to find what is its exact
-# name in Braindecode. To do so, you can visit the Braindecode online documentation
-# which lists all the available models.
+# name in Braindecode. To do so, you can visit Braindecode's :doc:`Models Summary </models_summary>`
+# page for information on which are the available models.
 #
-# Models list: https://braindecode.org/stable/api.html#models
-#
-# Alternatively, the API also provide a dictionary with all available models:
+# Alternatively, the :doc:`API </api>` also provide a dictionary with all available models:
 
 from braindecode.models.util import models_dict
 
@@ -105,23 +105,24 @@ print(epochs)
 # and that we have some fake data, it is time to train the model!
 #
 # .. note::
-#    `Skorch <https://skorch.readthedocs.io>`_  is a library that allows you to wrap
+#    `<skorch_>`_  is a library that allows you to wrap
 #    any PyTorch module into a scikit-learn-compatible classifier or regressor.
 #    Braindecode provides wrappers that inherit form the original Skorch ones and simply
 #    implement a few additional features that facilitate the use of Braindecode models.
 #
 # To train a Braindecode model, the easiest way is by using braindecode's
-# Skorch wrappers. These wrappers are :class:`braindecode.EEGClassifier` and
-# :class:`braindecode.EEGRegressor`. As our fake data is a classification task,
+# Skorch wrappers. These wrappers are :class:`braindecode.classifier.EEGClassifier` and
+# :class:`braindecode.regressor.EEGRegressor`. As our fake data is a classification task,
 # we will use the former.
 #
-# The wrapper :class:`braindecode.EEGClassifier` expects a model class as its first argument but
+# The wrapper :class:`braindecode.classifier.EEGClassifier` expects a model class as its first argument but
 # to facilitate the usage, you can also simply pass the name of any braindecode model as a string.
 # The wrapper automatically finds and instantiates the model for you.
 # If you want to pass parameters to your model, you can give them to the wrapper
 # with the prefix ``module__``.
 #
 from skorch.dataset import ValidSplit
+
 from braindecode import EEGClassifier
 
 net = EEGClassifier(
@@ -136,7 +137,7 @@ net = EEGClassifier(
 # that will be forwarded to the model (without the prefix ``module__``).
 #
 # We also note that the parameters ``n_chans``, ``n_times`` and ``n_outputs`` were not specified
-# even if :class:`braindecode.ShallowFBCSPNet` needs them to be initialized. This is because the
+# even if :class:`braindecode.models.ShallowFBCSPNet` needs them to be initialized. This is because the
 # wrapper will automatically infer them, along with some other signal-related parameters,
 # from the input data at training time.
 #
@@ -162,8 +163,8 @@ print(
 ######################################################################
 # Depending on the type of data used for training, some parameters might not be
 # possible to infer. For example if you pass a numpy array or a
-# :class:`braindecode.dataset.WindowsDataset` with ``target_from="metadata"``,
-#  then only ``n_chans``, ``n_times`` and ``n_outputs`` will be inferred.
+# :class:`braindecode.datasets.WindowsDataset` with ``targets_from="metadata"``,
+# then only ``n_chans``, ``n_times`` and ``n_outputs`` will be inferred.
 # And if you pass other types of datasets, only ``n_chans`` and ``n_times`` will be inferred.
 # In these case, you will have to pass the missing parameters manually
 # (with the prefix ``module__``).
@@ -177,3 +178,5 @@ print(
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Human Brain Mapping, Aug. 2017.
 #        Online: http://dx.doi.org/10.1002/hbm.23730
+#
+# .. include:: /links.inc

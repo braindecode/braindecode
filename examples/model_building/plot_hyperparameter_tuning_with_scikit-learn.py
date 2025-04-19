@@ -1,9 +1,11 @@
 """
+.. _tuning-with-scikit-learn:
+
 Hyperparameter tuning with scikit-learn
 =======================================
 
 The braindecode provides some compatibility with
-`scikit-learn <https://scikit-learn.org/stable/>`__. This allows us
+`<scikit-learn_>`_. This allows us
 to use scikit-learn functionality to find the best hyperparameters for our
 model. This is especially useful to tune hyperparameters or
 parameters for one decoding task or a specific dataset.
@@ -12,7 +14,7 @@ parameters for one decoding task or a specific dataset.
 
     Deep learning models are often sensitive to the choice of hyperparameters
     and parameters. Hyperparameters are the parameters set before
-    training the model. The hyeperparameters determine (1) the capacity of the model,
+    training the model. The hyperparameters determine (1) the capacity of the model,
     e.g. its depth (the number of layers) and its width (the number of
     convolutional kernels, sizes of fully connected layers) and (2) the
     learning process via the choice of optimizer and its learning rate,
@@ -53,15 +55,13 @@ of the learning rate and dropout probability on the model's performance.
 
 ######################################################################
 # First, we load the data. In this tutorial, we use the functionality of
-# braindecode to load datasets via
-# `MOABB <https://github.com/NeuroTechX/moabb>`__ [2]_ to load the BCI
-# Competition IV 2a data [3]_.
+# braindecode to load datasets via `MOABB <moabb_>`_ [2]_
+# to load the BCI Competition IV 2a data [3]_.
 #
 # .. note::
 #    To load your own datasets either via mne or from
-#    preprocessed X/y numpy arrays, see `MNE Dataset
-#    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
-#    Tutorial <./plot_custom_dataset_example.html>`__.
+#    preprocessed X/y numpy arrays, see :ref:`mne-dataset-example`
+#    and :ref:`custom-dataset-example`.
 #
 
 from braindecode.datasets.moabb import MOABBDataset
@@ -76,20 +76,17 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 
 
 ######################################################################
-# In this example, preprocessing includes signal rescaling, the bandpass filtering
-# (low and high cut-off frequencies are 4 and 38 Hz) and the standardization using
-# the exponential moving mean and variance.
-# You can either apply functions provided by
-# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
-# `mne.Epochs <https://mne.tools/stable/generated/mne.Epochs.html>`__
-# or apply your own functions, either to the MNE object or the underlying
-# numpy array.
+# In this example, preprocessing includes signal rescaling, the bandpass
+# filtering (low and high cut-off frequencies are 4 and 38 Hz) and
+# the standardization using the exponential moving mean and variance.
+# You can either apply functions provided by :class:`mne.io.Raw`
+# or :class:`mne.Epochs` or apply your own functions,
+# either to the MNE object or the underlying numpy array.
 #
 # .. note::
 #    These prepocessings are now directly applied to the loaded
 #    data, and not on-the-fly applied as transformations in
-#    PyTorch-libraries like
-#    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
+#    PyTorch-libraries like `<torchvision_>`_.
 #
 
 from braindecode.preprocessing.preprocess import (
@@ -138,7 +135,7 @@ preprocess(dataset, preprocessors, n_jobs=-1)
 # events inside the dataset. One event is the demarcation of the stimulus or
 # the beginning of the trial. In this example, we want to analyse 0.5 [s] long
 # before the corresponding event and the duration of the event itself.
-# #Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
+# Therefore, we set the ``trial_start_offset_seconds`` to -0.5 [s] and the
 # ``trial_stop_offset_seconds`` to 0 [s].
 #
 # We extract from the dataset the sampling frequency, which is the same for
@@ -197,9 +194,9 @@ eval_set = splitted["1test"]  # Session evaluation
 # time-domain EEG. Here, we use the ShallowFBCSPNet model from `Deep
 # learning with convolutional neural networks for EEG decoding and
 # visualization <https://arxiv.org/abs/1703.05051>`__ [4]_. These models are
-# pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
+# pure `PyTorch <pytorch_>`_ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
-# `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
+# :class:`torch.nn.Module`.
 #
 from functools import partial
 import torch
@@ -246,12 +243,11 @@ if cuda and hasattr(model, "cuda"):
 
 
 ######################################################################
-# Now we train the network! EEGClassifier is a Braindecode object
+# Now we train the network! :class:`EEGClassifier
+# <braindecode.classifier.EEGClassifier>` is a Braindecode object
 # responsible for managing the training of neural networks. It inherits
-# from `skorch.NeuralNetClassifier <https://skorch.readthedocs.io/
-# en/latest/classifier.html>`__,
-# so the training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# from :class:`skorch.classifier.NeuralNetClassifier`,
+# so the training logic is the same as in `<skorch_>`_.
 #
 
 from skorch.callbacks import LRScheduler
@@ -276,11 +272,10 @@ clf = EEGClassifier(
 )
 
 ######################################################################
-# We use scikit-learn `GridSearchCV
-# <https://scikit-learn.org/stable/modules/generated/
-# sklearn.model_selection.GridSearchCV.html>`__ to tune hyperparameters.
+# We use scikit-learn :class:`GridSearchCV
+# <sklearn.model_selection.GridSearchCV>` to tune hyperparameters.
 # To be able to do this, we slice the braindecode datasets that by default
-# return a 3-tuple to return X and y, respectively.
+# return a 3-tuple to return ``X`` and ``y``, respectively.
 #
 
 ######################################################################
@@ -386,3 +381,5 @@ print(f"Eval accuracy is {score * 100:.2f}%.")
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#
+# .. include:: /links.inc

@@ -7,7 +7,7 @@ If you want to test features under development or contribute to the library, or 
 
 .. note::
 
-   If you are only trying to install Braindecode, we recommend using the pip installation `Installation <https://braindecode.org/braindecode/install/install_pip.html#install-pip>`__ for details on that.
+   If you are only trying to install Braindecode, we recommend the :doc:`Installing from PyPI </install/install_pip>` section for details on that.
 
 
 
@@ -66,4 +66,6 @@ To verify that Braindecode is installed and running correctly, run the following
 
    python -m "import braindecode; braindecode.__version__"
 
-For more information, please see the `contributors' guidelines <https://github.com/braindecode/braindecode/blob/master/CONTRIBUTING.md>`__.
+For more information, please see the `contribution guide <braindecode-contribution-guide_>`_.
+
+.. include:: /links.inc

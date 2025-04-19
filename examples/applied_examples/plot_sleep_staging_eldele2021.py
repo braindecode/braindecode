@@ -1,4 +1,6 @@
 """
+.. _sleep-staging-physionet-eldele2021:
+
 Sleep staging on the Sleep Physionet dataset using Eldele2021
 =============================================================
 
@@ -22,10 +24,8 @@ to learn on sequences of EEG windows using the openly accessible Sleep Physionet
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE`_
-# sleep staging example).
-#
-# .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
+# train our network and the second one to evaluate performance (as in the `MNE
+# sleep staging example <mne-clinical-60-sleep_>`_).
 #
 
 from numbers import Integral
@@ -66,7 +66,8 @@ preprocess(dataset, preprocessors)
 # ~~~~~~~~~~~~~~~
 #
 # We extract 30-s windows to be used in the classification task.
-# The Eldele2021 model takes a single channel as input. Here, the Fpz-Cz channel is used as it
+# The :class:`braindecode.models.SleepStagerEldele2021` model takes a
+# single channel as input. Here, the Fpz-Cz channel is used as it
 # was found to give better performance than using the Pz-Oz channel
 
 from braindecode.preprocessing import create_windows_from_events
@@ -269,7 +270,7 @@ clf = EEGClassifier(
     device=device,
     classes=np.unique(y_train),
 )
-# Model training for a specified number of epochs. `y` is None as it is already
+# Model training for a specified number of epochs. ``y`` is ``None`` as it is already
 # supplied in the dataset.
 clf.fit(train_set, y=None, epochs=n_epochs)
 
@@ -365,3 +366,5 @@ ax.set_ylabel("Sleep stage")
 #        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
 #        Research Resource for Complex Physiologic Signals.
 #        Circulation 101(23):e215-e220
+#
+# .. include:: /links.inc

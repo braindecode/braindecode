@@ -1,4 +1,6 @@
 """
+.. _bcic-iv-2a-best-data-aug:
+
 Searching the best data augmentation on BCIC IV 2a Dataset
 ====================================================================================
 
@@ -80,7 +82,7 @@ factor = 1e6
 # In time series targets setup, targets variables are stored in mne.Raw object as channels
 # of type `misc`. Thus those channels have to be selected for further processing. However,
 # many mne functions ignore `misc` channels and perform operations only on data channels
-# (see https://mne.tools/stable/glossary.html#term-data-channels).
+# (see `MNE's glossary on data channels <MNE-glossary-data-channels_>`_).
 
 preprocessors = [
     Preprocessor("pick_types", eeg=True, meg=False, stim=False),  # Keep EEG sensors
@@ -365,3 +367,5 @@ plt.tight_layout()
 # .. [2] Banville, H., Chehab, O., Hyvärinen, A., Engemann, D. A., & Gramfort, A. (2021).
 #        Uncovering the structure of clinical EEG signals with self-supervised learning.
 #        Journal of Neural Engineering, 18(4), 046020.
+#
+# .. include:: /links.inc

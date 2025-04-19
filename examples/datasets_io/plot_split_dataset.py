@@ -1,4 +1,6 @@
 """
+.. _split-dataset-example:
+
 Split Dataset Example
 =====================
 
@@ -22,7 +24,8 @@ from braindecode.preprocessing import create_windows_from_events
 # Loading the dataset
 # -------------------------------------
 #
-# Firstly, we create a dataset using the braindecode class <MOABBDataset> to load
+# Firstly, we create a dataset using the braindecode
+# :class:`MOABBDataset <braindecode.datasets.MOABBDataset>` to load
 # it fetched from MOABB. In this example, we're using Dataset 2a from BCI
 # Competition IV.
 
@@ -33,10 +36,11 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 # -------------------------------------
 #
 # By description information
-# ~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
-# The class <MOABBDataset> has a pandas DataFrame containing additional
-# description of its internal datasets, which can be used to help splitting the data
+# The class :class:`MOABBDataset <braindecode.datasets.MOABBDataset>` has a pandas
+# DataFrame containing additional description of its internal datasets,
+# which can be used to help splitting the data
 # based on recording information, such as subject, session, and run of each trial.
 
 dataset.description

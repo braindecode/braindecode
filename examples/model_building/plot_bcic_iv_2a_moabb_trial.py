@@ -1,4 +1,6 @@
 """
+.. _bcic-iv-2a-moabb-trial:
+
 Basic Brain Decoding on EEG Data
 ========================================
 
@@ -27,13 +29,12 @@ labels (e.g., Right Hand, Left Hand, etc.).
 ######################################################################
 # First, we load the data. In this tutorial, we load the BCI Competition
 # IV 2a data [1]_ using braindecode's wrapper to load via
-# `MOABB library <https://github.com/NeuroTechX/moabb>`__ [2]_.
+# `MOABB library <moabb_>`_ [2]_.
 #
 # .. note::
 #    To load your own datasets either via mne or from
-#    preprocessed X/y numpy arrays, see `MNE Dataset
-#    Tutorial <./plot_mne_dataset_example.html>`__ and `Numpy Dataset
-#    Tutorial <./plot_custom_dataset_example.html>`__.
+#    preprocessed X/y numpy arrays, see :ref:`mne-dataset-example`
+#    and :ref:`custom-dataset-example`.
 #
 
 from braindecode.datasets import MOABBDataset
@@ -49,18 +50,15 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 
 
 ######################################################################
-# Now we apply preprocessing like bandpass filtering to our dataset. You
-# can either apply functions provided by
-# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
-# `mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`__
-# or apply your own functions, either to the MNE object or the underlying
-# numpy array.
+# Now we apply preprocessing like bandpass filtering to our dataset.
+# You can either apply functions provided by :class:`mne.io.Raw` or
+# :class:`mne.Epochs` or apply your own functions, either to the
+# MNE object or the underlying numpy array.
 #
 # .. note::
 #    Generally, braindecode prepocessing is directly applied to the loaded
 #    data, and not applied on-the-fly as transformations, such as in
-#    PyTorch-libraries like
-#    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
+#    PyTorch-libraries like `<torchvision_>`_.
 #
 
 from numpy import multiply
@@ -136,7 +134,7 @@ windows_dataset = create_windows_from_events(
 ######################################################################
 # We can easily split the dataset using additional info stored in the
 # description attribute, in this case ``session`` column. We select
-# ``T`` for training and ``test`` for validation.
+# ``0train`` for training and ``1test`` for validation.
 #
 
 splitted = windows_dataset.split("session")
@@ -146,17 +144,18 @@ valid_set = splitted["1test"]  # Session evaluation
 
 ######################################################################
 # Creating a model
-# ------------
+# ----------------
 #
 
 
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
-# time-domain EEG. Here, we use the shallow ConvNet model from [3]_. These models are
-# pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
+# time-domain EEG. Here, we use the :class:`ShallowFBCSPNet
+# <braindecode.models.ShallowFBCSPNet>` model from [3]_. These models are
+# pure `PyTorch <pytorch_>`_ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
-# `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
+# :class:`torch.nn.Module`.
 #
 
 import torch
@@ -205,10 +204,11 @@ if cuda:
 
 
 ######################################################################
-# Now we will train the network! ``EEGClassifier`` is a Braindecode object
-# responsible for managing the training of neural networks. It inherits
-# from skorch `NeuralNetClassifier <https://skorch.readthedocs.io/en/stable/classifier.html#>`__,
-# so the training logic is the same as in `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# Now we will train the network! :class:`EEGClassifier
+# <braindecode.classifier.EEGClassifier>` is a Braindecode object
+# responsible for managing the training of neural networks.
+# It inherits from :class:`skorch.classifier.NeuralNetClassifier`,
+# so the training logic is the same as in `<skorch_>`_.
 #
 
 
@@ -251,19 +251,19 @@ clf = EEGClassifier(
     device=device,
     classes=classes,
 )
-# Model training for the specified number of epochs. `y` is None as it is
+# Model training for the specified number of epochs. ``y`` is ``None`` as it is
 # already supplied in the dataset.
 _ = clf.fit(train_set, y=None, epochs=n_epochs)
 
 
 ######################################################################
 # Plotting Results
-# ------------
+# ----------------
 #
 
 
 ######################################################################
-# Now we use the history stored by Skorch throughout training to plot
+# Now we use the history stored by skorch throughout training to plot
 # accuracy and loss curves.
 #
 
@@ -366,3 +366,5 @@ plot_confusion_matrix(confusion_mat, class_names=labels)
 #        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
 #        Deep learning with convolutional neural networks for EEG decoding and visualization.
 #        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#
+# .. include:: /links.inc

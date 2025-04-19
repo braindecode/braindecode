@@ -1,4 +1,6 @@
 """
+.. _mne-dataset-example:
+
 MNE Dataset Example
 ===================
 """
@@ -48,7 +50,7 @@ windows_dataset = create_from_mne_raw(
 )
 
 ###############################################################################
-# If trials were already cut beforehand and are available as mne.Epochs:
+# If trials were already cut beforehand and are available as :class:`mne.Epochs`:
 list_of_epochs = [mne.Epochs(raw, [[0, 0, 0]], tmin=0, baseline=None) for raw in parts]
 windows_dataset = create_from_mne_epochs(
     list_of_epochs,

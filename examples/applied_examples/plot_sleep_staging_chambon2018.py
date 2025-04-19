@@ -1,4 +1,6 @@
 """
+.. _sleep-staging-physionet-chambon2018:
+
 Sleep staging on the Sleep Physionet dataset using Chambon2018 network
 ======================================================================
 
@@ -23,13 +25,12 @@ sequences of EEG windows using the openly accessible Sleep Physionet dataset
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE`_
-# sleep staging example).
-#
-# .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
+# train our network and the second one to evaluate performance (as in the `MNE
+# sleep staging example <mne-clinical-60-sleep_>`_).
 #
 
 from numbers import Integral
+
 from braindecode.datasets import SleepPhysionet
 
 subject_ids = [0, 1]
@@ -226,11 +227,10 @@ if cuda:
 # Training
 # --------
 #
-# We can now train our network. :class:`braindecode.EEGClassifier` is a
+# We can now train our network. :class:`braindecode.classifier.EEGClassifier` is a
 # braindecode object that is responsible for managing the training of neural
-# networks. It inherits from :class:`skorch.NeuralNetClassifier`, so the
-# training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# networks. It inherits from :class:`skorch.classifier.NeuralNetClassifier`, so the
+# training logic is the same as in `<skorch_>`_.
 #
 # .. note::
 #    We use different hyperparameters from [1]_, as these hyperparameters were
@@ -368,3 +368,5 @@ ax.set_ylabel("Sleep stage")
 #        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
 #        Research Resource for Complex Physiologic Signals.
 #        Circulation 101(23):e215-e220
+#
+# .. include:: /links.inc

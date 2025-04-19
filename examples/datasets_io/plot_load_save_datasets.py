@@ -1,4 +1,6 @@
 """
+.. _load-save-dataset:
+
 Load and save dataset example
 =============================
 
@@ -92,3 +94,6 @@ windows_dataset_loaded = load_concat_dataset(
 )
 
 windows_dataset_loaded.description
+
+###############################################################################
+# .. include:: /links.inc

@@ -1,10 +1,12 @@
 """
+.. _sleep-staging-usleep:
+
 Sleep staging on the Sleep Physionet dataset using U-Sleep network
 ==================================================================
 
 .. note::
     Please take a look at the simpler sleep staging example
-    :ref:`here <sphx_glr_auto_examples_plot_sleep_staging.py>`
+    :ref:`sleep-staging-physionet-chambon2018`
     before going through this example. The current example uses a more complex
     architecture and a sequence-to-sequence (seq2seq) approach.
 
@@ -34,10 +36,8 @@ windows using the openly accessible Sleep Physionet dataset [2]_ [3]_.
 # First, we load the data using the
 # :class:`braindecode.datasets.sleep_physionet.SleepPhysionet` class. We load
 # two recordings from two different individuals: we will use the first one to
-# train our network and the second one to evaluate performance (as in the `MNE`_
-# sleep staging example).
-#
-# .. _MNE: https://mne.tools/stable/auto_tutorials/sample-datasets/plot_sleep.html
+# train our network and the second one to evaluate performance (as in the `MNE
+# sleep staging example <mne-clinical-60-sleep_>`_).
 #
 
 from braindecode.datasets import SleepPhysionet
@@ -188,11 +188,11 @@ if cuda:
 # Training
 # --------
 #
-# We can now train our network. :class:`braindecode.EEGClassifier` is a
+# We can now train our network. :class:`braindecode.classifier.EEGClassifier` is a
 # braindecode object that is responsible for managing the training of neural
-# networks. It inherits from :class:`skorch.NeuralNetClassifier`, so the
+# networks. It inherits from :class:`skorch.classifier.NeuralNetClassifier`, so the
 # training logic is the same as in
-# `Skorch <https://skorch.readthedocs.io/en/stable/>`__.
+# `<skorch_>`_.
 #
 # .. note::
 #    We use different hyperparameters from [1]_, as these hyperparameters were
@@ -331,3 +331,5 @@ ax.set_ylabel("Sleep stage")
 #        PhysioBank, PhysioToolkit, and PhysioNet: Components of a New
 #        Research Resource for Complex Physiologic Signals.
 #        Circulation 101(23):e215-e220
+#
+# .. include:: /links.inc
