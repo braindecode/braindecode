@@ -379,15 +379,13 @@ class _MultiHeadedAttention(nn.Module):
         self.d_per_head = d_model // h
         self.h = h
 
-        self.convs = _clones(
-            CausalConv1d(
-                in_channels=after_reduced_cnn_size,
-                out_channels=after_reduced_cnn_size,
-                kernel_size=7,
-                stride=1,
-            ),
-            3,
+        base_conv = CausalConv1d(
+            in_channels=after_reduced_cnn_size,
+            out_channels=after_reduced_cnn_size,
+            kernel_size=7,
+            stride=1,
         )
+        self.convs = nn.ModuleList([copy.deepcopy(base_conv) for _ in range(3)])
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
@@ -424,14 +422,9 @@ class _SublayerOutput(nn.Module):
         self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, sublayer):
+    def forward(self, x: torch.Tensor, sublayer: nn.Module) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
         return x + self.dropout(sublayer(self.norm(x)))
-
-
-def _clones(module, n):
-    """Produce n identical layers."""
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(n)])
 
 
 class _TCE(nn.Module):
@@ -442,7 +435,7 @@ class _TCE(nn.Module):
 
     def __init__(self, layer, n):
         super().__init__()
-        self.layers = _clones(layer, n)
+        self.layers = nn.ModuleList([copy.deepcopy(layer) for _ in range(n)])
         self.norm = nn.LayerNorm(layer.size, eps=1e-6)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -464,7 +457,12 @@ class _EncoderLayer(nn.Module):
         self.self_attn = self_attn
         self.feed_forward = feed_forward
 
-        self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
+        self.sublayer_output = nn.ModuleList(
+            [
+                _SublayerOutput(size, dropout),
+                _SublayerOutput(size, dropout),
+            ]
+        )
 
         self.conv = CausalConv1d(
             in_channels=after_reduced_cnn_size,
