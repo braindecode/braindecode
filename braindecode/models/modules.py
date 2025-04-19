@@ -768,7 +768,10 @@ class FilterBankLayer(nn.Module):
                         )
                         iir_params["output"] = "ba"
 
-        filts = {}
+        self.fir_kernels = nn.ParameterList()  # only used if method != 'iir'
+        self.a_coeffs = nn.ParameterList()  # denominator, IIR
+        self.b_coeffs = nn.ParameterList()  # numerator, IIR
+
         for idx, (l_freq, h_freq) in enumerate(band_filters):
             filt = create_filter(
                 data=None,
@@ -786,22 +789,14 @@ class FilterBankLayer(nn.Module):
                 verbose=verbose,
             )
             if not self.method_iir:
-                filt = from_numpy(filt).float()
-                filts[f"band_{idx}"] = {"filt": filt}
-
+                kernel = from_numpy(filt).float()
+                self.fir_kernels.append(nn.Parameter(kernel, requires_grad=False))
             else:
                 _check_coefficients((filt["b"], filt["a"]))
-                b = torch.tensor(filt["b"], dtype=torch.float64)
-                a = torch.tensor(filt["a"], dtype=torch.float64)
-
-                filts[f"band_{idx}"] = {"b": b, "a": a}
-
-        self.filts = nn.ParameterDict(filts)
-
-        if self.method_iir:
-            self._apply_filter_func = self._apply_iir
-        else:
-            self._apply_filter_func = partial(self._apply_fir, n_chans=self.n_chans)
+                b = torch.as_tensor(filt["b"], dtype=torch.float32)
+                a = torch.as_tensor(filt["a"], dtype=torch.float32)
+                self.b_coeffs.append(nn.Parameter(b, requires_grad=False))
+                self.a_coeffs.append(nn.Parameter(a, requires_grad=False))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -817,13 +812,32 @@ class FilterBankLayer(nn.Module):
         torch.Tensor
             Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
-        return torch.cat(
-            [self._apply_filter_func(x, p_filt) for p_filt in self.filts.values()],
-            dim=1,
-        )
+        # x: (batch, n_chans, time)
+        outs = []
+        if self.method_iir:
+            # loop over each band’s (a, b)
+            for a, b in zip(self.a_coeffs, self.b_coeffs):
+                # filtfilt expects (batch, chans, time), returns same shape
+                y = filtfilt(
+                    x,
+                    a_coeffs=a.to(x.device).type_as(x),
+                    b_coeffs=b.to(x.device).type_as(x),
+                    clamp=False,
+                )
+                outs.append(y.unsqueeze(1))  # (batch, 1, n_chans, time)
+        else:
+            # FIR path: loop over each kernel
+            for k in self.fir_kernels:
+                # expand to (1, n_chans, kernel_length)
+                ker = k.unsqueeze(0).repeat(self.n_chans, 1).unsqueeze(0)
+                y = fftconvolve(x, ker.to(x.device).type_as(x), mode="same")
+                outs.append(y.unsqueeze(1))  # (batch, 1, n_chans, time)
+
+        # concat along the "band" dimension → (batch, n_bands, n_chans, time)
+        return torch.cat(outs, dim=1)
 
     @staticmethod
-    def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
+    def _apply_fir(x, filter_coef: torch.Tensor, n_chans: int) -> Tensor:
         """
         Apply an FIR filter to the input tensor.
 
@@ -847,7 +861,7 @@ class FilterBankLayer(nn.Module):
         # After unsqueeze and repeat: (n_chans, filter_length)
         # After final unsqueeze: (1, n_chans, filter_length)
         filt_expanded = (
-            filter["filt"].to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
+            filter_coef.to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
         )
 
         # Perform FFT-based convolution
@@ -866,7 +880,7 @@ class FilterBankLayer(nn.Module):
         return filtered
 
     @staticmethod
-    def _apply_iir(x: Tensor, filter: dict) -> Tensor:
+    def _apply_iir(x: Tensor, filter_a: Tensor, filter_b: Tensor) -> Tensor:
         """
         Apply an IIR filter to the input tensor.
 
@@ -888,8 +902,8 @@ class FilterBankLayer(nn.Module):
         # Apply filtering using torchaudio's filtfilt
         filtered = filtfilt(
             x,
-            a_coeffs=filter["a"].type_as(x).to(x.device),
-            b_coeffs=filter["b"].type_as(x).to(x.device),
+            a_coeffs=filter_a.type_as(x).to(x.device),
+            b_coeffs=filter_b.type_as(x).to(x.device),
             clamp=False,
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)

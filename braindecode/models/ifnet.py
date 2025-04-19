@@ -251,7 +251,7 @@ class _InterFrequencyModule(nn.Module):
 
         self.activation = activation()
 
-    def forward(self, x_list: list) -> torch.Tensor:
+    def forward(self, x_list: list[torch.Tensor]) -> torch.Tensor:
         """Forward pass.
 
         Parameters
