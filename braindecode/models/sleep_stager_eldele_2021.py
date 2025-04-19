@@ -412,7 +412,7 @@ class _MultiHeadedAttention(nn.Module):
         return self.linear(x)
 
 
-class _SublayerOutput(nn.Module):
+class _ResidualLayerNorm(nn.Module):
     """
     A residual connection followed by a layer norm.
     """
@@ -422,9 +422,15 @@ class _SublayerOutput(nn.Module):
         self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x: torch.Tensor, sublayer: nn.Module) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, sublayer: nn.Module, *args: torch.Tensor
+    ) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
-        return x + self.dropout(sublayer(self.norm(x)))
+        x_norm = self.norm(x)
+
+        out = sublayer(x_norm, *args)
+
+        return x + self.dropout(out)
 
 
 class _TCE(nn.Module):
@@ -448,20 +454,22 @@ class _EncoderLayer(nn.Module):
     """
     An encoder layer
     Made up of self-attention and a feed forward layer.
-    Each of these sublayers have residual and layer norm, implemented by _SublayerOutput.
+    Each of these sublayers have residual and layer norm, implemented by _ResidualLayerNorm.
     """
 
     def __init__(self, size, self_attn, feed_forward, after_reduced_cnn_size, dropout):
-        super(_EncoderLayer, self).__init__()
+        super().__init__()
         self.size = size
         self.self_attn = self_attn
         self.feed_forward = feed_forward
 
-        self.sublayer_output = nn.ModuleList(
-            [
-                _SublayerOutput(size, dropout),
-                _SublayerOutput(size, dropout),
-            ]
+        self.residual_self_attn = _ResidualLayerNorm(
+            size,
+            dropout,
+        )
+        self.residual_ff = _ResidualLayerNorm(
+            size,
+            dropout,
         )
 
         self.conv = CausalConv1d(
@@ -476,8 +484,9 @@ class _EncoderLayer(nn.Module):
         """Transformer Encoder"""
         query = self.conv(x_in)
         # Encoder self-attention
-        x = self.sublayer_output[0](query, lambda x: self.self_attn(query, x_in, x_in))
-        return self.sublayer_output[1](x, self.feed_forward)
+        x = self.residual_self_attn(query, self.self_attn, x_in, x_in)
+        x_ff = self.residual_ff(x, self.feed_forward)
+        return x_ff
 
 
 class _PositionwiseFeedForward(nn.Module):
