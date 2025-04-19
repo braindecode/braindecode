@@ -2,7 +2,7 @@
 #          Maciej Sliwowski
 #
 # License: BSD-3
-
+from __future__ import annotations
 import warnings
 from typing import Dict, Iterable, List, Optional, Tuple
 
