@@ -264,7 +264,7 @@ class _InterFrequencyModule(nn.Module):
         torch.Tensor
             Combined tensor after applying GELU activation.
         """
-        x = sum(x_list)
+        x = torch.stack(x_list, dim=0).sum(dim=0)
         x = self.activation(x)
         return x
 
