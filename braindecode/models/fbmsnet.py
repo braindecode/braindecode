@@ -9,10 +9,13 @@ from torch import nn
 from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.fbcnet import _valid_layers
 
-from braindecode.models.modules import LinearWithConstraint, FilterBankLayer
+from braindecode.models.modules import (
+    LinearWithConstraint,
+    FilterBankLayer,
+    Conv2dWithConstraint,
+)
 
 
 class FBMSNet(EEGModuleMixin, nn.Module):
