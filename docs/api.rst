@@ -49,7 +49,8 @@ Models
 
 .. autosummary::
    :toctree: generated/
-
+   :recursive:
+   
     EEGModuleMixin
 
 :py:mod:`braindecode.models`:
@@ -58,7 +59,8 @@ Models
 
 .. autosummary::
    :toctree: generated/
-
+   :recursive:
+   
     ATCNet
     AttentionBaseNet
     BDTCN
@@ -114,17 +116,23 @@ filter banks, and other utilities.
 
 Activation
 ----------
+These modules wrap specialized activation functions—e.g., safe logarithms for numerical stability.
+
 .. autosummary::
     :toctree: generated/activation
-
+    :recursive:
+   
     LogActivation
     SafeLog
 
 Attention
 ---------
+These modules implement various attention mechanisms, including
+multi-head attention and squeeze-and-excitation layers.
 .. autosummary::
     :toctree: generated/attention
-
+    :recursive:
+   
     CAT
     CBAM
     ECA
@@ -140,18 +148,27 @@ Attention
 
 Blocks
 ------
+These modules are specialized building blocks for neural networks,
+including multi-layer perceptrons (MLPs) and inception blocks.
+
 .. autosummary::
     :toctree: generated/blocks
-
+    :recursive:
+   
     MLP
     FeedForwardBlock
     InceptionBlock
 
 Convolution
 -----------
+These modules implement constraints convolutional layers, including
+depthwise convolutions and causal convolutions. They also include
+convolutional layers with constraints and pooling layers.
+
 .. autosummary::
     :toctree: generated/convolution
-
+    :recursive:
+   
     AvgPool2dWithConv
     CausalConv1d
     CombinedConv
@@ -160,17 +177,26 @@ Convolution
 
 Filter
 ------
+These modules implement Filter Bank as Layer and generalizer Gaussian
+layer. 
+
 .. autosummary::
     :toctree: generated/filter
-
+    :recursive:
+   
     FilterBankLayer
     GeneralizedGaussianFilter
 
 Layers
 ------
+These modules implement various types of layers, including dropout
+layers, normalization layers, and time-distributed layers. They also
+include layers for handling different input shapes and dimensions.
+
 .. autosummary::
     :toctree: generated/layers
-
+    :recursive:
+   
     Chomp1d
     DropPath
     Ensure4d
@@ -178,17 +204,28 @@ Layers
 
 Linear
 ------
+These modules implement linear layers with various constraints and
+initializations. They include linear layers with max-norm constraints
+and linear layers with specific initializations.
+
 .. autosummary::
     :toctree: generated/linear
-
+    :recursive:
+   
     LinearWithConstraint
     MaxNormLinear
 
 Stats
 -----
+These modules implement statistical layers, including layers for
+calculating the mean, standard deviation, and variance of input
+data. They also include layers for calculating the log power and log
+variance of input data. Mostly used on FilterBank models.
+
 .. autosummary::
     :toctree: generated/stats
-    
+    :recursive:
+       
     StatLayer
     LogPowerLayer
     LogVarLayer
@@ -199,17 +236,26 @@ Stats
 
 Utilities
 ---------
+These modules implement various utility functions and classes for
+change to cropped model.
+
 .. autosummary::
     :toctree: generated/util
-
+    :recursive:
+   
     get_output_shape
     to_dense_prediction_model
 
 Wrappers
 --------
+These modules implement wrappers for various types of models,
+including wrappers for models with multiple outputs and wrappers for
+models with intermediate outputs. 
+
 .. autosummary::
     :toctree: generated/wrapper
-
+    :recursive:
+   
     Expression
     IntermediateOutputWrapper
 
@@ -235,30 +281,58 @@ Training
 
 Datasets
 ========
-
+.. currentmodule:: braindecode.datasets
 :py:mod:`braindecode.datasets`:
+
+Pytorch Datasets structure for common EEG datasets, and function to create the dataset from several
+different data formats. The options available are: `Numpy Arrays`, `MNE Raw` and `MNE Epochs`. 
+
+
+Base classes
+------------
+
+.. autosummary::
+   :toctree: generated/
+
+    BaseConcatDataset
+    BaseDataset
+    WindowsDataset
+    BIDSDataset
+    BIDSEpochsDataset
+
+   
+Common Datasets
+----------------
+
+.. autosummary::
+   :toctree: generated/
+   :recursive:
+
+    BCICompetitionIVDataset4
+    BNCI2014001
+    HGD
+    MOABBDataset
+    NMT
+    SleepPhysionet
+    SleepPhysionetChallenge2018
+    TUH
+    TUHAbnormal
+
+
+Dataset Builders Functions
+--------------------------
+Functions to create datasets from different data formats
+
 
 .. currentmodule:: braindecode.datasets
 
 .. autosummary::
    :toctree: generated/
 
-    BaseDataset
-    BaseConcatDataset
-    BIDSDataset
-    BIDSEpochsDataset
-    WindowsDataset
-    MOABBDataset
-    HGD
-    BNCI2014001
-    TUH
-    TUHAbnormal
-    NMT
-    SleepPhysionet
-    BCICompetitionIVDataset4
     create_from_X_y
     create_from_mne_raw
     create_from_mne_epochs
+
 
 Preprocessing
 =============
@@ -300,6 +374,9 @@ Data Utils
 
 Samplers
 ========
+Samplers that can used to sample EEG data for training and testing
+and to create batches of data, used on Self-Supervised Learning
+and other tasks.
 
 :py:mod:`braindecode.samplers`:
 
@@ -319,6 +396,13 @@ Samplers
 
 Augmentation
 ============
+
+The augmentation module follow the pytorch transforms API. It contains
+transformations that can be applied to EEG data. The transformations
+can be used to augment the data during training, which can help improve
+the performance of the model. The transformations can be applied to
+the data in a variety of ways, including time-domain transformations,
+frequency-domain transformations, and spatial transformations. 
 
 :py:mod:`braindecode.augmentation`:
 
@@ -349,25 +433,35 @@ Augmentation
     SegmentationReconstruction
     MaskEncoding
 
-    functional.identity
-    functional.time_reverse
-    functional.sign_flip
-    functional.ft_surrogate
-    functional.channels_dropout
-    functional.channels_shuffle
-    functional.channels_permute
-    functional.gaussian_noise
-    functional.smooth_time_mask
-    functional.bandstop_filter
-    functional.frequency_shift
-    functional.sensors_rotation
-    functional.mixup
-    functional.segmentation_reconstruction
-    functional.mask_encoding
+
+Functional API
+--------------
+The functional API contains the same transformations as the
+transforms API, but they are implemented as functions. 
+
+.. currentmodule:: braindecode.augmentation.functional
+
+.. autosummary::
+    identity
+    time_reverse
+    sign_flip
+    ft_surrogate
+    channels_dropout
+    channels_shuffle
+    channels_permute
+    gaussian_noise
+    smooth_time_mask
+    bandstop_filter
+    frequency_shift
+    sensors_rotation
+    mixup
+    segmentation_reconstruction
+    mask_encoding
 
 
 Utils
 =====
+Util functions available in braindecode util module. 
 
 :py:mod:`braindecode.util`:
 
@@ -380,6 +474,10 @@ Utils
 
 Visualization
 =============
+Visualization module contains functions for visualizing EEG data,
+including plotting the confusion matrix and computing amplitude
+gradients. The visualization module is useful for understanding the
+performance of the model and for interpreting the results. 
 
 :py:mod:`braindecode.visualization`:
 
