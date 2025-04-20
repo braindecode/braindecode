@@ -51,7 +51,7 @@ repos:
             "--fix",
             "--preview",
             "--select=NPY201",
-            "--ignore=D100,D102,D105,D107,D415,D417",
+            "--ignore=D100,D101,D102,D105,D107,D415,D417,D205",
           ]
         files: ^braindecode/
       - id: ruff
@@ -60,7 +60,7 @@ repos:
           [
             "--fix",
             "--select=D",                 # docstring rules
-            "--ignore=D103,D400,E402,D100,D102,D105,D107,D415,D417",    # drop these specific checks
+            "--ignore=D103,D400,E402,D100,D101,D102,D105,D107,D415,D417,D205",    # drop these specific checks
           ]
         files: ^(docs|examples)/
       - id: ruff-format
