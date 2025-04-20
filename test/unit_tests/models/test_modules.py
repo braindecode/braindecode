@@ -13,10 +13,8 @@ from scipy.signal import freqz
 from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
 
-from braindecode.models.eegminer import GeneralizedGaussianFilter
-from braindecode.models.functions import drop_path
-from braindecode.models.labram import _SegmentPatch
-from braindecode.models.modules import (
+from braindecode.functional import drop_path
+from braindecode.modules import (
     MLP,
     CombinedConv,
     DropPath,
@@ -24,7 +22,9 @@ from braindecode.models.modules import (
     LinearWithConstraint,
     SafeLog,
     TimeDistributed,
+    GeneralizedGaussianFilter,
 )
+from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 

@@ -3,7 +3,7 @@ import pytest
 import torch
 from scipy.signal import hilbert
 
-from braindecode.models.functions import hilbert_freq, plv_time
+from braindecode.functional import hilbert_freq, plv_time
 
 
 @pytest.fixture(autouse=True)
