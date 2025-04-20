@@ -16,32 +16,29 @@ This is the reference for classes (``CamelCase`` names) and functions
    :no-members:
    :no-inherited-members:
 
-Classifier
-==========
-
-:py:mod:`braindecode.classifier`:
-
-.. currentmodule:: braindecode.classifier
-
-.. autosummary::
-   :toctree: generated/
-
-    EEGClassifier
-
-Regressor
-=========
-
-:py:mod:`braindecode.regressor`:
-
-.. currentmodule:: braindecode.regressor
-
-.. autosummary::
-   :toctree: generated/
-
-    EEGRegressor
-
 Models
 ======
+
+Model zoo availables in braindecode. The models are implemented as
+`PyTorch` :py:class:`nn.Modules` and can be used for various EEG decoding ways tasks. 
+
+All the models have the convention of having the signal related parameters 
+named the same way, following the braindecode's standards:
+
++ `n_outputs`: Number of labels or outputs of the model. 
++ `n_chans`: Number of EEG channels.
++ `n_times`: Number of time points of the input window.
++ `input_window_seconds`: Length of the input window in seconds.
++ `sfreq`: Sampling frequency of the EEG recordings.
++ `chs_info`: Information about each individual EEG channel. Refer to `mne.Info["chs"]`. 
+
+All the models assume that the input data is a 3D tensor of shape
+``(batch_size, n_chans, n_times)``, and some models also accept a 4D tensor of shape
+``(batch_size, n_chans, n_times, n_epochs)``, in case of cropped model.
+
+All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, which is a
+base class for all EEG models in Braindecode. The :py:class:`EEGModuleMixin` class
+provides a common interface for all EEG models and derivate variables names if necessary.
 
 :py:mod:`braindecode.models.base`:
 
@@ -262,24 +259,7 @@ models with intermediate outputs.
     IntermediateOutputWrapper
 
 
-Training
-========
 
-:py:mod:`braindecode.training`:
-
-.. currentmodule:: braindecode.training
-
-.. autosummary::
-   :toctree: generated/
-
-    CroppedLoss
-    TimeSeriesLoss
-    CroppedTrialEpochScoring
-    CroppedTimeSeriesEpochScoring
-    PostEpochTrainScoring
-    mixup_criterion
-    trial_preds_from_window_preds
-    predict_trials
 
 Datasets
 ========
@@ -436,9 +416,7 @@ frequency'domain transformations, and spatial transformations.
     MaskEncoding
 
 
-Functional API
-''''''''''''''
-The functional API contains the same transformations as the
+The functional augmentation API contains the same transformations as the
 transforms API, but they are implemented as functions. 
 
 :py:mod:`braindecode.augmentation.functional`:
@@ -465,9 +443,66 @@ transforms API, but they are implemented as functions.
     mask_encoding
 
 
+Classifier
+==========
+
+Skorch wrapper for braindecode models. The skorch wrapper
+allows to use braindecode models with scikit'learn
+API. 
+
+:py:mod:`braindecode.classifier`:
+
+.. currentmodule:: braindecode.classifier
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGClassifier
+
+Regressor
+=========
+
+Skorch wrapper for braindecode models focus on regression tasks.
+The skorch wrapper allows to use braindecode models with scikit'learn
+API. 
+
+:py:mod:`braindecode.regressor`:
+
+.. currentmodule:: braindecode.regressor
+
+.. autosummary::
+   :toctree: generated/
+
+    EEGRegressor
+
+
+Training
+========
+
+Training module contains functions and classes for training
+and evaluating EEG models. It is inside the Classifier and
+Regressor skorch classes, and it is used to train the models
+and evaluate their performance. 
+
+:py:mod:`braindecode.training`:
+
+.. currentmodule:: braindecode.training
+
+.. autosummary::
+   :toctree: generated/
+
+    CroppedLoss
+    TimeSeriesLoss
+    CroppedTrialEpochScoring
+    CroppedTimeSeriesEpochScoring
+    PostEpochTrainScoring
+    mixup_criterion
+    trial_preds_from_window_preds
+    predict_trials
+
 Utils
 =====
-Utils functions available in braindecode util module. 
+Functions available in braindecode util module. 
 
 :py:mod:`braindecode.util`:
 
