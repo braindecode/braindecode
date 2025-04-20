@@ -22,7 +22,7 @@ from joblib import Parallel, delayed
 from .base import BaseConcatDataset, BaseDataset, WindowsDataset
 
 
-def _descriptiion_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
+def _description_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:
     return {
         "path": bids_path.fpath,
         "subject": bids_path.subject,
@@ -187,7 +187,7 @@ class BIDSDataset(BaseConcatDataset):
         super().__init__(all_base_ds)
 
     def _get_dataset(self, bids_path: mne_bids.BIDSPath) -> BaseDataset:
-        description = _descriptiion_from_bids_path(bids_path)
+        description = _description_from_bids_path(bids_path)
         raw = mne_bids.read_raw_bids(bids_path, verbose=False)
         if self.preload:
             raw.load_data()
@@ -239,7 +239,7 @@ class BIDSEpochsDataset(BIDSDataset):
         epochs.metadata = pd.DataFrame(metadata_dict)
 
     def _get_dataset(self, bids_path):
-        description = _descriptiion_from_bids_path(bids_path)
+        description = _description_from_bids_path(bids_path)
         epochs = mne.read_epochs(bids_path.fpath)
         self._set_metadata(epochs)
         return WindowsDataset(epochs, description=description, targets_from="metadata")
