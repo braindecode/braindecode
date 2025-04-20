@@ -9,10 +9,6 @@ API Reference
 This is the reference for classes (``CamelCase`` names) and functions
 (``underscore_case`` names) of Braindecode.
 
-.. contents::
-   :local:
-   :depth: 2
-
 
 :py:mod:`braindecode`:
 
@@ -105,13 +101,15 @@ Models
     USleep
 
 
+Modules
+=======
 
 :py:mod:`braindecode.modules`:
 
 .. currentmodule:: braindecode.modules
 
 Activation
-==========
+----------
 .. autosummary::
     :toctree: generated/activation
 
@@ -119,7 +117,7 @@ Activation
     SafeLog
 
 Attention
-=========
+---------
 .. autosummary::
     :toctree: generated/attention
 
@@ -137,7 +135,7 @@ Attention
     SqueezeAndExcitation
 
 Blocks
-======
+------
 .. autosummary::
     :toctree: generated/blocks
 
@@ -146,7 +144,7 @@ Blocks
     InceptionBlock
 
 Convolution
-===========
+-----------
 .. autosummary::
     :toctree: generated/convolution
 
@@ -157,7 +155,7 @@ Convolution
     DepthwiseConv2d
 
 Filter
-======
+------
 .. autosummary::
     :toctree: generated/filter
 
@@ -165,7 +163,7 @@ Filter
     GeneralizedGaussianFilter
 
 Layers
-======
+------
 .. autosummary::
     :toctree: generated/layers
 
@@ -175,7 +173,7 @@ Layers
     TimeDistributed
 
 Linear
-======
+------
 .. autosummary::
     :toctree: generated/linear
 
@@ -183,7 +181,7 @@ Linear
     MaxNormLinear
 
 Stats
-=====
+-----
 .. autosummary::
     :toctree: generated/stats
 
@@ -196,7 +194,7 @@ Stats
     VarLayer
 
 Utilities
-=========
+---------
 .. autosummary::
     :toctree: generated/util
 
@@ -204,7 +202,7 @@ Utilities
     to_dense_prediction_model
 
 Wrappers
-========
+--------
 .. autosummary::
     :toctree: generated/wrapper
 
