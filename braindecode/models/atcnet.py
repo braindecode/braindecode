@@ -7,7 +7,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import CausalConv1d, Ensure4d, MaxNormLinear
+from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
