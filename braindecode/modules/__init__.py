@@ -14,12 +14,7 @@ from .attention import (
 )
 from .modules import (
     MLP,
-    AvgPool2dWithConv,
-    CausalConv1d,
     Chomp1d,
-    CombinedConv,
-    Conv2dWithConstraint,
-    DepthwiseConv2d,
     DropPath,
     Ensure4d,
     Expression,
@@ -27,10 +22,21 @@ from .modules import (
     InceptionBlock,
     IntermediateOutputWrapper,
     LinearWithConstraint,
-    LogActivation,
     MaxNormLinear,
-    SafeLog,
     TimeDistributed,
+)
+
+from .convolution import (
+    AvgPool2dWithConv,
+    CombinedConv,
+    Conv2dWithConstraint,
+    DepthwiseConv2d,
+    CausalConv1d,
+)
+
+from .activation import (
+    LogActivation,
+    SafeLog,
 )
 
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
