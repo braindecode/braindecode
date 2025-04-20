@@ -31,23 +31,39 @@ repos:
       - id: pretty-format-json
         args: [ "--autofix", "--no-sort-keys", "--indent=4" ]
 
+repos:
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.9.7
     hooks:
       - id: ruff
-        args: [ "--ignore=E402,E501,F401", "--fix" ] #, --exit-non-zero-on-fix, ]
+        name: ruff lint base
+        args:
+          [
+            "--fix",
+            "--select=E,W,F,I",           # E=errors, W=warnings, F=pyflakes, I=import sorting
+            "--ignore=E402,E501,F401",    # your custom ignores
+          ]
       - id: ruff
         name: ruff lint braindecode preview
-        args: [ "--fix", "--preview", "--select=NPY201" ]
+        args:
+          [
+            "--fix",
+            "--preview",
+            "--select=NPY201",
+          ]
         files: ^braindecode/
       - id: ruff
-        name: ruff lint docs, and examples
-        # D103: missing docstring in public function
-        # D400: docstring first line must end with period
-        args: [ "--ignore=D103,D400,E402", "--fix" ]
-        files: ^docs/|^examples/
+        name: ruff lint docs & examples
+        args:
+          [
+            "--fix",
+            "--select=D",                 # docstring rules
+            "--ignore=D103,D400,E402",    # drop these specific checks
+          ]
+        files: ^(docs|examples)/
       - id: ruff-format
-        files: ^braindecode/|^docs/|^examples/
+        name: ruff format code
+        files: ^(braindecode|docs|examples)/
 
 
   - repo: https://github.com/codespell-project/codespell
