@@ -11,6 +11,7 @@ from .attention import (
     GSoP,
     SqueezeAndExcitation,
     SRM,
+    MultiHeadAttention,
 )
 from .modules import (
     AvgPool2dWithConv,
@@ -39,4 +40,5 @@ from .modules import (
     StdLayer,
     TimeDistributed,
     VarLayer,
+    FeedForwardBlock,
 )

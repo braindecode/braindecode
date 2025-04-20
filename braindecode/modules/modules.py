@@ -1061,3 +1061,13 @@ LogPowerLayer: Callable[[int, bool], StatLayer] = partial(
     clamp_range=(1e-4, 1e4),
     apply_log=True,
 )
+
+
+class FeedForwardBlock(nn.Sequential):
+    def __init__(self, emb_size, expansion, drop_p, activation: nn.Module = nn.GELU):
+        super().__init__(
+            nn.Linear(emb_size, expansion * emb_size),
+            activation(),
+            nn.Dropout(drop_p),
+            nn.Linear(expansion * emb_size, emb_size),
+        )
