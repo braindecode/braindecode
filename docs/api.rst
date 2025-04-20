@@ -283,8 +283,9 @@ Training
 
 Datasets
 ========
-.. currentmodule:: braindecode.datasets
 :py:mod:`braindecode.datasets`:
+
+.. currentmodule:: braindecode.datasets
 
 Pytorch Datasets structure for common EEG datasets, and function to create the dataset from several
 different data formats. The options available are: `Numpy Arrays`, `MNE Raw` and `MNE Epochs`. 
@@ -308,7 +309,6 @@ Common Datasets
 
 .. autosummary::
    :toctree: generated/
-   :recursive:
 
     BCICompetitionIVDataset4
     BNCI2014001
@@ -387,12 +387,12 @@ and other tasks.
 .. autosummary::
    :toctree: generated/
 
-   RecordingSampler
-   DistributedRecordingSampler
-   SequenceSampler
-   RelativePositioningSampler
-   DistributedRelativePositioningSampler
-   BalancedSequenceSampler
+    RecordingSampler
+    DistributedRecordingSampler
+    SequenceSampler
+    RelativePositioningSampler
+    DistributedRelativePositioningSampler
+    BalancedSequenceSampler
 
 .. _augmentation_api:
 
@@ -444,6 +444,8 @@ transforms API, but they are implemented as functions.
 .. currentmodule:: braindecode.augmentation.functional
 
 .. autosummary::
+   :toctree: generated/
+
     identity
     time_reverse
     sign_flip
@@ -463,7 +465,7 @@ transforms API, but they are implemented as functions.
 
 Utils
 =====
-Util functions available in braindecode util module. 
+Utils functions available in braindecode util module. 
 
 :py:mod:`braindecode.util`:
 
