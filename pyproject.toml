@@ -98,7 +98,7 @@ exclude = []  # exclude packages matching these glob patterns (empty by default)
 namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.ruff]
-ignore-init-module-imports = true
+lint.ignore-init-module-imports = true
 
 [tool.isort]
 skip = [".gitignore"]
