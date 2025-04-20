@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Callable, Optional, List, Tuple
 from functools import partial
+from typing import Callable, List, Optional, Tuple
 
 import torch
-
 from torch import nn
 from torch.nn import functional as F
 

@@ -15,10 +15,9 @@ import math
 
 import torch
 import torch.nn.functional as F
-
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from torch import nn, Tensor
+from torch import Tensor, nn
 
 from braindecode.functional import _get_gaussian_kernel1d
 

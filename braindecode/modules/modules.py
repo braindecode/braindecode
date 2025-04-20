@@ -3,28 +3,20 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-from typing import Callable
+from functools import partial
+from typing import Callable, List, Optional, Tuple
+
 import numpy as np
 import torch
-
-from functools import partial
-from mne.filter import create_filter, _check_coefficients
-from mne.utils import warn
-
-from torch import Tensor, nn, from_numpy
-
 import torch.nn.functional as F
-
+from mne.filter import _check_coefficients, create_filter
+from mne.utils import warn
+from torch import Tensor, from_numpy, nn
 from torchaudio.functional import fftconvolve, filtfilt
 
-from typing import Optional, List, Tuple
-
-from braindecode.functional import (
-    drop_path,
-    safe_log,
-)
-from braindecode.util import np_to_th
+from braindecode.functional import drop_path, safe_log
 from braindecode.models.eegminer import GeneralizedGaussianFilter
+from braindecode.util import np_to_th
 
 
 class Ensure4d(nn.Module):

@@ -3,9 +3,10 @@
 #
 # License: BSD (3-clause)
 import inspect
-import pandas as pd
 from pathlib import Path
+
 import numpy as np
+import pandas as pd
 import torch
 from scipy.special import log_softmax
 from sklearn.utils import deprecated

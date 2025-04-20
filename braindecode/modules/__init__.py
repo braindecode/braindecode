@@ -1,19 +1,19 @@
-from .util import get_output_shape, to_dense_prediction_model
 from .attention import (
     CAT,
-    CATLite,
     CBAM,
     ECA,
-    EncNet,
     FCA,
-    GatherExcite,
     GCT,
-    GSoP,
-    SqueezeAndExcitation,
     SRM,
+    CATLite,
+    EncNet,
+    GatherExcite,
+    GSoP,
     MultiHeadAttention,
+    SqueezeAndExcitation,
 )
 from .modules import (
+    MLP,
     AvgPool2dWithConv,
     CausalConv1d,
     Chomp1d,
@@ -23,25 +23,24 @@ from .modules import (
     DropPath,
     Ensure4d,
     Expression,
+    FeedForwardBlock,
     FilterBankLayer,
     GeneralizedGaussianFilter,
     InceptionBlock,
     IntermediateOutputWrapper,
     LinearWithConstraint,
     LogActivation,
-    MLP,
     MaxNormLinear,
     SafeLog,
     TimeDistributed,
-    FeedForwardBlock,
 )
-
 from .stats import (
     LogPowerLayer,
     LogVarLayer,
     MaxLayer,
     MeanLayer,
+    StatLayer,
     StdLayer,
     VarLayer,
-    StatLayer,
 )
+from .util import get_output_shape, to_dense_prediction_model
