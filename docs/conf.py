@@ -1,3 +1,4 @@
+"""Our local Sphinx configuration file."""
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
@@ -82,6 +83,7 @@ def linkcode_resolve(domain, info):
     -----
     This has been adapted to deal with our "verbose" decorator.
     Adapted from SciPy (doc/source/conf.py).
+
     """
     repo = "https://github.com/braindecode/braindecode/"
     if domain != "py":
