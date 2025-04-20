@@ -19,8 +19,6 @@ from .modules import (
     Ensure4d,
     FeedForwardBlock,
     InceptionBlock,
-    LinearWithConstraint,
-    MaxNormLinear,
     TimeDistributed,
 )
 
@@ -32,6 +30,10 @@ from .convolution import (
     CausalConv1d,
 )
 
+from .linear import (
+    LinearWithConstraint,
+    MaxNormLinear,
+)
 from .activation import (
     LogActivation,
     SafeLog,
@@ -48,6 +50,7 @@ from .stats import (
     StdLayer,
     VarLayer,
 )
-from .util import get_output_shape, to_dense_prediction_model
 
 from .wrapper import IntermediateOutputWrapper, Expression
+
+from .util import get_output_shape, to_dense_prediction_model
