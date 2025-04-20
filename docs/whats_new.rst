@@ -22,6 +22,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Making the braindecode.models compatibility with torch compile, torch export and torch jit (:gh:`714` by `Bruno Aristimunha` and `Pierre Guetschel`_)
 - Adding :class:`braindecode.models.IFNet` (:gh:`725` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBMSNet` (:gh:`724` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBCNet` (:gh:`722` by `Bruno Aristimunha`_ )
