@@ -127,8 +127,10 @@ These modules wrap specialized activation functions—e.g., safe logarithms for 
 
 Attention
 ---------
+
 These modules implement various attention mechanisms, including
 multi-head attention and squeeze-and-excitation layers.
+
 .. autosummary::
     :toctree: generated/attention
     :recursive:
