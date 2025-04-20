@@ -7,10 +7,7 @@ API Reference
 =============
 
 This is the reference for classes (``CamelCase`` names) and functions
-(``underscore_case`` names) of Braindecode.
-
-
-:py:mod:`braindecode`:
+(``underscore_case`` names) of :py:mod:`braindecode`.
 
 .. automodule:: braindecode
    :no-members:
@@ -20,24 +17,24 @@ Models
 ======
 
 Model zoo availables in braindecode. The models are implemented as
-`PyTorch` :py:class:`nn.Modules` and can be used for various EEG decoding ways tasks. 
+``PyTorch`` :py:class:`torch.nn.Modules` and can be used for various EEG decoding ways tasks. 
 
 All the models have the convention of having the signal related parameters 
 named the same way, following the braindecode's standards:
 
-+ `n_outputs`: Number of labels or outputs of the model. 
-+ `n_chans`: Number of EEG channels.
-+ `n_times`: Number of time points of the input window.
-+ `input_window_seconds`: Length of the input window in seconds.
-+ `sfreq`: Sampling frequency of the EEG recordings.
-+ `chs_info`: Information about each individual EEG channel. Refer to `mne.Info["chs"]`. 
++ ``n_outputs``: Number of labels or outputs of the model. 
++ ``n_chans``: Number of EEG channels.
++ ``n_times``: Number of time points of the input window.
++ ``input_window_seconds``: Length of the input window in seconds.
++ ``sfreq``: Sampling frequency of the EEG recordings.
++ ``chs_info``: Information about each individual EEG channel. Refer to :class:`mne.Info["chs"]`. 
 
 All the models assume that the input data is a 3D tensor of shape
 ``(batch_size, n_chans, n_times)``, and some models also accept a 4D tensor of shape
 ``(batch_size, n_chans, n_times, n_epochs)``, in case of cropped model.
 
 All the models are implemented as subclasses of :py:class:`EEGModuleMixin`, which is a
-base class for all EEG models in Braindecode. The :py:class:`EEGModuleMixin` class
+base class for all EEG models in Braindecode. The :class:`EEGModuleMixin` class
 provides a common interface for all EEG models and derivate variables names if necessary.
 
 :py:mod:`braindecode.models.base`:

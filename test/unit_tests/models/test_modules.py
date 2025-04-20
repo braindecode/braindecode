@@ -309,7 +309,7 @@ def test_drop_path_different_dimensions():
 
 
 @pytest.mark.parametrize(
-    "eps, expected_repr",
+    "epilson, expected_repr",
     [
         (1e-6, "eps=1e-06"),
         (1e-4, "eps=0.0001"),
@@ -318,7 +318,7 @@ def test_drop_path_different_dimensions():
         (123.456, "eps=123.456"),
     ]
 )
-def test_safelog_extra_repr(eps, expected_repr):
+def test_safelog_extra_repr(epilson, expected_repr):
     """
     Test the extra_repr method of the SafeLog class to ensure it returns
     the correct string representation based on the eps value.
@@ -331,7 +331,7 @@ def test_safelog_extra_repr(eps, expected_repr):
         The expected string output from extra_repr.
     """
     # Initialize the SafeLog module with the given eps
-    module = SafeLog(eps=eps)
+    module = SafeLog(epilson=epilson)
 
     # Get the extra representation
     repr_output = module.extra_repr()
