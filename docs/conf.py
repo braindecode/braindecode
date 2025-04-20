@@ -224,7 +224,6 @@ intersphinx_mapping = {
     "mne": ("http://mne.tools/stable", None),
     "skorch": ("https://skorch.readthedocs.io/en/stable/", None),
     "torch": ("https://pytorch.org/docs/stable/", None),
-    "braindecode": ("https://braindecode.org/", None),
 }
 
 sphinx_gallery_conf = {
@@ -250,10 +249,8 @@ sphinx_gallery_conf = {
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-import sphinx_rtd_theme  # noqa
 
 html_theme = "pydata_sphinx_theme"
-html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 switcher_version_match = "dev" if release.endswith("dev0") else version
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the

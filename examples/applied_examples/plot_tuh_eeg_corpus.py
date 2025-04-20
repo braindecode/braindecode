@@ -1,9 +1,11 @@
 """
+.. _process-big-dataset-TUH:
+
 Process a big data EEG resource (TUH EEG Corpus)
 ================================================
 
 In this example, we showcase usage of the Temple University Hospital EEG Corpus
-(https://www.isip.piconepress.com/projects/tuh_eeg/html/downloads.shtml#c_tueg)
+(https://isip.piconepress.com/projects/nedc/html/tuh_eeg/)
 including simple preprocessing steps as well as cutting of compute windows.
 
 .. contents:: This example covers:
@@ -175,7 +177,7 @@ plt_histogram(df)
 # -------------------------------------
 #
 # Selecting recordings
-# ~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~
 #
 # First, we will do some selection of available recordings based on the duration.
 # We will select those recordings that have at least five minutes duration.
@@ -250,7 +252,7 @@ tuh = select_by_channels(tuh, short_ch_names)
 
 ###############################################################################
 # Combining preprocessing steps
-# ~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #
 # Next, we use braindecode's preprocess to combine and execute several preprocessing
 # steps that are executed through 'mne':
@@ -311,7 +313,7 @@ tuh_preproc = preprocess(
 
 ###############################################################################
 # Cut Compute Windows
-# ~~~~~~~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~
 # We can finally generate compute windows. The resulting dataset is now ready
 # to be used for model training.
 
