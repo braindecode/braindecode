@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
-from braindecode.util import convert_chs_info_to_torch
+from braindecode.util import convert_chs_info_to_tensordicts
 
 
 def deprecated_args(obj, *old_new_args):
