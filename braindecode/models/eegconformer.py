@@ -7,10 +7,10 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from torch import nn, Tensor
+from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import MultiHeadAttention, FeedForwardBlock
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):

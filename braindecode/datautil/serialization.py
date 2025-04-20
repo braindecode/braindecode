@@ -6,8 +6,8 @@ Convenience functions for storing and loading of windows datasets.
 #
 # License: BSD (3-clause)
 
-import os
 import json
+import os
 import pickle
 import warnings
 from glob import glob
@@ -18,10 +18,10 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 from ..datasets.base import (
-    BaseDataset,
     BaseConcatDataset,
-    WindowsDataset,
+    BaseDataset,
     EEGWindowsDataset,
+    WindowsDataset,
 )
 
 

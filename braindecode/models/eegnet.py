@@ -2,18 +2,19 @@
 #
 # License: BSD (3-clause)
 from __future__ import annotations
-from typing import Optional, List, Dict
+
+from typing import Dict, List, Optional
 
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
 
+from braindecode.functional import glorot_weight_zero_bias, squeeze_final_output
 from braindecode.models.base import EEGModuleMixin
-from braindecode.functional import squeeze_final_output, glorot_weight_zero_bias
 from braindecode.models.modules import (
+    Conv2dWithConstraint,
     Ensure4d,
     Expression,
-    Conv2dWithConstraint,
     LinearWithConstraint,
 )
 

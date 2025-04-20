@@ -6,9 +6,9 @@ from einops.layers.torch import Rearrange
 from numpy import prod
 from torch import nn
 
-from braindecode.models.base import EEGModuleMixin
 from braindecode.functional import glorot_weight_zero_bias
-from braindecode.modules import Ensure4d, DepthwiseConv2d, InceptionBlock
+from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
 
 
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):

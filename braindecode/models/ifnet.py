@@ -11,14 +11,14 @@ doi: 10.1109/TNSRE.2023.3257319.
 """
 
 from __future__ import annotations
+
 from typing import Optional
 
-from mne.utils import warn
-
 import torch
+from einops.layers.torch import Rearrange
+from mne.utils import warn
 from torch import nn
 from torch.nn.init import trunc_normal_
-from einops.layers.torch import Rearrange
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.modules import (

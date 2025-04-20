@@ -8,13 +8,11 @@
 from functools import partial
 
 import torch
+from einops.layers.torch import Rearrange
+from torch import nn
+from torch.fft import fftfreq
 
 import braindecode.functional as F
-
-from torch.fft import fftfreq
-from einops.layers.torch import Rearrange
-
-from torch import nn
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import GeneralizedGaussianFilter
 

@@ -8,16 +8,16 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Ensure4d
 from braindecode.modules.attention import (
     CAT,
-    CATLite,
     CBAM,
     ECA,
-    EncNet,
     FCA,
-    GatherExcite,
     GCT,
+    SRM,
+    CATLite,
+    EncNet,
+    GatherExcite,
     GSoP,
     SqueezeAndExcitation,
-    SRM,
 )
 
 

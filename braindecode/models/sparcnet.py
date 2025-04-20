@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from math import floor, log2
 from collections import OrderedDict
+from math import floor, log2
 from typing import Any
 
 import torch

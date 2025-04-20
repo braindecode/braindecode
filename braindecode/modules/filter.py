@@ -2,13 +2,11 @@ from functools import partial
 from typing import List, Optional, Tuple
 
 import torch
-
+from einops.layers.torch import Rearrange
 from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
-
-from torch.fft import fftfreq
 from torch import Tensor, from_numpy, nn
-from einops.layers.torch import Rearrange
+from torch.fft import fftfreq
 from torchaudio.functional import fftconvolve, filtfilt
 
 import braindecode.functional as F

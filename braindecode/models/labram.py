@@ -5,18 +5,18 @@ Authors: Wei-Bang Jiang
 License: BSD 3 clause
 """
 
-from warnings import warn
 from collections import OrderedDict
+from warnings import warn
 
 import torch
 import torch.nn as nn
-from torch.nn.init import trunc_normal_
 from einops import rearrange
 from einops.layers.torch import Rearrange
+from torch.nn.init import trunc_normal_
 
+from braindecode.models.base import EEGModuleMixin
 from braindecode.models.functions import rescale_parameter
 from braindecode.models.modules import MLP, DropPath
-from braindecode.models.base import EEGModuleMixin
 
 
 class Labram(EEGModuleMixin, nn.Module):

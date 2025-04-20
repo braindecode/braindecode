@@ -1,10 +1,12 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
+from typing import Dict, List, Optional, Tuple, Type, Union
+
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
-from typing import List, Type, Union, Tuple, Optional, Dict
+
 from braindecode.models.base import EEGModuleMixin
 
 

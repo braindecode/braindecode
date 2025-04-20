@@ -7,11 +7,12 @@ Self-supervised learning samplers.
 #
 # License: BSD (3-clause)
 
-import numpy as np
 import warnings
 
-from . import RecordingSampler, DistributedRecordingSampler
+import numpy as np
 import torch.distributed as dist
+
+from . import DistributedRecordingSampler, RecordingSampler
 
 
 class RelativePositioningSampler(RecordingSampler):

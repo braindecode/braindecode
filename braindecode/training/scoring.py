@@ -6,15 +6,15 @@
 #
 # License: BSD-3
 
-from contextlib import contextmanager
 import warnings
+from contextlib import contextmanager
 
 import numpy as np
 import torch
 from mne.utils.check import check_version
 from skorch.callbacks.scoring import EpochScoring
-from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
+from skorch.utils import to_numpy
 from torch.utils.data import DataLoader
 
 

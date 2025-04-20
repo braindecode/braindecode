@@ -3,16 +3,16 @@ Utilities for data manipulation.
 """
 
 from .serialization import (
-    save_concat_dataset,
-    load_concat_dataset,
     _check_save_dir_empty,
+    load_concat_dataset,
+    save_concat_dataset,
 )
 
 
 def __getattr__(name):
     # ideas from https://stackoverflow.com/a/57110249/1469195
-    from warnings import warn
     import importlib
+    from warnings import warn
 
     if name == "create_from_X_y":
         warn(

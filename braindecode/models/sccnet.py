@@ -4,10 +4,11 @@
 # License: BSD (3-clause)
 
 import math
+
 import torch
+from einops.layers.torch import Rearrange
 from torch import nn
 
-from einops.layers.torch import Rearrange
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.modules import LogActivation
 

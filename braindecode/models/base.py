@@ -4,10 +4,10 @@
 # License: BSD-3
 
 from __future__ import annotations
-import warnings
-from typing import Dict, Iterable, List, Optional, Tuple
 
+import warnings
 from collections import OrderedDict
+from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import torch

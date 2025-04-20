@@ -2,28 +2,27 @@
 Utilities for data augmentation.
 """
 
-from .base import Transform, IdentityTransform, Compose, AugmentedDataLoader
+from . import functional
+from .base import AugmentedDataLoader, Compose, IdentityTransform, Transform
 from .transforms import (
-    TimeReverse,
-    SignFlip,
-    FTSurrogate,
-    ChannelsShuffle,
-    ChannelsDropout,
-    GaussianNoise,
-    ChannelsSymmetry,
-    SmoothTimeMask,
     BandstopFilter,
+    ChannelsDropout,
+    ChannelsShuffle,
+    ChannelsSymmetry,
     FrequencyShift,
-    SensorsRotation,
-    SensorsZRotation,
-    SensorsYRotation,
-    SensorsXRotation,
+    FTSurrogate,
+    GaussianNoise,
+    MaskEncoding,
     Mixup,
     SegmentationReconstruction,
-    MaskEncoding,
+    SensorsRotation,
+    SensorsXRotation,
+    SensorsYRotation,
+    SensorsZRotation,
+    SignFlip,
+    SmoothTimeMask,
+    TimeReverse,
 )
-
-from . import functional
 
 __all__ = [
     "Transform",

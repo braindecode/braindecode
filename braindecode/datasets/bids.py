@@ -8,17 +8,18 @@ More information on BIDS (Brain Imaging Data Structure) can be found at https://
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from typing import Any
+
 from dataclasses import dataclass, field
 from pathlib import Path
-from joblib import Parallel, delayed
+from typing import Any
 
-import pandas as pd
 import mne
 import mne_bids
 import numpy as np
+import pandas as pd
+from joblib import Parallel, delayed
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from .base import BaseConcatDataset, BaseDataset, WindowsDataset
 
 
 def _descriptiion_from_bids_path(bids_path: mne_bids.BIDSPath) -> dict[str, Any]:

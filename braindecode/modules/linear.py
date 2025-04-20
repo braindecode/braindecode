@@ -1,6 +1,5 @@
 import torch
-from torch import nn
-from torch import Tensor
+from torch import Tensor, nn
 
 
 class MaxNormLinear(nn.Linear):

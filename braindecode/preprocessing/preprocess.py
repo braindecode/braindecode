@@ -9,11 +9,12 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from warnings import warn
-from functools import partial
-from collections.abc import Iterable
-import sys
+
 import platform
+import sys
+from collections.abc import Iterable
+from functools import partial
+from warnings import warn
 
 if sys.version_info < (3, 9):
     from typing import Callable
@@ -21,21 +22,21 @@ else:
     from collections.abc import Callable
 
 import numpy as np
-from numpy.typing import NDArray
 import pandas as pd
-from mne import create_info, BaseEpochs
-from mne.io import BaseRaw
 from joblib import Parallel, delayed
+from mne import BaseEpochs, create_info
+from mne.io import BaseRaw
+from numpy.typing import NDArray
 
 from braindecode.datasets.base import (
     BaseConcatDataset,
     BaseDataset,
-    WindowsDataset,
     EEGWindowsDataset,
+    WindowsDataset,
 )
 from braindecode.datautil.serialization import (
-    load_concat_dataset,
     _check_save_dir_empty,
+    load_concat_dataset,
 )
 
 

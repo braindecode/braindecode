@@ -1,9 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from numpy import ceil, arange
 from einops.layers.torch import Rearrange
+from numpy import arange, ceil
 
 from braindecode.models.base import EEGModuleMixin
 

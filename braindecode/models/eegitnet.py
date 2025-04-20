@@ -6,7 +6,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import Ensure4d, DepthwiseConv2d, InceptionBlock
+from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
 
 
 class EEGITNet(EEGModuleMixin, nn.Sequential):
