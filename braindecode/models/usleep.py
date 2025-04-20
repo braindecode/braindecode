@@ -318,22 +318,22 @@ class _DecoderBlock(nn.Module):
     def forward(self, x, residual):
         x = self.block_preskip(x)
         if self.with_skip_connection:
-            x, residual = _crop_tensors_to_match(
+            x, residual = self._crop_tensors_to_match(
                 x, residual, axis=-1
             )  # in case of mismatch
             x = torch.cat([x, residual], axis=1)  # (B, 2 * C, T)
         x = self.block_postskip(x)
         return x
 
+    @staticmethod
+    def _crop_tensors_to_match(x1, x2, axis=-1):
+        """Crops two tensors to their lowest-common-dimension along an axis."""
+        dim_cropped = min(x1.shape[axis], x2.shape[axis])
 
-def _crop_tensors_to_match(x1, x2, axis=-1):
-    """Crops two tensors to their lowest-common-dimension along an axis."""
-    dim_cropped = min(x1.shape[axis], x2.shape[axis])
-
-    x1_cropped = torch.index_select(
-        x1, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
-    )
-    x2_cropped = torch.index_select(
-        x2, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
-    )
-    return x1_cropped, x2_cropped
+        x1_cropped = torch.index_select(
+            x1, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
+        )
+        x2_cropped = torch.index_select(
+            x2, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
+        )
+        return x1_cropped, x2_cropped
