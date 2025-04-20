@@ -29,16 +29,19 @@ from .modules import (
     IntermediateOutputWrapper,
     LinearWithConstraint,
     LogActivation,
+    MLP,
+    MaxNormLinear,
+    SafeLog,
+    TimeDistributed,
+    FeedForwardBlock,
+)
+
+from .stats import (
     LogPowerLayer,
     LogVarLayer,
-    MLP,
     MaxLayer,
-    MaxNormLinear,
     MeanLayer,
-    SafeLog,
-    StatLayer,
     StdLayer,
-    TimeDistributed,
     VarLayer,
-    FeedForwardBlock,
+    StatLayer,
 )
