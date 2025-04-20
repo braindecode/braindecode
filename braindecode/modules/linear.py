@@ -6,7 +6,7 @@ class MaxNormLinear(nn.Linear):
     """Linear layer with MaxNorm constraining on weights.
 
     Equivalent of Keras tf.keras.Dense(..., kernel_constraint=max_norm())
-    [1, 2]_. Implemented as advised in [3]_.
+    [1]_ and [2]_. Implemented as advised in [3]_.
 
     Parameters
     ----------

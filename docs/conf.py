@@ -148,6 +148,11 @@ sys.path.append(os.path.abspath(os.path.join(curdir, "..", "mne")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
 autosummary_generate = True
+
+suppress_warnings = [
+    "autosummary.generate",
+]
+
 autodoc_default_options = {"inherited-members": False}
 
 numpydoc_show_class_members = False

@@ -574,7 +574,8 @@ class CAT(nn.Module):
     References
     ----------
     .. [Wu2023] Wu, Z. et al., 2023
-    CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
+        CAT: Learning to Collaborate Channel and Spatial Attention from
+        Multi-Information Fusion. IET Computer Vision 2023.
     """
 
     def __init__(
@@ -655,7 +656,7 @@ class CAT(nn.Module):
 
 class CATLite(nn.Module):
     """
-    Modification of CAT without the convolutional layer.
+    Modification of CAT without the convolutional layer from [Wu2023]_.
 
     Parameters
     ----------
@@ -668,8 +669,8 @@ class CATLite(nn.Module):
 
     References
     ----------
-    .. [Wu2023] Wu, Z. et al., 2023
-    CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
+    .. [Wu2023] Wu, Z. et al., 2023 CAT: Learning to Collaborate Channel and
+        Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
     """
 
     def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):

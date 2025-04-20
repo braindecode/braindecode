@@ -104,15 +104,113 @@ Models
     TSceptionV1
     USleep
 
-.. currentmodule:: braindecode.models.modules
 
-:py:mod:`braindecode.models`:
 
+:py:mod:`braindecode.modules`:
+
+.. currentmodule:: braindecode.modules
+
+Activation
+==========
 .. autosummary::
-   :toctree: generated/
+    :toctree: generated/activation
+
+    LogActivation
+    SafeLog
+
+Attention
+=========
+.. autosummary::
+    :toctree: generated/attention
+
+    CAT
+    CBAM
+    ECA
+    FCA
+    GCT
+    SRM
+    CATLite
+    EncNet
+    GatherExcite
+    GSoP
+    MultiHeadAttention
+    SqueezeAndExcitation
+
+Blocks
+======
+.. autosummary::
+    :toctree: generated/blocks
+
+    MLP
+    FeedForwardBlock
+    InceptionBlock
+
+Convolution
+===========
+.. autosummary::
+    :toctree: generated/convolution
+
+    AvgPool2dWithConv
+    CausalConv1d
+    CombinedConv
+    Conv2dWithConstraint
+    DepthwiseConv2d
+
+Filter
+======
+.. autosummary::
+    :toctree: generated/filter
 
     FilterBankLayer
     GeneralizedGaussianFilter
+
+Layers
+======
+.. autosummary::
+    :toctree: generated/layers
+
+    Chomp1d
+    DropPath
+    Ensure4d
+    TimeDistributed
+
+Linear
+======
+.. autosummary::
+    :toctree: generated/linear
+
+    LinearWithConstraint
+    MaxNormLinear
+
+Stats
+=====
+.. autosummary::
+    :toctree: generated/stats
+
+    LogPowerLayer
+    LogVarLayer
+    MaxLayer
+    MeanLayer
+    StatLayer
+    StdLayer
+    VarLayer
+
+Utilities
+=========
+.. autosummary::
+    :toctree: generated/util
+
+    get_output_shape
+    to_dense_prediction_model
+
+Wrappers
+========
+.. autosummary::
+    :toctree: generated/wrapper
+
+    Expression
+    IntermediateOutputWrapper
+
 
 Training
 ========
