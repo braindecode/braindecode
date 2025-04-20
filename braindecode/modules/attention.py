@@ -133,7 +133,7 @@ class GSoP(nn.Module):
         return scale * x
 
 
-class FCA(torch.nn.Module):
+class FCA(nn.Module):
     """
     Frequency Channel Attention Networks from [Qin2021]_.
 
