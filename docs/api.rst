@@ -2,12 +2,9 @@
 
 .. _api_reference:
 
-=============
-API Reference
-=============
-
-This is the reference for classes (``CamelCase`` names) and functions
-(``underscore_case`` names) of :py:mod:`braindecode`.
+=======================
+Braindece API Reference
+=======================
 
 .. automodule:: braindecode
    :no-members:
@@ -256,7 +253,28 @@ models with intermediate outputs.
     IntermediateOutputWrapper
 
 
+Functional
+===========
+:py:mod:`braindecode.functional`:
 
+.. currentmodule:: braindecode.functional
+
+The functional module contains various functions that can be used
+like functional API. 
+
+.. autosummary::
+    :toctree: generated
+    :recursive:
+   
+     drop_path
+     glorot_weight_zero_bias 
+     hilbert_freq
+     identity
+     plv_time
+     rescale_parameter
+     safe_log
+     square
+     squeeze_final_output
 
 Datasets
 ========
