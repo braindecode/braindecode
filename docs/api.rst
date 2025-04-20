@@ -115,7 +115,7 @@ filter banks, and other utilities.
 .. currentmodule:: braindecode.modules
 
 Activation
-----------
+''''''''''
 These modules wrap specialized activation functions—e.g., safe logarithms for numerical stability.
 
 .. autosummary::
@@ -126,10 +126,10 @@ These modules wrap specialized activation functions—e.g., safe logarithms for 
     SafeLog
 
 Attention
----------
+'''''''''
 
 These modules implement various attention mechanisms, including
-multi-head attention and squeeze-and-excitation layers.
+multi'head attention and squeeze'and'excitation layers.
 
 .. autosummary::
     :toctree: generated/attention
@@ -149,9 +149,9 @@ multi-head attention and squeeze-and-excitation layers.
     SqueezeAndExcitation
 
 Blocks
-------
+''''''
 These modules are specialized building blocks for neural networks,
-including multi-layer perceptrons (MLPs) and inception blocks.
+including multi'layer perceptrons (MLPs) and inception blocks.
 
 .. autosummary::
     :toctree: generated/blocks
@@ -162,7 +162,7 @@ including multi-layer perceptrons (MLPs) and inception blocks.
     InceptionBlock
 
 Convolution
------------
+'''''''''''
 These modules implement constraints convolutional layers, including
 depthwise convolutions and causal convolutions. They also include
 convolutional layers with constraints and pooling layers.
@@ -178,7 +178,7 @@ convolutional layers with constraints and pooling layers.
     DepthwiseConv2d
 
 Filter
-------
+''''''
 These modules implement Filter Bank as Layer and generalizer Gaussian
 layer. 
 
@@ -190,9 +190,9 @@ layer.
     GeneralizedGaussianFilter
 
 Layers
-------
+''''''
 These modules implement various types of layers, including dropout
-layers, normalization layers, and time-distributed layers. They also
+layers, normalization layers, and time'distributed layers. They also
 include layers for handling different input shapes and dimensions.
 
 .. autosummary::
@@ -205,9 +205,9 @@ include layers for handling different input shapes and dimensions.
     TimeDistributed
 
 Linear
-------
+''''''
 These modules implement linear layers with various constraints and
-initializations. They include linear layers with max-norm constraints
+initializations. They include linear layers with max'norm constraints
 and linear layers with specific initializations.
 
 .. autosummary::
@@ -218,7 +218,7 @@ and linear layers with specific initializations.
     MaxNormLinear
 
 Stats
------
+'''''
 These modules implement statistical layers, including layers for
 calculating the mean, standard deviation, and variance of input
 data. They also include layers for calculating the log power and log
@@ -237,7 +237,7 @@ variance of input data. Mostly used on FilterBank models.
     VarLayer
 
 Utilities
----------
+'''''''''
 These modules implement various utility functions and classes for
 change to cropped model.
 
@@ -249,7 +249,7 @@ change to cropped model.
     to_dense_prediction_model
 
 Wrappers
---------
+''''''''
 These modules implement wrappers for various types of models,
 including wrappers for models with multiple outputs and wrappers for
 models with intermediate outputs. 
@@ -292,7 +292,7 @@ different data formats. The options available are: `Numpy Arrays`, `MNE Raw` and
 
 
 Base classes
-------------
+''''''''''''
 
 .. autosummary::
    :toctree: generated/
@@ -305,7 +305,7 @@ Base classes
 
    
 Common Datasets
-----------------
+''''''''''''''''
 
 .. autosummary::
    :toctree: generated/
@@ -322,7 +322,7 @@ Common Datasets
 
 
 Dataset Builders Functions
---------------------------
+''''''''''''''''''''''''''
 Functions to create datasets from different data formats
 
 
@@ -377,7 +377,7 @@ Data Utils
 Samplers
 ========
 Samplers that can used to sample EEG data for training and testing
-and to create batches of data, used on Self-Supervised Learning
+and to create batches of data, used on Self'Supervised Learning
 and other tasks.
 
 :py:mod:`braindecode.samplers`:
@@ -403,8 +403,8 @@ The augmentation module follow the pytorch transforms API. It contains
 transformations that can be applied to EEG data. The transformations
 can be used to augment the data during training, which can help improve
 the performance of the model. The transformations can be applied to
-the data in a variety of ways, including time-domain transformations,
-frequency-domain transformations, and spatial transformations. 
+the data in a variety of ways, including time'domain transformations,
+frequency'domain transformations, and spatial transformations. 
 
 :py:mod:`braindecode.augmentation`:
 
@@ -437,9 +437,11 @@ frequency-domain transformations, and spatial transformations.
 
 
 Functional API
---------------
+''''''''''''''
 The functional API contains the same transformations as the
 transforms API, but they are implemented as functions. 
+
+:py:mod:`braindecode.augmentation.functional`:
 
 .. currentmodule:: braindecode.augmentation.functional
 
