@@ -99,6 +99,8 @@ namespaces = false  # to disable scanning PEP 420 namespaces (true by default)
 
 [tool.ruff]
 lint.ignore-init-module-imports = true
+line-length = 88
+target-version = "py311"
 
 [tool.isort]
 skip = [".gitignore"]
@@ -106,5 +108,5 @@ skip_glob = ["test/*", "examples/*"]
 py_version = 311
 profile = "black"
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]  # :contentReference[oaicite:0]{index=0}
-known_first_party = ["braindecode"]    # :contentReference[oaicite:1]{index=1}
+known_first_party = ["braindecode"]   
 lines_between_sections = 1
