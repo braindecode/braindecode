@@ -8,7 +8,7 @@ import inspect
 
 import mne.io
 
-from braindecode.preprocessing import Preprocessor
+from braindecode.preprocessing.preprocess import Preprocessor
 from braindecode.util import _update_moabb_docstring
 
 
