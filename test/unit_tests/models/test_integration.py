@@ -451,9 +451,6 @@ def test_model_exported(model):
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
-    if model.__class__.__name__ == "EEGNetv4":
-        # EEGNetv4 is not compatible with torch.export
-        pytest.skip("EEGNetv4 is not compatible with torch.export")
 
     model.eval()
 
