@@ -18,9 +18,9 @@ class SafeLog(nn.Module):
 
     """
 
-    def __init__(self, eps: float = 1e-6):
+    def __init__(self, epsilon: float = 1e-6):
         super().__init__()
-        self.eps = eps
+        self.epsilon = epsilon
 
     def forward(self, x) -> Tensor:
         """
@@ -36,10 +36,10 @@ class SafeLog(nn.Module):
         torch.Tensor
             Output tensor after applying safe logarithm.
         """
-        return F.safe_log(x=x, eps=self.eps)
+        return F.safe_log(x=x, eps=self.epsilon)
 
     def extra_repr(self) -> str:
-        eps_str = f"eps={self.eps}"
+        eps_str = f"eps={self.epsilon}"
         return eps_str
 
 

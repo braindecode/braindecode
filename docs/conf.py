@@ -149,9 +149,7 @@ sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
 autosummary_generate = True
 
-suppress_warnings = [
-    "autosummary.generate",
-]
+suppress_warnings = ["autosummary.generate", "misc.include"]
 
 autodoc_default_options = {"inherited-members": False}
 
@@ -359,6 +357,7 @@ html_sidebars = {
     "cite": [],
     "help": [],
     "whats_new": [],
+    "api": [],
 }
 
 # -- Options for LaTeX output ---------------------------------------------
