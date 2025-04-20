@@ -7,7 +7,7 @@ from torch.nn import init
 from torch.nn.utils import weight_norm
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import Ensure4d
+from braindecode.modules import Ensure4d
 
 
 class TIDNet(EEGModuleMixin, nn.Module):

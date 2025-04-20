@@ -7,9 +7,9 @@ from torch import nn
 from torch.nn import init
 from torch.nn.utils import weight_norm
 
+from braindecode.functional import squeeze_final_output
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import squeeze_final_output
-from braindecode.models.modules import Chomp1d, Ensure4d, Expression
+from braindecode.modules import Chomp1d, Ensure4d, Expression
 
 
 class BDTCN(EEGModuleMixin, nn.Module):

@@ -7,7 +7,7 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import Ensure4d
+from braindecode.modules import Ensure4d
 
 
 class EEGInceptionMI(EEGModuleMixin, nn.Module):

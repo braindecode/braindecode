@@ -10,7 +10,7 @@ from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.models.fbcnet import _valid_layers
-from braindecode.models.modules import (
+from braindecode.modules import (
     Conv2dWithConstraint,
     FilterBankLayer,
     LinearWithConstraint,

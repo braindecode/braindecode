@@ -11,7 +11,7 @@ from torch import nn
 
 from braindecode.functional import glorot_weight_zero_bias, squeeze_final_output
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import (
+from braindecode.modules import (
     Conv2dWithConstraint,
     Ensure4d,
     Expression,

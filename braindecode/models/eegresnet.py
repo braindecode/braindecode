@@ -9,9 +9,9 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 
+from braindecode.functional import squeeze_final_output
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import squeeze_final_output
-from braindecode.models.modules import AvgPool2dWithConv, Ensure4d, Expression
+from braindecode.modules import AvgPool2dWithConv, Ensure4d, Expression
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
