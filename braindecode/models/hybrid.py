@@ -8,7 +8,7 @@ from torch.nn import ConstantPad2d
 
 from braindecode.models.deep4 import Deep4Net
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
-from braindecode.models.util import to_dense_prediction_model
+from braindecode.modules.util import to_dense_prediction_model
 
 
 class HybridNet(nn.Module):
