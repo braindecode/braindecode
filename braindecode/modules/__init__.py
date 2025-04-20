@@ -24,8 +24,6 @@ from .modules import (
     Ensure4d,
     Expression,
     FeedForwardBlock,
-    FilterBankLayer,
-    GeneralizedGaussianFilter,
     InceptionBlock,
     IntermediateOutputWrapper,
     LinearWithConstraint,
@@ -34,6 +32,9 @@ from .modules import (
     SafeLog,
     TimeDistributed,
 )
+
+from .filter import FilterBankLayer, GeneralizedGaussianFilter
+
 from .stats import (
     LogPowerLayer,
     LogVarLayer,

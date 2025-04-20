@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Optional, Tuple
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 
 class StatLayer(nn.Module):

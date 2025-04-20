@@ -2,16 +2,11 @@
 #          Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
-import inspect
-from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import torch
 from scipy.special import log_softmax
 from sklearn.utils import deprecated
-
-import braindecode.models as models
 
 
 @deprecated(
