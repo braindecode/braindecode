@@ -43,6 +43,7 @@ repos:
             "--select=E,W,F,I",           # E=errors, W=warnings, F=pyflakes, I=import sorting
             "--ignore=E402,E501,F401",    # your custom ignores
           ]
+        files: ^(docs|examples)/
       - id: ruff
         name: ruff lint braindecode preview
         args:
