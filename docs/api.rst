@@ -106,6 +106,10 @@ Modules
 
 :py:mod:`braindecode.modules`:
 
+This module contains the building blocks for Braindecode models. It
+contains activation functions, convolutional layers, attention mechanisms,
+filter banks, and other utilities.
+
 .. currentmodule:: braindecode.modules
 
 Activation
@@ -184,12 +188,12 @@ Stats
 -----
 .. autosummary::
     :toctree: generated/stats
-
+    
+    StatLayer
     LogPowerLayer
     LogVarLayer
     MaxLayer
     MeanLayer
-    StatLayer
     StdLayer
     VarLayer
 
