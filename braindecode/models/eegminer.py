@@ -9,7 +9,7 @@ from functools import partial
 
 import torch
 
-import braindecode.models.functions as F
+import braindecode.functional as F
 
 from torch.fft import fftfreq
 from einops.layers.torch import Rearrange

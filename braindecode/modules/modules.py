@@ -19,7 +19,7 @@ from torchaudio.functional import fftconvolve, filtfilt
 
 from typing import Optional, List, Tuple
 
-from braindecode.models.functions import (
+from braindecode.functional import (
     drop_path,
     safe_log,
 )
@@ -175,6 +175,84 @@ class AvgPool2dWithConv(nn.Module):
             groups=in_channels,
         )
         return pooled
+
+
+class DepthwiseConv2d(torch.nn.Conv2d):
+    """
+    Depthwise convolution layer.
+
+    This class implements a depthwise convolution, where each input channel is
+    convolved separately with its own filter (channel multiplier), effectively
+    performing a spatial convolution independently over each channel.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of channels in the input tensor.
+    depth_multiplier : int, optional
+        Multiplier for the number of output channels. The total number of
+        output channels will be `in_channels * depth_multiplier`. Default is 2.
+    kernel_size : int or tuple, optional
+        Size of the convolutional kernel. Default is 3.
+    stride : int or tuple, optional
+        Stride of the convolution. Default is 1.
+    padding : int or tuple, optional
+        Padding added to both sides of the input. Default is 0.
+    dilation : int or tuple, optional
+        Spacing between kernel elements. Default is 1.
+    bias : bool, optional
+        If True, adds a learnable bias to the output. Default is True.
+    padding_mode : str, optional
+        Padding mode to use. Options are 'zeros', 'reflect', 'replicate', or
+        'circular'.
+        Default is 'zeros'.
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        depth_multiplier=2,
+        kernel_size=3,
+        stride=1,
+        padding=0,
+        dilation=1,
+        bias=True,
+        padding_mode="zeros",
+    ):
+        out_channels = in_channels * depth_multiplier
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=in_channels,
+            bias=bias,
+            padding_mode=padding_mode,
+        )
+
+
+class InceptionBlock(nn.Module):
+    """
+    Inception block module.
+
+    This module applies multiple convolutional branches to the input and concatenates
+    their outputs along the channel dimension. Each branch can have a different
+    configuration, allowing the model to capture multi-scale features.
+
+    Parameters
+    ----------
+    branches : list of nn.Module
+        List of convolutional branches to apply to the input.
+    """
+
+    def __init__(self, branches):
+        super().__init__()
+        self.branches = nn.ModuleList(branches)
+
+    def forward(self, x):
+        return torch.cat([branch(x) for branch in self.branches], 1)
 
 
 class IntermediateOutputWrapper(nn.Module):

@@ -9,7 +9,7 @@ from mne.utils import warn
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import squeeze_final_output
+from braindecode.functional import squeeze_final_output, glorot_weight_zero_bias
 from braindecode.models.modules import (
     Ensure4d,
     Expression,
@@ -295,7 +295,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
             )
         self.add_module("final_layer", module)
 
-        _glorot_weight_zero_bias(self)
+        glorot_weight_zero_bias(self)
 
 
 class EEGNetv1(EEGModuleMixin, nn.Sequential):
@@ -468,25 +468,4 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
 
         self.add_module("final_layer", module)
 
-        _glorot_weight_zero_bias(self)
-
-
-def _glorot_weight_zero_bias(model):
-    """Initialize parameters of all modules by initializing weights with
-    glorot
-     uniform/xavier initialization, and setting biases to zero. Weights from
-     batch norm layers are set to 1.
-
-    Parameters
-    ----------
-    model: Module
-    """
-    for module in model.modules():
-        if hasattr(module, "weight"):
-            if "BatchNorm" not in module.__class__.__name__:
-                nn.init.xavier_uniform_(module.weight, gain=1)
-            else:
-                nn.init.constant_(module.weight, 1)
-        if hasattr(module, "bias"):
-            if module.bias is not None:
-                nn.init.constant_(module.bias, 0)
+        glorot_weight_zero_bias(self)

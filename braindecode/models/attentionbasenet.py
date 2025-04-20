@@ -5,8 +5,8 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import Ensure4d
-from braindecode.models.modules_attention import (
+from braindecode.modules import Ensure4d
+from braindecode.modules.attention import (
     CAT,
     CATLite,
     CBAM,
