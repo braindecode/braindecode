@@ -51,6 +51,7 @@ repos:
             "--fix",
             "--preview",
             "--select=NPY201",
+            "--ignore=D100,D102,D105,D107,D415,D417",
           ]
         files: ^braindecode/
       - id: ruff
