@@ -10,6 +10,8 @@ from collections import OrderedDict
 
 import numpy as np
 import torch
+from tensordict import TensorDict
+
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
 from braindecode.util import convert_chs_info_to_tensordicts
@@ -73,18 +75,16 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
-    # _chs_info: List[Dict[str, torch.Tensor]]  # type: ignore[assignment]
-    # we need to cast to torch.Tensor because
-    # torch.jit.Attribute does not support np.ndarray
-    # _sfreq: int  # type: ignore[assignment]
-    # _n_outputs: int  # type: ignore[assignment]
-    # _n_chans: int  # type: ignore[assignment]
-    # _n_times: int  # type: ignore[assignment]
-    # _add_log_softmax: bool  # type: ignore[assignment]
-    # _input_window_seconds: float  # type: ignore[assignment]
-    # _mapping: Dict[str, str]  # type: ignore[assignment]
-    # _input_shape: Tuple[int, int, int]  # type: ignore[assignment]
-    # _output_shape: Tuple[int, ...]  # type: ignore[assignment]
+    _chs_info: Tuple[type[TensorDict], List[Dict[str, str]]]  # type: ignore[assignment]
+    _sfreq: int  # type: ignore[assignment]
+    _n_outputs: int  # type: ignore[assignment]
+    _n_chans: int  # type: ignore[assignment]
+    _n_times: int  # type: ignore[assignment]
+    _add_log_softmax: bool  # type: ignore[assignment]
+    _input_window_seconds: float  # type: ignore[assignment]
+    _mapping: Dict[str, str]  # type: ignore[assignment]
+    _input_shape: Tuple[int, int, int]  # type: ignore[assignment]
+    _output_shape: Tuple[int, ...]  # type: ignore[assignment]
 
     def __init__(
         self,
@@ -136,10 +136,14 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    def chs_info(self):
-        if self._chs_info is None:
-            raise ValueError("chs_info not specified.")
-        return self._chs_info
+    def chs_info(self):  # -> Tuple[TensorDict, List[Dict[str, str]]]:
+        if self._chs_info is None and self._n_chans is not None:
+            chs_info = [{"ch_name": f"{i}"} for i in range(self._n_chans)]
+            self._chs_info = convert_chs_info_to_tensordicts(chs_info)
+        if self._chs_info is not None and self._n_chans is None:
+            raise ValueError("chs_info not specified and could not be inferred.")
+
+        return convert_chs_info_to_tensordicts(self._chs_info)
 
     @property
     def n_times(self) -> int:
