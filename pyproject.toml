@@ -102,6 +102,7 @@ lint.ignore-init-module-imports = true
 line-length = 88
 target-version = "py311"
 
+
 [tool.isort]
 skip = [".gitignore"]
 skip_glob = ["test/*", "examples/*"]
