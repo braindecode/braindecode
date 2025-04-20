@@ -331,7 +331,7 @@ def test_safelog_extra_repr(epilson, expected_repr):
         The expected string output from extra_repr.
     """
     # Initialize the SafeLog module with the given eps
-    module = SafeLog(epilson=epilson)
+    module = SafeLog(epilson)
 
     # Get the extra representation
     repr_output = module.extra_repr()
