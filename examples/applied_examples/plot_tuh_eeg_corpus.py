@@ -1,5 +1,4 @@
-"""
-.. _process-big-dataset-TUH:
+""".. _process-big-dataset-TUH:
 
 Process a big data EEG resource (TUH EEG Corpus)
 ================================================
@@ -21,17 +20,17 @@ including simple preprocessing steps as well as cutting of compute windows.
 
 import tempfile
 
-import numpy as np
 import matplotlib.pyplot as plt
 import mne
+import numpy as np
+from numpy import multiply
 
 from braindecode.datasets import TUH
 from braindecode.preprocessing import (
-    preprocess,
     Preprocessor,
     create_fixed_length_windows,
+    preprocess,
 )
-from numpy import multiply
 
 mne.set_log_level("ERROR")  # avoid messages every time a window is extracted
 

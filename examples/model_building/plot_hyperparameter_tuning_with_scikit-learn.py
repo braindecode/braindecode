@@ -1,5 +1,4 @@
-"""
-.. _tuning-with-scikit-learn:
+""".. _tuning-with-scikit-learn:
 
 Hyperparameter tuning with scikit-learn
 =======================================
@@ -89,12 +88,13 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 #    PyTorch-libraries like `<torchvision_>`_.
 #
 
+from numpy import multiply
+
 from braindecode.preprocessing.preprocess import (
+    Preprocessor,
     exponential_moving_standardize,
     preprocess,
-    Preprocessor,
 )
-from numpy import multiply
 
 low_cut_hz = 4.0  # low cut frequency for filtering
 high_cut_hz = 38.0  # high cut frequency for filtering
@@ -199,9 +199,11 @@ eval_set = splitted["1test"]  # Session evaluation
 # :class:`torch.nn.Module`.
 #
 from functools import partial
+
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 # check if GPU is available, if True chooses to use it
 cuda = torch.cuda.is_available()
@@ -252,6 +254,7 @@ if cuda and hasattr(model, "cuda"):
 
 from skorch.callbacks import LRScheduler
 from skorch.dataset import ValidSplit
+
 from braindecode import EEGClassifier
 
 batch_size = 16
@@ -287,10 +290,10 @@ clf = EEGClassifier(
 #    of a single trial into both train and valid set.
 #
 
+import pandas as pd
+from numpy import array
 from sklearn.model_selection import GridSearchCV, KFold
 from skorch.helper import SliceDataset
-from numpy import array
-import pandas as pd
 
 train_X = SliceDataset(train_set, idx=0)
 train_y = array([y for y in SliceDataset(train_set, idx=1)])

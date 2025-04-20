@@ -1,5 +1,4 @@
-"""
-.. _sleep-staging-physionet-chambon2018:
+""".. _sleep-staging-physionet-chambon2018:
 
 Sleep staging on the Sleep Physionet dataset using Chambon2018 network
 ======================================================================
@@ -44,8 +43,9 @@ dataset = SleepPhysionet(subject_ids=subject_ids, recording_ids=[2], crop_wake_m
 # a lowpass filter. We omit the downsampling step of [1]_ as the Sleep
 # Physionet data is already sampled at a lower 100 Hz.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from numpy import multiply
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 high_cut_hz = 30
 factor = 1e6
@@ -129,6 +129,7 @@ train_set, valid_set = splits["train"], splits["valid"]
 #
 
 import numpy as np
+
 from braindecode.samplers import SequenceSampler
 
 n_windows = 3  # Sequences of 3 consecutive windows
@@ -183,8 +184,10 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 
 import torch
 from torch import nn
+
+from braindecode.models import SleepStagerChambon2018
+from braindecode.modules import TimeDistributed
 from braindecode.util import set_random_seeds
-from braindecode.models import SleepStagerChambon2018, TimeDistributed
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -240,8 +243,9 @@ if cuda:
 #    with more recordings.
 #
 
-from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -309,7 +313,8 @@ plt.show()
 # Finally, we also display the confusion matrix and classification report:
 #
 
-from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.metrics import classification_report, confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
 
 y_true = [valid_set[[i]][1][0] for i in range(len(valid_sampler))]

@@ -10,26 +10,29 @@ Test for samplers.
 import bisect
 import platform
 
-import pytest
 import numpy as np
 import pandas as pd
+import pytest
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
-from braindecode.samplers import (
-    RecordingSampler,
-    DistributedRecordingSampler,
-    SequenceSampler,
-    BalancedSequenceSampler,
-)
-from braindecode.samplers.ssl import RelativePositioningSampler, DistributedRelativePositioningSampler
-from braindecode.datasets import BaseDataset, BaseConcatDataset
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
     create_fixed_length_windows,
     create_windows_from_events,
 )
+from braindecode.samplers import (
+    BalancedSequenceSampler,
+    DistributedRecordingSampler,
+    RecordingSampler,
+    SequenceSampler,
+)
+from braindecode.samplers.ssl import (
+    DistributedRelativePositioningSampler,
+    RelativePositioningSampler,
+)
 
-import torch.distributed as dist
-import torch.multiprocessing as mp
 
 @pytest.fixture(scope="module")
 def windows_ds():

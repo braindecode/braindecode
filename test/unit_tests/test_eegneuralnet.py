@@ -12,18 +12,20 @@ import torch
 from scipy.special import softmax
 from sklearn.base import clone
 from skorch.callbacks import LRScheduler
-from skorch.utils import to_tensor
 from skorch.helper import SliceDataset
+from skorch.utils import to_tensor
 from torch import optim
 from torch.nn.functional import nll_loss
 
 from braindecode import EEGClassifier, EEGRegressor
 from braindecode.datasets import BaseConcatDataset, WindowsDataset
+from braindecode.eegneuralnet import _EEGNeuralNet
 from braindecode.models.base import EEGModuleMixin
+
 # from braindecode.models.util import models_dict
 from braindecode.models.shallow_fbcsp import ShallowFBCSPNet
 from braindecode.training import CroppedLoss
-from braindecode.eegneuralnet import _EEGNeuralNet
+
 
 class MockDataset(torch.utils.data.Dataset):
     def __len__(self):
@@ -505,6 +507,7 @@ def test_EEGRegressor_predict_trials(Xy, preds):
     assert np.array_equal(targets, np.concatenate([X[i][1]
                                                   for i in range(len(X))]))
 from braindecode.eegneuralnet import CroppedTrialEpochScoring
+
 
 class ConcreteEEGNeuralNet(_EEGNeuralNet):
     def _get_n_outputs(self, y, classes):

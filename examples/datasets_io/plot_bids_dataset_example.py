@@ -1,5 +1,4 @@
-"""
-.. _bids-dataset-example:
+""".. _bids-dataset-example:
 
 BIDS Dataset Example
 ========================
@@ -17,7 +16,6 @@ from pathlib import Path
 import openneuro
 
 from braindecode.datasets import BIDSDataset
-
 
 ###############################################################################
 # First, we download a collection of (fake/empty) BIDS datasets.

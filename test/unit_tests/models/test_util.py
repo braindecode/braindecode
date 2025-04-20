@@ -5,19 +5,21 @@
 
 import inspect
 
-import pytest
 import numpy as np
-from torch import nn
+import pytest
 from sklearn.preprocessing import OneHotEncoder
+from torch import nn
 
-from braindecode.models.modules import Expression
-from braindecode.models.util import (
-    get_output_shape,
-    aggregate_probas,
+from braindecode import models
+from braindecode.modules import Expression
+from braindecode.modules.util import (
     _pad_shift_array,
+    aggregate_probas,
+    get_output_shape
+)
+from braindecode.models.util import (
     models_dict,
 )
-from braindecode import models
 
 
 def test_get_output_shape_1d_model():

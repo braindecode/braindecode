@@ -8,15 +8,23 @@ import pytest
 import torch
 from mne.filter import create_filter
 from mne.time_frequency import psd_array_welch
-from scipy.signal import fftconvolve as fftconvolve_scipy, freqz, \
-    lfilter as lfilter_scipy
+from scipy.signal import fftconvolve as fftconvolve_scipy
+from scipy.signal import freqz
+from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
 
+from braindecode.models.eegminer import GeneralizedGaussianFilter
 from braindecode.models.functions import drop_path
 from braindecode.models.labram import _SegmentPatch
-from braindecode.models.eegminer import GeneralizedGaussianFilter
-from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed, LinearWithConstraint
+from braindecode.models.modules import (
+    MLP,
+    CombinedConv,
+    DropPath,
+    FilterBankLayer,
+    LinearWithConstraint,
+    SafeLog,
+    TimeDistributed,
+)
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 

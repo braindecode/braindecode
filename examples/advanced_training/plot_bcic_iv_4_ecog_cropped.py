@@ -1,5 +1,4 @@
-"""
-.. _bcic-iv-4-ecog-cropped-decoding:
+""".. _bcic-iv-4-ecog-cropped-decoding:
 
 Fingers flexion cropped decoding on BCIC IV 4 ECoG Dataset
 ==========================================================
@@ -192,9 +191,9 @@ model = ShallowFBCSPNet(
 if cuda:
     model.cuda()
 
-from braindecode.models import to_dense_prediction_model
+from braindecode.modules.util import to_dense_prediction_model
 
-to_dense_prediction_model(model)
+(model)
 
 ######################################################################
 # To know the models’ receptive field, we calculate the shape of model

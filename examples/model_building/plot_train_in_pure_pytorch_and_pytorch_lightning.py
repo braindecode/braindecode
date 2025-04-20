@@ -1,5 +1,4 @@
-"""
-.. _train-model-in-pytorch:
+""".. _train-model-in-pytorch:
 
 Training a Braindecode model in PyTorch
 =======================================
@@ -85,9 +84,9 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 import numpy as np
 
 from braindecode.preprocessing import (
+    Preprocessor,
     exponential_moving_standardize,
     preprocess,
-    Preprocessor,
 )
 
 low_cut_hz = 4.0  # low cut frequency for filtering
@@ -142,6 +141,7 @@ windows_dataset = create_windows_from_events(
 #
 
 import torch
+
 from braindecode.models import ShallowFBCSPNet
 from braindecode.util import set_random_seeds
 
@@ -243,7 +243,6 @@ n_epochs = 2
 # given model. It needs a loss function, optimization algorithm, and
 # learning rate updating callback.
 from tqdm import tqdm
-
 
 # Define a method for training one epoch
 

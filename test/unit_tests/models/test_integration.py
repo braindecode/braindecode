@@ -7,27 +7,30 @@ import inspect
 from copy import deepcopy
 
 import mne
-import torch
 import numpy as np
 import pytest
-
-from torch import nn
+import torch
 from skorch.dataset import ValidSplit
+from torch import nn
 
-from braindecode.models.util import models_dict, models_mandatory_parameters, non_classification_models
 from braindecode import EEGClassifier
 from braindecode.models import (
-    SyncNet,
-    EEGSimpleConv,
-    EEGResNet,
-    USleep,
     EEGInceptionMI,
     EEGMiner,
+    EEGResNet,
+    EEGSimpleConv,
     FBCNet,
-    FBMSNet,
     FBLightConvNet,
+    FBMSNet,
+    SyncNet,
+    USleep,
 )
-from braindecode.models.util import _summary_table
+from braindecode.models.util import (
+    _summary_table,
+    models_dict,
+    models_mandatory_parameters,
+    non_classification_models,
+)
 
 rng = np.random.default_rng(12)
 # Generating the channel info

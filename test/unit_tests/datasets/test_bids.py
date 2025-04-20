@@ -3,9 +3,9 @@
 # License: BSD (3-clause)
 
 import pytest
-
 from moabb.datasets import FakeDataset
 from moabb.paradigms import LeftRightImagery
+
 from braindecode.datasets import BIDSDataset, BIDSEpochsDataset
 
 

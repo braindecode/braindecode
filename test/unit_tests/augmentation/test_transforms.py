@@ -2,45 +2,44 @@
 #          Gustavo Rodrigues <gustavenrique01@gmail.com>
 #
 # License: BSD (3-clause)
-from test.unit_tests.augmentation.test_base import common_transform_assertions
-from test.dataset import concat_windows_dataset, concat_ds_targets
-
 import numpy as np
 import pytest
 import torch
-from scipy.fft import fft
-from scipy.fft import fftfreq
-from scipy.fft import fftshift
-from scipy.signal import find_peaks
-from scipy.signal import welch
+from scipy.fft import fft, fftfreq, fftshift
+from scipy.signal import find_peaks, welch
 from sklearn.utils import check_random_state
 from skorch.helper import predefined_split
 from torch import nn
 
 from braindecode import EEGClassifier
+from braindecode.augmentation import AugmentedDataLoader, IdentityTransform
+from braindecode.augmentation.functional import (
+    _frequency_shift,
+    _torch_normalize_vectors,
+    sensors_rotation,
+)
+from braindecode.augmentation.transforms import (
+    BandstopFilter,
+    ChannelsDropout,
+    ChannelsShuffle,
+    ChannelsSymmetry,
+    FrequencyShift,
+    FTSurrogate,
+    GaussianNoise,
+    MaskEncoding,
+    Mixup,
+    SegmentationReconstruction,
+    SensorsXRotation,
+    SensorsYRotation,
+    SensorsZRotation,
+    SignFlip,
+    SmoothTimeMask,
+    TimeReverse,
+    _get_standard_10_20_positions,
+)
 from braindecode.models import ShallowFBCSPNet
-
-from braindecode.augmentation import IdentityTransform, AugmentedDataLoader
-from braindecode.augmentation.functional import _frequency_shift
-from braindecode.augmentation.functional import _torch_normalize_vectors
-from braindecode.augmentation.functional import sensors_rotation
-from braindecode.augmentation.transforms import BandstopFilter
-from braindecode.augmentation.transforms import ChannelsDropout
-from braindecode.augmentation.transforms import ChannelsShuffle
-from braindecode.augmentation.transforms import ChannelsSymmetry
-from braindecode.augmentation.transforms import FrequencyShift
-from braindecode.augmentation.transforms import FTSurrogate
-from braindecode.augmentation.transforms import GaussianNoise
-from braindecode.augmentation.transforms import MaskEncoding
-from braindecode.augmentation.transforms import Mixup
-from braindecode.augmentation.transforms import SensorsXRotation
-from braindecode.augmentation.transforms import SensorsYRotation
-from braindecode.augmentation.transforms import SensorsZRotation
-from braindecode.augmentation.transforms import SegmentationReconstruction
-from braindecode.augmentation.transforms import SignFlip
-from braindecode.augmentation.transforms import SmoothTimeMask
-from braindecode.augmentation.transforms import TimeReverse
-from braindecode.augmentation.transforms import _get_standard_10_20_positions
+from test.dataset import concat_ds_targets, concat_windows_dataset
+from test.unit_tests.augmentation.test_base import common_transform_assertions
 
 
 @pytest.fixture

@@ -1,5 +1,4 @@
-"""
-.. _sleep-staging-usleep:
+""".. _sleep-staging-usleep:
 
 Sleep staging on the Sleep Physionet dataset using U-Sleep network
 ==================================================================
@@ -57,8 +56,9 @@ dataset = SleepPhysionet(
 # done in [1]_ so that we keep the example as light as possible. No filtering
 # is described in [1]_.
 
-from braindecode.preprocessing import preprocess, Preprocessor
 from sklearn.preprocessing import robust_scale
+
+from braindecode.preprocessing import Preprocessor, preprocess
 
 preprocessors = [Preprocessor(robust_scale, channel_wise=True)]
 
@@ -153,8 +153,9 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 # neural network.
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import USleep
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -201,8 +202,9 @@ if cuda:
 #    optimization if reusing this code on a different dataset or with more
 #    recordings.
 
-from skorch.helper import predefined_split
 from skorch.callbacks import EpochScoring
+from skorch.helper import predefined_split
+
 from braindecode import EEGClassifier
 
 lr = 1e-3
@@ -279,8 +281,9 @@ plt.show()
 
 ######################################################################
 # Finally, we also display the confusion matrix and classification report:
+from sklearn.metrics import classification_report, confusion_matrix
+
 from braindecode.visualization import plot_confusion_matrix
-from sklearn.metrics import confusion_matrix, classification_report
 
 y_true = np.array([valid_set[i][1] for i in valid_sampler])
 y_pred = clf.predict(valid_set)

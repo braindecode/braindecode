@@ -1,5 +1,4 @@
-"""
-.. _train-test-tune-model:
+""".. _train-test-tune-model:
 
 How to train, test and tune your model?
 =======================================
@@ -107,9 +106,9 @@ dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[subject_id])
 import numpy as np
 
 from braindecode.preprocessing import (
+    Preprocessor,
     exponential_moving_standardize,
     preprocess,
-    Preprocessor,
 )
 
 low_cut_hz = 4.0  # low cut frequency for filtering
@@ -207,8 +206,9 @@ test_set = splitted["1test"]  # Session evaluation
 #
 
 import torch
-from braindecode.util import set_random_seeds
+
 from braindecode.models import ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 cuda = torch.cuda.is_available()  # check if GPU is available, if True chooses to use it
 device = "cuda" if cuda else "cpu"
@@ -303,8 +303,8 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 # training and testing subsets.
 #
 #
-import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
 from matplotlib.patches import Patch
 
 sns.set(font_scale=1.5)
@@ -368,9 +368,9 @@ plot_simple_train_test(
 # ``Subset`` from torch and ``predefined_split`` from skorch.
 #
 
-from torch.utils.data import Subset
 from sklearn.model_selection import train_test_split
-from skorch.helper import predefined_split, SliceDataset
+from skorch.helper import SliceDataset, predefined_split
+from torch.utils.data import Subset
 
 X_train = SliceDataset(train_set, idx=0)
 y_train = np.array([y for y in SliceDataset(train_set, idx=1)])
@@ -421,7 +421,6 @@ print(f"Test acc: {(test_acc * 100):.2f}%")
 
 def plot_train_valid_test(ax, all_dataset, train_subset, val_subset, test_set):
     """Create a sample plot for training, validation, testing."""
-
     bd_cmap = [
         "#3A6190",
         "#683E00",
@@ -490,11 +489,10 @@ plot_train_valid_test(
 # The ``train_split`` argument has to be set to ``None``, as sklearn
 # will take care of the splitting.
 #
+from sklearn.model_selection import KFold, cross_val_score
 from skorch.callbacks import LRScheduler
 
 from braindecode import EEGClassifier
-
-from sklearn.model_selection import KFold, cross_val_score
 
 lr = 0.0625 * 0.01
 weight_decay = 0
@@ -537,7 +535,6 @@ print(
 
 def plot_k_fold(ax, cv, all_dataset, X_train, y_train, test_set):
     """Create a sample plot for training, validation, testing."""
-
     bd_cmap = [
         "#3A6190",
         "#683E00",

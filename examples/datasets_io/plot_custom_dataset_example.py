@@ -1,5 +1,4 @@
-"""
-.. _custom-dataset-example:
+""".. _custom-dataset-example:
 
 Custom Dataset Example
 ======================

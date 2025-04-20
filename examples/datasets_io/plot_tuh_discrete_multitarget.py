@@ -1,5 +1,4 @@
-"""
-.. _multiple-discrete-targets-TUH:
+""".. _multiple-discrete-targets-TUH:
 
 Multiple discrete targets with the TUH EEG Corpus
 =================================================

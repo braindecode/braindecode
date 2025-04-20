@@ -1,5 +1,4 @@
-"""
-.. _split-dataset-example:
+""".. _split-dataset-example:
 
 Split Dataset Example
 =====================

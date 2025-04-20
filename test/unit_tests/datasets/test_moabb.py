@@ -2,16 +2,15 @@
 #
 # License: BSD (3-clause)
 import mne
-
 import pytest
+from moabb.datasets import FakeDataset
 from pandas import DataFrame
 
-from moabb.datasets import FakeDataset
 from braindecode.datasets import MOABBDataset
 from braindecode.datasets.moabb import (
+    BNCI2014001,
     _fetch_and_unpack_moabb_data,
     _find_dataset_in_moabb,
-    BNCI2014001,
 )
 
 

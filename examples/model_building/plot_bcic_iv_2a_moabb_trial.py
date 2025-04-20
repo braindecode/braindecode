@@ -1,5 +1,4 @@
-"""
-.. _bcic-iv-2a-moabb-trial:
+""".. _bcic-iv-2a-moabb-trial:
 
 Basic Brain Decoding on EEG Data
 ========================================
