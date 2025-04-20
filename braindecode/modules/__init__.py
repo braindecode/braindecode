@@ -17,10 +17,8 @@ from .modules import (
     Chomp1d,
     DropPath,
     Ensure4d,
-    Expression,
     FeedForwardBlock,
     InceptionBlock,
-    IntermediateOutputWrapper,
     LinearWithConstraint,
     MaxNormLinear,
     TimeDistributed,
@@ -51,3 +49,5 @@ from .stats import (
     VarLayer,
 )
 from .util import get_output_shape, to_dense_prediction_model
+
+from .wrapper import IntermediateOutputWrapper, Expression
