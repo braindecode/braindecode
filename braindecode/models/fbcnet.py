@@ -8,8 +8,8 @@ from mne.utils import warn
 from torch import nn, Tensor
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.modules import (
+    Conv2dWithConstraint,
     FilterBankLayer,
     LinearWithConstraint,
     LogVarLayer,
