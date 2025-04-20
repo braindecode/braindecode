@@ -414,10 +414,9 @@ def test_model_torchscript(model_class):
     torchscript_model_class = torch.jit.script(model)
     assert torchscript_model_class is not None
 
-# skip if windows
-@pytest.skipif(
-    sys.platform == "win32",
-    reason="torch.compile is not supported on Windows"
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="torch.compile is known to have issues on Windows."
 )
 @pytest.mark.parametrize(
     "model",
