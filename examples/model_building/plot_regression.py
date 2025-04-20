@@ -1,4 +1,6 @@
 """
+.. _convnet-regression-fake:
+
 Convolutional neural network regression model on fake data.
 ===========================================================
 
@@ -14,9 +16,9 @@ function from the classifier's output layer and how to train it on a fake regres
 ###################################################################################################
 # Fake regression data
 # --------------------
-# Function for generation of the fake regression dataset generates `n_fake_recs` recordings,
+# Function for generation of the fake regression dataset generates ``n_fake_recs`` recordings,
 # each containing sinusoidal signals with Gaussian noise. Each fake recording signal has
-# `n_fake_chs` channels, it lasts `fake_duration` [s] and it is sampled with `fake_sfreq` [Hz].
+# ``n_fake_chs`` channels, it lasts ``fake_duration`` [s] and it is sampled with ``fake_sfreq`` [Hz].
 # The recordings are split into train, validation and testing sessions.
 
 import numpy as np
@@ -108,7 +110,8 @@ dataset = fake_regression_dataset(
 # Defining a CNN regression model
 # -------------------------------
 #
-# Choosing and defining a CNN classifier, `ShallowFBCSPNet` or `Deep4Net`, introduced in [1]_.
+# Choosing and defining a CNN classifier, :class:`ShallowFBCSPNet <braindecode.models.ShallowFBCSPNet>`
+# or :class:`Deep4Net <braindecode.models.Deep4Net>`, introduced in [1]_.
 # To convert a classifier to a regressor, `softmax` function is removed from its output layer.
 from braindecode.util import set_random_seeds
 from braindecode.models import Deep4Net
@@ -162,7 +165,8 @@ if cuda:
 ###################################################################################################
 # Data windowing
 # ----------------
-# Windowing data with a sliding window into the epochs of the size `window_size_samples`.
+# Windowing data with a sliding window into the epochs of the size ``window_size_samples``.
+
 from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.preprocessing import create_fixed_length_windows
 

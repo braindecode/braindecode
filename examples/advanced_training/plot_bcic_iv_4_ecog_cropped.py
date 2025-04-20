@@ -1,4 +1,6 @@
 """
+.. _bcic-iv-4-ecog-cropped-decoding:
+
 Fingers flexion cropped decoding on BCIC IV 4 ECoG Dataset
 ==========================================================
 
@@ -62,9 +64,7 @@ test_set = dataset_split["test"]
 # ~~~~~~~~~~~~~
 #
 # Now we apply preprocessing like bandpass filtering to our dataset. You
-# can either apply functions provided by
-# `mne.Raw <https://mne.tools/stable/generated/mne.io.Raw.html>`__ or
-# `mne.Epochs <https://mne.tools/0.11/generated/mne.Epochs.html#mne.Epochs>`__
+# can either apply functions provided by :class:`mne.io.Raw` or :class:`mne.Epochs`
 # or apply your own functions, either to the MNE object or the underlying
 # numpy array.
 #
@@ -77,7 +77,7 @@ test_set = dataset_split["test"]
 #    These prepocessings are now directly applied to the loaded
 #    data, and not on-the-fly applied as transformations in
 #    PyTorch-libraries like
-#    `torchvision <https://pytorch.org/docs/stable/torchvision/index.html>`__.
+#    `<torchvision_>`_.
 #
 
 
@@ -107,7 +107,7 @@ preprocess(test_set, [Preprocessor("crop", tmin=0, tmax=24)], n_jobs=-1)
 # In time series targets setup, targets variables are stored in mne.Raw object as channels
 # of type `misc`. Thus those channels have to be selected for further processing. However,
 # many mne functions ignore `misc` channels and perform operations only on data channels
-# (see https://mne.tools/stable/glossary.html#term-data-channels).
+# (see `MNE's glossary on data channels <MNE-glossary-data-channels_>`_).
 preprocessors = [
     # TODO: ensure that misc is not removed
     Preprocessor("pick_types", ecog=True, misc=True),
@@ -152,12 +152,11 @@ n_times = 1000
 ######################################################################
 # Now we create the deep learning model! Braindecode comes with some
 # predefined convolutional neural network architectures for raw
-# time-domain EEG. Here, we use the shallow ConvNet model from `Deep
-# learning with convolutional neural networks for EEG decoding and
-# visualization <https://arxiv.org/abs/1703.05051>`__. These models are
-# pure `PyTorch <https://pytorch.org>`__ deep learning models, therefore
+# time-domain EEG. Here, we use the :class:`ShallowFBCSPNet
+# <braindecode.models.ShallowFBCSPNet>` model from [1]_. These models are
+# pure `PyTorch <pytorch_>`_ deep learning models, therefore
 # to use your own model, it just has to be a normal PyTorch
-# `nn.Module <https://pytorch.org/docs/stable/nn.html#torch.nn.Module>`__.
+# :class:`torch.nn.Module`.
 #
 
 import torch
@@ -264,8 +263,10 @@ test_set.target_transform = lambda x: x[0:1]
 # --------
 #
 # In difference to trialwise decoding, we now should supply
-# ``cropped=True`` to the EEGClassifier, and ``CroppedLoss`` as the
-# criterion, as well as ``criterion__loss_function`` as the loss function
+# ``cropped=True`` to the :class:`EEGClassifer
+# <braindecode.classifier.EEGClassifier>`, and :class:`CroppedLoss
+# <braindecode.training.CroppedLoss>` as the criterion,
+# as well as ``criterion__loss_function`` as the loss function
 # applied to the meaned predictions.
 #
 # .. note::
@@ -325,7 +326,7 @@ regressor = EEGRegressor(
 set_log_level(verbose="WARNING")
 
 ######################################################################
-# Model training for a specified number of epochs. ``y`` is None as it is already supplied
+# Model training for a specified number of epochs. ``y`` is ``None`` as it is already supplied
 # in the dataset.
 regressor.fit(train_set, y=None, epochs=n_epochs)
 
@@ -449,3 +450,16 @@ handles.append(
 )
 plt.legend(handles, [h.get_label() for h in handles], fontsize=14, loc="center right")
 plt.tight_layout()
+
+#############################################################
+#
+#
+# References
+# ----------
+#
+# .. [1] Schirrmeister, R.T., Springenberg, J.T., Fiederer, L.D.J., Glasstetter, M.,
+#        Eggensperger, K., Tangermann, M., Hutter, F., Burgard, W. and Ball, T. (2017),
+#        Deep learning with convolutional neural networks for EEG decoding and visualization.
+#        Hum. Brain Mapping, 38: 5391-5420. https://doi.org/10.1002/hbm.23730.
+#
+# .. include:: /links.inc

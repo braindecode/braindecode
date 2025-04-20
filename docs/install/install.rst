@@ -6,8 +6,8 @@ Installation
 
 Braindecode is written in Python 3, specifically for version 3.8 or above.
 
-The package is distributed via Python package index (`PyPI <https://pypi.org/project/braincode>`__), and you can access the
-source code via `Github <https://github.com/braincode/braindecode>`__ repository.
+The package is distributed via Python package index (`PyPI <braindecode-pypi_>`_), and you can access the
+source code via `Github <braindecode-github_>`_ repository.
 
 There are different ways to install Braindecode, depending on your needs and:
 
@@ -26,7 +26,7 @@ There are different ways to install Braindecode, depending on your needs and:
             For Beginners
 
         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        .. image:: https://braindecode.org/dev/_static/braindecode_install.png
+        .. image:: /_static/braindecode_install.png
            :alt: Braindecode Installer with pip
 
         +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -73,3 +73,5 @@ There are different ways to install Braindecode, depending on your needs and:
 
     install_pip
     install_source
+
+.. include:: /links.inc
