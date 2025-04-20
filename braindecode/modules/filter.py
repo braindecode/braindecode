@@ -6,14 +6,12 @@ import torch
 from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
 
+from torch.fft import fftfreq
 from torch import Tensor, from_numpy, nn
+from einops.layers.torch import Rearrange
 from torchaudio.functional import fftconvolve, filtfilt
 
-
 import braindecode.functional as F
-
-from torch.fft import fftfreq
-from einops.layers.torch import Rearrange
 
 
 class FilterBankLayer(nn.Module):
