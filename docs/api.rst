@@ -109,6 +109,8 @@ Activation
 ''''''''''
 These modules wrap specialized activation functions—e.g., safe logarithms for numerical stability.
 
+:py:mod:`braindecode.modules.activation`:
+
 .. autosummary::
     :toctree: generated/activation
     :recursive:
@@ -120,7 +122,9 @@ Attention
 '''''''''
 
 These modules implement various attention mechanisms, including
-multi'head attention and squeeze'and'excitation layers.
+multi'head attention and squeeze and excitation layers.
+
+:py:mod:`braindecode.modules.attention`:
 
 .. autosummary::
     :toctree: generated/attention
@@ -144,6 +148,8 @@ Blocks
 These modules are specialized building blocks for neural networks,
 including multi'layer perceptrons (MLPs) and inception blocks.
 
+:py:mod:`braindecode.modules.blocks`:
+
 .. autosummary::
     :toctree: generated/blocks
     :recursive:
@@ -157,6 +163,8 @@ Convolution
 These modules implement constraints convolutional layers, including
 depthwise convolutions and causal convolutions. They also include
 convolutional layers with constraints and pooling layers.
+
+:py:mod:`braindecode.modules.convolution`:
 
 .. autosummary::
     :toctree: generated/convolution
@@ -173,6 +181,8 @@ Filter
 These modules implement Filter Bank as Layer and generalizer Gaussian
 layer. 
 
+:py:mod:`braindecode.modules.filter`:
+
 .. autosummary::
     :toctree: generated/filter
     :recursive:
@@ -185,6 +195,8 @@ Layers
 These modules implement various types of layers, including dropout
 layers, normalization layers, and time'distributed layers. They also
 include layers for handling different input shapes and dimensions.
+
+:py:mod:`braindecode.modules.layers`:
 
 .. autosummary::
     :toctree: generated/layers
@@ -201,6 +213,8 @@ These modules implement linear layers with various constraints and
 initializations. They include linear layers with max'norm constraints
 and linear layers with specific initializations.
 
+:py:mod:`braindecode.modules.linear`:
+
 .. autosummary::
     :toctree: generated/linear
     :recursive:
@@ -214,6 +228,8 @@ These modules implement statistical layers, including layers for
 calculating the mean, standard deviation, and variance of input
 data. They also include layers for calculating the log power and log
 variance of input data. Mostly used on FilterBank models.
+
+:py:mod:`braindecode.modules.stats`:
 
 .. autosummary::
     :toctree: generated/stats
@@ -232,6 +248,8 @@ Utilities
 These modules implement various utility functions and classes for
 change to cropped model.
 
+:py:mod:`braindecode.modules.util`:
+
 .. autosummary::
     :toctree: generated/util
     :recursive:
@@ -244,6 +262,8 @@ Wrappers
 These modules implement wrappers for various types of models,
 including wrappers for models with multiple outputs and wrappers for
 models with intermediate outputs. 
+
+:py:mod:`braindecode.modules.wrapper`:
 
 .. autosummary::
     :toctree: generated/wrapper
