@@ -3,6 +3,8 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
+from typing import Optional, Dict, List, Tuple, Any
+
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
@@ -61,12 +63,12 @@ class EEGNeX(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         # Signal related parameters
-        n_chans=None,
-        n_outputs=None,
-        n_times=None,
-        chs_info=None,
-        input_window_seconds=None,
-        sfreq=None,
+        n_chans: Optional[int] = None,
+        n_outputs: Optional[int] = None,
+        n_times: Optional[int] = None,
+        chs_info: Optional[List[Dict[str, Any]]] = None,
+        input_window_seconds: Optional[float] = None,
+        sfreq: Optional[float] = None,
         # Model parameters
         activation: nn.Module = nn.ELU,
         depth_multiplier: int = 2,

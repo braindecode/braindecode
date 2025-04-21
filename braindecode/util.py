@@ -412,9 +412,7 @@ def read_all_file_names(directory, extension):
     return file_paths
 
 
-def convert_chs_info_to_tensordicts(
-    chs_info: List[Dict],
-) -> Tuple[TensorDict, List[Dict[str, str]]]:
+def chs_to_torch(chs_info) -> List[str]:
     """
     Convert MNE-Python's info['chs'] entries into a TensorDict for numeric data
     and a separate list for string data.
@@ -433,55 +431,68 @@ def convert_chs_info_to_tensordicts(
     channel_string_data : list of dict
         List of dictionaries with string fields for each channel.
     """
-    numeric_data: TensorDict = {"loc": [], "cal": [], "kind": [], "unit": []}
-    channel_string_data: list = []
+    # numeric_data: TensorDict = {"loc": [], "cal": [], "kind": [], "unit": []}
+    # channel_string_data: list = []
 
+    # for ch in chs_info:
+    #     # Process numeric fields
+    #     loc = ch.get("loc")
+    #     cal = ch.get("cal")
+    #     kind = ch.get("kind")
+    #     unit = ch.get("unit")
+
+    #     if isinstance(loc, np.ndarray):
+    #         numeric_data["loc"].append(torch.from_numpy(loc.astype(np.float32)))
+    #     else:
+    #         numeric_data["loc"].append(
+    #             torch.zeros(12, dtype=torch.float32)
+    #         )  # Default or placeholder
+
+    #     numeric_data["cal"].append(
+    #         torch.tensor(cal, dtype=torch.float32)
+    #         if isinstance(cal, (int, float))
+    #         else torch.tensor(0.0)
+    #     )
+    #     numeric_data["kind"].append(
+    #         torch.tensor(kind, dtype=torch.int32)
+    #         if isinstance(kind, int)
+    #         else torch.tensor(0)
+    #     )
+    #     numeric_data["unit"].append(
+    #         torch.tensor(unit, dtype=torch.int32)
+    #         if isinstance(unit, int)
+    #         else torch.tensor(0)
+    #     )
+
+    #     # Process string fields
+    #     string_fields = {}
+    #     ch_name = ch.get("ch_name")
+    #     if isinstance(ch_name, str):
+    #         string_fields["ch_name"] = ch_name
+    #     channel_string_data.append(string_fields)
+
+    # # Stack numeric data
+    # channel_numeric_data = TensorDict(
+    #     {
+    #         "loc": torch.stack(numeric_data["loc"]),
+    #         "cal": torch.stack(numeric_data["cal"]),
+    #         "kind": torch.stack(numeric_data["kind"]),
+    #         "unit": torch.stack(numeric_data["unit"]),
+    #     },
+    #     batch_size=[len(chs_info)],
+    # )
+
+    # return channel_string_data
+    if chs_info is None:
+        return []
+    channel_names: List[str] = []
     for ch in chs_info:
-        # Process numeric fields
-        loc = ch.get("loc")
-        cal = ch.get("cal")
-        kind = ch.get("kind")
-        unit = ch.get("unit")
-
-        if isinstance(loc, np.ndarray):
-            numeric_data["loc"].append(torch.from_numpy(loc.astype(np.float32)))
-        else:
-            numeric_data["loc"].append(
-                torch.zeros(12, dtype=torch.float32)
-            )  # Default or placeholder
-
-        numeric_data["cal"].append(
-            torch.tensor(cal, dtype=torch.float32)
-            if isinstance(cal, (int, float))
-            else torch.tensor(0.0)
-        )
-        numeric_data["kind"].append(
-            torch.tensor(kind, dtype=torch.int32)
-            if isinstance(kind, int)
-            else torch.tensor(0)
-        )
-        numeric_data["unit"].append(
-            torch.tensor(unit, dtype=torch.int32)
-            if isinstance(unit, int)
-            else torch.tensor(0)
-        )
-
-        # Process string fields
-        string_fields = {}
         ch_name = ch.get("ch_name")
         if isinstance(ch_name, str):
-            string_fields["ch_name"] = ch_name
-        channel_string_data.append(string_fields)
-
-    # Stack numeric data
-    channel_numeric_data = TensorDict(
-        {
-            "loc": torch.stack(numeric_data["loc"]),
-            "cal": torch.stack(numeric_data["cal"]),
-            "kind": torch.stack(numeric_data["kind"]),
-            "unit": torch.stack(numeric_data["unit"]),
-        },
-        batch_size=[len(chs_info)],
-    )
-
-    return channel_numeric_data, channel_string_data
+            channel_names.append(ch_name)
+        else:
+            # Decide handling: raise error, use index, or skip
+            # Raising error is safer if names are expected
+            raise TypeError(f"Expected 'ch_name' to be a string in dict: {ch}")
+            # Alternative: channel_names.append(f"Unnamed_{len(channel_names)}")
+    return channel_names

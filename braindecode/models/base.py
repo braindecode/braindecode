@@ -14,7 +14,7 @@ from tensordict import TensorDict
 
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
-from braindecode.util import convert_chs_info_to_tensordicts
+from braindecode.util import chs_to_torch
 
 
 def deprecated_args(obj, *old_new_args):
@@ -75,22 +75,28 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
-    _chs_info: Tuple[type[TensorDict], List[Dict[str, str]]]  # type: ignore[assignment]
-    _sfreq: int  # type: ignore[assignment]
-    _n_outputs: int  # type: ignore[assignment]
-    _n_chans: int  # type: ignore[assignment]
-    _n_times: int  # type: ignore[assignment]
-    _add_log_softmax: bool  # type: ignore[assignment]
-    _input_window_seconds: float  # type: ignore[assignment]
-    _mapping: Dict[str, str]  # type: ignore[assignment]
-    _input_shape: Tuple[int, int, int]  # type: ignore[assignment]
-    _output_shape: Tuple[int, ...]  # type: ignore[assignment]
+    _chs_info: List[str]  # Stores List[str] after conversion
+    _n_outputs: int
+    _n_chans: int
+    _n_times: int
+    _sfreq: float
+    _input_window_seconds: float
+    _add_log_softmax: bool
+
+    __constants__ = [
+        "_n_outputs",
+        "_n_chans",
+        "_n_times",
+        "_input_window_seconds",
+        "_sfreq",
+        "_add_log_softmax",
+    ]
 
     def __init__(
         self,
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
-        chs_info: Optional[Any] = None,
+        chs_info: Optional[List[Dict[str, Any]]] = None,
         n_times: Optional[int] = None,
         input_window_seconds: Optional[float] = None,
         sfreq: Optional[float] = None,
@@ -109,8 +115,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             raise ValueError(
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
             )
+        # if chs_info is not None:
 
         self._chs_info = chs_info  # type: ignore[assignment]
+
+        # torch.jit.Attribute(chs_to_torch(chs_info), List[str])
         self._n_outputs = n_outputs  # type: ignore[assignment]
         self._n_chans = n_chans  # type: ignore[assignment]
         self._n_times = n_times  # type: ignore[assignment]
@@ -136,14 +145,10 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    def chs_info(self):  # -> Tuple[TensorDict, List[Dict[str, str]]]:
-        if self._chs_info is None and self._n_chans is not None:
-            chs_info = [{"ch_name": f"{i}"} for i in range(self._n_chans)]
-            self._chs_info = convert_chs_info_to_tensordicts(chs_info)
-        if self._chs_info is not None and self._n_chans is None:
-            raise ValueError("chs_info not specified and could not be inferred.")
-
-        return convert_chs_info_to_tensordicts(self._chs_info)
+    def chs_info(self):
+        if self._chs_info is None:
+            raise ValueError("chs_info not specified.")
+        return self._chs_info  # chs_to_torch(
 
     @property
     def n_times(self) -> int:
@@ -215,11 +220,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         with torch.inference_mode():
             try:
                 return tuple(
-                    self.forward(
+                    self.forward(  # type: ignore[attr-defined]
                         torch.zeros(
                             self.input_shape,
-                            dtype=next(self.parameters()).dtype,
-                            device=next(self.parameters()).device,
+                            dtype=next(self.parameters()).dtype,  # type: ignore[attr-defined]
+                            device=next(self.parameters()).device,  # type: ignore[attr-defined]
                         )
                     ).shape
                 )
@@ -277,7 +282,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
         axis = np.array(axis) - 2
         stride_so_far = np.array([1, 1])
-        for module in self.modules():
+        for module in self.modules():  # type: ignore[attr-defined]
             if hasattr(module, "dilation"):
                 assert module.dilation == 1 or (module.dilation == (1, 1)), (
                     "Dilation should equal 1 before conversion, maybe the model is "
@@ -333,11 +338,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
 
-    def forward(self, *args):
-        return super().forward(*args)
+    # def forward(self, *args):
+    #     return super().forward(*args)
 
-    def parameters(self):
-        return super().parameters()
+    # def parameters(self):
+    #     return super().parameters()
 
-    def modules(self):
-        return super().modules()
+    # def modules(self):
+    #     return super().modules()
