@@ -33,5 +33,5 @@ from .stats import (
     StdLayer,
     VarLayer,
 )
-from .util import get_output_shape, to_dense_prediction_model
+from .util import aggregate_probas
 from .wrapper import Expression, IntermediateOutputWrapper

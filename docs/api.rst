@@ -254,8 +254,8 @@ change to cropped model.
     :toctree: generated/util
     :recursive:
    
-    get_output_shape
-    to_dense_prediction_model
+    aggregate_probas
+    
 
 Wrappers
 ''''''''
