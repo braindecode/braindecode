@@ -191,9 +191,8 @@ model = ShallowFBCSPNet(
 if cuda:
     model.cuda()
 
-from braindecode.modules.util import to_dense_prediction_model
 
-(model)
+print(model)
 
 ######################################################################
 # To know the models’ receptive field, we calculate the shape of model

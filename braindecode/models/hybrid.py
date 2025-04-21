@@ -73,20 +73,19 @@ class HybridNet(nn.Module):
             final_conv_length=29,
             drop_prob=drop_prob,
         )
-
         new_conv_layer = nn.Conv2d(
-            deep_model.conv_classifier.in_channels,
+            deep_model.final_layer.conv_classifier.in_channels,
             60,
-            kernel_size=deep_model.conv_classifier.kernel_size,
-            stride=deep_model.conv_classifier.stride,
+            kernel_size=deep_model.final_layer.conv_classifier.kernel_size,
+            stride=deep_model.final_layer.conv_classifier.stride,
         )
         deep_model.final_layer = new_conv_layer
 
         new_conv_layer = nn.Conv2d(
-            shallow_model.conv_classifier.in_channels,
+            shallow_model.final_layer.conv_classifier.in_channels,
             40,
-            kernel_size=shallow_model.conv_classifier.kernel_size,
-            stride=shallow_model.conv_classifier.stride,
+            kernel_size=shallow_model.final_layer.conv_classifier.kernel_size,
+            stride=shallow_model.final_layer.conv_classifier.stride,
         )
         shallow_model.final_layer = new_conv_layer
 
