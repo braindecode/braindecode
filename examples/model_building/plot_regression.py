@@ -166,12 +166,12 @@ if cuda:
 # ----------------
 # Windowing data with a sliding window into the epochs of the size ``window_size_samples``.
 
-from braindecode.modules.util import get_output_shape, to_dense_prediction_model
 from braindecode.preprocessing import create_fixed_length_windows
 
 window_size_samples = fake_sfreq * fake_duration // 3
-to_dense_prediction_model(model)
-n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[2]
+model.to_dense_prediction_model()
+
+n_preds_per_input = model.get_output_shape()[2]
 windows_dataset = create_fixed_length_windows(
     dataset,
     start_offset_samples=0,
