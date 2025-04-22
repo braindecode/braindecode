@@ -38,7 +38,7 @@ class MaxNormLinear(nn.Linear):
         )
         self._max_norm_val = max_norm_val
         self._eps = eps
-        register_parametrization(self, "weight", MaxNorm(self._max_norm_val, eps))
+        register_parametrization(self, "weight", MaxNorm(self._max_norm_val, self._eps))
 
 
 class LinearWithConstraint(nn.Linear):
