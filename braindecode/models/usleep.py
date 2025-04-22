@@ -2,6 +2,7 @@
 #          Omar Chehab <l-emir-omar.chehab@inria.fr>
 #
 # License: BSD (3-clause)
+import math
 
 import numpy as np
 import torch
@@ -117,8 +118,8 @@ class USleep(EEGModuleMixin, nn.Module):
         channels = [self.n_chans]
         n_filters = n_time_filters
         for _ in range(depth + 1):
-            channels.append(int(n_filters * np.sqrt(complexity_factor)))
-            n_filters = int(n_filters * np.sqrt(2))
+            channels.append(int(n_filters * math.sqrt(complexity_factor)))
+            n_filters = int(n_filters * math.sqrt(2))
         self.channels = channels
 
         # Instantiate encoder
