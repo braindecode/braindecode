@@ -24,6 +24,7 @@ from braindecode.modules import (
     TimeDistributed,
     GeneralizedGaussianFilter,
     CausalConv1d,
+    MaxNormLinear,
 )
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
