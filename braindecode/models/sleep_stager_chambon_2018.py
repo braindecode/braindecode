@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 import math
 
+import numpy as np
 import torch
 from torch import nn
 
@@ -91,9 +92,9 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             "fc.1.bias": "final_layer.1.bias",
         }
 
-        time_conv_size = math.ceil(time_conv_size_s * self.sfreq).astype(int)
-        max_pool_size = math.ceil(max_pool_size_s * self.sfreq).astype(int)
-        pad_size = math.ceil(pad_size_s * self.sfreq).astype(int)
+        time_conv_size = np.ceil(time_conv_size_s * self.sfreq).astype(int)
+        max_pool_size = np.ceil(max_pool_size_s * self.sfreq).astype(int)
+        pad_size = np.ceil(pad_size_s * self.sfreq).astype(int)
 
         if self.n_chans > 1:
             self.spatial_conv = nn.Conv2d(1, self.n_chans, (self.n_chans, 1))
