@@ -21,7 +21,7 @@ from torch import nn
 from torch.nn.init import trunc_normal_
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import (
+from braindecode.modules import (
     FilterBankLayer,
     LinearWithConstraint,
     LogPowerLayer,
