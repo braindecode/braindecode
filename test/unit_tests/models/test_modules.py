@@ -29,6 +29,15 @@ from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 
+def old_maxnorm(weight: torch.Tensor,
+                max_norm_val: float = 2.0,
+                eps: float = 1e-5) -> torch.Tensor:
+    w = weight.clone()
+    # clamp denominator ≥ max_norm_val/2, numerator ≤ max_norm_val
+    denom  = w.norm(2, dim=0, keepdim=True).clamp(min=max_norm_val / 2)
+    number  = denom.clamp(max=max_norm_val)
+    return w * (number / (denom + eps))
+
 
 class OldCausalConv1d(nn.Conv1d):
     """Causal 1-dimensional convolution
