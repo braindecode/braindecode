@@ -6,6 +6,8 @@ import platform
 import numpy as np
 import pytest
 import torch
+
+from warnings import catch_warnings, simplefilter
 from mne.filter import create_filter
 from mne.time_frequency import psd_array_welch
 from scipy.signal import fftconvolve as fftconvolve_scipy
@@ -28,7 +30,7 @@ from braindecode.modules import (
 )
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-
+from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 
 def old_maxnorm(weight: torch.Tensor,
                 max_norm_val: float = 2.0,
@@ -1081,3 +1083,36 @@ def test_gradients_match_casual_conv(batch, in_ch, out_ch, length, kernel, dilat
     assert torch.allclose(causal_new.bias.grad, causal_old.bias.grad, atol=1e-6), \
         "Bias gradients differ between new and old implementations"
 
+
+@pytest.mark.parametrize("n_bands,kernel_sizes,expected_warning", [
+    (2, [63], "Reducing number of bands"),         # n_bands > len(kernel_sizes)
+    (1, [63, 31], "Reducing number of kernels"),   # n_bands < len(kernel_sizes)
+    (1, [63], "not divisible by"),                 # n_times % stride_factor != 0
+])
+def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
+    with catch_warnings(record=True) as w:
+        simplefilter("always")
+        block = _SpatioTemporalFeatureBlock(
+            n_times=130,                  # not divisible by 16
+            in_channels=4,
+            out_channels=8,
+            kernel_sizes=kernel_sizes,
+            n_bands=n_bands,
+            stride_factor=16
+        )
+        assert any(expected_warning in str(warn.message) for warn in w)
+
+
+def test_forward_pass_ifnet_output_shape():
+    block = _SpatioTemporalFeatureBlock(
+        n_times=128,                     # divisible by stride_factor
+        in_channels=4,
+        out_channels=8,
+        kernel_sizes=[63, 31],
+        n_bands=2,
+        stride_factor=16
+    )
+    x = torch.randn(2, 4, 128)           # batch_size=2
+    out = block(x)
+    assert isinstance(out, torch.Tensor)
+    assert out.shape[0] == 2            # batch_size preserved

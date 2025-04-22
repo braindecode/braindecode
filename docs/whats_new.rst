@@ -79,6 +79,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Fixing the IFNet (:gh:`739` by `Bruno Aristimunha`_)
 - Fix dead links in the documentation (:gh:`727` by `Lucas Heck`_)
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
 - Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
