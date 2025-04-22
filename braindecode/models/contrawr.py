@@ -162,18 +162,18 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_chans: int | None = None,
-        n_outputs: int | None = None,
-        sfreq: int | None = None,
+        n_chans=None,
+        n_outputs=None,
+        sfreq=None,
         emb_size: int = 256,
         res_channels: list[int] = [32, 64, 128],
         steps=20,
         activation: nn.Module = nn.ELU,
         drop_prob: float = 0.5,
         # Another way to pass the EEG parameters
-        chs_info: list[dict[Any, Any]] | None = None,
-        n_times: int | None = None,
-        input_window_seconds: float | None = None,
+        chs_info=None,
+        n_times=None,
+        input_window_seconds=None,
     ):
         super().__init__(
             n_outputs=n_outputs,

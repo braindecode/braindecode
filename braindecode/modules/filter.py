@@ -128,7 +128,7 @@ class FilterBankLayer(nn.Module):
     def __init__(
         self,
         n_chans: int,
-        sfreq: int,
+        sfreq: float,
         band_filters: Optional[List[Tuple[float, float]] | int] = None,
         method: str = "fir",
         filter_length: str | float | int = "auto",

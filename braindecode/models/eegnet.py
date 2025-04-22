@@ -102,8 +102,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         norm_rate: float = 0.25,
         # Other ways to construct the signal related parameters
         chs_info: Optional[List[Dict]] = None,
-        input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
+        input_window_seconds=None,
+        sfreq=None,
         **kwargs,
     ):
         super().__init__(

@@ -104,7 +104,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_outputs=None,
         input_window_seconds=None,
-        sfreq=250,
+        sfreq=250.0,
         conv_block_n_filters=16,
         conv_block_kernel_length_1=64,
         conv_block_kernel_length_2=16,
