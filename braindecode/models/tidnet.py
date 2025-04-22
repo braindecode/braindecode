@@ -4,7 +4,7 @@ import torch
 from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import Ensure4d
