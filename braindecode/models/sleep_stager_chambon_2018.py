@@ -112,7 +112,16 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             activation(),
             nn.MaxPool2d((1, max_pool_size)),
         )
-        self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
+
+        dim_conv_1 = (
+            self.n_times + 2 * pad_size - (time_conv_size - 1)
+        ) // max_pool_size
+        dim_after_conv = (
+            dim_conv_1 + 2 * pad_size - (time_conv_size - 1)
+        ) // max_pool_size
+
+        self.len_last_layer = n_conv_chs * self.n_chans * dim_after_conv
+
         self.return_feats = return_feats
 
         # TODO: Add new way to handle return_features == True
@@ -121,13 +130,6 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
                 nn.Dropout(p=drop_prob),
                 nn.Linear(self.len_last_layer, self.n_outputs),
             )
-
-    def _len_last_layer(self, n_channels, input_size):
-        self.feature_extractor.eval()
-        with torch.no_grad():
-            out = self.feature_extractor(torch.Tensor(1, 1, n_channels, input_size))
-        self.feature_extractor.train()
-        return len(out.flatten())
 
     def forward(self, x):
         """
