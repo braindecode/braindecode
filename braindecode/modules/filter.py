@@ -239,11 +239,6 @@ class FilterBankLayer(nn.Module):
 
         self.filts = nn.ParameterDict(filts)
 
-        if self.method_iir:
-            self._apply_filter_func = self._apply_iir
-        else:
-            self._apply_filter_func = partial(self._apply_fir, n_chans=self.n_chans)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Apply the filter bank to the input signal.
@@ -258,10 +253,21 @@ class FilterBankLayer(nn.Module):
         torch.Tensor
             Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
-        return torch.cat(
-            [self._apply_filter_func(x, p_filt) for p_filt in self.filts.values()],
-            dim=1,
-        )
+        filtered_x: list[torch.Tensor] = []
+        # as we have few filters, it is okay to use this for loop...abs
+
+        for p_filt in self.filts.values():
+            if self.method_iir:
+                # Apply the filter to the input tensor
+                filtered = self._apply_iir(x, p_filt)
+            else:
+                # Apply the filter to the input tensor
+                filtered = self._apply_fir(x, p_filt, self.n_chans)
+
+            # Append the filtered tensor to the list
+            filtered_x.append(filtered)
+
+        return torch.cat(filtered_x, dim=1)
 
     @staticmethod
     def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
