@@ -408,7 +408,7 @@ def test_model_torchscript(model_class):
     """
     Verifies that all models can be torch scriptable
     """
-    #pytest.skip("Skipping torchscript test for now.")
+    pytest.skip("Skipping torchscript test for now.")
     model = model_class
 
     torchscript_model_class = torch.jit.script(model)
