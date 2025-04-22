@@ -9,13 +9,14 @@ from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
 
-from braindecode.functional import glorot_weight_zero_bias, squeeze_final_output
+from braindecode.functional import glorot_weight_zero_bias
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     Conv2dWithConstraint,
     Ensure4d,
     Expression,
     LinearWithConstraint,
+    SqueezeFinalOutput,
 )
 
 
@@ -283,7 +284,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
                 Rearrange("batch x y z -> batch x z y"),
             )
 
-            module.add_module("squeeze", Expression(squeeze_final_output))
+            module.add_module("squeeze", SqueezeFinalOutput())
         else:
             module.add_module("flatten", nn.Flatten())
             module.add_module(
@@ -465,7 +466,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
             Rearrange("batch x y z -> batch x z y"),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 
