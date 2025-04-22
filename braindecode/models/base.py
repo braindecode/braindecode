@@ -195,11 +195,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         with torch.inference_mode():
             try:
                 return tuple(
-                    self.forward(
+                    self.forward(  # type: ignore
                         torch.zeros(
                             self.input_shape,
-                            dtype=next(self.parameters()).dtype,
-                            device=next(self.parameters()).device,
+                            dtype=next(self.parameters()).dtype,  # type: ignore
+                            device=next(self.parameters()).device,  # type: ignore
                         )
                     ).shape
                 )
@@ -257,7 +257,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
         axis = np.array(axis) - 2
         stride_so_far = np.array([1, 1])
-        for module in self.modules():
+        for module in self.modules():  # type: ignore
             if hasattr(module, "dilation"):
                 assert module.dilation == 1 or (module.dilation == (1, 1)), (
                     "Dilation should equal 1 before conversion, maybe the model is "
@@ -312,12 +312,3 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
-
-    def forward(self, *args, **kwargs):
-        return super().forward(*args, **kwargs)
-
-    def parameters(self):
-        return super().parameters()
-
-    def modules(self):
-        return super().modules()
