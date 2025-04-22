@@ -123,7 +123,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
 
         self.return_feature = return_feature
         self.resample = (
-            Resample(orig_freq=self.sfreq, new_freq=resampling_freq)
+            Resample(orig_freq=float(self.sfreq), new_freq=float(resampling_freq))
             if self.sfreq != resampling_freq
             else torch.nn.Identity()
         )
