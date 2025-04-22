@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import CausalConv1d
 
 
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
@@ -370,37 +371,6 @@ def _attention(query, key, value, dropout=None):
     return torch.matmul(p_attn, value), p_attn
 
 
-class _CausalConv1d(torch.nn.Conv1d):
-    def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride=1,
-        dilation=1,
-        groups=1,
-        bias=True,
-    ):
-        self.__padding = (kernel_size - 1) * dilation
-
-        super(_CausalConv1d, self).__init__(
-            in_channels,
-            out_channels,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=self.__padding,
-            dilation=dilation,
-            groups=groups,
-            bias=bias,
-        )
-
-    def forward(self, input):
-        result = super(_CausalConv1d, self).forward(input)
-        if self.__padding != 0:
-            return result[:, :, : -self.__padding]
-        return result
-
-
 class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
@@ -410,7 +380,7 @@ class _MultiHeadedAttention(nn.Module):
         self.h = h
 
         self.convs = _clones(
-            _CausalConv1d(
+            CausalConv1d(
                 after_reduced_cnn_size, after_reduced_cnn_size, kernel_size=7, stride=1
             ),
             3,
@@ -491,7 +461,7 @@ class _EncoderLayer(nn.Module):
         self.feed_forward = feed_forward
         self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
         self.size = size
-        self.conv = _CausalConv1d(
+        self.conv = CausalConv1d(
             after_reduced_cnn_size,
             after_reduced_cnn_size,
             kernel_size=7,
