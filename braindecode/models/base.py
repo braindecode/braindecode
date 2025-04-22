@@ -103,13 +103,8 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
             )
 
-        if input_window_seconds is not None:
-            self._input_window_seconds = float(input_window_seconds)  # type: ignore[assignment]
-        else:
-            self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
-
-        self._chs_info = torch.jit.Attribute("[]", List[str])
-
+        self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
+        self._chs_info = chs_info  # type: ignore[assignment]
         self._n_outputs = n_outputs  # type: ignore[assignment]
         self._n_chans = n_chans  # type: ignore[assignment]
         self._n_times = n_times  # type: ignore[assignment]

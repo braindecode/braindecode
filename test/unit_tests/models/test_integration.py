@@ -55,7 +55,7 @@ default_signal_params = dict(
 def build_model_list():
     models = []
     for name, req, sig_params in models_mandatory_parameters:
-        if name not in non_classification_models:
+        if name not in non_classification_models and "jepa" not in name.lower():
             sp = deepcopy(default_signal_params)
             if sig_params is not None:
                 sp.update(sig_params)
