@@ -5,6 +5,8 @@ from torch.nn import functional as F
 
 from braindecode.util import np_to_th
 
+from .parametrization import MaxNormParametrize
+
 
 class AvgPool2dWithConv(nn.Module):
     """
@@ -69,15 +71,11 @@ class AvgPool2dWithConv(nn.Module):
 
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
-        self.max_norm = max_norm
         super().__init__(*args, **kwargs)
-
-    def forward(self, x):
-        with torch.no_grad():
-            self.weight.data = torch.renorm(
-                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-            )
-        return super().forward(x)
+        self.max_norm = max_norm
+        # initialize the weights
+        nn.init.xavier_uniform_(self.weight, gain=1)
+        register_parametrization(self, "weight", MaxNormParametrize(self._max_norm))
 
 
 class CombinedConv(nn.Module):

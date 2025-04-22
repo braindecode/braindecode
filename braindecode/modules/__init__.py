@@ -24,6 +24,7 @@ from .convolution import (
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
 from .layers import Chomp1d, DropPath, Ensure4d, TimeDistributed
 from .linear import LinearWithConstraint, MaxNormLinear
+from .parametrization import MaxNorm, MaxNormParametrize
 from .stats import (
     LogPowerLayer,
     LogVarLayer,

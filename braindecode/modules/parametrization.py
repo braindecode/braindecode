@@ -24,7 +24,7 @@ class MaxNorm(nn.Module):
         return X / scale
 
 
-class MaxNormParametriza(nn.Module):
+class MaxNormParametrize(nn.Module):
     """
     Enforce a max‑norm constraint on the rows of a weight tensor via parametrization.
     """
