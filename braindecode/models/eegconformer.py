@@ -251,9 +251,9 @@ class _ResidualAdd(nn.Module):
         super().__init__()
         self.fn = fn
 
-    def forward(self, x, **kwargs):
+    def forward(self, x):
         res = x
-        x = self.fn(x, **kwargs)
+        x = self.fn(x)
         x += res
         return x
 
