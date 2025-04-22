@@ -66,21 +66,6 @@ def build_model_list():
 model_instances = build_model_list()
 
 
-
-def build_model_list():
-    models = []
-    for name, req, sig_params in models_mandatory_parameters:
-        if name not in non_classification_models:
-            sp = deepcopy(default_signal_params)
-            if sig_params is not None:
-                sp.update(sig_params)
-            models.append(models_dict[name](**sp))
-    return models
-
-# call it once, at import time:
-model_instances = build_model_list()
-
-
 def get_epochs_y(signal_params=None, n_epochs=10):
     """
     Generate a random dataset with the given signal parameters.
@@ -429,7 +414,7 @@ def test_model_torchscript(model_class):
     torchscript_model_class = torch.jit.script(model)
     assert torchscript_model_class is not None
 
- @pytest.mark.skipif(
+@pytest.mark.skipif(
     sys.platform.startswith("win"),
     reason="torch.compile is known to have issues on Windows."
 )
