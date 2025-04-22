@@ -47,7 +47,7 @@ chs_info = [
 # Generating the signal parameters
 default_signal_params = dict(
     n_times=1000,
-    sfreq=250,
+    sfreq=250.0,
     n_outputs=2,
     chs_info=chs_info,
 )

@@ -256,7 +256,7 @@ class FilterBankLayer(nn.Module):
         filtered_x: list[torch.Tensor] = []
         # as we have few filters, it is okay to use this for loop...abs
 
-        for p_filt in self.filts.values():
+        for key, p_filt in self.filts.items():
             if self.method_iir:
                 # Apply the filter to the input tensor
                 filtered = self._apply_iir(x, p_filt)

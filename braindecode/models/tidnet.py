@@ -74,15 +74,15 @@ class TIDNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
-        s_growth=24,
-        t_filters=32,
-        drop_prob=0.4,
-        pooling=15,
-        temp_layers=2,
-        spat_layers=2,
-        temp_span=0.05,
-        bottleneck=3,
-        summary=-1,
+        s_growth: int = 24,
+        t_filters: int = 32,
+        drop_prob: float = 0.4,
+        pooling: int = 15,
+        temp_layers: int = 2,
+        spat_layers: int = 2,
+        temp_span: float = 0.05,
+        bottleneck: int = 3,
+        summary: int = -1,
         activation: nn.Module = nn.LeakyReLU,
     ):
         super().__init__(
@@ -94,11 +94,6 @@ class TIDNet(EEGModuleMixin, nn.Module):
             chs_info=chs_info,
         )
         del n_outputs, n_chans, n_times, input_window_seconds, sfreq, chs_info
-
-        self.mapping = {
-            "classify.1.weight": "final_layer.0.weight",
-            "classify.1.bias": "final_layer.0.bias",
-        }
 
         self.temp_len = ceil(temp_span * self.n_times)
 
@@ -123,7 +118,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
 
         self.final_layer = self._create_classifier(self.num_features, self.n_outputs)
 
-    def _create_classifier(self, incoming, n_outputs):
+    def _create_classifier(self, incoming: int, n_outputs: int):
         classifier = nn.Linear(incoming, n_outputs)
         init.xavier_normal_(classifier.weight)
         classifier.bias.data.zero_()
@@ -131,7 +126,7 @@ class TIDNet(EEGModuleMixin, nn.Module):
 
         return seq_clf
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
 
         Parameters
@@ -166,17 +161,17 @@ class _ConvBlock2D(nn.Module):
 
     def __init__(
         self,
-        in_filters,
-        out_filters,
-        kernel,
-        stride=(1, 1),
-        padding=0,
-        dilation=1,
-        groups=1,
-        drop_prob=0.5,
-        batch_norm=True,
-        activation=nn.LeakyReLU,
-        residual=False,
+        in_filters: int,
+        out_filters: int,
+        kernel: tuple[int, int],
+        stride: tuple[int, int] = (1, 1),
+        padding: int = 0,
+        dilation: int = 1,
+        groups: int = 1,
+        drop_prob: float = 0.5,
+        batch_norm: bool = True,
+        activation: type[nn.Module] = nn.LeakyReLU,
+        residual: bool = False,
     ):
         super().__init__()
         self.kernel = kernel
@@ -193,7 +188,7 @@ class _ConvBlock2D(nn.Module):
             groups=groups,
             bias=not batch_norm,
         )
-        self.dropout = nn.Dropout2d(p=drop_prob)
+        self.dropout = nn.Dropout2d(p=float(drop_prob))
         self.batch_norm = (
             _BatchNormZG(out_filters)
             if residual
@@ -202,7 +197,7 @@ class _ConvBlock2D(nn.Module):
             else nn.Identity()
         )
 
-    def forward(self, input):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
         res = input
         input = self.conv(
             input,
@@ -216,13 +211,13 @@ class _ConvBlock2D(nn.Module):
 class _DenseFilter(nn.Module):
     def __init__(
         self,
-        in_features,
-        growth_rate,
-        filter_len=5,
-        drop_prob=0.5,
-        bottleneck=2,
-        activation: nn.Module = nn.LeakyReLU,
-        dim=-2,
+        in_features: int,
+        growth_rate: int,
+        filter_len: int = 5,
+        drop_prob: float = 0.5,
+        bottleneck: int = 2,
+        activation: type[nn.Module] = nn.LeakyReLU,
+        dim: int = -2,
     ):
         super().__init__()
         dim = dim if dim > 0 else dim + 4
@@ -242,24 +237,24 @@ class _DenseFilter(nn.Module):
                 kernel,
                 padding=tuple((k // 2 for k in kernel)),
             ),
-            nn.Dropout2d(drop_prob),
+            nn.Dropout2d(p=float(drop_prob)),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.cat((x, self.net(x)), dim=1)
 
 
 class _DenseSpatialFilter(nn.Module):
     def __init__(
         self,
-        n_chans,
-        growth,
-        depth,
-        in_ch=1,
-        bottleneck=4,
-        drop_prob=0.0,
-        activation: nn.Module = nn.LeakyReLU,
-        collapse=True,
+        n_chans: int,
+        growth: int,
+        depth: int,
+        in_ch: int = 1,
+        bottleneck: int = 4,
+        drop_prob: float = 0.0,
+        activation: type[nn.Module] = nn.LeakyReLU,
+        collapse: bool = True,
     ):
         super().__init__()
         self.net = nn.Sequential(
@@ -281,7 +276,7 @@ class _DenseSpatialFilter(nn.Module):
                 n_filters, n_filters, (n_chans, 1), drop_prob=0, activation=activation
             )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         if len(x.shape) < 4:
             x = x.unsqueeze(1).permute([0, 1, 3, 2])
         x = self.net(x)
@@ -293,13 +288,13 @@ class _DenseSpatialFilter(nn.Module):
 class _TemporalFilter(nn.Module):
     def __init__(
         self,
-        n_chans,
-        filters,
-        depth,
-        temp_len,
-        drop_prob=0.0,
-        activation: nn.Module = nn.LeakyReLU,
-        residual="netwise",
+        n_chans: int,
+        filters: int,
+        depth: int,
+        temp_len: int,
+        drop_prob: float = 0.0,
+        activation: type[nn.Module] = nn.LeakyReLU,
+        residual: str = "netwise",
     ):
         super().__init__()
         temp_len = temp_len + 1 - temp_len % 2
@@ -317,37 +312,44 @@ class _TemporalFilter(nn.Module):
                     padding=(0, dil * (temp_len - 1) // 2),
                 )
             )
-            net.append(nn.Sequential(conv, activation(), nn.Dropout2d(drop_prob)))
+            net.append(
+                nn.Sequential(conv, activation(), nn.Dropout2d(p=float(drop_prob)))
+            )
         if self.residual_style.lower() == "netwise":
             self.net = nn.Sequential(*net)
             self.residual = nn.Conv2d(n_chans, filters, (1, 1))
         elif residual.lower() == "dense":
             self.net = net
 
-    def forward(self, x):
-        if self.residual_style.lower() == "netwise":
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        style = self.residual_style.lower()
+        if style == "netwise":
             return self.net(x) + self.residual(x)
-        elif self.residual_style.lower() == "dense":
+        elif style == "dense":
             for layer in self.net:
                 x = torch.cat((x, layer(x)), dim=1)
             return x
+        # TorchScript now knows this path always returns or errors
+        else:
+            # Use an assertion so TorchScript can compile it
+            assert False, f"Unsupported residual style: {self.residual_style}"
 
 
 class _TIDNetFeatures(nn.Module):
     def __init__(
         self,
-        s_growth,
-        t_filters,
-        n_chans,
-        n_times,
-        drop_prob,
-        pooling,
-        temp_layers,
-        spat_layers,
-        temp_span,
-        bottleneck,
-        summary,
-        activation: nn.Module = nn.LeakyReLU,
+        s_growth: int,
+        t_filters: int,
+        n_chans: int,
+        n_times: int,
+        drop_prob: float,
+        pooling: int,
+        temp_layers: int,
+        spat_layers: int,
+        temp_span: float,
+        bottleneck: int,
+        summary: int,
+        activation: type[nn.Module] = nn.LeakyReLU,
     ):
         super().__init__()
         self.n_chans = n_chans
@@ -364,7 +366,7 @@ class _TIDNetFeatures(nn.Module):
                 activation=activation,
             ),
             nn.MaxPool2d((1, pooling)),
-            nn.Dropout2d(drop_prob),
+            nn.Dropout2d(p=float(drop_prob)),
         )
         summary = n_times // pooling if summary == -1 else summary
 
@@ -387,7 +389,7 @@ class _TIDNetFeatures(nn.Module):
     def num_features(self):
         return self._num_features
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.temporal(x)
         x = self.spatial(x)
         return self.extract_features(x)

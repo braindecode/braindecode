@@ -86,7 +86,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         self,
         n_outputs: Optional[int] = None,  # type: ignore[assignment]
         n_chans: Optional[int] = None,  # type: ignore[assignment]
-        chs_info: Optional[List[Dict]] = None,  # type: ignore[assignment]
+        chs_info=None,  # type: ignore[assignment]
         n_times: Optional[int] = None,  # type: ignore[assignment]
         input_window_seconds: Optional[float] = None,  # type: ignore[assignment]
         sfreq: float = None,  # type: ignore[assignment]
