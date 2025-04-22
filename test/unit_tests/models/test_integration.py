@@ -50,6 +50,20 @@ default_signal_params = dict(
     chs_info=chs_info,
 )
 
+def build_model_list():
+    models = []
+    for name, req, sig_params in models_mandatory_parameters:
+        if name not in non_classification_models:
+            sp = deepcopy(default_signal_params)
+            if sig_params is not None:
+                sp.update(sig_params)
+            models.append(models_dict[name](**sp))
+    return models
+
+# call it once, at import time:
+model_instances = build_model_list()
+
+
 
 def get_epochs_y(signal_params=None, n_epochs=10):
     """
@@ -384,6 +398,21 @@ def test_model_has_drop_prob_parameter(model_class):
         f"{model_class.__name__} does not have an drop_prob parameter."
         f" Found parameters: {param_names}"
     )
+
+@pytest.mark.parametrize(
+    "model_class",
+    model_instances,
+    ids=lambda m: m.__class__.__name__ )
+def test_model_torchscript(model_class):
+    """
+    Verifies that all models can be torch scriptable
+    """
+    #pytest.skip("Skipping torchscript test for now.")
+    model = model_class
+
+    torchscript_model_class = torch.jit.script(model)
+    assert torchscript_model_class is not None
+
 
 @pytest.mark.parametrize("model_class", models_dict.values())
 def test_completeness_summary_table(model_class):
