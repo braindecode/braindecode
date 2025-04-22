@@ -2,6 +2,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.util import np_to_th
 
@@ -75,7 +76,7 @@ class Conv2dWithConstraint(nn.Conv2d):
         self.max_norm = max_norm
         # initialize the weights
         nn.init.xavier_uniform_(self.weight, gain=1)
-        register_parametrization(self, "weight", MaxNormParametrize(self._max_norm))
+        register_parametrization(self, "weight", MaxNormParametrize(self.max_norm))
 
 
 class CombinedConv(nn.Module):
