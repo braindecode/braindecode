@@ -253,9 +253,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
-        n_chans: int | None = None,
-        n_times: int | None = None,
-        n_outputs: int | None = None,
+        n_chans=None,
+        n_times=None,
+        n_outputs=None,
         # Neural network parameters
         block_layers: int = 4,
         growth_rate: int = 16,
@@ -266,9 +266,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         activation: nn.Module = nn.ELU,
         # EEGModuleMixin parameters
         # (another way to present the same parameters)
-        chs_info: list[dict[Any, Any]] | None = None,
-        input_window_seconds: float | None = None,
-        sfreq: int | None = None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
     ):
         super().__init__(
             n_outputs=n_outputs,

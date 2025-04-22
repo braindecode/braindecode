@@ -1,3 +1,4 @@
+# type: ignore
 # Authors: Pierre Guetschel <pierre.guetschel@gmail.com>
 #
 # License: BSD (3-clause)

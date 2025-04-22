@@ -75,9 +75,9 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
     def __init__(
         self,
         # signal's parameters
-        n_chans: Optional[int] = None,
-        n_outputs: Optional[int] = None,
-        n_times: Optional[int] = None,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
         # model's parameters
         final_conv_length: str | int = "auto",
         pool_mode: str = "mean",
@@ -98,9 +98,9 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         final_layer_with_constraint: bool = False,
         norm_rate: float = 0.25,
         # Other ways to construct the signal related parameters
-        chs_info: Optional[List[Dict]] = None,
-        input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
         **kwargs,
     ):
         super().__init__(

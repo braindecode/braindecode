@@ -75,12 +75,12 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
-    _chs_info: List[str]  # Stores List[str] after conversion
+    # _chs_info: List[str] # ict[str, np.array | str | int | float]]  # Stores List[str] after conversion
     _n_outputs: int
     _n_chans: int
     _n_times: int
-    _sfreq: float
-    _input_window_seconds: float
+    # _sfreq: float
+    # _input_window_seconds: float
     _add_log_softmax: bool
 
     __constants__ = [
@@ -88,7 +88,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         "_n_chans",
         "_n_times",
         "_input_window_seconds",
-        "_sfreq",
+        # "_sfreq",
         "_add_log_softmax",
     ]
 
@@ -96,10 +96,10 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         self,
         n_outputs: Optional[int] = None,
         n_chans: Optional[int] = None,
-        chs_info: Optional[List[Dict[str, Any]]] = None,
+        chs_info=None,
         n_times: Optional[int] = None,
         input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
+        sfreq: float = None,  # type: ignore
         add_log_softmax: Optional[bool] = False,
     ):
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
@@ -117,14 +117,18 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             )
         # if chs_info is not None:
 
-        self._chs_info = chs_info  # type: ignore[assignment]
+        if input_window_seconds is not None:
+            self._input_window_seconds = float(input_window_seconds)  # type: ignore[assignment]
+        else:
+            self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
 
-        # torch.jit.Attribute(chs_to_torch(chs_info), List[str])
+        self._chs_info = torch.jit.Attribute("[]", List[str])
+        # chs_info # torch.jit.Attribute(chs_to_torch(), List[str])  # type: ignore[assignment]
+
         self._n_outputs = n_outputs  # type: ignore[assignment]
         self._n_chans = n_chans  # type: ignore[assignment]
         self._n_times = n_times  # type: ignore[assignment]
-        self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
-        self._sfreq = sfreq  # type: ignore[assignment]
+        self._sfreq = float(sfreq)  # type: ignore[assignment]
         self._add_log_softmax = add_log_softmax  # type: ignore[assignment]
         super().__init__()
 
@@ -145,7 +149,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    def chs_info(self):
+    def chs_info(self) -> List[str]:
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
         return self._chs_info  # chs_to_torch(
@@ -172,7 +176,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             and self._n_times is not None
             and self._sfreq is not None
         ):
-            return self._n_times / self._sfreq
+            return float(self._n_times / self._sfreq)
         elif self._input_window_seconds is None:
             raise ValueError(
                 "input_window_seconds could not be inferred. "
@@ -187,7 +191,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             and self._input_window_seconds is not None
             and self._n_times is not None
         ):
-            return self._n_times // self._input_window_seconds
+            return float(self._n_times / self._input_window_seconds)
         elif self._sfreq is None:
             raise ValueError(
                 "sfreq could not be inferred. "
@@ -337,12 +341,3 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
-
-    # def forward(self, *args):
-    #     return super().forward(*args)
-
-    # def parameters(self):
-    #     return super().parameters()
-
-    # def modules(self):
-    #     return super().modules()

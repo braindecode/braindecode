@@ -38,12 +38,12 @@ from .eegminer import EEGMiner
 from .ctnet import CTNet
 from .sinc_shallow import SincShallowNet
 from .sccnet import SCCNet
-from .signal_jepa import (
-    SignalJEPA_Contextual,
-    SignalJEPA_PostLocal,
-    SignalJEPA_PreLocal,
-    SignalJEPA,
-)
+from .signal_jepa import (  # type: ignore
+    SignalJEPA_Contextual,  # type: ignore
+    SignalJEPA_PostLocal,  # type: ignore
+    SignalJEPA_PreLocal,  # type: ignore
+    SignalJEPA,  # type: ignore
+)  # type: ignore
 from .fbcnet import FBCNet
 from .fbmsnet import FBMSNet
 from .fblightconvnet import FBLightConvNet
