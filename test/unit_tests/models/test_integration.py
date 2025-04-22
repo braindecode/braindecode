@@ -52,7 +52,6 @@ default_signal_params = dict(
     chs_info=chs_info,
 )
 
-
 def build_model_list():
     models = []
     for name, req, sig_params in models_mandatory_parameters:
@@ -400,6 +399,20 @@ def test_model_has_drop_prob_parameter(model_class):
         f"{model_class.__name__} does not have an drop_prob parameter."
         f" Found parameters: {param_names}"
     )
+
+@pytest.mark.parametrize(
+    "model_class",
+    model_instances,
+    ids=lambda m: m.__class__.__name__ )
+def test_model_torchscript(model_class):
+    """
+    Verifies that all models can be torch scriptable
+    """
+    #pytest.skip("Skipping torchscript test for now.")
+    model = model_class
+
+    torchscript_model_class = torch.jit.script(model)
+    assert torchscript_model_class is not None
 
 @pytest.mark.skipif(
     sys.platform.startswith("win"),

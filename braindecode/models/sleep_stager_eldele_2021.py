@@ -2,7 +2,6 @@
 #
 # License: BSD (3-clause)
 
-import copy
 import math
 import warnings
 from copy import deepcopy
@@ -186,8 +185,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         if self.return_feats:
             return encoded_features
 
-        final_output = self.final_layer(encoded_features)
-        return final_output
+        return self.final_layer(encoded_features)
 
 
 class _SELayer(nn.Module):
@@ -386,7 +384,8 @@ class _MultiHeadedAttention(nn.Module):
             kernel_size=7,
             stride=1,
         )
-        self.convs = nn.ModuleList([copy.deepcopy(base_conv) for _ in range(3)])
+        self.convs = nn.ModuleList([deepcopy(base_conv) for _ in range(3)])
+
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
@@ -469,7 +468,9 @@ class _TCE(nn.Module):
 
     def __init__(self, layer, n):
         super().__init__()
-        self.layers = nn.ModuleList([copy.deepcopy(layer) for _ in range(n)])
+
+        self.layers = nn.ModuleList([deepcopy(layer) for _ in range(n)])
+
         self.norm = nn.LayerNorm(layer.size, eps=1e-6)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

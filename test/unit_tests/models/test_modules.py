@@ -32,6 +32,7 @@ from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 
+
 def old_maxnorm(weight: torch.Tensor,
                 max_norm_val: float = 2.0,
                 eps: float = 1e-5) -> torch.Tensor:
