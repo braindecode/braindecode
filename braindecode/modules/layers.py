@@ -6,6 +6,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 import torch.nn.functional as F
+from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.functional import drop_path, safe_log
@@ -103,3 +104,30 @@ class DropPath(nn.Module):
     # Utility function to print DropPath module
     def extra_repr(self) -> str:
         return f"p={self.drop_prob}"
+
+
+class SqueezeFinalOutput(nn.Module):
+    """
+
+    Removes empty dimension at end and potentially removes empty time
+    dimension. It does  not just use squeeze as we never want to remove
+    first dimension.
+
+    Returns
+    -------
+    x: torch.Tensor
+        squeezed tensor
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.squeeze = Rearrange("b c t 1 -> b c t")
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 1) drop feature dim
+        x = self.squeeze(x)
+        # 2) drop time dim if singleton
+        if x.shape[-1] == 1:
+            x = x.squeeze(-1)
+        return x
