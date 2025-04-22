@@ -1,6 +1,7 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
+import math
 
 import numpy as np
 import torch
