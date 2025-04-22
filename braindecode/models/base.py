@@ -14,6 +14,8 @@ import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
 
+from .util import chs_to_torch
+
 
 def deprecated_args(obj, *old_new_args):
     out_args = []
