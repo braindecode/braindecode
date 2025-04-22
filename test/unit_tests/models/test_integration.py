@@ -6,6 +6,8 @@
 import sys
 import inspect
 from copy import deepcopy
+import inspect
+from types import MethodType
 
 import mne
 import numpy as np
@@ -52,19 +54,89 @@ default_signal_params = dict(
     chs_info=chs_info,
 )
 
+
+def get_parameter_by_model(model_name):
+    if "Sleep" not in model_name:
+
+        return default_signal_params
+
+    elif "Sleep" in model_name:
+        if model_name != "SleepStagerEldele2021" and \
+            model_name != "DeepSleepNet":
+            chs_info_sleep = [
+                {
+                    "ch_name": f"C{i}",
+                    "kind": "eeg",
+                    "loc": rng.random(3),
+                }
+                for i in range(1, 5)
+            ]
+        else:
+            chs_info_sleep = [
+                {
+                    "ch_name": f"C{i}",
+                    "kind": "eeg",
+                    "loc": rng.random(3),
+                }
+                for i in range(1, 2)
+            ]
+        signal_img = dict(
+            n_times=30*100,
+            sfreq=100.0,
+            n_outputs=4,
+            chs_info=chs_info_sleep,
+            n_chans=len(chs_info_sleep), 
+        )
+        return signal_img
+
 def build_model_list():
     models = []
     for name, req, sig_params in models_mandatory_parameters:
         if name not in non_classification_models and "jepa" not in name.lower():
-            sp = deepcopy(default_signal_params)
+            parameters = get_parameter_by_model(name)
+            sp = deepcopy(parameters)
             if sig_params is not None:
                 sp.update(sig_params)
             models.append(models_dict[name](**sp))
     return models
 
+def convert_model_to_plain(model):
+    basic_mixin = ["_n_times", "_sfreq", "_n_times", "_chs_info", "_n_outputs", "_n_chans"]
+    final_plain_model = nn.Module()
+
+    if isinstance(model, nn.Sequential):
+        final_plain_model = nn.Sequential(*model.children())
+    else:
+        final_plain_model = nn.Module()
+        for name, module in model.named_children():
+            final_plain_model.add_module(name, module)
+
+        for attr, val in model.__dict__.items():
+            # Skip the modules dict to avoid double‐registering
+            if attr != '_modules':
+                if attr in basic_mixin:
+                    setattr(final_plain_model, attr[1:], val)
+                else:
+                    setattr(final_plain_model, attr, val)
+
+        # Retrieves (name, value) for every attribute of type function
+        methods = inspect.getmembers(
+            model.__class__, 
+            predicate=inspect.isfunction
+        )
+
+        for name, func in methods:
+            # Skip Python dunders or private methods if desired
+            if name.startswith('_'):
+                continue
+            # Bind func to final_plain_model so its signature is (self, *args, **kwargs)
+            bound_method = MethodType(func, final_plain_model)
+            setattr(final_plain_model, name, bound_method)
+
+    return final_plain_model
+
 # call it once, at import time:
 model_instances = build_model_list()
-
 
 def get_epochs_y(signal_params=None, n_epochs=10):
     """
@@ -463,7 +535,48 @@ def test_model_exported(model):
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
 
+@pytest.mark.parametrize(
+    "model",
+    model_instances,
+    ids=lambda m: m.__class__.__name__ )
+def test_model_torch_script(model):
+    """
+    Verifies that all models can be torch export without issue
+    using torch.export.export()
+    """
+    final_plain_model = convert_model_to_plain(model)
+    model.eval()
+    final_plain_model.eval()
 
+    # example input matching your model’s expected shape
+    input_tensor = torch.randn(1, model.n_chans, model.n_times)
+    
+    output_model = model(input_tensor)
+    output_model_recreated = final_plain_model(input_tensor)
+    assert output_model.shape == output_model_recreated.shape
+
+    torch.testing.assert_close(output_model, output_model_recreated)  
+    # only shallow and resnet is not matching, but fix later
+
+    # convert the new model to scripted
+    scripted_model = torch.jit.script(final_plain_model)
+    #output_script = scripted_model(input_tensor)
+    scripted_model.save(f"{model.__class__.__name__}_scripted.pt")
+    # print(f"Model {model_class.__name__} passed the test.")
+
+    # # load the scripted model
+    # loaded_scripted_model = torch.jit.load(f"{model_class.__name__}_scripted.pt")
+    # output_loaded_script = loaded_scripted_model(input_tensor)
+    # assert output_script.shape == output_loaded_script.shape
+    # torch.testing.assert_close(output_script, output_loaded_script)
+    # only shallow and resnet is not matching, but fix later
+    # convert the original model to scripted
+    #torch.testing.assert_close(output_model, output_model_recreated)
+
+    #torch.testing.assert_close(output_script, output_loaded_script)
+
+
+  
 @pytest.mark.parametrize("model_class", models_dict.values())
 def test_completeness_summary_table(model_class):
 
