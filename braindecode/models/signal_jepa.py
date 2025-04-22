@@ -2,18 +2,17 @@
 #
 # License: BSD (3-clause)
 from __future__ import annotations
-from typing import Any, Sequence
+
 import math
 from copy import deepcopy
+from typing import Any, Sequence
 
 import torch
-from torch import nn
+from einops import parse_shape, rearrange
 from einops.layers.torch import Rearrange
-from einops import rearrange, parse_shape
-
+from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-
 
 _DEFAULT_CONV_LAYER_SPEC = (  # downsampling: 128Hz -> 1Hz, receptive field 1.1875s, stride 1s
     (8, 32, 8),

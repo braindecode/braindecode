@@ -7,12 +7,12 @@
 from numbers import Real
 
 import numpy as np
+import torch
+from mne.filter import notch_filter
 from scipy.interpolate import Rbf
 from sklearn.utils import check_random_state
-import torch
 from torch.fft import fft, ifft
-from torch.nn.functional import pad, one_hot
-from mne.filter import notch_filter
+from torch.nn.functional import one_hot, pad
 
 
 def identity(X, y):

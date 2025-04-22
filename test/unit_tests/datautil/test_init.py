@@ -1,5 +1,7 @@
 import pytest
+
 from braindecode.datautil import __getattr__
+
 
 # Define a fixture for the names and their expected results
 @pytest.fixture(params=[

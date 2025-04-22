@@ -5,11 +5,11 @@
 #          Valentin Iovene <val@too.gy>
 # License: BSD (3-clause)
 
-from typing import List, Tuple, Any, Optional, Union, Callable
 from numbers import Real
+from typing import Any, Callable, List, Optional, Tuple, Union
 
-from sklearn.utils import check_random_state
 import torch
+from sklearn.utils import check_random_state
 from torch import Tensor, nn
 from torch.utils.data import DataLoader
 from torch.utils.data._utils.collate import default_collate

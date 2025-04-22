@@ -6,10 +6,9 @@ from einops.layers.torch import Rearrange
 from numpy import prod
 from torch import nn
 
+from braindecode.functional import glorot_weight_zero_bias
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.eegitnet import _DepthwiseConv2d, _InceptionBlock
-from braindecode.models.eegnet import _glorot_weight_zero_bias
-from braindecode.models.modules import Ensure4d
+from braindecode.modules import DepthwiseConv2d, Ensure4d, InceptionBlock
 
 
 class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
@@ -167,7 +166,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         )
 
         self.add_module(
-            "inception_block_1", _InceptionBlock((block11, block12, block13))
+            "inception_block_1", InceptionBlock((block11, block12, block13))
         )
 
         self.add_module("avg_pool_1", nn.AvgPool2d((1, self.pooling_sizes[0])))
@@ -201,7 +200,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         )
 
         self.add_module(
-            "inception_block_2", _InceptionBlock((block21, block22, block23))
+            "inception_block_2", InceptionBlock((block21, block22, block23))
         )
 
         self.add_module("avg_pool_2", nn.AvgPool2d((1, self.pooling_sizes[1])))
@@ -251,7 +250,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
 
         self.add_module("final_layer", module)
 
-        _glorot_weight_zero_bias(self)
+        glorot_weight_zero_bias(self)
 
     @staticmethod
     def _get_inception_branch_1(
@@ -274,7 +273,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             nn.BatchNorm2d(out_channels, momentum=alpha_momentum),
             activation(),
             nn.Dropout(drop_prob),
-            _DepthwiseConv2d(
+            DepthwiseConv2d(
                 out_channels,
                 kernel_size=(in_channels, 1),
                 depth_multiplier=depth_multiplier,

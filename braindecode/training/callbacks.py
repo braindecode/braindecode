@@ -2,8 +2,8 @@
 #
 # License: BSD (3-clause)
 
-from skorch.callbacks import Callback
 import torch
+from skorch.callbacks import Callback
 
 
 class MaxNormConstraintCallback(Callback):

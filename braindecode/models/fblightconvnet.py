@@ -4,13 +4,12 @@ from typing import Optional
 
 import torch
 import torch.nn.functional as F
-
 from einops.layers.torch import Rearrange
 from mne.utils import warn
 from torch import nn
-from braindecode.models.base import EEGModuleMixin
 
-from braindecode.models.modules import (
+from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import (
     FilterBankLayer,
     LogVarLayer,
 )

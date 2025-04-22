@@ -8,15 +8,23 @@ import pytest
 import torch
 from mne.filter import create_filter
 from mne.time_frequency import psd_array_welch
-from scipy.signal import fftconvolve as fftconvolve_scipy, freqz, \
-    lfilter as lfilter_scipy
+from scipy.signal import fftconvolve as fftconvolve_scipy
+from scipy.signal import freqz
+from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
 
-from braindecode.models.functions import drop_path
+from braindecode.functional import drop_path
+from braindecode.modules import (
+    MLP,
+    CombinedConv,
+    DropPath,
+    FilterBankLayer,
+    LinearWithConstraint,
+    SafeLog,
+    TimeDistributed,
+    GeneralizedGaussianFilter,
+)
 from braindecode.models.labram import _SegmentPatch
-from braindecode.models.eegminer import GeneralizedGaussianFilter
-from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed, LinearWithConstraint
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 
 
@@ -301,7 +309,7 @@ def test_drop_path_different_dimensions():
 
 
 @pytest.mark.parametrize(
-    "eps, expected_repr",
+    "epilson, expected_repr",
     [
         (1e-6, "eps=1e-06"),
         (1e-4, "eps=0.0001"),
@@ -310,7 +318,7 @@ def test_drop_path_different_dimensions():
         (123.456, "eps=123.456"),
     ]
 )
-def test_safelog_extra_repr(eps, expected_repr):
+def test_safelog_extra_repr(epilson, expected_repr):
     """
     Test the extra_repr method of the SafeLog class to ensure it returns
     the correct string representation based on the eps value.
@@ -323,7 +331,7 @@ def test_safelog_extra_repr(eps, expected_repr):
         The expected string output from extra_repr.
     """
     # Initialize the SafeLog module with the given eps
-    module = SafeLog(eps=eps)
+    module = SafeLog(epilson)
 
     # Get the extra representation
     repr_output = module.extra_repr()

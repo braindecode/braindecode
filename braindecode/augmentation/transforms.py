@@ -13,20 +13,22 @@ import torch
 from mne.channels import make_standard_montage
 
 from .base import Transform
-from .functional import bandstop_filter
-from .functional import channels_dropout
-from .functional import channels_permute
-from .functional import channels_shuffle
-from .functional import frequency_shift
-from .functional import ft_surrogate
-from .functional import gaussian_noise
-from .functional import mixup
-from .functional import sensors_rotation
-from .functional import sign_flip
-from .functional import smooth_time_mask
-from .functional import time_reverse
-from .functional import segmentation_reconstruction
-from .functional import mask_encoding
+from .functional import (
+    bandstop_filter,
+    channels_dropout,
+    channels_permute,
+    channels_shuffle,
+    frequency_shift,
+    ft_surrogate,
+    gaussian_noise,
+    mask_encoding,
+    mixup,
+    segmentation_reconstruction,
+    sensors_rotation,
+    sign_flip,
+    smooth_time_mask,
+    time_reverse,
+)
 
 
 class TimeReverse(Transform):

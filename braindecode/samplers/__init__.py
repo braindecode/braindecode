@@ -1,12 +1,12 @@
 """Classes to sample examples."""
 
 from .base import (
-    RecordingSampler,
-    SequenceSampler,
     BalancedSequenceSampler,
     DistributedRecordingSampler,
+    RecordingSampler,
+    SequenceSampler,
 )
-from .ssl import RelativePositioningSampler, DistributedRelativePositioningSampler
+from .ssl import DistributedRelativePositioningSampler, RelativePositioningSampler
 
 __all__ = [
     "RecordingSampler",

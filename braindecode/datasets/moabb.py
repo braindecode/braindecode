@@ -9,14 +9,16 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from typing import Any
+
 import warnings
+from typing import Any
 
-import pandas as pd
 import mne
+import pandas as pd
 
-from .base import BaseDataset, BaseConcatDataset
 from braindecode.util import _update_moabb_docstring
+
+from .base import BaseConcatDataset, BaseDataset
 
 
 def _find_dataset_in_moabb(dataset_name, dataset_kwargs=None):

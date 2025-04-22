@@ -14,12 +14,12 @@ import math
 import torch
 from einops.layers.torch import Rearrange
 from mne.utils import warn
-from torch import nn, Tensor
+from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.eegconformer import (
-    _FeedForwardBlock,
-    _MultiHeadAttention,
+from braindecode.modules import (
+    FeedForwardBlock,
+    MultiHeadAttention,
 )
 
 
@@ -328,14 +328,14 @@ class _TransformerEncoderBlock(nn.Module):
         super().__init__()
         self.attention = _ResidualAdd(
             nn.Sequential(
-                _MultiHeadAttention(dim_feedforward, num_heads, drop_prob),
+                MultiHeadAttention(dim_feedforward, num_heads, drop_prob),
             ),
             dim_feedforward,
             drop_prob,
         )
         self.feed_forward = _ResidualAdd(
             nn.Sequential(
-                _FeedForwardBlock(
+                FeedForwardBlock(
                     dim_feedforward,
                     expansion=forward_expansion,
                     drop_p=forward_drop_p,

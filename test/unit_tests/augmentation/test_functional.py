@@ -1,8 +1,11 @@
 import pytest
 import torch
 
-from braindecode.augmentation.functional import _analytic_transform, \
-    channels_shuffle, segmentation_reconstruction
+from braindecode.augmentation.functional import (
+    _analytic_transform,
+    channels_shuffle,
+    segmentation_reconstruction,
+)
 
 
 def test_channels_shuffle():

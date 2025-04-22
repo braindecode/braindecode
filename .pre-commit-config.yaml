@@ -31,23 +31,41 @@ repos:
       - id: pretty-format-json
         args: [ "--autofix", "--no-sort-keys", "--indent=4" ]
 
+repos:
   - repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.9.7
     hooks:
       - id: ruff
-        args: [ "--ignore=E402,E501,F401", "--fix" ] #, --exit-non-zero-on-fix, ]
+        name: ruff lint docs & examples
+        args:
+          [
+            "--fix",
+            "--select=E,W,F,I,D",         # E=errors, W=warnings, F=pyflakes, I=import sorting, D=docstring rules
+            "--ignore=E402,E501,F401,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",  # combined ignores
+          ]
+        files: ^(docs|examples)/
       - id: ruff
         name: ruff lint braindecode preview
-        args: [ "--fix", "--preview", "--select=NPY201" ]
+        args:
+          [
+            "--fix",
+            "--preview",
+            "--select=NPY201",
+            "--ignore=D100,D101,D102,D105,D107,D415,D417,D205",
+          ]
         files: ^braindecode/
       - id: ruff
-        name: ruff lint docs, and examples
-        # D103: missing docstring in public function
-        # D400: docstring first line must end with period
-        args: [ "--ignore=D103,D400,E402", "--fix" ]
-        files: ^docs/|^examples/
+        name: ruff lint docs & examples
+        args:
+          [
+            "--fix",
+            "--select=D",                 # docstring rules
+            "--ignore=D103,D400,E402,D100,D101,D102,D105,D107,D415,D417,D205",    # drop these specific checks
+          ]
+        files: ^(docs|examples)/
       - id: ruff-format
-        files: ^braindecode/|^docs/|^examples/
+        name: ruff format code
+        files: ^(braindecode|docs|examples)/
 
 
   - repo: https://github.com/codespell-project/codespell
@@ -55,8 +73,8 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=carin,splitted,meaned,wil,whats,additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar,mane
-          - --skip="./.*,*.csv,*.json,*.ambr"
+          - --ignore-words-list=carin,splitted,meaned,wil,whats,additionals,alle,alot,bund,currenty,datas,farenheit,falsy,fo,haa,hass,iif,incomfort,ines,ist,nam,nd,pres,pullrequests,resset,rime,ser,serie,te,technik,ue,unsecure,withing,zar,mane,THIRDPARTY
+          - --skip="./.*,*.csv,*.json,*.ambr,*.toml"
           - --quiet-level=2
         exclude_types: [ csv, json ]
         exclude: ^tests/|generated/^.github
@@ -78,3 +96,9 @@ repos:
             types-requests,
           ]
         verbose: true
+
+  - repo: https://github.com/PyCQA/isort
+    rev: 6.0.1           
+    hooks:
+      - id: isort
+        exclude: ^\.gitignore

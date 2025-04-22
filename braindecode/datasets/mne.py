@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
+import mne
 import numpy as np
 import pandas as pd
-import mne
 
-from .base import BaseDataset, BaseConcatDataset, WindowsDataset
+from .base import BaseConcatDataset, BaseDataset, WindowsDataset
 
 
 def create_from_mne_raw(

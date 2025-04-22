@@ -5,9 +5,9 @@ import pytest
 import torch
 
 from braindecode.models.signal_jepa import (
+    _ConvFeatureEncoder,
     _pos_encode_contineous,
     _pos_encode_time,
-    _ConvFeatureEncoder,
     _PosEncoder,
 )
 

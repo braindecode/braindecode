@@ -3,23 +3,29 @@
 # License: BSD-3
 
 import os
+import tempfile
 from unittest import mock
 
+import h5py
 import mne
 import numpy as np
-import h5py
 import pytest
 import torch
-import tempfile
-
+from numpy.testing import assert_allclose, assert_array_equal
 from sklearn.utils import check_random_state
-from numpy.testing import assert_array_equal, assert_allclose
 
-
-from braindecode.util import _cov_and_var_to_corr, _cov_to_corr, \
-    corr, create_mne_dummy_raw, \
-    read_all_file_names, set_random_seeds, th_to_np, cov, np_to_th, \
-    get_balanced_batches
+from braindecode.util import (
+    _cov_and_var_to_corr,
+    _cov_to_corr,
+    corr,
+    cov,
+    create_mne_dummy_raw,
+    get_balanced_batches,
+    np_to_th,
+    read_all_file_names,
+    set_random_seeds,
+    th_to_np,
+)
 
 
 def test_create_mne_dummy_raw(tmp_path):

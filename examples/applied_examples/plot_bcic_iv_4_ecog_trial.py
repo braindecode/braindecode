@@ -1,5 +1,4 @@
-"""
-.. _bcic-iv-4-ecog-decoding:
+""".. _bcic-iv-4-ecog-decoding:
 
 Fingers flexion decoding on BCIC IV 4 ECoG Dataset
 ==================================================
@@ -247,9 +246,9 @@ if cuda:
 #    encourage you to perform your own hyperparameter and preprocessing optimization using
 #    cross validation on your training data.
 #
+from mne import set_log_level
 from skorch.callbacks import EpochScoring, LRScheduler
 from skorch.helper import predefined_split
-from mne import set_log_level
 
 from braindecode import EEGRegressor
 

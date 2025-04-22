@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-.. _bcic-iv-2a-moabb-cropped:
+""".. _bcic-iv-2a-moabb-cropped:
 
 Cropped Decoding on BCIC IV 2a Dataset
 ======================================

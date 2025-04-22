@@ -10,113 +10,6 @@ from torch import nn
 from braindecode.models.base import EEGModuleMixin
 
 
-def _crop_tensors_to_match(x1, x2, axis=-1):
-    """Crops two tensors to their lowest-common-dimension along an axis."""
-    dim_cropped = min(x1.shape[axis], x2.shape[axis])
-
-    x1_cropped = torch.index_select(
-        x1, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
-    )
-    x2_cropped = torch.index_select(
-        x2, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
-    )
-    return x1_cropped, x2_cropped
-
-
-class _EncoderBlock(nn.Module):
-    """Encoding block for a timeseries x of shape (B, C, T)."""
-
-    def __init__(
-        self,
-        in_channels=2,
-        out_channels=2,
-        kernel_size=9,
-        downsample=2,
-        activation: nn.Module = nn.ELU,
-    ):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.downsample = downsample
-
-        self.block_prepool = nn.Sequential(
-            nn.Conv1d(
-                in_channels=in_channels,
-                out_channels=out_channels,
-                kernel_size=kernel_size,
-                padding="same",
-            ),
-            activation(),
-            nn.BatchNorm1d(num_features=out_channels),
-        )
-
-        self.pad = nn.ConstantPad1d(padding=1, value=0)
-        self.maxpool = nn.MaxPool1d(kernel_size=self.downsample, stride=self.downsample)
-
-    def forward(self, x):
-        x = self.block_prepool(x)
-        residual = x
-        if x.shape[-1] % 2:
-            x = self.pad(x)
-        x = self.maxpool(x)
-        return x, residual
-
-
-class _DecoderBlock(nn.Module):
-    """Decoding block for a timeseries x of shape (B, C, T)."""
-
-    def __init__(
-        self,
-        in_channels=2,
-        out_channels=2,
-        kernel_size=9,
-        upsample=2,
-        with_skip_connection=True,
-        activation: nn.Module = nn.ELU,
-    ):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size = kernel_size
-        self.upsample = upsample
-        self.with_skip_connection = with_skip_connection
-
-        self.block_preskip = nn.Sequential(
-            nn.Upsample(scale_factor=upsample),
-            nn.Conv1d(
-                in_channels=in_channels,
-                out_channels=out_channels,
-                kernel_size=2,
-                padding="same",
-            ),
-            activation(),
-            nn.BatchNorm1d(num_features=out_channels),
-        )
-        self.block_postskip = nn.Sequential(
-            nn.Conv1d(
-                in_channels=(
-                    2 * out_channels if with_skip_connection else out_channels
-                ),
-                out_channels=out_channels,
-                kernel_size=kernel_size,
-                padding="same",
-            ),
-            activation(),
-            nn.BatchNorm1d(num_features=out_channels),
-        )
-
-    def forward(self, x, residual):
-        x = self.block_preskip(x)
-        if self.with_skip_connection:
-            x, residual = _crop_tensors_to_match(
-                x, residual, axis=-1
-            )  # in case of mismatch
-            x = torch.cat([x, residual], axis=1)  # (B, 2 * C, T)
-        x = self.block_postskip(x)
-        return x
-
-
 class USleep(EEGModuleMixin, nn.Module):
     """
     Sleep staging architecture from Perslev et al. (2021) [1]_.
@@ -337,3 +230,110 @@ class USleep(EEGModuleMixin, nn.Module):
             y_pred = y_pred[:, :, 0]
 
         return y_pred
+
+
+class _EncoderBlock(nn.Module):
+    """Encoding block for a timeseries x of shape (B, C, T)."""
+
+    def __init__(
+        self,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=9,
+        downsample=2,
+        activation: nn.Module = nn.ELU,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.downsample = downsample
+
+        self.block_prepool = nn.Sequential(
+            nn.Conv1d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                padding="same",
+            ),
+            activation(),
+            nn.BatchNorm1d(num_features=out_channels),
+        )
+
+        self.pad = nn.ConstantPad1d(padding=1, value=0)
+        self.maxpool = nn.MaxPool1d(kernel_size=self.downsample, stride=self.downsample)
+
+    def forward(self, x):
+        x = self.block_prepool(x)
+        residual = x
+        if x.shape[-1] % 2:
+            x = self.pad(x)
+        x = self.maxpool(x)
+        return x, residual
+
+
+class _DecoderBlock(nn.Module):
+    """Decoding block for a timeseries x of shape (B, C, T)."""
+
+    def __init__(
+        self,
+        in_channels=2,
+        out_channels=2,
+        kernel_size=9,
+        upsample=2,
+        with_skip_connection=True,
+        activation: nn.Module = nn.ELU,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.upsample = upsample
+        self.with_skip_connection = with_skip_connection
+
+        self.block_preskip = nn.Sequential(
+            nn.Upsample(scale_factor=upsample),
+            nn.Conv1d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=2,
+                padding="same",
+            ),
+            activation(),
+            nn.BatchNorm1d(num_features=out_channels),
+        )
+        self.block_postskip = nn.Sequential(
+            nn.Conv1d(
+                in_channels=(
+                    2 * out_channels if with_skip_connection else out_channels
+                ),
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                padding="same",
+            ),
+            activation(),
+            nn.BatchNorm1d(num_features=out_channels),
+        )
+
+    def forward(self, x, residual):
+        x = self.block_preskip(x)
+        if self.with_skip_connection:
+            x, residual = self._crop_tensors_to_match(
+                x, residual, axis=-1
+            )  # in case of mismatch
+            x = torch.cat([x, residual], axis=1)  # (B, 2 * C, T)
+        x = self.block_postskip(x)
+        return x
+
+    @staticmethod
+    def _crop_tensors_to_match(x1, x2, axis=-1):
+        """Crops two tensors to their lowest-common-dimension along an axis."""
+        dim_cropped = min(x1.shape[axis], x2.shape[axis])
+
+        x1_cropped = torch.index_select(
+            x1, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
+        )
+        x2_cropped = torch.index_select(
+            x2, dim=axis, index=torch.arange(dim_cropped).to(device=x1.device)
+        )
+        return x1_cropped, x2_cropped

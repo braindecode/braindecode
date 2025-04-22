@@ -1,18 +1,20 @@
 from __future__ import annotations
-from typing import Optional, Sequence
+
 from functools import partial
-from mne.utils import warn
+from typing import Optional, Sequence
 
 import torch
-
-from torch import nn
 from einops.layers.torch import Rearrange
+from mne.utils import warn
+from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.eegnet import Conv2dWithConstraint
 from braindecode.models.fbcnet import _valid_layers
-
-from braindecode.models.modules import LinearWithConstraint, FilterBankLayer
+from braindecode.modules import (
+    Conv2dWithConstraint,
+    FilterBankLayer,
+    LinearWithConstraint,
+)
 
 
 class FBMSNet(EEGModuleMixin, nn.Module):

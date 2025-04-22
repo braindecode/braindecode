@@ -5,22 +5,22 @@
 import os
 import platform
 import sys
-
-import pytest
-import numpy as np
-import pandas as pd
 import warnings
 
+import numpy as np
+import pandas as pd
+import pytest
+
 from braindecode.datasets import BaseConcatDataset, MOABBDataset
-from braindecode.preprocessing import (
-    create_windows_from_events,
-    Preprocessor,
-    preprocess,
-)
 from braindecode.datautil.serialization import (
-    load_concat_dataset,
     _check_save_dir_empty,
-    save_concat_dataset
+    load_concat_dataset,
+    save_concat_dataset,
+)
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_windows_from_events,
+    preprocess,
 )
 
 bnci_kwargs = {

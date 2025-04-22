@@ -1,5 +1,4 @@
-"""
-.. _convnet-regression-fake:
+""".. _convnet-regression-fake:
 
 Convolutional neural network regression model on fake data.
 ===========================================================
@@ -59,8 +58,8 @@ def fake_regression_dataset(
     -------
     dataset : BaseConcatDataset object
         The generated dataset object.
-    """
 
+    """
     datasets = []
     for i in range(n_fake_recs):
         if i < int(fake_data_split[0] * n_fake_recs):
@@ -113,10 +112,10 @@ dataset = fake_regression_dataset(
 # Choosing and defining a CNN classifier, :class:`ShallowFBCSPNet <braindecode.models.ShallowFBCSPNet>`
 # or :class:`Deep4Net <braindecode.models.Deep4Net>`, introduced in [1]_.
 # To convert a classifier to a regressor, `softmax` function is removed from its output layer.
-from braindecode.util import set_random_seeds
-from braindecode.models import Deep4Net
-from braindecode.models import ShallowFBCSPNet
 import torch
+
+from braindecode.models import Deep4Net, ShallowFBCSPNet
+from braindecode.util import set_random_seeds
 
 # Choosing a CNN model
 model_name = "shallow"  # 'shallow' or 'deep'
@@ -167,12 +166,12 @@ if cuda:
 # ----------------
 # Windowing data with a sliding window into the epochs of the size ``window_size_samples``.
 
-from braindecode.models.util import to_dense_prediction_model, get_output_shape
 from braindecode.preprocessing import create_fixed_length_windows
 
 window_size_samples = fake_sfreq * fake_duration // 3
-to_dense_prediction_model(model)
-n_preds_per_input = get_output_shape(model, n_fake_chans, window_size_samples)[2]
+model.to_dense_prediction_model()
+
+n_preds_per_input = model.get_output_shape()[2]
 windows_dataset = create_fixed_length_windows(
     dataset,
     start_offset_samples=0,
@@ -195,10 +194,11 @@ test_set = splits["test"]
 # Model is trained by minimizing MSE loss between ground truth and estimated value averaged over
 # a period of time using AdamW optimizer [2]_, [3]_. Learning rate is managed by CosineAnnealingLR
 # learning rate scheduler.
-from braindecode import EEGRegressor
-from braindecode.training.losses import CroppedLoss
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
+
+from braindecode import EEGRegressor
+from braindecode.training.losses import CroppedLoss
 
 batch_size = 4
 n_epochs = 3
@@ -228,7 +228,6 @@ regressor.fit(train_set, y=None, epochs=n_epochs)
 # -----------------
 # Plotting training and validation losses and negative root mean square error
 import matplotlib.pyplot as plt
-
 
 fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 axes[0].set_title("Train and valid losses")

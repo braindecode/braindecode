@@ -13,17 +13,17 @@ pathological EEG recordings for predictive modeling. This dataset contains
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
 import glob
 import os
 import warnings
+from pathlib import Path
+from unittest import mock
 
+import mne
 import numpy as np
 import pandas as pd
-import mne
-
-from unittest import mock
-from pathlib import Path
-from joblib import delayed, Parallel
+from joblib import Parallel, delayed
 from mne.datasets import fetch_dataset
 
 from braindecode.datasets.base import BaseConcatDataset, BaseDataset

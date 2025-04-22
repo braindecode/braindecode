@@ -1,12 +1,15 @@
 # Authors: Hubert Banville <hubert.jbanville@gmail.com>
 #
 # License: BSD (3-clause)
-import pytest
 import pickle
 
-from braindecode.datasets.sleep_physionet import SleepPhysionet
-from braindecode.datasets.sleep_physio_challe_18 import SleepPhysionetChallenge2018 as PC18
+import pytest
+
 from braindecode.datasets.base import BaseConcatDataset
+from braindecode.datasets.sleep_physio_challe_18 import (
+    SleepPhysionetChallenge2018 as PC18,
+)
+from braindecode.datasets.sleep_physionet import SleepPhysionet
 
 
 @pytest.fixture(params=[SleepPhysionet])

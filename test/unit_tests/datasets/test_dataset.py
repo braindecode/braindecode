@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets import WindowsDataset, BaseDataset, BaseConcatDataset
+from braindecode.datasets import BaseConcatDataset, BaseDataset, WindowsDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing.windowers import (
-    create_windows_from_events,
     create_fixed_length_windows,
+    create_windows_from_events,
 )
 
 bnci_kwargs = {

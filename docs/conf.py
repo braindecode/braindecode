@@ -1,3 +1,4 @@
+"""Our local Sphinx configuration file."""
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
@@ -82,6 +83,7 @@ def linkcode_resolve(domain, info):
     -----
     This has been adapted to deal with our "verbose" decorator.
     Adapted from SciPy (doc/source/conf.py).
+
     """
     repo = "https://github.com/braindecode/braindecode/"
     if domain != "py":
@@ -146,6 +148,9 @@ sys.path.append(os.path.abspath(os.path.join(curdir, "..", "mne")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
 autosummary_generate = True
+
+suppress_warnings = ["autosummary.generate", "misc.include"]
+
 autodoc_default_options = {"inherited-members": False}
 
 numpydoc_show_class_members = False
@@ -352,6 +357,7 @@ html_sidebars = {
     "cite": [],
     "help": [],
     "whats_new": [],
+    "api": [],
 }
 
 # -- Options for LaTeX output ---------------------------------------------

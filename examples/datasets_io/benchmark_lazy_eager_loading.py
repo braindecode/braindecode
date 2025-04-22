@@ -1,5 +1,4 @@
-"""
-.. _benchmark-eager-lazy:
+""".. _benchmark-eager-lazy:
 
 Benchmarking eager and lazy loading
 ======================================
@@ -35,22 +34,20 @@ have been instantiated with parameter `preload=False`.
 #
 # License: BSD (3-clause)
 
-from itertools import product
 import time
-
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from itertools import product
 
 import mne
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader
 
 from braindecode.datasets import TUHAbnormal
+from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
-from braindecode.models import ShallowFBCSPNet, Deep4Net
-
 
 mne.set_log_level("WARNING")  # avoid messages every time a window is extracted
 
@@ -94,8 +91,8 @@ def load_example_data(preload, window_len_s, n_recordings=10):
         The recordings from the TUH Abnormal corpus do not all share the same
         sampling rate. The following assumes that the files have already been
         resampled to a common sampling rate.
-    """
 
+    """
     recording_ids = list(range(n_recordings))
 
     ds = TUHAbnormal(
@@ -157,6 +154,7 @@ def create_example_model(
         Loss function
     optimizer :
         Optimizer
+
     """
     if kind == "shallow":
         model = ShallowFBCSPNet(
@@ -233,6 +231,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
     -------
     model : torch.nn.Module
         Trained model.
+
     """
     for i in range(n_epochs):
         loss_vals = list()

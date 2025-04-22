@@ -1,5 +1,4 @@
-"""
-.. _basic-training-epochs:
+""".. _basic-training-epochs:
 
 Simple training on MNE epochs
 =============================

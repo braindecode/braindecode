@@ -11,21 +11,18 @@ PhysioNet Challenge 2018 dataset.
 import os
 import os.path as op
 import urllib
-import mne
 
-import wfdb
+import mne
 import numpy as np
 import pandas as pd
-
-from mne.utils import warn
+import wfdb
 from joblib import Parallel, delayed
-
-from mne.datasets.utils import _get_path
 from mne.datasets.sleep_physionet._utils import _fetch_one
+from mne.datasets.utils import _get_path
+from mne.utils import warn
+
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 from braindecode.preprocessing.preprocess import _preprocess
-
-from braindecode.datasets import BaseDataset, BaseConcatDataset
-
 
 PC18_DIR = op.join(op.dirname(__file__), "data", "pc18")
 PC18_RECORDS = op.join(PC18_DIR, "sleep_records.csv")

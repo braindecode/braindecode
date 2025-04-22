@@ -14,11 +14,12 @@ AttentionBaseNet class.
 import math
 
 import torch
+import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from torch import nn
+from torch import Tensor, nn
 
-from braindecode.models.functions import _get_gaussian_kernel1d
+from braindecode.functional import _get_gaussian_kernel1d
 
 
 class SqueezeAndExcitation(nn.Module):
@@ -131,7 +132,7 @@ class GSoP(nn.Module):
         return scale * x
 
 
-class FCA(torch.nn.Module):
+class FCA(nn.Module):
     """
     Frequency Channel Attention Networks from [Qin2021]_.
 
@@ -573,7 +574,8 @@ class CAT(nn.Module):
     References
     ----------
     .. [Wu2023] Wu, Z. et al., 2023
-    CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
+        CAT: Learning to Collaborate Channel and Spatial Attention from
+        Multi-Information Fusion. IET Computer Vision 2023.
     """
 
     def __init__(
@@ -654,7 +656,7 @@ class CAT(nn.Module):
 
 class CATLite(nn.Module):
     """
-    Modification of CAT without the convolutional layer.
+    Modification of CAT without the convolutional layer from [Wu2023]_.
 
     Parameters
     ----------
@@ -667,8 +669,8 @@ class CATLite(nn.Module):
 
     References
     ----------
-    .. [Wu2023] Wu, Z. et al., 2023
-    CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
+    .. [Wu2023] Wu, Z. et al., 2023 CAT: Learning to Collaborate Channel and
+        Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
     """
 
     def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
@@ -715,3 +717,32 @@ class CATLite(nn.Module):
         channel_score = channel_score.expand(b, c, h, w)
 
         return channel_score * x
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, emb_size, num_heads, dropout):
+        super().__init__()
+        self.emb_size = emb_size
+        self.num_heads = num_heads
+        self.keys = nn.Linear(emb_size, emb_size)
+        self.queries = nn.Linear(emb_size, emb_size)
+        self.values = nn.Linear(emb_size, emb_size)
+        self.att_drop = nn.Dropout(dropout)
+        self.projection = nn.Linear(emb_size, emb_size)
+
+    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
+        queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
+        keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
+        values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
+        energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
+        if mask is not None:
+            fill_value = torch.finfo(torch.float32).min
+            energy.mask_fill(~mask, fill_value)
+
+        scaling = self.emb_size ** (1 / 2)
+        att = F.softmax(energy / scaling, dim=-1)
+        att = self.att_drop(att)
+        out = torch.einsum("bhal, bhlv -> bhav ", att, values)
+        out = rearrange(out, "b h n d -> b n (h d)")
+        out = self.projection(out)
+        return out

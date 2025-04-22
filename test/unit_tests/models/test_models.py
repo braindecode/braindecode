@@ -12,41 +12,39 @@ from functools import partial
 
 import numpy as np
 import pytest
-
 import torch
 from sklearn.utils import check_random_state
 from torch import nn
 
-
 from braindecode.models import (
-    Deep4Net,
-    EEGNetv4,
-    EEGNetv1,
-    EEGTCNet,
-    HybridNet,
-    ShallowFBCSPNet,
-    EEGResNet,
+    BIOT,
     TCN,
-    SleepStagerChambon2018,
-    SleepStagerBlanco2020,
-    SleepStagerEldele2021,
-    USleep,
+    ATCNet,
+    AttentionBaseNet,
+    ContraWR,
+    Deep4Net,
     DeepSleepNet,
-    EEGITNet,
+    EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
-    TIDNet,
-    ATCNet,
-    EEGConformer,
-    BIOT,
-    Labram,
-    EEGSimpleConv,
-    AttentionBaseNet,
-    SPARCNet,
-    ContraWR,
+    EEGITNet,
     EEGMiner,
+    EEGNetv1,
+    EEGNetv4,
+    EEGResNet,
+    EEGSimpleConv,
+    EEGTCNet,
     FBCNet,
-    IFNet
+    HybridNet,
+    IFNet,
+    Labram,
+    ShallowFBCSPNet,
+    SleepStagerBlanco2020,
+    SleepStagerChambon2018,
+    SleepStagerEldele2021,
+    SPARCNet,
+    TIDNet,
+    USleep,
 )
 from braindecode.util import set_random_seeds
 
