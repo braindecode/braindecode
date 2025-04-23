@@ -505,6 +505,7 @@ def test_model_compiled(model):
     model = model.eval()
     not_compiled_model = model
     compiled_model = torch.compile(model)
+    torch.compiler.reset()
 
     output = not_compiled_model(input_tensor)
     output_compiled = compiled_model(input_tensor)
