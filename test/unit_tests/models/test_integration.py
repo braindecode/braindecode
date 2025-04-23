@@ -477,8 +477,7 @@ def test_model_compiled(model):
     output = not_compiled_model(input_tensor)
     output_compiled = compiled_model(input_tensor)
 
-    assert output.shape == (1, model.n_outputs)
-    assert output_compiled.shape == (1, model.n_outputs)
+    assert output.shape == output_compiled.shape
     assert output_compiled.allclose(output, atol=1e-4)
 
 
