@@ -73,7 +73,6 @@ def convert_model_to_plain(model):
     if isinstance(model, nn.Sequential):
         final_plain_model = nn.Sequential(*model.children())
         final_plain_model.__dict__.update({k: v for k,v in model.__dict__.items() if k != '_modules'})
-
     else:
         final_plain_model = nn.Module()
         for name, module in model.named_children():
@@ -89,14 +88,13 @@ def convert_model_to_plain(model):
 
         # Retrieves (name, value) for every attribute of type function
         methods = inspect.getmembers(model.__class__, predicate=inspect.isfunction)
-        
+
         for name, func in methods:
             # Skip Python dunders or private methods if desired
             if name.startswith("_"):
                 continue
             # Bind func to final_plain_model so its signature is (self, *args, **kwargs)
             bound_method = MethodType(func, final_plain_model)
-            print(f"Binding {name} to {final_plain_model.__class__.__name__}")
             setattr(final_plain_model, name, bound_method)
 
     return final_plain_model
@@ -135,6 +133,7 @@ def model(request):
     name, req, sig_params = request.param
     sp = get_sp(sig_params, req)
     model = models_dict[name](**sp)
+
     model.eval()
     return model
 

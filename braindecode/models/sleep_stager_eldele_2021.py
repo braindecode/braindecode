@@ -446,9 +446,6 @@ class _ResidualLayerNormAttn(nn.Module):
 
 
 class _ResidualLayerNormFF(nn.Module):
-    """
-    A residual connection followed by a layer norm.
-    """
 
     def __init__(self, size, dropout, fn_ff):
         super().__init__()
