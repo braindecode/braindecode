@@ -112,6 +112,9 @@ def get_sp(
                 {"ch_name": f"C{i}", "kind": "eeg", "loc": rng.random(12)}
                 for i in range(signal_params["n_chans"])
             ]
+        assert isinstance( sp["n_times"], int)
+        assert isinstance( sp["sfreq"], float)
+        assert isinstance( sp["input_window_seconds"], float)         
         if "input_window_seconds" not in signal_params:
             sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
         if "sfreq" not in signal_params:
