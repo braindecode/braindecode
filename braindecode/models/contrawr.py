@@ -6,117 +6,6 @@ import torch.nn as nn
 from braindecode.models.base import EEGModuleMixin
 
 
-class _ResBlock(nn.Module):
-    """Convolutional Residual Block 2D.
-
-    This block stacks two convolutional layers with batch normalization,
-    max pooling, dropout, and residual connection.
-
-    Parameters
-    ----------
-    in_channels : int
-        Number of input channels.
-    out_channels : int
-        Number of output channels.
-    stride : int (default=1)
-        Stride of the convolutional layers.
-    use_downsampling : bool (default=True)
-        Whether to use a downsampling residual connection.
-    pooling : bool (default=True)
-        Whether to use max pooling.
-    kernel_size : int (default=3)
-        Kernel size of the convolutional layers.
-    padding : int (default=1)
-        Padding of the convolutional layers.
-    activation: nn.Module, default=nn.ELU
-        Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
-    drop_prob : float, default=0.5
-        The dropout rate for regularization. Values should be between 0 and 1.
-
-    Examples
-    --------
-    >>> import torch
-    >>> model = ResBlock2D(6, 16, 1, True, True)
-    >>> input_ = torch.randn((16, 6, 28, 150))  # (batch, channel, height, width)
-    >>> output = model(input_)
-    >>> output.shape
-    torch.Size([16, 16, 14, 75])
-    """
-
-    def __init__(
-        self,
-        in_channels,
-        out_channels,
-        stride=1,
-        use_downsampling=True,
-        pooling=True,
-        kernel_size=3,
-        padding=1,
-        drop_prob=0.5,
-        activation: nn.Module = nn.ReLU,
-    ):
-        super(_ResBlock, self).__init__()
-        self.conv1 = nn.Conv2d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding,
-        )
-        self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu = activation()
-        self.conv2 = nn.Conv2d(
-            in_channels=out_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            padding=padding,
-        )
-        self.bn2 = nn.BatchNorm2d(out_channels)
-        self.maxpool = nn.MaxPool2d(
-            kernel_size=kernel_size, stride=stride, padding=padding
-        )
-        self.downsample = nn.Sequential(
-            nn.Conv2d(
-                in_channels=in_channels,
-                out_channels=out_channels,
-                kernel_size=kernel_size,
-                stride=stride,
-                padding=padding,
-            ),
-            nn.BatchNorm2d(out_channels),
-        )
-        self.use_downsampling = use_downsampling
-        self.pooling = pooling
-        self.dropout = nn.Dropout(drop_prob)
-
-    def forward(self, x):
-        """
-
-        Parameters
-        ----------
-        X: Tensor
-            Input tensor of shape (batch_size, n_channels, n_freqs, n_times).
-
-        Returns
-        -------
-        Tensor
-            Output tensor of shape (batch_size, n_channels, n_freqs, n_times).
-        """
-        out = self.conv1(x)
-        out = self.bn1(out)
-        out = self.relu(out)
-        out = self.conv2(out)
-        out = self.bn2(out)
-        if self.use_downsampling:
-            residual = self.downsample(x)
-            out += residual
-        if self.pooling:
-            out = self.maxpool(out)
-        out = self.dropout(out)
-        return out
-
-
 class ContraWR(EEGModuleMixin, nn.Module):
     """Contrast with the World Representation ContraWR from Yang et al (2021) [Yang2021]_.
 
@@ -209,7 +98,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
             nn.Linear(emb_size, self.n_outputs),
         )
 
-    def torch_stft(self, x):
+    def torch_stft(self, x: torch.Tensor) -> torch.Tensor:
         """
         Compute the Short-Time Fourier Transform (STFT) of the input tensor.
 
@@ -241,7 +130,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
         stacked = torch.stack(signal).permute(1, 0, 2, 3)
         return torch.abs(stacked)
 
-    def forward(self, X):
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
@@ -257,6 +146,117 @@ class ContraWR(EEGModuleMixin, nn.Module):
         X = self.torch_stft(X)
 
         for conv in self.convs[:-1]:
-            X = conv(X)
-        emb = self.convs[-1](X).squeeze(-1).squeeze(-1)
+            X = conv.forward(X)
+        emb = self.convs[-1].forward(X).squeeze(-1).squeeze(-1)
         return self.final_layer(emb)
+
+
+class _ResBlock(nn.Module):
+    """Convolutional Residual Block 2D.
+
+    This block stacks two convolutional layers with batch normalization,
+    max pooling, dropout, and residual connection.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels.
+    out_channels : int
+        Number of output channels.
+    stride : int (default=1)
+        Stride of the convolutional layers.
+    use_downsampling : bool (default=True)
+        Whether to use a downsampling residual connection.
+    pooling : bool (default=True)
+        Whether to use max pooling.
+    kernel_size : int (default=3)
+        Kernel size of the convolutional layers.
+    padding : int (default=1)
+        Padding of the convolutional layers.
+    activation: nn.Module, default=nn.ELU
+        Activation function class to apply. Should be a PyTorch activation
+        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ReLU``.
+    drop_prob : float, default=0.5
+        The dropout rate for regularization. Values should be between 0 and 1.
+
+    Examples
+    --------
+    >>> import torch
+    >>> model = ResBlock2D(6, 16, 1, True, True)
+    >>> input_ = torch.randn((16, 6, 28, 150))  # (batch, channel, height, width)
+    >>> output = model(input_)
+    >>> output.shape
+    torch.Size([16, 16, 14, 75])
+    """
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        stride=1,
+        use_downsampling=True,
+        pooling=True,
+        kernel_size=3,
+        padding=1,
+        drop_prob=0.5,
+        activation: nn.Module = nn.ReLU,
+    ):
+        super(_ResBlock, self).__init__()
+        self.conv1 = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+        )
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = activation()
+        self.conv2 = nn.Conv2d(
+            in_channels=out_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            padding=padding,
+        )
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.maxpool = nn.MaxPool2d(
+            kernel_size=kernel_size, stride=stride, padding=padding
+        )
+        self.downsample = nn.Sequential(
+            nn.Conv2d(
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+            ),
+            nn.BatchNorm2d(out_channels),
+        )
+        self.use_downsampling = use_downsampling
+        self.pooling = pooling
+        self.dropout = nn.Dropout(drop_prob)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+
+        Parameters
+        ----------
+        X: Tensor
+            Input tensor of shape (batch_size, n_channels, n_freqs, n_times).
+
+        Returns
+        -------
+        Tensor
+            Output tensor of shape (batch_size, n_channels, n_freqs, n_times).
+        """
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        if self.use_downsampling:
+            residual = self.downsample(x)
+            out += residual
+        if self.pooling:
+            out = self.maxpool(out)
+        out = self.dropout(out)
+        return out

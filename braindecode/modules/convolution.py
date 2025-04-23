@@ -120,7 +120,7 @@ class CombinedConv(nn.Module):
             n_filters_time, n_filters_spat, (1, in_chans), bias=bias_spat, stride=1
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Merge time and spat weights
         combined_weight = (
             (self.conv_time.weight * self.conv_spat.weight.permute(1, 0, 2, 3))
