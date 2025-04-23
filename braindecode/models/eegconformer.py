@@ -283,7 +283,7 @@ class _TransformerEncoderBlock(nn.Sequential):
             _ResidualAdd(
                 nn.Sequential(
                     nn.LayerNorm(emb_size),
-                    _FeedForwardBlock(
+                    FeedForwardBlock(
                         emb_size,
                         expansion=forward_expansion,
                         drop_p=att_drop,
