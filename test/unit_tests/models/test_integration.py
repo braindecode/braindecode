@@ -72,6 +72,7 @@ def convert_model_to_plain(model):
 
     if isinstance(model, nn.Sequential):
         final_plain_model = nn.Sequential(*model.children())
+        final_plain_model.__dict__.update({k: v for k,v in model.__dict__.items() if k != '_modules'})
     else:
         final_plain_model = nn.Module()
         for name, module in model.named_children():
@@ -131,13 +132,8 @@ def model(request):
     """Instantiated model."""
     name, req, sig_params = request.param
     sp = get_sp(sig_params, req)
-    try:
-        model = models_dict[name](**sp)
-    except Exception as e:  # pylint: disable=bare-except
-        pytest.skip(
-            f"Skipping {name} as it cannot be instantiated with the parameters {sp}. \n"
-            f"Got error: \n{e}"
-        )
+    model = models_dict[name](**sp)
+
     model.eval()
     return model
 
@@ -531,21 +527,12 @@ def test_model_torch_script(model):
     """
 
     not_working_models = [
-        "BDTCN",
         "Deep4Net",
-        "EEGInceptionERP",
-        "EEGNetv1",
         "EEGResNet",
         "ShallowFBCSPNet",
-        "SleepStagerEldele2021",
         "Labram",
-        "EEGSimpleConv",
         "ContraWR",
         "BIOT",
-        "FBMSNet",
-        "FBLightConvNet",
-        "FBCNet",
-        "IFNet",
         "EEGMiner",
         "SignalJEPA",
         "SignalJEPA_Contextual",

@@ -389,7 +389,7 @@ class EEGNetv1(EEGModuleMixin, nn.Sequential):
         )
         self.add_module("elu_1", activation())
         # transpose to examples x 1 x (virtual, not EEG) channels x time
-        self.add_module("permute_1", Expression(lambda x: x.permute(0, 3, 1, 2)))
+        self.add_module("permute_1", Rearrange("batch x y z -> batch z x y"))
 
         self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
 

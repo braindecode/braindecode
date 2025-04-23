@@ -1025,13 +1025,10 @@ def test_eeg_simpleconv_features(param_eegsimple):
     )
 
     output = model(input)
-    assert isinstance(output, tuple)
-    assert len(output) == 2
+    assert isinstance(output, torch.Tensor)
 
-    pred, feature = output
+    feature = output
 
-    assert (pred.shape[0] == batch_size and
-            pred.shape[1] == param_eegsimple['n_classes'])
 
     assert (feature.shape[0] == batch_size and
             feature.shape[1] == 32)

@@ -163,7 +163,7 @@ class TCN(nn.Module):
         # start in eval mode
         self.eval()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
 
         Parameters
@@ -196,7 +196,9 @@ class _FinalLayer(nn.Module):
 
         self.squeeze = SqueezeFinalOutput()
 
-    def forward(self, x, batch_size, time_size, min_len):
+    def forward(
+        self, x: torch.Tensor, batch_size: int, time_size: int, min_len: int
+    ) -> torch.Tensor:
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))

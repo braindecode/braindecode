@@ -163,16 +163,16 @@ class FilterBankLayer(nn.Module):
                 "please specify 'band_filters' as a list of tuples.",
                 UserWarning,
             )
-            start = 4
-            end = 40
+            start = 4.0
+            end = 40.0
 
             total_band_width = end - start  # 4 Hz to 40 Hz
 
             band_width_calculated = total_band_width / band_filters
             band_filters = [
                 (
-                    torch.tensor(start + i * band_width_calculated),
-                    torch.tensor(start + (i + 1) * band_width_calculated),
+                    float(start + i * band_width_calculated),
+                    float(start + (i + 1) * band_width_calculated),
                 )
                 for i in range(band_filters)
             ]
@@ -195,7 +195,12 @@ class FilterBankLayer(nn.Module):
         self.method = method
         self.n_chans = n_chans
 
-        self.method_iir = True if self.method == "iir" else False
+        self.method_iir = self.method == "iir"
+
+        # Prepare ParameterLists
+        self.fir_list = nn.ParameterList()
+        self.b_list = nn.ParameterList()
+        self.a_list = nn.ParameterList()
 
         if self.method_iir:
             if iir_params is None:
@@ -209,17 +214,16 @@ class FilterBankLayer(nn.Module):
                         )
                         iir_params["output"] = "ba"
 
-        filts = {}
-        for idx, (l_freq, h_freq) in enumerate(band_filters):
+        for l_freq, h_freq in band_filters:
             filt = create_filter(
                 data=None,
                 sfreq=sfreq,
-                l_freq=l_freq,
-                h_freq=h_freq,
+                l_freq=float(l_freq),
+                h_freq=float(h_freq),
                 filter_length=filter_length,
                 l_trans_bandwidth=l_trans_bandwidth,
                 h_trans_bandwidth=h_trans_bandwidth,
-                method=method,
+                method=self.method,
                 iir_params=iir_params,
                 phase=phase,
                 fir_window=fir_window,
@@ -227,17 +231,20 @@ class FilterBankLayer(nn.Module):
                 verbose=verbose,
             )
             if not self.method_iir:
+                # FIR filter
                 filt = from_numpy(filt).float()
-                filts[f"band_{idx}"] = {"filt": filt}
-
+                self.fir_list.append(nn.Parameter(filt, requires_grad=False))
             else:
-                _check_coefficients((filt["b"], filt["a"]))
-                b = torch.tensor(filt["b"], dtype=torch.float64)
-                a = torch.tensor(filt["a"], dtype=torch.float64)
+                a_coeffs = filt["a"]
+                b_coeffs = filt["b"]
 
-                filts[f"band_{idx}"] = {"b": b, "a": a}
+                _check_coefficients((b_coeffs, a_coeffs))
 
-        self.filts = nn.ParameterDict(filts)
+                b = torch.tensor(b_coeffs, dtype=torch.float64)
+                a = torch.tensor(a_coeffs, dtype=torch.float64)
+
+                self.b_list.append(nn.Parameter(b, requires_grad=False))
+                self.a_list.append(nn.Parameter(a, requires_grad=False))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -253,24 +260,20 @@ class FilterBankLayer(nn.Module):
         torch.Tensor
             Filtered output tensor of shape (batch_size, n_bands, n_chans, filtered_time_points).
         """
-        filtered_x: list[torch.Tensor] = []
-        # as we have few filters, it is okay to use this for loop...abs
+        outs = []
+        if self.method_iir:
+            for b, a in zip(self.b_list, self.a_list):
+                # Pass numerator and denominator directly
+                outs.append(self._apply_iir(x=x, b_coeffs=b, a_coeffs=a))
+        else:
+            for fir in self.fir_list:
+                # Pass FIR filter directly
+                outs.append(self._apply_fir(x=x, filt=fir, n_chans=self.n_chans))
 
-        for key, p_filt in self.filts.items():
-            if self.method_iir:
-                # Apply the filter to the input tensor
-                filtered = self._apply_iir(x, p_filt)
-            else:
-                # Apply the filter to the input tensor
-                filtered = self._apply_fir(x, p_filt, self.n_chans)
-
-            # Append the filtered tensor to the list
-            filtered_x.append(filtered)
-
-        return torch.cat(filtered_x, dim=1)
+        return torch.cat(outs, dim=1)
 
     @staticmethod
-    def _apply_fir(x, filter: dict, n_chans: int) -> Tensor:
+    def _apply_fir(x, filt: Tensor, n_chans: int) -> Tensor:
         """
         Apply an FIR filter to the input tensor.
 
@@ -293,9 +296,7 @@ class FilterBankLayer(nn.Module):
         # Original 'b' shape: (filter_length,)
         # After unsqueeze and repeat: (n_chans, filter_length)
         # After final unsqueeze: (1, n_chans, filter_length)
-        filt_expanded = (
-            filter["filt"].to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
-        )
+        filt_expanded = filt.to(x.device).unsqueeze(0).repeat(n_chans, 1).unsqueeze(0)
 
         # Perform FFT-based convolution
         # Input x shape: (batch_size, n_chans, n_times)
@@ -313,7 +314,7 @@ class FilterBankLayer(nn.Module):
         return filtered
 
     @staticmethod
-    def _apply_iir(x: Tensor, filter: dict) -> Tensor:
+    def _apply_iir(x: Tensor, b_coeffs: Tensor, a_coeffs: Tensor) -> Tensor:
         """
         Apply an IIR filter to the input tensor.
 
@@ -335,8 +336,8 @@ class FilterBankLayer(nn.Module):
         # Apply filtering using torchaudio's filtfilt
         filtered = filtfilt(
             x,
-            a_coeffs=filter["a"].type_as(x).to(x.device),
-            b_coeffs=filter["b"].type_as(x).to(x.device),
+            a_coeffs=a_coeffs.type_as(x).to(x.device),
+            b_coeffs=b_coeffs.type_as(x).to(x.device),
             clamp=False,
         )
         # Rearrange dimensions to (batch_size, 1, n_chans, n_times)
