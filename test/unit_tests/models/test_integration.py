@@ -35,7 +35,6 @@ from braindecode.models.util import (
     models_mandatory_parameters,
     non_classification_models,
 )
-
 rng = np.random.default_rng(12)
 # Generating the channel info
 chs_info = [
@@ -46,59 +45,16 @@ chs_info = [
     }
     for i in range(1, 4)
 ]
-# Generating the signal parameters
+
 default_signal_params = dict(
     n_times=1000,
     sfreq=250.0,
     n_outputs=2,
     chs_info=chs_info,
+    n_chans=len(chs_info),
+    input_window_seconds=4.0,
 )
 
-
-def get_parameter_by_model(model_name):
-    if "Sleep" not in model_name:
-
-        return default_signal_params
-
-    elif "Sleep" in model_name:
-        if model_name != "SleepStagerEldele2021" and \
-            model_name != "DeepSleepNet":
-            chs_info_sleep = [
-                {
-                    "ch_name": f"C{i}",
-                    "kind": "eeg",
-                    "loc": rng.random(3),
-                }
-                for i in range(1, 5)
-            ]
-        else:
-            chs_info_sleep = [
-                {
-                    "ch_name": f"C{i}",
-                    "kind": "eeg",
-                    "loc": rng.random(3),
-                }
-                for i in range(1, 2)
-            ]
-        signal_img = dict(
-            n_times=30*100,
-            sfreq=100.0,
-            n_outputs=4,
-            chs_info=chs_info_sleep,
-            n_chans=len(chs_info_sleep), 
-        )
-        return signal_img
-
-def build_model_list():
-    models = []
-    for name, req, sig_params in models_mandatory_parameters:
-        if name not in non_classification_models and "jepa" not in name.lower():
-            parameters = get_parameter_by_model(name)
-            sp = deepcopy(parameters)
-            if sig_params is not None:
-                sp.update(sig_params)
-            models.append(models_dict[name](**sp))
-    return models
 
 def convert_model_to_plain(model):
     basic_mixin = ["_n_times", "_sfreq", "_n_times", "_chs_info", "_n_outputs", "_n_chans"]
@@ -135,8 +91,18 @@ def convert_model_to_plain(model):
 
     return final_plain_model
 
-# call it once, at import time:
-model_instances = build_model_list()
+@pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])  
+def model_instances(request):  
+    name, req, sig_params = request.param  
+    
+    all_sp = deepcopy(default_signal_params)
+    
+    if sig_params is not None:
+        all_sp.update(sig_params)
+        all_sp = {{req: all_sp[k]} for k in req}
+    
+    return models_dict[name](**all_sp)  
+
 
 def get_epochs_y(signal_params=None, n_epochs=10):
     """
@@ -472,39 +438,23 @@ def test_model_has_drop_prob_parameter(model_class):
         f" Found parameters: {param_names}"
     )
 
-@pytest.mark.parametrize(
-    "model_class",
-    model_instances,
-    ids=lambda m: m.__class__.__name__ )
-def test_model_torchscript(model_class):
-    """
-    Verifies that all models can be torch scriptable
-    """
-    pytest.skip("Skipping torchscript test for now.")
-    model = model_class
-
-    torchscript_model_class = torch.jit.script(model)
-    assert torchscript_model_class is not None
 
 @pytest.mark.skipif(
     sys.platform.startswith("win"),
     reason="torch.compile is known to have issues on Windows."
 )
-@pytest.mark.parametrize(
-    "model",
-    model_instances,
-    ids=lambda m: m.__class__.__name__ )
-def test_model_compiled(model):
+def test_model_compiled(model_instances):
     """
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
+    model = model_instances
     # This assumes the model has attributes n_chans and n_times
     input_tensor = torch.randn(1, model.n_chans, model.n_times)
     # Set the model to evaluation mode
     model = model.eval()
     not_compiled_model = model
-    compiled_model = torch.compile(model)
+    compiled_model = torch.compile(model, mode="reduce-overhead", dynamic=False)
     torch.compiler.reset()
 
     output = not_compiled_model(input_tensor)
@@ -515,15 +465,12 @@ def test_model_compiled(model):
     assert output_compiled.allclose(output, atol=1e-4)
 
 
-@pytest.mark.parametrize(
-    "model",
-    model_instances,
-    ids=lambda m: m.__class__.__name__ )
-def test_model_exported(model):
+def test_model_exported(model_instances):
     """
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
+    model = model_instances
 
     model.eval()
 
@@ -536,15 +483,14 @@ def test_model_exported(model):
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
 
-@pytest.mark.parametrize(
-    "model",
-    model_instances,
-    ids=lambda m: m.__class__.__name__ )
-def test_model_torch_script(model):
+
+def test_model_torch_script(model_instances):
     """
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
+    model = model_instances
+
     not_working_models = [
         "BDTCN",
         "Deep4Net",
