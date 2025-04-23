@@ -1,7 +1,7 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Dict, Optional, Tuple, Type, Union
 
 import torch
 import torch.nn as nn
@@ -22,9 +22,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_filters_list : List[int], optional
+    n_filters_list : list[int], optional
         List of filter numbers for each TSConv block, by default (9, 9, 9, 9).
-    conv1_kernels_size : List[int], optional
+    conv1_kernels_size : list[int], optional
         List of kernel sizes for the first convolution in each TSConv block,
         by default (15, 31, 63, 125).
     conv2_kernel_size : int, optional
@@ -148,7 +148,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
     def _forward_mstsconv(
         self, cat: bool = True
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+    ) -> Union[torch.Tensor, list[torch.Tensor]]:
         x = torch.randn(1, 1, self.n_chans, self.n_times)
         x = [tsconv(x) for tsconv in self.mstsconv]
         if cat:
@@ -157,7 +157,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
     def _forward_flatten(
         self, cat: bool = True
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+    ) -> Union[torch.Tensor, list[torch.Tensor]]:
         x = self._forward_mstsconv(cat)
         if cat:
             x = self.transformer(x)

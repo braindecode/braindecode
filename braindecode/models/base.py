@@ -7,14 +7,12 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, Optional, Tuple
 
 import numpy as np
 import torch
 from docstring_inheritance import NumpyDocstringInheritanceInitMeta
 from torchinfo import ModelStatistics, summary
-
-from .util import chs_to_torch
 
 
 def deprecated_args(obj, *old_new_args):
@@ -113,7 +111,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    def chs_info(self) -> List[str]:
+    def chs_info(self) -> list[str]:
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
         return self._chs_info

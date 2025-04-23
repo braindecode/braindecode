@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 from einops.layers.torch import Rearrange
@@ -35,7 +35,7 @@ class FilterBankLayer(nn.Module):
         Number of channels in the input signal.
     sfreq : int
         Sampling frequency of the input signal in Hz.
-    band_filters : Optional[List[Tuple[float, float]]] or int, default=None
+    band_filters : Optional[list[Tuple[float, float]]] or int, default=None
         List of frequency bands as (low_freq, high_freq) tuples. Each tuple defines
         the frequency range for one filter in the bank. If not provided, defaults
         to 9 non-overlapping bands with 4 Hz bandwidths spanning from 4 to 40 Hz.
@@ -129,7 +129,7 @@ class FilterBankLayer(nn.Module):
         self,
         n_chans: int,
         sfreq: float,
-        band_filters: Optional[List[Tuple[float, float]] | int] = None,
+        band_filters: Optional[list[Tuple[float, float]] | int] = None,
         method: str = "fir",
         filter_length: str | float | int = "auto",
         l_trans_bandwidth: str | float | int = "auto",

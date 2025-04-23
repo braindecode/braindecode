@@ -6,7 +6,7 @@
 # License: BSD (3-clause)
 
 from numbers import Real
-from typing import Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 
 import torch
 from sklearn.utils import check_random_state
@@ -16,7 +16,7 @@ from torch.utils.data._utils.collate import default_collate
 
 from .functional import identity
 
-Batch = List[Tuple[torch.Tensor, int, Any]]
+Batch = list[Tuple[torch.Tensor, int, Any]]
 Output = Union[
     # just outputting X
     torch.Tensor,

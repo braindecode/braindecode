@@ -3,7 +3,7 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from einops.layers.torch import Rearrange
 from mne.utils import warn
@@ -101,7 +101,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         final_layer_with_constraint: bool = False,
         norm_rate: float = 0.25,
         # Other ways to construct the signal related parameters
-        chs_info: Optional[List[Dict]] = None,
+        chs_info: Optional[list[Dict]] = None,
         input_window_seconds=None,
         sfreq=None,
         **kwargs,

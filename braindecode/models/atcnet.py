@@ -2,7 +2,6 @@
 #
 # License: BSD (3-clause)
 import math
-from typing import List
 
 import torch
 from einops.layers.torch import Rearrange
@@ -249,7 +248,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         # Dimension: (batch_size, F2, Tc)
 
         # ----- Sliding window -----
-        sw_concat: List[torch.Tensor] = []  # to store sliding window outputs
+        sw_concat: list[torch.Tensor] = []  # to store sliding window outputs
         # for w in range(self.n_windows):
         for idx, (attention, tcn_module, final_layer) in enumerate(
             zip(self.attention_blocks, self.temporal_conv_nets, self.final_layer)

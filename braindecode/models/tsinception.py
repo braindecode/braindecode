@@ -41,7 +41,7 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
         module like ``nn.ReLU`` or ``nn.LeakyReLU``. Default is ``nn.LeakyReLU``.
     pool_size : int, optional
         Pooling size for the average pooling layers. Default is 8.
-    inception_windows : List[float], optional
+    inception_windows : list[float], optional
         List of window sizes (in seconds) for the inception modules.
         Default is [0.5, 0.25, 0.125].
 
