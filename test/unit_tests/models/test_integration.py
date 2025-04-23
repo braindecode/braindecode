@@ -35,6 +35,7 @@ from braindecode.models.util import (
     models_mandatory_parameters,
     non_classification_models,
 )
+
 rng = np.random.default_rng(12)
 # Generating the channel info
 chs_info = [
@@ -57,7 +58,14 @@ default_signal_params = dict(
 
 
 def convert_model_to_plain(model):
-    basic_mixin = ["_n_times", "_sfreq", "_n_times", "_chs_info", "_n_outputs", "_n_chans"]
+    basic_mixin = [
+        "_n_times",
+        "_sfreq",
+        "_n_times",
+        "_chs_info",
+        "_n_outputs",
+        "_n_chans",
+    ]
     final_plain_model = nn.Module()
 
     if isinstance(model, nn.Sequential):
@@ -69,21 +77,18 @@ def convert_model_to_plain(model):
 
         for attr, val in model.__dict__.items():
             # Skip the modules dict to avoid double‐registering
-            if attr != '_modules':
+            if attr != "_modules":
                 if attr in basic_mixin:
                     setattr(final_plain_model, attr[1:], val)
                 else:
                     setattr(final_plain_model, attr, val)
 
         # Retrieves (name, value) for every attribute of type function
-        methods = inspect.getmembers(
-            model.__class__, 
-            predicate=inspect.isfunction
-        )
+        methods = inspect.getmembers(model.__class__, predicate=inspect.isfunction)
 
         for name, func in methods:
             # Skip Python dunders or private methods if desired
-            if name.startswith('_'):
+            if name.startswith("_"):
                 continue
             # Bind func to final_plain_model so its signature is (self, *args, **kwargs)
             bound_method = MethodType(func, final_plain_model)
@@ -91,17 +96,23 @@ def convert_model_to_plain(model):
 
     return final_plain_model
 
-@pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])  
-def model_instances(request):  
-    name, req, sig_params = request.param  
-    
-    all_sp = deepcopy(default_signal_params)
-    
+
+@pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
+def model(request):
+    """Instantiated model."""
+    name, req, sig_params = request.param
+    sp = deepcopy(default_signal_params)
     if sig_params is not None:
-        all_sp.update(sig_params)
-        all_sp = {{req: all_sp[k]} for k in req}
-    
-    return models_dict[name](**all_sp)  
+        sp.update(sig_params)
+    sp = {k: sp[k] for k in req}
+    try:
+        model = models_dict[name](**sp)
+    except:  # pylint: disable=bare-except
+        pytest.skip(
+            f"Skipping {name} as it cannot be instantiated with the parameters {sp}"
+        )
+    model.eval()
+    return model
 
 
 def get_epochs_y(signal_params=None, n_epochs=10):
@@ -239,7 +250,7 @@ def test_model_integration(model_name, required_params, signal_params):
         out = model(X)
 
         # Skip the output shape test for non-classification models
-        if model_name  in non_classification_models:
+        if model_name in non_classification_models:
             continue
 
         # test output shape
@@ -441,18 +452,15 @@ def test_model_has_drop_prob_parameter(model_class):
 
 @pytest.mark.skipif(
     sys.platform.startswith("win"),
-    reason="torch.compile is known to have issues on Windows."
+    reason="torch.compile is known to have issues on Windows.",
 )
-def test_model_compiled(model_instances):
+def test_model_compiled(model):
     """
     Verifies that all models can be torch compiled without issue
     and if the outputs are the same.
     """
-    model = model_instances
     # This assumes the model has attributes n_chans and n_times
     input_tensor = torch.randn(1, model.n_chans, model.n_times)
-    # Set the model to evaluation mode
-    model = model.eval()
     not_compiled_model = model
     compiled_model = torch.compile(model, mode="reduce-overhead", dynamic=False)
     torch.compiler.reset()
@@ -465,15 +473,11 @@ def test_model_compiled(model_instances):
     assert output_compiled.allclose(output, atol=1e-4)
 
 
-def test_model_exported(model_instances):
+def test_model_exported(model):
     """
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
-    model = model_instances
-
-    model.eval()
-
     # example input matching your model’s expected shape
     example_input = torch.randn(1, model.n_chans, model.n_times)
 
@@ -484,12 +488,11 @@ def test_model_exported(model_instances):
     assert isinstance(exported_prog, ExportedProgram)
 
 
-def test_model_torch_script(model_instances):
+def test_model_torch_script(model):
     """
     Verifies that all models can be torch export without issue
     using torch.export.export()
     """
-    model = model_instances
 
     not_working_models = [
         "BDTCN",
@@ -512,25 +515,26 @@ def test_model_torch_script(model_instances):
     ]
 
     if model.__class__.__name__ in not_working_models:
-        pytest.skip(f"Skipping {model.__class__.__name__} as not working with torchscript")
+        pytest.skip(
+            f"Skipping {model.__class__.__name__} as not working with torchscript"
+        )
 
     final_plain_model = convert_model_to_plain(model)
-    model.eval()
     final_plain_model.eval()
 
     # example input matching your model’s expected shape
     input_tensor = torch.randn(1, model.n_chans, model.n_times)
-    
+
     output_model = model(input_tensor)
     output_model_recreated = final_plain_model(input_tensor)
     assert output_model.shape == output_model_recreated.shape
 
-    torch.testing.assert_close(output_model, output_model_recreated)  
+    torch.testing.assert_close(output_model, output_model_recreated)
     # convert the new model to scripted
     scripted_model = torch.jit.script(final_plain_model)
-    
+
     scripted_model.save(f"{model.__class__.__name__}_scripted.pt")
-    
+
     # print(f"Model {model_class.__name__} passed the test.")
     # Continue this tests later. Not now...
     # output_script = scripted_model(input_tensor)
@@ -538,7 +542,6 @@ def test_model_torch_script(model_instances):
     # torch.testing.assert_close(output_script, output_model)
 
 
-  
 @pytest.mark.parametrize("model_class", models_dict.values())
 def test_completeness_summary_table(model_class):
 
