@@ -527,7 +527,6 @@ def test_model_torch_script(model):
         "FBLightConvNet",
         "FBCNet",
         "IFNet",
-        # "SyncNet",
         "EEGMiner",
     ]
 
