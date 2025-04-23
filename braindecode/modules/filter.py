@@ -163,16 +163,16 @@ class FilterBankLayer(nn.Module):
                 "please specify 'band_filters' as a list of tuples.",
                 UserWarning,
             )
-            start = 4
-            end = 40
+            start = 4.0
+            end = 40.0
 
             total_band_width = end - start  # 4 Hz to 40 Hz
 
             band_width_calculated = total_band_width / band_filters
             band_filters = [
                 (
-                    torch.tensor(start + i * band_width_calculated),
-                    torch.tensor(start + (i + 1) * band_width_calculated),
+                    float(start + i * band_width_calculated),
+                    float(start + (i + 1) * band_width_calculated),
                 )
                 for i in range(band_filters)
             ]
@@ -195,7 +195,7 @@ class FilterBankLayer(nn.Module):
         self.method = method
         self.n_chans = n_chans
 
-        self.method_iir = True if self.method == "iir" else False
+        self.method_iir = self.method == "iir"
 
         if self.method_iir:
             if iir_params is None:
