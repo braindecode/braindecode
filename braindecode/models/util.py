@@ -67,7 +67,7 @@ models_mandatory_parameters = [
         "SleepStagerBlanco2020",
         ["n_chans", "n_outputs", "n_times"],
         # n_chans dividable by n_groups=2:
-        dict(chs_info=[dict(ch_name=f"C{i}", kind="eeg") for i in range(1, 5)]),
+        dict(n_chans=4),
     ),
     ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
