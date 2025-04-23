@@ -262,7 +262,6 @@ class _ResidualAdd(nn.Module):
         return x
 
 
-
 class _TransformerEncoderBlock(nn.Sequential):
     def __init__(
         self,
