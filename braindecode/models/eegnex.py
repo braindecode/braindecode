@@ -231,9 +231,9 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         kernel_size : tuple
-            Tuple containing the kernel size (height, width).
+            tuple containing the kernel size (height, width).
         dilation : tuple
-            Tuple containing the dilation rate (height, width).
+            tuple containing the dilation rate (height, width).
 
         Returns
         -------

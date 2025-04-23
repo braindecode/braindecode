@@ -49,7 +49,7 @@ class FBCNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_bands : int or None or list[Tuple[int, int]]], default=9
+    n_bands : int or None or list[tuple[int, int]]], default=9
         Number of frequency bands. Could
     n_filters_spat : int, default=32
         Number of spatial filters for the first convolution.

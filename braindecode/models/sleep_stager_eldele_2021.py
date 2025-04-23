@@ -5,7 +5,7 @@
 import math
 import warnings
 from copy import deepcopy
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
@@ -360,7 +360,7 @@ class _MRCNN(nn.Module):
 
 def _attention(
     query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Implementation of Scaled dot product attention"""
     # d_k - dimension of the query and key vectors
     d_k = query.size(-1)

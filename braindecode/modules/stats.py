@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from functools import partial
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional
 
 import torch
 from torch import nn
@@ -29,7 +29,7 @@ class StatLayer(nn.Module):
         stat_fn: Callable[..., torch.Tensor],
         dim: int,
         keepdim: bool = True,
-        clamp_range: Optional[Tuple[float, float]] = None,
+        clamp_range: Optional[tuple[float, float]] = None,
         apply_log: bool = False,
     ) -> None:
         super().__init__()

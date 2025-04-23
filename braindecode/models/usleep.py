@@ -3,7 +3,6 @@
 #
 # License: BSD (3-clause)
 
-from typing import Tuple
 
 import numpy as np
 import torch
@@ -263,7 +262,7 @@ class _EncoderBlock(nn.Module):
         self.pad = nn.ConstantPad1d(padding=1, value=0.0)
         self.maxpool = nn.MaxPool1d(kernel_size=self.downsample, stride=self.downsample)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.block_prepool(x)
         residual = x
         if x.shape[-1] % 2:
@@ -328,7 +327,7 @@ class _DecoderBlock(nn.Module):
     @staticmethod
     def _crop_tensors_to_match(
         x1: torch.Tensor, x2: torch.Tensor, axis: int = -1
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Crops two tensors to their lowest-common-dimension along an axis."""
         dim_cropped = min(x1.shape[axis], x2.shape[axis])
 

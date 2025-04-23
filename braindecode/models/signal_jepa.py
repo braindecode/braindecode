@@ -29,7 +29,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     feature_encoder__conv_layers_spec: list of tuple
-        Tuples have shape ``(dim, k, stride)`` where:
+        tuples have shape ``(dim, k, stride)`` where:
 
         * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
         * ``k`` : temporal length of the layer's kernel;
@@ -645,7 +645,7 @@ class _ConvFeatureEncoder(nn.Module):
     Parameters
     ----------
     conv_layers_spec: list of tuple
-        Tuples have shape ``(dim, k, stride)`` where:
+        tuples have shape ``(dim, k, stride)`` where:
 
         * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
         * ``k`` : temporal length of the layer's kernel;

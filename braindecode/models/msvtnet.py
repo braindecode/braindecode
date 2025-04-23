@@ -1,7 +1,7 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-from typing import Dict, Optional, Tuple, Type, Union
+from typing import Dict, Optional, Type, Union
 
 import torch
 import torch.nn as nn
@@ -75,8 +75,8 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         sfreq=None,
         chs_info=None,
         # Model's parameters
-        n_filters_list: Tuple[int, ...] = (9, 9, 9, 9),
-        conv1_kernels_size: Tuple[int, ...] = (15, 31, 63, 125),
+        n_filters_list: tuple[int, ...] = (9, 9, 9, 9),
+        conv1_kernels_size: tuple[int, ...] = (15, 31, 63, 125),
         conv2_kernel_size: int = 15,
         depth_multiplier: int = 2,
         pool1_size: int = 8,
