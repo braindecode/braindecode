@@ -102,9 +102,9 @@ def model(request):
     """Instantiated model."""
     name, req, sig_params = request.param
     sp = deepcopy(default_signal_params)
+    sp = {k: sp[k] for k in req}
     if sig_params is not None:
         sp.update(sig_params)
-    sp = {k: sp[k] for k in req}
     try:
         model = models_dict[name](**sp)
     except Exception as e:  # pylint: disable=bare-except
