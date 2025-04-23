@@ -3,11 +3,13 @@
 #          Pierre Guetschel
 #
 # License: BSD-3
+from __future__ import annotations
 import sys
 import inspect
 from copy import deepcopy
 import inspect
 from types import MethodType
+from typing import Any
 
 import mne
 import numpy as np
@@ -97,14 +99,35 @@ def convert_model_to_plain(model):
     return final_plain_model
 
 
+def get_sp(
+    signal_params: dict[str, Any] | None, required_params: list[str] | None = None
+):
+    sp = deepcopy(default_signal_params)
+    if signal_params is not None:
+        sp.update(signal_params)
+        if "chs_info" in signal_params and "n_chans" not in signal_params:
+            sp["n_chans"] = len(signal_params["chs_info"])
+        if "n_chans" in signal_params and "chs_info" not in signal_params:
+            sp["chs_info"] = [
+                {"ch_name": f"C{i}", "kind": "eeg", "loc": rng.random(12)}
+                for i in range(signal_params["n_chans"])
+            ]
+        if "input_window_seconds" not in signal_params:
+            sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
+        if "sfreq" not in signal_params:
+            sp["sfreq"] = sp["n_times"] / sp["input_window_seconds"]
+        if "n_times" not in signal_params:
+            sp["n_times"] = int(sp["input_window_seconds"] * sp["sfreq"])
+    if required_params is not None:
+        sp = {k: sp[k] for k in set((signal_params or {}).keys()).union(required_params)}
+    return sp
+
+
 @pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
 def model(request):
     """Instantiated model."""
     name, req, sig_params = request.param
-    sp = deepcopy(default_signal_params)
-    sp = {k: sp[k] for k in req}
-    if sig_params is not None:
-        sp.update(sig_params)
+    sp = get_sp(sig_params, req)
     try:
         model = models_dict[name](**sp)
     except Exception as e:  # pylint: disable=bare-except
@@ -120,9 +143,7 @@ def get_epochs_y(signal_params=None, n_epochs=10):
     """
     Generate a random dataset with the given signal parameters.
     """
-    sp = deepcopy(default_signal_params)
-    if signal_params is not None:
-        sp.update(signal_params)
+    sp = get_sp(signal_params)
     X = np.random.randn(n_epochs, len(sp["chs_info"]), sp["n_times"])
     y = np.random.randint(sp["n_outputs"], size=n_epochs)
     info = mne.create_info(
@@ -170,11 +191,7 @@ def test_model_integration(model_name, required_params, signal_params):
     if signal_params is not None:
         assert set(signal_params.keys()) <= set(default_signal_params.keys())
 
-    sp = deepcopy(default_signal_params)
-    if signal_params is not None:
-        sp.update(signal_params)
-    sp["n_chans"] = len(sp["chs_info"])
-    sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
+    sp = get_sp(signal_params)
 
     # create input data
     batch_size = 3

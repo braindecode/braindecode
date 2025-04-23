@@ -66,8 +66,7 @@ models_mandatory_parameters = [
     (
         "SleepStagerBlanco2020",
         ["n_chans", "n_outputs", "n_times"],
-        # n_chans dividable by n_groups=2:
-        dict(n_chans=4),
+        dict(n_chans=4),  # n_chans dividable by n_groups=2
     ),
     ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
