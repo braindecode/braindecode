@@ -262,15 +262,6 @@ class _ResidualAdd(nn.Module):
         return x
 
 
-class _FeedForwardBlock(nn.Sequential):
-    def __init__(self, emb_size, expansion, drop_p, activation: nn.Module = nn.GELU):
-        super().__init__(
-            nn.Linear(emb_size, expansion * emb_size),
-            activation(),
-            nn.Dropout(drop_p),
-            nn.Linear(expansion * emb_size, emb_size),
-        )
-
 
 class _TransformerEncoderBlock(nn.Sequential):
     def __init__(
