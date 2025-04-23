@@ -528,16 +528,13 @@ def test_model_torch_script(model):
     """
 
     not_working_models = [
-        #"Deep4Net",
-        #"EEGInceptionERP",
-        #"EEGNetv1",
-        #"EEGResNet",
-        #"ShallowFBCSPNet",
-        # "Labram",
-        # "EEGSimpleConv",
-        # "ContraWR",
-        # "BIOT",
-        # "EEGMiner",
+        "Deep4Net",
+        "EEGResNet",
+        "ShallowFBCSPNet",
+        "Labram",
+        "ContraWR",
+        "BIOT",
+        "EEGMiner",
         "SignalJEPA",
         "SignalJEPA_Contextual",
         "SignalJEPA_PostLocal",
