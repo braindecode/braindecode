@@ -25,6 +25,7 @@ coverage
 __pycache__/
 prof/
 .ipynb_checkpoints
+*.pt
 
 dist/
 docs/_build/
