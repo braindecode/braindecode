@@ -107,9 +107,10 @@ def model(request):
     sp = {k: sp[k] for k in req}
     try:
         model = models_dict[name](**sp)
-    except:  # pylint: disable=bare-except
+    except Exception as e:  # pylint: disable=bare-except
         pytest.skip(
-            f"Skipping {name} as it cannot be instantiated with the parameters {sp}"
+            f"Skipping {name} as it cannot be instantiated with the parameters {sp}. \n"
+            f"Got error: \n{e}"
         )
     model.eval()
     return model
@@ -460,7 +461,15 @@ def test_model_compiled(model):
     and if the outputs are the same.
     """
     # This assumes the model has attributes n_chans and n_times
-    input_tensor = torch.randn(1, model.n_chans, model.n_times)
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    input_tensor = torch.randn(1, n_chans, n_times)
     not_compiled_model = model
     compiled_model = torch.compile(model, mode="reduce-overhead", dynamic=False)
     torch.compiler.reset()
@@ -479,7 +488,15 @@ def test_model_exported(model):
     using torch.export.export()
     """
     # example input matching your model’s expected shape
-    example_input = torch.randn(1, model.n_chans, model.n_times)
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    example_input = torch.randn(1, n_chans, n_times)
 
     # this will raise if the model isn’t fully traceable
     exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
@@ -523,7 +540,15 @@ def test_model_torch_script(model):
     final_plain_model.eval()
 
     # example input matching your model’s expected shape
-    input_tensor = torch.randn(1, model.n_chans, model.n_times)
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    input_tensor = torch.randn(1, n_chans, n_times)
 
     output_model = model(input_tensor)
     output_model_recreated = final_plain_model(input_tensor)
