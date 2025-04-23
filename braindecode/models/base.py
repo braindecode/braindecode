@@ -73,7 +73,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         chs_info=None,  # type: ignore[assignment]
         n_times: Optional[int] = None,  # type: ignore[assignment]
         input_window_seconds: Optional[float] = None,  # type: ignore[assignment]
-        sfreq: float = None,  # type: ignore[assignment]
+        sfreq: Optional[float] = None,  # type: ignore[assignment]
     ):
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
             raise ValueError(f"{n_chans=} different from {chs_info=} length")
