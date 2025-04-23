@@ -11,7 +11,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules.attention import MultiHeadAttention
+from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
