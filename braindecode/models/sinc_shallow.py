@@ -1,5 +1,5 @@
 import math
-from typing import Dict, List, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -100,12 +100,12 @@ class SincShallowNet(EEGModuleMixin, nn.Module):
         pool_size: int = 55,
         pool_stride: int = 12,
         # braindecode parameters
-        n_chans: Optional[int] = None,
-        n_outputs: Optional[int] = None,
-        n_times: Optional[int] = None,
-        input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
-        chs_info: Optional[List[Dict]] = None,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        chs_info=None,
     ):
         super().__init__(
             n_outputs=n_outputs,

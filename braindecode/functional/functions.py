@@ -20,24 +20,6 @@ def identity(x):
     return x
 
 
-def squeeze_final_output(x):
-    """Removes empty dimension at end and potentially removes empty time
-     dimension. It does  not just use squeeze as we never want to remove
-     first dimension.
-
-    Returns
-    -------
-    x: torch.Tensor
-        squeezed tensor
-    """
-
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
-    if x.size()[2] == 1:
-        x = x[:, :, 0]
-    return x
-
-
 def drop_path(
     x, drop_prob: float = 0.0, training: bool = False, scale_by_keep: bool = True
 ):

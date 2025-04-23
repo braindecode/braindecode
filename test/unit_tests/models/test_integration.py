@@ -3,8 +3,13 @@
 #          Pierre Guetschel
 #
 # License: BSD-3
+from __future__ import annotations
+import sys
 import inspect
 from copy import deepcopy
+import inspect
+from types import MethodType
+from typing import Any
 
 import mne
 import numpy as np
@@ -12,6 +17,7 @@ import pytest
 import torch
 from skorch.dataset import ValidSplit
 from torch import nn
+from torch.export import export, ExportedProgram
 
 from braindecode import EEGClassifier
 from braindecode.models import (
@@ -42,22 +48,105 @@ chs_info = [
     }
     for i in range(1, 4)
 ]
-# Generating the signal parameters
+
 default_signal_params = dict(
     n_times=1000,
-    sfreq=250,
+    sfreq=250.0,
     n_outputs=2,
     chs_info=chs_info,
+    n_chans=len(chs_info),
+    input_window_seconds=4.0,
 )
+
+
+def convert_model_to_plain(model):
+    basic_mixin = [
+        "_n_times",
+        "_sfreq",
+        "_n_times",
+        "_chs_info",
+        "_n_outputs",
+        "_n_chans",
+    ]
+    final_plain_model = nn.Module()
+
+    if isinstance(model, nn.Sequential):
+        final_plain_model = nn.Sequential(*model.children())
+    else:
+        final_plain_model = nn.Module()
+        for name, module in model.named_children():
+            final_plain_model.add_module(name, module)
+
+        for attr, val in model.__dict__.items():
+            # Skip the modules dict to avoid double‐registering
+            if attr != "_modules":
+                if attr in basic_mixin:
+                    setattr(final_plain_model, attr[1:], val)
+                else:
+                    setattr(final_plain_model, attr, val)
+
+        # Retrieves (name, value) for every attribute of type function
+        methods = inspect.getmembers(model.__class__, predicate=inspect.isfunction)
+
+        for name, func in methods:
+            # Skip Python dunders or private methods if desired
+            if name.startswith("_"):
+                continue
+            # Bind func to final_plain_model so its signature is (self, *args, **kwargs)
+            bound_method = MethodType(func, final_plain_model)
+            setattr(final_plain_model, name, bound_method)
+
+    return final_plain_model
+
+
+def get_sp(
+    signal_params: dict[str, Any] | None, required_params: list[str] | None = None
+):
+    sp = deepcopy(default_signal_params)
+    if signal_params is not None:
+        sp.update(signal_params)
+        if "chs_info" in signal_params and "n_chans" not in signal_params:
+            sp["n_chans"] = len(signal_params["chs_info"])
+        if "n_chans" in signal_params and "chs_info" not in signal_params:
+            sp["chs_info"] = [
+                {"ch_name": f"C{i}", "kind": "eeg", "loc": rng.random(12)}
+                for i in range(signal_params["n_chans"])
+            ]
+        assert isinstance( sp["n_times"], int)
+        assert isinstance( sp["sfreq"], float)
+        assert isinstance( sp["input_window_seconds"], float)         
+        if "input_window_seconds" not in signal_params:
+            sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
+        if "sfreq" not in signal_params:
+            sp["sfreq"] = sp["n_times"] / sp["input_window_seconds"]
+        if "n_times" not in signal_params:
+            sp["n_times"] = int(sp["input_window_seconds"] * sp["sfreq"])
+    if required_params is not None:
+        sp = {k: sp[k] for k in set((signal_params or {}).keys()).union(required_params)}
+    return sp
+
+
+@pytest.fixture(scope="module", params=models_mandatory_parameters, ids=lambda p: p[0])
+def model(request):
+    """Instantiated model."""
+    name, req, sig_params = request.param
+    sp = get_sp(sig_params, req)
+    try:
+        model = models_dict[name](**sp)
+    except Exception as e:  # pylint: disable=bare-except
+        pytest.skip(
+            f"Skipping {name} as it cannot be instantiated with the parameters {sp}. \n"
+            f"Got error: \n{e}"
+        )
+    model.eval()
+    return model
 
 
 def get_epochs_y(signal_params=None, n_epochs=10):
     """
     Generate a random dataset with the given signal parameters.
     """
-    sp = deepcopy(default_signal_params)
-    if signal_params is not None:
-        sp.update(signal_params)
+    sp = get_sp(signal_params)
     X = np.random.randn(n_epochs, len(sp["chs_info"]), sp["n_times"])
     y = np.random.randint(sp["n_outputs"], size=n_epochs)
     info = mne.create_info(
@@ -105,11 +194,7 @@ def test_model_integration(model_name, required_params, signal_params):
     if signal_params is not None:
         assert set(signal_params.keys()) <= set(default_signal_params.keys())
 
-    sp = deepcopy(default_signal_params)
-    if signal_params is not None:
-        sp.update(signal_params)
-    sp["n_chans"] = len(sp["chs_info"])
-    sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
+    sp = get_sp(signal_params)
 
     # create input data
     batch_size = 3
@@ -186,7 +271,7 @@ def test_model_integration(model_name, required_params, signal_params):
         out = model(X)
 
         # Skip the output shape test for non-classification models
-        if model_name  in non_classification_models:
+        if model_name in non_classification_models:
             continue
 
         # test output shape
@@ -384,6 +469,125 @@ def test_model_has_drop_prob_parameter(model_class):
         f"{model_class.__name__} does not have an drop_prob parameter."
         f" Found parameters: {param_names}"
     )
+
+
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="torch.compile is known to have issues on Windows.",
+)
+def test_model_compiled(model):
+    """
+    Verifies that all models can be torch compiled without issue
+    and if the outputs are the same.
+    """
+    # This assumes the model has attributes n_chans and n_times
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    input_tensor = torch.randn(1, n_chans, n_times)
+    not_compiled_model = model
+    compiled_model = torch.compile(model, mode="reduce-overhead", dynamic=False)
+    torch.compiler.reset()
+
+    output = not_compiled_model(input_tensor)
+    output_compiled = compiled_model(input_tensor)
+
+    assert output.shape == output_compiled.shape
+    assert output_compiled.allclose(output, atol=1e-4)
+
+
+def test_model_exported(model):
+    """
+    Verifies that all models can be torch export without issue
+    using torch.export.export()
+    """
+    # example input matching your model’s expected shape
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    example_input = torch.randn(1, n_chans, n_times)
+
+    # this will raise if the model isn’t fully traceable
+    exported_prog: ExportedProgram = export(model, args=(example_input,), strict=False)
+
+    # sanity check: we got the right return type
+    assert isinstance(exported_prog, ExportedProgram)
+
+
+def test_model_torch_script(model):
+    """
+    Verifies that all models can be torch export without issue
+    using torch.export.export()
+    """
+
+    not_working_models = [
+        "BDTCN",
+        "Deep4Net",
+        "EEGInceptionERP",
+        "EEGNetv1",
+        "EEGResNet",
+        "ShallowFBCSPNet",
+        "SleepStagerEldele2021",
+        "Labram",
+        "EEGSimpleConv",
+        "ContraWR",
+        "BIOT",
+        "FBMSNet",
+        "FBLightConvNet",
+        "FBCNet",
+        "IFNet",
+        "EEGMiner",
+        "SignalJEPA",
+        "SignalJEPA_Contextual",
+        "SignalJEPA_PostLocal",
+        "SignalJEPA_PreLocal",
+    ]
+
+    if model.__class__.__name__ in not_working_models:
+        pytest.skip(
+            f"Skipping {model.__class__.__name__} as not working with torchscript"
+        )
+
+    final_plain_model = convert_model_to_plain(model)
+    final_plain_model.eval()
+
+    # example input matching your model’s expected shape
+    try:
+        n_chans = model.n_chans
+    except ValueError:
+        n_chans = default_signal_params["n_chans"]
+    try:
+        n_times = model.n_times
+    except ValueError:
+        n_times = default_signal_params["n_times"]
+    input_tensor = torch.randn(1, n_chans, n_times)
+
+    output_model = model(input_tensor)
+    output_model_recreated = final_plain_model(input_tensor)
+    assert output_model.shape == output_model_recreated.shape
+
+    torch.testing.assert_close(output_model, output_model_recreated)
+    # convert the new model to scripted
+    scripted_model = torch.jit.script(final_plain_model)
+
+    scripted_model.save(f"{model.__class__.__name__}_scripted.pt")
+
+    # print(f"Model {model_class.__name__} passed the test.")
+    # Continue this tests later. Not now...
+    # output_script = scripted_model(input_tensor)
+    # assert output_script.shape == output_model.shape
+    # torch.testing.assert_close(output_script, output_model)
+
 
 @pytest.mark.parametrize("model_class", models_dict.values())
 def test_completeness_summary_table(model_class):

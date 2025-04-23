@@ -1,7 +1,7 @@
 # Authors: Tao Yang <sheeptao@outlook.com>
 #          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
 #
-from typing import Dict, List, Optional, Tuple, Type, Union
+from typing import Dict, Optional, Type, Union
 
 import torch
 import torch.nn as nn
@@ -22,9 +22,9 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_filters_list : List[int], optional
+    n_filters_list : list[int], optional
         List of filter numbers for each TSConv block, by default (9, 9, 9, 9).
-    conv1_kernels_size : List[int], optional
+    conv1_kernels_size : list[int], optional
         List of kernel sizes for the first convolution in each TSConv block,
         by default (15, 31, 63, 125).
     conv2_kernel_size : int, optional
@@ -68,15 +68,15 @@ class MSVTNet(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         # braindecode parameters
-        n_chans: Optional[int] = None,
-        n_outputs: Optional[int] = None,
-        n_times: Optional[int] = None,
-        input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
-        chs_info: Optional[List[Dict]] = None,
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        input_window_seconds=None,
+        sfreq=None,
+        chs_info=None,
         # Model's parameters
-        n_filters_list: Tuple[int, ...] = (9, 9, 9, 9),
-        conv1_kernels_size: Tuple[int, ...] = (15, 31, 63, 125),
+        n_filters_list: tuple[int, ...] = (9, 9, 9, 9),
+        conv1_kernels_size: tuple[int, ...] = (15, 31, 63, 125),
         conv2_kernel_size: int = 15,
         depth_multiplier: int = 2,
         pool1_size: int = 8,
@@ -148,7 +148,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
     def _forward_mstsconv(
         self, cat: bool = True
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+    ) -> Union[torch.Tensor, list[torch.Tensor]]:
         x = torch.randn(1, 1, self.n_chans, self.n_times)
         x = [tsconv(x) for tsconv in self.mstsconv]
         if cat:
@@ -157,7 +157,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
 
     def _forward_flatten(
         self, cat: bool = True
-    ) -> Union[torch.Tensor, List[torch.Tensor]]:
+    ) -> Union[torch.Tensor, list[torch.Tensor]]:
         x = self._forward_mstsconv(cat)
         if cat:
             x = self.transformer(x)
@@ -166,9 +166,7 @@ class MSVTNet(EEGModuleMixin, nn.Module):
             x = [_.flatten(start_dim=1, end_dim=-1) for _ in x]
         return x
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, List[torch.Tensor]]]:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x with shape: (batch, n_chans, n_times)
         x = self.ensure_dim(x)
         # x with shape: (batch, 1, n_chans, n_times)
@@ -185,7 +183,11 @@ class MSVTNet(EEGModuleMixin, nn.Module):
         # x shape after transformer: [batch_size, embed_dim]
 
         x = self.final_layer(x)
-        return (x, branch_preds) if self.return_features else x
+        if self.return_features:
+            # x shape after final layer: [batch_size, num_classes]
+            # branch_preds shape: [batch_size, num_classes]
+            return torch.stack(branch_preds)
+        return x
 
 
 class _TSConv(nn.Sequential):

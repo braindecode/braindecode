@@ -22,6 +22,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Making the braindecode.models compatibility with torch compile, torch export and torch jit (:gh:`729` by `Bruno Aristimunha` and `Pierre Guetschel`_)
 - Reorder the modules, functional and re-organize the codebase (:gh:`728` by `Bruno Aristimunha`_)
 - Adding :class:`braindecode.models.IFNet` (:gh:`725` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.FBMSNet` (:gh:`724` by `Bruno Aristimunha`_ )
@@ -95,6 +96,8 @@ Bugs
 
 API changes
 ~~~~~~~~~~~
+- Removing deprecated variable ``use_log_softmax`` from :class:`braindecode.models.base` (:gh:`729` by `Bruno Aristimunha`_)
+- Removing function ``squeze_final_output`` with Expression because of not compatibility with torch script (:gh:`729` by `Bruno Aristimunha`_)
 - Expose the ``use_mne_epochs parameter`` of :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
 - Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)

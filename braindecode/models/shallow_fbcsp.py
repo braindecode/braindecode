@@ -6,9 +6,15 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 
-from braindecode.functional import square, squeeze_final_output
+from braindecode.functional import square
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import CombinedConv, Ensure4d, Expression, SafeLog
+from braindecode.modules import (
+    CombinedConv,
+    Ensure4d,
+    Expression,
+    SafeLog,
+    SqueezeFinalOutput,
+)
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
@@ -180,7 +186,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 

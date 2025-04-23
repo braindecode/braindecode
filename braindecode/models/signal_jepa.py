@@ -29,7 +29,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     feature_encoder__conv_layers_spec: list of tuple
-        Tuples have shape ``(dim, k, stride)`` where:
+        tuples have shape ``(dim, k, stride)`` where:
 
         * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
         * ``k`` : temporal length of the layer's kernel;
@@ -123,8 +123,8 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
             )
 
         if _init_transformer:
-            ch_names = [ch["ch_name"] for ch in self.chs_info]
-            ch_locs = [ch["loc"] for ch in self.chs_info]
+            ch_names = [ch["ch_name"] for ch in self.chs_info]  # type: ignore
+            ch_locs = [ch["loc"] for ch in self.chs_info]  # type: ignore
             self.pos_encoder = _PosEncoder(
                 spat_dim=pos_encoder__spat_dim,
                 time_dim=pos_encoder__time_dim,
@@ -645,7 +645,7 @@ class _ConvFeatureEncoder(nn.Module):
     Parameters
     ----------
     conv_layers_spec: list of tuple
-        Tuples have shape ``(dim, k, stride)`` where:
+        tuples have shape ``(dim, k, stride)`` where:
 
         * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
         * ``k`` : temporal length of the layer's kernel;
@@ -868,8 +868,8 @@ class _PosEncoder(nn.Module):
         self,
         spat_dim: int,
         time_dim: int,
-        ch_names: list[str],
-        ch_locs: list[list[float]],
+        ch_names,
+        ch_locs,
         sfreq_features: float,
         spat_kwargs: dict | None = None,
         max_seconds: float = 600.0,  # 10 minutes

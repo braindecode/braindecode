@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, Optional
 
 import numpy as np
 import torch
@@ -52,20 +52,11 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         Length of the input window in seconds.
     sfreq : float
         Sampling frequency of the EEG recordings.
-    add_log_softmax: bool
-        Whether to use log-softmax non-linearity as the output function.
-        LogSoftmax final layer will be removed in the future.
-        Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!
-        Check the documentation of the torch.nn loss functions:
-        https://pytorch.org/docs/stable/nn.html#loss-functions.
 
     Raises
     ------
     ValueError: If some input signal-related parameters are not specified
                 and can not be inferred.
-
-    FutureWarning: If add_log_softmax is True, since LogSoftmax final layer
-                   will be removed in the future.
 
     Notes
     -----
@@ -75,13 +66,12 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __init__(
         self,
-        n_outputs: Optional[int] = None,
-        n_chans: Optional[int] = None,
-        chs_info: Optional[List[Dict]] = None,
-        n_times: Optional[int] = None,
-        input_window_seconds: Optional[float] = None,
-        sfreq: Optional[float] = None,
-        add_log_softmax: Optional[bool] = False,
+        n_outputs: Optional[int] = None,  # type: ignore[assignment]
+        n_chans: Optional[int] = None,  # type: ignore[assignment]
+        chs_info=None,  # type: ignore[assignment]
+        n_times: Optional[int] = None,  # type: ignore[assignment]
+        input_window_seconds: Optional[float] = None,  # type: ignore[assignment]
+        sfreq: Optional[float] = None,  # type: ignore[assignment]
     ):
         if n_chans is not None and chs_info is not None and len(chs_info) != n_chans:
             raise ValueError(f"{n_chans=} different from {chs_info=} length")
@@ -94,23 +84,24 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
             raise ValueError(
                 f"{n_times=} different from {input_window_seconds=} * {sfreq=}"
             )
-        self._n_outputs = n_outputs
-        self._n_chans = n_chans
-        self._chs_info = chs_info
-        self._n_times = n_times
-        self._input_window_seconds = input_window_seconds
-        self._sfreq = sfreq
-        self._add_log_softmax = add_log_softmax
+
+        self._input_window_seconds = input_window_seconds  # type: ignore[assignment]
+        self._chs_info = chs_info  # type: ignore[assignment]
+        self._n_outputs = n_outputs  # type: ignore[assignment]
+        self._n_chans = n_chans  # type: ignore[assignment]
+        self._n_times = n_times  # type: ignore[assignment]
+        self._sfreq = sfreq  # type: ignore[assignment]
+
         super().__init__()
 
     @property
-    def n_outputs(self):
+    def n_outputs(self) -> int:
         if self._n_outputs is None:
             raise ValueError("n_outputs not specified.")
         return self._n_outputs
 
     @property
-    def n_chans(self):
+    def n_chans(self) -> int:
         if self._n_chans is None and self._chs_info is not None:
             return len(self._chs_info)
         elif self._n_chans is None:
@@ -120,13 +111,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_chans
 
     @property
-    def chs_info(self):
+    def chs_info(self) -> list[str]:
         if self._chs_info is None:
             raise ValueError("chs_info not specified.")
         return self._chs_info
 
     @property
-    def n_times(self):
+    def n_times(self) -> int:
         if (
             self._n_times is None
             and self._input_window_seconds is not None
@@ -141,13 +132,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._n_times
 
     @property
-    def input_window_seconds(self):
+    def input_window_seconds(self) -> float:
         if (
             self._input_window_seconds is None
             and self._n_times is not None
             and self._sfreq is not None
         ):
-            return self._n_times / self._sfreq
+            return float(self._n_times / self._sfreq)
         elif self._input_window_seconds is None:
             raise ValueError(
                 "input_window_seconds could not be inferred. "
@@ -156,13 +147,13 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._input_window_seconds
 
     @property
-    def sfreq(self):
+    def sfreq(self) -> float:
         if (
             self._sfreq is None
             and self._input_window_seconds is not None
             and self._n_times is not None
         ):
-            return self._n_times // self._input_window_seconds
+            return float(self._n_times / self._input_window_seconds)
         elif self._sfreq is None:
             raise ValueError(
                 "sfreq could not be inferred. "
@@ -171,35 +162,26 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         return self._sfreq
 
     @property
-    def add_log_softmax(self):
-        if self._add_log_softmax:
-            warnings.warn(
-                "LogSoftmax final layer will be removed! "
-                + "Please adjust your loss function accordingly (e.g. CrossEntropyLoss)!"
-            )
-        return self._add_log_softmax
-
-    @property
-    def input_shape(self) -> Tuple[int, int, int]:
+    def input_shape(self) -> tuple[int, int, int]:
         """Input data shape."""
         return (1, self.n_chans, self.n_times)
 
-    def get_output_shape(self) -> Tuple[int, ...]:
+    def get_output_shape(self) -> tuple[int, ...]:
         """Returns shape of neural network output for batch size equal 1.
 
         Returns
         -------
-        output_shape: Tuple[int, ...]
+        output_shape: tuple[int, ...]
             shape of the network output for `batch_size==1` (1, ...)
         """
         with torch.inference_mode():
             try:
                 return tuple(
-                    self.forward(
+                    self.forward(  # type: ignore
                         torch.zeros(
                             self.input_shape,
-                            dtype=next(self.parameters()).dtype,
-                            device=next(self.parameters()).device,
+                            dtype=next(self.parameters()).dtype,  # type: ignore
+                            device=next(self.parameters()).device,  # type: ignore
                         )
                     ).shape
                 )
@@ -233,7 +215,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
         return super().load_state_dict(new_state_dict, *args, **kwargs)
 
-    def to_dense_prediction_model(self, axis: Tuple[int, ...] | int = (2, 3)) -> None:
+    def to_dense_prediction_model(self, axis: tuple[int, ...] | int = (2, 3)) -> None:
         """
         Transform a sequential model with strides to a model that outputs
         dense predictions by removing the strides and instead inserting dilations.
@@ -257,7 +239,7 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
         assert all([ax in [2, 3] for ax in axis]), "Only 2 and 3 allowed for axis"  # type: ignore[union-attr]
         axis = np.array(axis) - 2
         stride_so_far = np.array([1, 1])
-        for module in self.modules():
+        for module in self.modules():  # type: ignore
             if hasattr(module, "dilation"):
                 assert module.dilation == 1 or (module.dilation == (1, 1)), (
                     "Dilation should equal 1 before conversion, maybe the model is "
@@ -312,12 +294,3 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
 
     def __str__(self) -> str:
         return str(self.get_torchinfo_statistics())
-
-    def forward(self, *args, **kwargs):
-        return super().forward(*args, **kwargs)
-
-    def parameters(self):
-        return super().parameters()
-
-    def modules(self):
-        return super().modules()

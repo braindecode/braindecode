@@ -6,6 +6,5 @@ from .functions import (
     plv_time,
     safe_log,
     square,
-    squeeze_final_output,
 )
 from .initialization import glorot_weight_zero_bias, rescale_parameter

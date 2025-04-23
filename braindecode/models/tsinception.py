@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-from typing import Tuple
-
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
@@ -41,7 +39,7 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
         module like ``nn.ReLU`` or ``nn.LeakyReLU``. Default is ``nn.LeakyReLU``.
     pool_size : int, optional
         Pooling size for the average pooling layers. Default is 8.
-    inception_windows : List[float], optional
+    inception_windows : list[float], optional
         List of window sizes (in seconds) for the inception modules.
         Default is [0.5, 0.25, 0.125].
 
@@ -79,7 +77,7 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.5,
         activation: nn.Module = nn.LeakyReLU,
         pool_size: int = 8,
-        inception_windows: Tuple[float, float, float] = (0.5, 0.25, 0.125),
+        inception_windows: tuple[float, float, float] = (0.5, 0.25, 0.125),
     ):
         super().__init__(
             n_outputs=n_outputs,
