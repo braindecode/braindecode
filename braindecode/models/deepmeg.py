@@ -49,7 +49,7 @@ class SimpleConv(nn.Module):
         glu: int = 0,
         glu_context: int = 0,
         glu_glu: bool = True,
-        gelu: bool = False,
+        activation: type[nn.Module] = nn.Identity,
         # Dual path RNN
         dual_path: int = 0,
         # Dropouts, BN, activations
@@ -79,38 +79,25 @@ class SimpleConv(nn.Module):
         initial_linear: int = 0,
         initial_depth: int = 1,
         initial_nonlin: bool = False,
-        subsample_meg_channels: int = 0,
     ):
         super().__init__()
+
+        # check inputs
         if set(in_channels.keys()) != set(hidden.keys()):
             raise ValueError(
                 "Channels and hidden keys must match "
                 f"({set(in_channels.keys())} and {set(hidden.keys())})"
             )
+        assert kernel_size % 2 == 1, "For padding to work, this must be verified"
 
         self._concatenate = concatenate
         self.out_channels = out_channels
 
-        if gelu:
-            activation = nn.GELU
-        elif relu_leakiness:
-            activation = partial(nn.LeakyReLU, relu_leakiness)
-        else:
-            activation = nn.ReLU
-
-        assert kernel_size % 2 == 1, "For padding to work, this must be verified"
-
         self.merger = None
         self.dropout = None
-        self.subsampled_meg_channels: tp.Optional[list] = None
-        if subsample_meg_channels:
-            assert "meg" in in_channels
-            indexes = list(range(in_channels["meg"]))
-            rng = random.Random(1234)
-            rng.shuffle(indexes)
-            self.subsampled_meg_channels = indexes[:subsample_meg_channels]
-
         self.initial_linear = None
+        self.activation = activation()
+
         if dropout > 0.0:
             self.dropout = ChannelDropout(dropout, dropout_rescale)
         if merger:
@@ -236,11 +223,6 @@ class SimpleConv(nn.Module):
     def forward(self, inputs, batch):
         subjects = batch.subject_index
         length = next(iter(inputs.values())).shape[-1]  # length of any of the inputs
-
-        if self.subsampled_meg_channels is not None:
-            mask = torch.zeros_like(inputs["meg"][:1, :, :1])
-            mask[:, self.subsampled_meg_channels] = 1.0
-            inputs["meg"] = inputs["meg"] * mask
 
         if self.dropout is not None:
             inputs["meg"] = self.dropout(inputs["meg"], batch)
