@@ -131,13 +131,7 @@ def model(request):
     """Instantiated model."""
     name, req, sig_params = request.param
     sp = get_sp(sig_params, req)
-    try:
-        model = models_dict[name](**sp)
-    except Exception as e:  # pylint: disable=bare-except
-        pytest.skip(
-            f"Skipping {name} as it cannot be instantiated with the parameters {sp}. \n"
-            f"Got error: \n{e}"
-        )
+    model = models_dict[name](**sp)
     model.eval()
     return model
 
@@ -537,15 +531,10 @@ def test_model_torch_script(model):
         "EEGNetv1",
         "EEGResNet",
         "ShallowFBCSPNet",
-        "SleepStagerEldele2021",
         "Labram",
         "EEGSimpleConv",
         "ContraWR",
         "BIOT",
-        "FBMSNet",
-        "FBLightConvNet",
-        "FBCNet",
-        "IFNet",
         "EEGMiner",
         "SignalJEPA",
         "SignalJEPA_Contextual",

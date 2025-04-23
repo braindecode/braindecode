@@ -431,7 +431,12 @@ class _ResidualLayerNormAttn(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fn_attn = fn_attn
 
-    def forward(self, x: torch.Tensor, key=None, value=None) -> torch.Tensor:
+    def forward(
+        self,
+        x: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+    ) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
         x_norm = self.norm(x)
 
