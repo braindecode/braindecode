@@ -66,22 +66,6 @@ class EEGModuleMixin(metaclass=NumpyDocstringInheritanceInitMeta):
     there will be an attempt to infer them from the other parameters.
     """
 
-    _n_outputs: int
-    _n_chans: int
-    _n_times: int
-    # _sfreq: float
-    # _input_window_seconds: float
-    # _chs_info: List[str] # Dict[str, np.array | str | int | float]]
-    # Stores List[str] after conversion
-
-    __constants__ = [
-        "_n_outputs",
-        "_n_chans",
-        "_n_times",
-        "_input_window_seconds",
-        # "_sfreq",
-    ]
-
     def __init__(
         self,
         n_outputs: Optional[int] = None,  # type: ignore[assignment]
