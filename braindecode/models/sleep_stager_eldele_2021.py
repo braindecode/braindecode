@@ -446,7 +446,6 @@ class _ResidualLayerNormAttn(nn.Module):
 
 
 class _ResidualLayerNormFF(nn.Module):
-
     def __init__(self, size, dropout, fn_ff):
         super().__init__()
         self.norm = nn.LayerNorm(size, eps=1e-6)
