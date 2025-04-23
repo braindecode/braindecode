@@ -516,9 +516,10 @@ def test_iir_params_output_sos_warning(sample_input):
             iir_params=iir_params
         )
 
-    assert layer.filts is not None, "Filters should be initialized."
-    assert layer.filts["band_0"][
-               "a"].dtype == torch.float64, "Filter coefficients should be float64."
+    assert layer.a_list is not None, "Filters should be initialized."
+    assert layer.b_list is not None, "Filters should be initialized."
+
+    assert layer.a_list[0].dtype == torch.float64, "Filter coefficients should be float64."
 
 
 @pytest.mark.parametrize('method', ['iir', 'fir'])
@@ -769,11 +770,10 @@ def test_filter_bank_layer_frequency_response():
 
     # Prepare plots
     # Iterate over each filter in the filter bank
-    for idx, ((l_freq, h_freq), filt_dict) in enumerate(zip(
-            band_filters, filter_bank_layer.filts.values())):
-
+    for idx, ((l_freq, h_freq), b_value) in enumerate(zip(
+            band_filters, filter_bank_layer.b_list)):
         # Extract filter coefficients
-        b = filt_dict["filt"].detach().numpy()
+        b = b_value.detach().numpy()
         a = np.array([1.0])  # FIR filter, so a is [1.0]
 
         # Compute frequency response
