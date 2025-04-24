@@ -1,3 +1,5 @@
+from typing import List, Tuple
+
 import torch
 from torch import nn
 
@@ -16,8 +18,8 @@ class Expression(nn.Module):
         super().__init__()
         self.expression_fn = expression_fn
 
-    def forward(self, *x):
-        return self.expression_fn(*x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.expression_fn(x)
 
     def __repr__(self):
         if hasattr(self.expression_fn, "func") and hasattr(

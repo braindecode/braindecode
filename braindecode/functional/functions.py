@@ -11,7 +11,7 @@ def square(x):
     return x * x
 
 
-def safe_log(x, eps=1e-6):
+def safe_log(x, eps: float = 1e-6) -> torch.Tensor:
     """Prevents :math:`log(0)` by using :math:`log(max(x, eps))`."""
     return torch.log(torch.clamp(x, min=eps))
 
