@@ -69,6 +69,8 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     pos_encoder: _PosEncoder | None
     transformer: nn.Transformer | None
 
+    _feature_encoder_channels: str = "n_chans"
+
     def __init__(
         self,
         n_outputs=None,
@@ -116,6 +118,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         if _init_feature_encoder:
             self.feature_encoder = _ConvFeatureEncoder(
                 conv_layers_spec=feature_encoder__conv_layers_spec,
+                channels=getattr(self, self._feature_encoder_channels),
                 drop_prob=drop_prob,
                 mode=feature_encoder__mode,
                 conv_bias=feature_encoder__conv_bias,
@@ -222,7 +225,7 @@ class SignalJEPA(_BaseSignalJEPA):
 
     def forward(self, X):
         batch = {"X": X}
-        local_features = self.feature_encoder(batch)
+        local_features = self.feature_encoder(X)
         pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
         local_features += pos_encoding
         contextual_features = self.transformer.encoder(local_features)
@@ -369,7 +372,7 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
     def forward(self, X):
         batch = {"X": X}
-        local_features = self.feature_encoder(batch)
+        local_features = self.feature_encoder(X)
         pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
         local_features += pos_encoding
         contextual_features = self.transformer.encoder(local_features)
@@ -496,7 +499,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         return new_model
 
     def forward(self, X):
-        local_features = self.feature_encoder({"X": X})
+        local_features = self.feature_encoder(X)
         y = self.final_layer(local_features)
         return y
 
@@ -524,6 +527,8 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
+
+    _feature_encoder_channels: str = "n_spat_filters"
 
     def __init__(
         self,
@@ -556,6 +561,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         # other
         _init_feature_encoder: bool = True,
     ):
+        self.n_spat_filters = n_spat_filters
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -628,12 +634,12 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     def forward(self, X):
         X = self.spatial_conv(X)
-        local_features = self.feature_encoder({"X": X})
+        local_features = self.feature_encoder(X)
         y = self.final_layer(local_features)
         return y
 
 
-class _ConvFeatureEncoder(nn.Module):
+class _ConvFeatureEncoder(nn.Sequential):
     """Convolutional feature encoder for EEG data.
 
     Computes successive 1D convolutions (with activations) over the time
@@ -651,6 +657,7 @@ class _ConvFeatureEncoder(nn.Module):
         * ``k`` : temporal length of the layer's kernel;
         * ``stride`` : temporal stride of the layer's kernel.
 
+    channels: int
     drop_prob: float
     mode: str
         Normalisation mode. Either ``default`` or ``layer_norm``.
@@ -661,13 +668,13 @@ class _ConvFeatureEncoder(nn.Module):
     def __init__(
         self,
         conv_layers_spec: Sequence[tuple[int, int, int]],
+        channels: int,
         drop_prob: float = 0.0,
         mode: str = "default",
         conv_bias: bool = False,
         activation: type[nn.Module] = nn.GELU,
     ):
         assert mode in {"default", "layer_norm"}
-        super().__init__()
 
         input_channels = 1
         conv_layers = []
@@ -689,15 +696,19 @@ class _ConvFeatureEncoder(nn.Module):
                 )
             )
             input_channels = output_channels
-
+        all_layers = [
+            Rearrange("b channels time -> (b channels) 1 time", channels=channels),
+            *conv_layers,
+            Rearrange(
+                "(b channels) emb_dim time_out -> b (channels time_out) emb_dim",
+                channels=channels,
+            ),
+        ]
+        super().__init__(*all_layers)
         self.emb_dim = (
             output_channels  # last output dimension becomes the embedding dimension
         )
         self.conv_layers_spec = conv_layers_spec
-        self.cnn = nn.Sequential(
-            Rearrange("b channels time -> (b channels) 1 time"),
-            *conv_layers,
-        )
 
     @staticmethod
     def _get_block(
@@ -711,9 +722,9 @@ class _ConvFeatureEncoder(nn.Module):
         is_group_norm=False,
         conv_bias=False,
     ):
-        assert not (is_layer_norm and is_group_norm), (
-            "layer norm and group norm are exclusive"
-        )
+        assert not (
+            is_layer_norm and is_group_norm
+        ), "layer norm and group norm are exclusive"
 
         conv = nn.Conv1d(
             input_channels,
@@ -746,36 +757,6 @@ class _ConvFeatureEncoder(nn.Module):
 
     def n_times_out(self, n_times):
         return _n_times_out(self.conv_layers_spec, n_times)
-
-    def forward(self, batch):
-        """
-        ``n_times_out`` is the temporal length of the signal after passing
-        through the convolutional layers. This length can be predicted with
-        the method ``_ConvFeatureEncoder.n_times_out()``.
-
-        Parameters
-        ----------
-        batch: dict with keys:
-
-            * X: (batch_size, n_chans, n_times)
-                Batched EEG signal.
-
-        Returns
-        -------
-        local_features: (batch_size, n_chans * n_times_out, emb_dim)
-            Local features extracted from the EEG signal.
-            ``emb_dim`` corresponds to the ``dim`` of the last element of
-            ``conv_layers_spec``.
-        """
-        x = batch["X"]
-        shapes = parse_shape(x, "b channels _")
-        x = self.cnn(x)
-        x = rearrange(
-            x,
-            "(b channels) emb_dim time_out -> b (channels time_out) emb_dim",
-            **shapes,
-        )
-        return x
 
 
 class _ChannelEmbedding(nn.Embedding):
@@ -826,7 +807,8 @@ class _ChannelEmbedding(nn.Embedding):
                     with torch.no_grad():
                         self.weight[
                             i,
-                            j * self.embedding_dim_per_coordinate : (j + 1)
+                            j
+                            * self.embedding_dim_per_coordinate : (j + 1)
                             * self.embedding_dim_per_coordinate,
                         ].copy_(
                             _pos_encode_contineous(
