@@ -220,13 +220,13 @@ class SignalJEPA(_BaseSignalJEPA):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None):
-        local_features = self.feature_encoder(X)
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)
-        local_features += pos_encoding
-        contextual_features = self.transformer.encoder(local_features)
-        y = self.final_layer(contextual_features)
-        return y
+    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
+        local_features = self.feature_encoder(X)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        local_features += pos_encoding  # type: ignore
+        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        y = self.final_layer(contextual_features)  # type: ignore
+        return y  # type: ignore
 
 
 class SignalJEPA_Contextual(_BaseSignalJEPA):
@@ -366,13 +366,13 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
         return new_model
 
-    def forward(self, X, ch_idxs: torch.Tensor | None = None):
-        local_features = self.feature_encoder(X)
-        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)
-        local_features += pos_encoding
-        contextual_features = self.transformer.encoder(local_features)
-        y = self.final_layer(contextual_features)
-        return y
+    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
+        local_features = self.feature_encoder(X)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        local_features += pos_encoding  # type: ignore
+        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        y = self.final_layer(contextual_features)  # type: ignore
+        return y  # type: ignore
 
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
