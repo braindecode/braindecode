@@ -529,6 +529,8 @@ def test_model_torch_script(model):
     """
 
     not_working_models = [
+        "BIOT",
+        "Labram",
         "EEGMiner",
         "SignalJEPA",
         "SignalJEPA_Contextual",

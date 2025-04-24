@@ -160,7 +160,7 @@ class BIOT(EEGModuleMixin, nn.Module):
         x = self.final_layer(emb)
 
         if self.return_feature:
-            return emb
+            return x, emb
         else:
             return x
 
