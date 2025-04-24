@@ -717,9 +717,9 @@ class _ConvFeatureEncoder(nn.Sequential):
         is_group_norm=False,
         conv_bias=False,
     ):
-        assert not (
-            is_layer_norm and is_group_norm
-        ), "layer norm and group norm are exclusive"
+        assert not (is_layer_norm and is_group_norm), (
+            "layer norm and group norm are exclusive"
+        )
 
         conv = nn.Conv1d(
             input_channels,
@@ -802,8 +802,7 @@ class _ChannelEmbedding(nn.Embedding):
                     with torch.no_grad():
                         self.weight[
                             i,
-                            j
-                            * self.embedding_dim_per_coordinate : (j + 1)
+                            j * self.embedding_dim_per_coordinate : (j + 1)
                             * self.embedding_dim_per_coordinate,
                         ].copy_(
                             _pos_encode_contineous(
