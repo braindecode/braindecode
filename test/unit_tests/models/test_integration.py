@@ -521,7 +521,10 @@ def test_model_exported(model):
     # sanity check: we got the right return type
     assert isinstance(exported_prog, ExportedProgram)
 
-
+@pytest.mark.skipif(
+    sys.platform.startswith("win"),
+    reason="torch.script is known to have issues on Windows.",
+)
 def test_model_torch_script(model):
     """
     Verifies that all models can be torch export without issue
@@ -557,11 +560,6 @@ def test_model_torch_script(model):
     output_model_recreated = final_plain_model(input_tensor)
     assert output_model.shape == output_model_recreated.shape
     
-    # if windows make sure to send everything to the CPU
-    if sys.platform.startswith("win"):
-        output_model = output_model.cpu()
-        output_model_recreated = output_model_recreated.cpu()
-        
     torch.testing.assert_close(output_model, output_model_recreated)
     # convert the new model to scripted
     scripted_model = torch.jit.script(final_plain_model)
