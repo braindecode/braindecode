@@ -111,3 +111,13 @@ profile = "black"
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]  # :contentReference[oaicite:0]{index=0}
 known_first_party = ["braindecode"]   
 lines_between_sections = 1
+
+[pytest]
+# where to look for tests
+testpaths = ["test"]
+
+# which files count as test modules
+python_files = ["test_*.py", "*_test.py"]
+
+# which functions inside them count as tests
+python_functions = ["test_*"]

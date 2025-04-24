@@ -109,7 +109,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.final_conv_length = final_conv_length
         self.conv_nonlin = conv_nonlin
         self.pool_mode = pool_mode
-        self.pool_nonlin = activation_pool_nonlin()
+        self.pool_nonlin = activation_pool_nonlin
         self.split_first_layer = split_first_layer
         self.batch_norm = batch_norm
         self.batch_norm_alpha = batch_norm_alpha
@@ -167,7 +167,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                 stride=(self.pool_time_stride, 1),
             ),
         )
-        self.add_module("pool_nonlin_exp", self.pool_nonlin)
+        self.add_module("pool_nonlin_exp", self.pool_nonlin())
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":

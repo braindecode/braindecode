@@ -6,6 +6,8 @@
 from __future__ import annotations
 import sys
 import inspect
+import os
+
 from copy import deepcopy
 import inspect
 from types import MethodType
@@ -527,12 +529,6 @@ def test_model_torch_script(model):
     """
 
     not_working_models = [
-        "Deep4Net",
-        "EEGResNet",
-        "ShallowFBCSPNet",
-        "Labram",
-        "ContraWR",
-        "BIOT",
         "EEGMiner",
         "SignalJEPA",
         "SignalJEPA_Contextual",
@@ -567,8 +563,14 @@ def test_model_torch_script(model):
     # convert the new model to scripted
     scripted_model = torch.jit.script(final_plain_model)
 
-    scripted_model.save(f"{model.__class__.__name__}_scripted.pt")
+    fname = f"{model.__class__.__name__}_scripted.pt"
+    scripted_model.save(fname)
 
+    os.remove(fname)
+    # now that we can save, 
+    # erasing the model from the memory
+    # 
+     
     # print(f"Model {model_class.__name__} passed the test.")
     # Continue this tests later. Not now...
     # output_script = scripted_model(input_tensor)

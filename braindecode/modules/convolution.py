@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import torch
 from torch import nn
@@ -128,20 +130,28 @@ class CombinedConv(nn.Module):
             .unsqueeze(1)
         )
 
-        # Calculate bias term
-        if not self.bias_spat and not self.bias_time:
-            bias = None
-        else:
-            bias = 0
-            if self.bias_time:
-                bias += (
-                    self.conv_spat.weight.squeeze()
-                    .sum(-1)
-                    .mm(self.conv_time.bias.unsqueeze(-1))
-                    .squeeze()
-                )
-            if self.bias_spat:
-                bias += self.conv_spat.bias
+        bias = None
+        calculated_bias: Optional[torch.Tensor] = None
+
+        # Calculate bias terms
+        if self.bias_time:
+            time_bias = self.conv_time.bias
+            assert time_bias is not None
+            calculated_bias = (
+                self.conv_spat.weight.squeeze()
+                .sum(-1)
+                .mm(time_bias.unsqueeze(-1))
+                .squeeze()
+            )
+        if self.bias_spat:
+            spat_bias = self.conv_spat.bias
+            assert spat_bias is not None
+            if calculated_bias is None:
+                calculated_bias = spat_bias
+            else:
+                calculated_bias = calculated_bias + spat_bias
+
+        bias = calculated_bias
 
         return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
 

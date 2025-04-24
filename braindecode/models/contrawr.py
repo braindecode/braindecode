@@ -79,6 +79,11 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
         res_channels = [self.n_chans] + res_channels + [emb_size]
 
+        self.torch_stft = _STFTModule(
+            n_fft=self.n_fft,
+            hop_length=int(self.n_fft // self.steps),
+        )
+
         self.convs = nn.ModuleList(
             [
                 _ResBlock(
@@ -98,38 +103,6 @@ class ContraWR(EEGModuleMixin, nn.Module):
             nn.Linear(emb_size, self.n_outputs),
         )
 
-    def torch_stft(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Compute the Short-Time Fourier Transform (STFT) of the input tensor.
-
-        EEG Signal is expected to be of shape (batch_size, n_channels, n_times).
-
-        Parameters
-        ----------
-        X: Tensor
-            Input tensor of shape (batch_size, n_channels, n_times).
-        Returns
-        -------
-        Tensor
-            Output tensor of shape (batch_size, n_channels, n_freqs, n_times).
-        """
-
-        signal = []
-        for s in range(x.shape[1]):
-            spectral = torch.stft(
-                x[:, s, :],
-                n_fft=self.n_fft,
-                hop_length=self.n_fft // self.steps,
-                win_length=self.n_fft,
-                normalized=True,
-                center=True,
-                onesided=True,
-                return_complex=True,
-            )
-            signal.append(spectral)
-        stacked = torch.stack(signal).permute(1, 0, 2, 3)
-        return torch.abs(stacked)
-
     def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
@@ -147,7 +120,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
 
         for conv in self.convs[:-1]:
             X = conv.forward(X)
-        emb = self.convs[-1].forward(X).squeeze(-1).squeeze(-1)
+        emb = self.convs[-1](X).squeeze(-1).squeeze(-1)
         return self.final_layer(emb)
 
 
@@ -201,7 +174,7 @@ class _ResBlock(nn.Module):
         drop_prob=0.5,
         activation: nn.Module = nn.ReLU,
     ):
-        super(_ResBlock, self).__init__()
+        super().__init__()
         self.conv1 = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
@@ -260,3 +233,64 @@ class _ResBlock(nn.Module):
             out = self.maxpool(out)
         out = self.dropout(out)
         return out
+
+
+class _STFTModule(nn.Module):
+    """
+    A PyTorch module that computes the Short-Time Fourier Transform (STFT)
+    of an EEG batch tensor.
+
+    Expects input of shape (batch_size, n_channels, n_times) and returns
+    (batch_size, n_channels, n_freqs, n_times).
+    """
+
+    def __init__(
+        self,
+        n_fft: int,
+        hop_length: int,
+        center: bool = True,
+        onesided: bool = True,
+        return_complex: bool = True,
+        normalized: bool = True,
+    ):
+        """
+        Parameters
+        ----------
+        n_fft : int
+            Number of FFT points (window size).
+        steps : int
+            Number of hops per window (i.e. hop_length = n_fft // steps).
+        """
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+        self.center = center
+        self.one_sided = onesided
+        self.return_complex = return_complex
+        self.normalized = normalized
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        window = torch.ones(self.n_fft, device=x.device)
+
+        # x: (B, C, T)
+        B, C, T = x.shape
+        # flatten batch & channel into one dim
+        x_flat = x.reshape(B * C, T)
+
+        # compute stft on 2D tensor
+        spec_flat = torch.stft(
+            x_flat,
+            n_fft=self.n_fft,
+            hop_length=self.hop_length,
+            win_length=self.n_fft,
+            window=window,
+            normalized=self.normalized,
+            center=self.center,
+            onesided=self.one_sided,
+            return_complex=self.return_complex,
+        )
+
+        F, L = spec_flat.shape[-2], spec_flat.shape[-1]
+        spec = spec_flat.view(B, C, F, L)
+
+        return torch.abs(spec)
