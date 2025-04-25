@@ -80,6 +80,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Exposing extra variable to avoid problem with the parallel process (:gh:`736` by `Pierre Guetschel`_)
 - Fixing the IFNet (:gh:`739` by `Bruno Aristimunha`_)
 - Fix dead links in the documentation (:gh:`727` by `Lucas Heck`_)
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
@@ -106,6 +107,7 @@ API changes
 - Moving :class:`braindecode.models.TCN` and :class:`braindecode.models.HybridNet` to module and creating :class:`braindecode.models.BDTCN` (:gh:`673` by `Bruno Aristimunha`_)
 - Removing dead parameters from :class:`braindecode.models.EEGNetv4` (:gh:`676` by `Bruno Aristimunha`_)
 - Including Linear Layer at the end :class:`braindecode.models.EEGNetv4` (:gh:`680` by `Bruno Aristimunha`_)
+- Expose ``copy_data`` parameter in :func:`braindecode.preprocessing.preprocess` (:gh:`736` by `Pierre Guetschel`_)
 
 .. _changes_0_8_0:
 
