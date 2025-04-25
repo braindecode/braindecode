@@ -80,6 +80,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Exposing extra variable to avoid problem with the parallel process (:gh:`736` by `Pierre Guetschel`_)
 - Fixing the IFNet (:gh:`739` by `Bruno Aristimunha`_)
 - Fix dead links in the documentation (:gh:`727` by `Lucas Heck`_)
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
