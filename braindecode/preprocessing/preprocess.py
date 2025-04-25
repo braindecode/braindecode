@@ -139,7 +139,7 @@ def preprocess(
         one dataset has to be processed and saved at a time to account for
         its original position.
     copy_data : bool | None
-        Whether the data passed to the different jobs should be copied or 
+        Whether the data passed to the different jobs should be copied or
         passed by reference.
 
     Returns
@@ -168,7 +168,7 @@ def preprocess(
             save_dir,
             overwrite,
             copy_data=(
-                (parallel_processing and (save_dir is None)) 
+                (parallel_processing and (save_dir is None))
                 if copy_data is None
                 else copy_data
             ),
