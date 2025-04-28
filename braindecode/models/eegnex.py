@@ -117,7 +117,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             nn.Conv2d(
                 in_channels=1,
                 out_channels=self.filter_1,
-                kernel_size=self.self.kernel_block_1_2,
+                kernel_size=self.kernel_block_1_2,
                 padding="same",
                 bias=False,
             ),
@@ -128,7 +128,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             nn.Conv2d(
                 in_channels=self.filter_1,
                 out_channels=self.filter_2,
-                kernel_size=self.self.kernel_block_1_2,
+                kernel_size=self.kernel_block_1_2,
                 padding="same",
                 bias=False,
             ),
