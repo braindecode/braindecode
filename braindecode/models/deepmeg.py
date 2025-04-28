@@ -186,6 +186,8 @@ class DeepRecurrentEncoder(nn.Module):
         Number of layers in the initial linear stack.
     initial_nonlin : bool, default=False
         If True, apply `activation` after the initial linear stack.
+    final_layer: torch.nn.Module or None
+        If not None, replaces the final output layer(s) with the provided module.
 
     Attributes
     ----------
@@ -293,6 +295,8 @@ class DeepRecurrentEncoder(nn.Module):
         initial_linear: int = 0,
         initial_depth: int = 1,
         initial_nonlin: bool = False,
+        # Final layer
+        final_layer: tp.Optional[nn.Module] = nn.Linear,
     ):
         super().__init__()
 
