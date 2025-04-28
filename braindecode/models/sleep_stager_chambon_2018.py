@@ -2,7 +2,8 @@
 #
 # License: BSD (3-clause)
 
-import numpy as np
+import math
+
 import torch
 from torch import nn
 
@@ -91,12 +92,14 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             "fc.1.bias": "final_layer.1.bias",
         }
 
-        time_conv_size = np.ceil(time_conv_size_s * self.sfreq).astype(int)
-        max_pool_size = np.ceil(max_pool_size_s * self.sfreq).astype(int)
-        pad_size = np.ceil(pad_size_s * self.sfreq).astype(int)
+        time_conv_size = math.ceil(time_conv_size_s * self.sfreq)
+        max_pool_size = math.ceil(max_pool_size_s * self.sfreq)
+        pad_size = math.ceil(pad_size_s * self.sfreq)
 
         if self.n_chans > 1:
             self.spatial_conv = nn.Conv2d(1, self.n_chans, (self.n_chans, 1))
+        else:
+            self.spatial_conv = nn.Identity()
 
         batch_norm = nn.BatchNorm2d if apply_batch_norm else nn.Identity
 
@@ -112,24 +115,25 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
             activation(),
             nn.MaxPool2d((1, max_pool_size)),
         )
-        self.len_last_layer = self._len_last_layer(self.n_chans, self.n_times)
         self.return_feats = return_feats
+
+        dim_conv_1 = (
+            self.n_times + 2 * pad_size - (time_conv_size - 1)
+        ) // max_pool_size
+        dim_after_conv = (
+            dim_conv_1 + 2 * pad_size - (time_conv_size - 1)
+        ) // max_pool_size
+
+        self.len_last_layer = n_conv_chs * self.n_chans * dim_after_conv
 
         # TODO: Add new way to handle return_features == True
         if not return_feats:
             self.final_layer = nn.Sequential(
                 nn.Dropout(p=drop_prob),
-                nn.Linear(self.len_last_layer, self.n_outputs),
+                nn.Linear(in_features=self.len_last_layer, out_features=self.n_outputs),
             )
 
-    def _len_last_layer(self, n_channels, input_size):
-        self.feature_extractor.eval()
-        with torch.no_grad():
-            out = self.feature_extractor(torch.Tensor(1, 1, n_channels, input_size))
-        self.feature_extractor.train()
-        return len(out.flatten())
-
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
@@ -149,5 +153,5 @@ class SleepStagerChambon2018(EEGModuleMixin, nn.Module):
 
         if self.return_feats:
             return feats
-        else:
-            return self.final_layer(feats)
+
+        return self.final_layer(feats)

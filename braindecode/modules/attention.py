@@ -12,6 +12,7 @@ AttentionBaseNet class.
 # License: BSD (3-clause)
 
 import math
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -730,19 +731,27 @@ class MultiHeadAttention(nn.Module):
         self.att_drop = nn.Dropout(dropout)
         self.projection = nn.Linear(emb_size, emb_size)
 
-    def forward(self, x: Tensor, mask: Tensor = None) -> Tensor:
-        queries = rearrange(self.queries(x), "b n (h d) -> b h n d", h=self.num_heads)
-        keys = rearrange(self.keys(x), "b n (h d) -> b h n d", h=self.num_heads)
-        values = rearrange(self.values(x), "b n (h d) -> b h n d", h=self.num_heads)
+        self.rearrange_stack = Rearrange(
+            "b n (h d) -> b h n d",
+            h=num_heads,
+        )
+        self.rearrange_unstack = Rearrange(
+            "b h n d -> b n (h d)",
+        )
+
+    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        queries = self.rearrange_stack(self.queries(x))
+        keys = self.rearrange_stack(self.keys(x))
+        values = self.rearrange_stack(self.values(x))
         energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
         if mask is not None:
-            fill_value = torch.finfo(torch.float32).min
-            energy.mask_fill(~mask, fill_value)
+            fill_value = float("-inf")
+            energy = energy.masked_fill(~mask, fill_value)
 
         scaling = self.emb_size ** (1 / 2)
         att = F.softmax(energy / scaling, dim=-1)
         att = self.att_drop(att)
         out = torch.einsum("bhal, bhlv -> bhav ", att, values)
-        out = rearrange(out, "b h n d -> b n (h d)")
+        out = self.rearrange_unstack(out)
         out = self.projection(out)
         return out

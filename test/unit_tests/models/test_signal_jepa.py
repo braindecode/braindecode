@@ -64,9 +64,9 @@ class TestPosEncodeContineousFunction:
 
 class TestConvFeatureEncoderModule:
     def test_forward__n_times_out(self):
-        model = _ConvFeatureEncoder([(32, 10, 5), (64, 5, 2), (128, 5, 2)])
+        model = _ConvFeatureEncoder([(32, 10, 5), (64, 5, 2), (128, 5, 2)], channels=3)
         x = torch.rand(2, 3, 103)
-        y = model(dict(X=x))
+        y = model(x)
         n_times_out = model.n_times_out(103)
         assert y.shape == (2, 3 * n_times_out, 128)
 
@@ -84,13 +84,12 @@ class TestPosEncoderModule:
         return _PosEncoder(
             spat_dim=40,
             time_dim=60,
-            ch_names=["A", "B"],
-            ch_locs=[[1.0, 2.0], [0.0, 1.0]],
+            ch_locs=[[1.0, 2.0], [0.0, 1.0], [0.0, 0.0]],
             sfreq_features=128,
         )
 
     def test_forward(self, batch, model):
-        y = model(batch)
+        y = model(**batch)
         assert y.shape == (2, 4 * 10, 100)
         y = y.view(2, 4, 10, 100)
         assert (y[:, 2, :, :40] == y[:, 3, :, :40]).all()  # same unknown embedding
@@ -105,17 +104,7 @@ class TestPosEncoderModule:
             for i in range(2)
         )
 
-    def test_set_fixed_ch_names(self, batch, model):
-        batch1 = batch.copy()
-        batch2 = batch.copy()
-        batch2.pop("ch_idxs")
-        y1 = model(batch1)
-        ch_names = ['A',"B","C","D"] # C and D are unknown channels
-        model.set_fixed_ch_names(ch_names)
-        y2 = model(batch2)
-        assert (y1 == y2).all()
-
     def test_forward_forward(self, batch, model):
-        _ = model(batch)
+        _ = model(**batch)
         batch["local_features"] = batch["local_features"].tile(1, 2, 1)
-        _ = model(batch)
+        _ = model(**batch)

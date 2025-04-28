@@ -1,7 +1,8 @@
 # Authors: Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
-import numpy as np
+import math
+
 import torch
 from einops.layers.torch import Rearrange
 from torch import nn
@@ -102,7 +103,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         n_chans=None,
         n_outputs=None,
         input_window_seconds=None,
-        sfreq=250,
+        sfreq=250.0,
         conv_block_n_filters=16,
         conv_block_kernel_length_1=64,
         conv_block_kernel_length_2=16,
@@ -247,39 +248,42 @@ class ATCNet(EEGModuleMixin, nn.Module):
         # Dimension: (batch_size, F2, Tc)
 
         # ----- Sliding window -----
-        sw_concat = []  # to store sliding window outputs
-        for w in range(self.n_windows):
-            conv_feat_w = conv_feat[..., w : w + self.Tw]
+        sw_concat: list[torch.Tensor] = []  # to store sliding window outputs
+        # for w in range(self.n_windows):
+        for idx, (attention, tcn_module, final_layer) in enumerate(
+            zip(self.attention_blocks, self.temporal_conv_nets, self.final_layer)
+        ):
+            conv_feat_w = conv_feat[..., idx : idx + self.Tw]
             # Dimension: (batch_size, F2, Tw)
 
             # ----- Attention block -----
-            att_feat = self.attention_blocks[w](conv_feat_w)
+            att_feat = attention(conv_feat_w)
             # Dimension: (batch_size, F2, Tw)
 
             # ----- Temporal convolutional network (TCN) -----
-            tcn_feat = self.temporal_conv_nets[w](att_feat)[..., -1]
+            tcn_feat = tcn_module(att_feat)[..., -1]
             # Dimension: (batch_size, F2)
 
             # Outputs of sliding window can be either averaged after being
             # mapped by dense layer or concatenated then mapped by a dense
             # layer
             if not self.concat:
-                tcn_feat = self.final_layer[w](tcn_feat)
+                tcn_feat = final_layer(tcn_feat)
 
             sw_concat.append(tcn_feat)
 
         # ----- Aggregation and prediction -----
         if self.concat:
-            sw_concat = torch.cat(sw_concat, dim=1)
-            sw_concat = self.final_layer[0](sw_concat)
+            sw_concat_agg = torch.cat(sw_concat, dim=1)
+            sw_concat_agg = self.final_layer[0](sw_concat_agg)
         else:
             if len(sw_concat) > 1:  # more than one window
-                sw_concat = torch.stack(sw_concat, dim=0)
-                sw_concat = torch.mean(sw_concat, dim=0)
+                sw_concat_agg = torch.stack(sw_concat, dim=0)
+                sw_concat_agg = torch.mean(sw_concat_agg, dim=0)
             else:  # one window (# windows = 1)
-                sw_concat = sw_concat[0]
+                sw_concat_agg = sw_concat[0]
 
-        return self.out_fun(sw_concat)
+        return self.out_fun(sw_concat_agg)
 
 
 class _ConvBlock(nn.Module):
@@ -629,7 +633,7 @@ class _MHA(nn.Module):
         # Attention weights of size (num_heads * batch_size, n, m):
         # measures how similar each pair of Q and K is.
         W = torch.softmax(
-            Q_.bmm(K_.transpose(-2, -1)) / np.sqrt(self.head_dim),
+            Q_.bmm(K_.transpose(-2, -1)) / math.sqrt(self.head_dim),
             -1,  # (B', D', S)
         )  # (B', N, M)
 

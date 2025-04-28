@@ -22,8 +22,9 @@ from .convolution import (
     DepthwiseConv2d,
 )
 from .filter import FilterBankLayer, GeneralizedGaussianFilter
-from .layers import Chomp1d, DropPath, Ensure4d, TimeDistributed
+from .layers import Chomp1d, DropPath, Ensure4d, SqueezeFinalOutput, TimeDistributed
 from .linear import LinearWithConstraint, MaxNormLinear
+from .parametrization import MaxNorm, MaxNormParametrize
 from .stats import (
     LogPowerLayer,
     LogVarLayer,

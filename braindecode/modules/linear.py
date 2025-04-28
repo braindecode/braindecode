@@ -1,5 +1,8 @@
 import torch
 from torch import Tensor, nn
+from torch.nn.utils.parametrize import register_parametrization
+
+from braindecode.modules.parametrization import MaxNorm, MaxNormParametrize
 
 
 class MaxNormLinear(nn.Linear):
@@ -35,18 +38,7 @@ class MaxNormLinear(nn.Linear):
         )
         self._max_norm_val = max_norm_val
         self._eps = eps
-
-    def forward(self, X: Tensor) -> Tensor:
-        self._max_norm()
-        return super().forward(X)
-
-    def _max_norm(self):
-        with torch.no_grad():
-            norm = self.weight.norm(2, dim=0, keepdim=True).clamp(
-                min=self._max_norm_val / 2
-            )
-            desired = torch.clamp(norm, max=self._max_norm_val)
-            self.weight *= desired / (self._eps + norm)
+        register_parametrization(self, "weight", MaxNorm(self._max_norm_val, self._eps))
 
 
 class LinearWithConstraint(nn.Linear):
@@ -55,23 +47,4 @@ class LinearWithConstraint(nn.Linear):
     def __init__(self, *args, max_norm=1.0, **kwargs):
         super(LinearWithConstraint, self).__init__(*args, **kwargs)
         self.max_norm = max_norm
-
-    def forward(self, x: Tensor) -> Tensor:
-        with torch.no_grad():
-            # In PyTorch, the weight matrix of nn.Linear is of shape (out_features, in_features),
-            # which is the transpose of TensorFlow's typical kernel shape.
-            #
-            # The torch.renorm function applies a re-normalization to slices of the tensor:
-            # - 'p=2' specifies that we are using the Euclidean (L2) norm.
-            # - 'dim=0' indicates that the tensor will be split along the first dimension.
-            #   This corresponds to each "row" in the weight matrix, which in this context
-            #   represents a weight vector for each output neuron.
-            # - 'maxnorm=self.max_norm' sets the maximum allowed norm for each of these sub-tensors.
-            #
-            # Note: In TensorFlow's max_norm constraint, the axis parameter determines along which
-            # dimension the norm is computed. Here, due to the difference in kernel shape and axis
-            # interpretation, we use torch.renorm with dim=0 to match TensorFlow's behavior.
-            self.weight.data = torch.renorm(
-                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-            )
-        return super(LinearWithConstraint, self).forward(x)
+        register_parametrization(self, "weight", MaxNormParametrize(self.max_norm))

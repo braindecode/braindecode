@@ -103,7 +103,8 @@ class CTNet(EEGModuleMixin, nn.Module):
         n_times=None,
         input_window_seconds=None,
         # Model specific arguments
-        activation: nn.Module = nn.GELU,
+        activation_patch: nn.Module = nn.ELU,
+        activation_transformer: nn.Module = nn.GELU,
         drop_prob_cnn: float = 0.3,
         drop_prob_posi: float = 0.1,
         drop_prob_final: float = 0.5,
@@ -128,7 +129,8 @@ class CTNet(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.emb_size = emb_size
-        self.activation = activation
+        self.activation_patch = activation_patch
+        self.activation_transformer = activation_transformer
 
         self.n_filters_time = n_filters_time
         self.drop_prob_cnn = drop_prob_cnn
@@ -161,7 +163,7 @@ class CTNet(EEGModuleMixin, nn.Module):
             pool_size_2=self.pool_size_2,
             drop_prob=self.drop_prob_cnn,
             n_chans=self.n_chans,
-            activation=self.activation,
+            activation=self.activation_patch,
         )
 
         self.position = _PositionalEncoding(
@@ -172,7 +174,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         )
 
         self.trans = _TransformerEncoder(
-            heads, depth, emb_size, activation=self.activation
+            heads, depth, emb_size, activation=self.activation_transformer
         )
 
         self.flatten_drop_layer = nn.Sequential(
@@ -294,7 +296,7 @@ class _ResidualAdd(nn.Module):
         self.drop = nn.Dropout(drop_p)
         self.layernorm = nn.LayerNorm(emb_size)
 
-    def forward(self, x: Tensor, **kwargs) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Forward pass with residual connection.
 
@@ -310,7 +312,7 @@ class _ResidualAdd(nn.Module):
         Tensor
             Output tensor after applying residual connection.
         """
-        res = self.module(x, **kwargs)
+        res = self.module(x)
         out = self.layernorm(self.drop(res) + x)
         return out
 
@@ -346,7 +348,7 @@ class _TransformerEncoderBlock(nn.Module):
             drop_prob,
         )
 
-    def forward(self, x: Tensor, **kwargs) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Forward pass of the transformer encoder block.
 
@@ -362,8 +364,8 @@ class _TransformerEncoderBlock(nn.Module):
         Tensor
             Output tensor after transformer encoder block.
         """
-        x = self.attention(x, **kwargs)
-        x = self.feed_forward(x, **kwargs)
+        x = self.attention(x)
+        x = self.feed_forward(x)
         return x
 
 

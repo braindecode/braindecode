@@ -1,9 +1,14 @@
+from typing import Optional
+
 import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.util import np_to_th
+
+from .parametrization import MaxNormParametrize
 
 
 class AvgPool2dWithConv(nn.Module):
@@ -69,15 +74,11 @@ class AvgPool2dWithConv(nn.Module):
 
 class Conv2dWithConstraint(nn.Conv2d):
     def __init__(self, *args, max_norm=1, **kwargs):
-        self.max_norm = max_norm
         super().__init__(*args, **kwargs)
-
-    def forward(self, x):
-        with torch.no_grad():
-            self.weight.data = torch.renorm(
-                self.weight.data, p=2, dim=0, maxnorm=self.max_norm
-            )
-        return super().forward(x)
+        self.max_norm = max_norm
+        # initialize the weights
+        nn.init.xavier_uniform_(self.weight, gain=1)
+        register_parametrization(self, "weight", MaxNormParametrize(self.max_norm))
 
 
 class CombinedConv(nn.Module):
@@ -121,7 +122,7 @@ class CombinedConv(nn.Module):
             n_filters_time, n_filters_spat, (1, in_chans), bias=bias_spat, stride=1
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Merge time and spat weights
         combined_weight = (
             (self.conv_time.weight * self.conv_spat.weight.permute(1, 0, 2, 3))
@@ -129,20 +130,28 @@ class CombinedConv(nn.Module):
             .unsqueeze(1)
         )
 
-        # Calculate bias term
-        if not self.bias_spat and not self.bias_time:
-            bias = None
-        else:
-            bias = 0
-            if self.bias_time:
-                bias += (
-                    self.conv_spat.weight.squeeze()
-                    .sum(-1)
-                    .mm(self.conv_time.bias.unsqueeze(-1))
-                    .squeeze()
-                )
-            if self.bias_spat:
-                bias += self.conv_spat.bias
+        bias = None
+        calculated_bias: Optional[torch.Tensor] = None
+
+        # Calculate bias terms
+        if self.bias_time:
+            time_bias = self.conv_time.bias
+            assert time_bias is not None
+            calculated_bias = (
+                self.conv_spat.weight.squeeze()
+                .sum(-1)
+                .mm(time_bias.unsqueeze(-1))
+                .squeeze()
+            )
+        if self.bias_spat:
+            spat_bias = self.conv_spat.bias
+            assert spat_bias is not None
+            if calculated_bias is None:
+                calculated_bias = spat_bias
+            else:
+                calculated_bias = calculated_bias + spat_bias
+
+        bias = calculated_bias
 
         return F.conv2d(x, weight=combined_weight, bias=bias, stride=(1, 1))
 
@@ -197,7 +206,15 @@ class CausalConv1d(nn.Conv1d):
         )
 
     def forward(self, X):
-        out = super().forward(X)
+        out = F.conv1d(
+            X,
+            self.weight,
+            self.bias,
+            stride=self.stride,
+            padding=self.padding,
+            dilation=self.dilation,
+            groups=self.groups,
+        )
         return out[..., : -self.padding[0]]
 
 

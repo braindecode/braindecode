@@ -11,30 +11,12 @@ def square(x):
     return x * x
 
 
-def safe_log(x, eps=1e-6):
+def safe_log(x, eps: float = 1e-6) -> torch.Tensor:
     """Prevents :math:`log(0)` by using :math:`log(max(x, eps))`."""
     return torch.log(torch.clamp(x, min=eps))
 
 
 def identity(x):
-    return x
-
-
-def squeeze_final_output(x):
-    """Removes empty dimension at end and potentially removes empty time
-     dimension. It does  not just use squeeze as we never want to remove
-     first dimension.
-
-    Returns
-    -------
-    x: torch.Tensor
-        squeezed tensor
-    """
-
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
-    if x.size()[2] == 1:
-        x = x[:, :, 0]
     return x
 
 

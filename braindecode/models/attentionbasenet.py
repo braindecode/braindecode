@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import numpy as np
+import math
+
 from einops.layers.torch import Rearrange
 from torch import nn
 
@@ -225,8 +226,8 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         seq_lengths = []
         out = input_window_samples
         for k, pl, ps in zip(kernel_lengths, pool_lengths, pool_strides):
-            out = np.floor(out + 2 * (k // 2) - k + 1)
-            out = np.floor((out - pl) / ps + 1)
+            out = math.floor(out + 2 * (k // 2) - k + 1)
+            out = math.floor((out - pl) / ps + 1)
             seq_lengths.append(int(out))
         return seq_lengths
 

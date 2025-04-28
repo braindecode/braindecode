@@ -2,8 +2,9 @@
 #          Cedric Rommel <cedric.rommel@inria.fr>
 #
 # License: BSD (3-clause)
+import math
+
 from einops.layers.torch import Rearrange
-from numpy import prod
 from torch import nn
 
 from braindecode.functional import glorot_weight_zero_bias
@@ -233,7 +234,7 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        spatial_dim_last_layer = self.n_times // prod(self.pooling_sizes)
+        spatial_dim_last_layer = self.n_times // math.prod(self.pooling_sizes)
         n_channels_last_layer = self.n_filters * len(self.scales_samples) // 4
 
         self.add_module("flat", nn.Flatten())

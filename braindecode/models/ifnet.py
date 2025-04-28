@@ -12,7 +12,7 @@ doi: 10.1109/TNSRE.2023.3257319.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Sequence
 
 import torch
 from einops.layers.torch import Rearrange
@@ -69,7 +69,7 @@ class IFNet(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    bands : List[Tuple[int, int]] or int or None, default=[[4, 16], (16, 40)]
+    bands : list[tuple[int, int]] or int or None, default=[[4, 16], (16, 40)]
         Frequency bands for filtering.
     out_planes : int, default=64
         Number of output feature dimensions.
@@ -251,7 +251,7 @@ class _InterFrequencyModule(nn.Module):
 
         self.activation = activation()
 
-    def forward(self, x_list: list) -> torch.Tensor:
+    def forward(self, x_list: list[torch.Tensor]) -> torch.Tensor:
         """Forward pass.
 
         Parameters
@@ -264,7 +264,7 @@ class _InterFrequencyModule(nn.Module):
         torch.Tensor
             Combined tensor after applying GELU activation.
         """
-        x = sum(x_list)
+        x = torch.stack(x_list, dim=0).sum(dim=0)
         x = self.activation(x)
         return x
 
@@ -277,7 +277,7 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         n_times: int,
         in_channels: int,
         out_channels: int = 64,
-        kernel_sizes=[63, 31],
+        kernel_sizes: Sequence[int] = [63, 31],
         stride_factor: int = 8,
         n_bands: int = 2,
         drop_prob: float = 0.5,
@@ -313,20 +313,54 @@ class _SpatioTemporalFeatureBlock(nn.Module):
         self.activation = activation
         self.dim = dim
         self.n_times = n_times
+        self.kernel_sizes = kernel_sizes
+
+        if self.n_bands != len(self.kernel_sizes):
+            warn(
+                f"Got {self.n_bands} bands, different from {len(self.kernel_sizes)} amount of "
+                "kernels to build the temporal convolution, we will apply "
+                "min(n_bands, len(self.kernel_size) to apply the convolution.",
+                UserWarning,
+            )
+            if self.n_bands > len(self.kernel_sizes):
+                self.n_bands = len(self.kernel_sizes)
+                warn(
+                    f"Reducing number of bands to {len(self.kernel_sizes)} to match the number of kernels.",
+                    UserWarning,
+                )
+            elif self.n_bands < len(self.kernel_sizes):
+                self.kernel_sizes = self.kernel_sizes[: self.n_bands]
+                warn(
+                    f"Reducing number of kernels to {self.n_bands} to match the number of bands.",
+                    UserWarning,
+                )
+
+        if self.n_times % self.stride_factor != 0:
+            warn(
+                f"Time dimension ({self.n_times}) is not divisible by"
+                f" stride_factor ({self.stride_factor}). Input will be padded.",
+                UserWarning,
+            )
+
+        out_channels_spatial = self.out_channels * self.n_bands
 
         # Spatial convolution
         self.spatial_conv = nn.Conv1d(
             in_channels=self.in_channels,
-            out_channels=self.out_channels,
+            out_channels=out_channels_spatial,
             kernel_size=1,
             groups=self.n_bands,
             bias=False,
         )
-        self.spatial_bn = nn.BatchNorm1d(self.out_channels)
+        self.spatial_bn = nn.BatchNorm1d(out_channels_spatial)
+
+        self.unpack_bands = nn.Unflatten(
+            dim=1, unflattened_size=(self.n_bands, self.out_channels)
+        )
 
         # Temporal convolutions for each radix
         self.temporal_convs = nn.ModuleList()
-        for kernel_size in kernel_sizes:
+        for kernel_size in self.kernel_sizes:
             self.temporal_convs.append(
                 nn.Sequential(
                     nn.Conv1d(
@@ -340,16 +374,8 @@ class _SpatioTemporalFeatureBlock(nn.Module):
                     nn.BatchNorm1d(self.out_channels),
                 )
             )
-
         # Inter-frequency module
         self.inter_frequency = _InterFrequencyModule(activation=self.activation)
-
-        if self.n_times % self.stride_factor != 0:
-            warn(
-                f"Time dimension ({self.n_times}) is not divisible by"
-                f" stride_factor ({self.stride_factor}). Input will be padded.",
-                UserWarning,
-            )
 
         if self.n_times % self.stride_factor != 0:
             self.padding_size = stride_factor - (self.n_times % stride_factor)
@@ -384,11 +410,12 @@ class _SpatioTemporalFeatureBlock(nn.Module):
 
         x = self.spatial_bn(x)
 
-        # Split the output into radix groups
-        x_split = torch.split(x, self.out_channels, dim=1)
+        # Split the output by bands for each frequency
+        x_split = self.unpack_bands(x)
 
-        # Apply temporal convolutions
-        x_t = [conv(x_i) for x_i, conv in zip(x_split, self.temporal_convs)]
+        x_t = []
+        for idx, conv in enumerate(self.temporal_convs):
+            x_t.append(conv(x_split[::, idx]))
 
         # Inter-frequency interaction
         x = self.inter_frequency(x_t)

@@ -2,16 +2,17 @@
 #
 # License: BSD (3-clause)
 
-import copy
 import math
 import warnings
 from copy import deepcopy
+from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
+from braindecode.modules import CausalConv1d
 
 
 class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
@@ -166,7 +167,7 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
         self.feature_extractor.train()
         return len(out.flatten())
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass.
 
@@ -183,9 +184,8 @@ class SleepStagerEldele2021(EEGModuleMixin, nn.Module):
 
         if self.return_feats:
             return encoded_features
-        else:
-            final_output = self.final_layer(encoded_features)
-            return final_output
+
+        return self.final_layer(encoded_features)
 
 
 class _SELayer(nn.Module):
@@ -199,7 +199,7 @@ class _SELayer(nn.Module):
             nn.Sigmoid(),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the SE layer.
 
@@ -245,7 +245,7 @@ class _SEBasicBlock(nn.Module):
             self.conv1, self.bn1, self.relu, self.conv2, self.bn2, self.se
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the SE layer.
 
@@ -346,7 +346,7 @@ class _MRCNN(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         x1 = self.features1(x)
         x2 = self.features2(x)
         x_concat = torch.cat((x1, x2), dim=2)
@@ -358,67 +358,38 @@ class _MRCNN(nn.Module):
 ##########################################################################################
 
 
-def _attention(query, key, value, dropout=None):
+def _attention(
+    query: torch.Tensor, key: torch.Tensor, value: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Implementation of Scaled dot product attention"""
     # d_k - dimension of the query and key vectors
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-
-    p_attn = F.softmax(scores, dim=-1)
-    if dropout is not None:
-        p_attn = dropout(p_attn)
-    return torch.matmul(p_attn, value), p_attn
-
-
-class _CausalConv1d(torch.nn.Conv1d):
-    def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride=1,
-        dilation=1,
-        groups=1,
-        bias=True,
-    ):
-        self.__padding = (kernel_size - 1) * dilation
-
-        super(_CausalConv1d, self).__init__(
-            in_channels,
-            out_channels,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=self.__padding,
-            dilation=dilation,
-            groups=groups,
-            bias=bias,
-        )
-
-    def forward(self, input):
-        result = super(_CausalConv1d, self).forward(input)
-        if self.__padding != 0:
-            return result[:, :, : -self.__padding]
-        return result
+    p_attn = F.softmax(scores, dim=-1)  # attention weights
+    output = torch.matmul(p_attn, value)  # (B, h, T, d_k)
+    return output, p_attn
 
 
 class _MultiHeadedAttention(nn.Module):
     def __init__(self, h, d_model, after_reduced_cnn_size, dropout=0.1):
         """Take in model size and number of heads."""
-        super(_MultiHeadedAttention, self).__init__()
+        super().__init__()
         assert d_model % h == 0
         self.d_per_head = d_model // h
         self.h = h
 
-        self.convs = _clones(
-            _CausalConv1d(
-                after_reduced_cnn_size, after_reduced_cnn_size, kernel_size=7, stride=1
-            ),
-            3,
+        base_conv = CausalConv1d(
+            in_channels=after_reduced_cnn_size,
+            out_channels=after_reduced_cnn_size,
+            kernel_size=7,
+            stride=1,
         )
+        self.convs = nn.ModuleList([deepcopy(base_conv) for _ in range(3)])
+
         self.linear = nn.Linear(d_model, d_model)
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value):
+    def forward(self, query, key, value: torch.Tensor) -> torch.Tensor:
         """Implements Multi-head attention"""
         nbatches = query.size(0)
 
@@ -434,31 +405,60 @@ class _MultiHeadedAttention(nn.Module):
             .transpose(1, 2)
         )
 
-        x, self.attn = _attention(query, key, value, dropout=self.dropout)
+        x_raw, attn_weights = _attention(query, key, value)
+        # apply dropout to the *weights*
+        attn = self.dropout(attn_weights)
+        # recompute the weighted sum with dropped weights
+        x = torch.matmul(attn, value)
 
+        # stash the pre‑dropout weights if you need them
+        self.attn = attn_weights
+
+        # merge heads and project
         x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_per_head)
 
         return self.linear(x)
 
 
-class _SublayerOutput(nn.Module):
+class _ResidualLayerNormAttn(nn.Module):
     """
     A residual connection followed by a layer norm.
     """
 
-    def __init__(self, size, dropout):
-        super(_SublayerOutput, self).__init__()
+    def __init__(self, size, dropout, fn_attn):
+        super().__init__()
         self.norm = nn.LayerNorm(size, eps=1e-6)
         self.dropout = nn.Dropout(dropout)
+        self.fn_attn = fn_attn
 
-    def forward(self, x, sublayer):
+    def forward(
+        self,
+        x: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+    ) -> torch.Tensor:
         """Apply residual connection to any sublayer with the same size."""
-        return x + self.dropout(sublayer(self.norm(x)))
+        x_norm = self.norm(x)
+
+        out = self.fn_attn(x_norm, key, value)
+
+        return x + self.dropout(out)
 
 
-def _clones(module, n):
-    """Produce n identical layers."""
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(n)])
+class _ResidualLayerNormFF(nn.Module):
+    def __init__(self, size, dropout, fn_ff):
+        super().__init__()
+        self.norm = nn.LayerNorm(size, eps=1e-6)
+        self.dropout = nn.Dropout(dropout)
+        self.fn_ff = fn_ff
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply residual connection to any sublayer with the same size."""
+        x_norm = self.norm(x)
+
+        out = self.fn_ff(x_norm)
+
+        return x + self.dropout(out)
 
 
 class _TCE(nn.Module):
@@ -468,11 +468,13 @@ class _TCE(nn.Module):
     """
 
     def __init__(self, layer, n):
-        super(_TCE, self).__init__()
-        self.layers = _clones(layer, n)
+        super().__init__()
+
+        self.layers = nn.ModuleList([deepcopy(layer) for _ in range(n)])
+
         self.norm = nn.LayerNorm(layer.size, eps=1e-6)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         for layer in self.layers:
             x = layer(x)
         return self.norm(x)
@@ -482,41 +484,53 @@ class _EncoderLayer(nn.Module):
     """
     An encoder layer
     Made up of self-attention and a feed forward layer.
-    Each of these sublayers have residual and layer norm, implemented by _SublayerOutput.
+    Each of these sublayers have residual and layer norm, implemented by _ResidualLayerNorm.
     """
 
     def __init__(self, size, self_attn, feed_forward, after_reduced_cnn_size, dropout):
-        super(_EncoderLayer, self).__init__()
+        super().__init__()
+        self.size = size
         self.self_attn = self_attn
         self.feed_forward = feed_forward
-        self.sublayer_output = _clones(_SublayerOutput(size, dropout), 2)
-        self.size = size
-        self.conv = _CausalConv1d(
-            after_reduced_cnn_size,
-            after_reduced_cnn_size,
+
+        self.residual_self_attn = _ResidualLayerNormAttn(
+            size=size,
+            dropout=dropout,
+            fn_attn=self_attn,
+        )
+        self.residual_ff = _ResidualLayerNormFF(
+            size=size,
+            dropout=dropout,
+            fn_ff=feed_forward,
+        )
+
+        self.conv = CausalConv1d(
+            in_channels=after_reduced_cnn_size,
+            out_channels=after_reduced_cnn_size,
             kernel_size=7,
             stride=1,
             dilation=1,
         )
 
-    def forward(self, x_in):
+    def forward(self, x_in: torch.Tensor) -> torch.Tensor:
         """Transformer Encoder"""
         query = self.conv(x_in)
         # Encoder self-attention
-        x = self.sublayer_output[0](query, lambda x: self.self_attn(query, x_in, x_in))
-        return self.sublayer_output[1](x, self.feed_forward)
+        x = self.residual_self_attn(query, x_in, x_in)
+        x_ff = self.residual_ff(x)
+        return x_ff
 
 
 class _PositionwiseFeedForward(nn.Module):
     """Positionwise feed-forward network."""
 
     def __init__(self, d_model, d_ff, dropout=0.1, activation: nn.Module = nn.ReLU):
-        super(_PositionwiseFeedForward, self).__init__()
+        super().__init__()
         self.w_1 = nn.Linear(d_model, d_ff)
         self.w_2 = nn.Linear(d_ff, d_model)
         self.dropout = nn.Dropout(dropout)
         self.activate = activation()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Implements FFN equation."""
         return self.w_2(self.dropout(self.activate(self.w_1(x))))

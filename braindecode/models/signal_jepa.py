@@ -8,7 +8,7 @@ from copy import deepcopy
 from typing import Any, Sequence
 
 import torch
-from einops import parse_shape, rearrange
+from einops import parse_shape, rearrange, repeat
 from einops.layers.torch import Rearrange
 from torch import nn
 
@@ -29,7 +29,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     Parameters
     ----------
     feature_encoder__conv_layers_spec: list of tuple
-        Tuples have shape ``(dim, k, stride)`` where:
+        tuples have shape ``(dim, k, stride)`` where:
 
         * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
         * ``k`` : temporal length of the layer's kernel;
@@ -68,6 +68,8 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
     feature_encoder: _ConvFeatureEncoder | None
     pos_encoder: _PosEncoder | None
     transformer: nn.Transformer | None
+
+    _feature_encoder_channels: str = "n_chans"
 
     def __init__(
         self,
@@ -116,6 +118,7 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
         if _init_feature_encoder:
             self.feature_encoder = _ConvFeatureEncoder(
                 conv_layers_spec=feature_encoder__conv_layers_spec,
+                channels=getattr(self, self._feature_encoder_channels),
                 drop_prob=drop_prob,
                 mode=feature_encoder__mode,
                 conv_bias=feature_encoder__conv_bias,
@@ -123,17 +126,14 @@ class _BaseSignalJEPA(EEGModuleMixin, nn.Module):
             )
 
         if _init_transformer:
-            ch_names = [ch["ch_name"] for ch in self.chs_info]
-            ch_locs = [ch["loc"] for ch in self.chs_info]
+            ch_locs = [ch["loc"] for ch in self.chs_info]  # type: ignore
             self.pos_encoder = _PosEncoder(
                 spat_dim=pos_encoder__spat_dim,
                 time_dim=pos_encoder__time_dim,
-                ch_names=ch_names,
                 ch_locs=ch_locs,
                 sfreq_features=pos_encoder__sfreq_features,
                 spat_kwargs=pos_encoder__spat_kwargs,
             )
-            self.pos_encoder.set_fixed_ch_names(ch_names)
             self.transformer = nn.Transformer(
                 d_model=transformer__d_model,
                 nhead=transformer__nhead,
@@ -220,14 +220,13 @@ class SignalJEPA(_BaseSignalJEPA):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         self.final_layer = nn.Identity()
 
-    def forward(self, X):
-        batch = {"X": X}
-        local_features = self.feature_encoder(batch)
-        pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
-        local_features += pos_encoding
-        contextual_features = self.transformer.encoder(local_features)
-        y = self.final_layer(contextual_features)
-        return y
+    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
+        local_features = self.feature_encoder(X)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        local_features += pos_encoding  # type: ignore
+        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        y = self.final_layer(contextual_features)  # type: ignore
+        return y  # type: ignore
 
 
 class SignalJEPA_Contextual(_BaseSignalJEPA):
@@ -367,14 +366,13 @@ class SignalJEPA_Contextual(_BaseSignalJEPA):
 
         return new_model
 
-    def forward(self, X):
-        batch = {"X": X}
-        local_features = self.feature_encoder(batch)
-        pos_encoding = self.pos_encoder(dict(local_features=local_features, **batch))
-        local_features += pos_encoding
-        contextual_features = self.transformer.encoder(local_features)
-        y = self.final_layer(contextual_features)
-        return y
+    def forward(self, X, ch_idxs: torch.Tensor | None = None):  # type: ignore
+        local_features = self.feature_encoder(X)  # type: ignore
+        pos_encoding = self.pos_encoder(local_features, ch_idxs=ch_idxs)  # type: ignore
+        local_features += pos_encoding  # type: ignore
+        contextual_features = self.transformer.encoder(local_features)  # type: ignore
+        y = self.final_layer(contextual_features)  # type: ignore
+        return y  # type: ignore
 
 
 class SignalJEPA_PostLocal(_BaseSignalJEPA):
@@ -496,7 +494,7 @@ class SignalJEPA_PostLocal(_BaseSignalJEPA):
         return new_model
 
     def forward(self, X):
-        local_features = self.feature_encoder({"X": X})
+        local_features = self.feature_encoder(X)
         y = self.final_layer(local_features)
         return y
 
@@ -524,6 +522,8 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         S-JEPA: towards seamless cross-dataset transfer through dynamic spatial attention.
         In 9th Graz Brain-Computer Interface Conference, https://www.doi.org/10.3217/978-3-99161-014-4-003
     """
+
+    _feature_encoder_channels: str = "n_spat_filters"
 
     def __init__(
         self,
@@ -556,6 +556,7 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
         # other
         _init_feature_encoder: bool = True,
     ):
+        self.n_spat_filters = n_spat_filters
         super().__init__(
             n_outputs=n_outputs,
             n_chans=n_chans,
@@ -628,12 +629,12 @@ class SignalJEPA_PreLocal(_BaseSignalJEPA):
 
     def forward(self, X):
         X = self.spatial_conv(X)
-        local_features = self.feature_encoder({"X": X})
+        local_features = self.feature_encoder(X)
         y = self.final_layer(local_features)
         return y
 
 
-class _ConvFeatureEncoder(nn.Module):
+class _ConvFeatureEncoder(nn.Sequential):
     """Convolutional feature encoder for EEG data.
 
     Computes successive 1D convolutions (with activations) over the time
@@ -645,12 +646,13 @@ class _ConvFeatureEncoder(nn.Module):
     Parameters
     ----------
     conv_layers_spec: list of tuple
-        Tuples have shape ``(dim, k, stride)`` where:
+        tuples have shape ``(dim, k, stride)`` where:
 
         * ``dim`` : number of output channels of the layer (unrelated to EEG channels);
         * ``k`` : temporal length of the layer's kernel;
         * ``stride`` : temporal stride of the layer's kernel.
 
+    channels: int
     drop_prob: float
     mode: str
         Normalisation mode. Either ``default`` or ``layer_norm``.
@@ -661,13 +663,13 @@ class _ConvFeatureEncoder(nn.Module):
     def __init__(
         self,
         conv_layers_spec: Sequence[tuple[int, int, int]],
+        channels: int,
         drop_prob: float = 0.0,
         mode: str = "default",
         conv_bias: bool = False,
         activation: type[nn.Module] = nn.GELU,
     ):
         assert mode in {"default", "layer_norm"}
-        super().__init__()
 
         input_channels = 1
         conv_layers = []
@@ -689,15 +691,19 @@ class _ConvFeatureEncoder(nn.Module):
                 )
             )
             input_channels = output_channels
-
+        all_layers = [
+            Rearrange("b channels time -> (b channels) 1 time", channels=channels),
+            *conv_layers,
+            Rearrange(
+                "(b channels) emb_dim time_out -> b (channels time_out) emb_dim",
+                channels=channels,
+            ),
+        ]
+        super().__init__(*all_layers)
         self.emb_dim = (
             output_channels  # last output dimension becomes the embedding dimension
         )
         self.conv_layers_spec = conv_layers_spec
-        self.cnn = nn.Sequential(
-            Rearrange("b channels time -> (b channels) 1 time"),
-            *conv_layers,
-        )
 
     @staticmethod
     def _get_block(
@@ -746,36 +752,6 @@ class _ConvFeatureEncoder(nn.Module):
 
     def n_times_out(self, n_times):
         return _n_times_out(self.conv_layers_spec, n_times)
-
-    def forward(self, batch):
-        """
-        ``n_times_out`` is the temporal length of the signal after passing
-        through the convolutional layers. This length can be predicted with
-        the method ``_ConvFeatureEncoder.n_times_out()``.
-
-        Parameters
-        ----------
-        batch: dict with keys:
-
-            * X: (batch_size, n_chans, n_times)
-                Batched EEG signal.
-
-        Returns
-        -------
-        local_features: (batch_size, n_chans * n_times_out, emb_dim)
-            Local features extracted from the EEG signal.
-            ``emb_dim`` corresponds to the ``dim`` of the last element of
-            ``conv_layers_spec``.
-        """
-        x = batch["X"]
-        shapes = parse_shape(x, "b channels _")
-        x = self.cnn(x)
-        x = rearrange(
-            x,
-            "(b channels) emb_dim time_out -> b (channels time_out) emb_dim",
-            **shapes,
-        )
-        return x
 
 
 class _ChannelEmbedding(nn.Embedding):
@@ -849,8 +825,6 @@ class _PosEncoder(nn.Module):
         i.e. the EEG channel.
     time_dim: int
         Number of dimensions to use to encode the temporal position of the patch.
-    ch_names: list[str]
-        List of all the EEG channel names that could be encountered in the data.
     ch_locs: list of list of float or 2d array
         List of the n-dimensions locations of the EEG channels.
     sfreq_features: float
@@ -862,36 +836,30 @@ class _PosEncoder(nn.Module):
         Maximum number of seconds to consider for the temporal encoding.
     """
 
-    fixed_ch_names: list[str] | None = None
-
     def __init__(
         self,
         spat_dim: int,
         time_dim: int,
-        ch_names: list[str],
-        ch_locs: list[list[float]],
+        ch_locs,
         sfreq_features: float,
         spat_kwargs: dict | None = None,
         max_seconds: float = 600.0,  # 10 minutes
     ):
-        assert len(ch_names) == len(ch_locs)
         super().__init__()
         spat_kwargs = spat_kwargs or {}
-        ch_locs_plus_ukn = [None] + list(ch_locs)
-        self.ch_names = ch_names
         self.spat_dim = spat_dim
         self.time_dim = time_dim
         self.max_n_times = int(max_seconds * sfreq_features)
 
         # Positional encoder for the spatial dimension:
         self.pos_encoder_spat = _ChannelEmbedding(
-            ch_locs_plus_ukn, spat_dim, **spat_kwargs
+            ch_locs, spat_dim, **spat_kwargs
         )  # (batch_size, n_channels, spat_dim)
 
         # Pre-computed tensor for positional encoding on the time dimension:
         self.encoding_time = torch.zeros(0, dtype=torch.float32, requires_grad=False)
 
-    def _check_encoding_time(self, n_times):
+    def _check_encoding_time(self, n_times: int):
         if self.encoding_time.size(0) < n_times:
             self.encoding_time = self.encoding_time.new_empty((n_times, self.time_dim))
             self.encoding_time[:] = _pos_encode_time(
@@ -901,17 +869,14 @@ class _PosEncoder(nn.Module):
                 device=self.encoding_time.device,
             )
 
-    def forward(self, batch):
+    def forward(self, local_features, ch_idxs: torch.Tensor | None = None):
         """
         Parameters
         ----------
-        batch: dict with keys:
-
-            * local_features: (batch_size, n_chans * n_times_out, emb_dim)
-            * ch_idxs: (batch_size, n_chans)
-                Indices of the channels to use in the ``ch_names`` list passed
-                as argument plus one. Index 0 is reserved for an unknown channel.
-                Only needed if ``set_fixed_ch_names`` has not been called.
+        * local_features: (batch_size, n_chans * n_times_out, emb_dim)
+        * ch_idxs: (batch_size, n_chans) | None
+            Indices of the channels to use in the ``ch_names`` list passed
+            as argument plus one. Index 0 is reserved for an unknown channel.
 
         Returns
         -------
@@ -919,10 +884,15 @@ class _PosEncoder(nn.Module):
             The first ``spat_dim`` dimensions encode the channels positional encoding
             and the following ``time_dim`` dimensions encode the temporal positional encoding.
         """
-        local_features = batch["local_features"]
-        ch_idxs = self.get_ch_idxs(batch).to(local_features.device)
         batch_size, n_chans_times, emb_dim = local_features.shape
-        batch_size_chs, n_chans = ch_idxs.shape  # ==(1,_) if fixed_ch_names
+        if ch_idxs is None:
+            ch_idxs = torch.arange(
+                0,
+                self.pos_encoder_spat.num_embeddings,
+                device=local_features.device,
+            ).repeat(batch_size, 1)
+
+        batch_size_chs, n_chans = ch_idxs.shape
         assert emb_dim >= self.spat_dim + self.time_dim
         assert n_chans_times % n_chans == 0
         n_times = n_chans_times // n_chans
@@ -939,31 +909,8 @@ class _PosEncoder(nn.Module):
         _ = pos_encoding[:, :, :, self.spat_dim : self.spat_dim + self.time_dim].copy_(
             self.encoding_time[None, None, :n_times, :],
         )
-        if batch_size_chs == 1:  # case with fixed_ch_names
-            pos_encoding = pos_encoding.tile(batch_size, 1, 1, 1)
+
         return pos_encoding.view(batch_size, n_chans_times, emb_dim)
-
-    def set_fixed_ch_names(self, ch_names: list[str]):
-        """Sets a fixed list of channels so that the batch
-        does not need to contain ``ch_names``.
-        """
-        self.fixed_ch_names = list(ch_names)
-
-    def unset_fixed_ch_names(self):
-        """
-        Unsets the fixed list of channels.
-        """
-        self.fixed_ch_names = None
-
-    def get_ch_idxs(self, batch):
-        if self.fixed_ch_names is not None:
-            return torch.tensor(
-                [
-                    self.ch_names.index(c) + 1 if c in self.ch_names else 0
-                    for c in self.fixed_ch_names
-                ]
-            ).unsqueeze(0)
-        return batch["ch_idxs"]
 
 
 def _n_times_out(conv_layers_spec, n_times):
@@ -999,7 +946,12 @@ def _get_separable_clf_layer(
     return clf_layer
 
 
-def _pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
+def _pos_encode_time(
+    n_times: int,
+    n_dim: int,
+    max_n_times: int,
+    device: torch.device = torch.device("cpu"),
+):
     """1-dimensional positional encoding.
 
     Parameters
@@ -1011,7 +963,7 @@ def _pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
         max_n_times: int
             The largest possible number of time samples to encode.
             Used to scale the positional encoding.
-        device: str
+        device: torch.device
             Device to put the output on.
     Returns
     -------
@@ -1028,7 +980,9 @@ def _pos_encode_time(n_times, n_dim, max_n_times, device="cpu"):
     return pos_encoding
 
 
-def _pos_encode_contineous(x, x_min, x_max, n_dim, device="cpu"):
+def _pos_encode_contineous(
+    x, x_min, x_max, n_dim, device: torch.device = torch.device("cpu")
+):
     """1-dimensional positional encoding.
 
     Parameters
@@ -1041,7 +995,7 @@ def _pos_encode_contineous(x, x_min, x_max, n_dim, device="cpu"):
             The maximum possible value of x.
         n_dim: int
             Number of dimensions of the positional encoding. Must be even.
-         device: str
+         device: torch.device
             Device to put the output on.
     Returns
     -------

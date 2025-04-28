@@ -5,11 +5,10 @@
 import torch
 from torch import nn
 from torch.nn import init
-from torch.nn.utils import weight_norm
+from torch.nn.utils.parametrizations import weight_norm
 
-from braindecode.functional import squeeze_final_output
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import Chomp1d, Ensure4d, Expression
+from braindecode.modules import Chomp1d, Ensure4d, Expression, SqueezeFinalOutput
 
 
 class BDTCN(EEGModuleMixin, nn.Module):
@@ -164,7 +163,7 @@ class TCN(nn.Module):
         # start in eval mode
         self.eval()
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
 
         Parameters
@@ -195,9 +194,11 @@ class _FinalLayer(nn.Module):
 
         self.out_fun = nn.Identity()
 
-        self.squeeze = Expression(squeeze_final_output)
+        self.squeeze = SqueezeFinalOutput()
 
-    def forward(self, x, batch_size, time_size, min_len):
+    def forward(
+        self, x: torch.Tensor, batch_size: int, time_size: int, min_len: int
+    ) -> torch.Tensor:
         fc_out = self.fc(x.view(batch_size * time_size, x.size(2)))
         fc_out = self.out_fun(fc_out)
         fc_out = fc_out.view(batch_size, time_size, fc_out.size(1))

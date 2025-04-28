@@ -6,6 +6,8 @@ import platform
 import numpy as np
 import pytest
 import torch
+
+from warnings import catch_warnings, simplefilter
 from mne.filter import create_filter
 from mne.time_frequency import psd_array_welch
 from scipy.signal import fftconvolve as fftconvolve_scipy
@@ -23,9 +25,75 @@ from braindecode.modules import (
     SafeLog,
     TimeDistributed,
     GeneralizedGaussianFilter,
+    CausalConv1d,
+    MaxNormLinear,
 )
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
+from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
+
+
+def old_maxnorm(weight: torch.Tensor,
+                max_norm_val: float = 2.0,
+                eps: float = 1e-5) -> torch.Tensor:
+    w = weight.clone()
+    # clamp denominator ≥ max_norm_val/2, numerator ≤ max_norm_val
+    denom  = w.norm(2, dim=0, keepdim=True).clamp(min=max_norm_val / 2)
+    number  = denom.clamp(max=max_norm_val)
+    return w * (number / (denom + eps))
+
+
+class OldCausalConv1d(nn.Conv1d):
+    """Causal 1-dimensional convolution
+    Code modified from [1]_ and [2]_.
+    Parameters
+    ----------
+    in_channels : int
+        Input channels.
+    out_channels : int
+        Output channels (number of filters).
+    kernel_size : int
+        Kernel size.
+    dilation : int, optional
+        Dilation (number of elements to skip within kernel multiplication).
+        Default to 1.
+    **kwargs :
+        Other keyword arguments to pass to torch.nn.Conv1d, except for
+        `padding`!!
+    References
+    ----------
+    .. [1] https://discuss.pytorch.org/t/causal-convolution/3456/4
+    .. [2] https://gist.github.com/paultsw/7a9d6e3ce7b70e9e2c61bc9287addefc
+    """
+
+    padding: torch.Tensor
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        dilation=1,
+        **kwargs,
+    ):
+        assert "padding" not in kwargs, (
+            "The padding parameter is controlled internally by "
+            f"{type(self).__name__} class. You should not try to override this"
+            " parameter."
+        )
+
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            dilation=dilation,
+            padding=(kernel_size - 1) * dilation,
+            **kwargs,
+        )
+
+    def forward(self, X):
+        out = super().forward(X)
+        return out[..., : -self.padding[0]]
 
 
 def _filfilt_in_torch_sytle(b, a, x_np):
@@ -448,9 +516,10 @@ def test_iir_params_output_sos_warning(sample_input):
             iir_params=iir_params
         )
 
-    assert layer.filts is not None, "Filters should be initialized."
-    assert layer.filts["band_0"][
-               "a"].dtype == torch.float64, "Filter coefficients should be float64."
+    assert layer.a_list is not None, "Filters should be initialized."
+    assert layer.b_list is not None, "Filters should be initialized."
+
+    assert layer.a_list[0].dtype == torch.float64, "Filter coefficients should be float64."
 
 
 @pytest.mark.parametrize('method', ['iir', 'fir'])
@@ -701,11 +770,10 @@ def test_filter_bank_layer_frequency_response():
 
     # Prepare plots
     # Iterate over each filter in the filter bank
-    for idx, ((l_freq, h_freq), filt_dict) in enumerate(zip(
-            band_filters, filter_bank_layer.filts.values())):
-
+    for idx, ((l_freq, h_freq), b_value) in enumerate(zip(
+            band_filters, filter_bank_layer.b_list)):
         # Extract filter coefficients
-        b = filt_dict["filt"].detach().numpy()
+        b = b_value.detach().numpy()
         a = np.array([1.0])  # FIR filter, so a is [1.0]
 
         # Compute frequency response
@@ -869,7 +937,7 @@ def test_weight_norm_constraint(input_linear_constraint, layer_with_constraint):
     """
     layer_with_constraint(input_linear_constraint)
     # Calculate the L2 norm of each column (dim=0)
-    weight_norms = layer_with_constraint.weight.data.norm(p=2, dim=0)
+    weight_norms = layer_with_constraint.weight.data.norm(p=2, dim=1)
     assert torch.all(weight_norms <= layer_with_constraint.max_norm + 1e-6), (
         f"Weight norms {weight_norms} exceed max_norm {layer_with_constraint.max_norm}"
     )
@@ -914,3 +982,138 @@ def test_max_norm_parameter(max_norm):
     assert torch.all(weight_norms <= max_norm + 1e-6), (
         f"For max_norm {max_norm}, weight norms {weight_norms} exceed max_norm"
     )
+
+
+
+@pytest.mark.parametrize("out_in", [
+    (4,  8),
+    (8, 16),
+    (16,32),
+])
+def test_new_vs_old_maxnorm_are_identical(out_in):
+    out_features, in_features = out_in
+    torch.manual_seed(0)
+    W = torch.randn(out_features, in_features, requires_grad=True)
+
+    W_ref = old_maxnorm(W, max_norm_val=2.0, eps=1e-5)
+
+    layer = MaxNormLinear(
+        in_features=in_features,
+        out_features=out_features,
+        max_norm_val=2.0,
+        eps=1e-5,
+        bias=True,
+    )
+
+    layer.weight = W.clone()
+
+    W_new = layer.weight
+
+    assert torch.allclose(W_ref, W_new, atol=1e-6), (
+        f"MaxNorm mismatch: max|W_ref - W_new| = {(W_ref - W_new).abs().max():.3e}"
+    )
+
+
+@pytest.mark.parametrize("batch,in_ch,out_ch,length,kernel,dilation", [
+    (1, 1, 1, 20, 3, 1),
+    (2, 3, 4, 50, 5, 2),
+    (4, 2, 2, 30, 7, 3),
+])
+def test_matches_padded_conv(batch, in_ch, out_ch, length, kernel, dilation):
+    torch.manual_seed(0)
+    # instantiate causal conv
+    causal_new = CausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+    # clone weights/bias for reference conv
+    causal_old = OldCausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+
+    causal_old.weight.data.copy_(causal_new.weight.data)
+    causal_old.bias.data.copy_(causal_new.bias.data)
+
+    # random input
+    x = torch.randn(batch, in_ch, length)
+
+    # causal output
+    y_causal = causal_new(x)
+    # reference: padded conv then trim right
+    y_ref = causal_old(x)[..., : length]
+
+    assert y_causal.shape == (batch, out_ch, length)
+    assert torch.allclose(y_causal, y_ref, atol=1e-6), "CausalConv1d differs from trimmed padded Conv1d"
+
+
+
+
+@pytest.mark.parametrize("batch,in_ch,out_ch,length,kernel,dilation", [
+    (1, 1, 1, 20, 3, 1),
+    (2, 3, 4, 50, 5, 2),
+])
+def test_gradients_match_casual_conv(batch, in_ch, out_ch, length, kernel, dilation):
+    torch.manual_seed(0)
+    # new implementation
+    causal_new = CausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+    # old implementation
+    causal_old = OldCausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+
+    # sync parameters
+    causal_old.weight.data.copy_(causal_new.weight.data)
+    causal_old.bias.data.copy_(causal_new.bias.data)
+
+    # random input with gradient tracking
+    x_new = torch.randn(batch, in_ch, length, requires_grad=True)
+    x_old = x_new.clone().detach().requires_grad_(True)
+
+    # forward + backward new
+    y_new = causal_new(x_new)
+    loss_new = y_new.sum()
+    loss_new.backward()
+
+    # forward + backward old
+    y_old = causal_old(x_old)[..., :length]
+    loss_old = y_old.sum()
+    loss_old.backward()
+
+    # compare input gradients
+    assert torch.allclose(x_new.grad, x_old.grad, atol=1e-6), \
+        "Input gradients differ between new and old implementations"
+
+    # compare weight gradients
+    assert torch.allclose(causal_new.weight.grad, causal_old.weight.grad, atol=1e-6), \
+        "Weight gradients differ between new and old implementations"
+
+    # compare bias gradients
+    assert torch.allclose(causal_new.bias.grad, causal_old.bias.grad, atol=1e-6), \
+        "Bias gradients differ between new and old implementations"
+
+
+@pytest.mark.parametrize("n_bands,kernel_sizes,expected_warning", [
+    (2, [63], "Reducing number of bands"),         # n_bands > len(kernel_sizes)
+    (1, [63, 31], "Reducing number of kernels"),   # n_bands < len(kernel_sizes)
+    (1, [63], "not divisible by"),                 # n_times % stride_factor != 0
+])
+def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
+    with catch_warnings(record=True) as w:
+        simplefilter("always")
+        block = _SpatioTemporalFeatureBlock(
+            n_times=130,                  # not divisible by 16
+            in_channels=4,
+            out_channels=8,
+            kernel_sizes=kernel_sizes,
+            n_bands=n_bands,
+            stride_factor=16
+        )
+        assert any(expected_warning in str(warn.message) for warn in w)
+
+
+def test_forward_pass_ifnet_output_shape():
+    block = _SpatioTemporalFeatureBlock(
+        n_times=128,                     # divisible by stride_factor
+        in_channels=4,
+        out_channels=8,
+        kernel_sizes=[63, 31],
+        n_bands=2,
+        stride_factor=16
+    )
+    x = torch.randn(2, 4, 128)           # batch_size=2
+    out = block(x)
+    assert isinstance(out, torch.Tensor)
+    assert out.shape[0] == 2            # batch_size preserved

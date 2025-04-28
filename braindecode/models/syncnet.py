@@ -217,7 +217,7 @@ class SyncNet(EEGModuleMixin, nn.Module):
         # Apply activation
         out = self.activation(res_flat)
         # Apply classifier
-        out = self.final_layer(out).squeeze()
+        out = self.final_layer(out)
 
         return out
 

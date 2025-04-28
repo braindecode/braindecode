@@ -9,9 +9,12 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 
-from braindecode.functional import squeeze_final_output
 from braindecode.models.base import EEGModuleMixin
-from braindecode.modules import AvgPool2dWithConv, Ensure4d, Expression
+from braindecode.modules import (
+    AvgPool2dWithConv,
+    Ensure4d,
+    SqueezeFinalOutput,
+)
 
 
 class EEGResNet(EEGModuleMixin, nn.Sequential):
@@ -79,7 +82,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         self.n_first_filters = n_first_filters
         self.n_layers_per_block = n_layers_per_block
         self.first_filter_length = first_filter_length
-        self.nonlinearity = activation()
+        self.nonlinearity = activation
         self.split_first_layer = split_first_layer
         self.batch_norm_alpha = batch_norm_alpha
         self.batch_norm_epsilon = batch_norm_epsilon
@@ -132,7 +135,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
                 n_filters_conv, momentum=self.batch_norm_alpha, affine=True, eps=1e-5
             ),
         )
-        self.add_module("conv_nonlin", self.nonlinearity)
+        self.add_module("conv_nonlin", self.nonlinearity())
         cur_dilation = np.array([1, 1])
         n_cur_filters = n_filters_conv
         i_block = 1
@@ -265,7 +268,7 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 
@@ -351,10 +354,8 @@ class _ResidualBlock(nn.Module):
         stack_1 = self.nonlinearity(self.bn1(self.conv_1(x)))
         stack_2 = self.bn2(self.conv_2(stack_1))  # next nonlin after sum
         if self.n_pad_chans != 0:
-            zeros_for_padding = torch.autograd.Variable(
-                x.new_zeros(
-                    (x.size()[0], self.n_pad_chans // 2, x.size()[2], x.size()[3])
-                )
+            zeros_for_padding = x.new_zeros(
+                (x.shape[0], self.n_pad_chans // 2, x.shape[2], x.shape[3])
             )
             x = torch.cat((zeros_for_padding, x, zeros_for_padding), dim=1)
         out = self.nonlinearity(x + stack_2)
