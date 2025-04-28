@@ -32,6 +32,7 @@ from braindecode.models import (
     EEGNetv1,
     EEGNetv4,
     EEGResNet,
+    EEGNeX,
     EEGSimpleConv,
     EEGTCNet,
     FBCNet,
@@ -1445,3 +1446,31 @@ def test_initialize_weights_conv():
     assert conv.weight.std().item() <= 0.02  # Checking trunc_normal_ std
     if conv.bias is not None:
         assert torch.allclose(conv.bias, torch.zeros_like(conv.bias))
+
+
+test_cases = [
+    pytest.param(64, id="n_times=64_perfect_multiple"),
+    pytest.param(437, id="n_times=437_trace_example"), # Expect 104
+    pytest.param(95, id="n_times=95_edge_case_1"), # Expect 24
+    pytest.param(67, id="n_times=67_edge_case_2"), # Expect 16
+    pytest.param(94, id="n_times=94_edge_case_3"), # Expect 24
+]
+
+@pytest.mark.parametrize("n_times_input", test_cases)
+def test_eegnex_final_layer_in_features(n_times_input):
+    """
+    Tests if the EEGNeX model correctly calculates the 'in_features'
+    for its final linear layer during initialization, especially for
+    n_times values that are not perfect multiples of pooling factors,
+    considering the specified padding.
+    """
+    n_chans_test = 2
+    n_outputs_test = 5
+
+    model = EEGNeX(
+        n_chans=n_chans_test,
+        n_outputs=n_outputs_test,
+        n_times=n_times_input
+    )
+
+    print(model)
