@@ -155,7 +155,6 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             self.activation(),
             nn.AvgPool2d(
                 kernel_size=self.avg_pool_block4,
-                stride=self.avg_pool_block4,
                 padding=(0, 1),
             ),
             nn.Dropout(p=self.drop_prob),
@@ -186,7 +185,6 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             self.activation(),
             nn.AvgPool2d(
                 kernel_size=self.avg_pool_block5,
-                stride=self.avg_pool_block5,
                 padding=(0, 1),
             ),
             nn.Dropout(p=self.drop_prob),
