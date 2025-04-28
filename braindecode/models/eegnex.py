@@ -102,17 +102,12 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
         self.kernel_block_4 = (1, kernel_block_4)
         self.dilation_block_4 = (1, dilation_block_4)
-        self.padding_block_4 = self._calc_padding(
-            self.kernel_block_4, self.dilation_block_4
-        )
+
         self.avg_pool_block4 = (1, avg_pool_block4)
 
         self.kernel_block_5 = (1, kernel_block_5)
         self.dilation_block_5 = (1, dilation_block_5)
 
-        self.padding_block_5 = self._calc_padding(
-            self.kernel_block_5, self.dilation_block_5
-        )
         self.avg_pool_block5 = (1, avg_pool_block5)
 
         # final layers output
@@ -166,7 +161,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
                 out_channels=self.filter_2,
                 kernel_size=self.kernel_block_4,
                 dilation=self.dilation_block_4,
-                padding=self.padding_block_4,
+                padding="same",
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=self.filter_2),
@@ -178,7 +173,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
                 out_channels=self.filter_1,
                 kernel_size=self.kernel_block_5,
                 dilation=self.dilation_block_5,
-                padding=self.padding_block_5,
+                padding="same",
                 bias=False,
             ),
             nn.BatchNorm2d(num_features=self.filter_1),
@@ -225,27 +220,3 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         x = self.final_layer(x)
 
         return x
-
-    @staticmethod
-    def _calc_padding(
-        kernel_size: tuple[int, int], dilation: tuple[int, int]
-    ) -> tuple[int, int]:
-        """
-        Calculate padding size for 'same' convolution with dilation.
-
-        Parameters
-        ----------
-        kernel_size : tuple
-            tuple containing the kernel size (height, width).
-        dilation : tuple
-            tuple containing the dilation rate (height, width).
-
-        Returns
-        -------
-        tuple
-            Padding sizes (padding_height, padding_width).
-        """
-        # Calculate padding
-        padding_height = ((kernel_size[0] - 1) * dilation[0]) // 2
-        padding_width = ((kernel_size[1] - 1) * dilation[1]) // 2
-        return padding_height, padding_width
