@@ -80,6 +80,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Making the :class:`braindecode.models.SCCNet` more compatible with paper instead of source code (:gh:`742` by `Bruno Aristimunha`_)
 - Making the :class:`braindecode.models.EEGNeX` and :class:`braindecode.models.CTNet` more compatible with paper instead of source code (:gh:`740` by `Bruno Aristimunha`_)
 - Exposing extra variable to avoid problem with the parallel process (:gh:`736` by `Pierre Guetschel`_)
 - Fixing the IFNet (:gh:`739` by `Bruno Aristimunha`_)
