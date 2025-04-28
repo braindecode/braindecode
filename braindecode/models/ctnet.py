@@ -104,7 +104,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         # Model specific arguments
         activation_patch: nn.Module = nn.ELU,
-        activation_transfomer: nn.Module = nn.GELU,
+        activation_transformer: nn.Module = nn.GELU,
         drop_prob_cnn: float = 0.3,
         drop_prob_posi: float = 0.1,
         drop_prob_final: float = 0.5,
@@ -130,7 +130,7 @@ class CTNet(EEGModuleMixin, nn.Module):
 
         self.emb_size = emb_size
         self.activation_patch = activation_patch
-        self.activation_transfomer = activation_transfomer
+        self.activation_transformer = activation_transformer
 
         self.n_filters_time = n_filters_time
         self.drop_prob_cnn = drop_prob_cnn
@@ -174,7 +174,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         )
 
         self.trans = _TransformerEncoder(
-            heads, depth, emb_size, activation=self.activation_transfomer
+            heads, depth, emb_size, activation=self.activation_transformer
         )
 
         self.flatten_drop_layer = nn.Sequential(
