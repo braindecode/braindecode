@@ -74,6 +74,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         filter_1: int = 8,
         filter_2: int = 32,
         drop_prob: float = 0.5,
+        kernel_block_1_2: int = 64,
         kernel_block_4: int = 16,
         dilation_block_4: int = 2,
         avg_pool_block4: int = 4,
@@ -99,15 +100,12 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         self.filter_3 = self.filter_2 * self.depth_multiplier
         self.drop_prob = drop_prob
         self.activation = activation
-
+        self.kernel_block_1_2 = (1, kernel_block_1_2)
         self.kernel_block_4 = (1, kernel_block_4)
         self.dilation_block_4 = (1, dilation_block_4)
-
         self.avg_pool_block4 = (1, avg_pool_block4)
-
         self.kernel_block_5 = (1, kernel_block_5)
         self.dilation_block_5 = (1, dilation_block_5)
-
         self.avg_pool_block5 = (1, avg_pool_block5)
 
         # final layers output
@@ -119,7 +117,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             nn.Conv2d(
                 in_channels=1,
                 out_channels=self.filter_1,
-                kernel_size=(1, 64),
+                kernel_size=self.self.kernel_block_1_2,
                 padding="same",
                 bias=False,
             ),
@@ -130,7 +128,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
             nn.Conv2d(
                 in_channels=self.filter_1,
                 out_channels=self.filter_2,
-                kernel_size=(1, 64),
+                kernel_size=self.self.kernel_block_1_2,
                 padding="same",
                 bias=False,
             ),
