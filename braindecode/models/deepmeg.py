@@ -22,184 +22,223 @@ from torch.nn import functional as F
 logger = logging.getLogger(__name__)
 
 
-class DeepRecurrent(nn.Module):
-    """
-    Deep Recurrent Encoder from Chehab O et al. (2022) [chehab2022]_
+class ConvRecurrentMEGEncoder(nn.Module):
+    """Deep Recurrent Encoder (DRE) for MEG data based on [chehab2022]_.
 
     .. figure:: /_static/model/deeprecurrent.jpg
        :align: center
-       :alt: Deep Recurrent Encoder
+       :alt: Deep Recurrent Encoder Architecture Diagram [chehab2022]_
 
-    Deep Recurrent Encoder: End-to-end deep encoder for multichannel MEG signals,
-    modeling them as outputs of latent brain states.
+    This model aims to learn a generative model of brain activity ($h_t$)
+    and its mapping to observable MEG signals ($x_t$). It generalizes
+    traditional linear models like Temporal Receptive Fields (TRF) and
+    Recurrent TRF (RTRF) by employing non-linear components, specifically
+    LSTMs for dynamics and convolutional layers for input/output mapping.
 
-    The network can consume raw time-domain MEG or optional spectral representations
-    (via STFT); if spectral input is used, early layers may use complex-valued convolutions.
+    The underlying assumption, following [chehab2022]_, is that brain
+    dynamics $h_t$ evolve based on past dynamics and external stimuli $u_t$,
+    and MEG sensors measure a transformation of these dynamics. The DRE
+    parameterizes this relationship using deep learning components.
 
-    It employs subject-specific adaptations (an embedding layer and/or linear layer)
-    to account for inter-individual variability [chehab2022]_.
+    The general structure implemented corresponds to Equation (6) in [chehab2022]_:
 
-    The MEG sensor inputs are spatially pooled and subjected to structured dropout
-    according to sensor layout (dropping groups of nearby channels) to improve robustness.
+    .. math::
 
-    Temporally, the core model uses one or more recurrent layers (e.g. stacked LSTMs)
-    to capture dynamics over time; very long sequences can be handled by an optional
-    dual-path RNN structure.
+        \\begin{cases}
+        \\mathbf{x}_{t:t-\\tau_x+1} & = d_{\\theta_2}(h_t) \\\\
+        h_{t} & = f_{\\theta_1} (\\mathbf{h}_{t-1:t-\\tau_h},
+                                e_{\\theta_3}(\\mathbf{\\tilde{u}}_{t:t-\\tau_u}))
+        \\end{cases}
 
-    A stack of 1D convolutional encoder layers (with nonlinearities) precedes the RNN,
-    reducing temporal resolution, and a symmetric transposed-convolution decoder
-    reconstructs the MEG output.
+    Where:
+        - $x_t \\in \\mathbb{R}^{d_x}$ is the MEG recording at time $t$.
+        - $h_t \\in \\mathbb{R}^{d_h}$ represents the latent brain state (or model estimate).
+        - $\\tilde{u}_t$ is an potentially augmented control input, including
+          external stimuli $u_t$, subject embeddings $s$, and optionally
+          masked past MEG signals $p_t \\odot x_t$.
+        - $e_{\\theta_3}$ is an encoder function (typically convolutional layers,
+          potentially processing STFT features) mapping inputs to a sequence
+          representation suitable for the recurrent core.
+        - $f_{\\theta_1}$ governs the latent state dynamics (implemented here via
+          a recurrent component like LSTM/`DualPathRNN`).
+        - $d_{\\theta_2}$ is a decoder function (typically transposed convolutions)
+          mapping the latent state $h_t$ back to predicted MEG signals $\\hat{x}_t$.
+        - $\\mathbf{v}_{t:t-\\tau+1}$ denotes the flattened concatenation
+          $[v_t, ..., v_{t-\\tau+1}]$. DRE aims to minimize receptive fields
+          ($\\tau_h=1, \\tau_u=0$ ideally for the LSTM core).
 
-    The model is trained to predict future MEG activity from past MEG and external stimuli,
-    analogous to a state-space model where MEG = g(hidden_state) with subject-specific readout.
+    Key features adapted from [chehab2022]_ include:
+    - **Non-linear Dynamics:** Uses recurrent layers (e.g., LSTM inspired)
+      to model $f_{\\theta_1}$, allowing complex temporal dependencies.
 
-    Key architectural components include:
-    - **Optional STFT preprocessing:** short-time Fourier transform on MEG yields
-      time-frequency features for the conv layers.
-    - **Subject-specific embeddings/layers:** each subject can have a learned embedding vector
-      concatenated to the input or dedicated layers applied to adapt to individual differences.
-    - **Spatial channel pooling/dropout:** channels can be merged based on sensor layout,
-      and random contiguous subsets of sensors can be dropped during training (spatial dropout).
-    - **Recurrent dynamics:** An optional dual-path RNN (intra- and inter-chunk recurrence)
-      can be enabled to efficiently model very long sequences.
-    - **Convolutional encoder/decoder:** 1D convolutions encode short temporal context,
-      and a final (potentially transposed) convolution generates the output.
+    - **Convolutional Encoder/Decoder:** Employs 1D convolutions for $e_{\\theta_3}$
+      and transposed convolutions for $d_{\\theta_2}$, potentially reducing
+      temporal resolution via striding for efficiency.
+
+    - **Subject Embeddings:** Learns a vector $s \\in \\mathbb{R}^{d_s}$ for each
+      subject (`subject_dim`) to capture subject-specific variations within a
+      single model, augmenting the input $\\tilde{u}_t$.
+
+    - **Optional STFT:** Can process time-frequency representations of MEG
+      data (`n_fft`) as input to the encoder $e_{\\theta_3}$.
+
+    - **End-to-End Training:** Learns the encoder, dynamics, and decoder
+      jointly by minimizing a prediction loss, typically
+      $\\sum_t \\| x_t - \\hat{x}_t \\|_2^2$.
+
 
     Parameters
     ----------
     in_channels : dict[str, int]
         Dictionary mapping input modality names (e.g., 'meg', 'audio') to their
         respective number of input channels. Keys must match `hidden`.
+        The 'meg' modality undergoes special processing (STFT, subject adapt.).
     out_channels : int
-        Number of output channels for the final layer.
+        Number of output channels for the final layer (dimension $d_x$ of $\\hat{x}_t$).
     hidden : dict[str, int]
         Dictionary mapping input modality names to the number of hidden channels
-        for the first convolutional layer of their respective branch. Keys must match `in_channels`.
+        for the first convolutional layer of their respective branch in the
+        encoder $e_{\\theta_3}$. Keys must match `in_channels`.
     depth : int, default=4
-        Number of convolutional layers in each encoder branch.
+        Number of convolutional layers in each encoder branch ($e_{\\theta_3}$)
+        and implicitly in the decoder $d_{\\theta_2}$ if `linear_out=False`.
     concatenate : bool, default=False
-        If True, concatenate the outputs of different modality branches before the
-        final layers/RNN. If False, process modalities separately until the final output combination.
+        If True, concatenate the outputs of different modality branches from
+        $e_{\\theta_3}$ before feeding into the dynamics model $f_{\\theta_1}$.
     linear_out : bool, default=False
-        If True, use a simple linear ConvTranspose1d layer as the final output layer.
-        Cannot be True if `complex_out` is True.
+        If True, use a simple linear ConvTranspose1d layer for the decoder $d_{\\theta_2}$.
+        Mutually exclusive with `complex_out`.
     complex_out : bool, default=False
-        If True, use a more complex sequence involving Conv1d, activation, and ConvTranspose1d
-        as the final output layer, potentially handling complex-valued outputs if STFT is used.
+        If True, use a Conv1d -> Activation -> ConvTranspose1d sequence for the
+        decoder $d_{\\theta_2}$.
     kernel_size : int, default=5
-        Kernel size for the 1D convolutional layers. Must be odd.
+        Kernel size for the 1D convolutional layers in $e_{\\theta_3}$ and $d_{\\theta_2}$.
+        Must be odd. Corresponds to $K$ in the paper's figure.
     growth : float, default=1.0
-        Factor by which the number of channels increases in successive convolutional
-        layers within a branch. `channels = hidden * growth ** layer_index`.
+        Factor by which the number of channels changes in successive convolutional
+        layers within $e_{\\theta_3}$. `channels = hidden * growth ** layer_index`.
     dilation_growth : int, default=2
         Factor by which dilation increases in successive convolutional layers.
     dilation_period : int, optional
-        Number of layers after which dilation resets to 1 (if `dilation_growth > 1`). Default is None (no reset).
+        Number of layers after which dilation resets to 1. Default is None.
     skip : bool, default=False
-        If True, use skip connections in the convolutional layers.
+        If True, use skip connections within the convolutional layers ($e_{\\theta_3}, d_{\\theta_2}$).
     post_skip : bool, default=False
-        If True, apply activation *after* the skip connection addition.
+        If True, apply activation *after* skip connection addition.
     scale : float, optional
-        Rescaling factor for skip connections. Default is None (no scaling or $1/\sqrt{2}$ if skip is True).
+        Rescaling factor for skip connections.
     rewrite : bool, default=False
-        If True, use weight normalization and potentially learnable scaling in conv layers.
+        If True, use weight normalization and potentially learnable scaling.
     groups : int, default=1
-        Number of groups for grouped convolutions in the conv layers.
+        Number of groups for grouped convolutions.
     glu : int, default=0
-        If > 0, use Gated Linear Units (GLU) in the convolutional layers. Value indicates context size.
+        If > 0, use Gated Linear Units (GLU) in convolutional layers.
     glu_context : int, default=0
-        Context size specifically for the GLU gate projection.
+        Context size for the GLU gate projection.
     glu_glu : bool, default=True
-        If True and `glu > 0`, use GLU for both the main path and the gate; otherwise, only for the gate.
+        If True and `glu > 0`, use GLU for both main path and gate.
     activation : type[torch.nn.Module], default=nn.Identity
-        Activation function class to use after convolutional layers (e.g., nn.ReLU, nn.GELU).
+        Activation function class (e.g., nn.ReLU, nn.GELU) used within $e_{\\theta_3}$ and $d_{\\theta_2}$.
     dual_path : int, default=0
-        If > 0, enables the Dual Path RNN structure with the specified hidden size.
-        Processes the concatenated outputs of the convolutional encoders.
+        If > 0, enables a `DualPathRNN` (LSTM-based) component to model $f_{\\theta_1}$
+        with the specified hidden size ($d_h$). If 0, dynamics are implicitly handled
+        by the convolutional structure only.
     conv_dropout : float, default=0.0
-        Dropout rate applied within the convolutional layers.
+        Dropout rate applied within convolutional layers.
     dropout_input : float, default=0.0
         Dropout rate applied to the input of each convolutional layer.
     batch_norm : bool, default=False
-        If True, use Batch Normalization in the convolutional layers.
+        If True, use Batch Normalization in convolutional layers.
     relu_leakiness : float, default=0.0
-        Leakiness factor if using LeakyReLU activation (relevant if `activation` is LeakyReLU).
+        Leakiness factor if `activation` is LeakyReLU.
     n_subjects : int, default=200
-        Total number of unique subjects, used for subject embeddings and layers.
+        Total number of unique subjects for subject embeddings ($s$).
     subject_dim : int, default=64
-        Dimension of the subject-specific embedding vectors. If 0, no embedding is used.
+        Dimension ($d_s$) of the subject-specific embedding vectors $s$. If 0, no embedding.
     subject_layers : bool, default=False
-        If True, add subject-specific linear layers. Requires 'meg' in `in_channels`.
+        If True, add subject-specific linear adaptation layers to the 'meg' branch.
     subject_layers_dim : str, default="input"
-        Specifies whether subject-specific layers adapt the 'input' dimension ('meg' channels)
-        or the 'hidden' dimension (output of the first conv layer).
+        Target dimension ('input' or 'hidden') for subject layer adaptation.
     subject_layers_id : bool, default=False
-        If True, concatenate the subject ID embedding to the input of the subject layers.
+        If True, concatenate subject embedding $s$ to the input of subject layers.
     embedding_scale : float, default=1.0
-        Scaling factor applied to the subject embeddings.
+        Scaling factor applied to subject embeddings $s$.
     n_fft : int, optional
-        If set, applies STFT preprocessing to 'meg' inputs using this FFT size. Default is None (no STFT).
+        If set, applies STFT preprocessing to 'meg' inputs within $e_{\\theta_3}$.
     fft_complex : bool, default=True
-        If `n_fft` is set, determines if the STFT output representation is complex
-        (represented as 2*channels for real and imaginary parts) or magnitude-only.
+        If `n_fft` is set, determines if STFT output is complex (real/imag parts)
+        or magnitude.
     merger : bool, default=False
-        If True, enables the ChannelMerger module for 'meg' channels, potentially
-        using positional information for merging/attention.
+        If True, enables `ChannelMerger` module for 'meg' channels early in $e_{\\theta_3}$.
     merger_pos_dim : int, default=256
-        Dimensionality of positional embeddings used in the ChannelMerger.
+        Dimensionality of positional embeddings for `ChannelMerger`.
     merger_channels : int, default=270
-        Number of output channels after the ChannelMerger. Becomes the new 'meg' input channels.
+        Number of output channels after `ChannelMerger`.
     merger_dropout : float, default=0.2
-        Dropout rate used within the ChannelMerger.
+        Dropout rate within `ChannelMerger`.
     merger_penalty : float, default=0.0
-        Usage penalty term for the ChannelMerger attention mechanism.
+        Usage penalty for `ChannelMerger` attention.
     merger_per_subject : bool, default=False
-        If True, ChannelMerger parameters are subject-specific.
+        If True, `ChannelMerger` parameters are subject-specific.
     dropout : float, default=0.0
-        Dropout rate for the initial ChannelDropout module applied to 'meg' inputs.
+        Dropout rate for initial `ChannelDropout` applied to 'meg' inputs.
     dropout_rescale : bool, default=True
-        If True, rescale the remaining channels after ChannelDropout to maintain variance.
+        If True, rescale channels after `ChannelDropout`.
     initial_linear : int, default=0
-        If > 0, adds an initial 1x1 convolutional layer (or stack) to 'meg' inputs
-        with this many output channels.
+        If > 0, adds initial 1x1 Conv layer(s) to 'meg' inputs in $e_{\\theta_3}$.
     initial_depth : int, default=1
-        Number of layers in the initial linear stack if `initial_linear > 0`.
+        Number of layers in the initial linear stack.
     initial_nonlin : bool, default=False
-        If True, applies the main `activation` function after the initial linear stack(s).
+        If True, apply `activation` after the initial linear stack.
 
     Attributes
     ----------
-    subject_embedding : ScaledEmbedding or None
-        Embedding layer for subject IDs.
-    subject_layers : SubjectLayers or None
-        Subject-specific adaptation layers.
-    stft : torchaudio.transforms.Spectrogram or None
-        STFT transformation layer.
-    merger : ChannelMerger or None
-        Channel merging module.
-    dropout : ChannelDropout or None
-        Initial channel dropout module.
-    initial_linear : torch.nn.Sequential or None
-        Initial linear layer(s) applied to MEG input.
-    encoders : torch.nn.ModuleDict
-        Dictionary containing the convolutional encoder sequence for each input modality.
-    dual_path : DualPathRNN or None
-        Dual Path RNN module.
-    final : torch.nn.Module or None
-        The final output layer (ConvTranspose1d or a more complex sequence).
-    activation : torch.nn.Module
+    subject_embedding_ : ScaledEmbedding or None
+        The learned subject embedding layer (producing $s$).
+    subject_layers_ : SubjectLayers or None
+        The subject-specific adaptation layers module.
+    stft_ : torchaudio.transforms.Spectrogram or None
+        The STFT transformation layer.
+    merger_ : ChannelMerger or None
+        The channel merging module.
+    dropout_ : ChannelDropout or None
+        The initial channel dropout module.
+    initial_linear_ : torch.nn.Sequential or None
+        The initial linear layer(s) module.
+    encoders_ : torch.nn.ModuleDict
+        Dictionary containing the convolutional encoder ($e_{\\theta_3}$) modules
+        for each input modality.
+    dual_path_ : DualPathRNN or None
+        The recurrent module ($f_{\\theta_1}$) if `dual_path > 0`.
+    final_ : torch.nn.Module or None
+        The final output layer(s) corresponding to the decoder ($d_{\\theta_2}$).
+    activation_ : torch.nn.Module
         Instance of the activation function used.
 
-    .. versionadded:: 1.0
+    Notes
+    -----
+    - The implementation closely follows the architecture described in [chehab2022]_,
+      mapping the components to the functions $e_{\\theta_3}$ (encoder),
+      $f_{\\theta_1}$ (dynamics), and $d_{\\theta_2}$ (decoder) from Equation (6).
+    - The optional `DualPathRNN` (`dual_path` > 0) explicitly models the
+      recurrent dynamics $f_{\\theta_1}$. If `dual_path` is 0, the model relies
+      solely on the convolutional structure for temporal processing.
+    - Subject adaptation via embeddings (`subject_dim`) or layers (`subject_layers`)
+      allows a single model to handle multi-subject data effectively.
+    - The use of strided convolutions in the encoder $e_{\\theta_3}$ can reduce
+      the sequence length processed by the recurrent component $f_{\\theta_1}$,
+      improving computational efficiency, as mentioned in [chehab2022]_.
 
     References
     ----------
-    .. [chehab2022] Chehab, O., Défossez, A., Jean-Christophe, L., Gramfort, A.,
+    .. [chehab2022] Chehab, O., Défossez, A., Loiseau, J. C., Gramfort, A.,
        & King, J. R. (2022). Deep Recurrent Encoder: an end-to-end network to model
        magnetoencephalography at scale. Neurons, Behavior, Data Analysis, and Theory.
     .. [brainmagik] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
        (2023). Decoding speech perception from non-invasive brain recordings. Nature
        Machine Intelligence, 5(10), 1097-1107.
+
+    .. versionadded:: 1.0
     """
 
     def __init__(
@@ -864,7 +903,9 @@ class ChannelMerger(nn.Module):
 
 if __name__ == "__main__":
     # Work in Progress
-    model = DeepRecurrent(in_channels={"meg": 10}, out_channels=2, hidden={"meg": 20})
+    model = ConvRecurrentMEGEncoder(
+        in_channels={"meg": 10}, out_channels=2, hidden={"meg": 20}
+    )
     x = torch.randn(2, 10, 100)
     batch = type("Batch", (object,), {"subject_index": torch.tensor([0, 1])})
     y = model(x, batch)
