@@ -3,6 +3,8 @@
 # License: BSD (3-clause)
 from __future__ import annotations
 
+import math
+
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
@@ -109,7 +111,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         self.avg_pool_block5 = (1, avg_pool_block5)
 
         # final layers output
-        self.in_features = self.filter_1 * (self.n_times // self.filter_2)
+        self.in_features = self._calculate_output_length()
 
         # Following paper nomenclature
         self.block_1 = nn.Sequential(
@@ -218,3 +220,12 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         x = self.final_layer(x)
 
         return x
+
+    def _calculate_output_length(self) -> int:
+        T_3 = math.floor(self.n_times / self.avg_pool_block4[1])
+
+        T_5 = math.floor(T_3 / self.avg_pool_block5[1])
+
+        final_in_features = self.filter_1 * T_5
+
+        return final_in_features
