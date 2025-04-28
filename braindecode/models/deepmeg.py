@@ -86,7 +86,7 @@ class DeepRecurrentEncoder(nn.Module):
     Parameters
     ----------
     in_channels : dict[str, int]
-        Dictionary mapping input modality names (e.g., 'meg', 'audio') to their
+        Dictionary mapping input modality names (e.g., 'meg') to their
         respective number of input channels. Keys must match `hidden`.
         The 'meg' modality undergoes special processing (STFT, subject adapt.).
     out_channels : int
@@ -482,6 +482,7 @@ class DeepRecurrentEncoder(nn.Module):
         if self.final is not None:
             x = self.final(x)
         assert x.shape[-1] >= length
+
         return x[:, :, :length]
 
 
@@ -762,6 +763,7 @@ class PositionGetter:
 class FourierEmb(nn.Module):
     """
     Fourier positional embedding.
+
     Unlike trad. embedding this is not using exponential periods
     for cosines and sinuses, but typical `2 pi k` which can represent
     any function over [0, 1]. As this function would be necessarily periodic,
