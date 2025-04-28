@@ -101,7 +101,7 @@ class DeepRecurrentEncoder(nn.Module):
     concatenate : bool, default=False
         If True, concatenate the outputs of different modality branches from
         :math:`e_{\\theta_3}` before feeding into the dynamics model :math:`f_{\\theta_1}`.
-    linear_out : bool, default=False
+    linear_out : bool, default=True
         If True, use a simple linear ConvTranspose1d layer for the decoder :math:`d_{\\theta_2}`.
         Mutually exclusive with `complex_out`.
     complex_out : bool, default=False
@@ -186,8 +186,7 @@ class DeepRecurrentEncoder(nn.Module):
         Number of layers in the initial linear stack.
     initial_nonlin : bool, default=False
         If True, apply `activation` after the initial linear stack.
-    final_layer: torch.nn.Module or None
-        If not None, replaces the final output layer(s) with the provided module.
+  
 
     Attributes
     ----------
@@ -250,7 +249,7 @@ class DeepRecurrentEncoder(nn.Module):
         # Overall structure
         depth: int = 4,
         concatenate: bool = False,  # concatenate the inputs
-        linear_out: bool = False,
+        linear_out: bool = True,
         complex_out: bool = False,
         # Conv layer
         kernel_size: int = 5,
@@ -296,7 +295,6 @@ class DeepRecurrentEncoder(nn.Module):
         initial_depth: int = 1,
         initial_nonlin: bool = False,
         # Final layer
-        final_layer: tp.Optional[nn.Module] = nn.Linear,
     ):
         super().__init__()
 
@@ -342,6 +340,7 @@ class DeepRecurrentEncoder(nn.Module):
         if subject_layers:
             assert "meg" in in_channels
             meg_dim = in_channels["meg"]
+            # dim is equal to n_times in braindecode
             dim = {"hidden": hidden["meg"], "input": meg_dim}[subject_layers_dim]
             self.subject_layers = SubjectLayers(
                 meg_dim, dim, n_subjects, subject_layers_id
