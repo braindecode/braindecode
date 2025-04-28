@@ -129,7 +129,6 @@ class SCCNet(EEGModuleMixin, nn.Module):
             kernel_size=(self.n_spatial_filters, self.samples_100ms),
             bias=False,
         )
-        # Momentum following keras
         self.batch_norm = nn.BatchNorm2d(
             self.n_spatial_filters_smooth, momentum=batch_norm_momentum
         )
