@@ -59,6 +59,7 @@ provides a common interface for all EEG models and derivate variables names if n
     ContraWR
     CTNet
     Deep4Net
+    DeepRecurrentEncoder
     DeepSleepNet
     EEGConformer
     EEGInceptionERP
