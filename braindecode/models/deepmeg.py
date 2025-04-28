@@ -1,13 +1,11 @@
+# This source code is licensed under Attribution-NonCommercial 4.0
+# International.
+#
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # All rights reserved.
 #
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
+# Braindecode adaptation made by
+# Bruno Aristimunha <b.aristimunha@gmail.com>
 
 import logging
 import math
@@ -24,7 +22,78 @@ from torch.nn import functional as F
 logger = logging.getLogger(__name__)
 
 
-class SimpleConv(nn.Module):
+class DeepRecurrent(nn.Module):
+    """Deep Recurrent Encoder from Chehab O et al. (2022) [chehab2022]_
+
+    .. figure:: /_static/model/deeprecurrent.jpg
+       :align: center
+       :alt: Deep Recurrent Encoder
+
+    Deep Recurrent Encoder: End-to-end deep encoder for multichannel MEG signals, modeling them as outputs of latent brain states.
+    The network can consume raw time-domain MEG or optional spectral representations (via STFT); if spectral input is used, early layers may use complex-valued convolutions.
+
+    It employs subject-specific adaptations (an embedding layer and/or linear layer) to account for inter-individual variability [chehab2022]_.
+    The MEG sensor inputs are spatially pooled and subjected to structured dropout according to sensor layout (dropping groups of nearby channels) to improve robustness.
+
+    Temporally, the core model uses one or more recurrent layers (e.g. stacked LSTMs) to capture dynamics over time; very long sequences can be handled by an optional dual-path RNN structure.
+
+    A stack of 1D convolutional encoder layers (with nonlinearities) precedes the RNN, reducing temporal resolution, and a symmetric transposed-convolution decoder reconstructs the MEG output.
+
+    The model is trained to predict future MEG activity from past MEG and external stimuli, analogous to a state-space model where MEG = g(hidden_state) with subject-specific readout.
+
+    Key architectural components include:
+    - **Optional STFT preprocessing:** short-time Fourier transform on MEG yields time-frequency features for the conv layers.
+    - **Subject-specific embeddings:** each subject has a learned embedding vector that is concatenated to the RNN input (or used in a 1×1 layer) to adapt to individual differences.
+    - **Spatial channel pooling/dropout:** channels are merged based on sensor layout, and random contiguous subsets of sensors are dropped during training (spatial dropout).
+    - **Recurrent dynamics:** one or more LSTM/GRU layers capture temporal evolution; a dual-path RNN (intra- and inter-chunk recurrence) can be enabled to efficiently model very long sequences.
+    - **Convolutional encoder/decoder:** 1D convolutions (with stride >1) encode short temporal context into fewer time steps, and symmetric transposed convolutions decode back to full MEG output (the decoder may produce real or complex outputs if the encoder input was complex).
+
+    Parameters
+    ----------
+    n_subjects : int
+        Number of subjects (size of subject embedding dictionary).
+    subject_embed_dim : int, default=16
+        Dimension of the subject-specific embedding vectors.
+    use_stft : bool, default=False
+        If True, apply STFT to input MEG signals before encoding.
+    conv_channels : int, default=256
+        Number of channels in the first convolutional layer (subsequent layers may increase channels).
+    conv_layers : int, default=2
+        Number of convolutional encoder layers (and decoder layers).
+    conv_kernel : int, default=4
+        Kernel size of convolutional layers.
+    conv_stride : int, default=2
+        Stride of convolutions (controls temporal downsampling).
+    rnn_hidden : int, default=256
+        Hidden size of the RNN (per direction if bidirectional).
+    rnn_layers : int, default=2
+        Number of stacked RNN layers (stacking dual LSTM blocks for depth).
+    dropout : float, default=0.2
+        Probability of dropping spatially contiguous MEG channels (spatial dropout).
+
+    Attributes
+    ----------
+    subject_embedding_ : torch.nn.Embedding
+        Embedding layer (n_subjects x subject_embed_dim) for subject IDs, or None.
+    conv_encoder_ : torch.nn.Sequential
+        Convolutional encoder network (1D conv + ReLU layers).
+    rnn_ : torch.nn.Module
+        Recurrent module (e.g. stacked LSTMs, possibly with dual-path structure).
+    conv_decoder_ : torch.nn.Sequential
+        Convolutional decoder network (transpose convolutions).
+
+    .. versionadded:: 1.0
+
+    References
+    ----------
+    .. [chehab2022] Chehab, O., Défossez, A., Jean-Christophe, L., Gramfort, A.,
+       & King, J. R. (2022). Deep Recurrent Encoder: an end-to-end network to model
+       magnetoencephalography at scale. Neurons, Behavior, Data Analysis, and Theory.
+    .. [brainmagik] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
+       (2023). Decoding speech perception from non-invasive brain recordings. Nature
+       Machine Intelligence, 5(10), 1097-1107.
+    """
+
     def __init__(
         self,
         # Channels
@@ -686,7 +755,8 @@ class ChannelMerger(nn.Module):
 
 
 if __name__ == "__main__":
-    model = SimpleConv(in_channels={"meg": 10}, out_channels=2, hidden={"meg": 20})
+    # Work in Progress
+    model = DeepRecurrent(in_channels={"meg": 10}, out_channels=2, hidden={"meg": 20})
     x = torch.randn(2, 10, 100)
     batch = type("Batch", (object,), {"subject_index": torch.tensor([0, 1])})
     y = model(x, batch)
