@@ -222,10 +222,26 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         return x
 
     def _calculate_output_length(self) -> int:
-        T_3 = math.floor(self.n_times / self.avg_pool_block4[1])
+        # Pooling kernel sizes for the time dimension
+        p4 = self.avg_pool_block4[1]
+        p5 = self.avg_pool_block5[1]
 
-        T_5 = math.floor(T_3 / self.avg_pool_block5[1])
+        # Padding for the time dimension (assumed from padding=(0, 1))
+        pad4 = 1
+        pad5 = 1
 
-        final_in_features = self.filter_1 * T_5
+        # Stride is assumed to be equal to kernel size (p4 and p5)
 
+        # Calculate time dimension after block 3 pooling
+        # Formula: floor((L_in + 2*padding - kernel_size) / stride) + 1
+        T3 = math.floor((self.n_times + 2 * pad4 - p4) / p4) + 1
+
+        # Calculate time dimension after block 5 pooling
+        T5 = math.floor((T3 + 2 * pad5 - p5) / p5) + 1
+
+        # Calculate final flattened features (channels * 1 * time_dim)
+        # The spatial dimension is reduced to 1 after block 3's depthwise conv.
+        final_in_features = (
+            self.filter_1 * T5
+        )  # filter_1 is the number of channels before flatten
         return final_in_features
