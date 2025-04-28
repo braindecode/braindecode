@@ -224,6 +224,8 @@ class DeepRecurrentEncoder(nn.Module):
     - The use of strided convolutions in the encoder :math:`e_{\\theta_3}` can reduce
       the sequence length processed by the recurrent component :math:`f_{\\theta_1}`,
       improving computational efficiency, as mentioned in [chehab2022]_.
+    - We are follow the re-implementation of the DRE model in [brainmagik]_ from the same 
+      research group.
 
     References
     ----------
