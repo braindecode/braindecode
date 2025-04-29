@@ -30,15 +30,17 @@ class DeepRecurrentEncoder(nn.Module):
        :alt: Deep Recurrent Encoder Architecture Diagram [chehab2022]_
 
     This model aims to learn a generative model of brain activity (:math:`h_t`)
-    and its mapping to observable MEG signals (:math:`x_t`). It generalizes
-    traditional linear models like Temporal Receptive Fields (TRF) and
-    Recurrent TRF (RTRF) by employing non-linear components, specifically
+    and its mapping to observable MEG signals (:math:`x_t`). 
+    
+    It generalizes traditional linear models like Temporal Receptive Fields (TRF) 
+    and Recurrent TRF (RTRF) by employing non-linear components, specifically
     LSTMs for dynamics and convolutional layers for input/output mapping.
 
     The underlying assumption, following [chehab2022]_, is that brain
     dynamics :math:`h_t` evolve based on past dynamics and external stimuli :math:`u_t`,
-    and MEG sensors measure a transformation of these dynamics. The DRE
-    parameterizes this relationship using deep learning components.
+    and MEG sensors measure a transformation of these dynamics.
+    
+    The DRE parameterizes this relationship using deep learning components.
 
     The general structure implemented corresponds to Equation (6) in [chehab2022]_:
 
@@ -71,17 +73,22 @@ class DeepRecurrentEncoder(nn.Module):
 
     - **Non-linear Dynamics:** Uses recurrent layers (e.g., LSTM inspired)
       to model :math:`f_{\\theta_1}`, allowing complex temporal dependencies.
+
     - **Convolutional Encoder/Decoder:** Employs 1D convolutions for :math:`e_{\\theta_3}`
       and transposed convolutions for :math:`d_{\\theta_2}`, potentially reducing
       temporal resolution via striding for efficiency.
+
     - **Subject Embeddings:** Learns a vector :math:`s \\in \\mathbb{R}^{d_s}` for each
       subject (`subject_dim`) to capture subject-specific variations within a
-      single model, augmenting the input :math:`\\tilde{u}_t`.
+      single model, augmenting the input :math:`\\tilde{u}_t`. By default, in `braindecode`
+      this is disable.
+
     - **Optional STFT:** Can process time-frequency representations of MEG
       data (`n_fft`) as input to the encoder :math:`e_{\\theta_3}`.
+
     - **End-to-End Training:** Learns the encoder, dynamics, and decoder
       jointly by minimizing a prediction loss, typically
-      :math:`\\sum_t \\| x_t - \\hat{x}_t \\|_2^2`.
+      :math:`\\sum_t \\| x_t - \\hat{x}_t \\|_2^2`. In another works, an auto-regressive model.
 
     Parameters
     ----------
@@ -98,9 +105,6 @@ class DeepRecurrentEncoder(nn.Module):
     depth : int, default=4
         Number of convolutional layers in each encoder branch (:math:`e_{\\theta_3}`)
         and implicitly in the decoder :math:`d_{\\theta_2}` if `linear_out=False`.
-    concatenate : bool, default=False
-        If True, concatenate the outputs of different modality branches from
-        :math:`e_{\\theta_3}` before feeding into the dynamics model :math:`f_{\\theta_1}`.
     linear_out : bool, default=True
         If True, use a simple linear ConvTranspose1d layer for the decoder :math:`d_{\\theta_2}`.
         Mutually exclusive with `complex_out`.
@@ -243,12 +247,13 @@ class DeepRecurrentEncoder(nn.Module):
     def __init__(
         self,
         # Channels
-        in_channels: tp.Dict[str, int],
-        out_channels: int,
-        hidden: tp.Dict[str, int],
+        n_chans: int,
+        # in_channels: int,
+        n_outputs: int,
+        # out_channels: int,
+        hidden_channels: int,
         # Overall structure
         depth: int = 4,
-        concatenate: bool = False,  # concatenate the inputs
         linear_out: bool = True,
         complex_out: bool = False,
         # Conv layer
@@ -291,96 +296,41 @@ class DeepRecurrentEncoder(nn.Module):
         merger_per_subject: bool = False,
         dropout: float = 0.0,
         dropout_rescale: bool = True,
-        initial_linear: int = 0,
+        initial_linear=None,
         initial_depth: int = 1,
         initial_nonlin: bool = False,
         # Final layer
+        decode: bool = True,  # True for braindecode
+        # Braindecode parameters to replace the other parameters
+        n_times=None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
     ):
         super().__init__()
 
         # check inputs
-        if set(in_channels.keys()) != set(hidden.keys()):
-            raise ValueError(
-                "Channels and hidden keys must match "
-                f"({set(in_channels.keys())} and {set(hidden.keys())})"
-            )
         assert kernel_size % 2 == 1, "For padding to work, this must be verified"
-
-        self._concatenate = concatenate
-        self.out_channels = out_channels
+        # number of classes
+        self.n_outputs = n_outputs
 
         self.merger = None
         self.dropout = None
         self.initial_linear = None
-        self.activation = activation()
 
-        if dropout > 0.0:
-            self.dropout = ChannelDropout(dropout, dropout_rescale)
-        if merger:
-            self.merger = ChannelMerger(
-                merger_channels,
-                pos_dim=merger_pos_dim,
-                dropout=merger_dropout,
-                usage_penalty=merger_penalty,
-                n_subjects=n_subjects,
-                per_subject=merger_per_subject,
-            )
-            in_channels["meg"] = merger_channels
+        # initialize dummy layers that will be replaced by the real ones
+        self.activation_ = activation()
+        self.initial_linear_ = None
+        self.subject_layers_ = None
+        self.subject_embedding_ = None
+        self.stft_ = None
+        self.dual_path_ = None
+        self.final_ = None
+        self.final_ = None
 
-        if initial_linear:
-            init = [nn.Conv1d(in_channels["meg"], initial_linear, 1)]
-            for _ in range(initial_depth - 1):
-                init += [activation(), nn.Conv1d(initial_linear, initial_linear, 1)]
-            if initial_nonlin:
-                init += [activation()]
-            self.initial_linear = nn.Sequential(*init)
-            in_channels["meg"] = initial_linear
+        current_in_channels = n_chans
 
-        self.subject_layers = None
-        if subject_layers:
-            assert "meg" in in_channels
-            meg_dim = in_channels["meg"]
-            # dim is equal to n_times in braindecode
-            dim = {"hidden": hidden["meg"], "input": meg_dim}[subject_layers_dim]
-            self.subject_layers = SubjectLayers(
-                meg_dim, dim, n_subjects, subject_layers_id
-            )
-            in_channels["meg"] = dim
-
-        self.stft = None
-        if n_fft is not None:
-            assert "meg" in in_channels
-            self.fft_complex = fft_complex
-            self.n_fft = n_fft
-            self.stft = ta.transforms.Spectrogram(
-                n_fft=n_fft,
-                hop_length=n_fft // 2,
-                normalized=True,
-                power=None if fft_complex else 1,
-                return_complex=True,
-            )
-            in_channels["meg"] *= n_fft // 2 + 1
-            if fft_complex:
-                in_channels["meg"] *= 2
-
-        self.subject_embedding = None
-        if subject_dim:
-            self.subject_embedding = ScaledEmbedding(
-                n_subjects, subject_dim, embedding_scale
-            )
-            in_channels["meg"] += subject_dim
-
-        # concatenate inputs if need be
-        if concatenate:
-            in_channels = {"concat": sum(in_channels.values())}
-            hidden = {"concat": sum(hidden.values())}
-
-        # compute the sequences of channel sizes
-        sizes = {}
-        for name in in_channels:
-            sizes[name] = [in_channels[name]]
-            sizes[name] += [int(round(hidden[name] * growth**k)) for k in range(depth)]
-
+        # Parameters for the encoder
         params: tp.Dict[str, tp.Any]
         params = dict(
             kernel=kernel_size,
@@ -400,112 +350,191 @@ class DeepRecurrentEncoder(nn.Module):
             glu_context=glu_context,
             glu_glu=glu_glu,
             activation=activation,
+            decode=decode,
         )
+        #############################################################
+        # Creating the layer...
+        if dropout > 0.0:
+            self.dropout_ = ChannelDropout(dropout, dropout_rescale)
+        if merger:
+            self.merger_ = ChannelMerger(
+                merger_channels,
+                pos_dim=merger_pos_dim,
+                dropout=merger_dropout,
+                usage_penalty=merger_penalty,
+                n_subjects=n_subjects,
+                per_subject=merger_per_subject,
+            )
+            current_in_channels = merger_channels
 
-        final_channels = sum([x[-1] for x in sizes.values()])
-        self.dual_path = None
+        # So confused this part... We have one conv layer for each channel (?)
+        # very similar to eeg-simple conv, but as optional (?)
+        if initial_linear:
+            init = [nn.Conv1d(current_in_channels, initial_linear, 1)]
+            for _ in range(initial_depth - 1):
+                init += [activation(), nn.Conv1d(initial_linear, initial_linear, 1)]
+            if initial_nonlin:
+                init += [activation()]
+            self.initial_linear_ = nn.Sequential(*init)
+            # overwrite the input channels
+            current_in_channels = initial_linear
+
+        if subject_layers:
+            # dim is equal to n_times in braindecode
+            # SubjectLayers adapts the channel dimension
+            input_dim_for_subj = current_in_channels
+            subj_layer_out_dim = {
+                "hidden": hidden_channels,
+                "input": input_dim_for_subj,
+            }[subject_layers_dim]
+
+            self.subject_layers_ = SubjectLayers(
+                input_dim_for_subj, subj_layer_out_dim, n_subjects, subject_layers_id
+            )
+            current_in_channels = subj_layer_out_dim
+
+        if n_fft is not None:
+            self.fft_complex = fft_complex
+            self.n_fft = n_fft
+            self.stft_ = ta.transforms.Spectrogram(
+                n_fft=n_fft,
+                hop_length=n_fft // 2,
+                normalized=True,
+                power=None if fft_complex else 1,
+                return_complex=True,
+            )
+            stft_freq_bins = n_fft // 2 + 1
+            stft_out_channels = current_in_channels * stft_freq_bins
+            if fft_complex:
+                # real and imag
+                stft_out_channels *= 2
+            current_in_channels = stft_out_channels
+
+        if subject_layers:
+            self.subject_embedding_ = ScaledEmbedding(
+                n_subjects, subject_dim, embedding_scale
+            )
+            current_in_channels += subject_dim
+
+        # compute the sequences of channel sizes
+        conv_seq_channels = [current_in_channels]
+        conv_seq_channels += [
+            int(round(hidden_channels * growth**k)) for k in range(depth)
+        ]
+
+        if not linear_out and not complex_out:
+            params["activation_on_last"] = False
+            conv_seq_channels[-1] = n_outputs  # Output channels defined by last layer
+
+        self.encoder_ = ConvSequence(conv_seq_channels, **params)
+
+        final_channels = conv_seq_channels[-1]
+
+        # --- Recurrent Layer ---
         if dual_path:
-            self.dual_path = DualPathRNN(final_channels, dual_path)
-        self.final = None
+            # Input to DualPathRNN is the output of the encoder
+            self.dual_path_ = DualPathRNN(final_channels, dual_path)
+            # DualPathRNN output channels == input channels
+
+        # --- Final Layer ---
         pad = 0
         kernel = 1
         stride = 1
         if n_fft is not None:
+            # Adjust ConvTranspose1d for STFT hop length
             pad = n_fft // 4
             kernel = n_fft
             stride = n_fft // 2
 
+        # Check if encoder already produced the output channels
         if linear_out:
             assert not complex_out
-            self.final = nn.ConvTranspose1d(
-                final_channels, out_channels, kernel, stride, pad
+            self.final_ = nn.ConvTranspose1d(
+                final_channels, self.n_outputs, kernel, stride, pad
             )
         elif complex_out:
-            self.final = nn.Sequential(
+            self.final_ = nn.Sequential(
                 nn.Conv1d(final_channels, 2 * final_channels, 1),
-                activation(),
+                self.activation_(),
                 nn.ConvTranspose1d(
-                    2 * final_channels, out_channels, kernel, stride, pad
+                    2 * final_channels, self.n_outputs, kernel, stride, pad
                 ),
             )
-        else:
-            assert len(sizes) == 1, "if no linear_out, there must be a single branch."
-            params["activation_on_last"] = False
-            list(sizes.values())[0][-1] = out_channels
 
-        self.encoders = nn.ModuleDict(
-            {name: ConvSequence(channels, **params) for name, channels in sizes.items()}
-        )
+    def forward(self, x, batch=None):
+        # subjects = batch.subject_index
+        # Estimate original length before potential STFT downsampling
+        original_length = x.shape[-1]
 
-    def forward(self, inputs, batch):
-        subjects = batch.subject_index
-        length = next(iter(inputs.values())).shape[-1]  # length of any of the inputs
+        # Apply ""preprocessing"" layers sequentially
+        # if self.dropout_ is not None:
+        #     x = self.dropout_(x, batch)
 
-        if self.dropout is not None:
-            inputs["meg"] = self.dropout(inputs["meg"], batch)
+        # if self.merger_ is not None:
+        #     x = self.merger_(x, batch)
 
-        if self.merger is not None:
-            inputs["meg"] = self.merger(inputs["meg"], batch)
+        # if self.initial_linear_ is not None:
+        #     x = self.initial_linear_(x)
 
-        if self.initial_linear is not None:
-            inputs["meg"] = self.initial_linear(inputs["meg"])
+        # if self.subject_layers_ is not None:
+        #     x = self.subject_layers_(x, subjects)
 
-        if self.subject_layers is not None:
-            inputs["meg"] = self.subject_layers(inputs["meg"], subjects)
-
-        if self.stft is not None:
-            x = inputs["meg"]
-            pad = self.n_fft // 4
-            x = F.pad(pad_multiple(x, self.n_fft // 2), (pad, pad), mode="reflect")
-            z = self.stft(inputs["meg"])
-            B, C, Fr, T = z.shape
-            if self.fft_complex:
-                z = torch.view_as_real(z).permute(0, 1, 2, 4, 3)
-            z = z.reshape(B, -1, T)
-            inputs["meg"] = z
-
-        if self.subject_embedding is not None:
-            emb = self.subject_embedding(subjects)[:, :, None]
-            inputs["meg"] = torch.cat(
-                [inputs["meg"], emb.expand(-1, -1, length)], dim=1
+        if self.stft_ is not None:
+            pad_amount = self.n_fft // 4  # Use attribute directly
+            # Pad for STFT analysis window overlap
+            x_padded = F.pad(
+                pad_multiple(x, self.n_fft // 2),
+                (pad_amount, pad_amount),
+                mode="reflect",
             )
+            z = self.stft_(x_padded)  # Apply STFT
+            B, C, Fr, T_stft = z.shape
 
-        if self._concatenate:
-            input_list = [x[1] for x in sorted(inputs.items())]
-            inputs = {"concat": torch.cat(input_list, dim=1)}
+            if self.fft_complex:
+                # Convert complex tensor to real representation (B, C, Freq, 2, Time) -> (B, C * Freq * 2, Time)
+                z = torch.view_as_real(z).permute(
+                    0, 1, 2, 4, 3
+                )  # B, C, Fr, T, 2 -> TO-DO: replace for einops
+                z = z.reshape(
+                    B, C * Fr * 2, T_stft
+                )  # Combine C, Fr, Real/Imag into one dim
+            else:
+                # If power=1 (magnitude), reshape directly
+                z = z.reshape(B, C * Fr, T_stft)  # Combine C, Fr
+            x = z  # Update x to be the STFT representation
 
-        encoded = {}
-        for name, x in inputs.items():
-            encoded[name] = self.encoders[name](x)
+        # if self.subject_embedding_ is not None:
+        #     # This block is currently unreachable due to `if False:` in __init__
+        #     # If enabled, ensure `current_length` reflects potential changes from STFT
+        #     current_length = x.shape[-1]
+        #     emb = self.subject_embedding_(subjects)[:, :, None]
+        #     x = torch.cat(
+        #         [x, emb.expand(-1, -1, current_length)], dim=1
+        #     )
 
-        inputs = [x[1] for x in sorted(encoded.items())]
-        x = torch.cat(inputs, dim=1)
-        if self.dual_path is not None:
-            x = self.dual_path(x)
-        if self.final is not None:
-            x = self.final(x)
-        assert x.shape[-1] >= length
+        # Main Encoder
+        x = self.encoder_(x)
 
-        return x[:, :, :length]
+        # Optional Recurrent Layer
+        if self.dual_path_ is not None:
+            x = self.dual_path_(x)
 
+        # Final Decoder/Output Layer
+        if self.final_ is not None:
+            x = self.final_(x)
 
-class Recording:
-    recording_index: int
-    study_name: str
-    recording_uid: str
-    mne_info: mne.io.BaseRaw
+        current_length = x.shape[-1]
+        if current_length < original_length:
+            # This might happen if strides reduce length too much
+            logger.warning(
+                f"Output length ({current_length}) is less than input length ({original_length}). Padding..."
+            )
+            x = F.pad(x, (0, original_length - current_length))
+        elif current_length > original_length:
+            # Crop the output to match the original input length
+            x = x[:, :, :original_length]
 
-    def __init__(
-        self,
-        recording_index: int,
-        study_name: str,
-        recording_uid: str,
-        mne_info: mne.io.BaseRaw,
-    ):
-        self.recording_index = recording_index
-        self.study_name = study_name
-        self.recording_uid = recording_uid
-        self.mne_info = mne_info
+        return x
 
 
 def pad_multiple(x: torch.Tensor, base: int):
@@ -577,14 +606,14 @@ class ConvSequence(nn.Module):
     def __init__(
         self,
         channels: tp.Sequence[int],
-        kernel: int = 4,
+        kernel: int = 4,  # should not be 5 here?
         dilation_growth: int = 1,
         dilation_period: tp.Optional[int] = None,
         stride: int = 2,
         dropout: float = 0.0,
         leakiness: float = 0.0,
         groups: int = 1,
-        decode: bool = False,
+        decode: bool = False,  # This param should be True or False for braindecode use?
         batch_norm: bool = False,
         dropout_input: float = 0,
         skip: bool = False,
@@ -600,7 +629,7 @@ class ConvSequence(nn.Module):
         super().__init__()
         dilation = 1
         channels = tuple(channels)
-        self.skip = skip
+        self.skip = skip  # what is skip?
         self.sequence = nn.ModuleList()
         self.glus = nn.ModuleList()
         if activation is None:
@@ -706,63 +735,6 @@ class DualPathRNN(nn.Module):
         return x[:L].permute(1, 2, 0).contiguous()
 
 
-class PositionGetter:
-    INVALID = -0.1
-
-    def __init__(self) -> None:
-        self._cache: tp.Dict[int, torch.Tensor] = {}
-        self._invalid_names: tp.Set[str] = set()
-
-    def get_recording_layout(self, recording: Recording) -> torch.Tensor:
-        index = recording.recording_index
-        if index in self._cache:
-            return self._cache[index]
-        else:
-            info = recording.mne_info
-            layout = mne.find_layout(info)
-            indexes: tp.List[int] = []
-            valid_indexes: tp.List[int] = []
-            for meg_index, name in enumerate(info.ch_names):
-                name = name.rsplit("-", 1)[0]
-                try:
-                    indexes.append(layout.names.index(name))
-                except ValueError:
-                    if name not in self._invalid_names:
-                        logger.warning(
-                            "Channels %s not in layout for recording %s of %s.",
-                            name,
-                            recording.study_name,
-                            recording.recording_uid,
-                        )
-                        self._invalid_names.add(name)
-                else:
-                    valid_indexes.append(meg_index)
-
-            positions = torch.full((len(info.ch_names), 2), self.INVALID)
-            x, y = layout.pos[indexes, :2].T
-            x = (x - x.min()) / (x.max() - x.min())
-            y = (y - y.min()) / (y.max() - y.min())
-            x = torch.from_numpy(x).float()
-            y = torch.from_numpy(y).float()
-            positions[valid_indexes, 0] = x
-            positions[valid_indexes, 1] = y
-            self._cache[index] = positions
-            return positions
-
-    def get_positions(self, batch):
-        meg = batch.meg
-        B, C, T = meg.shape
-        positions = torch.full((B, C, 2), self.INVALID, device=meg.device)
-        for idx in range(len(batch)):
-            recording = batch._recordings[idx]
-            rec_pos = self.get_recording_layout(recording)
-            positions[idx, : len(rec_pos)] = rec_pos.to(meg.device)
-        return positions
-
-    def is_invalid(self, positions):
-        return (positions == self.INVALID).all(dim=-1)
-
-
 class FourierEmb(nn.Module):
     """
     Fourier positional embedding.
@@ -804,7 +776,7 @@ class FourierEmb(nn.Module):
 
 
 class ChannelDropout(nn.Module):
-    def __init__(self, dropout: float = 0.1, rescale: bool = True):
+    def __init__(self, ch_info, dropout: float = 0.1, rescale: bool = True):
         """
         Args:
             dropout: dropout radius in normalized [0, 1] coordinates.
@@ -813,7 +785,7 @@ class ChannelDropout(nn.Module):
         super().__init__()
         self.dropout = dropout
         self.rescale = rescale
-        self.position_getter = PositionGetter()
+        self.ch_info = ch_info
 
     def forward(self, meg, batch):
         if not self.dropout:
@@ -821,6 +793,7 @@ class ChannelDropout(nn.Module):
 
         B, C, T = meg.shape
         meg = meg.clone()
+
         positions = self.position_getter.get_positions(batch)
         valid = (~self.position_getter.is_invalid(positions)).float()
         meg = meg * valid[:, :, None]
@@ -853,7 +826,8 @@ class ChannelMerger(nn.Module):
     ):
         super().__init__()
         assert pos_dim % 4 == 0
-        self.position_getter = PositionGetter()
+        self.position_getter = PositionGetter()  # type: ignore
+
         self.per_subject = per_subject
         if self.per_subject:
             self.heads = nn.Parameter(
@@ -861,6 +835,7 @@ class ChannelMerger(nn.Module):
             )
         else:
             self.heads = nn.Parameter(torch.randn(chout, pos_dim, requires_grad=True))
+
         self.heads.data /= pos_dim**0.5
         self.dropout = dropout
         self.embedding = FourierEmb(pos_dim)
@@ -906,9 +881,32 @@ class ChannelMerger(nn.Module):
 
 if __name__ == "__main__":
     # Work in Progress
+    n_batch = 4
+    n_channels_in = 20
+    n_channels_out = 2  # classes (?)
+    n_times = 1000
+    hidden = 32
+    depth = 3
+    sfreq = 100.0
+
+    print("\n--- Example with STFT ---")
+    n_fft_val = 32
     model = DeepRecurrentEncoder(
-        in_channels={"meg": 10}, out_channels=2, hidden={"meg": 20}
+        n_chans=n_channels_in,
+        n_outputs=n_channels_out,
+        hidden_channels=hidden,
+        depth=depth,
+        kernel_size=3,  # Smaller kernel often used with STFT
+        subject_layers=False,
+        dropout=0.1,
+        merger=False,
+        n_fft=n_fft_val,
+        fft_complex=True,
+        dual_path=1,
+        linear_out=False,
     )
-    x = torch.randn(2, 10, 100)
-    batch = type("Batch", (object,), {"subject_index": torch.tensor([0, 1])})
-    y = model(x, batch)
+
+    x_tensor = torch.randn(n_batch, n_channels_in, n_times)
+
+    y = model(x_tensor)
+    print(y.shape)
