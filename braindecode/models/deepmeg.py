@@ -92,15 +92,10 @@ class DeepRecurrentEncoder(nn.Module):
 
     Parameters
     ----------
-    in_channels : dict[str, int]
-        Dictionary mapping input modality names (e.g., 'meg') to their
-        respective number of input channels. Keys must match `hidden`.
-        The 'meg' modality undergoes special processing (STFT, subject adapt.).
-    out_channels : int
+    n_outputs : int
         Number of output channels for the final layer (dimension :math:`d_x` of :math:`\\hat{x}_t`).
     hidden : dict[str, int]
-        Dictionary mapping input modality names to the number of hidden channels
-        for the first convolutional layer of their respective branch in the
+        Number of hidden channels for the first convolutional layer of their respective branch in the
         encoder :math:`e_{\\theta_3}`. Keys must match `in_channels`.
     depth : int, default=4
         Number of convolutional layers in each encoder branch (:math:`e_{\\theta_3}`)
@@ -246,11 +241,14 @@ class DeepRecurrentEncoder(nn.Module):
 
     def __init__(
         self,
+        ########################
+        # Braindecode parameters
+        #########################
         # Channels
-        n_chans: int,
-        # in_channels: int,
-        n_outputs: int,
-        # out_channels: int,
+        n_chans: int,  # in_channels: int,
+        n_outputs: int,  # out_channels: int,
+        ####################
+        # Model parameters
         hidden_channels: int,
         # Overall structure
         depth: int = 4,
@@ -296,7 +294,7 @@ class DeepRecurrentEncoder(nn.Module):
         merger_per_subject: bool = False,
         dropout: float = 0.0,
         dropout_rescale: bool = True,
-        initial_linear=None,
+        initial_linear=20,
         initial_depth: int = 1,
         initial_nonlin: bool = False,
         # Final layer
@@ -352,6 +350,10 @@ class DeepRecurrentEncoder(nn.Module):
             activation=activation,
             decode=decode,
         )
+        # parameters for final
+        pad = 0
+        kernel = 1
+        stride = 1
         #############################################################
         # Creating the layer...
         if dropout > 0.0:
@@ -437,9 +439,7 @@ class DeepRecurrentEncoder(nn.Module):
             # DualPathRNN output channels == input channels
 
         # --- Final Layer ---
-        pad = 0
-        kernel = 1
-        stride = 1
+
         if n_fft is not None:
             # Adjust ConvTranspose1d for STFT hop length
             pad = n_fft // 4
@@ -461,7 +461,11 @@ class DeepRecurrentEncoder(nn.Module):
                 ),
             )
 
-    def forward(self, x, batch=None):
+    def forward(
+        self,
+        x,
+        batch=None,
+    ):
         # subjects = batch.subject_index
         # Estimate original length before potential STFT downsampling
         original_length = x.shape[-1]
@@ -473,8 +477,8 @@ class DeepRecurrentEncoder(nn.Module):
         # if self.merger_ is not None:
         #     x = self.merger_(x, batch)
 
-        # if self.initial_linear_ is not None:
-        #     x = self.initial_linear_(x)
+        if self.initial_linear_ is not None:
+            x = self.initial_linear_(x)
 
         # if self.subject_layers_ is not None:
         #     x = self.subject_layers_(x, subjects)
@@ -504,8 +508,6 @@ class DeepRecurrentEncoder(nn.Module):
             x = z  # Update x to be the STFT representation
 
         # if self.subject_embedding_ is not None:
-        #     # This block is currently unreachable due to `if False:` in __init__
-        #     # If enabled, ensure `current_length` reflects potential changes from STFT
         #     current_length = x.shape[-1]
         #     emb = self.subject_embedding_(subjects)[:, :, None]
         #     x = torch.cat(
@@ -905,7 +907,7 @@ if __name__ == "__main__":
         dual_path=1,
         linear_out=False,
     )
-
+    subject_index = torch.randint(0, 200, (n_batch,))
     x_tensor = torch.randn(n_batch, n_channels_in, n_times)
 
     y = model(x_tensor)
