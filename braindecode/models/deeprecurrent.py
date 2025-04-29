@@ -13,320 +13,228 @@ import random
 import typing as tp
 from functools import partial
 
-import mne
 import torch
 import torchaudio as ta
 from torch import nn
 from torch.nn import functional as F
 
-logger = logging.getLogger(__name__)
+
+class DeepRecurrent(nn.Module):
+    """
+    Deep Recurrent Encoder (DRE) for MEG data based on [chehab2022]_.
+
+    .. figure:: _static/model/deeprecurrent.jpg
+       :align: center
+       :alt: Deep Recurrent Encoder Architecture Diagram [chehab2022]_
+
+    Parameters
+    ----------
+
+    Notes
+    -----
+    Implemented from [brainmagik]_, which come from the same research group.
 
 
-class DeepRecurrentEncoder(nn.Module):
+    References
+    ----------
+    .. [chehab2022] Chehab, O., Défossez, A., Loiseau, J. C., Gramfort, A.,
+       & King, J. R. (2022). Deep Recurrent Encoder: an end-to-end network to model
+       magnetoencephalography at scale. Neurons, Behavior, Data Analysis, and Theory.
+    .. [brainmagik] Défossez, A., Caucheteux, C., Rapin, J., Kabeli, O., & King, J. R.
+       (2023). Decoding speech perception from non-invasive brain recordings. Nature
+       Machine Intelligence, 5(10), 1097-1107.
+    .. versionadded:: 1.0
+    """
+
     def __init__(
         self,
-        ########################
-        # Braindecode parameters
-        #########################
         # Channels
-        n_chans: int,  # in_channels: int,
-        n_outputs: int,  # out_channels: int,
-        ####################
-        # Model parameters
-        hidden_channels: int,
+        n_chans: int,
+        n_outputs: int,
+        hidden: int,
         # Overall structure
-        depth: int = 4,
-        linear_out: bool = True,
+        depth: int = 2,
+        linear_out: bool = False,
         complex_out: bool = False,
-        # Conv layer
-        kernel_size: int = 5,
+        concatenate: bool = False,  # concatenate the inputs
+        # Conv structure
+        kernel_size: int = 4,
+        stride: int = 2,
         growth: float = 1.0,
-        dilation_growth: int = 2,
-        dilation_period: tp.Optional[int] = None,
-        skip: bool = False,
-        post_skip: bool = False,
-        scale: tp.Optional[float] = None,
-        rewrite: bool = False,
-        groups: int = 1,
-        glu: int = 0,
-        glu_context: int = 0,
-        glu_glu: bool = True,
-        activation: type[nn.Module] = nn.Identity,
-        # Dual path RNN
-        dual_path: int = 0,
-        # Dropouts, BN, activations
+        # LSTM
+        lstm: int = 2,
+        flip_lstm: bool = False,
+        bidirectional_lstm: bool = False,
+        # Attention
+        attention: int = 0,
+        heads: int = 4,
+        # Dropout, BN, activations
         conv_dropout: float = 0.0,
+        lstm_dropout: float = 0.0,
         dropout_input: float = 0.0,
         batch_norm: bool = False,
         relu_leakiness: float = 0.0,
-        # Subject specific settings
+        # Subject embeddings,
         n_subjects: int = 200,
         subject_dim: int = 64,
+        embedding_location: tp.List[str] = ["lstm"],  # can be lstm or input
+        embedding_scale: float = 1.0,
         subject_layers: bool = False,
         subject_layers_dim: str = "input",  # or hidden
-        subject_layers_id: bool = False,
-        embedding_scale: float = 1.0,
-        # stft transform
-        n_fft: tp.Optional[int] = None,
-        fft_complex: bool = True,
-        # Attention multi-dataset support
-        merger: bool = False,
-        merger_pos_dim: int = 256,
-        merger_channels: int = 270,
-        merger_dropout: float = 0.2,
-        merger_penalty: float = 0.0,
-        merger_per_subject: bool = False,
-        dropout: float = 0.0,
-        dropout_rescale: bool = True,
-        initial_linear=20,
-        initial_depth: int = 1,
-        initial_nonlin: bool = False,
-        # Final layer
-        decode: bool = True,  # True for braindecode
-        # Braindecode parameters to replace the other parameters
-        n_times=None,
-        chs_info=None,
-        input_window_seconds=None,
-        sfreq=None,
     ):
         super().__init__()
+        in_channels = n_chans
+        out_channels = n_outputs
+        self._concatenate = concatenate
+        self.depth = depth
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.embedding_location = embedding_location
 
-        # check inputs
-        assert kernel_size % 2 == 1, "For padding to work, this must be verified"
-        # number of classes
-        self.n_outputs = n_outputs
+        self.subject_layers = None
+        # if subject_layers:
+        #     assert "meg" in in_channels
+        #     meg_dim = in_channels["meg"]
+        #     dim = {"hidden": hidden["meg"], "input": meg_dim}[subject_layers_dim]
+        #     self.subject_layers = SubjectLayers(meg_dim, dim, n_subjects)
+        #     in_channels["meg"] = dim
+        # self.subject_embedding = None
+        # if subject_dim:
+        #     self.subject_embedding = ScaledEmbedding(
+        #         n_subjects, subject_dim, embedding_scale
+        #     )
+        #     if "input" in embedding_location:
+        #         in_channels["meg"] += subject_dim
 
-        self.merger = None
-        self.dropout = None
-        self.initial_linear = None
+        # concatenate inputs if need be
+        # if concatenate:
+        #     in_channels = {"concat": sum(in_channels.values())}
+        #     hidden = {"concat": sum(hidden.values())}
 
-        # initialize dummy layers that will be replaced by the real ones
-        self.activation_ = activation()
-        self.initial_linear_ = None
-        self.subject_layers_ = None
-        self.subject_embedding_ = None
-        self.stft_ = None
-        self.dual_path_ = None
-        self.final_ = None
-        self.final_ = None
+        # compute the sequences of channel sizes
+        sizes = [in_channels]
+        sizes += [int(round(hidden * growth**k)) for k in range(depth)]
 
-        current_in_channels = n_chans
+        lstm_hidden = sum(sizes[:-1])
+        lstm_input = lstm_hidden
+        if "lstm" in embedding_location:
+            lstm_input += subject_dim
 
-        # Parameters for the encoder
+        # encoders and decoder
         params: tp.Dict[str, tp.Any]
         params = dict(
             kernel=kernel_size,
-            stride=1,
+            stride=stride,
             leakiness=relu_leakiness,
             dropout=conv_dropout,
             dropout_input=dropout_input,
             batch_norm=batch_norm,
-            dilation_growth=dilation_growth,
-            groups=groups,
-            dilation_period=dilation_period,
-            skip=skip,
-            post_skip=post_skip,
-            scale=scale,
-            rewrite=rewrite,
-            glu=glu,
-            glu_context=glu_context,
-            glu_glu=glu_glu,
-            activation=activation,
-            decode=decode,
         )
-        # parameters for final
-        pad = 0
-        kernel = 1
-        stride = 1
-        #############################################################
-        # Creating the layer...
-        if dropout > 0.0:
-            self.dropout_ = ChannelDropout(dropout, dropout_rescale)
-        if merger:
-            self.merger_ = ChannelMerger(
-                merger_channels,
-                pos_dim=merger_pos_dim,
-                dropout=merger_dropout,
-                usage_penalty=merger_penalty,
-                n_subjects=n_subjects,
-                per_subject=merger_per_subject,
+        self.encoders = ConvSequence(sizes, **params)
+
+        # lstm
+        self.lstm = None
+        self.linear = None
+        if lstm:
+            self.lstm = LSTM(
+                input_size=lstm_input,
+                hidden_size=lstm_hidden,
+                dropout=lstm_dropout,
+                num_layers=lstm,
+                bidirectional=bidirectional_lstm,
             )
-            current_in_channels = merger_channels
+            self._flip_lstm = flip_lstm
 
-        # So confused this part... We have one conv layer for each channel (?)
-        # very similar to eeg-simple conv, but as optional (?)
-        if initial_linear:
-            init = [nn.Conv1d(current_in_channels, initial_linear, 1)]
-            for _ in range(initial_depth - 1):
-                init += [activation(), nn.Conv1d(initial_linear, initial_linear, 1)]
-            if initial_nonlin:
-                init += [activation()]
-            self.initial_linear_ = nn.Sequential(*init)
-            # overwrite the input channels
-            current_in_channels = initial_linear
+        self.attentions = nn.ModuleList()
+        for _ in range(attention):
+            self.attentions.append(Attention(lstm_hidden, heads=heads))
 
-        if subject_layers:
-            # dim is equal to n_times in braindecode
-            # SubjectLayers adapts the channel dimension
-            input_dim_for_subj = current_in_channels
-            subj_layer_out_dim = {
-                "hidden": hidden_channels,
-                "input": input_dim_for_subj,
-            }[subject_layers_dim]
-
-            self.subject_layers_ = SubjectLayers(
-                input_dim_for_subj, subj_layer_out_dim, n_subjects, subject_layers_id
-            )
-            current_in_channels = subj_layer_out_dim
-
-        if n_fft is not None:
-            self.fft_complex = fft_complex
-            self.n_fft = n_fft
-            self.stft_ = ta.transforms.Spectrogram(
-                n_fft=n_fft,
-                hop_length=n_fft // 2,
-                normalized=True,
-                power=None if fft_complex else 1,
-                return_complex=True,
-            )
-            stft_freq_bins = n_fft // 2 + 1
-            stft_out_channels = current_in_channels * stft_freq_bins
-            if fft_complex:
-                # real and imag
-                stft_out_channels *= 2
-            current_in_channels = stft_out_channels
-
-        if subject_layers:
-            self.subject_embedding_ = ScaledEmbedding(
-                n_subjects, subject_dim, embedding_scale
-            )
-            current_in_channels += subject_dim
-
-        # compute the sequences of channel sizes
-        conv_seq_channels = [current_in_channels]
-        conv_seq_channels += [
-            int(round(hidden_channels * growth**k)) for k in range(depth)
-        ]
-
-        if not linear_out and not complex_out:
-            params["activation_on_last"] = False
-            conv_seq_channels[-1] = n_outputs  # Output channels defined by last layer
-
-        self.encoder_ = ConvSequence(conv_seq_channels, **params)
-
-        final_channels = conv_seq_channels[-1]
-
-        # --- Recurrent Layer ---
-        if dual_path:
-            # Input to DualPathRNN is the output of the encoder
-            self.dual_path_ = DualPathRNN(final_channels, dual_path)
-            # DualPathRNN output channels == input channels
-
-        # --- Final Layer ---
-
-        if n_fft is not None:
-            # Adjust ConvTranspose1d for STFT hop length
-            pad = n_fft // 4
-            kernel = n_fft
-            stride = n_fft // 2
-
-        # Check if encoder already produced the output channels
+        # decoder
+        decoder_sizes = [int(round(lstm_hidden / growth**k)) for k in range(depth + 1)]
+        self.final = None
         if linear_out:
             assert not complex_out
-            self.final_ = nn.ConvTranspose1d(
-                final_channels, self.n_outputs, kernel, stride, pad
-            )
+            self.final = nn.Conv1d(decoder_sizes[-1], out_channels, 1)
         elif complex_out:
-            self.final_ = nn.Sequential(
-                nn.Conv1d(final_channels, 2 * final_channels, 1),
-                self.activation_(),
-                nn.ConvTranspose1d(
-                    2 * final_channels, self.n_outputs, kernel, stride, pad
-                ),
+            self.final = nn.Sequential(
+                nn.Conv1d(decoder_sizes[-1], 2 * decoder_sizes[-1], 1),
+                nn.ReLU(),
+                nn.Conv1d(2 * decoder_sizes[-1], out_channels, 1),
             )
+        else:
+            params["activation_on_last"] = False
+            decoder_sizes[-1] = out_channels
+            assert depth > 0, "if no linear out, depth must be > 0"
+        self.decoder = ConvSequence(decoder_sizes, decode=True, **params)
 
-    def forward(
-        self,
-        x,
-        batch=None,
-    ):
-        # subjects = batch.subject_index
-        # Estimate original length before potential STFT downsampling
-        original_length = x.shape[-1]
+    def valid_length(self, length):
+        """
+        Return the nearest valid length to use with the model so that
+        there is no time steps left over in a convolutions, e.g. for all
+        layers, (size of the input - kernel_size) % stride = 0.
 
-        # Apply ""preprocessing"" layers sequentially
-        # if self.dropout_ is not None:
-        #     x = self.dropout_(x, batch)
+        If the input has a valid length, the output
+        will have exactly the same length.
+        """
+        for idx in range(self.depth):
+            length = math.ceil(length / self.stride) + 1
+            length = max(length, 1)
+        for idx in range(self.depth):
+            length = (length - 1) * self.stride
+        return int(length)
 
-        # if self.merger_ is not None:
-        #     x = self.merger_(x, batch)
+    def pad(self, x):
+        length = x.size(-1)
+        valid_length = self.valid_length(length)
+        delta = valid_length - length
+        return F.pad(x, (0, delta))
 
-        if self.initial_linear_ is not None:
-            x = self.initial_linear_(x)
+    def forward(self, inputs, batch):
+        subjects = batch.subject_index
+        length = next(iter(inputs.values())).shape[-1]  # length of any of the inputs
 
-        # if self.subject_layers_ is not None:
-        #     x = self.subject_layers_(x, subjects)
+        # if self.subject_layers is not None:
+        #     inputs["meg"] = self.subject_layers(inputs["meg"], subjects)
+        # if self.subject_embedding is not None:
+        #     emb = self.subject_embedding(subjects)[:, :, None]
+        #     if "input" in self.embedding_location:
+        #         inputs["meg"] = torch.cat(
+        #             [inputs["meg"], emb.expand(-1, -1, length)], dim=1
+        #         )
 
-        if self.stft_ is not None:
-            pad_amount = self.n_fft // 4  # Use attribute directly
-            # Pad for STFT analysis window overlap
-            x_padded = F.pad(
-                pad_multiple(x, self.n_fft // 2),
-                (pad_amount, pad_amount),
-                mode="reflect",
-            )
-            z = self.stft_(x_padded)  # Apply STFT
-            B, C, Fr, T_stft = z.shape
+        # if self._concatenate:
+        #     input_list = [input_ for _, input_ in sorted(inputs.items())]
+        #     inputs = {"concat": torch.cat(input_list, dim=1)}
 
-            if self.fft_complex:
-                # Convert complex tensor to real representation (B, C, Freq, 2, Time) -> (B, C * Freq * 2, Time)
-                z = torch.view_as_real(z).permute(
-                    0, 1, 2, 4, 3
-                )  # B, C, Fr, T, 2 -> TO-DO: replace for einops
-                z = z.reshape(
-                    B, C * Fr * 2, T_stft
-                )  # Combine C, Fr, Real/Imag into one dim
-            else:
-                # If power=1 (magnitude), reshape directly
-                z = z.reshape(B, C * Fr, T_stft)  # Combine C, Fr
-            x = z  # Update x to be the STFT representation
+        inputs = {name: self.pad(input_) for name, input_ in inputs.items()}
+        encoded = {}
+        for name, x in inputs.items():
+            encoded[name] = self.encoders[name](self.pad(x))
 
-        # if self.subject_embedding_ is not None:
-        #     current_length = x.shape[-1]
-        #     emb = self.subject_embedding_(subjects)[:, :, None]
-        #     x = torch.cat(
-        #         [x, emb.expand(-1, -1, current_length)], dim=1
-        #     )
+        inputs = [x[1] for x in sorted(encoded.items())]
+        if "lstm" in self.embedding_location and self.subject_embedding is not None:
+            inputs.append(emb.expand(-1, -1, inputs[0].shape[-1]))
 
-        # Main Encoder
-        x = self.encoder_(x)
+        x = torch.cat(inputs, dim=1)
+        if self.lstm is not None:
+            x = x.permute(2, 0, 1)
+            if self._flip_lstm:
+                x = x.flip([0])
+            x, _ = self.lstm(x)
+            if self._flip_lstm:
+                x = x.flip([0])
+            x = x.permute(1, 2, 0)
 
-        # Optional Recurrent Layer
-        if self.dual_path_ is not None:
-            x = self.dual_path_(x)
+        for attention in self.attentions:
+            x = x + attention(x)
 
-        # Final Decoder/Output Layer
-        if self.final_ is not None:
-            x = self.final_(x)
+        x = self.decoder(x)
 
-        current_length = x.shape[-1]
-        if current_length < original_length:
-            # This might happen if strides reduce length too much
-            logger.warning(
-                f"Output length ({current_length}) is less than input length ({original_length}). Padding..."
-            )
-            x = F.pad(x, (0, original_length - current_length))
-        elif current_length > original_length:
-            # Crop the output to match the original input length
-            x = x[:, :, :original_length]
+        if self.final is not None:
+            x = self.final(x)
 
-        return x
-
-
-def pad_multiple(x: torch.Tensor, base: int):
-    length = x.shape[-1]
-    target = math.ceil(length / base) * base
-    return torch.nn.functional.pad(x, (0, target - length))
+        out = x[:, :, :length]
+        return out
 
 
 class ScaledEmbedding(nn.Module):
@@ -490,209 +398,108 @@ class ConvSequence(nn.Module):
         return x
 
 
-class DualPathRNN(nn.Module):
-    def __init__(self, channels: int, depth: int, inner_length: int = 10):
-        super().__init__()
-        self.lstms = nn.ModuleList(
-            [nn.LSTM(channels, channels, 1) for _ in range(depth * 4)]
-        )
-        self.inner_length = inner_length
-
-    def forward(self, x: torch.Tensor):
-        B, C, L = x.shape
-        IL = self.inner_length
-        x = pad_multiple(x, self.inner_length)
-        x = x.permute(2, 0, 1).contiguous()
-        for idx, lstm in enumerate(self.lstms):
-            y = x.reshape(-1, IL, B, C)
-            if idx % 2 == 0:
-                y = y.transpose(0, 1).reshape(IL, -1, C)
-            else:
-                y = y.reshape(-1, IL * B, C)
-            y, _ = lstm(x)
-            if idx % 2 == 0:
-                y = y.reshape(IL, -1, B, C).transpose(0, 1).reshape(-1, B, C)
-            else:
-                y = y.reshape(-1, B, C)
-            x = x + y
-
-            if idx % 2 == 1:
-                x = x.flip(dims=(0,))
-        return x[:L].permute(1, 2, 0).contiguous()
-
-
-class FourierEmb(nn.Module):
-    """
-    Fourier positional embedding.
-
-    Unlike trad. embedding this is not using exponential periods
-    for cosines and sinuses, but typical `2 pi k` which can represent
-    any function over [0, 1]. As this function would be necessarily periodic,
-    we take a bit of margin and do over [-0.2, 1.2].
+class LSTM(nn.Module):
+    """A wrapper for nn.LSTM that outputs the same amount
+    of features if bidirectional or not bidirectional.
     """
 
-    def __init__(self, dimension: int = 256, margin: float = 0.2):
+    def __init__(self, input_size, hidden_size, num_layers, dropout, bidirectional):
         super().__init__()
-        n_freqs = (dimension // 2) ** 0.5
-        assert int(n_freqs**2 * 2) == dimension
-        self.dimension = dimension
-        self.margin = margin
-
-    def forward(self, positions):
-        *O, D = positions.shape
-        assert D == 2
-        *O, D = positions.shape
-        n_freqs = (self.dimension // 2) ** 0.5
-        freqs_y = torch.arange(n_freqs).to(positions)
-        freqs_x = freqs_y[:, None]
-        width = 1 + 2 * self.margin
-        positions = positions + self.margin
-        p_x = 2 * math.pi * freqs_x / width
-        p_y = 2 * math.pi * freqs_y / width
-        positions = positions[..., None, None, :]
-        loc = (positions[..., 0] * p_x + positions[..., 1] * p_y).view(*O, -1)
-        emb = torch.cat(
-            [
-                torch.cos(loc),
-                torch.sin(loc),
-            ],
-            dim=-1,
+        self.lstm = nn.LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=dropout,
+            bidirectional=bidirectional,
         )
-        return emb
+        self.linear = None
+        if bidirectional:
+            self.linear = nn.Linear(2 * hidden_size, hidden_size)
+
+    def forward(self, x):
+        x, h = self.lstm(x)
+        if self.linear:
+            x = self.linear(x)
+        return x, h
 
 
-class ChannelDropout(nn.Module):
-    def __init__(self, ch_info, dropout: float = 0.1, rescale: bool = True):
-        """
-        Args:
-            dropout: dropout radius in normalized [0, 1] coordinates.
-            rescale: at valid, rescale all channels.
-        """
+class Attention(nn.Module):
+    def __init__(self, channels: int, radius: int = 50, heads: int = 4):
         super().__init__()
-        self.dropout = dropout
-        self.rescale = rescale
-        self.ch_info = ch_info
+        assert channels % heads == 0
+        self.content = nn.Conv1d(channels, channels, 1)
+        self.query = nn.Conv1d(channels, channels, 1)
+        self.key = nn.Conv1d(channels, channels, 1)
+        self.embedding = nn.Embedding(radius * 2 + 1, channels // heads)
+        # Let's make this embedding a bit smoother
+        weight = self.embedding.weight.data
+        weight[:] = (
+            weight.cumsum(0)
+            / torch.arange(1, len(weight) + 1).float().view(-1, 1).sqrt()
+        )
+        self.heads = heads
+        self.radius = radius
 
-    def forward(self, meg, batch):
-        if not self.dropout:
-            return meg
+        self.bn = nn.BatchNorm1d(channels)
+        self.fc = nn.Conv1d(channels, channels, 1)
+        self.scale = nn.Parameter(torch.full([channels], 0.1))
 
-        B, C, T = meg.shape
-        meg = meg.clone()
+    def forward(self, x):
+        def _split(y):
+            return y.view(y.shape[0], self.heads, -1, y.shape[2])
 
-        positions = self.position_getter.get_positions(batch)
-        valid = (~self.position_getter.is_invalid(positions)).float()
-        meg = meg * valid[:, :, None]
+        content = _split(self.content(x))
+        query = _split(self.query(x))
+        key = _split(self.key(x))
 
-        if self.training:
-            center_to_ban = torch.rand(2, device=meg.device)
-            kept = (positions - center_to_ban).norm(dim=-1) > self.dropout
-            meg = meg * kept.float()[:, :, None]
-            if self.rescale:
-                proba_kept = torch.zeros(B, C, device=meg.device)
-                n_tests = 100
-                for _ in range(n_tests):
-                    center_to_ban = torch.rand(2, device=meg.device)
-                    kept = (positions - center_to_ban).norm(dim=-1) > self.dropout
-                    proba_kept += kept.float() / n_tests
-                meg = meg / (1e-8 + proba_kept[:, :, None])
+        batch_size, _, dim, length = content.shape
 
-        return meg
+        # first index `t` is query, second index `s` is key.
+        dots = torch.einsum("bhct,bhcs->bhts", query, key)
 
+        steps = torch.arange(length, device=x.device)
+        relative = steps[:, None] - steps[None, :]
+        embs = self.embedding.weight.gather(
+            0,
+            self.radius
+            + relative.clamp_(-self.radius, self.radius).view(-1, 1).expand(-1, dim),
+        )
+        embs = embs.view(length, length, -1)
+        dots += 0.3 * torch.einsum("bhct,tsc->bhts", query, embs)
 
-class ChannelMerger(nn.Module):
-    def __init__(
-        self,
-        chout: int,
-        pos_dim: int = 256,
-        dropout: float = 0,
-        usage_penalty: float = 0.0,
-        n_subjects: int = 200,
-        per_subject: bool = False,
-    ):
-        super().__init__()
-        assert pos_dim % 4 == 0
-        self.position_getter = PositionGetter()  # type: ignore
+        # we kill any reference outside of the radius
+        dots = torch.where(
+            relative.abs() <= self.radius, dots, torch.tensor(-float("inf")).to(embs)
+        )
 
-        self.per_subject = per_subject
-        if self.per_subject:
-            self.heads = nn.Parameter(
-                torch.randn(n_subjects, chout, pos_dim, requires_grad=True)
-            )
-        else:
-            self.heads = nn.Parameter(torch.randn(chout, pos_dim, requires_grad=True))
-
-        self.heads.data /= pos_dim**0.5
-        self.dropout = dropout
-        self.embedding = FourierEmb(pos_dim)
-        self.usage_penalty = usage_penalty
-        self._penalty = torch.tensor(0.0)
-
-    @property
-    def training_penalty(self):
-        return self._penalty.to(next(self.parameters()).device)
-
-    def forward(self, meg, batch):
-        B, C, T = meg.shape
-        meg = meg.clone()
-        positions = self.position_getter.get_positions(batch)
-        embedding = self.embedding(positions)
-        score_offset = torch.zeros(B, C, device=meg.device)
-        score_offset[self.position_getter.is_invalid(positions)] = float("-inf")
-
-        if self.training and self.dropout:
-            center_to_ban = torch.rand(2, device=meg.device)
-            radius_to_ban = self.dropout
-            banned = (positions - center_to_ban).norm(dim=-1) <= radius_to_ban
-            score_offset[banned] = float("-inf")
-
-        if self.per_subject:
-            _, cout, pos_dim = self.heads.shape
-            subject = batch.subject_index
-            heads = self.heads.gather(
-                0, subject.view(-1, 1, 1).expand(-1, cout, pos_dim)
-            )
-        else:
-            heads = self.heads[None].expand(B, -1, -1)
-
-        scores = torch.einsum("bcd,bod->boc", embedding, heads)
-        scores += score_offset[:, None]
-        weights = torch.softmax(scores, dim=2)
-        out = torch.einsum("bct,boc->bot", meg, weights)
-        if self.training and self.usage_penalty > 0.0:
-            usage = weights.mean(dim=(0, 1)).sum()
-            self._penalty = self.usage_penalty * usage
+        weights = torch.softmax(dots, dim=-1)
+        out = torch.einsum("bhts,bhcs->bhct", weights, content)
+        out += 0.3 * torch.einsum("bhts,tsc->bhct", weights, embs)
+        out = out.reshape(batch_size, -1, length)
+        out = F.relu(self.bn(self.fc(out))) * self.scale.view(1, -1, 1)
         return out
 
 
-if __name__ == "__main__":
-    # Work in Progress
-    n_batch = 4
-    n_channels_in = 20
-    n_channels_out = 2  # classes (?)
-    n_times = 1000
-    hidden = 32
-    depth = 3
-    sfreq = 100.0
+# if __name__ == "__main__":
+#     # Work in Progress
+#     n_batch = 4
+#     n_channels_in = 20
+#     n_channels_out = 2  # classes (?)
+#     n_times = 1000
+#     hidden = 32
+#     depth = 3
+#     sfreq = 100.0
 
-    print("\n--- Example with STFT ---")
-    n_fft_val = 32
-    model = DeepRecurrentEncoder(
-        n_chans=n_channels_in,
-        n_outputs=n_channels_out,
-        hidden_channels=hidden,
-        depth=depth,
-        kernel_size=3,  # Smaller kernel often used with STFT
-        subject_layers=False,
-        dropout=0.1,
-        merger=False,
-        n_fft=n_fft_val,
-        fft_complex=True,
-        dual_path=1,
-        linear_out=False,
-    )
-    subject_index = torch.randint(0, 200, (n_batch,))
-    x_tensor = torch.randn(n_batch, n_channels_in, n_times)
+#     print("\n--- Example with STFT ---")
+#     n_fft_val = 32
+#     model = DeepRecurrent(
+#         n_chans=n_channels_in,
+#         n_outputs=n_channels_out,
+#         hidden_channels=hidden,
+#         depth=depth,
+#     )
+#     subject_index = torch.randint(0, 200, (n_batch,))
+#     x_tensor = torch.randn(n_batch, n_channels_in, n_times)
 
-    y = model(x_tensor)
-    print(y.shape)
+#     y = model(x_tensor)
+#     print(y.shape)

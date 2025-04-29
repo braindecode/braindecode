@@ -9,7 +9,7 @@ from .biot import BIOT
 from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
-from .deeprecurrent import DeepRecurrentEncoder
+from .deeprecurrent import DeepRecurrent
 from .deepsleepnet import DeepSleepNet
 from .eegconformer import EEGConformer
 from .eeginception_erp import EEGInceptionERP
