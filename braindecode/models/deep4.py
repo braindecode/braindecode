@@ -319,5 +319,4 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
         init.constant_(self.final_layer.conv_classifier.bias, 0)
 
-        # Start in eval mode
-        self.eval()
+        self.train()
