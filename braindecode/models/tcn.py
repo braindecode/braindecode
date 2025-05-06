@@ -161,7 +161,7 @@ class TCN(nn.Module):
             self.min_len += 2 * (kernel_size - 1) * dilation
 
         # start in eval mode
-        self.eval()
+        self.train()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.

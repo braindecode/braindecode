@@ -275,8 +275,8 @@ class EEGResNet(EEGModuleMixin, nn.Sequential):
         # Initialize all weights
         self.apply(lambda module: self._weights_init(module, self.conv_weight_init_fn))
 
-        # Start in eval mode
-        self.eval()
+        # Start in train mode
+        self.train()
 
     @staticmethod
     def _weights_init(module, conv_weight_init_fn):
