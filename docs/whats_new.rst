@@ -22,6 +22,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
+- Make sure all the models start at train model (:gh:`745` by `Bruno Aristimunha`_)
 - Enable more models to be pytorch compatible (:gh:`732` by `Bruno Aristimunha`_ and `Lucas Heck`_)
 - Making the braindecode.models compatibility with torch compile, torch export and torch jit (:gh:`729` by `Bruno Aristimunha` and `Pierre Guetschel`_)
 - Reorder the modules, functional and re-organize the codebase (:gh:`728` by `Bruno Aristimunha`_)
@@ -80,6 +81,9 @@ Enhancements
 
 Bugs
 ~~~~
+- Making the :class:`braindecode.models.SCCNet` more compatible with paper instead of source code (:gh:`742` by `Bruno Aristimunha`_)
+- Making the :class:`braindecode.models.EEGNeX` and :class:`braindecode.models.CTNet` more compatible with paper instead of source code (:gh:`740` by `Bruno Aristimunha`_)
+- Exposing extra variable to avoid problem with the parallel process (:gh:`736` by `Pierre Guetschel`_)
 - Fixing the IFNet (:gh:`739` by `Bruno Aristimunha`_)
 - Fix dead links in the documentation (:gh:`727` by `Lucas Heck`_)
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
@@ -106,6 +110,7 @@ API changes
 - Moving :class:`braindecode.models.TCN` and :class:`braindecode.models.HybridNet` to module and creating :class:`braindecode.models.BDTCN` (:gh:`673` by `Bruno Aristimunha`_)
 - Removing dead parameters from :class:`braindecode.models.EEGNetv4` (:gh:`676` by `Bruno Aristimunha`_)
 - Including Linear Layer at the end :class:`braindecode.models.EEGNetv4` (:gh:`680` by `Bruno Aristimunha`_)
+- Expose ``copy_data`` parameter in :func:`braindecode.preprocessing.preprocess` (:gh:`736` by `Pierre Guetschel`_)
 
 .. _changes_0_8_0:
 

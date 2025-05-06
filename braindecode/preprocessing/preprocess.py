@@ -111,6 +111,7 @@ def preprocess(
     overwrite: bool = False,
     n_jobs: int | None = None,
     offset: int = 0,
+    copy_data: bool | None = None,
 ):
     """Apply preprocessors to a concat dataset.
 
@@ -137,6 +138,9 @@ def preprocess(
         concat. This is useful in the setting of very large datasets, where
         one dataset has to be processed and saved at a time to account for
         its original position.
+    copy_data : bool | None
+        Whether the data passed to the different jobs should be copied or
+        passed by reference.
 
     Returns
     -------
@@ -163,7 +167,11 @@ def preprocess(
             preprocessors,
             save_dir,
             overwrite,
-            copy_data=(parallel_processing and (save_dir is None)),
+            copy_data=(
+                (parallel_processing and (save_dir is None))
+                if copy_data is None
+                else copy_data
+            ),
         )
         for i, ds in enumerate(concat_ds.datasets)
     )
