@@ -75,6 +75,7 @@ Enhancements
 - Adding support for distributed samplers (:gh:`695` by `Young Truong`_)
 - Adding :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` :gh:`702` :gh:`704` by `Pierre Guetschel`_ )
 - Add :class:`braindecode.models.SignalJEPA` plus downstream architectures (:gh:`703` by `Pierre Guetschel`_ )
+- Adding tutorial for :func:`braindecode.preprocessing.windowers.create_fixed_length_windows` (:gh:`746` by `Aniela Bulicz` and `Arina Schippers` and `Aron van Zuijlen`)
 - Various improvements on documentation:
 
   * :gh:`706` by `Pierre Guetschel`_

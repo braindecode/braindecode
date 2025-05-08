@@ -114,19 +114,23 @@ Fixed-Length Windows Extraction
 # Example Usage
 # -------------
 #
+from numpy import multiply
 
 from braindecode.datasets import MOABBDataset
-from braindecode.preprocessing import create_fixed_length_windows, preprocess, Preprocessor
-from numpy import multiply
+from braindecode.preprocessing import (
+    Preprocessor,
+    create_fixed_length_windows,
+    preprocess
+)
 
 # Load the EEG dataset
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
 
 # Preprocessing
 preprocessors = [
-    Preprocessor('pick_types', eeg=True, meg=False, stim=False),
+    Preprocessor("pick_types", eeg=True, meg=False, stim=False),
     Preprocessor(lambda data: multiply(data, 1e6)),
-    Preprocessor('filter', l_freq=4.0, h_freq=38.0),
+    Preprocessor("filter", l_freq=4.0, h_freq=38.0),
 ]
 preprocess(dataset, preprocessors)
 
@@ -134,7 +138,7 @@ preprocess(dataset, preprocessors)
 sfreq = dataset.datasets[0].raw.info["sfreq"]
 
 # Create windows
-window_size_samples = int(sfreq * 2)          # 2-second windows
+window_size_samples = int(sfreq * 2)  # 2-second windows
 window_stride_samples = int(window_size_samples * 0.5)  # 50% overlap
 
 windows_dataset = create_fixed_length_windows(
@@ -146,15 +150,17 @@ windows_dataset = create_fixed_length_windows(
     drop_last_window=True,
     mapping=None,
     preload=True,
-    picks='eeg',            # Only EEG channels
-    reject=dict(eeg=150e-6), # Reject windows where EEG p2p > 150 µV
+    picks="eeg",  # Only EEG channels
+    reject=dict(eeg=150e-6),  # Reject windows where EEG p2p > 150 µV
     flat=None,
-    targets_from='metadata',
+    targets_from="metadata",
     last_target_only=True,
-    on_missing='warning',
+    on_missing="warning",
     n_jobs=1,
-    verbose='error',
+    verbose="error",
 )
 
-print(f"Created {len(windows_dataset)} windows with shape {windows_dataset[0][0].shape}")
+print(
+    f"Created {len(windows_dataset)} windows with shape {windows_dataset[0][0].shape}"
+)
 
