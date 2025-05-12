@@ -111,17 +111,16 @@ Fixed-Length Windows Extraction
 
 
 ######################################################################
-# Example Usage
+# Example 1: Basic 2-Second, 50% Overlapping Windows
 # -------------
 #
-from numpy import multiply
-
 from braindecode.datasets import MOABBDataset
 from braindecode.preprocessing import (
     Preprocessor,
     create_fixed_length_windows,
-    preprocess
+    preprocess,
 )
+
 
 # Load the EEG dataset
 dataset = MOABBDataset(dataset_name="BNCI2014001", subject_ids=[1])
@@ -160,7 +159,117 @@ windows_dataset = create_fixed_length_windows(
     verbose="error",
 )
 
+# Let's inspect the output to better understand what we created.
+
+# Check how many windows were created
 print(
-    f"Created {len(windows_dataset)} windows with shape {windows_dataset[0][0].shape}"
+    f"Number of windows: {len(windows_dataset)}"
 )
 
+# Each window contains EEG data of fixed size
+X, y = windows_dataset[0]
+print(
+    f"Window data shape: {X.shape}"
+)
+print(
+    f"Window label: {y}"
+)
+
+######################################################################
+# Working with Targets
+# --------------------
+# In `create_fixed_length_windows`, targets can be derived in two ways:
+#
+# 1. From the recording metadata (e.g., "session", "condition"). This is the default when `targets_from='metadata'`.
+# 2. From signal channels themselves when `targets_from='channels'`, useful for cases like sleep staging where
+#    annotations are stored in auxiliary channels.
+#
+#
+# Additionally:
+#
+# - **mapping**: Optionally map target values (e.g. from "0train" / "1test" to 0 / 1).
+# - **last_target_only=True** (default): If multiple targets are present within a window (as in time-varying labels),
+#   use only the final target value in that window.
+
+# Example: mapping session names ("0train" and "1test") to integers
+
+mapping = {"0train": 0, "1test": 1}
+
+windows_dataset = create_fixed_length_windows(
+    dataset,
+    window_size_samples=window_size_samples,
+    window_stride_samples=window_stride_samples,
+    drop_last_window=True,
+    mapping=mapping,
+    preload=True,
+)
+
+# View first few targets
+print(
+    "Targets for first 10 windows:"
+)
+print(
+    windows_dataset.datasets[0].windows.get_metadata()['target'][:10]
+)
+
+
+######################################################################
+# Example: Rejecting Windows Based on Amplitude
+# ------------------------------------
+#
+# You can set rejection criteria to exclude windows with extreme values:
+
+reject_criteria = dict(eeg=150e-6)  # 150 µV max peak-to-peak allowed
+
+windows_with_rejection = create_fixed_length_windows(
+    concat_ds=dataset,
+    window_size_samples=200,
+    window_stride_samples=100,
+    reject=reject_criteria,
+    drop_last_window=True
+)
+
+print(
+    windows_with_rejection
+)
+
+######################################################################
+# Example: Using lazy metadata generation
+# ---------------------------------------
+#
+# For large datasets, it can be faster to generate metadata on-demand:
+
+lazy_windows = create_fixed_length_windows(
+    concat_ds=dataset,
+    window_size_samples=200,
+    window_stride_samples=100,
+    drop_last_window=True,
+    lazy_metadata=True
+)
+
+print(
+    lazy_windows
+)
+
+######################################################################
+#Example: Shifted Windows
+# ---------------------------------------
+#
+# You can also create shifted windows by using ``start_offset_samples`` or ``stop_offset_samples``.
+# For example, start windowing 500 ms later into the recording.
+
+start_offset_seconds = 0.5
+start_offset_samples = int(start_offset_seconds * sfreq)
+
+shifted_windows_dataset = create_fixed_length_windows(
+    dataset,
+    start_offset_samples=start_offset_samples,
+    window_size_samples=window_size_samples,
+    window_stride_samples=window_stride_samples,
+    drop_last_window=True,
+    preload=True,
+)
+
+print(
+    f"Number of shifted windows: {len(shifted_windows_dataset)}"
+)
