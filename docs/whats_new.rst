@@ -338,4 +338,4 @@ Authors
 .. _Baricocchi Martina: https://github.com/MartiElTaquito
 .. _Laura Euverman: https://github.com/LauraEU
 .. _Teun Stiphout: https://github.com/tstiphout
-.. _Lennard Chung: 
+.. _Lennard Chung: https://github.com/LCYC1
