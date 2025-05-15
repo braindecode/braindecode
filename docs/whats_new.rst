@@ -75,6 +75,7 @@ Enhancements
 - Adding support for distributed samplers (:gh:`695` by `Young Truong`_)
 - Adding :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` :gh:`702` :gh:`704` by `Pierre Guetschel`_ )
 - Add :class:`braindecode.models.SignalJEPA` plus downstream architectures (:gh:`703` by `Pierre Guetschel`_ )
+- Adding documentation for :func:`create_windows_from_events` (:gh:`747` by `Baricocchi Martina`_, `Laura Euverman`_, `Teun Stiphout`_, `Lennard Chung`_)
 - Various improvements on documentation:
 
   * :gh:`706` by `Pierre Guetschel`_
@@ -334,3 +335,7 @@ Authors
 .. _Young Truong: https://github.com/dungscout96
 .. _Lucas Heck: https://github.com/lucas-heck
 .. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
+.. _Baricocchi Martina: https://github.com/MartiElTaquito
+.. _Laura Euverman: https://github.com/LauraEU
+.. _Teun Stiphout: https://github.com/tstiphout
+.. _Lennard Chung: 

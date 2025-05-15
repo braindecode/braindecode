@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1W9xx18khCjr0KogBTv1tK5VmDBqlUDku
 """
 
-# The following tutorial will introduse to you how to work with the create_windows_from_events function.
+# The following tutorial will introduce to you how to work with the create_windows_from_events function.
 
 # To get started, you should first import the needed packages. In this case, we need to install the braindecode package,
 # and the moabb library, as we use this for the example.
@@ -19,8 +19,8 @@ Original file is located at
 # we will only import this function from the braindecode.preprocessing package.
 # For the example dataset, we also import MOABBDataset from the braindecode.datasets package. This will provide our sample data.
 
-from braindecode.preprocessing import create_windows_from_events
 from braindecode.datasets import MOABBDataset
+from braindecode.preprocessing import create_windows_from_events
 
 # To explore the parameter options accompanied by the function, we can directly access the doc.
 # Here we find some information on the function itself, as well as a small explanation on the function.
@@ -41,7 +41,7 @@ dataset = MOABBDataset(dataset_name="BNCI2014_001", subject_ids=[subject_id])
 # For exploration, all parameters are included in the function.
 # To explain the effects of the function, we have included a couple of parameters which are easy to manipulate.
 # Adjusting the window_size_samples parameter will cut windows in your chosen size.
-# The window_stride_samples parameter determines the amount of overlap the windows can have with eachother.
+# The window_stride_samples parameter determines the amount of overlap the windows can have with each other.
 windows_dataset = create_windows_from_events(
     dataset,
     window_size_samples=None,
