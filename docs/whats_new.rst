@@ -22,7 +22,7 @@ Current 0.9 (dev0)
 
 Enhancements
 ~~~~~~~~~~~~
-- Make sure all the models start at train model (:gh:`751` by `Bruno Aristimunha`_)
+- Make sure all the models start at train model (:gh:`745` by `Bruno Aristimunha`_)
 - Enable more models to be pytorch compatible (:gh:`732` by `Bruno Aristimunha`_ and `Lucas Heck`_)
 - Making the braindecode.models compatibility with torch compile, torch export and torch jit (:gh:`729` by `Bruno Aristimunha` and `Pierre Guetschel`_)
 - Reorder the modules, functional and re-organize the codebase (:gh:`728` by `Bruno Aristimunha`_)
