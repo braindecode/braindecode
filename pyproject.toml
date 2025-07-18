@@ -1,6 +1,6 @@
 [project]
 name = "braindecode"
-version = "0.8.1"
+version = "1.0.0"
 description = "Deep learning software to decode EEG, ECG or MEG signals"
 authors = [{ name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }]
 maintainers = [
@@ -33,11 +33,12 @@ classifiers = [
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
+    'Programming Language :: Python :: 3.12',
 ]
 readme = "README.rst"
 requires-python = ">3.9"
 dependencies = [
-    'mne', # because of python 3.12
+    'mne>=1.10.0',
     'numpy',
     'pandas',
     'scipy',
@@ -50,7 +51,7 @@ dependencies = [
     'joblib',
     'torchinfo',
     'wfdb',
-    "h5py!=3.12.0", # because wfdb use h5py and this issue: https://github.com/h5py/h5py/issues/2505
+    'h5py', 
     'linear_attention_transformer',
     'docstring_inheritance',
 ]
@@ -61,7 +62,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
-bids = ['mne_bids>=0.14']
+bids = ['mne_bids>=0.16']
 tests = [
     'pytest',
     'pytest-cov',
