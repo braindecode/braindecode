@@ -17,7 +17,7 @@ What's new
 
 .. _current:
 
-Current 1.0.1 (dev)
+Current 1.1 (dev)
 ----------------------
 
 Enhancements
