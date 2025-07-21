@@ -294,7 +294,7 @@ like functional API.
      rescale_parameter
      safe_log
      square
-     squeeze_final_output
+
 
 Datasets
 ========
