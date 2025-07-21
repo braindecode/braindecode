@@ -874,6 +874,8 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Replace first trial by a new shorter one
     annots.delete(0)
     del annot_0["orig_time"]
+    del annot_0["extras"] # empty extra dict
+
     annots.append(**annot_0)
     concat_ds.datasets[0].raw.set_annotations(annots)
     with pytest.warns(UserWarning, match=".* are being dropped as the window size .*"):

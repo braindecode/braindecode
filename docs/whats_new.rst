@@ -17,7 +17,20 @@ What's new
 
 .. _current:
 
-Current 0.9 (dev0)
+Current 1.1 (dev)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+
+Bugs
+~~~~
+
+API changes
+~~~~~~~~~~~
+
+
+Current 1.0 (stable)
 ----------------------
 
 Enhancements
