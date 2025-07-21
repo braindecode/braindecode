@@ -62,7 +62,6 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
-bids = ['']
 tests = [
     'pytest',
     'pytest-cov',
