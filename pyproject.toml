@@ -38,6 +38,7 @@ readme = "README.rst"
 requires-python = ">3.9"
 dependencies = [
     'mne>=1.10.0',
+    'mne_bids>=0.16',
     'numpy',
     'pandas',
     'scipy',
@@ -61,7 +62,7 @@ documentation = "https://braindecode.org/stable/index.html"
 
 [project.optional-dependencies]
 moabb = ["moabb>=1.2.0"]
-bids = ['mne_bids>=0.16']
+bids = ['']
 tests = [
     'pytest',
     'pytest-cov',
