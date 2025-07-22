@@ -30,7 +30,7 @@ API changes
 ~~~~~~~~~~~
 
 
-Current 1.0 (stable)
+Version 1.0 (stable)
 ----------------------
 
 Enhancements
@@ -127,7 +127,7 @@ API changes
 
 .. _changes_0_8_0:
 
-Current 0.8 (11-2022)
+Version 0.8 (11-2022)
 ----------------------
 
 Enhancements
@@ -194,7 +194,7 @@ API changes
 
 .. _changes_0_7_0:
 
-Current 0.7 (10-2022)
+Version 0.7 (10-2022)
 ----------------------
 
 Enhancements
