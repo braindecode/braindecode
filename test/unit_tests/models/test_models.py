@@ -1474,3 +1474,12 @@ def test_eegnex_final_layer_in_features(n_times_input):
     )
 
     print(model)
+
+@pytest.mark.parametrize("batch_norm", [True, False])
+def test_batchnorm_deep4net(batch_norm):
+    """
+    Test the number of trainable parameters in Deep4Net model.
+    """
+    model = Deep4Net(n_outputs=2, n_chans=22, n_times=1000, batch_norm=batch_norm)
+    
+    assert model is not None
