@@ -115,6 +115,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         batch_norm=True,
         batch_norm_alpha=0.1,
         stride_before_pool=False,
+        # Braindecode EEGModuleMixin parameters
         chs_info=None,
         input_window_seconds=None,
         sfreq=None,
@@ -299,7 +300,7 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         if self.split_first_layer:
             init.xavier_uniform_(self.conv_time_spat.conv_spat.weight, gain=1)
             if not self.batch_norm:
-                init.constant_(self.conv_spat.bias, 0)
+                init.constant_(self.conv_time_spat.conv_spat.bias, 0)
         if self.batch_norm:
             init.constant_(self.bnorm.weight, 1)
             init.constant_(self.bnorm.bias, 0)
