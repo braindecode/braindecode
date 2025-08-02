@@ -26,6 +26,7 @@ Enhancements
 Bugs
 ~~~~
 - Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`752` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
