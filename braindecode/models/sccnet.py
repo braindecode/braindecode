@@ -4,6 +4,7 @@
 # License: BSD (3-clause)
 
 import math
+from warnings import warn
 
 import torch
 from einops.layers.torch import Rearrange
@@ -98,9 +99,33 @@ class SCCNet(EEGModuleMixin, nn.Module):
         self.n_spatial_filters_smooth = n_spatial_filters_smooth
         self.drop_prob = drop_prob
 
-        self.samples_100ms = int(math.floor(self.sfreq * 0.1))
-        self.kernel_size_pool = int(self.sfreq * 0.5)
-        # Equivalent to 0.5 seconds
+        # Original logical for SCCNet
+        conv_kernel_time = 0.1  # 100ms
+        pool_kernel_time = 0.5  # 500ms
+
+        # Calculate sample-based sizes from time durations
+        conv_kernel_samples = int(math.floor(self.sfreq * conv_kernel_time))
+        pool_kernel_samples = int(math.floor(self.sfreq * pool_kernel_time))
+
+        # If the input window is too short for the default kernel sizes,
+        # scale them down proportionally.
+        total_kernel_samples = conv_kernel_samples + pool_kernel_samples
+
+        if self.n_times < total_kernel_samples:
+            warning_msg = (
+                f"Input window seconds ({self.input_window_seconds:.2f}s) is smaller than the "
+                f"model's combined kernel sizes ({(total_kernel_samples / self.sfreq):.2f}s). "
+                "Scaling temporal parameters down proportionally."
+            )
+            warn(warning_msg, UserWarning, stacklevel=2)
+
+            scaling_factor = self.n_times / total_kernel_samples
+            conv_kernel_samples = int(math.floor(conv_kernel_samples * scaling_factor))
+            pool_kernel_samples = int(math.floor(pool_kernel_samples * scaling_factor))
+
+        # Ensure kernels are at least 1 sample wide
+        self.samples_100ms = max(1, conv_kernel_samples)
+        self.kernel_size_pool = max(1, pool_kernel_samples)
 
         num_features = self._calc_num_features()
 
@@ -135,7 +160,7 @@ class SCCNet(EEGModuleMixin, nn.Module):
 
         self.dropout = nn.Dropout(self.drop_prob)
         self.temporal_smoothing = nn.AvgPool2d(
-            kernel_size=(1, int(self.sfreq / 2)),
+            kernel_size=(1, self.kernel_size_pool),
             stride=(1, self.samples_100ms),
         )
 
