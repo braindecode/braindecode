@@ -39,12 +39,14 @@ from braindecode.models import (
     HybridNet,
     IFNet,
     Labram,
+    SCCNet,
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
     SleepStagerChambon2018,
     SleepStagerEldele2021,
     SPARCNet,
     TIDNet,
+    TSceptionV1,
     USleep,
 )
 from braindecode.util import set_random_seeds
@@ -86,6 +88,25 @@ def check_forward_pass(model, input_sizes, only_check_until_dim=None):
         y_pred_new.detach().cpu().numpy(),
         atol=1e-4,
         rtol=0,
+    )
+
+def check_forward_pass_3d(model, input_sizes, only_check_until_dim=None):
+    rng = np.random.RandomState(42)
+
+    # Test 3d input
+    X = rng.randn(
+        input_sizes["n_samples"],
+        input_sizes["n_channels"],
+        input_sizes["n_in_times"],
+    )
+    X = torch.Tensor(X.astype(np.float32))
+    set_random_seeds(0, False)
+    X = X.squeeze(-1)
+    assert len(X.shape) == 3
+    y_pred_new = model(X)
+    assert y_pred_new.shape[:only_check_until_dim] == (
+        input_sizes["n_samples"],
+        input_sizes["n_classes"],
     )
 
 
@@ -720,6 +741,241 @@ def test_model_creation(model):
     assert model is not None
 
 
+def test_sparcnet_dummy():
+    input_sizes = dict(n_channels=32, n_in_times=125, n_classes=2, n_samples=64)
+    model = SPARCNet(
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
+        n_times=input_sizes["n_in_times"],
+        sfreq=500.0,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (256, 8, 256.0, 2),
+        (204, 8, 256.0, 2),
+        (125, 32, 500.0, 2),
+        (204, 16, 256.0, 2),
+        (128, 16, 128.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = ATCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (125, 32, 500.0, 2),
+        (614, 64, 2048.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_tsceptionv1_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = TSceptionV1(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (125, 32, 500.0, 2),
+        (614, 64, 2048.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = SCCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (2000, 63, 500.0, 4),
+    ],
+)
+def test_eeginceptionmi_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = EEGInceptionMI(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        input_window_seconds=n_times / sfreq,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (256, 8, 256.0, 2),
+        (204, 8, 256.0, 2),
+        (125, 32, 500.0, 2),
+        (204, 16, 256.0, 2),
+        (128, 16, 128.0, 2),
+        (384, 14, 128.0, 5),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_deep4net_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = Deep4Net(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (1536, 16, 512.0, 3),
+        (512, 16, 512.0, 2),
+        (125, 32, 500.0, 2),
+        (2560, 32, 512.0, 2),
+        (2560, 13, 512.0, 2),
+        (512, 32, 512.0, 2),
+        (2560, 15, 512.0, 2),
+        (1024, 30, 1024.0, 2),
+        (5120, 16, 512.0, 2),
+        (1536, 64, 512.0, 2),
+        (2048, 32, 2048.0, 2),
+        (614, 64, 2048.0, 2),
+        (1536, 61, 512.0, 7),
+        (899, 31, 1000.0, 2),
+        (4000, 62, 1000.0, 4),
+        (4000, 62, 1000.0, 2),
+        (153, 8, 512.0, 2),
+        (1000, 62, 1000.0, 2),
+        (1200, 31, 1000.0, 2),
+    ],
+)
+def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = ContraWR(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (204, 8, 256.0, 2),
+        (125, 32, 500.0, 2),
+        (204, 16, 256.0, 2),
+        (614, 64, 2048.0, 2),
+        (899, 31, 1000.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_biot_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = BIOT(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (125, 32, 500.0, 2),
+        (128, 16, 128.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_attentionbasenet_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = AttentionBaseNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
 
 def test_conformer_forward_pass(sample_input, model):
     output = model(sample_input)
@@ -803,7 +1059,6 @@ def default_biot_params():
         "hop_length": 50,
         "n_outputs": 2,
         "n_chans": 64,
-        "n_times": 1000,
     }
 
 
@@ -1073,7 +1328,7 @@ def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
 
 def test_parameters_contrawr():
 
-    model = ContraWR(n_outputs=2, n_chans=22, sfreq=250, n_times=1000)
+    model = ContraWR(n_outputs=2, n_chans=22, sfreq=250)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # 1.6M parameters according to the Labram paper, table 1
