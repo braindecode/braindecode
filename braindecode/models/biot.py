@@ -87,6 +87,10 @@ class BIOT(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         activation: nn.Module = nn.ELU,
         drop_prob: float = 0.5,
+        # Parameters for the encoder
+        max_seq_len: int = 1024,
+        attn_dropout=0.2,
+        attn_layer_dropout=0.2,
     ):
         super().__init__(
             n_outputs=n_outputs,
@@ -123,14 +127,29 @@ class BIOT(EEGModuleMixin, nn.Module):
                 UserWarning,
             )
             hop_length = self.sfreq // 2
+
+        if self.input_window_seconds < 1.0:
+            warning_msg = (
+                "The input window is less than 1 second, which may not be "
+                "sufficient for the model to learn meaningful representations."
+                "changing the `n_fft` to `n_times`."
+            )
+            warn(warning_msg, UserWarning)
+            self.n_fft = self.n_times
+        else:
+            self.n_fft = int(self.sfreq)
+
         self.encoder = _BIOTEncoder(
             emb_size=emb_size,
             att_num_heads=att_num_heads,
             n_layers=n_layers,
             n_chans=self.n_chans,
-            n_fft=self.sfreq,
+            n_fft=self.n_fft,
             hop_length=hop_length,
             drop_prob=drop_prob,
+            max_seq_len=max_seq_len,
+            attn_dropout=attn_dropout,
+            attn_layer_dropout=attn_layer_dropout,
         )
 
         self.final_layer = _ClassificationHead(
@@ -231,12 +250,11 @@ class _ClassificationHead(nn.Sequential):
 
     def __init__(self, emb_size: int, n_outputs: int, activation: nn.Module = nn.ELU):
         super().__init__()
-        self.classification_head = nn.Sequential(
-            activation(),
-            nn.Linear(emb_size, n_outputs),
-        )
+        self.activation_layer = activation()
+        self.classification_head = nn.Linear(emb_size, n_outputs)
 
     def forward(self, x):
+        x = self.activation_layer(x)
         out = self.classification_head(x)
         return out
 
@@ -344,6 +362,9 @@ class _BIOTEncoder(nn.Module):
         n_fft=200,  # Related with the frequency resolution
         hop_length=100,
         drop_prob: float = 0.1,
+        max_seq_len: int = 1024,  # The maximum sequence length
+        attn_dropout=0.2,  # dropout post-attention
+        attn_layer_dropout=0.2,  # dropout right after self-attention layer
     ):
         super().__init__()
 
@@ -357,9 +378,9 @@ class _BIOTEncoder(nn.Module):
             dim=emb_size,
             heads=att_num_heads,
             depth=n_layers,
-            max_seq_len=1024,
-            attn_layer_dropout=0.2,  # dropout right after self-attention layer
-            attn_dropout=0.2,  # dropout post-attention
+            max_seq_len=max_seq_len,
+            attn_layer_dropout=attn_layer_dropout,
+            attn_dropout=attn_dropout,
         )
         self.positional_encoding = _PositionalEncoding(emb_size, drop_prob=drop_prob)
 
