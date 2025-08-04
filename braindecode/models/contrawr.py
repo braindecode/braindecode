@@ -114,8 +114,10 @@ class ContraWR(EEGModuleMixin, nn.Module):
                 for i in range(len(res_channels) - 1)
             ]
         )
-        self.activation_layer = activation()
+        self.adaptative_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.flatten_layer = nn.Flatten()
 
+        self.activation_layer = activation()
         self.final_layer = nn.Linear(emb_size, self.n_outputs)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
@@ -133,10 +135,13 @@ class ContraWR(EEGModuleMixin, nn.Module):
         """
         X = self.torch_stft(X)
 
-        for conv in self.convs[:-1]:
+        for conv in self.convs:
             X = conv.forward(X)
-        emb = self.convs[-1](X).squeeze(-1).squeeze(-1)
+
+        emb = self.adaptative_pool(X)
+        emb = self.flatten_layer(emb)
         emb = self.activation_layer(emb)
+
         return self.final_layer(emb)
 
 
