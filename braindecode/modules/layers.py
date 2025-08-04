@@ -110,7 +110,7 @@ class SqueezeFinalOutput(nn.Module):
     """
 
     Removes empty dimension at end and potentially removes empty time
-    dimension. It does  not just use squeeze as we never want to remove
+    dimension. It does not just use squeeze as we never want to remove
     first dimension.
 
     Returns

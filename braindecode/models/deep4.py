@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 from einops.layers.torch import Rearrange
+from mne.utils import warn
 from torch import nn
 from torch.nn import init
 
@@ -156,6 +157,27 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         self.batch_norm_alpha = batch_norm_alpha
         self.stride_before_pool = stride_before_pool
 
+        min_n_times = self._get_min_n_times()
+        if self.n_times < min_n_times:
+            scaling_factor = self.n_times / min_n_times
+            warn(
+                f"n_times ({self.n_times}) is smaller than the minimum required "
+                f"({min_n_times}) for the current model parameters configuration. "
+                "Adjusting parameters to ensure compatibility."
+                "Reducing the kernel, pooling, and stride sizes accordingly."
+                "Scaling factor: {:.2f}".format(scaling_factor),
+                UserWarning,
+            )
+            # Calculate a scaling factor to adjust temporal parameters
+            # Apply the scaling factor to all temporal kernel and pooling sizes
+            self.filter_time_length = max(
+                1, int(self.filter_time_length * scaling_factor)
+            )
+            self.pool_time_length = max(1, int(self.pool_time_length * scaling_factor))
+            self.pool_time_stride = max(1, int(self.pool_time_stride * scaling_factor))
+            self.filter_length_2 = max(1, int(self.filter_length_2 * scaling_factor))
+            self.filter_length_3 = max(1, int(self.filter_length_3 * scaling_factor))
+            self.filter_length_4 = max(1, int(self.filter_length_4 * scaling_factor))
         # For the load_state_dict
         # When padronize all layers,
         # add the old's parameters here
@@ -269,7 +291,6 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
             self, self.n_filters_3, self.n_filters_4, self.filter_length_4, 4
         )
 
-        # self.add_module('drop_classifier', nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":
             self.final_conv_length = self.get_output_shape()[2]
@@ -321,3 +342,31 @@ class Deep4Net(EEGModuleMixin, nn.Sequential):
         init.constant_(self.final_layer.conv_classifier.bias, 0)
 
         self.train()
+
+    def _get_min_n_times(self) -> int:
+        """
+        Calculate the minimum number of time samples required for the model
+        to work with the given temporal parameters.
+        """
+        # Start with the minimum valid output length of the network (1)
+        min_len = 1
+
+        # List of conv kernel sizes and pool parameters for the 4 blocks, in reverse order
+        # Each tuple: (filter_length, pool_length, pool_stride)
+        block_params = [
+            (self.filter_length_4, self.pool_time_length, self.pool_time_stride),
+            (self.filter_length_3, self.pool_time_length, self.pool_time_stride),
+            (self.filter_length_2, self.pool_time_length, self.pool_time_stride),
+            (self.filter_time_length, self.pool_time_length, self.pool_time_stride),
+        ]
+
+        # Work backward from the last layer to the input
+        for filter_len, pool_len, pool_stride in block_params:
+            # Reverse the pooling operation
+            # L_in = stride * (L_out - 1) + kernel_size
+            min_len = pool_stride * (min_len - 1) + pool_len
+            # Reverse the convolution operation (assuming stride=1)
+            # L_in = L_out + kernel_size - 1
+            min_len = min_len + filter_len - 1
+
+        return min_len

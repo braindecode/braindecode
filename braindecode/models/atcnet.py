@@ -5,6 +5,7 @@ import math
 
 import torch
 from einops.layers.torch import Rearrange
+from mne.utils import warn
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -130,6 +131,45 @@ class ATCNet(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
+
+        # Validate and adjust parameters based on input size
+
+        min_len_tcn = (tcn_kernel_size - 1) * (2 ** (tcn_depth - 1)) + 1
+        # Minimum length required to get at least one sliding window
+        min_len_sliding = n_windows + min_len_tcn - 1
+        # Minimum input size that produces the required feature map length
+        min_n_times = min_len_sliding * conv_block_pool_size_1 * conv_block_pool_size_2
+
+        # 2. If the input is shorter, calculate a scaling factor
+        if self.n_times < min_n_times:
+            scaling_factor = self.n_times / min_n_times
+            warn(
+                f"n_times ({self.n_times}) is smaller than the minimum required "
+                f"({min_n_times}) for the current model parameters configuration. "
+                "Adjusting parameters to ensure compatibility."
+                "Reducing the kernel, pooling, and stride sizes accordingly."
+                "Scaling factor: {:.2f}".format(scaling_factor),
+                UserWarning,
+            )
+            conv_block_kernel_length_1 = max(
+                1, int(conv_block_kernel_length_1 * scaling_factor)
+            )
+            conv_block_kernel_length_2 = max(
+                1, int(conv_block_kernel_length_2 * scaling_factor)
+            )
+            conv_block_pool_size_1 = max(
+                1, int(conv_block_pool_size_1 * scaling_factor)
+            )
+            conv_block_pool_size_2 = max(
+                1, int(conv_block_pool_size_2 * scaling_factor)
+            )
+
+            # n_windows should be at least 1
+            n_windows = max(1, int(n_windows * scaling_factor))
+
+            # tcn_kernel_size must be at least 2 for dilation to work
+            tcn_kernel_size = max(2, int(tcn_kernel_size * scaling_factor))
+
         self.conv_block_n_filters = conv_block_n_filters
         self.conv_block_kernel_length_1 = conv_block_kernel_length_1
         self.conv_block_kernel_length_2 = conv_block_kernel_length_2
