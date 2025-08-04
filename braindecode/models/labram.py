@@ -166,10 +166,22 @@ class Labram(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
         self.patch_size = patch_size
-        self.n_path = self.n_times // patch_size
         self.num_features = self.emb_size = emb_size
         self.neural_tokenizer = neural_tokenizer
         self.init_scale = init_scale
+
+        if patch_size > self.n_times:
+            warn(
+                f"patch_size ({patch_size}) > n_times ({self.n_times}); "
+                f"setting patch_size = {self.n_times}.",
+                UserWarning,
+            )
+            self.patch_size = self.n_times
+            self.num_features = None
+            self.emb_size = None
+        else:
+            self.patch_size = patch_size
+        self.n_path = self.n_times // self.patch_size
 
         if neural_tokenizer and in_channels != 1:
             warn(
@@ -220,8 +232,17 @@ class Labram(EEGModuleMixin, nn.Module):
                     emb_dim=self.emb_size,
                 ),
             )
+
+        with torch.no_grad():
+            dummy = torch.zeros(1, self.n_chans, self.n_times)
+            out = self.patch_embed(dummy)
+        # out.shape for tokenizer: (1, n_chans, emb_dim)
+        # for decoder:        (1, n_patch, patch_size, emb_dim), but we want last dim
+        self.emb_size = out.shape[-1]
+        self.num_features = self.emb_size
+
         # Defining the parameters
-        # Creating a parameter list with cls token
+        # Creating a parameter list with cls token]
         self.cls_token = nn.Parameter(torch.zeros(1, 1, self.emb_size))
         # Positional embedding and time embedding are complementary
         # one is for the spatial information and the other is for the temporal
@@ -366,7 +387,6 @@ class Labram(EEGModuleMixin, nn.Module):
         x : torch.Tensor
             The output of the model.
         """
-
         if self.neural_tokenizer:
             batch_size, nch, n_patch, temporal = self.patch_embed.segment_patch(x).shape
         else:
