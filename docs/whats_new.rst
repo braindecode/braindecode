@@ -28,6 +28,7 @@ Bugs
 - Fixing several models to be be compatibility with small windows size(:gh:`756` by `Bruno Aristimunha`_)
 - Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
 - Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`754` by `Bruno Aristimunha`_)
+- Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
