@@ -69,6 +69,19 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         conv_bias: bool = True,
         batch_norm: bool = True,
         activation: nn.Module = nn.ELU,
+        kernel_size_conv0: int = 7,
+        kernel_size_conv1: int = 1,
+        kernel_size_conv2: int = 3,
+        kernel_size_pool: int = 3,
+        stride_pool: int = 2,
+        stride_conv0: int = 2,
+        stride_conv1: int = 1,
+        stride_conv2: int = 1,
+        padding_pool: int = 1,
+        padding_conv0: int = 3,
+        padding_conv2: int = 1,
+        kernel_size_trans: int = 2,
+        stride_trans: int = 2,
         # EEGModuleMixin parameters
         # (another way to present the same parameters)
         chs_info=None,
@@ -96,9 +109,9 @@ class SPARCNet(EEGModuleMixin, nn.Module):
                     nn.Conv1d(
                         in_channels=self.n_chans,
                         out_channels=out_channels,
-                        kernel_size=7,
-                        stride=2,
-                        padding=3,
+                        kernel_size=kernel_size_conv0,
+                        stride=stride_conv0,
+                        padding=padding_conv0,
                         bias=conv_bias,
                     ),
                 )
@@ -106,7 +119,11 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         )
         first_conv["norm0"] = nn.BatchNorm1d(out_channels)
         first_conv["act_layer"] = activation()
-        first_conv["pool0"] = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
+        first_conv["pool0"] = nn.MaxPool1d(
+            kernel_size=kernel_size_pool,
+            stride=stride_pool,
+            padding=padding_pool,
+        )
 
         self.encoder = nn.Sequential(first_conv)
 
@@ -123,6 +140,11 @@ class SPARCNet(EEGModuleMixin, nn.Module):
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
                 activation=activation,
+                kernel_size_conv1=kernel_size_conv1,
+                kernel_size_conv2=kernel_size_conv2,
+                stride_conv1=stride_conv1,
+                stride_conv2=stride_conv2,
+                padding_conv2=padding_conv2,
             )
             self.encoder.add_module("denseblock%d" % (n_layer + 1), block)
             # update the number of channels after each dense block
@@ -134,16 +156,19 @@ class SPARCNet(EEGModuleMixin, nn.Module):
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
                 activation=activation,
+                kernel_size_trans=kernel_size_trans,
+                stride_trans=stride_trans,
             )
             self.encoder.add_module("transition%d" % (n_layer + 1), trans)
             # update the number of channels after each transition layer
             n_channels = n_channels // 2
 
+        self.adaptative_pool = nn.AdaptiveAvgPool1d(1)
+        self.activation_layer = activation()
+        self.flatten_layer = nn.Flatten()
+
         # add final convolutional layer
-        self.final_layer = nn.Sequential(
-            activation(),
-            nn.Linear(n_channels, self.n_outputs),
-        )
+        self.final_layer = nn.Linear(n_channels, self.n_outputs)
 
         self._init_weights()
 
@@ -178,7 +203,10 @@ class SPARCNet(EEGModuleMixin, nn.Module):
         torch.Tensor
             The output tensor of the model with shape (batch_size, n_outputs)
         """
-        emb = self.encoder(X).squeeze(-1)
+        emb = self.encoder(X)
+        emb = self.adaptative_pool(emb)
+        emb = self.activation_layer(emb)
+        emb = self.flatten_layer(emb)
         out = self.final_layer(emb)
         return out
 
@@ -224,6 +252,11 @@ class _DenseLayer(nn.Sequential):
         conv_bias: bool = True,
         batch_norm: bool = True,
         activation: nn.Module = nn.ELU,
+        kernel_size_conv1: int = 1,
+        kernel_size_conv2: int = 3,
+        stride_conv1: int = 1,
+        stride_conv2: int = 1,
+        padding_conv2: int = 1,
     ):
         super().__init__()
         if batch_norm:
@@ -235,8 +268,8 @@ class _DenseLayer(nn.Sequential):
             nn.Conv1d(
                 in_channels=in_channels,
                 out_channels=bottleneck_size * growth_rate,
-                kernel_size=1,
-                stride=1,
+                kernel_size=kernel_size_conv1,
+                stride=stride_conv1,
                 bias=conv_bias,
             ),
         )
@@ -248,9 +281,9 @@ class _DenseLayer(nn.Sequential):
             nn.Conv1d(
                 in_channels=bottleneck_size * growth_rate,
                 out_channels=growth_rate,
-                kernel_size=3,
-                stride=1,
-                padding=1,
+                kernel_size=kernel_size_conv2,
+                stride=stride_conv2,
+                padding=padding_conv2,
                 bias=conv_bias,
             ),
         )
@@ -311,6 +344,11 @@ class _DenseBlock(nn.Sequential):
         conv_bias=True,
         batch_norm=True,
         activation: nn.Module = nn.ELU,
+        kernel_size_conv1: int = 1,
+        kernel_size_conv2: int = 3,
+        stride_conv1: int = 1,
+        stride_conv2: int = 1,
+        padding_conv2: int = 1,
     ):
         super(_DenseBlock, self).__init__()
         for idx_layer in range(num_layers):
@@ -322,6 +360,11 @@ class _DenseBlock(nn.Sequential):
                 conv_bias=conv_bias,
                 batch_norm=batch_norm,
                 activation=activation,
+                kernel_size_conv1=kernel_size_conv1,
+                kernel_size_conv2=kernel_size_conv2,
+                stride_conv1=stride_conv1,
+                stride_conv2=stride_conv2,
+                padding_conv2=padding_conv2,
             )
             self.add_module(f"denselayer{idx_layer + 1}", layer)
 
@@ -360,6 +403,8 @@ class _TransitionLayer(nn.Sequential):
         conv_bias=True,
         batch_norm=True,
         activation: nn.Module = nn.ELU,
+        kernel_size_trans: int = 2,
+        stride_trans: int = 2,
     ):
         super(_TransitionLayer, self).__init__()
         if batch_norm:
@@ -375,4 +420,6 @@ class _TransitionLayer(nn.Sequential):
                 bias=conv_bias,
             ),
         )
-        self.add_module("pool", nn.AvgPool1d(kernel_size=2, stride=2))
+        self.add_module(
+            "pool", nn.AvgPool1d(kernel_size=kernel_size_trans, stride=stride_trans)
+        )
