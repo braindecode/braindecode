@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from einops.layers.torch import Rearrange
+from mne.utils import warn
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
@@ -162,6 +163,33 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, sfreq, input_window_seconds
 
+        min_n_times_required = self._get_min_n_times(
+            pool_length_inp,
+            pool_stride_inp,
+            pool_length,
+        )
+
+        if self.n_times < min_n_times_required:
+            scaling_factor = self.n_times / min_n_times_required
+            warn(
+                f"n_times ({self.n_times}) is smaller than the minimum required "
+                f"({min_n_times_required}) for the current model parameters configuration. "
+                "Adjusting parameters to ensure compatibility."
+                "reducing the kernel, pooling, and stride sizes accordingly.\n"
+                "Scaling factor: {:.2f}".format(scaling_factor),
+                UserWarning,
+            )
+            # 3. Scale down all temporal parameters proportionally
+            # Use max(1, ...) to ensure parameters remain valid
+            temp_filter_length_inp = max(
+                1, int(temp_filter_length_inp * scaling_factor)
+            )
+            pool_length_inp = max(1, int(pool_length_inp * scaling_factor))
+            pool_stride_inp = max(1, int(pool_stride_inp * scaling_factor))
+            temp_filter_length = max(1, int(temp_filter_length * scaling_factor))
+            pool_length = max(1, int(pool_length * scaling_factor))
+            pool_stride = max(1, int(pool_stride * scaling_factor))
+
         self.input_block = _FeatureExtractor(
             n_chans=self.n_chans,
             n_temporal_filters=n_temporal_filters,
@@ -230,6 +258,27 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
             out = math.floor((out - pl) / ps + 1)
             seq_lengths.append(int(out))
         return seq_lengths
+
+    @staticmethod
+    def _get_min_n_times(
+        pool_length_inp: int,
+        pool_stride_inp: int,
+        pool_length: int,
+    ) -> int:
+        """
+        Calculates the minimum n_times required for the model to work
+        with the given parameters.
+
+        The calculation is based on reversing the pooling operations to
+        ensure the input to each is valid.
+        """
+        # The input to the second pooling layer must be at least its kernel size.
+        min_len_for_second_pool = pool_length
+
+        # Reverse the first pooling operation to find the required input size.
+        # Formula: min_L_in = Stride * (min_L_out - 1) + Kernel
+        min_len = pool_stride_inp * (min_len_for_second_pool - 1) + pool_length_inp
+        return min_len
 
 
 class _FeatureExtractor(nn.Module):
