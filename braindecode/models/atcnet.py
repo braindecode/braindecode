@@ -151,7 +151,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 f"n_times ({self.n_times}) is smaller than the minimum required "
                 f"({min_n_times}) for the current model parameters configuration. "
                 "Adjusting parameters to ensure compatibility."
-                "reducing the kernel, pooling, and stride sizes accordingly."
+                "Reducing the kernel, pooling, and stride sizes accordingly."
                 "Scaling factor: {:.2f}".format(scaling_factor),
                 UserWarning,
             )

@@ -106,7 +106,7 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
                 self.input_window_seconds / 4,
             )
             warning_msg = (
-                "Input window size is smaller than the maximum inception window size."
+                "Input window size is smaller than the maximum inception window size. "
                 "We are adjusting the input window size to match the maximum inception window size.\n"
                 f"Original input window size: {self.inception_windows}, \n"
                 f"Adjusted inception windows: {inception_windows}"

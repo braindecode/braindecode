@@ -25,6 +25,7 @@ Enhancements
 
 Bugs
 ~~~~
+- Fixing several models to be be compatibility with small windows size(:gh:`745` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~

@@ -82,7 +82,7 @@ class ContraWR(EEGModuleMixin, nn.Module):
             warning_msg = (
                 "The input window is less than 1 second, which may not be "
                 "sufficient for the model to learn meaningful representations."
-                "changing the `n_fft` to `n_times`."
+                "Changing the `n_fft` to `n_times`."
             )
             warn(warning_msg, UserWarning)
             self.n_fft = self.n_times
