@@ -1059,6 +1059,7 @@ def default_biot_params():
         "hop_length": 50,
         "n_outputs": 2,
         "n_chans": 64,
+        "n_times": 1000,
     }
 
 
@@ -1328,7 +1329,7 @@ def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
 
 def test_parameters_contrawr():
 
-    model = ContraWR(n_outputs=2, n_chans=22, sfreq=250)
+    model = ContraWR(n_outputs=2, n_chans=22, sfreq=250, n_times=1000)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # 1.6M parameters according to the Labram paper, table 1
