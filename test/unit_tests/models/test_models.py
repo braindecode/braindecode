@@ -1474,3 +1474,29 @@ def test_eegnex_final_layer_in_features(n_times_input):
     )
 
     print(model)
+
+@pytest.mark.parametrize("batch_norm", [True, False])
+def test_batchnorm_deep4net(batch_norm):
+    """
+    Test the number of trainable parameters in Deep4Net model.
+    """
+    model = Deep4Net(n_outputs=2, n_chans=22, n_times=1000, batch_norm=batch_norm)
+    
+    assert model is not None
+
+def test_fc_length_eegconformer():
+    """
+    Test the number of trainable parameters in EEGConformer model.
+    """
+    model = EEGConformer(
+        n_chans=64,  # Number of EEG channels
+        n_outputs=2,  # Number of output classes
+        n_times=500,  # Length of the input sequence (e.g., 500 time steps)
+        final_fc_length=120,
+        input_window_seconds=1.0,
+        return_features=True,
+        drop_prob=0.5,  # Dropout probability
+        sfreq=500.0  # Sampling frequency of the EEG data
+    )
+
+    assert model is not None

@@ -70,9 +70,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
     tcn_kernel_size : int
         Temporal kernel size used in TCN block, denoted Kt in table 1 of the
         paper [1]_. Defaults to 4 as in [1]_.
-    tcn_n_filters : int
-        Number of filters used in TCN convolutional layers (Ft). Defaults to
-        32 as in [1]_.
     tcn_dropout : float
         Dropout probability used in the TCN block, denoted pt in table 1
         of the paper [1]_. Defaults to 0.3 as in [1]_.
@@ -118,7 +115,6 @@ class ATCNet(EEGModuleMixin, nn.Module):
         att_drop_prob=0.5,
         tcn_depth=2,
         tcn_kernel_size=4,
-        tcn_n_filters=32,
         tcn_drop_prob=0.3,
         tcn_activation: nn.Module = nn.ELU,
         concat=False,
@@ -187,12 +183,11 @@ class ATCNet(EEGModuleMixin, nn.Module):
         self.att_dropout = att_drop_prob
         self.tcn_depth = tcn_depth
         self.tcn_kernel_size = tcn_kernel_size
-        self.tcn_n_filters = tcn_n_filters
         self.tcn_dropout = tcn_drop_prob
         self.tcn_activation = tcn_activation
         self.concat = concat
         self.max_norm_const = max_norm_const
-
+        self.tcn_n_filters = int(self.conv_block_depth_mult * self.conv_block_n_filters)
         map = dict()
         for w in range(self.n_windows):
             map[f"max_norm_linears.[{w}].weight"] = f"final_layer.[{w}].weight"
@@ -237,13 +232,13 @@ class ATCNet(EEGModuleMixin, nn.Module):
                     *[
                         _TCNResidualBlock(
                             in_channels=self.F2,
-                            kernel_size=tcn_kernel_size,
-                            n_filters=tcn_n_filters,
-                            dropout=tcn_drop_prob,
-                            activation=tcn_activation,
+                            kernel_size=self.tcn_kernel_size,
+                            n_filters=self.tcn_n_filters,
+                            dropout=self.tcn_dropout,
+                            activation=self.tcn_activation,
                             dilation=2**i,
                         )
-                        for i in range(tcn_depth)
+                        for i in range(self.tcn_depth)
                     ]
                 )
                 for _ in range(self.n_windows)

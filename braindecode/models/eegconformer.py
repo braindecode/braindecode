@@ -2,11 +2,8 @@
 #
 # License: BSD (3-clause)
 import warnings
-from typing import Optional
 
 import torch
-import torch.nn.functional as F
-from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 
@@ -150,6 +147,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         if final_fc_length == "auto":
             assert self.n_times is not None
             self.final_fc_length = self.get_fc_size()
+        else:
+            self.final_fc_length = final_fc_length
 
         self.transformer = _TransformerEncoder(
             att_depth=att_depth,
