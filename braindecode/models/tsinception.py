@@ -7,6 +7,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
+from mne.utils import warn
 
 from braindecode.models.base import EEGModuleMixin
 
@@ -98,20 +99,44 @@ class TSceptionV1(EEGModuleMixin, nn.Module):
 
         ### Layers
         self.ensuredim = Rearrange("batch nchans time -> batch 1 nchans time")
+        if self.input_window_seconds < max(self.inception_windows):
+            inception_windows = (
+                self.input_window_seconds,
+                self.input_window_seconds / 2,
+                self.input_window_seconds / 4,
+            )
+            warning_msg = (
+                "Input window size is smaller than the maximum inception window size."
+                "We are adjusting the input window size to match the maximum inception window size.\n"
+                f"Original input window size: {self.inception_windows}, \n"
+                f"Adjusted inception windows: {inception_windows}"
+            )
+            warn(warning_msg, UserWarning)
+            self.inception_windows = inception_windows
         # Define temporal convolutional layers (Tception)
-        self.temporal_blocks = nn.ModuleList(
-            [
-                self._conv_block(
-                    in_channels=1,
-                    out_channels=number_filter_temp,
-                    kernel_size=(1, int(window * self.sfreq)),
-                    stride=1,
-                    pool_size=self.pool_size,
-                    activation=self.activation,
-                )
-                for window in self.inception_windows
-            ]
-        )
+        self.temporal_blocks = nn.ModuleList()
+        for window in self.inception_windows:
+            # 1. Calculate the temporal kernel size for this block
+            kernel_size_t = int(window * self.sfreq)
+
+            # 2. Calculate the output length of the convolution
+            conv_out_len = self.n_times - kernel_size_t + 1
+
+            # 3. Ensure the pooling size is not larger than the conv output
+            #    and is at least 1.
+            dynamic_pool_size = max(1, min(self.pool_size, conv_out_len))
+
+            # 4. Create the block with the dynamic pooling size
+            block = self._conv_block(
+                in_channels=1,
+                out_channels=self.number_filter_temp,
+                kernel_size=(1, kernel_size_t),
+                stride=1,
+                pool_size=dynamic_pool_size,  # Use the dynamic size
+                activation=self.activation,
+            )
+            self.temporal_blocks.append(block)
+
         self.batch_temporal_lay = nn.BatchNorm2d(self.number_filter_temp)
 
         # Define spatial convolutional layers (Sception)
