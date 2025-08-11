@@ -585,3 +585,28 @@ def test_completeness_summary_table(model_class):
         f"{model_class.__name__} is not in the summary table. "
         f"Please add it to the summary table."
     )
+
+
+def test_if_models_with_embedding_parameter(model):
+    # Test if the model that have embedding parameters works changing the default
+    # embedding value
+
+    # first step is to inspect the models parameters
+    params = inspect.signature(model.__init__).parameters
+
+    # check if there is any mention to emb_size or embedding_dim or emb
+    # or return_features or feature
+
+    parameters_related_with_emb = ["emb_size", "embedding_dim", "emb", \
+                                   "return_features", "feature"]
+
+    # check if any of the parameters related to embedding are present in the model
+    if not any(param in params for param in parameters_related_with_emb):
+        pytest.skip(
+            f"{model.__class__.__name__} does not have an embedding parameter."
+        )
+    else:
+        # debugging now
+        raise NotImplementedError(
+            f"{model.__class__.__name__} has an embedding parameter."
+        )
