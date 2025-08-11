@@ -6,8 +6,13 @@ import numpy as np
 import torch
 from skorch.utils import to_numpy, to_tensor
 
+from braindecode.util import set_random_seeds
 
-def compute_amplitude_gradients(model, dataset, batch_size):
+
+def compute_amplitude_gradients(model, dataset, batch_size, seed=20240205):
+    """Compute amplitude gradients after seeding for reproducibility."""
+    cuda = next(model.parameters()).is_cuda
+    set_random_seeds(seed=seed, cuda=cuda)
     loader = torch.utils.data.DataLoader(
         dataset, batch_size=batch_size, drop_last=False, shuffle=False
     )
