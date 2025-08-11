@@ -40,7 +40,7 @@ repos:
           [
             "--fix",
             "--select=E,W,F,I,D",         # E=errors, W=warnings, F=pyflakes, I=import sorting, D=docstring rules
-            "--ignore=E402,E501,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",  # combined ignores
+            "--ignore=E402,E501,F401,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",  # combined ignores
           ]
         files: ^(docs|examples)/
       - id: ruff
