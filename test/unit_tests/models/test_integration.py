@@ -585,3 +585,46 @@ def test_completeness_summary_table(model_class):
         f"{model_class.__name__} is not in the summary table. "
         f"Please add it to the summary table."
     )
+
+
+def test_if_models_with_embedding_parameter(model):
+    # Test if the model that have embedding parameters works changing the default
+    # embedding value
+    model_name = model.__class__.__name__
+    # first step is to inspect the models parameters
+    params = inspect.signature(model.__init__).parameters
+
+    # check if there is any mention to emb_size or embedding_dim or emb
+    # or return_features or feature
+
+    parameters_related_with_emb = ["emb_size", "embedding_dim", "emb",
+                                   "return_features", "feature"]
+
+    # check if any of the parameters related to embedding are present in the model
+    if not any(param in params for param in parameters_related_with_emb):
+        pytest.skip(
+            f"{model_name} does not have an embedding parameter."
+        )
+    else:
+        # getting the parameters name
+        emb_param = next((param for param in params if param in parameters_related_with_emb), None)
+
+    # getting the emb parameter and re-initializing the model
+    # changing only this parameters
+    new_value = 128
+
+    model_dict = {name: (args, defaults) for name, args, defaults in models_mandatory_parameters}
+
+    mandatory_parameters, sig_params = model_dict[model_name]
+    signal_params = get_sp(sig_params, mandatory_parameters)
+    # redefining the embedding parameter
+    signal_params[emb_param] = new_value
+
+    model = models_dict[model_name](**signal_params)
+
+    print(f"Model {model_name} has an embedding parameter {emb_param} with value {new_value}.")
+    # assert not error when print the model
+    try:
+        print(model)
+    except Exception as e:
+        pytest.fail(f"Error printing model {model_name}: {e}")
