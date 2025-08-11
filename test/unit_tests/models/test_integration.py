@@ -4,12 +4,11 @@
 #
 # License: BSD-3
 from __future__ import annotations
-import sys
+
 import inspect
 import os
-
+import sys
 from copy import deepcopy
-import inspect
 from types import MethodType
 from typing import Any
 
@@ -19,7 +18,7 @@ import pytest
 import torch
 from skorch.dataset import ValidSplit
 from torch import nn
-from torch.export import export, ExportedProgram
+from torch.export import ExportedProgram, export
 
 from braindecode import EEGClassifier
 from braindecode.models import (
@@ -117,7 +116,7 @@ def get_sp(
             ]
         assert isinstance( sp["n_times"], int)
         assert isinstance( sp["sfreq"], float)
-        assert isinstance( sp["input_window_seconds"], float)         
+        assert isinstance( sp["input_window_seconds"], float)
         if "input_window_seconds" not in signal_params:
             sp["input_window_seconds"] = sp["n_times"] / sp["sfreq"]
         if "sfreq" not in signal_params:
@@ -559,7 +558,7 @@ def test_model_torch_script(model):
     output_model = model(input_tensor)
     output_model_recreated = final_plain_model(input_tensor)
     assert output_model.shape == output_model_recreated.shape
-    
+
     torch.testing.assert_close(output_model, output_model_recreated)
     # convert the new model to scripted
     scripted_model = torch.jit.script(final_plain_model)
@@ -568,10 +567,10 @@ def test_model_torch_script(model):
     scripted_model.save(fname)
 
     os.remove(fname)
-    # now that we can save, 
+    # now that we can save,
     # erasing the model from the memory
-    # 
-     
+    #
+
     # print(f"Model {model_class.__name__} passed the test.")
     # Continue this tests later. Not now...
     # output_script = scripted_model(input_tensor)

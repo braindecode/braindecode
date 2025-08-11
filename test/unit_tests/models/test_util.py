@@ -8,20 +8,15 @@ import inspect
 import numpy as np
 import pytest
 from sklearn.preprocessing import OneHotEncoder
-from torch import nn
 
 from braindecode import models
-from braindecode.modules import Expression
+from braindecode.models.util import (
+    models_dict,
+)
 from braindecode.modules.util import (
     _pad_shift_array,
     aggregate_probas,
 )
-from braindecode.models.util import (
-    models_dict,
-)
-
-
-
 
 
 @pytest.mark.parametrize("dtype", [np.float16, np.float32, np.float64])

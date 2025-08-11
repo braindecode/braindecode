@@ -8,7 +8,6 @@ from copy import deepcopy
 from typing import Any, Sequence
 
 import torch
-from einops import parse_shape, rearrange, repeat
 from einops.layers.torch import Rearrange
 from torch import nn
 
