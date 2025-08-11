@@ -607,7 +607,7 @@ def test_if_models_with_embedding_parameter(model):
         )
     else:
         # getting the parameters name
-        emb_param = next(param for param in params if param in parameters_related_with_emb)
+        emb_param = next((param for param in params if param in parameters_related_with_emb), None)
 
     # getting the emb parameter and re-initializing the model
     # changing only this parameters
