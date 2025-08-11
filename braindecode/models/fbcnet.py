@@ -5,7 +5,7 @@ from typing import Any
 import torch
 from einops.layers.torch import Rearrange
 from mne.utils import warn
-from torch import Tensor, nn
+from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (

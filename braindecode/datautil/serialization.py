@@ -107,7 +107,14 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
 def _load_signals_and_description(path, preload, is_raw, ids_to_load=None):
     all_signals = []
     file_name = "{}-raw.fif" if is_raw else "{}-epo.fif"
-    description_df = pd.read_json(path / "description.json")
+    description_df = pd.read_json(
+        path / "description.json", typ="series", convert_dates=False
+    )
+
+    if "timestamp" in description_df.index:
+        timestamp_numeric = pd.to_numeric(description_df["timestamp"])
+        description_df["timestamp"] = pd.to_datetime(timestamp_numeric)
+
     if ids_to_load is None:
         file_names = path.glob(f"*{file_name.lstrip('{}')}")
         # Extract ids, e.g.,
@@ -242,7 +249,11 @@ def _load_parallel(path, i, preload, is_raw, has_stored_windows):
     signals = _load_signals(fif_file_path, preload, is_raw)
 
     description_file_path = sub_dir / "description.json"
-    description = pd.read_json(description_file_path, typ="series")
+    description = pd.read_json(description_file_path, typ="series", convert_dates=False)
+
+    # if 'timestamp' in description.index:
+    #     timestamp_numeric = pd.to_numeric(description['timestamp'])
+    #     description['timestamp'] = pd.to_datetime(timestamp_numeric, unit='s')
 
     target_file_path = sub_dir / "target_name.json"
     target_name = None

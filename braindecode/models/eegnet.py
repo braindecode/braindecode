@@ -14,7 +14,6 @@ from braindecode.models.base import EEGModuleMixin
 from braindecode.modules import (
     Conv2dWithConstraint,
     Ensure4d,
-    Expression,
     LinearWithConstraint,
     SqueezeFinalOutput,
 )

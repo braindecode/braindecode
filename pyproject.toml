@@ -51,7 +51,7 @@ dependencies = [
     'joblib',
     'torchinfo',
     'wfdb',
-    'h5py', 
+    'h5py',
     'linear_attention_transformer',
     'docstring_inheritance',
 ]
@@ -109,7 +109,7 @@ skip_glob = ["test/*", "examples/*"]
 py_version = 311
 profile = "black"
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]  # :contentReference[oaicite:0]{index=0}
-known_first_party = ["braindecode"]   
+known_first_party = ["braindecode"]
 lines_between_sections = 1
 
 [pytest]
