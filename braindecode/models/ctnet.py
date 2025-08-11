@@ -178,7 +178,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         self.trans = _TransformerEncoder(
             self.heads,
             self.depth,
-            int(self.emb_size),
+            self.emb_size,
             activation=self.activation_transformer,
         )
 
