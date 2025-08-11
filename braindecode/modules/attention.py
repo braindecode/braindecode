@@ -157,7 +157,8 @@ class FCA(nn.Module):
     ):
         super(FCA, self).__init__()
         mapper_y = [freq_idx]
-        assert in_channels % len(mapper_y) == 0
+        if in_channels % len(mapper_y) != 0:
+            raise ValueError("in_channels must be divisible by number of DCT filters")
 
         self.weight = nn.Parameter(
             self.get_dct_filter(seq_len, mapper_y, in_channels), requires_grad=False
@@ -295,7 +296,8 @@ class ECA(nn.Module):
     def __init__(self, in_channels: int, kernel_size: int):
         super(ECA, self).__init__()
         self.gap = nn.AdaptiveAvgPool2d(1)
-        assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
+        if kernel_size % 2 != 1:
+            raise ValueError("kernel size must be odd for same padding")
         self.conv = nn.Conv1d(
             1, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False
         )
@@ -530,7 +532,8 @@ class CBAM(nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels // reduction_rate, in_channels, 1, bias=False),
         )
-        assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
+        if kernel_size % 2 != 1:
+            raise ValueError("kernel size must be odd for same padding")
         self.conv = nn.Conv2d(2, 1, (1, kernel_size), padding=(0, kernel_size // 2))
 
     def forward(self, x):
