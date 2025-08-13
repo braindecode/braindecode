@@ -17,11 +17,24 @@ What's new
 
 .. _current:
 
-Current 1.1 (dev)
+Current 1.2 (dev)
 ----------------------
 
 Enhancements
 ~~~~~~~~~~~~
+
+Bugs
+~~~~
+
+Current 1.1 (stable)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+
+API changes
+~~~~~~~~~~~
+
 
 Bugs
 ~~~~
@@ -35,7 +48,7 @@ API changes
 ~~~~~~~~~~~
 
 
-Version 1.0 (stable)
+Version 1.0
 ----------------------
 
 Enhancements
