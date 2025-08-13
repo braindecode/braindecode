@@ -1,6 +1,6 @@
 [project]
 name = "braindecode"
-version = "1.0.0"
+version = "1.1.0"
 description = "Deep learning software to decode EEG, ECG or MEG signals"
 authors = [{ name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }]
 maintainers = [
