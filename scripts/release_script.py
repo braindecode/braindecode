@@ -43,7 +43,7 @@ def numeric_from_suffix(s: str) -> int:
     m = re.search(r"([0-9a-fA-F]{5,})", s)
     if m:
         return int(m.group(1)[:7], 16)
-    return int(hashlib.sha1(s.encode("utf-8")).hexdigest()[:8], 16, usedforsecurity=False)
+    return int(hashlib.sha1(s.encode("utf-8"), usedforsecurity=False).hexdigest()[:8], 16)
 
 
 def read_current_version(init_path: Path) -> str:
