@@ -53,6 +53,5 @@ jobs:
       with:
         fail_ci_if_error: true
         file: ./coverage.xml
-        path_to_write_report: ./codecov_report.txt
         env_vars: OS,PYTHON
         token: ${{ secrets.CODECOV_TOKEN }}
