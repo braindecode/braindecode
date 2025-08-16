@@ -26,7 +26,8 @@ Enhancements
 Bugs
 ~~~~
 
-Current 1.1 (stable)
+
+Current 1.1.1 (stable)
 ----------------------
 
 Enhancements

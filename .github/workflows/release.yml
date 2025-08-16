@@ -55,13 +55,13 @@ jobs:
           set -euo pipefail
           if [[ -n "${{ steps.ver.outputs.pr_number || '' }}" ]]; then
             python scripts/release_script.py \
-              --init-file braindecode/__init__.py \
+              --init-file braindecode/version.py \
               --pr "${{ steps.ver.outputs.pr_number }}"
           else
             # Fallback path must be supported by your script; if not, change the script
             # to accept --pr and append a compliant .devN/.postN label.
             python scripts/release_script.py \
-              --init-file braindecode/__init__.py \
+              --init-file braindecode/version.py \
               --suffix "${{ steps.ver.outputs.suffix }}"
           fi
 

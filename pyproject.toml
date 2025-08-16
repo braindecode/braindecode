@@ -47,7 +47,7 @@ dependencies = [
     'scipy',
     'matplotlib',
     'h5py',
-    'skorch>1.12.0',
+    'skorch>=1.2.0',
     "torch>=2.0,<3.0",
     "torchaudio>=2.0,<3.0",
     'einops',
@@ -86,16 +86,15 @@ docs = [
     'pre-commit',
     'openneuro-py'
 ]
-
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+all = [
+    "braindecode[moabb,tests,docs]"
+]
 
 [tool.setuptools]
 py-modules = []
 
 [tool.setuptools.dynamic]
-version = {attr = "braindecode.__version__"}
+version = {attr = "braindecode.version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
@@ -114,7 +113,7 @@ skip = [".gitignore"]
 skip_glob = ["test/*", "examples/*"]
 py_version = 311
 profile = "black"
-sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"] 
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
 known_first_party = ["braindecode"]
 lines_between_sections = 1
 
