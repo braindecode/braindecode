@@ -41,3 +41,9 @@ def test_reproducible_training_outputs():
     preds1 = _train_and_predict(seed=20240205)
     preds2 = _train_and_predict(seed=20240205)
     assert np.allclose(preds1, preds2)
+
+
+def test_reproducible_training_different_outputs():
+    preds1 = _train_and_predict(seed=2025)
+    preds2 = _train_and_predict(seed=20240205)
+    assert not np.allclose(preds1, preds2)
