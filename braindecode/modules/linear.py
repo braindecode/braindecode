@@ -1,5 +1,4 @@
-import torch
-from torch import Tensor, nn
+from torch import nn
 from torch.nn.utils.parametrize import register_parametrization
 
 from braindecode.modules.parametrization import MaxNorm, MaxNormParametrize

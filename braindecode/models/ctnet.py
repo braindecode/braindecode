@@ -10,6 +10,7 @@ classification from Wei Zhao et al. (2024).
 from __future__ import annotations
 
 import math
+from typing import Optional
 
 import torch
 from einops.layers.torch import Rearrange
@@ -57,7 +58,7 @@ class CTNet(EEGModuleMixin, nn.Module):
         Activation function to use in the network.
     heads : int, default=4
         Number of attention heads in the Transformer encoder.
-    emb_size : int, default=40
+    emb_size : int or None, default=None
         Embedding size (dimensionality) for the Transformer encoder.
     depth : int, default=6
         Number of encoder layers in the Transformer.
@@ -110,11 +111,11 @@ class CTNet(EEGModuleMixin, nn.Module):
         drop_prob_final: float = 0.5,
         # other parameters
         heads: int = 4,
-        emb_size: int = 40,
+        emb_size: Optional[int] = 40,
         depth: int = 6,
-        n_filters_time: int = 20,
+        n_filters_time: Optional[int] = None,
         kernel_size: int = 64,
-        depth_multiplier: int = 2,
+        depth_multiplier: Optional[int] = 2,
         pool_size_1: int = 8,
         pool_size_2: int = 8,
     ):
@@ -128,27 +129,28 @@ class CTNet(EEGModuleMixin, nn.Module):
         )
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
 
-        self.emb_size = emb_size
         self.activation_patch = activation_patch
         self.activation_transformer = activation_transformer
-
-        self.n_filters_time = n_filters_time
         self.drop_prob_cnn = drop_prob_cnn
         self.pool_size_1 = pool_size_1
         self.pool_size_2 = pool_size_2
-        self.depth_multiplier = depth_multiplier
         self.kernel_size = kernel_size
         self.drop_prob_posi = drop_prob_posi
         self.drop_prob_final = drop_prob_final
-
+        self.heads = heads
+        self.depth = depth
         # n_times - pool_size_1 / p
-        sequence_length = math.floor(
+        self.sequence_length = math.floor(
             (
                 math.floor((self.n_times - self.pool_size_1) / self.pool_size_1 + 1)
                 - self.pool_size_2
             )
             / self.pool_size_2
             + 1
+        )
+
+        self.depth_multiplier, self.n_filters_time, self.emb_size = self._resolve_dims(
+            depth_multiplier, n_filters_time, emb_size
         )
 
         # Layers
@@ -167,14 +169,17 @@ class CTNet(EEGModuleMixin, nn.Module):
         )
 
         self.position = _PositionalEncoding(
-            emb_size=emb_size,
+            emb_size=self.emb_size,
             drop_prob=self.drop_prob_posi,
             n_times=self.n_times,
             pool_size=self.pool_size_1,
         )
 
         self.trans = _TransformerEncoder(
-            heads, depth, emb_size, activation=self.activation_transformer
+            self.heads,
+            self.depth,
+            self.emb_size,
+            activation=self.activation_transformer,
         )
 
         self.flatten_drop_layer = nn.Sequential(
@@ -183,7 +188,8 @@ class CTNet(EEGModuleMixin, nn.Module):
         )
 
         self.final_layer = nn.Linear(
-            in_features=emb_size * sequence_length, out_features=self.n_outputs
+            in_features=int(self.emb_size * self.sequence_length),
+            out_features=self.n_outputs,
         )
 
     def forward(self, x: Tensor) -> Tensor:
@@ -209,6 +215,86 @@ class CTNet(EEGModuleMixin, nn.Module):
         flatten_feature = self.flatten(features)
         out = self.final_layer(flatten_feature)
         return out
+
+    @staticmethod
+    def _resolve_dims(
+        depth_multiplier: Optional[int],
+        n_filters_time: Optional[int],
+        emb_size: Optional[int],
+    ) -> tuple[int, int, int]:
+        # Basic type/positivity checks for provided values
+        for name, val in (
+            ("depth_multiplier", depth_multiplier),
+            ("n_filters_time", n_filters_time),
+            ("emb_size", emb_size),
+        ):
+            if val is not None:
+                if not isinstance(val, int):
+                    raise TypeError(f"{name} must be int, got {type(val).__name__}")
+                if val <= 0:
+                    raise ValueError(f"{name} must be > 0, got {val}")
+
+        missing = [
+            k
+            for k, v in {
+                "depth_multiplier": depth_multiplier,
+                "n_filters_time": n_filters_time,
+                "emb_size": emb_size,
+            }.items()
+            if v is None
+        ]
+
+        if len(missing) >= 2:
+            # Too many unknowns → ambiguous
+            raise ValueError(
+                "Specify exactly two of {depth_multiplier, n_filters_time, emb_size}; the third will be inferred."
+            )
+
+        if len(missing) == 1:
+            # Infer the missing one
+            if missing[0] == "emb_size":
+                assert depth_multiplier is not None and n_filters_time is not None
+                emb_size = depth_multiplier * n_filters_time
+            elif missing[0] == "n_filters_time":
+                assert emb_size is not None and depth_multiplier is not None
+                if emb_size % depth_multiplier != 0:
+                    raise ValueError(
+                        f"emb_size={emb_size} must be divisible by depth_multiplier={depth_multiplier}"
+                    )
+                n_filters_time = emb_size // depth_multiplier
+            else:  # missing depth_multiplier
+                assert emb_size is not None and n_filters_time is not None
+                if emb_size % n_filters_time != 0:
+                    raise ValueError(
+                        f"emb_size={emb_size} must be divisible by n_filters_time={n_filters_time}"
+                    )
+                depth_multiplier = emb_size // n_filters_time
+
+        else:
+            # All provided: enforce consistency
+            assert (
+                depth_multiplier is not None
+                and n_filters_time is not None
+                and emb_size is not None
+            )
+            prod = depth_multiplier * n_filters_time
+            if prod != emb_size:
+                raise ValueError(
+                    "`depth_multiplier * n_filters_time` must equal `emb_size`, "
+                    f"but got {depth_multiplier} * {n_filters_time} = {prod} != {emb_size}. "
+                    "Fix by setting one of: "
+                    f"emb_size={prod}, "
+                    f"n_filters_time={emb_size // depth_multiplier if emb_size % depth_multiplier == 0 else 'not integer'}, "
+                    f"depth_multiplier={emb_size // n_filters_time if emb_size % n_filters_time == 0 else 'not integer'}."
+                )
+
+        # Ensure plain ints for the return type
+        assert (
+            depth_multiplier is not None
+            and n_filters_time is not None
+            and emb_size is not None
+        )
+        return depth_multiplier, n_filters_time, emb_size
 
 
 class _PatchEmbeddingEEGNet(nn.Module):

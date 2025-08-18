@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 import torch
-from scipy.signal import hilbert
 
 from braindecode.functional import hilbert_freq, plv_time
 

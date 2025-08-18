@@ -13,7 +13,7 @@ ci:
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: check-yaml
       - id: check-json
@@ -25,16 +25,15 @@ repos:
       - id: trailing-whitespace
       - id: check-case-conflict
       - id: mixed-line-ending
-      - id: end-of-file-fixer
-      - id: check-case-conflict
       - id: forbid-new-submodules
       - id: pretty-format-json
         args: [ "--autofix", "--no-sort-keys", "--indent=4" ]
-
-repos:
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.9.7
+    rev: v0.12.9
     hooks:
+      - id: ruff-format
+        name: ruff format code
+        files: ^(braindecode|docs|examples)/
       - id: ruff
         name: ruff lint docs & examples
         args:
@@ -44,6 +43,13 @@ repos:
             "--ignore=E402,E501,F401,D103,D400,D100,D101,D102,D105,D107,D415,D417,D205",  # combined ignores
           ]
         files: ^(docs|examples)/
+      - id: ruff
+        name: ruff — remove unused imports
+        args:
+          - --fix
+          - --select=F401,I
+          - --exit-non-zero-on-fix
+        types: [python]
       - id: ruff
         name: ruff lint braindecode preview
         args:
@@ -63,10 +69,6 @@ repos:
             "--ignore=D103,D400,E402,D100,D101,D102,D105,D107,D415,D417,D205",    # drop these specific checks
           ]
         files: ^(docs|examples)/
-      - id: ruff-format
-        name: ruff format code
-        files: ^(braindecode|docs|examples)/
-
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
@@ -86,7 +88,7 @@ repos:
         exclude: ^.github|CONTRIBUTING.md
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.15.0
+    rev: v1.17.1
     hooks:
       - id: mypy
         files: braindecode/.*.py|test/.*.py|examples/.*.py
@@ -98,7 +100,7 @@ repos:
         verbose: true
 
   - repo: https://github.com/PyCQA/isort
-    rev: 6.0.1           
+    rev: 6.0.1
     hooks:
       - id: isort
         exclude: ^\.gitignore

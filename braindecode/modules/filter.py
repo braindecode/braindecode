@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-from functools import partial
 from typing import Optional
 
 import torch
-from einops.layers.torch import Rearrange
 from mne.filter import _check_coefficients, create_filter
 from mne.utils import warn
 from torch import Tensor, from_numpy, nn
 from torch.fft import fftfreq
 from torchaudio.functional import fftconvolve, filtfilt
-
-import braindecode.functional as F
 
 
 class FilterBankLayer(nn.Module):
