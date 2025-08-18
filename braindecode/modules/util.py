@@ -4,7 +4,6 @@
 # License: BSD (3-clause)
 
 import numpy as np
-import torch
 from scipy.special import log_softmax
 
 

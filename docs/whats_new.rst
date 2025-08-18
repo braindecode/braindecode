@@ -17,7 +17,7 @@ What's new
 
 .. _current:
 
-Current 1.1 (dev)
+Current 1.2 (dev)
 ----------------------
 
 Enhancements
@@ -25,16 +25,31 @@ Enhancements
 
 Bugs
 ~~~~
-- Fixing several models to be be compatibility with small windows size(:gh:`756` by `Bruno Aristimunha`_)
-- Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
-- Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`754` by `Bruno Aristimunha`_)
-- Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
+
+
+Current 1.1.1 (stable)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
 
 API changes
 ~~~~~~~~~~~
 
 
-Version 1.0 (stable)
+Bugs
+~~~~
+- Fixing several models to be be compatibility with small windows size(:gh:`756` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`754` by `Bruno Aristimunha`_)
+- Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
+- Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno Aristimunha`_)
+
+API changes
+~~~~~~~~~~~
+
+
+Version 1.0
 ----------------------
 
 Enhancements

@@ -5,7 +5,6 @@
 import math
 import warnings
 from copy import deepcopy
-from typing import Callable, Optional
 
 import torch
 import torch.nn.functional as F

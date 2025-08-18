@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "braindecode"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Deep learning software to decode EEG, ECG or MEG signals"
 authors = [{ name = "Robin Tibor Schirrmeister", email = "robintibor@gmail.com" }]
 maintainers = [
@@ -29,13 +33,12 @@ classifiers = [
     "Intended Audience :: Science/Research",
     'Topic :: Software Development :: Build Tools',
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    'License :: OSI Approved :: BSD License',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
 ]
 readme = "README.rst"
-requires-python = ">3.9"
+requires-python = ">3.10"
 dependencies = [
     'mne>=1.10.0',
     'mne_bids>=0.16',
@@ -44,14 +47,14 @@ dependencies = [
     'scipy',
     'matplotlib',
     'h5py',
-    'skorch',
-    'torch',
-    'torchaudio',
+    'skorch>=1.2.0',
+    "torch>=2.0,<3.0",
+    "torchaudio>=2.0,<3.0",
     'einops',
     'joblib',
-    'torchinfo',
+    'torchinfo~=1.8',
     'wfdb',
-    'h5py', 
+    'h5py',
     'linear_attention_transformer',
     'docstring_inheritance',
 ]
@@ -83,13 +86,15 @@ docs = [
     'pre-commit',
     'openneuro-py'
 ]
-
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+all = [
+    "braindecode[moabb,tests,docs]"
+]
 
 [tool.setuptools]
 py-modules = []
+
+[tool.setuptools.dynamic]
+version = {attr = "braindecode.version.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]  # list of folders that contain the packages (["."] by default)
@@ -108,16 +113,14 @@ skip = [".gitignore"]
 skip_glob = ["test/*", "examples/*"]
 py_version = 311
 profile = "black"
-sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]  # :contentReference[oaicite:0]{index=0}
-known_first_party = ["braindecode"]   
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+known_first_party = ["braindecode"]
 lines_between_sections = 1
 
 [pytest]
 # where to look for tests
 testpaths = ["test"]
-
 # which files count as test modules
 python_files = ["test_*.py", "*_test.py"]
-
 # which functions inside them count as tests
 python_functions = ["test_*"]

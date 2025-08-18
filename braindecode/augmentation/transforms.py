@@ -6,7 +6,6 @@
 
 import warnings
 from numbers import Real
-from typing import Callable
 
 import numpy as np
 import torch

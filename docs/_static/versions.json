@@ -1,13 +1,18 @@
 [
     {
-        "name": "1.1 (devel)",
+        "name": "1.2.0 (devel)",
         "version": "dev",
         "url": "https://braindecode.org/dev/"
     },
     {
-        "name": "1.0.0 (stable)",
+        "name": "1.1 (stable)",
         "version": "stable",
-        "url": "https://braindecode.org/stable/"
+        "url": "https://braindecode.org/1.1/"
+    },
+    {
+        "name": "1.0",
+        "version": "1.0",
+        "url": "https://braindecode.org/1.0/"
     },
     {
         "name": "0.8",

@@ -2,12 +2,11 @@
 #
 # License: BSD (3-clause)
 import platform
+from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
 import torch
-
-from warnings import catch_warnings, simplefilter
 from mne.filter import create_filter
 from mne.time_frequency import psd_array_welch
 from scipy.signal import fftconvolve as fftconvolve_scipy
@@ -16,21 +15,21 @@ from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
 
 from braindecode.functional import drop_path
+from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
+from braindecode.models.labram import _SegmentPatch
+from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.modules import (
     MLP,
+    CausalConv1d,
     CombinedConv,
     DropPath,
     FilterBankLayer,
+    GeneralizedGaussianFilter,
     LinearWithConstraint,
+    MaxNormLinear,
     SafeLog,
     TimeDistributed,
-    GeneralizedGaussianFilter,
-    CausalConv1d,
-    MaxNormLinear,
 )
-from braindecode.models.labram import _SegmentPatch
-from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
-from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 
 
 def old_maxnorm(weight: torch.Tensor,
