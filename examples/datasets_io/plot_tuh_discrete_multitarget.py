@@ -14,10 +14,12 @@ process step by step.
 # License: BSD (3-clause)
 
 import mne
+import torch
 from torch.utils.data import DataLoader
 
 from braindecode.datasets import TUH
 from braindecode.preprocessing import create_fixed_length_windows
+from braindecode.util import set_random_seeds
 
 # Setting Logging Level
 # ----------------------
@@ -26,6 +28,10 @@ from braindecode.preprocessing import create_fixed_length_windows
 # extracting windows:
 
 mne.set_log_level("ERROR")  # avoid messages every time a window is extracted
+
+cuda = torch.cuda.is_available()
+seed = 20240205
+set_random_seeds(seed=seed, cuda=cuda)
 
 
 ###############################################################################
