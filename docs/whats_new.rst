@@ -22,6 +22,11 @@ Current 1.2 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Improving the docstring for :class:`braindecode.models.EEGNetv4`.
+
+
+API changes
+~~~~~~~~~~~
 
 Bugs
 ~~~~
