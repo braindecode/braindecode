@@ -59,10 +59,6 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     *Role.* Small attention focuses on interactions among *temporal patches* (not channels),
     extending effective receptive fields at modest cost.
 
-    *Interpretability/robustness.* Per-head attention maps can be inspected to identify
-    salient temporal segments; residual paths and normalization improve stability on
-    small EEG datasets.
-
     - **ClassificationHead (aggregation + readout)**
 
     *Operations.* Flatten the sequence ``(B, S_tokens·D)`` → MLP
