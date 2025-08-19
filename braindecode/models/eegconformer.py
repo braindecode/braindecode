@@ -17,9 +17,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     :bdg-success:`Convolution` :bdg-info:`Small Attention`
 
     .. figure:: https://raw.githubusercontent.com/eeyhsong/EEG-Conformer/refs/heads/main/visualization/Fig1.png
-    :align: center
-    :alt: EEGConformer Architecture
-    :width: 600px
+        :align: center
+        :alt: EEGConformer Architecture
+        :width: 600px
 
 
     .. rubric:: Architectural Overview
@@ -27,83 +27,89 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     EEG-Conformer is a *convolution-first* model augmented with a *lightweight transformer
     encoder*. The end-to-end flow is:
 
-    - (i) **PatchEmbedding** converts the continuous EEG into a compact sequence of tokens
-        via a ShallowFBCNet-style temporal–spatial conv stem and temporal pooling;
-    - (ii) **TransformerEncoder** applies small multi-head self-attention to integrate
-        longer-range temporal context across tokens;
-    - (iii) **ClassificationHead** aggregates the sequence and performs a linear readout.
+    - (i) :class:`_PatchEmbedding` converts the continuous EEG into a compact sequence of tokens via a :class:`ShallowFBCSPNet` temporal–spatial conv stem and temporal pooling;
+    - (ii) :class:`_TransformerEncoder applies small multi-head self-attention to integrate longer-range temporal context across tokens;
+    - (iii) :class:`_ClassificationHead` aggregates the sequence and performs a linear readout.
         This preserves the strong inductive biases of shallow CNN filter banks while adding
         just enough attention to capture dependencies beyond the pooling horizon [song2022]_.
 
     .. rubric:: Macro Components
 
-    - **PatchEmbedding (Shallow conv stem → tokens)**
+    - :class:`_PatchEmbedding` **(Shallow conv stem → tokens)**
 
-    *Operations.* A temporal convolution ``(1 x L_t)`` forms a data-driven
-    filter bank; a spatial convolution ``(n_chans x 1)`` projects across electrodes;
-    then BatchNorm → ELU → **AvgPool** along time (kernel ``(1, P)`` with stride ``(1, S)``)
-    and a final ``1x1`` projection. The result is rearranged to a token sequence
-    ``(B, S_tokens, D)``, where ``D = n_filters_time``. No attention here.
+    - *Operations.*
+        - A temporal convolution (`:class:`torch.nn.Conv2d`) ``(1 x L_t)`` forms a data-driven "filter bank";
+        - A spatial convolution (`:class:`torch.nn.Conv2d`) (n_chans x 1)`` projects across electrodes, collapsing the channel axis into a virtual channel.
+        - **Normalization function** `:class:torch.nn.BatchNorm`
+        - **Activation function** `:class:torch.nn.ELU`
+        - **Average Pooling** `:class:torch.nn.AvgPool` along time (kernel ``(1, P)`` with stride ``(1, S)``)
+        -  final ``1x1`` :class:`torch.nn.Linear` projection.
+
+    The result is rearranged to a token sequence ``(B, S_tokens, D)``, where ``D = n_filters_time``.
 
     *Interpretability/robustness.* Temporal kernels can be inspected as FIR filters;
-    the spatial conv yields channel projections analogous to ShallowFBCNet’s learned
+    the spatial conv yields channel projections analogous to :class:`ShallowFBCSPNet`’s learned
     spatial filters. Temporal pooling stabilizes statistics and reduces sequence length.
 
-    - **TransformerEncoder (context over temporal tokens)**
+    - :class:`_TransformerEncoder` **(context over temporal tokens)**
 
-    - *Operations.* A stack of ``att_depth`` encoder blocks. Each block applies
-    LayerNorm → Multi-Head Self-Attention (``att_heads``) with dropout → residual,
-    followed by LayerNorm → 2-layer feed-forward (≈4x expansion, GeLU) with dropout → residual.
+    - *Operations.*
+        - A stack of ``att_depth`` encoder blocks. :class:`_TransformerEncoderBlock`
+        - Each block applies LayerNorm :class:`torch.nn.LayerNorm`
+        - Multi-Head Self-Attention (``att_heads``) with dropout + residual :class:`MultiHeadAttention` (:class:`torch.nn.Dropout`)
+        - LayerNorm :class:`torch.nn.LayerNorm`
+        - 2-layer feed-forward (≈4x expansion, :class:`torch.nn.GELU`) with dropout + residual.
+
     Shapes remain ``(B, S_tokens, D)`` throughout.
 
     *Role.* Small attention focuses on interactions among *temporal patches* (not channels),
     extending effective receptive fields at modest cost.
 
-    - **ClassificationHead (aggregation + readout)**
+    - :class:`ClassificationHead` **(aggregation + readout)**
 
-    *Operations.* Flatten the sequence ``(B, S_tokens·D)`` → MLP
-    (Linear → activation → Dropout → Linear) → final Linear to classes.
+    - *Operations*.
+        - Flatten, :class:`torch.nn.Flatten` the sequence ``(B, S_tokens·D)`` -
+        - MLP (:class:`torch.nn.Linear` → activation (default: :class:`torch.nn.ELU`) → :class:`torch.nn.Dropout` → :class:`torch.nn.Linear`)
+        - final Linear to classes.
+
     With ``return_features=True``, features before the last Linear can be exported for
     linear probing or downstream tasks.
 
     .. rubric:: Convolutional Details
 
-    **Temporal (where time-domain patterns are learned).**
-    The initial ``(1 x L_t)`` conv per channel acts as a *learned filter bank* for oscillatory
-    bands and transients. Subsequent **AvgPool** along time performs local integration,
-    converting activations into “patches” (tokens). Pool length/stride control the
-    token rate and set the lower bound on temporal context within each token.
+    - **Temporal (where time-domain patterns are learned).**
+        The initial ``(1 x L_t)`` conv per channel acts as a *learned filter bank* for oscillatory
+        bands and transients. Subsequent **AvgPool** along time performs local integration,
+        converting activations into “patches” (tokens). Pool length/stride control the
+        token rate and set the lower bound on temporal context within each token.
 
-    **Spatial (how electrodes are processed).**
-    A single conv with kernel ``(n_chans x 1)`` spans the full montage to learn spatial
-    projections for each temporal feature map, collapsing the channel axis into a
-    virtual channel before tokenization. This mirrors the shallow spatial step in
-    ShallowFBCNet (temporal filters → spatial projection → temporal condensation).
+    - **Spatial (how electrodes are processed).**
+        A single conv with kernel ``(n_chans x 1)`` spans the full montage to learn spatial
+        projections for each temporal feature map, collapsing the channel axis into a
+        virtual channel before tokenization. This mirrors the shallow spatial step in
+        :class:`ShallowFBCSPNet` (temporal filters → spatial projection → temporal condensation).
 
-    **Spectral (how frequency content is captured).**
-    No explicit Fourier/wavelet stage is used. Spectral selectivity emerges implicitly
-    from the learned temporal kernels; pooling further smooths high-frequency noise.
-    The effective spectral resolution is thus governed by ``L_t`` and the pooling
-    configuration.
+    - **Spectral (how frequency content is captured).**
+        No explicit Fourier/wavelet stage is used. Spectral selectivity emerges implicitly
+        from the learned temporal kernels; pooling further smooths high-frequency noise.
+        The effective spectral resolution is thus governed by ``L_t`` and the pooling
+        configuration.
 
     .. rubric:: Attention / Sequential Modules
 
-    **Type.** Standard multi-head self-attention (MHA) with ``att_heads`` heads over the
-    token sequence.
-    **Shapes.** Input/Output: ``(B, S_tokens, D)``; attention operates along the
-    ``S_tokens`` axis.
-    **Role.** Re-weights and integrates evidence across pooled windows, capturing
-    dependencies longer than any single token while leaving channel relationships to the
-    convolutional stem. The design is intentionally *small*—attention refines rather
-    than replaces convolutional feature extraction.
+    - **Type.** Standard multi-head self-attention (MHA) with ``att_heads`` heads over the token sequence.
+    - **Shapes.** Input/Output: ``(B, S_tokens, D)``; attention operates along the ``S_tokens`` axis.
+    - **Role.** Re-weights and integrates evidence across pooled windows, capturing dependencies
+        longer than any single token while leaving channel relationships to the convolutional stem.
+        The design is intentionally *small*—attention refines rather than replaces convolutional feature extraction.
 
     .. rubric:: Additional Mechanisms
 
-    - **Parallel with ShallowFBCNet.** Both begin with a learned temporal filter bank,
-    spatial projection across electrodes, and early temporal condensation.
-    ShallowFBCNet then computes band-power (via squaring/log-variance), whereas
-    EEG-Conformer applies BN/ELU and **continues with attention** over tokens to
-    refine temporal context before classification.
+    - **Parallel with ShallowFBCSPNet.** Both begin with a learned temporal filter bank,
+        spatial projection across electrodes, and early temporal condensation.
+        :class:`ShallowFBCSPNet` then computes band-power (via squaring/log-variance), whereas
+        EEG-Conformer applies BN/ELU and **continues with attention** over tokens to
+        refine temporal context before classification.
 
     - **Tokenization knob.** ``pool_time_length`` and especially ``pool_time_stride`` set
     the number of tokens ``S_tokens``. Smaller strides → more tokens and higher attention
@@ -125,7 +131,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     -----
     The authors recommend using data augmentation before using Conformer,
     e.g. segmentation and recombination,
-    Please refer to the original paper and code for more details.
+    Please refer to the original paper and code for more details [ConformerCode]_.
 
     The model was initially tuned on 4 seconds of 250 Hz data.
     Please adjust the scale of the temporal convolutional layer,
@@ -134,7 +140,10 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     .. versionadded:: 0.8
 
     We aggregate the parameters based on the parts of the models, or
-    when the parameters were used first, e.g. n_filters_time.
+    when the parameters were used first, e.g. ``n_filters_time``.
+
+    .. versionadded:: 1.1
+
 
     Parameters
     ----------
