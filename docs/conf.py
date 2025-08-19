@@ -166,6 +166,9 @@ templates_path = ["_templates"]
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
+rst_prolog = """
+.. role:: tag(bdg-success)
+"""
 # The master toctree document.
 master_doc = "index"
 

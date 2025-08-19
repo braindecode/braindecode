@@ -20,13 +20,60 @@ from braindecode.modules import (
 
 
 class EEGNetv4(EEGModuleMixin, nn.Sequential):
-    """EEGNet v4 model from Lawhern et al. (2018) [EEGNet4]_.
+    """EEGNet v4 model from Lawhern et al. (2018) [Lawhern2018]_.
+
+    :bdg-success:`Convolution` :bdg-secondary:`Depthwise–Separable`
 
     .. figure:: https://content.cld.iop.org/journals/1741-2552/15/5/056013/revision2/jneaace8cf01_hr.jpg
        :align: center
-       :alt: EEGNet4 Architecture
+       :alt: EEGNetv4 Architecture
+       :width: 600px
 
-    See details in [EEGNet4]_.
+    .. rubric:: Architectural Overview
+
+    EEGNetv4 is a compact convolutional network designed for EEG decoding with a
+    pipeline that mirrors classical EEG processing:
+    - (i) learn temporal frequency-selective filters,
+    - (ii) learn spatial filters for those frequencies, and
+    - (iii) condense features with depthwise–separable convolutions before a lightweight classifier.
+
+    The architecture is deliberately small (temporal convolutional and spatial patterns) [Lawhern2018]_.
+
+    .. rubric:: Macro Components
+
+    - **Temporal convolution**
+      Temporal convolution applied per channel; learns ``F1`` kernels that act as data-driven band-pass filters.
+    - **Depthwise Spatial Filtering.**
+      Depthwise convolution spanning the channel dimension with ``groups = F1``,
+      yielding ``D`` spatial filters for each temporal filter (no cross-filter mixing).
+    - **Norm–Nonlinearity–Pooling (+ dropout).**
+      Batch normalization → ELU → temporal pooling, with dropout.
+    - **Depthwise–Separable Convolution Block.**
+      (a) depthwise temporal conv to refine temporal structure;
+      (b) pointwise 1x1 conv to mix feature maps into ``F2`` combinations.
+    - **Classifier Head.**
+      Lightweight 1x1 conv or dense layer (often with max-norm constraint).
+
+    .. rubric:: Convolutional Details
+
+    **Temporal.** The initial temporal convs serve as a *learned filter bank*:
+    long 1-D kernels (implemented as 2-D with singleton spatial extent) emphasize oscillatory bands and transients.
+    Because this stage is linear prior to BN/ELU, kernels can be analyzed as FIR filters to reveal each feature’s spectrum [Lawhern2018]_.
+
+    **Spatial.** The depthwise spatial conv spans the full channel axis (kernel height = #electrodes; temporal size = 1).
+    With ``groups = F1``, each temporal filter learns its own set of ``D`` spatial projections—akin to CSP, learned end-to-end and
+    typically regularized with max-norm.
+
+    **Spectral.** No explicit Fourier/wavelet transform is used. Frequency structure
+    is captured implicitly by the temporal filter bank; later depthwise temporal kernels act as short-time integrators/refiners.
+
+    .. rubric:: Additional Comments
+
+    - **Filter-bank structure:** Parallel temporal kernels (``F1``) emulate classical filter banks; pairing them with frequency-specific spatial filters
+      yields features mappable to rhythms and topographies.
+    - **Depthwise & separable convs:** Parameter-efficient decomposition (depthwise + pointwise) retains power while limiting overfitting
+      [Chollet2017]_ and keeps temporal vs. mixing steps interpretable.
+    - **Regularization:** Batch norm, dropout, pooling, and optional max-norm on spatial kernels aid stability on small EEG datasets.
 
     Parameters
     ----------
@@ -68,10 +115,13 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
     References
     ----------
-    .. [EEGNet4] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon, S. M.,
+    .. [Lawhern2018] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon, S. M.,
         Hung, C. P., & Lance, B. J. (2018). EEGNet: a compact convolutional
         neural network for EEG-based brain–computer interfaces. Journal of
         neural engineering, 15(5), 056013.
+    .. [Chollet2017] Chollet, F., *Xception: Deep Learning with Depthwise Separable
+        Convolutions*, CVPR, 2017.
+
     """
 
     def __init__(
