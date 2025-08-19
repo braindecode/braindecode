@@ -23,6 +23,7 @@ Current 1.2 (dev)
 Enhancements
 ~~~~~~~~~~~~
 - Improving the docstring for :class:`braindecode.models.EEGNetv4`  (:gh:`768` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGConformer`  (:gh:`769` by `Bruno Aristimunha`_)
 
 
 API changes
