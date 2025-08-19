@@ -12,27 +12,118 @@ from braindecode.modules import FeedForwardBlock, MultiHeadAttention
 
 
 class EEGConformer(EEGModuleMixin, nn.Module):
-    """EEG Conformer from Song et al. (2022) from [song2022]_.
+    """EEG Conformer from Song et al. (2022) [song2022]_.
 
-     .. figure:: https://raw.githubusercontent.com/eeyhsong/EEG-Conformer/refs/heads/main/visualization/Fig1.png
-        :align: center
-        :alt: EEGConformer Architecture
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
 
-    Convolutional Transformer for EEG decoding.
+    .. figure:: https://raw.githubusercontent.com/eeyhsong/EEG-Conformer/refs/heads/main/visualization/Fig1.png
+    :align: center
+    :alt: EEGConformer Architecture
+    :width: 600px
 
-    The paper and original code with more details about the methodological
-    choices are available at the [song2022]_ and [ConformerCode]_.
 
-    This neural network architecture receives a traditional braindecode input.
-    The input shape should be three-dimensional matrix representing the EEG
-    signals.
+    .. rubric:: Architectural Overview
 
-         `(batch_size, n_channels, n_timesteps)`.
+    EEG-Conformer is a *convolution-first* model augmented with a *lightweight transformer
+    encoder*. The end-to-end flow is:
 
-    The EEG Conformer architecture is composed of three modules:
-        - PatchEmbedding
-        - TransformerEncoder
-        - ClassificationHead
+    - (i) **PatchEmbedding** converts the continuous EEG into a compact sequence of tokens
+        via a ShallowFBCNet-style temporal–spatial conv stem and temporal pooling;
+    - (ii) **TransformerEncoder** applies small multi-head self-attention to integrate
+        longer-range temporal context across tokens;
+    - (iii) **ClassificationHead** aggregates the sequence and performs a linear readout.
+        This preserves the strong inductive biases of shallow CNN filter banks while adding
+        just enough attention to capture dependencies beyond the pooling horizon [song2022]_.
+
+    .. rubric:: Macro Components
+
+    - **PatchEmbedding (Shallow conv stem → tokens)**
+
+    *Operations.* A temporal convolution ``(1 x L_t)`` forms a data-driven
+    filter bank; a spatial convolution ``(n_chans x 1)`` projects across electrodes;
+    then BatchNorm → ELU → **AvgPool** along time (kernel ``(1, P)`` with stride ``(1, S)``)
+    and a final ``1x1`` projection. The result is rearranged to a token sequence
+    ``(B, S_tokens, D)``, where ``D = n_filters_time``. No attention here.
+
+    *Interpretability/robustness.* Temporal kernels can be inspected as FIR filters;
+    the spatial conv yields channel projections analogous to ShallowFBCNet’s learned
+    spatial filters. Temporal pooling stabilizes statistics and reduces sequence length.
+
+    - **TransformerEncoder (context over temporal tokens)**
+
+    - *Operations.* A stack of ``att_depth`` encoder blocks. Each block applies
+    LayerNorm → Multi-Head Self-Attention (``att_heads``) with dropout → residual,
+    followed by LayerNorm → 2-layer feed-forward (≈4x expansion, GeLU) with dropout → residual.
+    Shapes remain ``(B, S_tokens, D)`` throughout.
+
+    *Role.* Small attention focuses on interactions among *temporal patches* (not channels),
+    extending effective receptive fields at modest cost.
+
+    *Interpretability/robustness.* Per-head attention maps can be inspected to identify
+    salient temporal segments; residual paths and normalization improve stability on
+    small EEG datasets.
+
+    - **ClassificationHead (aggregation + readout)**
+
+    *Operations.* Flatten the sequence ``(B, S_tokens·D)`` → MLP
+    (Linear → activation → Dropout → Linear) → final Linear to classes.
+    With ``return_features=True``, features before the last Linear can be exported for
+    linear probing or downstream tasks.
+
+    .. rubric:: Convolutional Details
+
+    **Temporal (where time-domain patterns are learned).**
+    The initial ``(1 x L_t)`` conv per channel acts as a *learned filter bank* for oscillatory
+    bands and transients. Subsequent **AvgPool** along time performs local integration,
+    converting activations into “patches” (tokens). Pool length/stride control the
+    token rate and set the lower bound on temporal context within each token.
+
+    **Spatial (how electrodes are processed).**
+    A single conv with kernel ``(n_chans x 1)`` spans the full montage to learn spatial
+    projections for each temporal feature map, collapsing the channel axis into a
+    virtual channel before tokenization. This mirrors the shallow spatial step in
+    ShallowFBCNet (temporal filters → spatial projection → temporal condensation).
+
+    **Spectral (how frequency content is captured).**
+    No explicit Fourier/wavelet stage is used. Spectral selectivity emerges implicitly
+    from the learned temporal kernels; pooling further smooths high-frequency noise.
+    The effective spectral resolution is thus governed by ``L_t`` and the pooling
+    configuration.
+
+    .. rubric:: Attention / Sequential Modules
+
+    **Type.** Standard multi-head self-attention (MHA) with ``att_heads`` heads over the
+    token sequence.
+    **Shapes.** Input/Output: ``(B, S_tokens, D)``; attention operates along the
+    ``S_tokens`` axis.
+    **Role.** Re-weights and integrates evidence across pooled windows, capturing
+    dependencies longer than any single token while leaving channel relationships to the
+    convolutional stem. The design is intentionally *small*—attention refines rather
+    than replaces convolutional feature extraction.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Parallel with ShallowFBCNet.** Both begin with a learned temporal filter bank,
+    spatial projection across electrodes, and early temporal condensation.
+    ShallowFBCNet then computes band-power (via squaring/log-variance), whereas
+    EEG-Conformer applies BN/ELU and **continues with attention** over tokens to
+    refine temporal context before classification.
+
+    - **Tokenization knob.** ``pool_time_length`` and especially ``pool_time_stride`` set
+    the number of tokens ``S_tokens``. Smaller strides → more tokens and higher attention
+    capacity (but higher compute); larger strides → fewer tokens and stronger inductive bias.
+
+    - **Embedding dimension = filters.** ``n_filters_time`` serves double duty as both the
+    number of temporal filters in the stem and the transformer’s embedding size ``D``,
+    simplifying dimensional alignment.
+
+    .. rubric:: Usage and Configuration
+
+    - **Instantiation.** Choose ``n_filters_time`` (embedding size ``D``) and
+    ``filter_time_length`` to match the rhythms of interest. Tune
+    ``pool_time_length/stride`` to trade temporal resolution for sequence length.
+    Keep ``att_depth`` modest (e.g., 4–6) and set ``att_heads`` to divide ``D``.
+    ``final_fc_length="auto"`` infers the flattened size from PatchEmbedding.
 
     Notes
     -----
