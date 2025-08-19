@@ -19,6 +19,8 @@ from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 from braindecode.models.labram import _SegmentPatch
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
 from braindecode.modules import (
+    CBAM,
+    ECA,
     MLP,
     CausalConv1d,
     CombinedConv,
@@ -821,13 +823,13 @@ def test_initialization_valid_parameters():
 
 def test_initialization_invalid_parameters():
     """
-    Test that the GeneralizedGaussianFilter raises an assertion error when initialized with invalid parameters.
+    Test that the GeneralizedGaussianFilter raises a ValueError when initialized with invalid parameters.
     """
     in_channels = 2
     out_channels = 5  # Not a multiple of in_channels
     sequence_length = 256
     sample_rate = 100.0  # Hz
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         GeneralizedGaussianFilter(
             in_channels=in_channels,
             out_channels=out_channels,  # Should raise an error
@@ -837,6 +839,46 @@ def test_initialization_invalid_parameters():
             f_mean=(10.0, 20.0),
             bandwidth=(5.0, 10.0),
             shape=(2.0, 2.5)
+        )
+
+
+def test_initialization_invalid_parameter_lengths():
+    """GeneralizedGaussianFilter validates parameter lengths."""
+    in_channels = 1
+    sequence_length = 256
+    sample_rate = 100.0
+    # Mismatch f_mean length
+    with pytest.raises(ValueError):
+        GeneralizedGaussianFilter(
+            in_channels=in_channels,
+            out_channels=2,
+            sequence_length=sequence_length,
+            sample_rate=sample_rate,
+            f_mean=(10.0,),
+            bandwidth=(5.0, 5.0),
+            shape=(2.0, 2.0),
+        )
+    # Mismatch bandwidth length
+    with pytest.raises(ValueError):
+        GeneralizedGaussianFilter(
+            in_channels=in_channels,
+            out_channels=2,
+            sequence_length=sequence_length,
+            sample_rate=sample_rate,
+            f_mean=(10.0, 12.0),
+            bandwidth=(5.0,),
+            shape=(2.0, 2.0),
+        )
+    # Mismatch shape length
+    with pytest.raises(ValueError):
+        GeneralizedGaussianFilter(
+            in_channels=in_channels,
+            out_channels=2,
+            sequence_length=sequence_length,
+            sample_rate=sample_rate,
+            f_mean=(10.0, 12.0),
+            bandwidth=(5.0, 5.0),
+            shape=(2.0,),
         )
 
 def test_filter_construction_clamping():
@@ -917,6 +959,24 @@ def test_forward_pass_no_inverse_fourier():
     assert output.shape == expected_shape, f"Expected output shape {expected_shape}, got {output.shape}"
     # Verify that output is real-valued (since it's the real and imaginary parts)
     assert output.dtype == torch.float32 or output.dtype == torch.float64, "Output should be real-valued tensor"
+
+
+def test_eca_invalid_kernel_size():
+    """ECA requires odd kernel sizes for same padding."""
+    with pytest.raises(ValueError):
+        ECA(in_channels=4, kernel_size=4)
+
+
+def test_cbam_invalid_kernel_size():
+    """CBAM requires odd kernel sizes for same padding."""
+    with pytest.raises(ValueError):
+        CBAM(in_channels=4, reduction_rate=2, kernel_size=4)
+
+
+def test_causalconv1d_disallows_padding():
+    """Padding argument is managed internally by CausalConv1d."""
+    with pytest.raises(ValueError):
+        CausalConv1d(1, 1, kernel_size=3, padding=0)
 
 @pytest.fixture
 def input_linear_constraint():
