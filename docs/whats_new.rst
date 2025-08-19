@@ -24,7 +24,7 @@ Enhancements
 ~~~~~~~~~~~~
 - Improving the docstring for :class:`braindecode.models.EEGNetv4`  (:gh:`768` by `Bruno Aristimunha`_)
 - Improving the docstring for :class:`braindecode.models.EEGConformer`  (:gh:`769` by `Bruno Aristimunha`_)
-
+- Experimental BIDS Iterable Dataset support (:gh:`766` by `Bruno Aristimunha`_ and `Pierre Guetschel`_)
 
 API changes
 ~~~~~~~~~~~
