@@ -99,8 +99,9 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     - **Type.** Standard multi-head self-attention (MHA) with ``att_heads`` heads over the token sequence.
     - **Shapes.** Input/Output: ``(B, S_tokens, D)``; attention operates along the ``S_tokens`` axis.
-    - **Role.** Re-weights and integrates evidence across pooled windows, capturing dependencies longer than any single token while leaving channel relationships to the convolutional stem.
-        - The design is intentionally *small*—attention refines rather than replaces convolutional feature extraction.
+    - **Role.** Re-weights and integrates evidence across pooled windows, capturing dependencies
+      longer than any single token while leaving channel relationships to the convolutional stem.
+      The design is intentionally *small*—attention refines rather than replaces convolutional feature extraction.
 
     .. rubric:: Additional Mechanisms
 
