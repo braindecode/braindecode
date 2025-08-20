@@ -99,9 +99,8 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     - **Type.** Standard multi-head self-attention (MHA) with ``att_heads`` heads over the token sequence.
     - **Shapes.** Input/Output: ``(B, S_tokens, D)``; attention operates along the ``S_tokens`` axis.
-    - **Role.** Re-weights and integrates evidence across pooled windows, capturing dependencies
-        longer than any single token while leaving channel relationships to the convolutional stem.
-        The design is intentionally *small*—attention refines rather than replaces convolutional feature extraction.
+    - **Role.** Re-weights and integrates evidence across pooled windows, capturing dependencies longer than any single token while leaving channel relationships to the convolutional stem.
+        - The design is intentionally *small*—attention refines rather than replaces convolutional feature extraction.
 
     .. rubric:: Additional Mechanisms
 
@@ -112,20 +111,20 @@ class EEGConformer(EEGModuleMixin, nn.Module):
         refine temporal context before classification.
 
     - **Tokenization knob.** ``pool_time_length`` and especially ``pool_time_stride`` set
-    the number of tokens ``S_tokens``. Smaller strides → more tokens and higher attention
-    capacity (but higher compute); larger strides → fewer tokens and stronger inductive bias.
+        the number of tokens ``S_tokens``. Smaller strides → more tokens and higher attention
+        capacity (but higher compute); larger strides → fewer tokens and stronger inductive bias.
 
     - **Embedding dimension = filters.** ``n_filters_time`` serves double duty as both the
-    number of temporal filters in the stem and the transformer’s embedding size ``D``,
-    simplifying dimensional alignment.
+        number of temporal filters in the stem and the transformer’s embedding size ``D``,
+        simplifying dimensional alignment.
 
     .. rubric:: Usage and Configuration
 
     - **Instantiation.** Choose ``n_filters_time`` (embedding size ``D``) and
-    ``filter_time_length`` to match the rhythms of interest. Tune
-    ``pool_time_length/stride`` to trade temporal resolution for sequence length.
-    Keep ``att_depth`` modest (e.g., 4–6) and set ``att_heads`` to divide ``D``.
-    ``final_fc_length="auto"`` infers the flattened size from PatchEmbedding.
+        ``filter_time_length`` to match the rhythms of interest. Tune
+        ``pool_time_length/stride`` to trade temporal resolution for sequence length.
+        Keep ``att_depth`` modest (e.g., 4–6) and set ``att_heads`` to divide ``D``.
+        ``final_fc_length="auto"`` infers the flattened size from PatchEmbedding.
 
     Notes
     -----

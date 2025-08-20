@@ -15,7 +15,12 @@ from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
 class ATCNet(EEGModuleMixin, nn.Module):
     """ATCNet model from Altaheri et al. (2022) [1]_
 
-    Pytorch implementation based on official tensorflow code [2]_.
+    ATCNet is inspired in part by the Vision Transformer (ViT). ATCNet differs from ViT by the following:
+
+        ViT uses single-layer linear projection while ATCNet uses multilayer nonlinear projection, i.e., convolutional projection specifically designed for EEG-based brain signals.
+        ViT consists of a stack of encoders where the output of the previous encoder is the input of the subsequent. ATCNet consists of parallel encoders and the outputs of all encoders are concatenated.
+        The encoder block in ViT consists of a multi-head self-attention (MHA) followed by a multilayer perceptron (MLP), while in ATCNet the MHA is followed by a temporal convolutional network (TCN).
+        The first encoder in ViT receives the entire input sequence, while each encoder in ATCNet receives a shifted window from the input sequence.
 
     .. figure:: https://user-images.githubusercontent.com/25565236/185449791-e8539453-d4fa-41e1-865a-2cf7e91f60ef.png
        :align: center
