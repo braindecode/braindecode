@@ -57,9 +57,9 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
         - *Operations.*
         - **Temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(1, L_t)`` creates a learned
-        FIR-like filter bank with ``n_temporal_filters`` maps.
+          FIR-like filter bank with ``n_temporal_filters`` maps.
         - **Depthwise spatial conv** (:class:`torch.nn.Conv2d`, ``groups=n_temporal_filters``)
-        with kernel ``(n_chans, 1)`` learns per-filter spatial projections over the full montage.
+          with kernel ``(n_chans, 1)`` learns per-filter spatial projections over the full montage.
         - **BatchNorm → ELU → AvgPool → Dropout** stabilize and downsample time.
         - Output shape: ``(B, F2, 1, T₁)`` with ``F2 = n_temporal_filters x spatial_expansion``.
 
@@ -71,8 +71,8 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
 
         - *Operations.*
         - A ``1x1`` conv → BN → activation maps ``F2 → ch_dim`` without changing
-        the temporal length ``T₁`` (shape: ``(B, ch_dim, 1, T₁)``).
-        This sets the embedding width for the attention block.
+          the temporal length ``T₁`` (shape: ``(B, ch_dim, 1, T₁)``).
+          This sets the embedding width for the attention block.
 
     - :class:`_ChannelAttentionBlock` **(temporal refinement + channel attention)**
 
@@ -117,8 +117,10 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     - **Type.** Channel attention chosen by ``attention_mode`` (SE, ECA, CBAM, CAT, GSoP,
         EncNet, GE, GCT, SRM, CATLite). Most operate purely on channels; CBAM/CAT additionally
         include temporal attention.
+
     - **Shapes.** Input/Output around attention: ``(B, ch_dim, 1, T₁)``. Re-arrangements
         (if any) are internal to the module; the block returns the same shape before pooling.
+
     - **Role.** Re-weights channels (and optionally time) to highlight informative sources
         and suppress distractors, improving SNR ahead of the linear head.
 
@@ -195,18 +197,18 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
         the depth of the network after the initial layer. Default is 16.
     attention_mode : str, optional
         The type of attention mechanism to apply. If `None`, no attention is applied.
-        - "se" for Squeeze-and-excitation network
-        - "gsop" for Global Second-Order Pooling
-        - "fca" for Frequency Channel Attention Network
-        - "encnet" for context encoding module
-        - "eca" for Efficient channel attention for deep convolutional neural networks
-        - "ge" for Gather-Excite
-        - "gct" for Gated Channel Transformation
-        - "srm" for Style-based Recalibration Module
-        - "cbam" for Convolutional Block Attention Module
-        - "cat" for Learning to collaborate channel and temporal attention
-        from multi-information fusion
-        - "catlite" for Learning to collaborate channel attention
+            - "se" for Squeeze-and-excitation network
+            - "gsop" for Global Second-Order Pooling
+            - "fca" for Frequency Channel Attention Network
+            - "encnet" for context encoding module
+            - "eca" for Efficient channel attention for deep convolutional neural networks
+            - "ge" for Gather-Excite
+            - "gct" for Gated Channel Transformation
+            - "srm" for Style-based Recalibration Module
+            - "cbam" for Convolutional Block Attention Module
+            - "cat" for Learning to collaborate channel and temporal attention
+            from multi-information fusion
+            - "catlite" for Learning to collaborate channel attention
         from multi-information fusion (lite version, cat w/o temporal attention)
     pool_length : int, default=8
         The length of the window for the average pooling operation.

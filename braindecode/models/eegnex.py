@@ -16,9 +16,123 @@ from braindecode.modules import Conv2dWithConstraint, LinearWithConstraint
 class EEGNeX(EEGModuleMixin, nn.Module):
     """EEGNeX model from Chen et al. (2024) [eegnex]_.
 
+    :bdg-success:`Convolution`
+
     .. figure:: https://braindecode.org/dev/_static/model/eegnex.jpg
         :align: center
         :alt: EEGNeX Architecture
+        :width: 620px
+
+    .. rubric:: Architectural Overview
+
+    EEGNeX is a **purely convolutional** architecture that refines the EEGNet-style stem
+    and deepens the temporal stack with **dilated temporal convolutions**. The end-to-end
+    flow is:
+
+    - (i) **Block-1/2**: two temporal convolutions ``(1 x L)`` with BN refine a
+      learned FIR-like *temporal filter bank* (no pooling yet);
+    - (ii) **Block-3**: depthwise **spatial** convolution across electrodes
+      ``(n_chans x 1)`` with max-norm constraint, followed by ELU → AvgPool (time) → Dropout;
+    - (iii) **Block-4/5**: two additional **temporal** convolutions with increasing **dilation**
+      to expand the receptive field; the last block applies ELU → AvgPool → Dropout → Flatten;
+    - (iv) **Classifier**: a max-norm–constrained linear layer.
+
+    The published work positions EEGNeX as a compact, conv-only alternative that consistently
+    outperforms prior baselines across MOABB-style benchmarks, with the popular
+    “EEGNeX-8,32” shorthand denoting *8 temporal filters* and *kernel length 32*.
+
+
+    .. rubric:: Macro Components
+
+    - **Block-1 / Block-2 — Temporal filter (learned).**
+
+       - *Operations.*
+       - :class:`torch.nn.Conv2d` with kernels ``(1, L)``
+       - :class:`torch.nn.BatchNorm2d` (no nonlinearity until Block-3, mirroring a linear FIR analysis stage).
+         These layers set up frequency-selective detectors before spatial mixing.
+
+    - *Interpretability.* Kernels can be inspected as FIR filters; two stacked temporal
+      convs allow longer effective kernels without parameter blow-up.
+
+    - **Block-3 — Spatial projection + condensation.**
+
+        - *Operations.*
+        - :class:`braindecode.modules.Conv2dWithConstraint` with kernel``(n_chans, 1)``
+          and ``groups = filter_2`` (depthwise across filters)
+        - :class:`torch.nn.BatchNorm2d`
+        - :class:`torch.nn.ELU`
+        - :class:`torch.nn.AvgPool2d` (time)
+        - :class:`torch.nn.Dropout`.
+
+    *Role.* Learns per-filter spatial patterns over the **full montage** while temporal
+      pooling stabilizes and compresses features; max-norm encourages well-behaved spatial
+      weights similar to EEGNet practice.
+
+    - **Block-4 / Block-5 — Dilated temporal integration.**
+
+        - *Operations.*
+        - :class:`torch.nn.Conv2d` with kernels ``(1, k)`` and **dilations**
+        (e.g., 2 then 4);
+        - :class:`torch.nn.BatchNorm2d`
+        - :class:`torch.nn.ELU`
+        - :class:`torch.nn.AvgPool2d` (time)
+        - :class:`torch.nn.Dropout`
+        - :class:`torch.nn.Flatten`.
+
+    *Role.* Expands the temporal receptive field efficiently to capture rhythms and
+      long-range context after condensation.
+
+    - **Final Classifier — Max-norm linear.**
+
+        - *Operations.*
+        - :class:`braindecode.modules.LinearWithConstraint` maps the flattened
+          vector to the target classes; the max-norm constraint regularizes the readout.
+
+
+    .. rubric:: Convolutional Details
+
+    - **Temporal (where time-domain patterns are learned).**
+      Blocks 1-2 learn the primary filter bank (oscillations/transients), while Blocks 4-5
+      use **dilation** to integrate over longer horizons without extra pooling. The final
+      AvgPool in Block-5 sets the output token rate and helps noise suppression.
+
+    - **Spatial (how electrodes are processed).**
+      A *single* depthwise spatial conv (Block-3) spans the entire electrode set
+      (kernel ``(n_chans, 1)``), producing per-temporal-filter topographies; no cross-filter
+      mixing occurs at this stage, aiding interpretability.
+
+    - **Spectral (how frequency content is captured).**
+      Frequency selectivity emerges from the learned temporal kernels; dilation broadens effective
+      bandwidth coverage by composing multiple scales.
+
+    .. rubric:: Additional Mechanisms
+
+    - **EEGNeX-8,32 naming.** “8,32” indicates *8 temporal filters* and *kernel length 32*,
+      reflecting the paper's ablation path from EEGNet-8,2 toward thicker temporal kernels
+      and a deeper conv stack.
+    - **Max-norm constraints.** Spatial (Block-3) and final linear layers use max-norm
+      regularization—standard in EEG CNNs—to reduce overfitting and encourage stable spatial
+      patterns.
+
+    .. rubric:: Usage and Configuration
+
+    - **Kernel schedule.** Start with the canonical **EEGNeX-8,32** (``filter_1=8``,
+      ``kernel_block_1_2=32``) and keep **Block-3** depth multiplier modest (e.g., 2) to match
+      the paper's “pure conv” profile.
+    - **Pooling vs. dilation.** Use pooling in Blocks 3 and 5 to control compute and variance;
+      increase dilations (Blocks 4-5) to widen temporal context when windows are short.
+    - **Regularization.** Combine dropout (Blocks 3 & 5) with max-norm on spatial and
+      classifier layers; prefer ELU activations for stable training on small EEG datasets.
+
+
+    Notes
+    -----
+    - The braindecode implementation follows the paper's conv-only design with five blocks
+      and reproduces the depthwise spatial step and dilated temporal stack. See the class
+      reference for exact kernel sizes, dilations, and pooling defaults.
+
+    .. versionadded:: 1.1
+
 
     Parameters
     ----------

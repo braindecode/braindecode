@@ -31,8 +31,7 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
     .. rubric:: Architectural Overview
 
-    EEGNetv4 is a compact convolutional network designed for EEG decoding with a
-    pipeline that mirrors classical EEG processing:
+    EEGNetv4 is a compact convolutional network designed for EEG decoding with a pipeline that mirrors classical EEG processing:
     - (i) learn temporal frequency-selective filters,
     - (ii) learn spatial filters for those frequencies, and
     - (iii) condense features with depthwise–separable convolutions before a lightweight classifier.
@@ -56,16 +55,16 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
 
     .. rubric:: Convolutional Details
 
-    **Temporal.** The initial temporal convs serve as a *learned filter bank*:
-    long 1-D kernels (implemented as 2-D with singleton spatial extent) emphasize oscillatory bands and transients.
-    Because this stage is linear prior to BN/ELU, kernels can be analyzed as FIR filters to reveal each feature’s spectrum [Lawhern2018]_.
+    - **Temporal.** The initial temporal convs serve as a *learned filter bank*:
+      long 1-D kernels (implemented as 2-D with singleton spatial extent) emphasize oscillatory bands and transients.
+      Because this stage is linear prior to BN/ELU, kernels can be analyzed as FIR filters to reveal each feature’s spectrum [Lawhern2018]_.
 
-    **Spatial.** The depthwise spatial conv spans the full channel axis (kernel height = #electrodes; temporal size = 1).
-    With ``groups = F1``, each temporal filter learns its own set of ``D`` spatial projections—akin to CSP, learned end-to-end and
-    typically regularized with max-norm.
+    - **Spatial.** The depthwise spatial conv spans the full channel axis (kernel height = #electrodes; temporal size = 1).
+      With ``groups = F1``, each temporal filter learns its own set of ``D`` spatial projections—akin to CSP, learned end-to-end and
+      typically regularized with max-norm.
 
-    **Spectral.** No explicit Fourier/wavelet transform is used. Frequency structure
-    is captured implicitly by the temporal filter bank; later depthwise temporal kernels act as short-time integrators/refiners.
+    - **Spectral.** No explicit Fourier/wavelet transform is used. Frequency structure
+      is captured implicitly by the temporal filter bank; later depthwise temporal kernels act as short-time integrators/refiners.
 
     .. rubric:: Additional Comments
 
