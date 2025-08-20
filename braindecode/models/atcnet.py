@@ -13,92 +13,162 @@ from braindecode.modules import CausalConv1d, Ensure4d, MaxNormLinear
 
 
 class ATCNet(EEGModuleMixin, nn.Module):
-    """ATCNet model from Altaheri et al. (2022) [1]_
+    """ATCNet from Altaheri et al. (2022) [1]_.
 
-    ATCNet is inspired in part by the Vision Transformer (ViT). ATCNet differs from ViT by the following:
-
-        ViT uses single-layer linear projection while ATCNet uses multilayer nonlinear projection, i.e., convolutional projection specifically designed for EEG-based brain signals.
-        ViT consists of a stack of encoders where the output of the previous encoder is the input of the subsequent. ATCNet consists of parallel encoders and the outputs of all encoders are concatenated.
-        The encoder block in ViT consists of a multi-head self-attention (MHA) followed by a multilayer perceptron (MLP), while in ATCNet the MHA is followed by a temporal convolutional network (TCN).
-        The first encoder in ViT receives the entire input sequence, while each encoder in ATCNet receives a shifted window from the input sequence.
+    :bdg-success:`Convolution` :bdg-info:`Small Attention`
 
     .. figure:: https://user-images.githubusercontent.com/25565236/185449791-e8539453-d4fa-41e1-865a-2cf7e91f60ef.png
-       :align: center
-       :alt: ATCNet Architecture
+        :align: center
+        :alt: ATCNet Architecture
+        :width: 650px
 
-    Parameters
-    ----------
-    input_window_seconds : float, optional
-        Time length of inputs, in seconds. Defaults to 4.5 s, as in BCI-IV 2a
-        dataset.
-    sfreq : int, optional
-        Sampling frequency of the inputs, in Hz. Default to 250 Hz, as in
-        BCI-IV 2a dataset.
-    conv_block_n_filters : int
-        Number temporal filters in the first convolutional layer of the
-        convolutional block, denoted F1 in figure 2 of the paper [1]_. Defaults
-        to 16 as in [1]_.
-    conv_block_kernel_length_1 : int
-        Length of temporal filters in the first convolutional layer of the
-        convolutional block, denoted Kc in table 1 of the paper [1]_. Defaults
-        to 64 as in [1]_.
-    conv_block_kernel_length_2 : int
-        Length of temporal filters in the last convolutional layer of the
-        convolutional block. Defaults to 16 as in [1]_.
-    conv_block_pool_size_1 : int
-        Length of first average pooling kernel in the convolutional block.
-        Defaults to 8 as in [1]_.
-    conv_block_pool_size_2 : int
-        Length of first average pooling kernel in the convolutional block,
-        denoted P2 in table 1 of the paper [1]_. Defaults to 7 as in [1]_.
-    conv_block_depth_mult : int
-        Depth multiplier of depthwise convolution in the convolutional block,
-        denoted D in table 1 of the paper [1]_. Defaults to 2 as in [1]_.
-    conv_block_dropout : float
-        Dropout probability used in the convolution block, denoted pc in
-        table 1 of the paper [1]_. Defaults to 0.3 as in [1]_.
-    n_windows : int
-        Number of sliding windows, denoted n in [1]_. Defaults to 5 as in [1]_.
-    att_head_dim : int
-        Embedding dimension used in each self-attention head, denoted dh in
-        table 1 of the paper [1]_. Defaults to 8 as in [1]_.
-    att_num_heads : int
-        Number of attention heads, denoted H in table 1 of the paper [1]_.
-        Defaults to 2 as in [1]_.
-    att_dropout : float
-        Dropout probability used in the attention block, denoted pa in table 1
-        of the paper [1]_. Defaults to 0.5 as in [1]_.
-    tcn_depth : int
-        Depth of Temporal Convolutional Network block (i.e. number of TCN
-        Residual blocks), denoted L in table 1 of the paper [1]_. Defaults to 2
-        as in [1]_.
-    tcn_kernel_size : int
-        Temporal kernel size used in TCN block, denoted Kt in table 1 of the
-        paper [1]_. Defaults to 4 as in [1]_.
-    tcn_dropout : float
-        Dropout probability used in the TCN block, denoted pt in table 1
-        of the paper [1]_. Defaults to 0.3 as in [1]_.
-    tcn_activation : torch.nn.Module
-        Nonlinear activation to use. Defaults to nn.ELU().
-    concat : bool
-        When ``True``, concatenates each slidding window embedding before
-        feeding it to a fully-connected layer, as done in [1]_. When ``False``,
-        maps each slidding window to `n_outputs` logits and average them.
-        Defaults to ``False`` contrary to what is reported in [1]_, but
-        matching what the official code does [2]_.
-    max_norm_const : float
-        Maximum L2-norm constraint imposed on weights of the last
-        fully-connected layer. Defaults to 0.25.
+    .. rubric:: Architectural Overview
+
+    ATCNet is a *convolution-first* architecture augmented with a *lightweight attention–TCN*
+    sequence module. The end-to-end flow is:
+
+    - (i) :class:`_ConvBlock` learns temporal filter-banks and spatial projections (EEGNet-style),
+      downsampling time to a compact feature map;
+
+    - (ii) **Sliding Windows** carve overlapping temporal windows from this map;
+
+    - (iii) for each window, :class:`_AttentionBlock` applies small multi-head self-attention
+      over time, followed by a :class:`_TCNResidualBlock` stack (causal, dilated);
+
+    - (iv) window-level features are aggregated (mean of window logits or concatenation)
+      and mapped via a max-norm–constrained linear layer.
+
+    Relative to ViT, ATCNet replaces linear patch projection with learned *temporal–spatial*
+    convolutions; it processes *parallel* window encoders (attention→TCN) instead of a deep
+    stack; and swaps the MLP head for a TCN suited to 1-D EEG sequences.
+
+    .. rubric:: Macro Components
+
+    - :class:`_ConvBlock` **(Shallow conv stem → feature map)**
+
+        - *Operations.*
+        - **Temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_t, 1)`` builds a
+            FIR-like filter bank (``F1`` maps).
+        - **Depthwise spatial conv** (:class:`torch.nn.Conv2d`, ``groups=F1``) with kernel
+          ``(1, n_chans)`` learns per-filter spatial projections (akin to EEGNet’s CSP-like step).
+        - **BN → ELU → AvgPool → Dropout** to stabilize and condense activations.
+        - **Refining temporal conv** (:class:`torch.nn.Conv2d`) with kernel ``(L_r, 1)`` +
+          **BN → ELU → AvgPool → Dropout**.
+
+    The output shape is ``(B, F2, T_c, 1)`` with ``F2 = F1·D`` and ``T_c = T/(P1·P2)``.
+    Temporal kernels behave as FIR filters; the depthwise-spatial conv yields frequency-specific
+    topographies. Pooling acts as a local integrator, reducing variance and imposing a
+    useful inductive bias on short EEG windows.
+
+    - **Sliding-Window Sequencer**
+
+      From the condensed time axis (length ``T_c``), ATCNet forms ``n`` overlapping windows
+      of width ``T_w = T_c - n + 1`` (one start per index). Each window produces a sequence
+      ``(B, F2, T_w)`` forwarded to its own attention–TCN branch. This creates *parallel*
+      encoders over shifted contexts and is key to robustness on nonstationary EEG.
+
+    - :class:`_AttentionBlock` **(small MHA on temporal positions)**
+
+        - *Operations.*
+        - Rearrange to ``(B, T_w, F2)``,
+        - Normalization :class:`torch.nn.LayerNorm`
+        - Custom Windowed MultiHeadAttention :class:`_MHA` (``num_heads=H``, per-head dim ``d_h``) + residual add,
+        - Dropout :class:`torch.nn.Dropout`
+        - Rearrange back to ``(B, F2, T_w)``.
+
+
+    **Note**: Attention is *local to a window* and purely temporal.
+
+    *Role.* Re-weights evidence across the window, letting the model emphasize informative
+    segments (onsets, bursts) before causal convolutions aggregate history.
+
+    - :class:`_TCNResidualBlock` **(causal dilated temporal CNN)**
+
+        - *Operations.*
+        - Two :class:`braindecode.modules.CausalConv1d` layers per block with dilation  ``1, 2, 4, …``
+        - Across blocks of `torch.nn.ELU` + `torch.nn.BatchNorm1d` + `torch.nn.Dropout`) +
+          a residual (identity or 1x1 mapping).
+        - The final feature used per window is the *last* causal step ``[..., -1]`` (forecast-style).
+
+    *Role.* Efficient long-range temporal integration with stable gradients; the dilated
+    receptive field complements attention’s soft selection.
+
+    - **Aggregation & Classifier**
+
+        - *Operations.*
+        - Either (a) map each window feature ``(B, F2)`` to logits via :class:`braindecode.modules.MaxNormLinear`
+        and **average** across windows (default, matching official code), or
+        - (b) **concatenate** all window features ``(B, n·F2)`` and apply a single :class:`MaxNormLinear`.
+        The max-norm constraint regularizes the readout.
+
+    .. rubric:: Convolutional Details
+
+    - **Temporal.** Temporal structure is learned in three places:
+        - (1) the stem’s wide ``(L_t, 1)`` conv (learned filter bank),
+        - (2) the refining ``(L_r, 1)`` conv after pooling (short-term dynamics), and
+        - (3) the TCN’s causal 1-D convolutions with exponentially increasing dilation
+          (long-range dependencies). The minimum sequence length required by the TCN stack is
+          ``(K_t - 1)·2^{L-1} + 1``; the implementation *auto-scales* kernels/pools/windows
+          when inputs are shorter to preserve feasibility.
+
+    - **Spatial.** A depthwise spatial conv spans the **full montage** (kernel ``(1, n_chans)``),
+        producing *per-temporal-filter* spatial projections (no cross-filter mixing at this step).
+        This mirrors EEGNet’s interpretability: each temporal filter has its own spatial pattern.
+
+
+    .. rubric:: Attention / Sequential Modules
+
+    - **Type.** Multi-head self-attention with ``H`` heads and per-head dim ``d_h`` implemented
+      in :class:`_MHA`, allowing ``embed_dim = H·d_h`` independent of input and output dims.
+    - **Shapes.** ``(B, F2, T_w) → (B, T_w, F2) → (B, F2, T_w)``. Attention operates along
+      the **temporal** axis within a window; channels/features stay in the embedding dim ``F2``.
+    - **Role.** Highlights salient temporal positions prior to causal convolution; small attention
+      keeps compute modest while improving context modeling over pooled features.
+
+    .. rubric:: Additional Mechanisms
+
+    - **Parallel encoders over shifted windows.** Improves montage/phase robustness by
+      ensembling nearby contexts rather than committing to a single segmentation.
+    - **Max-norm classifier.** Enforces weight norm constraints at the readout, a common
+      stabilization trick in EEG decoding.
+    - **ViT vs. ATCNet (design choices).** Convolutional *nonlinear* projection rather than
+      linear patchification; attention followed by **TCN** (not MLP); *parallel* window
+      encoders rather than stacked encoders.
+
+    .. rubric:: Usage and Configuration
+
+        - ``conv_block_n_filters (F1)``, ``conv_block_depth_mult (D)`` → capacity of the stem
+        (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like `ÈEGNetv4`.
+        - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
+        ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
+        - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
+        - ``att_num_heads``, ``att_head_dim`` set attention capacity; keep ``H·d_h ≈ F2``.
+        - ``tcn_depth``, ``tcn_kernel_size`` govern receptive field; larger values demand
+        longer inputs (see minimum length above). The implementation warns and *rescales*
+        kernels/pools/windows if inputs are too short.
+        - **Aggregation choice.** ``concat=False`` (default, average of per-window logits) matches
+        the official code; ``concat=True`` mirrors the paper’s concatenation variant.
+
+
+    Notes
+    -----
+    - Inputs substantially shorter than the implied minimum length trigger **automatic
+      downscaling** of kernels, pools, windows, and TCN kernel size to maintain validity.
+    - The attention–TCN sequence operates **per window**; the last causal step is used as the
+      window feature, aligning the temporal semantics across windows.
+
+    .. versionadded:: 1.1
+
+        - More detailed documentation of the model.
 
 
     References
     ----------
-    .. [1] H. Altaheri, G. Muhammad and M. Alsulaiman,
-        Physics-informed attention temporal convolutional network for EEG-based
-        motor imagery classification in IEEE Transactions on Industrial Informatics,
-        2022, doi: 10.1109/TII.2022.3197419.
-    .. [2] EEE-ATCNet implementation.
-       https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
+    .. [1] H. Altaheri, G. Muhammad, M. Alsulaiman (2022).
+        *Physics-informed attention temporal convolutional network for EEG-based motor imagery classification.*
+        IEEE Transactions on Industrial Informatics. doi:10.1109/TII.2022.3197419.
+    .. [2] Official EEG-ATCNet implementation (TensorFlow):
+        https://github.com/Altaheri/EEG-ATCNet/blob/main/models.py
     """
 
     def __init__(
@@ -561,7 +631,8 @@ class _TCNResidualBlock(nn.Module):
         # Reshape the input for the residual connection when necessary
         if in_channels != n_filters:
             self.reshaping_conv = nn.Conv1d(
-                n_filters,
+                in_channels=in_channels,
+                out_channels=n_filters,
                 kernel_size=1,
                 padding="same",
             )
