@@ -27,22 +27,25 @@ class EEGConformer(EEGModuleMixin, nn.Module):
     EEG-Conformer is a *convolution-first* model augmented with a *lightweight transformer
     encoder*. The end-to-end flow is:
 
-    - (i) :class:`_PatchEmbedding` converts the continuous EEG into a compact sequence of tokens via a :class:`ShallowFBCSPNet` temporal–spatial conv stem and temporal pooling;
-    - (ii) :class:`_TransformerEncoder applies small multi-head self-attention to integrate longer-range temporal context across tokens;
+    - (i) :class:`_PatchEmbedding` converts the continuous EEG into a compact sequence of tokens via a
+      :class:`ShallowFBCSPNet` temporal–spatial conv stem and temporal pooling;
+    - (ii) :class:`_TransformerEncoder` applies small multi-head self-attention to integrate
+      longer-range temporal context across tokens;
     - (iii) :class:`_ClassificationHead` aggregates the sequence and performs a linear readout.
-        This preserves the strong inductive biases of shallow CNN filter banks while adding
-        just enough attention to capture dependencies beyond the pooling horizon [song2022]_.
+      This preserves the strong inductive biases of shallow CNN filter banks while adding
+      just enough attention to capture dependencies beyond the pooling horizon [song2022]_.
 
     .. rubric:: Macro Components
 
     - :class:`_PatchEmbedding` **(Shallow conv stem → tokens)**
 
-    - *Operations.*
-        - A temporal convolution (`:class:`torch.nn.Conv2d`) ``(1 x L_t)`` forms a data-driven "filter bank";
-        - A spatial convolution (`:class:`torch.nn.Conv2d`) (n_chans x 1)`` projects across electrodes, collapsing the channel axis into a virtual channel.
-        - **Normalization function** `:class:torch.nn.BatchNorm`
-        - **Activation function** `:class:torch.nn.ELU`
-        - **Average Pooling** `:class:torch.nn.AvgPool` along time (kernel ``(1, P)`` with stride ``(1, S)``)
+        - *Operations.*
+        - A temporal convolution (`:class:torch.nn.Conv2d`) ``(1 x L_t)`` forms a data-driven "filter bank";
+        - A spatial convolution (`:class:torch.nn.Conv2d`) (n_chans x 1)`` projects across electrodes,
+          collapsing the channel axis into a virtual channel.
+        - **Normalization function** :class:`torch.nn.BatchNorm`
+        - **Activation function** :class:`torch.nn.ELU`
+        - **Average Pooling** :class:`torch.nn.AvgPool` along time (kernel ``(1, P)`` with stride ``(1, S)``)
         -  final ``1x1`` :class:`torch.nn.Linear` projection.
 
     The result is rearranged to a token sequence ``(B, S_tokens, D)``, where ``D = n_filters_time``.
@@ -53,7 +56,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     - :class:`_TransformerEncoder` **(context over temporal tokens)**
 
-    - *Operations.*
+        - *Operations.*
         - A stack of ``att_depth`` encoder blocks. :class:`_TransformerEncoderBlock`
         - Each block applies LayerNorm :class:`torch.nn.LayerNorm`
         - Multi-Head Self-Attention (``att_heads``) with dropout + residual :class:`MultiHeadAttention` (:class:`torch.nn.Dropout`)
@@ -67,7 +70,7 @@ class EEGConformer(EEGModuleMixin, nn.Module):
 
     - :class:`ClassificationHead` **(aggregation + readout)**
 
-    - *Operations*.
+        - *Operations*.
         - Flatten, :class:`torch.nn.Flatten` the sequence ``(B, S_tokens·D)`` -
         - MLP (:class:`torch.nn.Linear` → activation (default: :class:`torch.nn.ELU`) → :class:`torch.nn.Dropout` → :class:`torch.nn.Linear`)
         - final Linear to classes.
