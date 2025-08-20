@@ -30,7 +30,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
     - (i) :class:`_ConvBlock` learns temporal filter-banks and spatial projections (EEGNet-style),
       downsampling time to a compact feature map;
 
-    - (ii) **Sliding Windows** carve overlapping temporal windows from this map;
+    - (ii) Sliding Windows carve overlapping temporal windows from this map;
 
     - (iii) for each window, :class:`_AttentionBlock` applies small multi-head self-attention
       over time, followed by a :class:`_TCNResidualBlock` stack (causal, dilated);
