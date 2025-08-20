@@ -72,7 +72,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - *Operations.*
         - Rearrange to ``(B, T_w, F2)``,
         - Normalization :class:`torch.nn.LayerNorm`
-        - Custom Windowed MultiHeadAttention :class:`_MHA` (``num_heads=H``, per-head dim ``d_h``) + residual add,
+        - Custom MultiHeadAttention :class:`_MHA` (``num_heads=H``, per-head dim ``d_h``) + residual add,
         - Dropout :class:`torch.nn.Dropout`
         - Rearrange back to ``(B, F2, T_w)``.
 
@@ -138,7 +138,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
     .. rubric:: Usage and Configuration
 
         - ``conv_block_n_filters (F1)``, ``conv_block_depth_mult (D)`` → capacity of the stem
-        (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like `ÈEGNetv4`.
+        (with ``F2 = F1·D`` feeding attention/TCN), dimensions aligned to ``F2``, like `EEGNetv4`.
         - Pool sizes ``P1,P2`` trade temporal resolution for stability/compute; they set
         ``T_c = T/(P1·P2)`` and thus window width ``T_w``.
         - ``n_windows`` controls the ensemble over shifts (compute ∝ windows).
