@@ -162,6 +162,70 @@ class ATCNet(EEGModuleMixin, nn.Module):
         - More detailed documentation of the model.
 
 
+    Parameters
+    ----------
+    input_window_seconds : float, optional
+        Time length of inputs, in seconds. Defaults to 4.5 s, as in BCI-IV 2a
+        dataset.
+    sfreq : int, optional
+        Sampling frequency of the inputs, in Hz. Default to 250 Hz, as in
+        BCI-IV 2a dataset.
+    conv_block_n_filters : int
+        Number temporal filters in the first convolutional layer of the
+        convolutional block, denoted F1 in figure 2 of the paper [1]_. Defaults
+        to 16 as in [1]_.
+    conv_block_kernel_length_1 : int
+        Length of temporal filters in the first convolutional layer of the
+        convolutional block, denoted Kc in table 1 of the paper [1]_. Defaults
+        to 64 as in [1]_.
+    conv_block_kernel_length_2 : int
+        Length of temporal filters in the last convolutional layer of the
+        convolutional block. Defaults to 16 as in [1]_.
+    conv_block_pool_size_1 : int
+        Length of first average pooling kernel in the convolutional block.
+        Defaults to 8 as in [1]_.
+    conv_block_pool_size_2 : int
+        Length of first average pooling kernel in the convolutional block,
+        denoted P2 in table 1 of the paper [1]_. Defaults to 7 as in [1]_.
+    conv_block_depth_mult : int
+        Depth multiplier of depthwise convolution in the convolutional block,
+        denoted D in table 1 of the paper [1]_. Defaults to 2 as in [1]_.
+    conv_block_dropout : float
+        Dropout probability used in the convolution block, denoted pc in
+        table 1 of the paper [1]_. Defaults to 0.3 as in [1]_.
+    n_windows : int
+        Number of sliding windows, denoted n in [1]_. Defaults to 5 as in [1]_.
+    att_head_dim : int
+        Embedding dimension used in each self-attention head, denoted dh in
+        table 1 of the paper [1]_. Defaults to 8 as in [1]_.
+    att_num_heads : int
+        Number of attention heads, denoted H in table 1 of the paper [1]_.
+        Defaults to 2 as in [1]_.
+    att_dropout : float
+        Dropout probability used in the attention block, denoted pa in table 1
+        of the paper [1]_. Defaults to 0.5 as in [1]_.
+    tcn_depth : int
+        Depth of Temporal Convolutional Network block (i.e. number of TCN
+        Residual blocks), denoted L in table 1 of the paper [1]_. Defaults to 2
+        as in [1]_.
+    tcn_kernel_size : int
+        Temporal kernel size used in TCN block, denoted Kt in table 1 of the
+        paper [1]_. Defaults to 4 as in [1]_.
+    tcn_dropout : float
+        Dropout probability used in the TCN block, denoted pt in table 1
+        of the paper [1]_. Defaults to 0.3 as in [1]_.
+    tcn_activation : torch.nn.Module
+        Nonlinear activation to use. Defaults to nn.ELU().
+    concat : bool
+        When ``True``, concatenates each slidding window embedding before
+        feeding it to a fully-connected layer, as done in [1]_. When ``False``,
+        maps each slidding window to `n_outputs` logits and average them.
+        Defaults to ``False`` contrary to what is reported in [1]_, but
+        matching what the official code does [2]_.
+    max_norm_const : float
+        Maximum L2-norm constraint imposed on weights of the last
+        fully-connected layer. Defaults to 0.25.
+
     References
     ----------
     .. [1] H. Altaheri, G. Muhammad, M. Alsulaiman (2022).
