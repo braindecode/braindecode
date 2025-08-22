@@ -29,7 +29,6 @@ from braindecode.models import (
     EEGInceptionMI,
     EEGITNet,
     EEGMiner,
-    EEGNetv1,
     EEGNetv4,
     EEGNeX,
     EEGResNet,
@@ -235,18 +234,6 @@ def test_eegnet_v4(input_sizes):
         n_times=input_sizes["n_in_times"],
     )
     check_forward_pass(model, input_sizes)
-
-
-def test_eegnet_v1(input_sizes):
-    model = EEGNetv1(
-        n_chans=input_sizes["n_channels"],
-        n_outputs=input_sizes["n_classes"],
-        n_times=input_sizes["n_in_times"],
-    )
-    check_forward_pass(
-        model,
-        input_sizes,
-    )
 
 
 def test_tcn(input_sizes):
