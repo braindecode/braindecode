@@ -51,11 +51,11 @@ The parameter counts shown in the table were calculated using consistent hyperpa
 We are continually expanding this collection and welcome contributions! If you have implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to Braindecode.
 
 .. button-ref:: models_visualization
- :ref-type: doc
+   :ref-type: doc
    :color: primary
    :expand:
 
- Next: Models Parameter Visualization →
+    Next: Models Parameter Visualization
 
 .. raw:: html
 
