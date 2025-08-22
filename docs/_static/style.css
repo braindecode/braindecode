@@ -219,3 +219,21 @@ button.copybtn {
 img.hidden {
     visibility: hidden;
 }
+/*model grid*/
+/* For the horizontally scrolling model cards */
+.horizontal-scroll-container {
+  display: flex;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  padding-bottom: 1rem; /* Add some space for the scrollbar */
+}
+
+/* Ensure the grid itself doesn't wrap, allowing it to overflow */
+.horizontal-scroll-container > .sd-grid {
+  flex-wrap: nowrap;
+}
+
+/* Give the cards a minimum width so they don't get too squished */
+.horizontal-scroll-container .sd-card {
+  min-width: 250px;
+}

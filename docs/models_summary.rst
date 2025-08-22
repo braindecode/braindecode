@@ -1,3 +1,5 @@
+:html_theme.sidebar_secondary.remove:
+
 .. raw:: html
 
    <style>
@@ -28,6 +30,104 @@ We are continually expanding this collection and welcome contributions! If you h
    :align: center
 
    Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental paradigm they were designed for (right plot).
+
+
+Models Categorization
+~~~~~~~~~~~~~~~~~~~~
+
+.. grid:: 1 2 3 3
+   :gutter: 3
+
+   .. grid-item-card:: |braille| Convolution layers
+      :shadow: sm
+
+      .. figure:: _static/model_cat/convolution.png
+        :width: 90%
+        :align: center
+        :alt: Diagram of a convolutional layer
+
+      Applies convolutional layers to extract spatial, temporal, and spectral features from brain signals.
+
+   .. grid-item-card:: |repeat| Recurrent Layers
+      :shadow: sm
+
+      .. figure:: _static/model_cat/rnn.png
+        :width: 90%
+        :align: center
+        :alt: Diagram of a convolutional layer
+
+      Processes sequential data using recurrent units (e.g., LSTM, GRU) to model temporal dependencies.
+
+   .. grid-item-card:: |magnifying-glass-chart| Small Attention
+      :shadow: sm
+
+      .. figure:: _static/model_cat/attention.png
+        :width: 90%
+        :align: center
+        :alt: Diagram of a convolutional layer
+
+      Uses attention mechanisms for feature focusing. Can be trained effectively without self-supervised pre-training.
+
+   .. grid-item-card:: |layer-group| Filterbank models
+      :shadow: sm
+
+      .. figure:: _static/model_cat/filterbank.png
+        :width: 90%
+        :align: center
+        :alt: Diagram of a recurrent models
+
+      Employs multiple non-learneable filterbanks to decompose signals and capture frequency-specific information.
+
+   .. grid-item-card:: |eye| Interpretability-by-design
+      :shadow: sm
+
+      .. figure:: _static/model_cat/interpre.png
+        :width: 90%
+        :align: center
+        :alt: Diagram of a interpretable
+
+      Architectures with inherently interpretable layers, allowing for direct neuroscientific validation of learned features.
+
+   .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
+      :shadow: sm
+
+      .. figure:: _static/model_cat/spd.png
+        :width: 90%
+        :align: center
+        :alt: Diagram of a SPD Learn
+
+      Learns representations by leveraging Symmetric Positive-Definite (SPD) matrices, which typically encode functional connectivity (covariance).
+
+   .. grid-item-card:: |lightbulb| Large Attention
+      :shadow: sm
+
+      .. figure:: _static/model_cat/llm.png
+        :width: 90%
+        :align: center
+        :alt: Diagram of a LLM models
+
+      Large-scale transformer layers that require self-supervised pre-training to effectively model complex data patterns.
+
+   .. grid-item-card:: |share-nodes| Graph Neural Network
+      :shadow: sm
+
+      .. figure:: _static/model_cat/gnn.png
+        :width: 90%
+        :align: center
+        :alt: Diagram for Graph neural Network models
+
+      Models the relationships between channels as a graph to explicitly learn from functional connectivity patterns.
+
+   .. grid-item-card:: |clone| Channel-domain
+      :shadow: sm
+
+      .. figure:: _static/model_cat/channel.png
+        :width: 90%
+        :align: center
+        :alt: Diagram for Channel-domain models
+
+      Employ the channel-montage feature for more robust, domain-aware learning in neuroscience.
+
 
 Columns definitions:
     - **Model**: The name of the model.

@@ -167,9 +167,7 @@ templates_path = ["_templates"]
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
-rst_prolog = """
-.. role:: tag(bdg-success)
-"""
+
 # The master toctree document.
 master_doc = "index"
 
@@ -392,7 +390,7 @@ latex_documents = [
         master_doc,
         "Braindecode.tex",
         "Braindecode",
-        "Robin Tibor Schirrmeister",
+        "Bruno Aristimunha",
         "manual",
     ),
 ]
@@ -431,6 +429,16 @@ other_icons = (
     "cloud-download-alt",
     "wrench",
     "hourglass",
+    # Add your new icons here
+    "braille",
+    "repeat",
+    "lightbulb",
+    "layer-group",
+    "eye",
+    "circle-nodes",
+    "magnifying-glass-chart",
+    "share-nodes",
+    "clone",
 )
 icons = dict()
 for icon in brand_icons + fixed_icons + other_icons:
@@ -458,6 +466,7 @@ prolog += """
 prolog += """
 .. |ensp| unicode:: U+2002 .. EN SPACE
 """
+rst_prolog = prolog
 
 # -- Options for manual page output ---------------------------------------
 
