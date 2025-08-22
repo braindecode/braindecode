@@ -57,7 +57,7 @@ def gen_models_visualization(
     fig = make_subplots(
         rows=1,
         cols=2,
-        column_widths=[0.62, 0.38],
+        column_widths=[0.76, 0.24],
         horizontal_spacing=0.10,
         subplot_titles=("Model Complexity (log₁₀ #Parameters)", "Models per Paradigm"),
     )
