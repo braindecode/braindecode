@@ -10,7 +10,7 @@ given time-series signals :math:`X \in \mathbb{R}^{C \times T}` and labels
 :math:`y \in \mathcal{Y}`, :class:`braindecode` implements neural networks
 :math:`f` that **decode** brain activity, i.e., it applies a series of transformations
 layers (e.g. :class:`torch.nn.Conv2d`, :class:`torch.nn.Linear`, :class:`torch.nn.ELU`) to the data
-to allow us to filter and extract features that are relevant to what we are modeling, in another words:
+to allow us to filter and extract features that are relevant to what we are modeling, in other words:
 
 .. math::
 
@@ -26,7 +26,7 @@ that can be quantized and modeled as a decoding task, see references :cite:label
 We aim to translate recorded brain activity into its originating stimulus, behavior,
 or mental state, :cite:t:`king2014characterizing,king2020`, again, :math:`f(X) \to y`.
 
-The model :math:`f` learns a representation that is useful for the encoded stimulus
+The neural networks model :math:`f` learns a representation that is useful for the encoded stimulus
 in the subject's brain over time series—also known as *reverse inference*.
 
 In supervised decoding, we usually learn the network parameters :math:`\theta` by minimizing
