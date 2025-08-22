@@ -33,7 +33,7 @@ train one of the Braindecode models on it.
 # architecture on Braindecode!
 #
 # In order to use this architecture, you first need to find what is its exact
-# name in Braindecode. To do so, you can visit Braindecode's :doc:`Models Summary </models_summary>`
+# name in Braindecode. To do so, you can visit Braindecode's Models Page
 # page for information on which are the available models.
 #
 # Alternatively, the :doc:`API </api>` also provide a dictionary with all available models:

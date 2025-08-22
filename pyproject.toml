@@ -75,6 +75,9 @@ tests = [
 docs = [
     'sphinx_gallery',
     'sphinx_rtd_theme',
+    'sphinx-autodoc-typehints',
+    'sphinx-autobuild',
+    'sphinxcontrib-bibtex',
     'pydata_sphinx_theme',
     'numpydoc',
     'memory_profiler',
@@ -84,7 +87,8 @@ docs = [
     'lightning',
     'seaborn',
     'pre-commit',
-    'openneuro-py'
+    'openneuro-py',
+    'plotly',
 ]
 all = [
     "braindecode[moabb,tests,docs]"
