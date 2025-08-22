@@ -24,7 +24,7 @@ from braindecode.modules.attention import (
 
 
 class AttentionBaseNet(EEGModuleMixin, nn.Module):
-    """
+    """AttentionBaseNet from Wimpff M et al. (2023) [Martin2023]_.
 
     :bdg-success:`Convolution` :bdg-info:`Small Attention`
 
@@ -165,10 +165,11 @@ class AttentionBaseNet(EEGModuleMixin, nn.Module):
     Notes
     -----
     - Sequence length after each stage is computed internally; the final classifier expects
-    a flattened ``ch_dim x T₂`` vector.
+      a flattened ``ch_dim x T₂`` vector.
     - Attention operates on *channel* dimension by design; temporal gating exists only in
-    specific variants (CBAM/CAT).
-
+      specific variants (CBAM/CAT).
+    - The paper and original code with more details about the methodological
+      choices are available at the [Martin2023]_ and [MartinCode]_.
     .. versionadded:: 0.9
 
     Parameters

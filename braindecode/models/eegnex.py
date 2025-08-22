@@ -129,7 +129,8 @@ class EEGNeX(EEGModuleMixin, nn.Module):
     -----
     - The braindecode implementation follows the paper's conv-only design with five blocks
       and reproduces the depthwise spatial step and dilated temporal stack. See the class
-      reference for exact kernel sizes, dilations, and pooling defaults.
+      reference for exact kernel sizes, dilations, and pooling defaults. You can check the
+      original implementation at [EEGNexCode]_.
 
     .. versionadded:: 1.1
 
@@ -158,12 +159,6 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         Dilation rate for block 5. Default is (1, 4).
     avg_pool_block5 : tuple[int, int], optional
         Pooling size for block 5. Default is (1, 8).
-
-    Notes
-    -----
-    This implementation is not guaranteed to be correct, has not been checked
-    by original authors, only reimplemented from the paper description and
-    source code in tensorflow [EEGNexCode]_.
 
     References
     ----------
