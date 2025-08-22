@@ -42,6 +42,10 @@ curdir = os.path.dirname(__file__)
 sys.path.append(os.path.abspath(os.path.join(curdir, "..", "braindecode")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
+import sphinx_design
+
+print(f"--- Sphinx is using sphinx_design version: {sphinx_design.__version__} ---")
+
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.

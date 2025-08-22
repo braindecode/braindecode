@@ -41,6 +41,8 @@ Models Categorization
    .. grid-item-card:: |braille| Convolution layers
       :shadow: sm
 
+      :bdg-success:`Convolution`
+
       .. figure:: _static/model_cat/convolution.png
         :width: 90%
         :align: center
@@ -50,6 +52,8 @@ Models Categorization
 
    .. grid-item-card:: |repeat| Recurrent Layers
       :shadow: sm
+
+      :bdg-secondary:`Recurrent`
 
       .. figure:: _static/model_cat/rnn.png
         :width: 90%
@@ -61,6 +65,8 @@ Models Categorization
    .. grid-item-card:: |magnifying-glass-chart| Small Attention
       :shadow: sm
 
+      :bdg-info:`Small Attention`
+
       .. figure:: _static/model_cat/attention.png
         :width: 90%
         :align: center
@@ -70,6 +76,8 @@ Models Categorization
 
    .. grid-item-card:: |layer-group| Filterbank models
       :shadow: sm
+
+      :bdg-primary:`Filterbank`
 
       .. figure:: _static/model_cat/filterbank.png
         :width: 90%
@@ -81,6 +89,8 @@ Models Categorization
    .. grid-item-card:: |eye| Interpretability-by-design
       :shadow: sm
 
+      :bdg-warning:`Interpretability`
+
       .. figure:: _static/model_cat/interpre.png
         :width: 90%
         :align: center
@@ -90,6 +100,8 @@ Models Categorization
 
    .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
       :shadow: sm
+
+      :bdg-dark:`SPD`
 
       .. figure:: _static/model_cat/spd.png
         :width: 90%
@@ -101,6 +113,8 @@ Models Categorization
    .. grid-item-card:: |lightbulb| Large Attention
       :shadow: sm
 
+      :bdg-danger:`Large Attention`
+
       .. figure:: _static/model_cat/llm.png
         :width: 90%
         :align: center
@@ -111,6 +125,8 @@ Models Categorization
    .. grid-item-card:: |share-nodes| Graph Neural Network
       :shadow: sm
 
+      :bdg-light:`Graph Neural Network`
+
       .. figure:: _static/model_cat/gnn.png
         :width: 90%
         :align: center
@@ -120,6 +136,8 @@ Models Categorization
 
    .. grid-item-card:: |clone| Channel-domain
       :shadow: sm
+
+      :bdg-dark-line:`Channel`
 
       .. figure:: _static/model_cat/channel.png
         :width: 90%
