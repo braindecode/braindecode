@@ -21,6 +21,10 @@
 EEG Decoding models
 ~~~~~~~~~~~~~~~~~~~~~
 
+Some text from the thesis here....
+
+We are continually expanding this collection and welcome contributions! If you have implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to Braindecode. See the "Submit a New Model" section below for details.
+
 .. grid:: 1 2 3 3
    :gutter: 3
 
@@ -48,7 +52,7 @@ EEG Decoding models
         :align: center
         :alt: Diagram of a convolutional layer
 
-      Processes sequential data using recurrent units (e.g., LSTM, GRU) to model temporal dependencies.
+      Processes sequential data using recurrent units (e.g., LSTM, GRU, TCN) to model temporal dependencies.
 
    .. grid-item-card:: |magnifying-glass-chart| Small Attention
       :shadow: sm
@@ -121,8 +125,6 @@ EEG Decoding models
 
       :bdg-light:`Graph Neural Network`
 
-      No implemented in braindecode yet!
-
       .. figure:: _static/model_cat/gnn.png
         :class: no-scaled-link
         :width: 90%
@@ -130,6 +132,7 @@ EEG Decoding models
         :alt: Diagram for Graph neural Network models
         :figclass: unavailable
 
+      No implemented in braindecode yet!
       Models the relationships between channels as a graph to explicitly learn from functional connectivity patterns.
 
    .. grid-item-card:: |clone| Channel-domain
@@ -145,6 +148,12 @@ EEG Decoding models
 
       Employ the channel-montage feature for more robust, domain-aware learning in neuroscience.
 
+
+Models Summary
+~~~~~~~~~~~~~~
+
+This page offers a summary of all :class:`braindecode` implemented models. For more information for each model please consult the :doc:`API documentation <api>`.
+
 .. raw:: html
 
    <!-- Dropdown filter container -->
@@ -152,7 +161,6 @@ EEG Decoding models
 
 .. raw:: html
    :file: generated/models_summary_table.html
-
 
 
 Columns definitions:
@@ -165,13 +173,9 @@ Columns definitions:
 
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
 
+Small Visualization
+~~~~~~~~~~~~~~~~~~~
 
-Models Summary
-~~~~~~~~~~~~~~
-
-This page offers a summary of many implemented models. Please note that this list may not be exhaustive. For the definitive and most current list, including detailed class documentation, please consult the :doc:`API documentation <api>`.
-
-We are continually expanding this collection and welcome contributions! If you have implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to Braindecode. See the "Submit a New Model" section below for details.
 
 .. figure:: _static/model/models_analysis.png
    :alt: Braindecode Models
