@@ -92,13 +92,14 @@ EEG Decoding models
    .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
       :shadow: sm
 
-      :bdg-dark:`SPD`
+      :bdg-dark:`SPD` :bdg-danger-line:`To be released soon!`
 
       .. figure:: _static/model_cat/spd.png
         :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram of a SPD Learn
+        :figclass: unavailable
 
       Learns representations by leveraging Symmetric Positive-Definite (SPD) matrices, which typically encode functional connectivity (covariance).
 
@@ -120,11 +121,14 @@ EEG Decoding models
 
       :bdg-light:`Graph Neural Network`
 
+      No implemented in braindecode yet!
+
       .. figure:: _static/model_cat/gnn.png
         :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram for Graph neural Network models
+        :figclass: unavailable
 
       Models the relationships between channels as a graph to explicitly learn from functional connectivity patterns.
 
@@ -141,6 +145,15 @@ EEG Decoding models
 
       Employ the channel-montage feature for more robust, domain-aware learning in neuroscience.
 
+.. raw:: html
+
+   <!-- Dropdown filter container -->
+   <div id="custom-filters" style="margin-bottom: 15px;"></div>
+
+.. raw:: html
+   :file: generated/models_summary_table.html
+
+
 
 Columns definitions:
     - **Model**: The name of the model.
@@ -149,14 +162,6 @@ Columns definitions:
     - **Freq (Hz)**: The data sampling rate (in Hertz) the model is designed for. Note that this might be adaptable depending on the specific dataset and application.
     - **Hyperparameters**: The mandatory hyperparameters required for instantiating the model class. These may include `n_chans` (number of channels), `n_outputs` (number of output classes or regression targets), `n_times` (number of time points in the input window), or `sfreq` (sampling frequency). Also, `n_times` can be derived implicitly by providing both `sfreq` and `input_window_seconds`.
     - **#Parameters**: The approximate total number of trainable parameters in the model, calculated using a consistent configuration (see note below).
-
-.. raw:: html
-
-   <!-- Dropdown filter container -->
-   <div id="custom-filters" style="margin-bottom: 15px;"></div>
-
-.. raw:: html
-   :file: generated/models_summary_table.html
 
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
 

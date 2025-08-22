@@ -237,3 +237,25 @@ img.hidden {
 .horizontal-scroll-container .sd-card {
   min-width: 250px;
 }
+
+/* Grey out images marked as unavailable */
+figure.unavailable img,
+img.unavailable {           /* covers :class: on the image */
+  filter: grayscale(100%);
+  opacity: 0.45;
+}
+
+/* Optional “Unavailable” ribbon – only shows if the class is on the figure */
+figure.unavailable { position: relative; }
+figure.unavailable::after {
+  content: "Unavailable";
+  position: absolute;
+  top: 0.6rem; right: -0.6rem;
+  transform: rotate(15deg);
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem; font-weight: 600;
+  background: rgba(128,128,128,0.25);
+  border: 1px solid rgba(128,128,128,0.45);
+  border-radius: 0.25rem;
+  pointer-events: none;
+}
