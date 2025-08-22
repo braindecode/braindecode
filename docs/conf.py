@@ -471,7 +471,6 @@ prolog += """
 .. |ensp| unicode:: U+2002 .. EN SPACE
 """
 rst_prolog = prolog
-
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples

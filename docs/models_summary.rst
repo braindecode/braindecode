@@ -18,22 +18,8 @@
 
 .. _models-summary:
 
-Models Summary
-~~~~~~~~~~~~~~
-
-This page offers a summary of many implemented models. Please note that this list may not be exhaustive. For the definitive and most current list, including detailed class documentation, please consult the :doc:`API documentation <api>`.
-
-We are continually expanding this collection and welcome contributions! If you have implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to Braindecode. See the "Submit a New Model" section below for details.
-
-.. figure:: _static/model/models_analysis.png
-   :alt: Braindecode Models
-   :align: center
-
-   Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental paradigm they were designed for (right plot).
-
-
-Models Categorization
-~~~~~~~~~~~~~~~~~~~~
+EEG Decoding models
+~~~~~~~~~~~~~~~~~~~~~
 
 .. grid:: 1 2 3 3
    :gutter: 3
@@ -44,10 +30,10 @@ Models Categorization
       :bdg-success:`Convolution`
 
       .. figure:: _static/model_cat/convolution.png
-        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a convolutional layer
+        :class: no-scaled-link
 
       Applies convolutional layers to extract spatial, temporal, and spectral features from brain signals.
 
@@ -57,7 +43,7 @@ Models Categorization
       :bdg-secondary:`Recurrent`
 
       .. figure:: _static/model_cat/rnn.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram of a convolutional layer
@@ -70,7 +56,7 @@ Models Categorization
       :bdg-info:`Small Attention`
 
       .. figure:: _static/model_cat/attention.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram of a convolutional layer
@@ -83,7 +69,7 @@ Models Categorization
       :bdg-primary:`Filterbank`
 
       .. figure:: _static/model_cat/filterbank.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram of a recurrent models
@@ -96,7 +82,7 @@ Models Categorization
       :bdg-warning:`Interpretability`
 
       .. figure:: _static/model_cat/interpre.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram of a interpretable
@@ -109,7 +95,7 @@ Models Categorization
       :bdg-dark:`SPD`
 
       .. figure:: _static/model_cat/spd.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram of a SPD Learn
@@ -122,7 +108,7 @@ Models Categorization
       :bdg-danger:`Large Attention`
 
       .. figure:: _static/model_cat/llm.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram of a LLM models
@@ -135,7 +121,7 @@ Models Categorization
       :bdg-light:`Graph Neural Network`
 
       .. figure:: _static/model_cat/gnn.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram for Graph neural Network models
@@ -148,7 +134,7 @@ Models Categorization
       :bdg-dark-line:`Channel`
 
       .. figure:: _static/model_cat/channel.png
-        :class: no-link
+        :class: no-scaled-link
         :width: 90%
         :align: center
         :alt: Diagram for Channel-domain models
@@ -173,6 +159,21 @@ Columns definitions:
    :file: generated/models_summary_table.html
 
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
+
+
+Models Summary
+~~~~~~~~~~~~~~
+
+This page offers a summary of many implemented models. Please note that this list may not be exhaustive. For the definitive and most current list, including detailed class documentation, please consult the :doc:`API documentation <api>`.
+
+We are continually expanding this collection and welcome contributions! If you have implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to Braindecode. See the "Submit a New Model" section below for details.
+
+.. figure:: _static/model/models_analysis.png
+   :alt: Braindecode Models
+   :align: center
+
+   Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental paradigm they were designed for (right plot).
+
 
 Submit a new model
 ~~~~~~~~~~~~~~~~~~
