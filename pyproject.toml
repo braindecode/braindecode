@@ -86,7 +86,8 @@ docs = [
     'lightning',
     'seaborn',
     'pre-commit',
-    'openneuro-py'
+    'openneuro-py',
+    'plotly',
 ]
 all = [
     "braindecode[moabb,tests,docs]"

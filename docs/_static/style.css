@@ -259,3 +259,4 @@ figure.unavailable::after {
   border-radius: 0.25rem;
   pointer-events: none;
 }
+.plot-caption{ font-size:.9em; color: var(--pst-color-text-muted, #6c757d); }

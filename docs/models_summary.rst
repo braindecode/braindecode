@@ -18,10 +18,30 @@
 
 .. _models-summary:
 
-EEG Decoding models
-~~~~~~~~~~~~~~~~~~~~~
+EEG Decoding
+~~~~~~~~~~~~~
 
 Some text from the thesis here....
+
+In this section, we will define our deep learning architecture.
+
+We use the residual dilated convolutional neural network of [Défossez et al. (2023)](https://www.nature.com/articles/s42256-023-00714-5). It performed well on multiple other M/EEG decoding tasks, e.g. [image decoding ](https://arxiv.org/abs/2310.19812), [word decoding](https://arxiv.org/abs/2412.17829) and [typing decoding](https://arxiv.org/abs/2502.17480).
+
+Following the formulation in part 1, we have:
+
+$\widehat{y}_i = f_{\Theta}(X_i) $
+
+where
+- $X_i$: an MEG segment, with shape `(n_channels, n_times)`;
+- $\widehat{y}$: the predicted word embedding, with shape `(n_word_dims,)`;
+- $\Theta$: the parameters of our convolutional network, to be tuned during training.
+
+![model](https://github.com/lucyzmf/NeuralDecoding-CCN2025/blob/main/images/model_architecture.png?raw=1)
+*Architecture of our simplified brain module.*
+
+*Note*: The following implementation is a simplified version of the [original](https://github.com/facebookresearch/brainmagick/blob/main/bm/models/simpleconv.py#L22) in which we drop less critical features and hardcode some hyperparameters.
+
+
 
 We are continually expanding this collection and welcome contributions! If you have implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to Braindecode. See the "Submit a New Model" section below for details.
 
@@ -132,7 +152,6 @@ We are continually expanding this collection and welcome contributions! If you h
         :alt: Diagram for Graph neural Network models
         :figclass: unavailable
 
-      No implemented in braindecode yet!
       Models the relationships between channels as a graph to explicitly learn from functional connectivity patterns.
 
    .. grid-item-card:: |clone| Channel-domain
@@ -168,7 +187,15 @@ Columns definitions:
     - **Paradigm**: The paradigm(s) the model is typically used for (e.g., Motor Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple paradigms or no specific paradigm focus.
     - **Type**: The model's primary function (e.g., Classification, Regression, Embedding).
     - **Freq (Hz)**: The data sampling rate (in Hertz) the model is designed for. Note that this might be adaptable depending on the specific dataset and application.
-    - **Hyperparameters**: The mandatory hyperparameters required for instantiating the model class. These may include `n_chans` (number of channels), `n_outputs` (number of output classes or regression targets), `n_times` (number of time points in the input window), or `sfreq` (sampling frequency). Also, `n_times` can be derived implicitly by providing both `sfreq` and `input_window_seconds`.
+    - **Hyperparameters**: The mandatory hyperparameters required for instantiating the model class. These may include:
+        - :fa:`wave-square`\  **n_chans**, number of channels/electrodes/sensors,
+        - :fa:`shapes`\  **n_outputs**, number of output classes or regression targets,
+        - :fa:`clock`\  **n_times**, number of time points in the input window,
+        - :fa:`wifi`\  **freq (Hz)**, sampling frequency,
+        - :fa:`info-circle`\  **chs_info**, information about each individual EEG channel. Refer to class:`mne.Info["chs"]`
+
+      Also, `n_times` can be derived implicitly by providing both `sfreq` and `input_window_seconds`.
+
     - **#Parameters**: The approximate total number of trainable parameters in the model, calculated using a consistent configuration (see note below).
 
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
@@ -177,15 +204,21 @@ Small Visualization
 ~~~~~~~~~~~~~~~~~~~
 
 
-.. figure:: _static/model/models_analysis.png
-   :alt: Braindecode Models
-   :align: center
 
-   Visualization comparing the models based on their total number of parameters (left plot) and the primary experimental paradigm they were designed for (right plot).
+.. raw:: html
+   :file: _static/model/models_analysis.html
+
+.. raw:: html
+
+   <p class="plot-caption">
+     Visualization comparing the models based on their total number of parameters (left)
+     and the primary experimental paradigm (right).
+   </p>
 
 
 Submit a new model
 ~~~~~~~~~~~~~~~~~~
+
 
 Want to contribute a new model to Braindecode? Great! You can propose a new model by opening an `issue <braindecode-issues_>`_ (please include a link to the relevant publication or description) or, even better, directly submit your implementation via a `pull request <braindecode-pulls_>`_. We appreciate your contributions to expanding the library!
 
