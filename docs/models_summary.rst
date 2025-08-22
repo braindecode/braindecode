@@ -107,10 +107,10 @@ We are continually expanding this collection and welcome contributions! If you h
 
       Learns representations by leveraging Symmetric Positive-Definite (SPD) matrices, which typically encode functional connectivity (covariance).
 
-   .. grid-item-card:: |lightbulb| Large Attention
+   .. grid-item-card:: |lightbulb| Large Language Model
       :shadow: sm
 
-      :bdg-danger:`Large Attention`
+      :bdg-danger:`Large Language Model`
 
       .. figure:: _static/model_cat/llm.png
         :class: no-scaled-link
