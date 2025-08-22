@@ -21,12 +21,8 @@ Models Summary
 
 This page offers a summary of all :class:`braindecode` implemented models. For more information for each model please consult the API.
 
-.. raw:: html
-
-   <!-- Dropdown filter container -->
-   <div id="custom-filters" style="margin-bottom: 15px;"></div>
-
 Columns definitions:
+
     - **Model**: The name of the model.
     - **Paradigm**: The paradigm(s) the model is typically used for (e.g., Motor Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple paradigms or no specific paradigm focus.
     - **Type**: The model's primary function (e.g., Classification, Regression, Embedding).
@@ -42,6 +38,10 @@ Columns definitions:
 
     - **#Parameters**: The approximate total number of trainable parameters in the model, calculated using a consistent configuration (see note below).
 
+.. raw:: html
+
+   <!-- Dropdown filter container -->
+   <div id="custom-filters" style="margin-bottom: 15px;"></div>
 
 .. raw:: html
    :file: ../generated/models_summary_table.html
@@ -49,6 +49,13 @@ Columns definitions:
 The parameter counts shown in the table were calculated using consistent hyperparameters for models within the same paradigm, based largely on Braindecode's default implementation values. These counts provide a relative comparison but may differ from those reported in the original publications due to variations in specific architectural details, input dimensions used in the paper, or calculation methods.
 
 We are continually expanding this collection and welcome contributions! If you have implemented a model relevant to EEG, EcoG, or MEG analysis, consider adding it to Braindecode.
+
+.. button-ref:: models_visualization
+   :ref-type: doc
+   :color: primary
+   :expand:
+
+   Next: Models Parameter Visualization →
 
 .. raw:: html
 

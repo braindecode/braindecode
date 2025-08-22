@@ -138,5 +138,11 @@ Submit a new model
 
 Want to contribute a new model to Braindecode? Great! You can propose a new model by opening an `issue <braindecode-issues_>`_ (please include a link to the relevant publication or description) or, even better, directly submit your implementation via a `pull request <braindecode-pulls_>`_. We appreciate your contributions to expanding the library!
 
+.. button-ref:: models_table
+   :ref-type: doc
+   :color: primary
+   :expand:
+
+   Next: Models Table →
 
 .. include:: /links.inc

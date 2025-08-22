@@ -41,7 +41,7 @@ the regularized the average loss over the training set :math:`\mathcal{D}_{\text
         \ell\!\left(f_{\theta}(x_i),\, y_i\right) \;+\; \lambda\,\Omega(\theta)\,,
    \end{aligned}
 
-where :math:`\ell` is the task loss (e.g., cross-entropy :class:`torch.nn.CrossEntropyLoss`), :math:`\Omega` is an optional regularizer, and :math:`\lambda \ge 0` its weight (e.g. ``weight_decay`` parameter in :class:`torch.optim.Adam`).
+where :math:`\ell` is the task loss (e.g., cross-entropy :class:`torch.nn.CrossEntropyLoss`), :math:`\Omega` is an optional regularizer, and :math:`\lambda \ge 0` its weight (e.g. ``weight_decay`` parameter in :class:`torch.optim.Adam` is the example of regularization).
 
 Equivalently, the goal is to minimize the expected risk :math:`\mathcal{R}(\theta)=\mathbb{E}_{(x,y)\sim P_{\text{tr}}}
 [\ell(f_{\theta}(x),y)]`, for which the empirical average above is a finite-sample
