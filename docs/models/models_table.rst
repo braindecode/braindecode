@@ -32,7 +32,7 @@ Columns definitions:
  - :fa:`shapes`\  **n_outputs**, number of output classes or regression targets,
  - :fa:`clock`\  **n_times**, number of time points in the input window,
  - :fa:`wifi`\  **freq (Hz)**, sampling frequency,
- - :fa:`info-circle`\  **chs_info**, information about each individual EEG channel. Refer to class:`mne.Info["chs"]`
+ - :fa:`info-circle`\  **chs_info**, information about each individual EEG channel. Refer to :class:`mne.Info` (see its `"chs"` field for details)
 
  Also, `n_times` can be derived implicitly by providing both `sfreq` and `input_window_seconds`.
 
