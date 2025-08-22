@@ -99,17 +99,23 @@ def gen_models_visualization(
         type="log",
         title_text="#Parameters (log scale)",
         showgrid=True,
-        gridcolor="rgba(0,0,0,0.15)",
-        griddash="solid",
-        minor=dict(showgrid=True, dtick="D2"),
-        minor_gridcolor="rgba(0,0,0,0.10)",
-        minor_griddash="dot",
+        gridcolor="rgba(0,0,0,0.18)",
+        gridwidth=1,  # major grid thickness
+        # all digits 2–9 per decade as minor gridlines
+        minor=dict(
+            showgrid=True,
+            dtick="D1",  # use "D2" to show only 2 and 5
+            gridcolor="rgba(0,0,0,0.10)",
+            griddash="dot",
+            gridwidth=0.5,  # minor grid thinner
+        ),
         tickformat="~s",
         ticks="outside",
         ticklen=6,
         row=1,
         col=1,
     )
+
     fig.update_yaxes(
         title_text="Model",
         categoryorder="array",
