@@ -59,6 +59,7 @@ extensions = [
     "sphinx.ext.ifconfig",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "sphinxcontrib.bibtex",
     "sphinx.ext.napoleon",
     "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
@@ -177,7 +178,9 @@ master_doc = "index"
 
 # General information about the project.
 
-
+bibtex_bibfiles = ["references.bib"]
+bibtex_reference_style = "author_year"
+bibtex_default_style = "unsrt"
 # -- Project information -----------------------------------------------------
 
 project = "Braindecode"
