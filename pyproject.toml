@@ -75,6 +75,8 @@ tests = [
 docs = [
     'sphinx_gallery',
     'sphinx_rtd_theme',
+    'sphinx-autodoc-typehints',
+    '"sphinx-autobuild',
     'pydata_sphinx_theme',
     'numpydoc',
     'memory_profiler',
