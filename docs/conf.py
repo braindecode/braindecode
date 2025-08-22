@@ -359,7 +359,6 @@ html_context = {
 }
 
 html_sidebars = {
-    "models_summary": [],
     "cite": [],
     "help": [],
     "whats_new": [],
