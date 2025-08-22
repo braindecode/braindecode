@@ -44,6 +44,7 @@ Models Categorization
       :bdg-success:`Convolution`
 
       .. figure:: _static/model_cat/convolution.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a convolutional layer
@@ -56,6 +57,7 @@ Models Categorization
       :bdg-secondary:`Recurrent`
 
       .. figure:: _static/model_cat/rnn.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a convolutional layer
@@ -68,6 +70,7 @@ Models Categorization
       :bdg-info:`Small Attention`
 
       .. figure:: _static/model_cat/attention.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a convolutional layer
@@ -80,6 +83,7 @@ Models Categorization
       :bdg-primary:`Filterbank`
 
       .. figure:: _static/model_cat/filterbank.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a recurrent models
@@ -92,6 +96,7 @@ Models Categorization
       :bdg-warning:`Interpretability`
 
       .. figure:: _static/model_cat/interpre.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a interpretable
@@ -104,6 +109,7 @@ Models Categorization
       :bdg-dark:`SPD`
 
       .. figure:: _static/model_cat/spd.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a SPD Learn
@@ -116,6 +122,7 @@ Models Categorization
       :bdg-danger:`Large Attention`
 
       .. figure:: _static/model_cat/llm.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram of a LLM models
@@ -128,6 +135,7 @@ Models Categorization
       :bdg-light:`Graph Neural Network`
 
       .. figure:: _static/model_cat/gnn.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram for Graph neural Network models
@@ -140,6 +148,7 @@ Models Categorization
       :bdg-dark-line:`Channel`
 
       .. figure:: _static/model_cat/channel.png
+        :class: no-link
         :width: 90%
         :align: center
         :alt: Diagram for Channel-domain models
