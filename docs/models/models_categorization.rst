@@ -83,7 +83,7 @@ training data, with parameters :math:`\theta \in \Theta`.
          :align: center
          :alt: Diagram of interpretable architectures
 
-     Architectures with inherently interpretable layers allow direct neuroscientific validation of learned features.
+      Architectures with inherently interpretable layers allow direct neuroscientific validation of learned features.
 
    .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
       :shadow: sm
@@ -110,7 +110,7 @@ training data, with parameters :math:`\theta \in \Theta`.
          :align: center
          :alt: Diagram of transformer models
 
-     Large-scale transformer layers require self-supervised pre-training to work effectively.
+      Large-scale transformer layers require self-supervised pre-training to work effectively.
 
    .. grid-item-card:: |share-nodes| Graph Neural Network
       :shadow: sm
