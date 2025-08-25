@@ -17,6 +17,8 @@ Learning is the mapping :math:`f_{\mathrm{method}} : \mathcal{X} \to \mathcal{Y}
 training data, with parameters :math:`\theta \in \Theta`.
 
 
+
+
 .. grid:: 1 2 3 3
    :gutter: 3
 

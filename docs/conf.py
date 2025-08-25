@@ -182,7 +182,6 @@ bibtex_bibfiles = ["references.bib"]
 bibtex_reference_style = "author_year"
 bibtex_default_style = "unsrt"
 # -- Project information -----------------------------------------------------
-
 project = "Braindecode"
 td = datetime.now(tz=timezone.utc)
 
@@ -369,20 +368,23 @@ html_sidebars = {
 }
 
 # -- Options for LaTeX output ---------------------------------------------
-
+latex_engine = "xelatex"
 latex_elements = {
+    "latex_engine": "xelatex",
     # The paper size ('letterpaper' or 'a4paper').
-    #
-    # 'papersize': 'letterpaper',
+    "papersize": "a4paper",
     # The font size ('10pt', '11pt' or '12pt').
     #
-    # 'pointsize': '10pt',
+    "pointsize": "14pt",
     # Additional stuff for the LaTeX preamble.
     #
-    # 'preamble': '',
+    "preamble": r"""\usepackage{microtype}
+    \usepackage{enumitem}
+    \setlist{nosep}
+    """,
     # Latex figure (float) alignment
     #
-    # 'figure_align': 'htbp',
+    "figure_align": "htbp",
 }
 
 latex_logo = "_static/braindecode_symbol.png"
