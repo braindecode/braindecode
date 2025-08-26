@@ -12,33 +12,20 @@ denoted :math:`f`, as a composition of sequential transformations:
 
  f_{\mathrm{method}}
  \;=\;
- f_{\mathrm{convolution}} \circ \cdots \circ f_{\mathrm{MLP}}\,
+ f_{\mathrm{convolution}} \circ f_{\ell} \circ \cdots  \circ f_{\mathrm{linear}}\,
 
-where each :math:`f_\ell` is a specific transformation (:math:`\ell` layer) in the network.
-Learning is the mapping :math:`f_{\mathrm{method}} : \mathcal{X} \to \mathcal{Y}` on the
+where each :math:`f_\ell` is a specific :math:`\ell` layer in the neural network,
+focusing mostly of time in learning the mapping :math:`f_{\mathrm{method}} : \mathcal{X} \to \mathcal{Y}` on the
 training data, with parameters :math:`\theta \in \Theta`.
+How these *core* :math:`\ell` sequence transformations are structured and combined defines the overall focus and strength of the models.
 
-
-Given the brain-decoding framework from the previous page, we define our neural networks,
-denoted :math:`f`, as a composition of sequential transformations:
-
-.. math::
-
- f_{\mathrm{method}}
- \;=\;
- f_{\mathrm{convolution}} \circ \cdots \circ f_{\mathrm{MLP}}\,
-
-where each :math:`f_\ell` is a specific transformation (:math:`\ell` layer) in the network.
-Learning is the mapping :math:`f_{\mathrm{method}} : \mathcal{X} \to \mathcal{Y}` on the
-training data, with parameters :math:`\theta \in \Theta`.
-
-How these transformations are structured and combined defines the overall architecture of the model, which is very diverse.
 Here, we categorize the main families of brain decoding models based on their core components and design philosophies.
+The categories are not mutually exclusive, but an indication of what governs that neural network model; many models blend elements from multiple families to leverage their combined strengths.
 Beginning directly, the categories are nine: :bdg-success:`Convolution`, :bdg-secondary:`Recurrent`, :bdg-info:`Small Attention`, :bdg-primary:`Filterbank`, :bdg-warning:`Interpretability`, :bdg-danger:`Large Language Model`, :bdg-light:`Graph Neural Network`, :bdg-dark:`Symmetric Positive-Definite` and :bdg-dark-line:`Channel`.
 
-Not all the categories are implemented, validated, and tested here, but there are some that are noteworthy for introducing or popularizing concepts or layer designs that can take decoding further.
+At the moment, not all the categories are implemented, validated, and tested, but there are some that are noteworthy for introducing or popularizing concepts or layer designs that can take decoding further.
 
-You gonna notice that the core layer present across almost all the models here is the convolution layer.
+The convolutional layer appears as the core primitive across most architectures.
 This is because **convolutions are filtering** operations, such as band-pass `filters <https://mne.tools/stable/auto_tutorials/preprocessing/25_background_filtering.html>`__, useful and needed to extract local features from brain signals.
 
 More details about each categories can be found in the respective sections below.
@@ -169,8 +156,8 @@ More details about each categories can be found in the respective sections below
 
 
 - Across most architectures, the earliest stages are convolutional (:bdg-success:`Convolution`), reflecting the brain time series's noisy, locally structured nature.
- These layers apply temporal and/or spatial convolutions—often depthwise-separable as in EEGNet, per-channel or across channel groups to extract robust local features.
- :class:`EEGNet`, :class:`ShallowFBCSPNet`, :class:`EEGNeX`, and :class:`EEGInceptionERP`
+  These layers apply temporal and/or spatial convolutions—often depthwise-separable as in EEGNet, per-channel or across channel groups to extract robust local features.
+  :class:`EEGNet`, :class:`ShallowFBCSPNet`, :class:`EEGNeX`, and :class:`EEGInceptionERP`
 - In the **recurrent** family (:bdg-secondary:`Recurrent`), many modern EEG models actually rely on *temporal convolutional networks* (TCNs) with dilations to grow the receptive field, rather than explicit recurrence (:cite:label:`bai2018tcn`), :class:`BDTCN`,
 - In contrast, several methods employ **small attention** modules (:bdg-info:`Small Attention`) to capture longer-range dependencies efficiently, e.g., :class:`EEGConformer`, :class:`CTNet`, :class:`ATCNet`, :class:`AttentionBaseNet` (:cite:label:`song2022eeg,zhao2024ctnet,altaheri2022atcnet`).
 - **Filterbank-style models** (:bdg-primary:`Filterbank`) explicitly decompose signals into multiple bands before (or while) learning, echoing the classic FBCSP pipeline; examples include :class:`FBCNet` and :class:`FBMSNet` (:cite:label:`mane2021fbcnet,liu2022fbmsnet`).
