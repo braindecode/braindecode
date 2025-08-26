@@ -26,6 +26,9 @@ training data, with parameters :math:`\theta \in \Theta`.
 
    .. grid-item-card:: |braille| Convolution Layers
       :shadow: sm
+      :link: convolution
+      :link-type: doc
+      :link-alt: Convolution page
 
       :bdg-success:`Convolution`
 
@@ -33,7 +36,6 @@ training data, with parameters :math:`\theta \in \Theta`.
          :width: 90%
          :align: center
          :alt: Diagram of a convolutional layer
-         :class: no-scaled-link
 
       Applies temporal and/or spatial convolutions to extract local features from brain signals.
 
