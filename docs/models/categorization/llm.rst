@@ -12,7 +12,7 @@
    :alt: Large Language Models icon
    :class: heading-icon no-scaled-link
 
-  :bdg-danger:`Large Transformer Models`
+:bdg-danger:`Large Transformer Models`
 
 .. figure:: ../../_static/model_connection/llm.png
     :width: 100%

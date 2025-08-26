@@ -201,4 +201,19 @@ We appreciate your contributions to expanding the library!
 
  Next: Models Table
 
+.. toctree::
+   :caption: Categorization
+   :maxdepth: 2
+   :hidden:
+
+   categorization/convolution
+   categorization/recurrent
+   categorization/attention
+   categorization/filterbank
+   categorization/interpretable
+   categorization/spd
+   categorization/llm
+   categorization/gnn
+   categorization/channel
+
 .. include:: /links.inc

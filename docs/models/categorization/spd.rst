@@ -12,7 +12,7 @@
    :alt: Symmetric Positive-Definite icon
    :class: heading-icon no-scaled-link
 
-  :bdg-dark:`Symmetric Positive-Definite`
+:bdg-dark:`Symmetric Positive-Definite`
 
 .. figure:: ../../_static/model_connection/convolution.png
     :width: 100%

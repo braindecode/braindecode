@@ -4,7 +4,7 @@
 
 .. _models:
 
-|channel-iconchannel| Channel-Domain
+|channel-icon| Channel-Domain
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. |channel-icon| image:: ../../_static/model_cat/channel.png
@@ -12,7 +12,7 @@
    :alt: Channel-Domain icon
    :class: heading-icon no-scaled-link
 
-  :bdg-light:`Channel-Domain`
+:bdg-light:`Channel-Domain`
 
 .. figure:: ../../_static/model_connection/gnn.png
     :width: 100%

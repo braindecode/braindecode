@@ -12,7 +12,7 @@
    :alt: Interpretability-by-Design icon
    :class: heading-icon no-scaled-link
 
-  :bdg-warning:`Interpretability-by-Design`
+:bdg-warning:`Interpretability-by-Design`
 
 .. figure:: ../../_static/model_connection/convolution.png
     :width: 100%

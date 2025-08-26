@@ -12,7 +12,7 @@
    :alt: Graph Neural Networks icon
    :class: heading-icon no-scaled-link
 
-  :bdg-light:`Graph Neural Network`
+:bdg-light:`Graph Neural Network`
 
 .. figure:: ../../_static/model_connection/gnn.png
     :width: 100%
