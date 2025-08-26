@@ -189,7 +189,7 @@ def wrap_model_name(name: str):
     # Remove any surrounding whitespace
     name = name.strip()
     # Construct the URL based on the model name
-    url = f"generated/braindecode.models.{name}.html#braindecode.models.{name}"
+    url = f"../generated/braindecode.models.{name}.html"
     return f'<a href="{url}">{name}</a>'
 
 
