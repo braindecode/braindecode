@@ -21,8 +21,78 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
         :align: center
         :alt: EEGInceptionERP Architecture
 
-    The code for the paper and this model is also available at [santamaria2020]_
-    and an adaptation for PyTorch [2]_.
+        Figure: Overview of EEG-Inception architecture. 2D convolution blocks and depthwise 2D convolution blocks include batch normalization, activation and dropout regularization. The kernel size is displayed for convolutional and average pooling layers.
+
+    .. rubric:: Architectural Overview
+
+    A two-stage, multi-scale CNN tailored to ERP detection from short (0-1000 ms) single-trial epochs. Signals are mapped through
+    * (i) :class:`_InceptionModule1` multi-scale temporal feature extraction plus per-branch spatial mixing;
+    * (ii) :class:`_InceptionModule2` deeper multi-scale refinement at a reduced temporal resolution; and
+    * (iii) :class:`_OutputModule` compact aggregation and linear readout.
+
+    .. rubric:: Macro Components
+
+    - :class:`_InceptionModule1` **(multi-scale temporal + spatial mixing)**
+
+        - *Operations.*
+        - `EEGInceptionERP.c1`: :class:`torch.nn.Conv2d` ``k=(64,1)``, stride ``(1,1)``, *same* pad on input reshaped to ``(B,1,128,8)`` → BN → activation → dropout.
+        - `EEGInceptionERP.d1`: :class:`torch.nn.Conv2d` (depthwise) ``k=(1,8)``, *valid* pad over channels → BN → activation → dropout.
+        - `EEGInceptionERP.c2`: :class:`torch.nn.Conv2d` ``k=(32,1)`` → BN → activation → dropout; then `EEGInceptionERP.d2` depthwise ``k=(1,8)`` → BN → activation → dropout.
+        - `EEGInceptionERP.c3`: :class:`torch.nn.Conv2d` ``k=(16,1)`` → BN → activation → dropout; then `EEGInceptionERP.d3` depthwise ``k=(1,8)`` → BN → activation → dropout.
+        - `EEGInceptionERP.n1`: :class:`torch.nn.Concat` over branch features.
+        - `EEGInceptionERP.a1`: :class:`torch.nn.AvgPool2d` ``pool=(4,1)``, stride ``(4,1)`` for temporal downsampling.
+
+    *Interpretability/robustness.* Depthwise `1 x n_chans` layers act as learnable montage-wide spatial filters per temporal scale; pooling stabilizes against jitter.
+
+    - :class:`_InceptionModule2` **(refinement at coarser timebase)**
+
+        - *Operations.*
+        - `EEGInceptionERP.c4`: :class:`torch.nn.Conv2d` ``k=(16,1)`` → BN → activation → dropout.
+        - `EEGInceptionERP.c5`: :class:`torch.nn.Conv2d` ``k=(8,1)`` → BN → activation → dropout.
+        - `EEGInceptionERP.c6`: :class:`torch.nn.Conv2d` ``k=(4,1)`` → BN → activation → dropout.
+        - `EEGInceptionERP.n2`: :class:`torch.nn.Concat` (merge C4-C6 outputs).
+        - `EEGInceptionERP.a2`: :class:`torch.nn.AvgPool2d` ``pool=(2,1)``, stride ``(2,1)``.
+        - `EEGInceptionERP.c7`: :class:`torch.nn.Conv2d` ``k=(8,1)`` → BN → activation → dropout; then `EEGInceptionERP.a3`: :class:`torch.nn.AvgPool2d` ``pool=(2,1)``.
+        - `EEGInceptionERP.c8`: :class:`torch.nn.Conv2d` ``k=(4,1)`` → BN → activation → dropout; then `EEGInceptionERP.a4`: :class:`torch.nn.AvgPool2d` ``pool=(2,1)``.
+
+    *Role.* Adds higher-level, shorter-window evidence while progressively compressing temporal dimension.
+
+    - :class:`_OutputModule` **(aggregation + readout)**
+
+        - *Operations.*
+        - :class:`torch.nn.Flatten`
+        - :class:`torch.nn.Linear` ``(features → 2)``
+
+    .. rubric:: Convolutional Details
+
+    - **Temporal (where time-domain patterns are learned).**
+    First module uses 1D temporal kernels along the 128-sample axis: ``64``, ``32``, ``16``
+    (≈500, 250, 125 ms at 128 Hz). After ``pool=(4,1)``, the second module applies ``16``,
+    ``8``, ``4`` (≈125, 62.5, 31.25 ms at the pooled rate). All strides are ``1`` in convs;
+    temporal resolution changes only via average pooling.
+
+    - **Spatial (how electrodes are processed).**
+    Depthwise convs with ``k=(1,8)`` span all channels and are applied **per temporal branch**,
+    yielding scale-specific channel projections (no cross-branch mixing until concatenation).
+    There is no full 2D mixing kernel; spatial mixing is factorized and lightweight.
+
+    - **Spectral (how frequency information is captured).**
+    No explicit transform; multiple temporal kernels form a *learned filter bank* over
+    ERP-relevant bands. Successive pooling acts as low-pass integration to emphasize sustained
+    post-stimulus components.
+
+    .. rubric:: Additional Mechanisms
+
+    - Every conv/depthwise block includes **BatchNorm**, nonlinearity (paper used grid-searched activation), and **dropout**.
+    - Two Inception stages followed by short convs and pooling keep parameters small (≈15k reported) while preserving multi-scale evidence.
+    - Expected input: epochs of shape ``(B,1,128,8)`` (time x channels as a 2D map) or reshaped from ``(B,8,128)`` with an added singleton feature dimension.
+
+    .. rubric:: Usage and Configuration
+
+    - **Key knobs.** Number of filters per branch; kernel lengths in both Inception modules; depthwise kernel over channels (typically ``n_chans``); pooling lengths/strides; dropout rate; choice of activation.
+    - **Training tips.** Use 0-1000 ms windows at 128 Hz with CAR; tune activation and dropout (they strongly affect performance); early-stop on validation loss when overfitting emerges.
+
+    .. rubric:: Implementation Details
 
     The model is strongly based on the original InceptionNet for an image. The main goal is
     to extract features in parallel with different scales. The authors extracted three scales
@@ -35,12 +105,9 @@ class EEGInceptionERP(EEGModuleMixin, nn.Sequential):
     The winners of BEETL Competition/NeurIps 2021 used parts of the
     model [beetl]_.
 
-    The model is fully described in [santamaria2020]_.
+    The code for the paper and this model is also available at [santamaria2020]_
+    and an adaptation for PyTorch [2]_.
 
-    Notes
-    -----
-    This implementation is not guaranteed to be correct, has not been checked
-    by original authors, only reimplemented from the paper based on [2]_.
 
     Parameters
     ----------
