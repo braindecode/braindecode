@@ -17,7 +17,6 @@ from .eegitnet import EEGITNet
 from .eegminer import EEGMiner
 from .eegnet import EEGNet
 from .eegnex import EEGNeX
-from .eegresnet import EEGResNet
 from .eegsimpleconv import EEGSimpleConv
 from .eegtcnet import EEGTCNet
 from .fbcnet import FBCNet
@@ -67,7 +66,6 @@ __all__ = [
     "EEGMiner",
     "EEGNet",
     "EEGNeX",
-    "EEGResNet",
     "EEGSimpleConv",
     "EEGTCNet",
     "FBCNet",

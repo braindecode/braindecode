@@ -56,7 +56,6 @@ models_mandatory_parameters = [
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
         "SleepStagerBlanco2020",

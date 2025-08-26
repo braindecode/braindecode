@@ -31,7 +31,6 @@ from braindecode.models import (
     EEGMiner,
     EEGNet,
     EEGNeX,
-    EEGResNet,
     EEGSimpleConv,
     EEGTCNet,
     FBCNet,
@@ -195,27 +194,6 @@ def test_deep4net_load_state_dict(input_sizes):
     state_dict["conv_classifier.bias"] = torch.rand([input_sizes["n_classes"]])
     model.load_state_dict(state_dict)
 
-
-def test_eegresnet(input_sizes):
-    model = EEGResNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_pool_length=5,
-        n_first_filters=2,
-    )
-    check_forward_pass(model, input_sizes, only_check_until_dim=2)
-
-
-def test_eegresnet_pool_length_auto(input_sizes):
-    model = EEGResNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_pool_length="auto",
-        n_first_filters=2,
-    )
-    check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
 def test_hybridnet(input_sizes):
