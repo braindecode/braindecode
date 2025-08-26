@@ -27,7 +27,6 @@ At the moment, not all the categories are implemented, validated, and tested, bu
 
 The convolutional layer appears as the core primitive across most architectures.
 This is because **convolutions are filtering** operations, such as band-pass `filters <https://mne.tools/stable/auto_tutorials/preprocessing/25_background_filtering.html>`__, useful and needed to extract local features from brain signals.
-
 More details about each categories can be found in the respective sections below.
 
 .. grid:: 1 2 3 3
@@ -35,7 +34,7 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |braille| Convolution Layers
   :shadow: sm
-  :link: convolution
+  :link: categorization/convolution
   :link-type: doc
   :link-alt: Convolution page
 
@@ -50,11 +49,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |repeat| Recurrent Layers
   :shadow: sm
+  :link: categorization/recurrent
+  :link-type: doc
+  :link-alt: Recurrent page
 
   :bdg-secondary:`Recurrent`
 
   .. figure:: ../_static/model_cat/rnn.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of recurrent/TCN models
@@ -63,11 +64,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |magnifying-glass-chart| Small Attention
   :shadow: sm
+  :link: categorization/attention
+  :link-type: doc
+  :link-alt: Attention page
 
   :bdg-info:`Small Attention`
 
   .. figure:: ../_static/model_cat/attention.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of attention modules
@@ -76,11 +79,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |layer-group| Filterbank Models
   :shadow: sm
+  :link: categorization/filterbank
+  :link-type: doc
+  :link-alt: FilterBank page
 
   :bdg-primary:`Filterbank`
 
   .. figure:: ../_static/model_cat/filterbank.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of filterbank models
@@ -89,11 +94,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |eye| Interpretability-by-Design
   :shadow: sm
+  :link: categorization/interpretable
+  :link-type: doc
+  :link-alt: Interpretability page
 
   :bdg-warning:`Interpretability`
 
   .. figure:: ../_static/model_cat/interpre.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of interpretable architectures
@@ -102,11 +109,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
   :shadow: sm
+  :link: categorization/spd
+  :link-type: doc
+  :link-alt: SPD page
 
   :bdg-dark:`SPD` :bdg-danger-line:`To be released soon!`
 
   .. figure:: ../_static/model_cat/spd.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of SPD learning
@@ -116,11 +125,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |lightbulb| Large Transformer Models
   :shadow: sm
+  :link: categorization/llm
+  :link-type: doc
+  :link-alt: Large Language Model page
 
   :bdg-danger:`Large Language Model`
 
   .. figure:: ../_static/model_cat/llm.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of transformer models
@@ -129,11 +140,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |share-nodes| Graph Neural Network
   :shadow: sm
+  :link: categorization/gnn
+  :link-type: doc
+  :link-alt: GNN page
 
   :bdg-light:`Graph Neural Network`
 
   .. figure:: ../_static/model_cat/gnn.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of GNN models
@@ -143,11 +156,13 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |clone| Channel-Domain
   :shadow: sm
+  :link: categorization/channel
+  :link-type: doc
+  :link-alt: Channel page
 
   :bdg-dark-line:`Channel`
 
   .. figure:: ../_static/model_cat/channel.png
-   :class: no-scaled-link
    :width: 90%
    :align: center
    :alt: Diagram of channel-domain methods
