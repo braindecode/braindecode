@@ -10,7 +10,9 @@ from braindecode.models.base import EEGModuleMixin
 class DeepSleepNet(EEGModuleMixin, nn.Module):
     """Sleep staging architecture from Supratak et al. (2017) [Supratak2017]_.
 
-     .. figure:: https://raw.githubusercontent.com/akaraspt/deepsleepnet/refs/heads/master/img/deepsleepnet.png
+    :bdg-success:`Convolution` :bdg-secondary:`Recurrent`
+
+    .. figure:: https://raw.githubusercontent.com/akaraspt/deepsleepnet/refs/heads/master/img/deepsleepnet.png
         :align: center
         :alt: DeepSleepNet Architecture
 
