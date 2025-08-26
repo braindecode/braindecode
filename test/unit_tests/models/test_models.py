@@ -45,7 +45,7 @@ from braindecode.models import (
     SleepStagerEldele2021,
     SPARCNet,
     TIDNet,
-    TSceptionV1,
+    TSception,
     USleep,
 )
 from braindecode.util import set_random_seeds
@@ -775,7 +775,7 @@ def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
         (153, 8, 512.0, 2),
     ],
 )
-def test_tsceptionv1_dummy(n_times, n_chans, sfreq, n_outputs):
+def test_tsception_dummy(n_times, n_chans, sfreq, n_outputs):
     batch_size = 64
     input_sizes = dict(
         n_channels=n_chans,
@@ -783,7 +783,7 @@ def test_tsceptionv1_dummy(n_times, n_chans, sfreq, n_outputs):
         n_classes=n_outputs,
         n_samples=batch_size,
     )
-    model = TSceptionV1(
+    model = TSception(
         n_chans=n_chans,
         n_outputs=n_outputs,
         n_times=n_times,
