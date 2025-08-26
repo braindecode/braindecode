@@ -40,7 +40,7 @@ class USleep(EEGModuleMixin, nn.Module):
 
     .. rubric:: Macro Components
 
-    - :class:`_EncoderBlock` **(multi-scale temporal feature extractor; downsampling x2 per block)**
+    - Encoder :class:`_EncoderBlock` **(multi-scale temporal feature extractor; downsampling x2 per block)**
 
     - *Operations.*
         - **Conv1d** (:class:`torch.nn.Conv1d`) with kernel ``9`` (stride ``1``, no dilation)
@@ -73,7 +73,7 @@ class USleep(EEGModuleMixin, nn.Module):
 
     *Output.* A multi-class, **high-frequency** per-sample representation aligned to the input rate (128 Hz).
 
-    - **Segment Classifier incorporate into :class:`USleep` (aggregation to fixed epochs)**
+    - **Segment Classifier incorporate into :class:`braindecode.models.USleep` (aggregation to fixed epochs)**
 
     - *Operations.*
         - **Mean-pool**, :class:`torch.nn.AvgPool2d` per class with kernel = epoch length *i* and stride *i*
