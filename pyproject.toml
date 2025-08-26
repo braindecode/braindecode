@@ -38,7 +38,7 @@ classifiers = [
     'Programming Language :: Python :: 3.12',
 ]
 readme = "README.rst"
-requires-python = ">3.10"
+requires-python = ">=3.10"
 dependencies = [
     'mne>=1.10.0',
     'mne_bids>=0.16',
@@ -121,9 +121,10 @@ sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
 known_first_party = ["braindecode"]
 lines_between_sections = 1
 
-[pytest]
-# where to look for tests
-testpaths = ["test"]
+[tool.pytest.ini_options]
+testpaths = [
+  "test",
+]
 # which files count as test modules
 python_files = ["test_*.py", "*_test.py"]
 # which functions inside them count as tests
