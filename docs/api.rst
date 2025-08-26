@@ -65,7 +65,7 @@ provides a common interface for all EEG models and derivate variables names if n
     EEGInceptionMI
     EEGITNet
     EEGMiner
-    EEGNetv4
+    EEGNet
     EEGNeX
     EEGResNet
     EEGSimpleConv

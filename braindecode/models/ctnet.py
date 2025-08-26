@@ -39,7 +39,7 @@ class CTNet(EEGModuleMixin, nn.Module):
     The architecture consists of three main components:
 
     1. **Convolutional Module**:
-        - Apply EEGNetV4 to perform some feature extraction, denoted here as
+        - Apply :class:`EEGNet` to perform some feature extraction, denoted here as
         _PatchEmbeddingEEGNet module.
 
     2. **Transformer Encoder Module**:

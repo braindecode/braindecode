@@ -15,7 +15,7 @@ def gen_models_visualization(
     d = df.copy()
 
     replace_pipeline = {
-        "EEGNetv4": "EEGNet",
+        "EEGNet": "EEGNet",
         "TSceptionV1": "TSception",
         "ShallowFBCSPNet": "ShallowNet",
         "AttentionBaseNet": "AttnBaseNet",

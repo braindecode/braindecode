@@ -6,7 +6,7 @@
 
 Computation times
 =================
-**01:54.289** total execution time for 25 files **from all galleries**:
+**00:26.093** total execution time for 26 files **from all galleries**:
 
 .. container::
 
@@ -32,15 +32,9 @@ Computation times
    * - Example
      - Time
      - Mem (MB)
-   * - :ref:`sphx_glr_auto_examples_applied_examples_plot_sleep_staging_usleep.py` (``../examples/applied_examples/plot_sleep_staging_usleep.py``)
-     - 00:51.196
-     - 955.2
-   * - :ref:`sphx_glr_auto_examples_applied_examples_plot_sleep_staging_eldele2021.py` (``../examples/applied_examples/plot_sleep_staging_eldele2021.py``)
-     - 00:43.871
-     - 1112.4
-   * - :ref:`sphx_glr_auto_examples_applied_examples_plot_tuh_eeg_corpus.py` (``../examples/applied_examples/plot_tuh_eeg_corpus.py``)
-     - 00:19.221
-     - 510.2
+   * - :ref:`sphx_glr_auto_examples_model_building_plot_bcic_iv_2a_moabb_cropped.py` (``../examples/model_building/plot_bcic_iv_2a_moabb_cropped.py``)
+     - 00:26.093
+     - 1634.5
    * - :ref:`sphx_glr_auto_examples_advanced_training_bcic_iv_4_ecog_cropped.py` (``../examples/advanced_training/bcic_iv_4_ecog_cropped.py``)
      - 00:00.000
      - 0.0
@@ -50,6 +44,9 @@ Computation times
    * - :ref:`sphx_glr_auto_examples_advanced_training_plot_data_augmentation_search.py` (``../examples/advanced_training/plot_data_augmentation_search.py``)
      - 00:00.000
      - 0.0
+   * - :ref:`sphx_glr_auto_examples_advanced_training_plot_moabb_benchmark.py` (``../examples/advanced_training/plot_moabb_benchmark.py``)
+     - 00:00.000
+     - 0.0
    * - :ref:`sphx_glr_auto_examples_advanced_training_plot_relative_positioning.py` (``../examples/advanced_training/plot_relative_positioning.py``)
      - 00:00.000
      - 0.0
@@ -57,6 +54,15 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_applied_examples_plot_sleep_staging_chambon2018.py` (``../examples/applied_examples/plot_sleep_staging_chambon2018.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_applied_examples_plot_sleep_staging_eldele2021.py` (``../examples/applied_examples/plot_sleep_staging_eldele2021.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_applied_examples_plot_sleep_staging_usleep.py` (``../examples/applied_examples/plot_sleep_staging_usleep.py``)
+     - 00:00.000
+     - 0.0
+   * - :ref:`sphx_glr_auto_examples_applied_examples_plot_tuh_eeg_corpus.py` (``../examples/applied_examples/plot_tuh_eeg_corpus.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_datasets_io_benchmark_lazy_eager_loading.py` (``../examples/datasets_io/benchmark_lazy_eager_loading.py``)
@@ -87,9 +93,6 @@ Computation times
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_model_building_plot_basic_training_epochs.py` (``../examples/model_building/plot_basic_training_epochs.py``)
-     - 00:00.000
-     - 0.0
-   * - :ref:`sphx_glr_auto_examples_model_building_plot_bcic_iv_2a_moabb_cropped.py` (``../examples/model_building/plot_bcic_iv_2a_moabb_cropped.py``)
      - 00:00.000
      - 0.0
    * - :ref:`sphx_glr_auto_examples_model_building_plot_bcic_iv_2a_moabb_trial.py` (``../examples/model_building/plot_bcic_iv_2a_moabb_trial.py``)

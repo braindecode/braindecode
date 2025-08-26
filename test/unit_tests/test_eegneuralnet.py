@@ -516,7 +516,7 @@ class ConcreteEEGNeuralNet(_EEGNeuralNet):
 
 @pytest.fixture()
 def net():
-    net = ConcreteEEGNeuralNet(module="EEGNetv4", criterion=CroppedTrialEpochScoring,
+    net = ConcreteEEGNeuralNet(module="EEGNet", criterion=CroppedTrialEpochScoring,
                                cropped=False, max_epochs=1, train_split=None,
                                n_times=5)
     return net

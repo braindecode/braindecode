@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 from einops.layers.torch import Rearrange
-from mne.utils import warn
+from mne.utils import deprecated, warn
 from torch import nn
 
 from braindecode.functional import glorot_weight_zero_bias
@@ -19,19 +19,19 @@ from braindecode.modules import (
 )
 
 
-class EEGNetv4(EEGModuleMixin, nn.Sequential):
-    """EEGNet v4 model from Lawhern et al. (2018) [Lawhern2018]_.
+class EEGNet(EEGModuleMixin, nn.Sequential):
+    """EEGNet model from Lawhern et al. (2018) [Lawhern2018]_.
 
     :bdg-success:`Convolution` :bdg-secondary:`Depthwise–Separable`
 
     .. figure:: https://content.cld.iop.org/journals/1741-2552/15/5/056013/revision2/jneaace8cf01_hr.jpg
        :align: center
-       :alt: EEGNetv4 Architecture
+       :alt: EEGNet Architecture
        :width: 600px
 
     .. rubric:: Architectural Overview
 
-    EEGNetv4 is a compact convolutional network designed for EEG decoding with a pipeline that mirrors classical EEG processing:
+    EEGNet is a compact convolutional network designed for EEG decoding with a pipeline that mirrors classical EEG processing:
     - (i) learn temporal frequency-selective filters,
     - (ii) learn spatial filters for those frequencies, and
     - (iii) condense features with depthwise–separable convolutions before a lightweight classifier.
@@ -73,6 +73,8 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
     - **Depthwise & separable convs:** Parameter-efficient decomposition (depthwise + pointwise) retains power while limiting overfitting
       [Chollet2017]_ and keeps temporal vs. mixing steps interpretable.
     - **Regularization:** Batch norm, dropout, pooling, and optional max-norm on spatial kernels aid stability on small EEG datasets.
+    - The v4 means the version 4 at the arxiv paper [Lawhern2018]_.
+
 
     Parameters
     ----------
@@ -348,174 +350,10 @@ class EEGNetv4(EEGModuleMixin, nn.Sequential):
         glorot_weight_zero_bias(self)
 
 
-class EEGNetv1(EEGModuleMixin, nn.Sequential):
-    """EEGNet model from Lawhern et al. 2016 from [EEGNet]_.
+@deprecated(
+    "`EEGNetv4` was renamed to `EEGNet` in v1.12; this alias will be removed in v1.14."
+)
+class EEGNetv4(EEGNet):
+    """Deprecated alias for EEGNet."""
 
-    See details in [EEGNet]_.
-
-    Parameters
-    ----------
-    in_chans :
-        Alias for n_chans.
-    n_classes:
-        Alias for n_outputs.
-    input_window_samples :
-        Alias for n_times.
-    activation: nn.Module, default=nn.ELU
-        Activation function class to apply. Should be a PyTorch activation
-        module class like ``nn.ReLU`` or ``nn.ELU``. Default is ``nn.ELU``.
-
-    Notes
-    -----
-    This implementation is not guaranteed to be correct, has not been checked
-    by original authors, only reimplemented from the paper description.
-
-    References
-    ----------
-    .. [EEGNet] Lawhern, V. J., Solon, A. J., Waytowich, N. R., Gordon,
-       S. M., Hung, C. P., & Lance, B. J. (2016).
-       EEGNet: A Compact Convolutional Network for EEG-based
-       Brain-Computer Interfaces.
-       arXiv preprint arXiv:1611.08024.
-    """
-
-    def __init__(
-        self,
-        n_chans=None,
-        n_outputs=None,
-        n_times=None,
-        final_conv_length="auto",
-        pool_mode="max",
-        second_kernel_size=(2, 32),
-        third_kernel_size=(8, 4),
-        drop_prob=0.25,
-        activation: nn.Module = nn.ELU,
-        chs_info=None,
-        input_window_seconds=None,
-        sfreq=None,
-    ):
-        super().__init__(
-            n_outputs=n_outputs,
-            n_chans=n_chans,
-            chs_info=chs_info,
-            n_times=n_times,
-            input_window_seconds=input_window_seconds,
-            sfreq=sfreq,
-        )
-        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
-        warn(
-            "The class EEGNetv1 is deprecated and will be removed in the "
-            "release 1.0 of braindecode. Please use "
-            "braindecode.models.EEGNetv4 instead in the future.",
-            DeprecationWarning,
-        )
-        if final_conv_length == "auto":
-            assert self.n_times is not None
-        self.final_conv_length = final_conv_length
-        self.pool_mode = pool_mode
-        self.second_kernel_size = second_kernel_size
-        self.third_kernel_size = third_kernel_size
-        self.drop_prob = drop_prob
-        # For the load_state_dict
-        # When padronize all layers,
-        # add the old's parameters here
-        self.mapping = {
-            "conv_classifier.weight": "final_layer.conv_classifier.weight",
-            "conv_classifier.bias": "final_layer.conv_classifier.bias",
-        }
-
-        pool_class = dict(max=nn.MaxPool2d, mean=nn.AvgPool2d)[self.pool_mode]
-        self.add_module("ensuredims", Ensure4d())
-        n_filters_1 = 16
-        self.add_module(
-            "conv_1",
-            nn.Conv2d(self.n_chans, n_filters_1, (1, 1), stride=1, bias=True),
-        )
-        self.add_module(
-            "bnorm_1",
-            nn.BatchNorm2d(n_filters_1, momentum=0.01, affine=True, eps=1e-3),
-        )
-        self.add_module("elu_1", activation())
-        # transpose to examples x 1 x (virtual, not EEG) channels x time
-        self.add_module("permute_1", Rearrange("batch x y z -> batch z x y"))
-
-        self.add_module("drop_1", nn.Dropout(p=self.drop_prob))
-
-        n_filters_2 = 4
-        # keras pads unequal padding more in front, so padding
-        # too large should be ok.
-        # Not padding in time so that cropped training makes sense
-        # https://stackoverflow.com/questions/43994604/padding-with-even-kernel-size-in-a-convolutional-layer-in-keras-theano
-
-        self.add_module(
-            "conv_2",
-            nn.Conv2d(
-                1,
-                n_filters_2,
-                self.second_kernel_size,
-                stride=1,
-                padding=(self.second_kernel_size[0] // 2, 0),
-                bias=True,
-            ),
-        )
-        self.add_module(
-            "bnorm_2",
-            nn.BatchNorm2d(n_filters_2, momentum=0.01, affine=True, eps=1e-3),
-        )
-        self.add_module("elu_2", activation())
-        self.add_module("pool_2", pool_class(kernel_size=(2, 4), stride=(2, 4)))
-        self.add_module("drop_2", nn.Dropout(p=self.drop_prob))
-
-        n_filters_3 = 4
-        self.add_module(
-            "conv_3",
-            nn.Conv2d(
-                n_filters_2,
-                n_filters_3,
-                self.third_kernel_size,
-                stride=1,
-                padding=(self.third_kernel_size[0] // 2, 0),
-                bias=True,
-            ),
-        )
-        self.add_module(
-            "bnorm_3",
-            nn.BatchNorm2d(n_filters_3, momentum=0.01, affine=True, eps=1e-3),
-        )
-        self.add_module("elu_3", activation())
-        self.add_module("pool_3", pool_class(kernel_size=(2, 4), stride=(2, 4)))
-        self.add_module("drop_3", nn.Dropout(p=self.drop_prob))
-
-        output_shape = self.get_output_shape()
-        n_out_virtual_chans = output_shape[2]
-
-        if self.final_conv_length == "auto":
-            n_out_time = output_shape[3]
-            self.final_conv_length = n_out_time
-
-        # Incorporating classification module and subsequent ones in one final layer
-        module = nn.Sequential()
-
-        module.add_module(
-            "conv_classifier",
-            nn.Conv2d(
-                n_filters_3,
-                self.n_outputs,
-                (n_out_virtual_chans, self.final_conv_length),
-                bias=True,
-            ),
-        )
-
-        # Transpose back to the logic of braindecode,
-
-        # so time in third dimension (axis=2)
-        module.add_module(
-            "permute_2",
-            Rearrange("batch x y z -> batch x z y"),
-        )
-
-        module.add_module("squeeze", SqueezeFinalOutput())
-
-        self.add_module("final_layer", module)
-
-        glorot_weight_zero_bias(self)
+    pass

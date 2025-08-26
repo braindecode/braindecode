@@ -29,7 +29,7 @@ from braindecode.models import (
     EEGInceptionMI,
     EEGITNet,
     EEGMiner,
-    EEGNetv4,
+    EEGNet,
     EEGNeX,
     EEGResNet,
     EEGSimpleConv,
@@ -227,8 +227,8 @@ def test_hybridnet(input_sizes):
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
-def test_eegnet_v4(input_sizes):
-    model = EEGNetv4(
+def test_eegnet(input_sizes):
+    model = EEGNet(
         input_sizes["n_channels"],
         input_sizes["n_classes"],
         n_times=input_sizes["n_in_times"],
@@ -1492,9 +1492,9 @@ def test_eegminer_plv_values_range():
         "PLV values should be in the range [0, 1]"
 
 
-def test_eegnetv4_final_layer_linear_true():
+def test_eegnet_final_layer_linear_true():
     """Test that final_layer_linear=True uses a conv-based classifier without warning."""
-    model = EEGNetv4(
+    model = EEGNet(
         final_layer_with_constraint=True,
         n_chans=4,
         n_times=128,
@@ -1513,12 +1513,12 @@ def test_eegnetv4_final_layer_linear_true():
     assert hasattr(final_layer,
                    "linearconstraint"), "Expected a 'linear constraint' sub-module."
 
-def test_eegnetv4_final_layer_linear_false():
+def test_eegnet_final_layer_linear_false():
     """Test that final_layer_conv=False raises a DeprecationWarning and uses
     a linear layer."""
     with pytest.warns(DeprecationWarning,
                       match="Parameter 'final_layer_with_constraint=False' is deprecated"):
-        model = EEGNetv4(
+        model = EEGNet(
             final_layer_with_constraint=False,
             n_chans=4,
             n_times=128,

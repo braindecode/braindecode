@@ -144,7 +144,7 @@ training data, with parameters :math:`\theta \in \Theta`.
 
 - Across most architectures, the earliest stages are convolutional (:bdg-success:`Convolution`), reflecting the brain time series's noisy, locally structured nature.
   These layers apply temporal and/or spatial convolutions—often depthwise-separable as in EEGNet, per-channel or across channel groups to extract robust local features.
-  :class:`braindecode.models.EEGNetv4`, :class:`braindecode.models.ShallowFBCSPNet`, :class:`braindecode.models.EEGNeX`, and :class:`braindecode.models.EEGInceptionERP`
+  :class:`braindecode.models.EEGNet`, :class:`braindecode.models.ShallowFBCSPNet`, :class:`braindecode.models.EEGNeX`, and :class:`braindecode.models.EEGInceptionERP`
 - In the **recurrent** family (:bdg-secondary:`Recurrent`), many modern EEG models actually rely on *temporal convolutional networks* (TCNs) with dilations to grow the receptive field, rather than explicit recurrence (:cite:label:`bai2018tcn`),  :class:`braindecode.models.BDTCN`,
 - In contrast, several methods employ **small attention** modules (:bdg-info:`Small Attention`) to capture longer-range dependencies efficiently, e.g., :class:`braindecode.models.EEGConformer`, :class:`braindecode.models.CTNet`, :class:`braindecode.models.ATCNet`, :class:`braindecode.models.AttentionBaseNet` (:cite:label:`song2022eeg,zhao2024ctnet,altaheri2022atcnet`).
 - **Filterbank-style models** (:bdg-primary:`Filterbank`) explicitly decompose signals into multiple bands before (or while) learning, echoing the classic FBCSP pipeline; examples include :class:`braindecode.models.FBCNet` and :class:`braindecode.models.FBMSNet` (:cite:label:`mane2021fbcnet,liu2022fbmsnet`).

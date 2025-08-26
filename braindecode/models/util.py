@@ -55,7 +55,7 @@ models_mandatory_parameters = [
     ("EEGInceptionERP", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGInceptionMI", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("EEGITNet", ["n_chans", "n_outputs", "n_times"], None),
-    ("EEGNetv4", ["n_chans", "n_outputs", "n_times"], None),
+    ("EEGNet", ["n_chans", "n_outputs", "n_times"], None),
     ("EEGResNet", ["n_chans", "n_outputs", "n_times"], None),
     ("ShallowFBCSPNet", ["n_chans", "n_outputs", "n_times"], None),
     (
