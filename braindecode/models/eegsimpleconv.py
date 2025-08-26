@@ -21,6 +21,8 @@ from braindecode.models.base import EEGModuleMixin
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     """EEGSimpleConv from Ouahidi, YE et al. (2023) [Yassine2023]_.
 
+    :bdg-success:`Convolution`
+
     .. figure:: https://raw.githubusercontent.com/elouayas/EEGSimpleConv/refs/heads/main/architecture.png
         :align: center
         :alt: EEGSimpleConv Architecture

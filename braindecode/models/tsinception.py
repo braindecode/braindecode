@@ -15,6 +15,8 @@ from braindecode.models.base import EEGModuleMixin
 class TSception(EEGModuleMixin, nn.Module):
     """TSception model from Ding et al. (2020) from [ding2020]_.
 
+    :bdg-success:`Convolution`
+
     TSception: A deep learning framework for emotion detection using EEG.
 
     .. figure:: https://user-images.githubusercontent.com/58539144/74716976-80415e00-526a-11ea-9433-02ab2b753f6b.PNG
