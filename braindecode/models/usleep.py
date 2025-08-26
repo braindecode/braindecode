@@ -42,7 +42,7 @@ class USleep(EEGModuleMixin, nn.Module):
 
     - Encoder :class:`_EncoderBlock` **(multi-scale temporal feature extractor; downsampling x2 per block)**
 
-    - *Operations.*
+        - *Operations.*
         - **Conv1d** (:class:`torch.nn.Conv1d`) with kernel ``9`` (stride ``1``, no dilation)
         - **ELU** (:class:`torch.nn.ELU`)
         - **Batch Norm** (:class:`torch.nn.BatchNorm1d`)
@@ -56,12 +56,12 @@ class USleep(EEGModuleMixin, nn.Module):
     The number of filters grows with depth (capacity scaling); each block also exposes a **skip** (pre-pool)
     to the matching decoder block.
 
-    *Rationale.*
-    - Slow, uniform downsampling (x2 each level) preserves information in early layers while expanding the temporal receptive field over the minutes.
+    **Rationale.**
+        - Slow, uniform downsampling (x2 each level) preserves information in early layers while expanding the temporal receptive field over the minutes.
 
     - Decoder :class:`_DecoderBlock`  **(progressive upsampling + skip fusion to high-frequency map, 12 blocks; upsampling x2 per block)**
 
-    - *Operations.*
+        - *Operations.*
         - **Nearest-neighbor upsample**, :class:`nn.Upsample` (x2)
         - **Convolution2d** (k=2), :class:`torch.nn.Conv2d`
         - ELU, :class:`torch.nn.ELU`
@@ -71,17 +71,17 @@ class USleep(EEGModuleMixin, nn.Module):
         - ELU, :class:`torch.nn.ELU`
         - Batch Norm, :class:`torch.nn.BatchNorm2d`.
 
-    *Output.* A multi-class, **high-frequency** per-sample representation aligned to the input rate (128 Hz).
+    **Output**: A multi-class, **high-frequency** per-sample representation aligned to the input rate (128 Hz).
 
     - **Segment Classifier incorporate into :class:`braindecode.models.USleep` (aggregation to fixed epochs)**
 
-    - *Operations.*
+        - *Operations.*
         - **Mean-pool**, :class:`torch.nn.AvgPool2d` per class with kernel = epoch length *i* and stride *i*
         - **1x1 conv**, :class:`torch.nn.Conv2d`
         - ELU, :class:`torch.nn.ELU`
         - **1x1 conv**, :class:`torch.nn.Conv2d` with ``(T, K)`` (epochs x stages).
 
-    *Role.* Learns a **non-linear** weighted combination over each 30-s window (unlike U-Time's linear combiner).
+    **Role**: Learns a **non-linear** weighted combination over each 30-s window (unlike U-Time's linear combiner).
 
     .. rubric:: Convolutional Details
 

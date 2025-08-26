@@ -51,8 +51,8 @@ class EEGNeX(EEGModuleMixin, nn.Module):
        - :class:`torch.nn.BatchNorm2d` (no nonlinearity until Block-3, mirroring a linear FIR analysis stage).
          These layers set up frequency-selective detectors before spatial mixing.
 
-    - *Interpretability.* Kernels can be inspected as FIR filters; two stacked temporal
-      convs allow longer effective kernels without parameter blow-up.
+       - *Interpretability.* Kernels can be inspected as FIR filters; two stacked temporal
+         convs allow longer effective kernels without parameter blow-up.
 
     - **Block-3 — Spatial projection + condensation.**
 
@@ -64,7 +64,7 @@ class EEGNeX(EEGModuleMixin, nn.Module):
         - :class:`torch.nn.AvgPool2d` (time)
         - :class:`torch.nn.Dropout`.
 
-    *Role.* Learns per-filter spatial patterns over the **full montage** while temporal
+    **Role**: Learns per-filter spatial patterns over the **full montage** while temporal
       pooling stabilizes and compresses features; max-norm encourages well-behaved spatial
       weights similar to EEGNet practice.
 
@@ -72,15 +72,15 @@ class EEGNeX(EEGModuleMixin, nn.Module):
 
         - *Operations.*
         - :class:`torch.nn.Conv2d` with kernels ``(1, k)`` and **dilations**
-        (e.g., 2 then 4);
+          (e.g., 2 then 4);
         - :class:`torch.nn.BatchNorm2d`
         - :class:`torch.nn.ELU`
         - :class:`torch.nn.AvgPool2d` (time)
         - :class:`torch.nn.Dropout`
         - :class:`torch.nn.Flatten`.
 
-    *Role.* Expands the temporal receptive field efficiently to capture rhythms and
-      long-range context after condensation.
+    **Role**: Expands the temporal receptive field efficiently to capture rhythms and
+    long-range context after condensation.
 
     - **Final Classifier — Max-norm linear.**
 
@@ -125,8 +125,6 @@ class EEGNeX(EEGModuleMixin, nn.Module):
       classifier layers; prefer ELU activations for stable training on small EEG datasets.
 
 
-    Notes
-    -----
     - The braindecode implementation follows the paper's conv-only design with five blocks
       and reproduces the depthwise spatial step and dilated temporal stack. See the class
       reference for exact kernel sizes, dilations, and pooling defaults. You can check the

@@ -22,8 +22,7 @@ from braindecode.modules import (
 class EEGNet(EEGModuleMixin, nn.Sequential):
     """EEGNet model from Lawhern et al. (2018) [Lawhern2018]_.
 
-    :bdg-success:`Convolution` :bdg-secondary:`Depthwise–Separable`
-
+    :bdg-success:`Convolution`
     .. figure:: https://content.cld.iop.org/journals/1741-2552/15/5/056013/revision2/jneaace8cf01_hr.jpg
        :align: center
        :alt: EEGNet Architecture
@@ -34,7 +33,7 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
     EEGNet is a compact convolutional network designed for EEG decoding with a pipeline that mirrors classical EEG processing:
     - (i) learn temporal frequency-selective filters,
     - (ii) learn spatial filters for those frequencies, and
-    - (iii) condense features with depthwise–separable convolutions before a lightweight classifier.
+    - (iii) condense features with depthwise-separable convolutions before a lightweight classifier.
 
     The architecture is deliberately small (temporal convolutional and spatial patterns) [Lawhern2018]_.
 
@@ -45,9 +44,9 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
     - **Depthwise Spatial Filtering.**
       Depthwise convolution spanning the channel dimension with ``groups = F1``,
       yielding ``D`` spatial filters for each temporal filter (no cross-filter mixing).
-    - **Norm–Nonlinearity–Pooling (+ dropout).**
+    - **Norm-Nonlinearity-Pooling (+ dropout).**
       Batch normalization → ELU → temporal pooling, with dropout.
-    - **Depthwise–Separable Convolution Block.**
+    - **Depthwise-Separable Convolution Block.**
       (a) depthwise temporal conv to refine temporal structure;
       (b) pointwise 1x1 conv to mix feature maps into ``F2`` combinations.
     - **Classifier Head.**
