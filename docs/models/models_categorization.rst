@@ -38,7 +38,7 @@ Beginning directly, the categories are nine: :bdg-success:`Convolution`, :bdg-se
 
 Not all the categories are implemented, validated, and tested here, but there are some that are noteworthy for introducing or popularizing concepts or layer designs that can take decoding further.
 
-You gonna notice that the core layer present across almost all the models here is the convolution layer:bdg-success:`Convolution`.
+You gonna notice that the core layer present across almost all the models here is the convolution layer.
 This is because **convolutions are filtering** operations, such as band-pass `filters <https://mne.tools/stable/auto_tutorials/preprocessing/25_background_filtering.html>`__, useful and needed to extract local features from brain signals.
 
 More details about each categories can be found in the respective sections below.
