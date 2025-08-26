@@ -33,20 +33,25 @@ class USleep(EEGModuleMixin, nn.Module):
     processes arbitrarily long inputs in **one forward pass** (resampling to 128 Hz), allowing whole-night
     hypnograms in seconds.
 
-    - (i). **Encoder** extracts progressively deeper temporal features at lower resolution;
-    - (ii). **Decoder** upsamples and fuses encoder features via U-Net-style skips to recover a per-sample stage map;
-    - (iii). **Segment Classifier** mean-pools over the target epoch length and applies two pointwise convs to yield
-      per-epoch probabilities.
+    - (i). :class:`_EncoderBlock` extracts progressively deeper temporal features at lower resolution;
+    - (ii). :class:`_Decoder` upsamples and fuses encoder features via U-Net-style skips to recover a per-sample stage map;
+    - (iii). Segment Classifier mean-pools over the target epoch length and applies two pointwise convs to yield
+      per-epoch probabilities. Integrates into the USleep class.
 
     .. rubric:: Macro Components
 
-    - **Encoder (12 blocks; downsampling x2 per block)**
+    - :class:`_EncoderBlock` **(multi-scale temporal feature extractor; downsampling x2 per block)**
 
     - *Operations.*
-        - 1-D temporal **convolution** (kernel ≈ 9)
-        - **ELU**
-        - **BatchNorm**
-        - **MaxPool** (2).
+        - **Conv1d** (:class:`torch.nn.Conv1d`) with kernel ``9`` (stride ``1``, no dilation)
+        - **ELU** (:class:`torch.nn.ELU`)
+        - **Batch Norm** (:class:`torch.nn.BatchNorm1d`)
+        - **Max Pool 1d**, :class:`torch.nn.MaxPool1d` (``kernel=2, stride=2``).
+
+        Filters grow with depth by a factor of ``sqrt(2)`` (start ``c_1=5``); each block exposes a **skip**
+        (pre-pooling activation) to the matching decoder block.
+        *Role.* Slow, uniform downsampling preserves early information while expanding the effective temporal
+        context over minutes—foundational for robust cross-cohort staging.
 
     The number of filters grows with depth (capacity scaling); each block also exposes a **skip** (pre-pool)
     to the matching decoder block.
@@ -54,28 +59,27 @@ class USleep(EEGModuleMixin, nn.Module):
     *Rationale.*
     - Slow, uniform downsampling (x2 each level) preserves information in early layers while expanding the temporal receptive field over the minutes.
 
-    - **Decoder (12 blocks; upsampling x2 per block)**
+    - Decoder :class:`_DecoderBlock`  **(progressive upsampling + skip fusion to high-frequency map, 12 blocks; upsampling x2 per block)**
 
     - *Operations.*
-        - **Nearest-neighbor upsample** (x2)
-        - **convolution** (k=2)
-        - ELU
-        - BN
-        - **concatenate** with the encoder skip at the same temporal scale
-        - **convolution**
-        - ELU
-        - BN.
+        - **Nearest-neighbor upsample**, :class:`nn.Upsample` (x2)
+        - **Convolution2d** (k=2), :class:`torch.nn.Conv2d`
+        - ELU, :class:`torch.nn.ELU`
+        - Batch Norm, :class:`torch.nn.BatchNorm2d`
+        - **Concatenate** with the encoder skip at the same temporal scale, :function:`torch.cat`
+        - **Convolution**, :class:`torch.nn.Conv2d`
+        - ELU, :class:`torch.nn.ELU`
+        - Batch Norm, :class:`torch.nn.BatchNorm2d`.
 
     *Output.* A multi-class, **high-frequency** per-sample representation aligned to the input rate (128 Hz).
 
-    - **Segment Classifier (aggregation to fixed epochs)**
+    - **Segment Classifier incorporate into :class:`USleep` (aggregation to fixed epochs)**
 
     - *Operations.*
-        - **Mean-pool** per class with kernel = epoch length *i* and stride *i*
-        - **1x1 conv**
-        - ELU
-        - **1x1 conv**
-        - ``(T, K)`` (epochs x stages).
+        - **Mean-pool**, :class:`torch.nn.AvgPool2d` per class with kernel = epoch length *i* and stride *i*
+        - **1x1 conv**, :class:`torch.nn.Conv2d`
+        - ELU, :class:`torch.nn.ELU`
+        - **1x1 conv**, :class:`torch.nn.Conv2d` with ``(T, K)`` (epochs x stages).
 
     *Role.* Learns a **non-linear** weighted combination over each 30-s window (unlike U-Time's linear combiner).
 
@@ -120,8 +124,6 @@ class USleep(EEGModuleMixin, nn.Module):
     - **Practice.** Resample PSG to **128 Hz** and provide at least two channels (one EEG, one EOG). Choose epoch
       length *i* (often 30 s); ensure windows long enough to exploit the model's receptive field (e.g., training on
       ≥ 17.5 min chunks).
-    - **When to prefer U-Sleep.** Use when you want **conv-only**, *end-to-end* segmentation with strong
-      cross-dataset robustness and fast whole-night inference.
 
 
     Parameters
