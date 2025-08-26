@@ -1,5 +1,7 @@
 :html_theme.sidebar_secondary.remove: true
 
+.. currentmodule:: braindecode.models
+
 .. raw:: html
 
  <style>

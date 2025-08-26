@@ -43,7 +43,7 @@ from .sparcnet import SPARCNet
 from .syncnet import SyncNet
 from .tcn import BDTCN, TCN
 from .tidnet import TIDNet
-from .tsinception import TSceptionV1
+from .tsinception import TSception
 from .usleep import USleep
 from .util import _init_models_dict, models_mandatory_parameters
 
@@ -92,7 +92,7 @@ __all__ = [
     "BDTCN",
     "TCN",
     "TIDNet",
-    "TSceptionV1",
+    "TSception",
     "USleep",
     "_init_models_dict",
     "models_mandatory_parameters",

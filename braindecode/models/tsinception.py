@@ -19,7 +19,7 @@ class TSception(EEGModuleMixin, nn.Module):
 
     .. figure:: https://user-images.githubusercontent.com/58539144/74716976-80415e00-526a-11ea-9433-02ab2b753f6b.PNG
         :align: center
-        :alt: TSceptionV1 Architecture
+        :alt: TSception Architecture
 
     The model consists of temporal and spatial convolutional layers
     (Tception and Sception) designed to learn temporal and spatial features

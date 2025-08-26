@@ -16,7 +16,7 @@ def gen_models_visualization(
 
     replace_pipeline = {
         "EEGNet": "EEGNet",
-        "TSceptionV1": "TSception",
+        "TSception": "TSception",
         "ShallowFBCSPNet": "ShallowNet",
         "AttentionBaseNet": "AttnBaseNet",
         "SleepStagerChambon2018": "SleepChambon2018",

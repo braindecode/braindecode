@@ -1,5 +1,7 @@
 :html_theme.sidebar_secondary.remove: true
 
+.. currentmodule:: braindecode.models
+
 Models Categorization
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -144,15 +146,15 @@ training data, with parameters :math:`\theta \in \Theta`.
 
 - Across most architectures, the earliest stages are convolutional (:bdg-success:`Convolution`), reflecting the brain time series's noisy, locally structured nature.
   These layers apply temporal and/or spatial convolutions—often depthwise-separable as in EEGNet, per-channel or across channel groups to extract robust local features.
-  :class:`braindecode.models.EEGNet`, :class:`braindecode.models.ShallowFBCSPNet`, :class:`braindecode.models.EEGNeX`, and :class:`braindecode.models.EEGInceptionERP`
-- In the **recurrent** family (:bdg-secondary:`Recurrent`), many modern EEG models actually rely on *temporal convolutional networks* (TCNs) with dilations to grow the receptive field, rather than explicit recurrence (:cite:label:`bai2018tcn`),  :class:`braindecode.models.BDTCN`,
-- In contrast, several methods employ **small attention** modules (:bdg-info:`Small Attention`) to capture longer-range dependencies efficiently, e.g., :class:`braindecode.models.EEGConformer`, :class:`braindecode.models.CTNet`, :class:`braindecode.models.ATCNet`, :class:`braindecode.models.AttentionBaseNet` (:cite:label:`song2022eeg,zhao2024ctnet,altaheri2022atcnet`).
-- **Filterbank-style models** (:bdg-primary:`Filterbank`) explicitly decompose signals into multiple bands before (or while) learning, echoing the classic FBCSP pipeline; examples include :class:`braindecode.models.FBCNet` and :class:`braindecode.models.FBMSNet` (:cite:label:`mane2021fbcnet,liu2022fbmsnet`).
-- **Interpretability-by-design** (:bdg-warning:`Interpretability`) architectures expose physiologically meaningful primitives (e.g., band-pass/sinc filters, variance or connectivity features), enabling direct neuroscientific inspection; see :class:`braindecode.models.SincShallowNet` and :class:`braindecode.models.EEGMiner` (:cite:label:`borra2020interpretable,ludwig2024eegminer`).
+  :class:`EEGNet`, :class:`ShallowFBCSPNet`, :class:`EEGNeX`, and :class:`EEGInceptionERP`
+- In the **recurrent** family (:bdg-secondary:`Recurrent`), many modern EEG models actually rely on *temporal convolutional networks* (TCNs) with dilations to grow the receptive field, rather than explicit recurrence (:cite:label:`bai2018tcn`),  :class:`BDTCN`,
+- In contrast, several methods employ **small attention** modules (:bdg-info:`Small Attention`) to capture longer-range dependencies efficiently, e.g., :class:`EEGConformer`, :class:`CTNet`, :class:`ATCNet`, :class:`AttentionBaseNet` (:cite:label:`song2022eeg,zhao2024ctnet,altaheri2022atcnet`).
+- **Filterbank-style models** (:bdg-primary:`Filterbank`) explicitly decompose signals into multiple bands before (or while) learning, echoing the classic FBCSP pipeline; examples include :class:`FBCNet` and :class:`FBMSNet` (:cite:label:`mane2021fbcnet,liu2022fbmsnet`).
+- **Interpretability-by-design** (:bdg-warning:`Interpretability`) architectures expose physiologically meaningful primitives (e.g., band-pass/sinc filters, variance or connectivity features), enabling direct neuroscientific inspection; see :class:`SincShallowNet` and :class:`EEGMiner` (:cite:label:`borra2020interpretable,ludwig2024eegminer`).
 - **SPD / Riemannian** (:bdg-dark:`SPD`) methods operate on covariance (or connectivity) matrices as points on the SPD manifold, combining layers such as BiMap, ReEig, and LogEig; deep SPD networks and Riemannian classifiers motivate this family (:cite:label:`huang2017riemannian`). *(Coming soon in a dedicate repository.)*
-- **Large-model / Transformer** (:bdg-danger:`Large Language Model`) approaches pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks; e.g., :class:`braindecode.models.BIOT` (:cite:label:`yang2023biot`). These typically need a heavily self-supervised pre-training before decoding.
+- **Large-model / Transformer** (:bdg-danger:`Large Language Model`) approaches pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks; e.g., :class:`BIOT` (:cite:label:`yang2023biot`). These typically need a heavily self-supervised pre-training before decoding.
 - **Graph neural networks** (:bdg-light:`Graph Neural Network`) treat channels/regions as nodes with learned (static or dynamic) edges to model functional connectivity explicitly; representative EEG-GNN, more common in the epileptic decoding (:cite:label:`klepl2024graph`).
-- **Channel-domain robustness** (:bdg-dark-line:`Channel`) techniques target variability in electrode layouts by learning montage-agnostic or channel-selective layers (e.g., dynamic spatial filtering, differentiable channel re-ordering); these strategies improve cross-setup generalization :class:`braindecode.models.SignalJEPA` (:cite:label:`guetschel2024sjepa,chen2024eegprogress`).
+- **Channel-domain robustness** (:bdg-dark-line:`Channel`) techniques target variability in electrode layouts by learning montage-agnostic or channel-selective layers (e.g., dynamic spatial filtering, differentiable channel re-ordering); these strategies improve cross-setup generalization :class:`SignalJEPA` (:cite:label:`guetschel2024sjepa,chen2024eegprogress`).
 
 
 We are continually expanding this collection and welcome contributions! If you have implemented a

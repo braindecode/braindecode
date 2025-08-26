@@ -89,7 +89,7 @@ provides a common interface for all EEG models and derivate variables names if n
     SPARCNet
     SyncNet
     TIDNet
-    TSceptionV1
+    TSception
     USleep
 
 
