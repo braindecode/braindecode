@@ -60,6 +60,7 @@ provides a common interface for all EEG models and derivate variables names if n
 
     ATCNet
     AttentionBaseNet
+    AttnSleep
     BDTCN
     BIOT
     ContraWR
@@ -90,7 +91,7 @@ provides a common interface for all EEG models and derivate variables names if n
     SincShallowNet
     SleepStagerBlanco2020
     SleepStagerChambon2018
-    SleepStagerEldele2021
+
     SPARCNet
     SyncNet
     TIDNet

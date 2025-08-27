@@ -4,6 +4,7 @@ Some predefined network architectures for EEG decoding.
 
 from .atcnet import ATCNet
 from .attentionbasenet import AttentionBaseNet
+from .attn_sleep import AttnSleep
 from .base import EEGModuleMixin
 from .biot import BIOT
 from .contrawr import ContraWR
@@ -37,7 +38,6 @@ from .signal_jepa import (
 from .sinc_shallow import SincShallowNet
 from .sleep_stager_blanco_2020 import SleepStagerBlanco2020
 from .sleep_stager_chambon_2018 import SleepStagerChambon2018
-from .sleep_stager_eldele_2021 import SleepStagerEldele2021
 from .sparcnet import SPARCNet
 from .syncnet import SyncNet
 from .tcn import BDTCN, TCN
@@ -52,6 +52,7 @@ _init_models_dict()
 
 __all__ = [
     "ATCNet",
+    "AttnSleep",
     "AttentionBaseNet",
     "EEGModuleMixin",
     "BIOT",
@@ -84,7 +85,6 @@ __all__ = [
     "SincShallowNet",
     "SleepStagerBlanco2020",
     "SleepStagerChambon2018",
-    "SleepStagerEldele2021",
     "SPARCNet",
     "SyncNet",
     "BDTCN",

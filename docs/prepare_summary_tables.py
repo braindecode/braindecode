@@ -21,7 +21,6 @@ def gen_models_visualization(
         "AttentionBaseNet": "AttnBaseNet",
         "SleepStagerChambon2018": "SleepChambon2018",
         "SleepStagerBlanco2020": "SleepBlanco2020",
-        "SleepStagerEldele2021": "SleepEldele2021",
     }
     label_map = {
         "SignalJEPA_PostLocal": "sJEPA<sub>pos</sub>",

@@ -67,7 +67,7 @@ preprocess(dataset, preprocessors)
 # ~~~~~~~~~~~~~~~
 #
 # We extract 30-s windows to be used in the classification task.
-# The :class:`braindecode.models.SleepStagerEldele2021` model takes a
+# The :class:`braindecode.models.AttnSleep` model takes a
 # single channel as input. Here, the Fpz-Cz channel is used as it
 # was found to give better performance than using the Pz-Oz channel
 
@@ -190,7 +190,7 @@ class_weights = compute_class_weight("balanced", classes=np.unique(y_train), y=y
 import torch
 from torch import nn
 
-from braindecode.models import SleepStagerEldele2021
+from braindecode.models import AttnSleep
 from braindecode.modules import TimeDistributed
 from braindecode.util import set_random_seeds
 
@@ -205,8 +205,8 @@ n_classes = 5
 # Extract number of channels and time steps from dataset
 n_channels, input_size_samples = train_set[0][0].shape
 
-feat_extractor = SleepStagerEldele2021(
-    sfreq,
+feat_extractor = AttnSleep(
+    sfreq=sfreq,
     n_outputs=n_classes,
     n_times=input_size_samples,
     return_feats=True,

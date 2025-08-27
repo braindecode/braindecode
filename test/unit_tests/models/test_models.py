@@ -21,6 +21,7 @@ from braindecode.models import (
     TCN,
     ATCNet,
     AttentionBaseNet,
+    AttnSleep,
     ContraWR,
     Deep4Net,
     DeepSleepNet,
@@ -41,7 +42,6 @@ from braindecode.models import (
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
     SleepStagerChambon2018,
-    SleepStagerEldele2021,
     SPARCNet,
     TIDNet,
     TSception,
@@ -496,7 +496,7 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_channels = 1
     n_examples = 10
 
-    model = SleepStagerEldele2021(
+    model = AttnSleep(
         sfreq=sfreq,
         n_outputs=n_classes,
         input_window_seconds=input_size_s,
@@ -520,7 +520,7 @@ def test_eldele_2021_feats():
     n_classes = 3
     n_examples = 10
 
-    model = SleepStagerEldele2021(
+    model = AttnSleep(
         sfreq,
         input_window_seconds=input_size_s,
         n_outputs=n_classes,
