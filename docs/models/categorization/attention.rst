@@ -18,7 +18,7 @@
     :width: 100%
     :align: center
 
-    Figure: `LitMap <https://app.litmaps.com/shared/7b301d7d-ade1-4134-9407-9fad80e009db>`__ **with small attention core components for EEG architectures, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
+    Figure: `LitMap <https://app.litmaps.com/shared/43fcc2cf-9b67-48be-8c83-5e7b3764aaab>`__ **with small attention core components for EEG architectures, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
 .. include:: ../links.inc

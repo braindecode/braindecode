@@ -14,11 +14,11 @@
 
 :bdg-primary:`FilterBank`
 
-.. figure:: ../../_static/model_connection/convolution.png
+.. figure:: ../../_static/model_connection/filterbank.png
     :width: 100%
     :align: center
 
-    Figure: `LitMap <https://app.litmaps.com/shared/7b301d7d-ade1-4134-9407-9fad80e009db>`__ **with filter bank core design, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
+    Figure: `LitMap <https://app.litmaps.com/shared/be03411d-4526-4557-a9f2-ec3d99773ea1>`__ **with filter bank core design, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
 .. include:: ../links.inc
