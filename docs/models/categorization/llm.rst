@@ -18,7 +18,7 @@
     :width: 100%
     :align: center
 
-    Figure: `LitMap <https://app.litmaps.com/shared/7b301d7d-ade1-4134-9407-9fad80e009db>`__ **with large transformer model layers, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
+    Figure: `LitMap <https://app.litmaps.com/shared/e33fb41d-bc98-407f-9372-437f2b59a140>`__ **with large transformer model layers, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
 .. include:: ../links.inc
