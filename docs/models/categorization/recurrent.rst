@@ -18,7 +18,7 @@
     :width: 100%
     :align: center
 
-    Figure: `LitMap <https://app.litmaps.com/shared/7b301d7d-ade1-4134-9407-9fad80e009db>`__ **with Sequential core components braindecode EEG architectures, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
+    Figure: `LitMap <https://app.litmaps.com/shared/fee2acc5-6bd7-4abc-be5d-db8167c81a4c>`__ **with Sequential core components braindecode EEG architectures, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
 .. include:: ../links.inc
