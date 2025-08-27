@@ -64,7 +64,7 @@ models_mandatory_parameters = [
     ),
     ("SleepStagerChambon2018", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     (
-        "SleepStagerEldele2021",
+        "AttnSleep",
         ["n_outputs", "n_times", "sfreq"],
         dict(sfreq=100.0, n_times=3000, chs_info=[dict(ch_name="C1", kind="eeg")]),
     ),  # 1 channel
