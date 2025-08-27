@@ -42,7 +42,7 @@ Columns definitions:
  - **Model**: The name of the model.
  - **Application**: The application(s) the model is typically used for (e.g., Motor Imagery, P300, Sleep Staging). 'General' indicates applicability across multiple applications or no specific application focus.
  - **Type**: The model's primary function (e.g., Classification, Regression, Embedding).
- - **Freq (Hz)**: The data sampling rate (in Hertz) the model is designed for. Note that this might be adaptable depending on the specific dataset and application.
+ - **Sampling Frequency**: The data sampling rate (in Hertz) the model is designed for. Note that this might be adaptable depending on the specific dataset and application.
  - **Categorization**: models categorization based on the main building blocks used in the architecture. See Models Categorization page for more details.
  - **Hyperparameters**: The mandatory hyperparameters required for instantiating the model class. These may include:
     - :fa:`wave-square`\  **n_chans**, number of channels/electrodes/sensors,

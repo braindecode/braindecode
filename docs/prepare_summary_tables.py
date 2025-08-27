@@ -283,7 +283,7 @@ def main(source_dir: str, target_dir: str):
                 "Application",
                 "Type",
                 "Categorization",
-                "Freq(Hz)",
+                "Sampling Frequency (Hz)",
                 "#Parameters",
                 "Hyperparameters",
             ]
