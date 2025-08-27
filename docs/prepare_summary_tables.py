@@ -38,14 +38,14 @@ def gen_models_visualization(
         .sort_values("#Parameters", ascending=True)
     )
 
-    # Right: models per paradigm
+    # Right: models per Application
     def _split(s):
         if pd.isna(s):
             return []
         return [t.strip() for t in str(s).split(",") if t.strip()]
 
-    d_par = d.assign(Paradigms=d["Paradigm"].apply(_split)).explode("Paradigms")
-    counts = d_par["Paradigms"].value_counts().sort_values(ascending=True)
+    d_par = d.assign(Application=d["Application"].apply(_split)).explode("Application")
+    counts = d_par["Application"].value_counts().sort_values(ascending=True)
 
     # ---- dynamic height based on the tallest panel ----
     row_px_left = 26  # pixels per bar on left
@@ -59,7 +59,10 @@ def gen_models_visualization(
         cols=2,
         column_widths=[0.76, 0.24],
         horizontal_spacing=0.10,
-        subplot_titles=("Model Complexity (log₁₀ #Parameters)", "Models per Paradigm"),
+        subplot_titles=(
+            "Model Complexity (log₁₀ #Parameters)",
+            "Models per Application",
+        ),
     )
 
     # bars: left
@@ -268,7 +271,7 @@ def main(source_dir: str, target_dir: str):
         df.drop(columns="get_#Parameters", inplace=True)
         gen_models_visualization(df)
         df["Model"] = df["Model"].apply(wrap_model_name)
-        df["Paradigm"] = df["Paradigm"].apply(wrap_tags)
+        df["Application"] = df["Application"].apply(wrap_tags)
         df["Hyperparameters"] = df["Hyperparameters"].apply(wrap_hyperparameters)
         df["Categorization"] = df["Categorization"].str.replace(",", ", ")
         df["Categorization"] = df["Categorization"].apply(wrap_tags)
@@ -277,7 +280,7 @@ def main(source_dir: str, target_dir: str):
         df = df[
             [
                 "Model",
-                "Paradigm",
+                "Application",
                 "Type",
                 "Categorization",
                 "Freq(Hz)",
