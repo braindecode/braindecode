@@ -78,6 +78,7 @@ docs = [
     'sphinx-autodoc-typehints',
     'sphinx-autobuild',
     'sphinxcontrib-bibtex',
+    'sphinx_sitemap',
     'pydata_sphinx_theme',
     'numpydoc',
     'memory_profiler',
