@@ -292,8 +292,8 @@ html_theme_options = {
         "version_match": switcher_version_match,
     },
     "logo": {
-        "image_light": "_static/braindecode_symbol.png",
-        "image_dark": "_static/braindecode_symbol.png",
+        "image_light": "_static/braindecode_long.png",
+        "image_dark": "_static/braindecode_long.png",
         "alt_text": "Braindecode Logo",
     },
     "footer_start": ["copyright"],
@@ -303,7 +303,7 @@ html_theme_options = {
 
 # The name of an image file (relative to this directory) to place at the top
 # of the sidebar.
-html_logo = "_static/braindecode_long.png"
+html_logo = "_static/braindecode_symbol.png"
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
@@ -312,6 +312,9 @@ html_static_path = ["_static"]
 html_css_files = [
     "style.css",
 ]
+
+# Favicon for the site
+html_favicon = "_static/braindecode_symbol.png"
 
 # If true, links to the reST sources are added to the pages.
 html_show_sourcelink = False
