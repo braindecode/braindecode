@@ -14,7 +14,7 @@
 
 :bdg-dark:`Symmetric Positive-Definite`
 
-.. figure:: ../../_static/model_connection/spd_learn.png
+.. figure:: ../../_static/model_connection/litmap_spd_learn.png
     :width: 100%
     :align: center
 

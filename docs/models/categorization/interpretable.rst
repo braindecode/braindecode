@@ -14,7 +14,7 @@
 
 :bdg-warning:`Interpretability-by-Design`
 
-.. figure:: ../../_static/model_connection/interpretable.png
+.. figure:: ../../_static/model_connection/litmap_interpretable.png
     :width: 100%
     :align: center
 

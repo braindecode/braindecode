@@ -14,7 +14,7 @@
 
 :bdg-light:`Graph Neural Network`
 
-.. figure:: ../../_static/model_connection/gnn.png
+.. figure:: ../../_static/model_connection/litmap_gnn.png
     :width: 100%
     :align: center
 

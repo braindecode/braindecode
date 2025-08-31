@@ -60,7 +60,6 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |magnifying-glass-chart| Small Attention
   :shadow: sm
-  :class: no-scaled-link
 
   :bdg-info:`Small Attention`
 

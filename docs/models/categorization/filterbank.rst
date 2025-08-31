@@ -14,7 +14,7 @@
 
 :bdg-primary:`FilterBank`
 
-.. figure:: ../../_static/model_connection/filterbank.png
+.. figure:: ../../_static/model_connection/litmap_filterbank.png
     :width: 100%
     :align: center
 

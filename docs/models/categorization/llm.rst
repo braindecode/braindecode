@@ -14,7 +14,7 @@
 
 :bdg-danger:`Large Transformer Models`
 
-.. figure:: ../../_static/model_connection/llm.png
+.. figure:: ../../_static/model_connection/litmap_llm.png
     :width: 100%
     :align: center
 

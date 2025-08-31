@@ -14,7 +14,7 @@
 
 :bdg-info:`Small Attention`
 
-.. figure:: ../../_static/model_connection/attention.png
+.. figure:: ../../_static/model_connection/litmap_attention.png
     :width: 100%
     :align: center
 

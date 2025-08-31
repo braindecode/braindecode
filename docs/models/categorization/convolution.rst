@@ -14,7 +14,7 @@
 
 :bdg-success:`Convolution`
 
-.. figure:: ../../_static/model_connection/convolution.png
+.. figure:: ../../_static/model_connection/litmap_convolution.png
     :width: 100%
     :align: center
     :alt: **LitMap of convolutional only braindecode EEG architectures, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show citation relationships. The map traces the line from early ShallowFBCSPNet/Deep4Net and EEGNet—to later convolutional variants such as EEG-TCNet, EEG-Inception, and EEG-ITNet, with recent additions like EEGNeX and EEG-SimpleConv.

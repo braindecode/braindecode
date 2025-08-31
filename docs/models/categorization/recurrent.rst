@@ -14,7 +14,7 @@
 
 :bdg-secondary:`Recurrent`
 
-.. figure:: ../../_static/model_connection/convolution.png
+.. figure:: ../../_static/model_connection/litmap_recurrent.png
     :width: 100%
     :align: center
 
