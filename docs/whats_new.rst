@@ -25,6 +25,11 @@ Enhancements
 - Improving the docstring for :class:`braindecode.models.EEGNetv4`  (:gh:`768` by `Bruno Aristimunha`_)
 - Improving the docstring for :class:`braindecode.models.EEGConformer`  (:gh:`769` by `Bruno Aristimunha`_)
 - Experimental BIDS Iterable Dataset support (:gh:`766` by `Bruno Aristimunha`_ and `Pierre Guetschel`_)
+- Improving the docstring for :class:`braindecode.models.ATCNet`  (:gh:`771` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.AttentionBaseNet`  (:gh:`772` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGNeX`  (:gh:`773` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`774` by `Bruno Aristimunha`_)
+
 
 API changes
 ~~~~~~~~~~~
@@ -38,6 +43,7 @@ Current 1.1.1 (stable)
 
 Enhancements
 ~~~~~~~~~~~~
+- Massive refactor of the model webpage
 
 API changes
 ~~~~~~~~~~~

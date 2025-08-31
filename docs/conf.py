@@ -42,6 +42,10 @@ curdir = os.path.dirname(__file__)
 sys.path.append(os.path.abspath(os.path.join(curdir, "..", "braindecode")))
 sys.path.append(os.path.abspath(os.path.join(curdir, "sphinxext")))
 
+import sphinx_design
+
+print(f"--- Sphinx is using sphinx_design version: {sphinx_design.__version__} ---")
+
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
@@ -55,7 +59,9 @@ extensions = [
     "sphinx.ext.ifconfig",
     "sphinx.ext.intersphinx",
     "sphinx.ext.githubpages",
+    "sphinxcontrib.bibtex",
     "sphinx.ext.napoleon",
+    "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
     "sphinx_design",
@@ -166,15 +172,15 @@ templates_path = ["_templates"]
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
-rst_prolog = """
-.. role:: tag(bdg-success)
-"""
+
 # The master toctree document.
 master_doc = "index"
 
 # General information about the project.
 
-
+bibtex_bibfiles = ["references.bib"]
+bibtex_reference_style = "author_year"
+bibtex_default_style = "unsrt"
 # -- Project information -----------------------------------------------------
 
 project = "Braindecode"
@@ -356,7 +362,6 @@ html_context = {
 }
 
 html_sidebars = {
-    "models_summary": [],
     "cite": [],
     "help": [],
     "whats_new": [],
@@ -391,7 +396,7 @@ latex_documents = [
         master_doc,
         "Braindecode.tex",
         "Braindecode",
-        "Robin Tibor Schirrmeister",
+        "Bruno Aristimunha",
         "manual",
     ),
 ]
@@ -430,6 +435,16 @@ other_icons = (
     "cloud-download-alt",
     "wrench",
     "hourglass",
+    # Add your new icons here
+    "braille",
+    "repeat",
+    "lightbulb",
+    "layer-group",
+    "eye",
+    "circle-nodes",
+    "magnifying-glass-chart",
+    "share-nodes",
+    "clone",
 )
 icons = dict()
 for icon in brand_icons + fixed_icons + other_icons:
@@ -457,7 +472,7 @@ prolog += """
 prolog += """
 .. |ensp| unicode:: U+2002 .. EN SPACE
 """
-
+rst_prolog = prolog
 # -- Options for manual page output ---------------------------------------
 
 # One entry per manual page. List of tuples

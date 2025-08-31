@@ -19,12 +19,12 @@ Model zoo availables in braindecode. The models are implemented as
 All the models have the convention of having the signal related parameters
 named the same way, following the braindecode's standards:
 
-+ ``n_outputs``: Number of labels or outputs of the model.
-+ ``n_chans``: Number of EEG channels.
-+ ``n_times``: Number of time points of the input window.
-+ ``input_window_seconds``: Length of the input window in seconds.
-+ ``sfreq``: Sampling frequency of the EEG recordings.
-+ ``chs_info``: Information about each individual EEG channel. Refer to :class:`mne.Info["chs"]`.
++ :fa:`shapes`\  ``n_outputs``: Number of labels or outputs of the model.
++ :fa:`wave-square`\  ``n_chans``: Number of EEG channels.
++ :fa:`clock`\  ``n_times``: Number of time points of the input window.
++ :fa:`wifi`\  ``sfreq``: Sampling frequency of the EEG recordings.
++ (:fa:`clock`\ / :fa:`wifi`\)  ``input_window_seconds``: Length of the input window in seconds.
++ :fa:`info-circle`\  ``chs_info``: Information about each individual EEG channel. Refer to :class:`mne.Info["chs"]`.
 
 All the models assume that the input data is a 3D tensor of shape
 ``(batch_size, n_chans, n_times)``, and some models also accept a 4D tensor of shape
@@ -65,7 +65,6 @@ provides a common interface for all EEG models and derivate variables names if n
     EEGInceptionMI
     EEGITNet
     EEGMiner
-    EEGNetv1
     EEGNetv4
     EEGNeX
     EEGResNet
