@@ -7,7 +7,7 @@ Good model understanding begins with two questions: what is it for, and how big 
 
 
 
-   .. figure:: ../_static/model_connection/braindecode.png
+   .. figure:: ../_static/model_connection/litmap_braindecode.png
       :width: 90%
       :align: center
       :alt: Litmaps overview
