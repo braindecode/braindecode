@@ -34,9 +34,6 @@ More details about each categories can be found in the respective sections below
 
  .. grid-item-card:: |braille| Convolution Layers
   :shadow: sm
-  :link: categorization/convolution
-  :link-type: doc
-  :link-alt: Convolution page
 
   :bdg-success:`Convolution`
 
@@ -44,14 +41,12 @@ More details about each categories can be found in the respective sections below
    :width: 90%
    :align: center
    :alt: Diagram of a convolutional layer
+   :class: no-scaled-link
 
   Applies temporal and/or spatial convolutions to extract local features from brain signals.
 
  .. grid-item-card:: |repeat| Recurrent Layers
   :shadow: sm
-  :link: categorization/recurrent
-  :link-type: doc
-  :link-alt: Recurrent page
 
   :bdg-secondary:`Recurrent`
 
@@ -59,14 +54,13 @@ More details about each categories can be found in the respective sections below
    :width: 90%
    :align: center
    :alt: Diagram of recurrent/TCN models
+   :class: no-scaled-link
 
   Models temporal dependencies via recurrent units or TCNs with dilations.
 
  .. grid-item-card:: |magnifying-glass-chart| Small Attention
   :shadow: sm
-  :link: categorization/attention
-  :link-type: doc
-  :link-alt: Attention page
+  :class: no-scaled-link
 
   :bdg-info:`Small Attention`
 
@@ -74,14 +68,12 @@ More details about each categories can be found in the respective sections below
    :width: 90%
    :align: center
    :alt: Diagram of attention modules
+   :class: no-scaled-link
 
   Uses attention mechanisms for feature focusing. Can be trained effectively without self-supervised pre-training.
 
  .. grid-item-card:: |layer-group| Filterbank Models
   :shadow: sm
-  :link: categorization/filterbank
-  :link-type: doc
-  :link-alt: FilterBank page
 
   :bdg-primary:`Filterbank`
 
@@ -89,14 +81,12 @@ More details about each categories can be found in the respective sections below
    :width: 90%
    :align: center
    :alt: Diagram of filterbank models
+   :class: no-scaled-link
 
   Decomposes signals into multiple bands (learned or fixed) to capture frequency-specific information.
 
  .. grid-item-card:: |eye| Interpretability-by-Design
   :shadow: sm
-  :link: categorization/interpretable
-  :link-type: doc
-  :link-alt: Interpretability page
 
   :bdg-warning:`Interpretability`
 
@@ -104,14 +94,12 @@ More details about each categories can be found in the respective sections below
    :width: 90%
    :align: center
    :alt: Diagram of interpretable architectures
+   :class: no-scaled-link
 
   Architectures with inherently interpretable layers allow direct neuroscientific validation of learned features.
 
  .. grid-item-card:: |circle-nodes| Symmetric Positive-Definite
   :shadow: sm
-  :link: categorization/spd
-  :link-type: doc
-  :link-alt: SPD page
 
   :bdg-dark:`SPD` :bdg-danger-line:`To be released soon!`
 
@@ -120,14 +108,12 @@ More details about each categories can be found in the respective sections below
    :align: center
    :alt: Diagram of SPD learning
    :figclass: unavailable
+   :class: no-scaled-link
 
   Learns on covariance/connectivity as SPD matrices using BiMap/ReEig/LogEig layers.
 
  .. grid-item-card:: |lightbulb| Large Transformer Models
   :shadow: sm
-  :link: categorization/llm
-  :link-type: doc
-  :link-alt: Large Language Model page
 
   :bdg-danger:`Large Language Model`
 
@@ -135,14 +121,12 @@ More details about each categories can be found in the respective sections below
    :width: 90%
    :align: center
    :alt: Diagram of transformer models
+   :class: no-scaled-link
 
   Large-scale transformer layers require self-supervised pre-training to work effectively.
 
  .. grid-item-card:: |share-nodes| Graph Neural Network
   :shadow: sm
-  :link: categorization/gnn
-  :link-type: doc
-  :link-alt: GNN page
 
   :bdg-light:`Graph Neural Network`
 
@@ -151,14 +135,12 @@ More details about each categories can be found in the respective sections below
    :align: center
    :alt: Diagram of GNN models
    :figclass: unavailable
+   :class: no-scaled-link
 
   Treats channels/regions as nodes with learned/static edges to model connectivity.
 
  .. grid-item-card:: |clone| Channel-Domain
   :shadow: sm
-  :link: categorization/channel
-  :link-type: doc
-  :link-alt: Channel page
 
   :bdg-dark-line:`Channel`
 
@@ -166,6 +148,7 @@ More details about each categories can be found in the respective sections below
    :width: 90%
    :align: center
    :alt: Diagram of channel-domain methods
+   :class: no-scaled-link
 
   Usage montage information with spatial filtering / channel / hemisphere / brain region selection strategies.
 
