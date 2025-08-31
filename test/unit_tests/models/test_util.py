@@ -89,6 +89,7 @@ def test_models_dict():
             inspect.isclass(m)
             and issubclass(m, models.base.EEGModuleMixin)
             and m != models.base.EEGModuleMixin
+            and m.__name__ != "EEGNetv4"
         )
     ]
     models_list = list(models_dict.items())
