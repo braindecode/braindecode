@@ -64,6 +64,7 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
+    "sphinx_sitemap",
     "sphinx_design",
     "numpydoc",
     "gh_substitutions",
@@ -182,7 +183,6 @@ bibtex_bibfiles = ["references.bib"]
 bibtex_reference_style = "author_year"
 bibtex_default_style = "unsrt"
 # -- Project information -----------------------------------------------------
-
 project = "Braindecode"
 td = datetime.now(tz=timezone.utc)
 
@@ -292,8 +292,8 @@ html_theme_options = {
         "version_match": switcher_version_match,
     },
     "logo": {
-        "image_light": "_static/braindecode_symbol.png",
-        "image_dark": "_static/braindecode_symbol.png",
+        "image_light": "_static/braindecode_long.png",
+        "image_dark": "_static/braindecode_long.png",
         "alt_text": "Braindecode Logo",
     },
     "footer_start": ["copyright"],
@@ -312,6 +312,9 @@ html_static_path = ["_static"]
 html_css_files = [
     "style.css",
 ]
+
+# Favicon for the site
+html_favicon = "_static/braindecode_symbol.png"
 
 # If true, links to the reST sources are added to the pages.
 html_show_sourcelink = False
@@ -369,20 +372,23 @@ html_sidebars = {
 }
 
 # -- Options for LaTeX output ---------------------------------------------
-
+latex_engine = "xelatex"
 latex_elements = {
+    "latex_engine": "xelatex",
     # The paper size ('letterpaper' or 'a4paper').
-    #
-    # 'papersize': 'letterpaper',
+    "papersize": "a4paper",
     # The font size ('10pt', '11pt' or '12pt').
     #
-    # 'pointsize': '10pt',
+    "pointsize": "14pt",
     # Additional stuff for the LaTeX preamble.
     #
-    # 'preamble': '',
+    "preamble": r"""\usepackage{microtype}
+    \usepackage{enumitem}
+    \setlist{nosep}
+    """,
     # Latex figure (float) alignment
     #
-    # 'figure_align': 'htbp',
+    "figure_align": "htbp",
 }
 
 latex_logo = "_static/braindecode_symbol.png"
@@ -400,7 +406,8 @@ latex_documents = [
         "manual",
     ),
 ]
-
+html_baseurl = "https://braindecode.org"
+sitemap_filename = "sitemap.xml"
 # -- Fontawesome support -----------------------------------------------------
 
 # here the "fab" and "fas" refer to "brand" and "solid" (determines which font

@@ -29,6 +29,7 @@ Enhancements
 - Improving the docstring for :class:`braindecode.models.AttentionBaseNet`  (:gh:`772` by `Bruno Aristimunha`_)
 - Improving the docstring for :class:`braindecode.models.EEGNeX`  (:gh:`773` by `Bruno Aristimunha`_)
 - Massive refactor of the models webpage (:gh:`774` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`775` by `Bruno Aristimunha`_)
 
 
 API changes

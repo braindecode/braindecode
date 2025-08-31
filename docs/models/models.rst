@@ -1,5 +1,7 @@
 :html_theme.sidebar_secondary.remove: true
 
+.. currentmodule:: braindecode.models
+
 .. _models:
 
 The brain decode problem
@@ -9,7 +11,7 @@ All the models in this library tackle the following problem:
 given time-series signals :math:`X \in \mathbb{R}^{C \times T}` and labels
 :math:`y \in \mathcal{Y}`, :class:`braindecode` implements neural networks
 :math:`f` that **decode** brain activity, i.e., it applies a series of transformations
-layers (e.g. :class:`torch.nn.Conv2d`, :class:`torch.nn.Linear`, :class:`torch.nn.ELU`) to the data
+layers (e.g. :class:`~torch.nn.Conv2d`, :class:`~torch.nn.Linear`, :class:`~torch.nn.ELU`) to the data
 to allow us to filter and extract features that are relevant to what we are modeling, in other words:
 
 .. math::
@@ -41,7 +43,7 @@ the regularized the average loss over the training set :math:`\mathcal{D}_{\text
         \ell\!\left(f_{\theta}(x_i),\, y_i\right) \;+\; \lambda\,\Omega(\theta)\,,
    \end{aligned}
 
-where :math:`\ell` is the task loss (e.g., cross-entropy :class:`torch.nn.CrossEntropyLoss`), :math:`\Omega` is an optional regularizer, and :math:`\lambda \ge 0` its weight (e.g. ``weight_decay`` parameter in :class:`torch.optim.Adam` is the example of regularization).
+where :math:`\ell` is the task loss (e.g., cross-entropy :class:`~torch.nn.CrossEntropyLoss`), :math:`\Omega` is an optional regularizer, and :math:`\lambda \ge 0` its weight (e.g. ``weight_decay`` parameter in :class:`~torch.optim.Adam` is the example of regularization).
 
 Equivalently, the goal is to minimize the expected risk :math:`\mathcal{R}(\theta)=\mathbb{E}_{(x,y)\sim P_{\text{tr}}}
 [\ell(f_{\theta}(x),y)]`, for which the empirical average above is a finite-sample

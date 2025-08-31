@@ -21,6 +21,7 @@ from braindecode.models import (
     TCN,
     ATCNet,
     AttentionBaseNet,
+    AttnSleep,
     ContraWR,
     Deep4Net,
     DeepSleepNet,
@@ -29,9 +30,8 @@ from braindecode.models import (
     EEGInceptionMI,
     EEGITNet,
     EEGMiner,
-    EEGNetv4,
+    EEGNet,
     EEGNeX,
-    EEGResNet,
     EEGSimpleConv,
     EEGTCNet,
     FBCNet,
@@ -42,10 +42,9 @@ from braindecode.models import (
     ShallowFBCSPNet,
     SleepStagerBlanco2020,
     SleepStagerChambon2018,
-    SleepStagerEldele2021,
     SPARCNet,
     TIDNet,
-    TSceptionV1,
+    TSception,
     USleep,
 )
 from braindecode.util import set_random_seeds
@@ -196,27 +195,6 @@ def test_deep4net_load_state_dict(input_sizes):
     model.load_state_dict(state_dict)
 
 
-def test_eegresnet(input_sizes):
-    model = EEGResNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_pool_length=5,
-        n_first_filters=2,
-    )
-    check_forward_pass(model, input_sizes, only_check_until_dim=2)
-
-
-def test_eegresnet_pool_length_auto(input_sizes):
-    model = EEGResNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_pool_length="auto",
-        n_first_filters=2,
-    )
-    check_forward_pass(model, input_sizes, only_check_until_dim=2)
-
 
 def test_hybridnet(input_sizes):
     model = HybridNet(
@@ -227,8 +205,8 @@ def test_hybridnet(input_sizes):
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
-def test_eegnet_v4(input_sizes):
-    model = EEGNetv4(
+def test_eegnet(input_sizes):
+    model = EEGNet(
         input_sizes["n_channels"],
         input_sizes["n_classes"],
         n_times=input_sizes["n_in_times"],
@@ -518,7 +496,7 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_channels = 1
     n_examples = 10
 
-    model = SleepStagerEldele2021(
+    model = AttnSleep(
         sfreq=sfreq,
         n_outputs=n_classes,
         input_window_seconds=input_size_s,
@@ -542,7 +520,7 @@ def test_eldele_2021_feats():
     n_classes = 3
     n_examples = 10
 
-    model = SleepStagerEldele2021(
+    model = AttnSleep(
         sfreq,
         input_window_seconds=input_size_s,
         n_outputs=n_classes,
@@ -775,7 +753,7 @@ def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
         (153, 8, 512.0, 2),
     ],
 )
-def test_tsceptionv1_dummy(n_times, n_chans, sfreq, n_outputs):
+def test_tsception_dummy(n_times, n_chans, sfreq, n_outputs):
     batch_size = 64
     input_sizes = dict(
         n_channels=n_chans,
@@ -783,7 +761,7 @@ def test_tsceptionv1_dummy(n_times, n_chans, sfreq, n_outputs):
         n_classes=n_outputs,
         n_samples=batch_size,
     )
-    model = TSceptionV1(
+    model = TSception(
         n_chans=n_chans,
         n_outputs=n_outputs,
         n_times=n_times,
@@ -1492,9 +1470,9 @@ def test_eegminer_plv_values_range():
         "PLV values should be in the range [0, 1]"
 
 
-def test_eegnetv4_final_layer_linear_true():
+def test_eegnet_final_layer_linear_true():
     """Test that final_layer_linear=True uses a conv-based classifier without warning."""
-    model = EEGNetv4(
+    model = EEGNet(
         final_layer_with_constraint=True,
         n_chans=4,
         n_times=128,
@@ -1513,12 +1491,12 @@ def test_eegnetv4_final_layer_linear_true():
     assert hasattr(final_layer,
                    "linearconstraint"), "Expected a 'linear constraint' sub-module."
 
-def test_eegnetv4_final_layer_linear_false():
+def test_eegnet_final_layer_linear_false():
     """Test that final_layer_conv=False raises a DeprecationWarning and uses
     a linear layer."""
     with pytest.warns(DeprecationWarning,
                       match="Parameter 'final_layer_with_constraint=False' is deprecated"):
-        model = EEGNetv4(
+        model = EEGNet(
             final_layer_with_constraint=False,
             n_chans=4,
             n_times=128,

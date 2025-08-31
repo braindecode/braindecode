@@ -2,7 +2,7 @@
 Cross-session motor imagery with deep learning EEGNet v4 model
 ===============================================================
 This example shows how to use BrainDecode in combination with MOABB evaluation.
-In this example, we use the architecture EEGNetv4.
+In this example, we use the architecture EEGNet.
 """
 
 # Authors: Igor Carrara <igor.carrara@inria.fr>
@@ -23,7 +23,7 @@ from skorch.callbacks import EarlyStopping, EpochScoring
 from skorch.dataset import ValidSplit
 
 from braindecode import EEGClassifier
-from braindecode.models import EEGNetv4
+from braindecode.models import EEGNet
 
 mne.set_log_level(False)
 
@@ -93,7 +93,7 @@ X, _, _ = paradigm.get_data(dataset=dataset, subjects=subjects)
 
 # Define a Skorch classifier
 clf = EEGClassifier(
-    module=EEGNetv4,
+    module=EEGNet,
     optimizer=torch.optim.Adam,
     optimizer__lr=LEARNING_RATE,
     batch_size=BATCH_SIZE,
@@ -114,7 +114,7 @@ clf = EEGClassifier(
 
 # Create the pipelines
 pipes = {}
-pipes["EEGNetV4"] = make_pipeline(clf)
+pipes["EEGNet"] = make_pipeline(clf)
 
 ##############################################################################
 # Evaluation

@@ -157,7 +157,7 @@ class EEGTCNet(EEGModuleMixin, nn.Module):
 class _EEGNetTC(nn.Module):
     """EEGNet Temporal Convolutional Network (TCN) block.
 
-    The main difference from our EEGNetV4 (braindecode) implementation is the
+    The main difference from our :class:`EEGNet` (braindecode) implementation is the
     kernel and dimensional order. Because of this, we decided to keep this
     implementation in a future issue; we will re-evaluate if it is necessary
     to maintain this separate implementation.

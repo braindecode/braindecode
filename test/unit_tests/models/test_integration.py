@@ -24,7 +24,6 @@ from braindecode import EEGClassifier
 from braindecode.models import (
     EEGInceptionMI,
     EEGMiner,
-    EEGResNet,
     EEGSimpleConv,
     FBCNet,
     FBLightConvNet,
@@ -439,7 +438,6 @@ def test_model_has_drop_prob_parameter(model_class):
     if model_class in [
         SyncNet,
         EEGSimpleConv,
-        EEGResNet,
         USleep,
         EEGMiner,
         EEGInceptionMI,
