@@ -64,6 +64,7 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinx_gallery.gen_gallery",
     "sphinx.ext.linkcode",
+    "sphinx_sitemap",
     "sphinx_design",
     "numpydoc",
     "gh_substitutions",
@@ -402,7 +403,8 @@ latex_documents = [
         "manual",
     ),
 ]
-
+html_baseurl = "https://braindecode.org"
+sitemap_filename = "sitemap.xml"
 # -- Fontawesome support -----------------------------------------------------
 
 # here the "fab" and "fas" refer to "brand" and "solid" (determines which font
