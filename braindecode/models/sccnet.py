@@ -104,6 +104,8 @@ class SCCNet(EEGModuleMixin, nn.Module):
       separable design favor parameter efficiency; SCCNet's second-scale kernels and
       square/log emphasize interpretable **band-power** features.
 
+    - Reference implementation: see [sccnetcode]_.
+
     .. rubric:: Usage and Configuration
 
     * **Training from the original authors.**
