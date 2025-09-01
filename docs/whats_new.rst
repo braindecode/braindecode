@@ -17,7 +17,7 @@ What's new
 
 .. _current:
 
-Current 1.2 (dev)
+Current 1.2 (stable)
 ----------------------
 
 Enhancements
@@ -29,17 +29,21 @@ Enhancements
 - Improving the docstring for :class:`braindecode.models.AttentionBaseNet`  (:gh:`772` by `Bruno Aristimunha`_)
 - Improving the docstring for :class:`braindecode.models.EEGNeX`  (:gh:`773` by `Bruno Aristimunha`_)
 - Massive refactor of the models webpage (:gh:`774` by `Bruno Aristimunha`_)
-- Massive refactor of the models webpage (:gh:`775` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`775` by `Bruno Aristimunha`_), creating the models categorization, table and many details.
 
 
 API changes
 ~~~~~~~~~~~
+- Using the name from the original name and deprecation models that we create for no reason, models :gh:`775` by `Bruno Aristimunha`_
+- Deprecated the version name in :class:`braindecode.models.EEGNetv4` in favour of :class:`braindecode.models.EEGNetv`.
+- Deprecated the version name in :class:`braindecode.models.SleepStagerEldele2021` in favour of :class:`braindecode.models.AttnSleep`.
+- Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of :class:`braindecode.models.TSception`.
 
 Bugs
 ~~~~
 
 
-Current 1.1.1 (stable)
+Version 1.1.1
 ----------------------
 
 Enhancements
