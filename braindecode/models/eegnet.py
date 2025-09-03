@@ -23,10 +23,11 @@ class EEGNet(EEGModuleMixin, nn.Sequential):
     """EEGNet model from Lawhern et al. (2018) [Lawhern2018]_.
 
     :bdg-success:`Convolution`
+
     .. figure:: https://content.cld.iop.org/journals/1741-2552/15/5/056013/revision2/jneaace8cf01_hr.jpg
-       :align: center
-       :alt: EEGNet Architecture
-       :width: 600px
+        :align: center
+        :alt: EEGNet Architecture
+        :width: 600px
 
     .. rubric:: Architectural Overview
 
