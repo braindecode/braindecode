@@ -111,18 +111,18 @@ More details about each categories can be found in the respective sections below
 
   Learns on covariance/connectivity as SPD matrices using BiMap/ReEig/LogEig layers.
 
- .. grid-item-card:: |lightbulb| Large Transformer Models
+ .. grid-item-card:: |lightbulb| Large Brain Models
   :shadow: sm
 
   :bdg-danger:`Large Language Model`
 
-  .. figure:: ../_static/model_cat/llm.png
+  .. figure:: ../_static/model_cat/lbm.png
    :width: 90%
    :align: center
    :alt: Diagram of transformer models
    :class: no-scaled-link
 
-  Large-scale transformer layers require self-supervised pre-training to work effectively.
+  Large-scale brain model layers require self-supervised pre-training to work effectively.
 
  .. grid-item-card:: |share-nodes| Graph Neural Network
   :shadow: sm
@@ -160,7 +160,7 @@ More details about each categories can be found in the respective sections below
 - **Filterbank-style models** (:bdg-primary:`Filterbank`) explicitly decompose signals into multiple bands before (or while) learning, echoing the classic FBCSP pipeline; examples include :class:`FBCNet` and :class:`FBMSNet` (:cite:label:`mane2021fbcnet,liu2022fbmsnet`).
 - **Interpretability-by-design** (:bdg-warning:`Interpretability`) architectures expose physiologically meaningful primitives (e.g., band-pass/sinc filters, variance or connectivity features), enabling direct neuroscientific inspection; see :class:`SincShallowNet` and :class:`EEGMiner` (:cite:label:`borra2020interpretable,ludwig2024eegminer`).
 - **SPD / Riemannian** (:bdg-dark:`SPD`) methods operate on covariance (or connectivity) matrices as points on the SPD manifold, combining layers such as BiMap, ReEig, and LogEig; deep SPD networks and Riemannian classifiers motivate this family (:cite:label:`huang2017riemannian`). *(Coming soon in a dedicate repository.)*
-- **Large-model / Transformer** (:bdg-danger:`Large Language Model`) approaches pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks; e.g., :class:`BIOT` (:cite:label:`yang2023biot`). These typically need a heavily self-supervised pre-training before decoding.
+- **Large-model / Transformer** (:bdg-danger:`Large Brain Model`) approaches pretrain attention-based encoders on diverse biosignals and fine-tune for EEG tasks; e.g., :class:`BIOT` (:cite:label:`yang2023biot`), :class:`Labram` (:cite:label:`jiang2024large`). These typically need a heavily self-supervised pre-training before decoding.
 - **Graph neural networks** (:bdg-light:`Graph Neural Network`) treat channels/regions as nodes with learned (static or dynamic) edges to model functional connectivity explicitly; representative EEG-GNN, more common in the epileptic decoding (:cite:label:`klepl2024graph`).
 - **Channel-domain robustness** (:bdg-dark-line:`Channel`) techniques target variability in electrode layouts by learning montage-agnostic or channel-selective layers (e.g., dynamic spatial filtering, differentiable channel re-ordering); these strategies improve cross-setup generalization :class:`SignalJEPA` (:cite:label:`guetschel2024sjepa,chen2024eegprogress`).
 
@@ -194,7 +194,7 @@ We appreciate your contributions to expanding the library!
    categorization/filterbank
    categorization/interpretable
    categorization/spd
-   categorization/llm
+   categorization/lbm
    categorization/gnn
    categorization/channel
 
