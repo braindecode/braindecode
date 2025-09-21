@@ -194,7 +194,7 @@ We appreciate your contributions to expanding the library!
    categorization/filterbank
    categorization/interpretable
    categorization/spd
-   categorization/llm
+   categorization/lbm
    categorization/gnn
    categorization/channel
 

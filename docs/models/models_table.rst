@@ -19,7 +19,7 @@
   .tag.tag-filterbank{ background:#06b6d4!important; color:#073042!important; border-color:#0891b2!important; }
   .tag.tag-interp    { background:#f59e0b!important; color:#1f2937!important; border-color:#d97706!important; }
   .tag.tag-spd       { background:#111827!important; color:#fff!important;  border-color:#0b1220!important; }
-  .tag.tag-llm       { background:#e11d48!important; color:#fff!important;  border-color:#be123c!important; }
+  .tag.tag-lbm       { background:#e11d48!important; color:#fff!important;  border-color:#be123c!important; }
   .tag.tag-gnn       { background:#475569!important; color:#fff!important;  border-color:#334155!important; }
   .tag.tag-channel   { background:#64748b!important; color:#fff!important;  border-color:#475569!important; }
 
@@ -83,7 +83,7 @@ We are continually expanding this collection and welcome contributions! If you h
   .tag.tag-filterbank{ background:#06b6d4!important; color:#073042!important; border-color:#0891b2!important; }
   .tag.tag-interp    { background:#f59e0b!important; color:#1f2937!important; border-color:#d97706!important; }
   .tag.tag-spd       { background:#111827!important; color:#fff!important;  border-color:#0b1220!important; }
-  .tag.tag-llm       { background:#e11d48!important; color:#fff!important;  border-color:#be123c!important; }
+  .tag.tag-lbm       { background:#e11d48!important; color:#fff!important;  border-color:#be123c!important; }
   .tag.tag-gnn       { background:#475569!important; color:#fff!important;  border-color:#334155!important; }
   .tag.tag-channel   { background:#64748b!important; color:#fff!important;  border-color:#475569!important; }
   .tag { box-shadow:0 0 0 0 rgba(0,0,0,0); transition:box-shadow .15s, transform .15s; }
@@ -111,11 +111,11 @@ We are continually expanding this collection and welcome contributions! If you h
         "Convolution":"tag-conv","Recurrent":"tag-recurrent","Small Attention":"tag-smallattn",
         "Filterbank":"tag-filterbank","Interpretability":"tag-interp",
         "SPD":"tag-spd","Riemannian":"tag-spd",
-        "Large Language Model":"tag-llm","Graph Neural Network":"tag-gnn","Channel":"tag-channel"
+        "Large Brain Model":"tag-lbm","Graph Neural Network":"tag-gnn","Channel":"tag-channel"
       };
       $(ctx).find('.tag').each(function () {
         var t = $(this).text().trim();
-        $(this).removeClass('tag-conv tag-recurrent tag-smallattn tag-filterbank tag-interp tag-spd tag-llm tag-gnn tag-channel');
+        $(this).removeClass('tag-conv tag-recurrent tag-smallattn tag-filterbank tag-interp tag-spd tag-lbm tag-gnn tag-channel');
         if (map[t]) $(this).addClass(map[t]);
         else if (t.includes('SPD') || t.includes('Riemannian')) $(this).addClass('tag-spd');
       });
