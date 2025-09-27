@@ -373,7 +373,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                             in_channels=self.F2 if i == 0 else self.tcn_n_filters,
                             kernel_size=self.tcn_kernel_size,
                             n_filters=self.tcn_n_filters,
-                            dropout=self.tcn_drop_prob,
+                            dropout=self.tcn_dropout,
                             activation=self.tcn_activation,
                             dilation=2**i,
                         )
