@@ -28,6 +28,7 @@ API changes
 
 Bugs
 ~~~~
+- Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi Altaheri`_)
 
 
 Current 1.2 (stable)
@@ -396,3 +397,4 @@ Authors
 .. _Young Truong: https://github.com/dungscout96
 .. _Lucas Heck: https://github.com/lucas-heck
 .. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
+.. _Hamdi Altaheri: https://github.com/Altaheri
