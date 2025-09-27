@@ -370,7 +370,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 nn.Sequential(
                     *[
                         _TCNResidualBlock(
-                            in_channels=self.F2,
+                            in_channels=self.F2 if i == 0 else self.tcn_n_filters,
                             kernel_size=self.tcn_kernel_size,
                             n_filters=self.tcn_n_filters,
                             dropout=self.tcn_dropout,
@@ -388,7 +388,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.ModuleList(
                 [
                     MaxNormLinear(
-                        in_features=self.F2 * self.n_windows,
+                        in_features=self.tcn_n_filters * self.n_windows,
                         out_features=self.n_outputs,
                         max_norm_val=self.max_norm_const,
                     )
@@ -398,7 +398,7 @@ class ATCNet(EEGModuleMixin, nn.Module):
             self.final_layer = nn.ModuleList(
                 [
                     MaxNormLinear(
-                        in_features=self.F2,
+                        in_features=self.tcn_n_filters,
                         out_features=self.n_outputs,
                         max_norm_val=self.max_norm_const,
                     )
@@ -695,8 +695,8 @@ class _TCNResidualBlock(nn.Module):
         # Reshape the input for the residual connection when necessary
         if in_channels != n_filters:
             self.reshaping_conv = nn.Conv1d(
-                in_channels=in_channels,
-                out_channels=n_filters,
+                in_channels=in_channels,  # Specify input channels
+                out_channels=n_filters,  # Specify output channels
                 kernel_size=1,
                 padding="same",
             )
@@ -716,7 +716,7 @@ class _TCNResidualBlock(nn.Module):
         out = self.activation(out)
         out = self.drop2(out)
 
-        out = self.reshaping_conv(out)
+        X = self.reshaping_conv(X)
 
         # ----- Residual connection -----
         out = X + out
