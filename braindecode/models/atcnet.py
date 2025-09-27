@@ -370,11 +370,11 @@ class ATCNet(EEGModuleMixin, nn.Module):
                 nn.Sequential(
                     *[
                         _TCNResidualBlock(
-                            in_channels=self.F2 if i == 0 else tcn_n_filters,
-                            kernel_size=tcn_kernel_size,
-                            n_filters=tcn_n_filters,
-                            dropout=tcn_drop_prob,
-                            activation=tcn_activation,
+                            in_channels=self.F2 if i == 0 else self.tcn_n_filters,
+                            kernel_size=self.tcn_kernel_size,
+                            n_filters=self.tcn_n_filters,
+                            dropout=self.tcn_drop_prob,
+                            activation=self.tcn_activation,
                             dilation=2**i,
                         )
                         for i in range(self.tcn_depth)
