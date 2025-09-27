@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+
+# Point crawlers to the generated sitemap
+Sitemap: https://braindecode.org/dev/sitemap.xml

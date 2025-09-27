@@ -14,7 +14,7 @@ from skorch import History
 from skorch.callbacks import Callback
 from skorch.utils import to_numpy, to_tensor
 from torch import optim
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from braindecode.classifier import EEGClassifier
 from braindecode.datasets.moabb import MOABBDataset
@@ -484,3 +484,51 @@ def test_predict_trials():
         "same result as '.predict'.",
     ):
         clf.predict_trials(windows_ds2)
+
+
+def test_post_epoch_train_scoring_uses_batch(monkeypatch):
+    import braindecode.training.scoring as scoring_module
+
+    if hasattr(scoring_module, "check_version"):
+        monkeypatch.setattr(
+            scoring_module, "check_version", lambda *args, **kwargs: False
+        )
+
+    class DummyNet:
+        def __init__(self):
+            self.device = "cpu"
+            self.history = History()
+            self.history.new_epoch()
+            self.evaluation_step_called_with_batch = False
+
+        def fit(self, X, y=None):
+            return self
+
+        def get_dataset(self, dataset):
+            return dataset
+
+        def get_iterator(self, dataset, training=False):
+            return DataLoader(dataset, batch_size=2)
+
+        def evaluation_step(self, batch, training=False):
+            assert isinstance(batch, (list, tuple))
+            self.evaluation_step_called_with_batch = True
+            X, _ = batch
+            return X
+
+    X = torch.zeros((4, 1))
+    y = torch.randint(0, 2, (4,))
+    dataset = TensorDataset(X, y)
+
+    pes = PostEpochTrainScoring(
+        lambda net, X, y: 0.0, lower_is_better=False, name="train_score"
+    )
+    pes.initialize()
+
+    net = DummyNet()
+    net.callbacks_ = [("", pes)]
+
+    pes.on_epoch_end(net, dataset, None)
+
+    assert net.history[0]["train_score"] == 0.0
+    assert net.evaluation_step_called_with_batch

@@ -21,6 +21,8 @@ from braindecode.models.base import EEGModuleMixin
 class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
     """EEGSimpleConv from Ouahidi, YE et al. (2023) [Yassine2023]_.
 
+    :bdg-success:`Convolution`
+
     .. figure:: https://raw.githubusercontent.com/elouayas/EEGSimpleConv/refs/heads/main/architecture.png
         :align: center
         :alt: EEGSimpleConv Architecture
@@ -123,7 +125,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
 
         self.return_feature = return_feature
         self.resample = (
-            Resample(orig_freq=self.sfreq, new_freq=resampling_freq)
+            Resample(orig_freq=int(self.sfreq), new_freq=int(resampling_freq))
             if self.sfreq != resampling_freq
             else torch.nn.Identity()
         )
@@ -174,7 +176,7 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
         self.blocks = torch.nn.ModuleList(self.blocks)
         self.final_layer = torch.nn.Linear(old_feature_maps, self.n_outputs)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass of the model.
 
@@ -194,6 +196,6 @@ class EEGSimpleConv(EEGModuleMixin, torch.nn.Module):
             feat = seq(feat)
         feat = feat.mean(dim=2)
         if self.return_feature:
-            return self.final_layer(feat), feat
+            return feat
         else:
             return self.final_layer(feat)

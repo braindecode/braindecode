@@ -10,8 +10,8 @@ import warnings
 
 import numpy as np
 from skorch import NeuralNet
-from skorch.classifier import NeuralNetClassifier
 from skorch.callbacks import EpochScoring
+from skorch.classifier import NeuralNetClassifier
 from torch.nn import CrossEntropyLoss
 
 from .eegneuralnet import _EEGNeuralNet

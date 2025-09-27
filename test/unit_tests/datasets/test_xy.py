@@ -3,6 +3,7 @@
 # License: BSD-3
 
 import numpy as np
+
 from braindecode.datasets.xy import create_from_X_y
 
 

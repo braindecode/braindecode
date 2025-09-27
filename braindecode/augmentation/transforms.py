@@ -6,27 +6,28 @@
 
 import warnings
 from numbers import Real
-from typing import Callable
 
 import numpy as np
 import torch
 from mne.channels import make_standard_montage
 
 from .base import Transform
-from .functional import bandstop_filter
-from .functional import channels_dropout
-from .functional import channels_permute
-from .functional import channels_shuffle
-from .functional import frequency_shift
-from .functional import ft_surrogate
-from .functional import gaussian_noise
-from .functional import mixup
-from .functional import sensors_rotation
-from .functional import sign_flip
-from .functional import smooth_time_mask
-from .functional import time_reverse
-from .functional import segmentation_reconstruction
-from .functional import mask_encoding
+from .functional import (
+    bandstop_filter,
+    channels_dropout,
+    channels_permute,
+    channels_shuffle,
+    frequency_shift,
+    ft_surrogate,
+    gaussian_noise,
+    mask_encoding,
+    mixup,
+    segmentation_reconstruction,
+    sensors_rotation,
+    sign_flip,
+    smooth_time_mask,
+    time_reverse,
+)
 
 
 class TimeReverse(Transform):
@@ -112,15 +113,15 @@ class FTSurrogate(Transform):
         random_state=None,
     ):
         super().__init__(probability=probability, random_state=random_state)
-        assert isinstance(
-            phase_noise_magnitude, (float, int, torch.Tensor)
-        ), "phase_noise_magnitude should be a float."
-        assert (
-            0 <= phase_noise_magnitude <= 1
-        ), "phase_noise_magnitude should be between 0 and 1."
-        assert isinstance(
-            channel_indep, bool
-        ), "channel_indep is expected to be a boolean"
+        assert isinstance(phase_noise_magnitude, (float, int, torch.Tensor)), (
+            "phase_noise_magnitude should be a float."
+        )
+        assert 0 <= phase_noise_magnitude <= 1, (
+            "phase_noise_magnitude should be between 0 and 1."
+        )
+        assert isinstance(channel_indep, bool), (
+            "channel_indep is expected to be a boolean"
+        )
         self.phase_noise_magnitude = phase_noise_magnitude
         self.channel_indep = channel_indep
 
@@ -533,16 +534,16 @@ class BandstopFilter(Transform):
             probability=probability,
             random_state=random_state,
         )
-        assert (
-            isinstance(bandwidth, Real) and bandwidth >= 0
-        ), "bandwidth should be a non-negative float."
-        assert (
-            isinstance(sfreq, Real) and sfreq > 0
-        ), "sfreq should be a positive float."
+        assert isinstance(bandwidth, Real) and bandwidth >= 0, (
+            "bandwidth should be a non-negative float."
+        )
+        assert isinstance(sfreq, Real) and sfreq > 0, (
+            "sfreq should be a positive float."
+        )
         if max_freq is not None:
-            assert (
-                isinstance(max_freq, Real) and max_freq > 0
-            ), "max_freq should be a positive float."
+            assert isinstance(max_freq, Real) and max_freq > 0, (
+                "max_freq should be a positive float."
+            )
         nyq = sfreq / 2
         if max_freq is None or max_freq > nyq:
             max_freq = nyq
@@ -551,9 +552,9 @@ class BandstopFilter(Transform):
                 f" Nyquist frequency ({nyq} Hz)."
                 f" Falling back to max_freq = {nyq}."
             )
-        assert (
-            bandwidth < max_freq
-        ), f"`bandwidth` needs to be smaller than max_freq={max_freq}"
+        assert bandwidth < max_freq, (
+            f"`bandwidth` needs to be smaller than max_freq={max_freq}"
+        )
 
         # override bandwidth value when a magnitude is passed
         self.sfreq = sfreq
@@ -631,9 +632,9 @@ class FrequencyShift(Transform):
             probability=probability,
             random_state=random_state,
         )
-        assert (
-            isinstance(sfreq, Real) and sfreq > 0
-        ), "sfreq should be a positive float."
+        assert isinstance(sfreq, Real) and sfreq > 0, (
+            "sfreq should be a positive float."
+        )
         self.sfreq = sfreq
 
         self.max_delta_freq = max_delta_freq
@@ -688,9 +689,9 @@ def _get_standard_10_20_positions(raw_or_epoch=None, ordered_ch_names=None):
         matrices that will be fed to `SensorsRotation` transform. By
         default None.
     """
-    assert (
-        raw_or_epoch is not None or ordered_ch_names is not None
-    ), "At least one of raw_or_epoch and ordered_ch_names is needed."
+    assert raw_or_epoch is not None or ordered_ch_names is not None, (
+        "At least one of raw_or_epoch and ordered_ch_names is needed."
+    )
     if ordered_ch_names is None:
         ordered_ch_names = raw_or_epoch.info["ch_names"]
     ten_twenty_montage = make_standard_montage("standard_1020")
@@ -756,23 +757,23 @@ class SensorsRotation(Transform):
         super().__init__(probability=probability, random_state=random_state)
         if isinstance(sensors_positions_matrix, (np.ndarray, list)):
             sensors_positions_matrix = torch.as_tensor(sensors_positions_matrix)
-        assert isinstance(
-            sensors_positions_matrix, torch.Tensor
-        ), "sensors_positions should be an Tensor"
-        assert (
-            isinstance(max_degrees, (Real, torch.Tensor)) and max_degrees >= 0
-        ), "max_degrees should be non-negative float."
+        assert isinstance(sensors_positions_matrix, torch.Tensor), (
+            "sensors_positions should be an Tensor"
+        )
+        assert isinstance(max_degrees, (Real, torch.Tensor)) and max_degrees >= 0, (
+            "max_degrees should be non-negative float."
+        )
         assert isinstance(axis, str) and axis in [
             "x",
             "y",
             "z",
         ], "axis can be either x, y or z."
-        assert (
-            sensors_positions_matrix.shape[0] == 3
-        ), "sensors_positions_matrix shape should be 3 x n_channels."
-        assert isinstance(
-            spherical_splines, bool
-        ), "spherical_splines should be a boolean"
+        assert sensors_positions_matrix.shape[0] == 3, (
+            "sensors_positions_matrix shape should be 3 x n_channels."
+        )
+        assert isinstance(spherical_splines, bool), (
+            "spherical_splines should be a boolean"
+        )
         self.sensors_positions_matrix = sensors_positions_matrix
         self.axis = axis
         self.spherical_splines = spherical_splines
@@ -1224,12 +1225,12 @@ class MaskEncoding(Transform):
             probability=probability,
             random_state=random_state,
         )
-        assert (
-            isinstance(n_segments, int) and n_segments > 0
-        ), "n_segments should be a positive integer."
-        assert (
-            isinstance(max_mask_ratio, (int, float)) and 0 <= max_mask_ratio <= 1
-        ), "mask_ratio should be a float between 0 and 1."
+        assert isinstance(n_segments, int) and n_segments > 0, (
+            "n_segments should be a positive integer."
+        )
+        assert isinstance(max_mask_ratio, (int, float)) and 0 <= max_mask_ratio <= 1, (
+            "mask_ratio should be a float between 0 and 1."
+        )
 
         self.mask_ratio = max_mask_ratio
         self.n_segments = n_segments
@@ -1256,9 +1257,9 @@ class MaskEncoding(Transform):
 
         segment_length = int((n_times * self.mask_ratio) / self.n_segments)
 
-        assert (
-            segment_length >= 1
-        ), "n_segments should be a positive integer not higher than (max_mask_ratio * window size)."
+        assert segment_length >= 1, (
+            "n_segments should be a positive integer not higher than (max_mask_ratio * window size)."
+        )
 
         time_start = self.rng.randint(
             0, n_times - segment_length, (batch_size, self.n_segments)

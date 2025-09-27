@@ -5,24 +5,25 @@
 
 
 import abc
-import logging
 import inspect
+import logging
 
 import mne
 import numpy as np
 import torch
-from skorch import NeuralNet
 from sklearn.metrics import get_scorer
+from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
-from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score, is_dataset
+from skorch.helper import SliceDataset
+from skorch.utils import is_dataset, noop, to_numpy, train_loss_score, valid_loss_score
 
+from .datasets.base import BaseConcatDataset, WindowsDataset
+from .models.util import models_dict
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
 )
-from .models.util import models_dict
-from .datasets.base import BaseConcatDataset, WindowsDataset
 
 log = logging.getLogger(__name__)
 
@@ -191,7 +192,11 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
         # get kwargs from signal:
         signal_kwargs = dict()
         # Using shape to work both with torch.tensor and numpy.array:
-        if isinstance(X, mne.BaseEpochs) or (hasattr(X, "shape") and len(X.shape) >= 2):
+        if (
+            isinstance(X, mne.BaseEpochs)
+            or (hasattr(X, "shape") and len(X.shape) >= 2)
+            or isinstance(X, SliceDataset)
+        ):
             if y is None:
                 raise ValueError("y must be specified if X is array-like.")
             signal_kwargs["n_outputs"] = self._get_n_outputs(y, classes)
@@ -200,6 +205,11 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
                 signal_kwargs["n_times"] = len(X.times)
                 signal_kwargs["sfreq"] = X.info["sfreq"]
                 signal_kwargs["chs_info"] = X.info["chs"]
+            elif isinstance(X, SliceDataset):
+                self.log.info("Using SliceDataset to find signal-related parameters.")
+                Xshape = X[0].shape
+                signal_kwargs["n_times"] = Xshape[-1]
+                signal_kwargs["n_chans"] = Xshape[-2]
             else:
                 self.log.info("Using array-like to find signal-related parameters.")
                 signal_kwargs["n_times"] = X.shape[-1]
@@ -235,9 +245,7 @@ class _EEGNeuralNet(NeuralNet, abc.ABC):
             if k in all_module_kwargs:
                 module_kwargs[k] = v
             else:
-                self.log.warning(
-                    f"Module {self.module!r} " f"is missing parameter {k!r}."
-                )
+                self.log.warning(f"Module {self.module!r} is missing parameter {k!r}.")
 
         # save kwargs to self:
         self.log.info(

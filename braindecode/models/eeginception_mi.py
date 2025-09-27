@@ -7,11 +7,13 @@ from einops.layers.torch import Rearrange
 from torch import nn
 
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.modules import Ensure4d
+from braindecode.modules import Ensure4d
 
 
 class EEGInceptionMI(EEGModuleMixin, nn.Module):
     """EEG Inception for Motor Imagery, as proposed in Zhang et al. (2021) [1]_
+
+    :bdg-success:`Convolution`
 
     .. figure:: https://content.cld.iop.org/journals/1741-2552/18/4/046014/revision3/jneabed81f1_hr.jpg
         :align: center
@@ -66,9 +68,9 @@ class EEGInceptionMI(EEGModuleMixin, nn.Module):
         n_outputs=None,
         input_window_seconds=None,
         sfreq=250,
-        n_convs=5,
-        n_filters=48,
-        kernel_unit_s=0.1,
+        n_convs: int = 5,
+        n_filters: int = 48,
+        kernel_unit_s: float = 0.1,
         activation: nn.Module = nn.ReLU,
         chs_info=None,
         n_times=None,
@@ -307,6 +309,12 @@ class _InceptionModuleMI(nn.Module):
 
         X2 = self.pooling(X)
         X2 = self.pooling_conv(X2)
+        # Get the target length from one of the conv branches
+        target_len = X1[0].shape[-1]
+
+        # Crop the pooling output if its length does not match
+        if X2.shape[-1] != target_len:
+            X2 = X2[..., :target_len]
 
         out = torch.cat(X1 + [X2], 1)
 

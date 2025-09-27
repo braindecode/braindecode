@@ -15,16 +15,17 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from typing import Callable, Any
-import warnings
 
-import numpy as np
-from numpy.typing import ArrayLike
+import warnings
+from typing import Any, Callable
+
 import mne
+import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
+from numpy.typing import ArrayLike
 
-from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
+from ..datasets.base import BaseConcatDataset, EEGWindowsDataset, WindowsDataset
 
 
 class _LazyDataFrame:
@@ -425,8 +426,7 @@ def create_fixed_length_windows(
         warnings.warn("Recordings have different lengths, they will not be batch-able!")
     if (window_size_samples is not None) and any(window_size_samples > lengths):
         raise ValueError(
-            f"Window size {window_size_samples} exceeds trial "
-            f"duration {lengths.min()}."
+            f"Window size {window_size_samples} exceeds trial duration {lengths.min()}."
         )
 
     list_of_windows_ds = Parallel(n_jobs=n_jobs)(
@@ -546,10 +546,17 @@ def _create_windows_from_events(
         # We could also just say we just assume window size=trial size
         # in case not given, without this condition...
         # but then would have to change functions overall
-        # to deal with varying window sizes hmmhmh
-        assert np.all(this_trial_sizes == window_size_samples), (
-            "All trial sizes should be the same if you do not supply a window " "size."
-        )
+        checker_trials_size = this_trial_sizes == window_size_samples
+
+        if not np.all(checker_trials_size):
+            trials_drops = int(len(this_trial_sizes) - sum(checker_trials_size))
+            warnings.warn(
+                f"Dropping trials with different windows size {trials_drops}",
+            )
+            bads_size_trials = checker_trials_size
+            events = events[checker_trials_size]
+            onsets = onsets[checker_trials_size]
+            stops = stops[checker_trials_size]
 
     description = events[:, -1]
 
@@ -931,8 +938,7 @@ def _compute_window_inds(
     window_stops = np.array(window_starts) + size
     if not (len(i_window_in_trials) == len(window_starts) == len(window_stops)):
         raise ValueError(
-            f"{len(i_window_in_trials)} == "
-            f"{len(window_starts)} == {len(window_stops)}"
+            f"{len(i_window_in_trials)} == {len(window_starts)} == {len(window_stops)}"
         )
 
     return i_trials, i_window_in_trials, window_starts, window_stops
