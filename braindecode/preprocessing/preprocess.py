@@ -153,8 +153,7 @@ def preprocess(
 
     parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
-    job_prefer = "threads" if platform.system() == "Windows" else None
-    list_of_ds = Parallel(n_jobs=n_jobs, prefer=job_prefer)(
+    list_of_ds = Parallel(n_jobs=n_jobs, prefer="threads")(
         delayed(_preprocess)(
             ds,
             i + offset,
