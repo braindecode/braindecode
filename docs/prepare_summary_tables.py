@@ -243,7 +243,7 @@ def wrap_categorization(spec: str, sep: str = "<br/>") -> str:
         "Filterbank": "primary",
         "Interpretability": "warning",
         "SPD": "dark",
-        "Large Language Model": "danger",
+        "Large Brain Model": "danger",
         "Graph Neural Network": "light",
         "Channel": "dark-line",  # outline
     }

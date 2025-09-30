@@ -17,7 +17,7 @@ class BIOT(EEGModuleMixin, nn.Module):
 
     BIOT: Cross-data Biosignal Learning in the Wild.
 
-    BIOT is a large language model for biosignal classification. It is
+    BIOT is a large brain model for biosignal classification. It is
     a wrapper around the `BIOTEncoder` and `ClassificationHead` modules.
 
     It is designed for N-dimensional biosignal data such as EEG, ECG, etc.
