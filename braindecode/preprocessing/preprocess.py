@@ -112,6 +112,7 @@ def preprocess(
     n_jobs: int | None = None,
     offset: int = 0,
     copy_data: bool | None = None,
+    parallel_kwargs: dict | None = None,
 ):
     """Apply preprocessors to a concat dataset.
 
@@ -135,6 +136,10 @@ def preprocess(
         and saving very large datasets in chunks to preserve original positions.
     copy_data : bool | None
         Whether the data passed to parallel jobs should be copied or passed by reference.
+    parallel_kwargs : dict | None
+        Additional keyword arguments forwarded to ``joblib.Parallel``.
+        Defaults to None (equivalent to ``{}``).
+        See https://joblib.readthedocs.io/en/stable/generated/joblib.Parallel.html for details.
 
     Returns
     -------
@@ -153,8 +158,12 @@ def preprocess(
 
     parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
-    job_prefer = "threads" if platform.system() == "Windows" else None
-    list_of_ds = Parallel(n_jobs=n_jobs, prefer=job_prefer)(
+    parallel_params = {} if parallel_kwargs is None else dict(parallel_kwargs)
+    parallel_params.setdefault(
+        "prefer", "threads" if platform.system() == "Windows" else None
+    )
+
+    list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
         delayed(_preprocess)(
             ds,
             i + offset,
