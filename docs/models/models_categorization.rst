@@ -21,7 +21,7 @@ How these *core* :math:`\ell` sequence transformations are structured and combin
 
 Here, we categorize the main families of brain decoding models based on their core components and design philosophies.
 The categories are not mutually exclusive, but an indication of what governs that neural network model; many models blend elements from multiple families to leverage their combined strengths.
-Beginning directly, the categories are nine: :bdg-success:`Convolution`, :bdg-secondary:`Recurrent`, :bdg-info:`Small Attention`, :bdg-primary:`Filterbank`, :bdg-warning:`Interpretability`, :bdg-danger:`Large Language Model`, :bdg-light:`Graph Neural Network`, :bdg-dark:`Symmetric Positive-Definite` and :bdg-dark-line:`Channel`.
+Beginning directly, the categories are nine: :bdg-success:`Convolution`, :bdg-secondary:`Recurrent`, :bdg-info:`Small Attention`, :bdg-primary:`Filterbank`, :bdg-warning:`Interpretability`, :bdg-danger:`Large Brain Model`, :bdg-light:`Graph Neural Network`, :bdg-dark:`Symmetric Positive-Definite` and :bdg-dark-line:`Channel`.
 
 At the moment, not all the categories are implemented, validated, and tested, but there are some that are noteworthy for introducing or popularizing concepts or layer designs that can take decoding further.
 
@@ -114,7 +114,7 @@ More details about each categories can be found in the respective sections below
  .. grid-item-card:: |lightbulb| Large Brain Models
   :shadow: sm
 
-  :bdg-danger:`Large Language Model`
+  :bdg-danger:`Large Brain Model`
 
   .. figure:: ../_static/model_cat/lbm.png
    :width: 90%
