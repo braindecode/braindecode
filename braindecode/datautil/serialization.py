@@ -56,9 +56,9 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
     """
     # assume we have a single concat dataset to load
     is_raw = (path / "0-raw.fif").is_file()
-    assert not (not is_raw and target_name is not None), (
-        "Setting a new target is only supported for raws."
-    )
+    assert not (
+        not is_raw and target_name is not None
+    ), "Setting a new target is only supported for raws."
     is_epochs = (path / "0-epo.fif").is_file()
     paths = [path]
     # assume we have multiple concat datasets to load
@@ -71,9 +71,9 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
             paths = [paths[i] for i in ids_to_load]
         ids_to_load = None
     # if we have neither a single nor multiple datasets, something went wrong
-    assert is_raw or is_epochs, (
-        f"Expect either raw or epo to exist in {path} or in {path / '0'}"
-    )
+    assert (
+        is_raw or is_epochs
+    ), f"Expect either raw or epo to exist in {path} or in {path / '0'}"
 
     datasets = []
     for path in paths:
@@ -138,12 +138,17 @@ def _load_signals(fif_file, preload, is_raw):
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
 
-        # If the file has been moved together with the pickle file, make sure
-        # the path links to correct fif file.
-        signals._fname = str(fif_file)
-        if preload:
-            signals.load_data()
-        return signals
+        if all(f.exists() for f in signals.filenames):
+            if preload:
+                signals.load_data()
+            return signals
+        else:  # This may happen if the file has been moved together with the pickle file.
+            warnings.warn(
+                f"Pickle file {pkl_file} exists, but the referenced fif "
+                "file(s) do not exist. Will read the fif file(s) directly "
+                "and re-create the pickle file.",
+                UserWarning,
+            )
 
     # If pickle didn't exist read via mne (likely slower) and save pkl after
     if is_raw:
