@@ -71,7 +71,7 @@ def _outdated_load_concat_dataset(path, preload, ids_to_load=None, target_name=N
             paths = [paths[i] for i in ids_to_load]
         ids_to_load = None
     # if we have neither a single nor multiple datasets, something went wrong
-    assert (is_raw or is_epochs), (
+    assert is_raw or is_epochs, (
         f"Expect either raw or epo to exist in {path} or in {path / '0'}"
     )
 
