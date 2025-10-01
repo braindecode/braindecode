@@ -138,12 +138,17 @@ def _load_signals(fif_file, preload, is_raw):
         with open(pkl_file, "rb") as f:
             signals = pickle.load(f)
 
-        # If the file has been moved together with the pickle file, make sure
-        # the path links to correct fif file.
-        signals._fname = str(fif_file)
-        if preload:
-            signals.load_data()
-        return signals
+        if all(f.exists() for f in signals.filenames):
+            if preload:
+                signals.load_data()
+            return signals
+        else:  # This may happen if the file has been moved together with the pickle file.
+            warnings.warn(
+                f"Pickle file {pkl_file} exists, but the referenced fif "
+                "file(s) do not exist. Will read the fif file(s) directly "
+                "and re-create the pickle file.",
+                UserWarning,
+            )
 
     # If pickle didn't exist read via mne (likely slower) and save pkl after
     if is_raw:
