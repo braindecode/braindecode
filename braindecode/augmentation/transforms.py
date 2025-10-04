@@ -161,10 +161,10 @@ class ChannelsDropout(Transform):
     ----------
     probability: float
         Float setting the probability of applying the operation.
-    proba_drop: float | None, optional
+    p_drop: float | None, optional
         Float between 0 and 1 setting the probability of dropping each channel.
         Defaults to 0.2.
-    random_state: int | numpy.random.Generator, optional
+    random_state: int | numpy.random.RandomState, optional
         Seed to be used to instantiate numpy random number generator instance.
         Used to decide whether or not to transform given the probability
         argument and to sample channels to erase. Defaults to None.
