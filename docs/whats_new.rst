@@ -22,6 +22,7 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Including typing in the augmentation module (:gh:`709` by `Aphel`_)
 
 API changes
 ~~~~~~~~~~~
