@@ -5,8 +5,9 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
 from numbers import Real
-from typing import Literal, cast
+from typing import Literal
 
 import numpy as np
 import numpy.typing as npt
