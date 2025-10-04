@@ -83,7 +83,7 @@ def _new_random_fft_phase_odd(
     c: int,
     n: int,
     device: torch.device,
-    random_state: int | np.random.Generator | None,
+    random_state: int | np.random.RandomState | None,
 ) -> torch.Tensor:
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
@@ -104,7 +104,7 @@ def _new_random_fft_phase_even(
     c: int,
     n: int,
     device: torch.device,
-    random_state: int | np.random.Generator | None,
+    random_state: int | np.random.RandomState | None,
 ) -> torch.Tensor:
     rng = check_random_state(random_state)
     random_phase = torch.from_numpy(
@@ -129,7 +129,7 @@ def ft_surrogate(
     y: torch.Tensor,
     phase_noise_magnitude: float,
     channel_indep: bool,
-    random_state: int | np.random.Generator | None = None,
+    random_state: int | np.random.RandomState | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """FT surrogate augmentation of a single EEG channel, as proposed in [1]_.
 
@@ -197,7 +197,7 @@ def ft_surrogate(
 
 
 def _pick_channels_randomly(
-    X: torch.Tensor, p_pick: float, random_state: int | np.random.Generator | None
+    X: torch.Tensor, p_pick: float, random_state: int | np.random.RandomState | None
 ) -> torch.Tensor:
     rng = check_random_state(random_state)
     batch_size, n_channels, _ = X.shape
@@ -215,7 +215,7 @@ def channels_dropout(
     X: torch.Tensor,
     y: torch.Tensor,
     p_drop: float,
-    random_state: int | np.random.Generator | None = None,
+    random_state: int | np.random.RandomState | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Randomly set channels to flat signal.
 
@@ -275,7 +275,7 @@ def channels_shuffle(
     X: torch.Tensor,
     y: torch.Tensor,
     p_shuffle: float,
-    random_state: int | np.random.Generator | None = None,
+    random_state: int | np.random.RandomState | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Randomly shuffle channels in EEG data matrix.
 
@@ -319,7 +319,7 @@ def gaussian_noise(
     X: torch.Tensor,
     y: torch.Tensor,
     std: float,
-    random_state: int | np.random.Generator | None = None,
+    random_state: int | np.random.RandomState | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Randomly add white Gaussian noise to all channels.
 
@@ -925,7 +925,7 @@ def _rotate_signals(
 
 def _make_rotation_matrix(
     axis: Literal["x", "y", "z"],
-    angle: float | int | np.ndarray | list,
+    angle: float | int | np.ndarray | list | torch.Tensor,
     degrees: bool = True,
 ) -> torch.Tensor:
     assert axis in ["x", "y", "z"], "axis should be either x, y or z."
