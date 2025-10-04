@@ -14,14 +14,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from braindecode.datasets.base import BaseDataset, BaseConcatDataset, EEGWindowsDataset
+from braindecode.datasets.base import BaseConcatDataset, BaseDataset, EEGWindowsDataset
 from braindecode.datasets.moabb import fetch_data_with_moabb
 from braindecode.preprocessing import (
-    create_windows_from_events,
     create_fixed_length_windows,
+    create_windows_from_events,
 )
 from braindecode.preprocessing.preprocess import Preprocessor, preprocess
-from braindecode.preprocessing.windowers import create_windows_from_target_channels, _LazyDataFrame
+from braindecode.preprocessing.windowers import (
+    _LazyDataFrame,
+    create_windows_from_target_channels,
+)
 from braindecode.util import create_mne_dummy_raw
 
 
@@ -871,6 +874,8 @@ def test_window_sizes_too_large(concat_ds_targets):
     # Replace first trial by a new shorter one
     annots.delete(0)
     del annot_0["orig_time"]
+    del annot_0["extras"] # empty extra dict
+
     annots.append(**annot_0)
     concat_ds.datasets[0].raw.set_annotations(annots)
     with pytest.warns(UserWarning, match=".* are being dropped as the window size .*"):

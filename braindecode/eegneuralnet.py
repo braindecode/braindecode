@@ -5,26 +5,25 @@
 
 
 import abc
-import logging
 import inspect
+import logging
 
 import mne
 import numpy as np
 import torch
-from skorch import NeuralNet
 from sklearn.metrics import get_scorer
+from skorch import NeuralNet
 from skorch.callbacks import BatchScoring, EpochScoring, EpochTimer, PrintLog
 from skorch.helper import SliceDataset
-from skorch.utils import noop, to_numpy, train_loss_score, valid_loss_score, is_dataset
+from skorch.utils import is_dataset, noop, to_numpy, train_loss_score, valid_loss_score
 
-
+from .datasets.base import BaseConcatDataset, WindowsDataset
+from .models.util import models_dict
 from .training.scoring import (
     CroppedTimeSeriesEpochScoring,
     CroppedTrialEpochScoring,
     PostEpochTrainScoring,
 )
-from .models.util import models_dict
-from .datasets.base import BaseConcatDataset, WindowsDataset
 
 log = logging.getLogger(__name__)
 

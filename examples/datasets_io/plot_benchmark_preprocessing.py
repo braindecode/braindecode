@@ -1,4 +1,5 @@
-"""
+""".. _benchmark-preprocess-parallel-serial:
+
 Benchmarking preprocessing with parallelization and serialization
 =================================================================
 
@@ -19,14 +20,14 @@ other. In this scenario, :func:`braindecode.preprocessing.preprocess` acts
 inplace, which means memory usage will likely stay stable (depending on the
 preprocessing operations) if recordings have been preloaded. However, two
 potential issues arise when working with large datasets: (1) if recordings have
-not been preloaded before preprocessing, `preprocess()` will need to load them
+not been preloaded before preprocessing, ``preprocess()`` will need to load them
 and keep them in memory, in which case memory can become a bottleneck, and (2)
 sequential preprocessing can take a considerable amount of time to run when
 working with many recordings.
 
 A solution to the first issue (memory usage) is to save the preprocessed data
 to a file so it can be cleared from memory before moving on to the next
-recording (case 2). The recordings can then be reloaded with `preload=False`
+recording (case 2). The recordings can then be reloaded with ``preload=False``
 once they have all been saved to disk. This enables using the lazy loading
 capabilities of :class:`braindecode.datasets.BaseConcatDataset` and avoids
 potential memory bottlenecks. The downside is that the writing to disk can take
@@ -49,22 +50,21 @@ the dataset and the specific operations applied to the recordings.
 #
 # License: BSD (3-clause)
 
-import time
 import tempfile
+import time
 from itertools import product
 
-import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import scale
+import pandas as pd
 from memory_profiler import memory_usage
+from sklearn.preprocessing import scale
 
 from braindecode.datasets import SleepPhysionet
 from braindecode.preprocessing import (
-    preprocess,
     Preprocessor,
     create_fixed_length_windows,
+    preprocess,
 )
-
 
 ###############################################################################
 # We create a function that goes through the usual three steps of data

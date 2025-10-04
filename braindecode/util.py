@@ -11,8 +11,8 @@ import h5py
 import mne
 import numpy as np
 import torch
-from torch import Tensor
 from sklearn.utils import check_random_state
+from torch import Tensor
 
 
 def set_random_seeds(seed, cuda, cudnn_benchmark=None):

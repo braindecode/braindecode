@@ -7,38 +7,36 @@
 # License: BSD-3
 
 
-import os
 import copy
+import os
 import platform
 from glob import glob
 
 import mne
+import numpy as np
 import pandas as pd
 import pytest
-import numpy as np
-
 from pytest_cases import parametrize_with_cases
 
-from braindecode.datasets import MOABBDataset, BaseConcatDataset, BaseDataset
-from braindecode.preprocessing.preprocess import (
-    preprocess,
-    Preprocessor,
-    filterbank,
-    exponential_moving_standardize,
-    _replace_inplace,
-    _set_preproc_kwargs,
-)
-from braindecode.preprocessing.windowers import create_fixed_length_windows
+from braindecode.datasets import BaseConcatDataset, BaseDataset, MOABBDataset
 from braindecode.datautil.serialization import load_concat_dataset
 from braindecode.preprocessing import (
-    Pick,
     Crop,
-    Filter,
-    Resample,
     DropChannels,
+    Filter,
+    Pick,
+    Resample,
     SetEEGReference,
 )
-
+from braindecode.preprocessing.preprocess import (
+    Preprocessor,
+    _replace_inplace,
+    _set_preproc_kwargs,
+    exponential_moving_standardize,
+    filterbank,
+    preprocess,
+)
+from braindecode.preprocessing.windowers import create_fixed_length_windows
 
 # We can't use fixtures with scope='module' as the dataset objects are modified
 # inplace during preprocessing. To avoid the long setup time caused by calling

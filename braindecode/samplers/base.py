@@ -9,10 +9,9 @@ Sampler classes.
 # License: BSD (3-clause)
 
 import numpy as np
-from torch.utils.data.sampler import Sampler
-from torch.utils.data.distributed import DistributedSampler
 from sklearn.utils import check_random_state
-from typing import Optional
+from torch.utils.data.distributed import DistributedSampler
+from torch.utils.data.sampler import Sampler
 
 
 class RecordingSampler(Sampler):

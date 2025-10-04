@@ -6,13 +6,21 @@ from einops.layers.torch import Rearrange
 from torch import nn
 from torch.nn import init
 
+from braindecode.functional import square
 from braindecode.models.base import EEGModuleMixin
-from braindecode.models.functions import square, squeeze_final_output
-from braindecode.models.modules import CombinedConv, Ensure4d, Expression, SafeLog
+from braindecode.modules import (
+    CombinedConv,
+    Ensure4d,
+    Expression,
+    SafeLog,
+    SqueezeFinalOutput,
+)
 
 
 class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
     """Shallow ConvNet model from Schirrmeister et al (2017) [Schirrmeister2017]_.
+
+    :bdg-success:`Convolution`
 
     .. figure:: https://onlinelibrary.wiley.com/cms/asset/221ea375-6701-40d3-ab3f-e411aad62d9e/hbm23730-fig-0002-m.jpg
         :align: center
@@ -103,7 +111,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
         self.final_conv_length = final_conv_length
         self.conv_nonlin = conv_nonlin
         self.pool_mode = pool_mode
-        self.pool_nonlin = activation_pool_nonlin()
+        self.pool_nonlin = activation_pool_nonlin
         self.split_first_layer = split_first_layer
         self.batch_norm = batch_norm
         self.batch_norm_alpha = batch_norm_alpha
@@ -161,7 +169,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
                 stride=(self.pool_time_stride, 1),
             ),
         )
-        self.add_module("pool_nonlin_exp", self.pool_nonlin)
+        self.add_module("pool_nonlin_exp", self.pool_nonlin())
         self.add_module("drop", nn.Dropout(p=self.drop_prob))
         self.eval()
         if self.final_conv_length == "auto":
@@ -180,7 +188,7 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             ),
         )
 
-        module.add_module("squeeze", Expression(squeeze_final_output))
+        module.add_module("squeeze", SqueezeFinalOutput())
 
         self.add_module("final_layer", module)
 
@@ -198,3 +206,5 @@ class ShallowFBCSPNet(EEGModuleMixin, nn.Sequential):
             init.constant_(self.bnorm.bias, 0)
         init.xavier_uniform_(self.final_layer.conv_classifier.weight, gain=1)
         init.constant_(self.final_layer.conv_classifier.bias, 0)
+
+        self.train()

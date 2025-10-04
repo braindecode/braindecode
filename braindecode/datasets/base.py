@@ -11,18 +11,19 @@ Dataset classes.
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from collections.abc import Callable
-import os
+
 import json
+import os
 import shutil
-from typing import Iterable, no_type_check
 import warnings
+from collections.abc import Callable
 from glob import glob
+from typing import Iterable, no_type_check
 
 import mne.io
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import ConcatDataset, Dataset
 
 
 def _create_description(description) -> pd.Series:
@@ -626,9 +627,9 @@ class BaseConcatDataset(ConcatDataset):
         description_file_name = os.path.join(path, "description.json")
         target_file_name = os.path.join(path, "target_name.json")
         if not overwrite:
-            from braindecode.datautil.serialization import (
+            from braindecode.datautil.serialization import (  # Import here to avoid circular import
                 _check_save_dir_empty,
-            )  # Import here to avoid circular import
+            )
 
             _check_save_dir_empty(path)
         else:

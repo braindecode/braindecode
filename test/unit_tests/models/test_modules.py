@@ -2,22 +2,99 @@
 #
 # License: BSD (3-clause)
 import platform
+from warnings import catch_warnings, simplefilter
 
 import numpy as np
 import pytest
 import torch
 from mne.filter import create_filter
 from mne.time_frequency import psd_array_welch
-from scipy.signal import fftconvolve as fftconvolve_scipy, freqz, \
-    lfilter as lfilter_scipy
+from scipy.signal import fftconvolve as fftconvolve_scipy
+from scipy.signal import freqz
+from scipy.signal import lfilter as lfilter_scipy
 from torch import nn
 
-from braindecode.models.functions import drop_path
+from braindecode.functional import drop_path
+from braindecode.models.ifnet import _SpatioTemporalFeatureBlock
 from braindecode.models.labram import _SegmentPatch
-from braindecode.models.eegminer import GeneralizedGaussianFilter
-from braindecode.models.modules import CombinedConv, DropPath, FilterBankLayer, \
-    MLP, SafeLog, TimeDistributed
 from braindecode.models.tidnet import _BatchNormZG, _DenseSpatialFilter
+from braindecode.modules import (
+    CBAM,
+    ECA,
+    MLP,
+    CausalConv1d,
+    CombinedConv,
+    DropPath,
+    FilterBankLayer,
+    GeneralizedGaussianFilter,
+    LinearWithConstraint,
+    MaxNormLinear,
+    SafeLog,
+    TimeDistributed,
+)
+
+
+def old_maxnorm(weight: torch.Tensor,
+                max_norm_val: float = 2.0,
+                eps: float = 1e-5) -> torch.Tensor:
+    w = weight.clone()
+    # clamp denominator ≥ max_norm_val/2, numerator ≤ max_norm_val
+    denom  = w.norm(2, dim=0, keepdim=True).clamp(min=max_norm_val / 2)
+    number  = denom.clamp(max=max_norm_val)
+    return w * (number / (denom + eps))
+
+
+class OldCausalConv1d(nn.Conv1d):
+    """Causal 1-dimensional convolution
+    Code modified from [1]_ and [2]_.
+    Parameters
+    ----------
+    in_channels : int
+        Input channels.
+    out_channels : int
+        Output channels (number of filters).
+    kernel_size : int
+        Kernel size.
+    dilation : int, optional
+        Dilation (number of elements to skip within kernel multiplication).
+        Default to 1.
+    **kwargs :
+        Other keyword arguments to pass to torch.nn.Conv1d, except for
+        `padding`!!
+    References
+    ----------
+    .. [1] https://discuss.pytorch.org/t/causal-convolution/3456/4
+    .. [2] https://gist.github.com/paultsw/7a9d6e3ce7b70e9e2c61bc9287addefc
+    """
+
+    padding: torch.Tensor
+
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        dilation=1,
+        **kwargs,
+    ):
+        assert "padding" not in kwargs, (
+            "The padding parameter is controlled internally by "
+            f"{type(self).__name__} class. You should not try to override this"
+            " parameter."
+        )
+
+        super().__init__(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            dilation=dilation,
+            padding=(kernel_size - 1) * dilation,
+            **kwargs,
+        )
+
+    def forward(self, X):
+        out = super().forward(X)
+        return out[..., : -self.padding[0]]
 
 
 def _filfilt_in_torch_sytle(b, a, x_np):
@@ -301,7 +378,7 @@ def test_drop_path_different_dimensions():
 
 
 @pytest.mark.parametrize(
-    "eps, expected_repr",
+    "epilson, expected_repr",
     [
         (1e-6, "eps=1e-06"),
         (1e-4, "eps=0.0001"),
@@ -310,7 +387,7 @@ def test_drop_path_different_dimensions():
         (123.456, "eps=123.456"),
     ]
 )
-def test_safelog_extra_repr(eps, expected_repr):
+def test_safelog_extra_repr(epilson, expected_repr):
     """
     Test the extra_repr method of the SafeLog class to ensure it returns
     the correct string representation based on the eps value.
@@ -323,7 +400,7 @@ def test_safelog_extra_repr(eps, expected_repr):
         The expected string output from extra_repr.
     """
     # Initialize the SafeLog module with the given eps
-    module = SafeLog(eps=eps)
+    module = SafeLog(epilson)
 
     # Get the extra representation
     repr_output = module.extra_repr()
@@ -440,9 +517,10 @@ def test_iir_params_output_sos_warning(sample_input):
             iir_params=iir_params
         )
 
-    assert layer.filts is not None, "Filters should be initialized."
-    assert layer.filts["band_0"][
-               "a"].dtype == torch.float64, "Filter coefficients should be float64."
+    assert layer.a_list is not None, "Filters should be initialized."
+    assert layer.b_list is not None, "Filters should be initialized."
+
+    assert layer.a_list[0].dtype == torch.float64, "Filter coefficients should be float64."
 
 
 @pytest.mark.parametrize('method', ['iir', 'fir'])
@@ -693,11 +771,10 @@ def test_filter_bank_layer_frequency_response():
 
     # Prepare plots
     # Iterate over each filter in the filter bank
-    for idx, ((l_freq, h_freq), filt_dict) in enumerate(zip(
-            band_filters, filter_bank_layer.filts.values())):
-
+    for idx, ((l_freq, h_freq), b_value) in enumerate(zip(
+            band_filters, filter_bank_layer.b_list)):
         # Extract filter coefficients
-        b = filt_dict["filt"].detach().numpy()
+        b = b_value.detach().numpy()
         a = np.array([1.0])  # FIR filter, so a is [1.0]
 
         # Compute frequency response
@@ -746,13 +823,13 @@ def test_initialization_valid_parameters():
 
 def test_initialization_invalid_parameters():
     """
-    Test that the GeneralizedGaussianFilter raises an assertion error when initialized with invalid parameters.
+    Test that the GeneralizedGaussianFilter raises a ValueError when initialized with invalid parameters.
     """
     in_channels = 2
     out_channels = 5  # Not a multiple of in_channels
     sequence_length = 256
     sample_rate = 100.0  # Hz
-    with pytest.raises(AssertionError):
+    with pytest.raises(ValueError):
         GeneralizedGaussianFilter(
             in_channels=in_channels,
             out_channels=out_channels,  # Should raise an error
@@ -762,6 +839,46 @@ def test_initialization_invalid_parameters():
             f_mean=(10.0, 20.0),
             bandwidth=(5.0, 10.0),
             shape=(2.0, 2.5)
+        )
+
+
+def test_initialization_invalid_parameter_lengths():
+    """GeneralizedGaussianFilter validates parameter lengths."""
+    in_channels = 1
+    sequence_length = 256
+    sample_rate = 100.0
+    # Mismatch f_mean length
+    with pytest.raises(ValueError):
+        GeneralizedGaussianFilter(
+            in_channels=in_channels,
+            out_channels=2,
+            sequence_length=sequence_length,
+            sample_rate=sample_rate,
+            f_mean=(10.0,),
+            bandwidth=(5.0, 5.0),
+            shape=(2.0, 2.0),
+        )
+    # Mismatch bandwidth length
+    with pytest.raises(ValueError):
+        GeneralizedGaussianFilter(
+            in_channels=in_channels,
+            out_channels=2,
+            sequence_length=sequence_length,
+            sample_rate=sample_rate,
+            f_mean=(10.0, 12.0),
+            bandwidth=(5.0,),
+            shape=(2.0, 2.0),
+        )
+    # Mismatch shape length
+    with pytest.raises(ValueError):
+        GeneralizedGaussianFilter(
+            in_channels=in_channels,
+            out_channels=2,
+            sequence_length=sequence_length,
+            sample_rate=sample_rate,
+            f_mean=(10.0, 12.0),
+            bandwidth=(5.0, 5.0),
+            shape=(2.0,),
         )
 
 def test_filter_construction_clamping():
@@ -842,3 +959,220 @@ def test_forward_pass_no_inverse_fourier():
     assert output.shape == expected_shape, f"Expected output shape {expected_shape}, got {output.shape}"
     # Verify that output is real-valued (since it's the real and imaginary parts)
     assert output.dtype == torch.float32 or output.dtype == torch.float64, "Output should be real-valued tensor"
+
+
+def test_eca_invalid_kernel_size():
+    """ECA requires odd kernel sizes for same padding."""
+    with pytest.raises(ValueError):
+        ECA(in_channels=4, kernel_size=4)
+
+
+def test_cbam_invalid_kernel_size():
+    """CBAM requires odd kernel sizes for same padding."""
+    with pytest.raises(ValueError):
+        CBAM(in_channels=4, reduction_rate=2, kernel_size=4)
+
+
+def test_causalconv1d_disallows_padding():
+    """Padding argument is managed internally by CausalConv1d."""
+    with pytest.raises(ValueError):
+        CausalConv1d(1, 1, kernel_size=3, padding=0)
+
+@pytest.fixture
+def input_linear_constraint():
+    torch.manual_seed(0)
+    return torch.randn(10, 5)  # Batch size of 10, input features of 5
+
+
+@pytest.fixture
+def layer_with_constraint():
+    torch.manual_seed(0)
+    return LinearWithConstraint(in_features=5, out_features=3, max_norm=1.0)
+
+
+def test_weight_norm_constraint(input_linear_constraint, layer_with_constraint):
+    """
+    Test whether the weight norms do not exceed max_norm after forward pass.
+    """
+    layer_with_constraint(input_linear_constraint)
+    # Calculate the L2 norm of each column (dim=0)
+    weight_norms = layer_with_constraint.weight.data.norm(p=2, dim=1)
+    assert torch.all(weight_norms <= layer_with_constraint.max_norm + 1e-6), (
+        f"Weight norms {weight_norms} exceed max_norm {layer_with_constraint.max_norm}"
+    )
+
+
+def test_no_constraint_if_within_norm():
+    """
+    Test that weights within the max_norm are not altered after forward pass.
+    """
+    in_features = 3
+    out_features = 2
+    max_norm = 2.0
+    layer = LinearWithConstraint(in_features, out_features, max_norm)
+
+    # Initialize weights with norms less than or equal to max_norm
+    with torch.no_grad():
+        layer.weight.data = torch.tensor([[1.0, 0.0, 0.0],
+                                         [0.0, 1.0, 0.0]])
+
+    input = torch.randn(1, in_features)
+    original_weights = layer.weight.data.clone()
+    layer(input)
+
+    # Weights should remain unchanged
+    assert torch.allclose(layer.weight.data, original_weights), "Weights were altered despite being within max_norm"
+
+
+@pytest.mark.parametrize("max_norm", [0.5, 1.0, 2.0])
+def test_max_norm_parameter(max_norm):
+    """
+    Test that different max_norm values are respected.
+    """
+    in_features = 3
+    out_features = 2
+    layer = LinearWithConstraint(in_features=in_features, out_features=out_features, max_norm=max_norm)
+    with torch.no_grad():
+        layer.weight.data = torch.tensor([[3.0, 0.0, 0.0],
+                                         [0.0, 4.0, 0.0]])
+    input = torch.randn(1, in_features)
+    layer(input)
+    weight_norms = layer.weight.data.norm(p=2, dim=1)
+    assert torch.all(weight_norms <= max_norm + 1e-6), (
+        f"For max_norm {max_norm}, weight norms {weight_norms} exceed max_norm"
+    )
+
+
+
+@pytest.mark.parametrize("out_in", [
+    (4,  8),
+    (8, 16),
+    (16,32),
+])
+def test_new_vs_old_maxnorm_are_identical(out_in):
+    out_features, in_features = out_in
+    torch.manual_seed(0)
+    W = torch.randn(out_features, in_features, requires_grad=True)
+
+    W_ref = old_maxnorm(W, max_norm_val=2.0, eps=1e-5)
+
+    layer = MaxNormLinear(
+        in_features=in_features,
+        out_features=out_features,
+        max_norm_val=2.0,
+        eps=1e-5,
+        bias=True,
+    )
+
+    layer.weight = W.clone()
+
+    W_new = layer.weight
+
+    assert torch.allclose(W_ref, W_new, atol=1e-6), (
+        f"MaxNorm mismatch: max|W_ref - W_new| = {(W_ref - W_new).abs().max():.3e}"
+    )
+
+
+@pytest.mark.parametrize("batch,in_ch,out_ch,length,kernel,dilation", [
+    (1, 1, 1, 20, 3, 1),
+    (2, 3, 4, 50, 5, 2),
+    (4, 2, 2, 30, 7, 3),
+])
+def test_matches_padded_conv(batch, in_ch, out_ch, length, kernel, dilation):
+    torch.manual_seed(0)
+    # instantiate causal conv
+    causal_new = CausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+    # clone weights/bias for reference conv
+    causal_old = OldCausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+
+    causal_old.weight.data.copy_(causal_new.weight.data)
+    causal_old.bias.data.copy_(causal_new.bias.data)
+
+    # random input
+    x = torch.randn(batch, in_ch, length)
+
+    # causal output
+    y_causal = causal_new(x)
+    # reference: padded conv then trim right
+    y_ref = causal_old(x)[..., : length]
+
+    assert y_causal.shape == (batch, out_ch, length)
+    assert torch.allclose(y_causal, y_ref, atol=1e-6), "CausalConv1d differs from trimmed padded Conv1d"
+
+
+
+
+@pytest.mark.parametrize("batch,in_ch,out_ch,length,kernel,dilation", [
+    (1, 1, 1, 20, 3, 1),
+    (2, 3, 4, 50, 5, 2),
+])
+def test_gradients_match_casual_conv(batch, in_ch, out_ch, length, kernel, dilation):
+    torch.manual_seed(0)
+    # new implementation
+    causal_new = CausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+    # old implementation
+    causal_old = OldCausalConv1d(in_ch, out_ch, kernel_size=kernel, dilation=dilation, bias=True)
+
+    # sync parameters
+    causal_old.weight.data.copy_(causal_new.weight.data)
+    causal_old.bias.data.copy_(causal_new.bias.data)
+
+    # random input with gradient tracking
+    x_new = torch.randn(batch, in_ch, length, requires_grad=True)
+    x_old = x_new.clone().detach().requires_grad_(True)
+
+    # forward + backward new
+    y_new = causal_new(x_new)
+    loss_new = y_new.sum()
+    loss_new.backward()
+
+    # forward + backward old
+    y_old = causal_old(x_old)[..., :length]
+    loss_old = y_old.sum()
+    loss_old.backward()
+
+    # compare input gradients
+    assert torch.allclose(x_new.grad, x_old.grad, atol=1e-6), \
+        "Input gradients differ between new and old implementations"
+
+    # compare weight gradients
+    assert torch.allclose(causal_new.weight.grad, causal_old.weight.grad, atol=1e-6), \
+        "Weight gradients differ between new and old implementations"
+
+    # compare bias gradients
+    assert torch.allclose(causal_new.bias.grad, causal_old.bias.grad, atol=1e-6), \
+        "Bias gradients differ between new and old implementations"
+
+
+@pytest.mark.parametrize("n_bands,kernel_sizes,expected_warning", [
+    (2, [63], "Reducing number of bands"),         # n_bands > len(kernel_sizes)
+    (1, [63, 31], "Reducing number of kernels"),   # n_bands < len(kernel_sizes)
+    (1, [63], "not divisible by"),                 # n_times % stride_factor != 0
+])
+def test_warning_conditions(n_bands, kernel_sizes, expected_warning):
+    with catch_warnings(record=True) as w:
+        simplefilter("always")
+        block = _SpatioTemporalFeatureBlock(
+            n_times=130,                  # not divisible by 16
+            in_channels=4,
+            out_channels=8,
+            kernel_sizes=kernel_sizes,
+            n_bands=n_bands,
+            stride_factor=16
+        )
+        assert any(expected_warning in str(warn.message) for warn in w)
+
+
+def test_forward_pass_ifnet_output_shape():
+    block = _SpatioTemporalFeatureBlock(
+        n_times=128,                     # divisible by stride_factor
+        in_channels=4,
+        out_channels=8,
+        kernel_sizes=[63, 31],
+        n_bands=2,
+        stride_factor=16
+    )
+    x = torch.randn(2, 4, 128)           # batch_size=2
+    out = block(x)
+    assert isinstance(out, torch.Tensor)
+    assert out.shape[0] == 2            # batch_size preserved

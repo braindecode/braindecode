@@ -15,16 +15,17 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from typing import Callable, Any
-import warnings
 
-import numpy as np
-from numpy.typing import ArrayLike
+import warnings
+from typing import Any, Callable
+
 import mne
+import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
+from numpy.typing import ArrayLike
 
-from ..datasets.base import WindowsDataset, BaseConcatDataset, EEGWindowsDataset
+from ..datasets.base import BaseConcatDataset, EEGWindowsDataset, WindowsDataset
 
 
 class _LazyDataFrame:

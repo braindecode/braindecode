@@ -3,6 +3,7 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
 import logging
 import os.path
 import re

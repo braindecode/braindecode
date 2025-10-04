@@ -5,7 +5,9 @@
 import mne
 import numpy as np
 import pytest
+import requests
 import torch
+from mne.datasets.eegbci.eegbci import EEGMI_URL
 from mne.io import concatenate_raws
 from skorch.callbacks import LRScheduler
 from skorch.helper import predefined_split
@@ -14,10 +16,6 @@ from braindecode.classifier import EEGClassifier
 from braindecode.datasets.xy import create_from_X_y
 from braindecode.models.biot import BIOT
 from braindecode.util import set_random_seeds
-
-import requests
-
-from mne.datasets.eegbci.eegbci import EEGMI_URL
 
 
 def check_http_issue():

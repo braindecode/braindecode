@@ -8,20 +8,21 @@ TUH Abnormal EEG Corpus.
 # License: BSD (3-clause)
 
 from __future__ import annotations
-import re
-import os
+
 import glob
+import os
+import re
 import warnings
-from unittest import mock
 from datetime import datetime, timezone
 from typing import Iterable
+from unittest import mock
 
-import pandas as pd
-import numpy as np
 import mne
+import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseDataset, BaseConcatDataset
+from .base import BaseConcatDataset, BaseDataset
 
 
 class TUH(BaseConcatDataset):
