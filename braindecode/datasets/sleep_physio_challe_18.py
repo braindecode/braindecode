@@ -11,21 +11,17 @@ PhysioNet Challenge 2018 dataset.
 import os
 import os.path as op
 import urllib
-import mne
 
-import wfdb
+import mne
 import numpy as np
 import pandas as pd
-
-from mne.utils import warn
+import wfdb
 from joblib import Parallel, delayed
-
-from mne.datasets.utils import _get_path
 from mne.datasets.sleep_physionet._utils import _fetch_one
-from braindecode.preprocessing.preprocess import _preprocess
+from mne.datasets.utils import _get_path
+from mne.utils import warn
 
-from braindecode.datasets import BaseDataset, BaseConcatDataset
-
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 
 PC18_DIR = op.join(op.dirname(__file__), "data", "pc18")
 PC18_RECORDS = op.join(PC18_DIR, "sleep_records.csv")
@@ -410,6 +406,8 @@ class SleepPhysionetChallenge2018(BaseConcatDataset):
         base_dataset = BaseDataset(raw_file, desc)
 
         if preproc is not None:
+            from braindecode.preprocessing.preprocess import _preprocess
+
             _preprocess(base_dataset, None, preproc)
 
         return base_dataset

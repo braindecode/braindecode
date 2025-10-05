@@ -9,10 +9,12 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from warnings import warn
-from functools import partial
-from collections.abc import Iterable
+
+import platform
 import sys
+from collections.abc import Iterable
+from functools import partial
+from warnings import warn
 
 if sys.version_info < (3, 9):
     from typing import Callable
@@ -20,21 +22,21 @@ else:
     from collections.abc import Callable
 
 import numpy as np
-from numpy.typing import NDArray
 import pandas as pd
-from mne import create_info, BaseEpochs
-from mne.io import BaseRaw
 from joblib import Parallel, delayed
+from mne import BaseEpochs, create_info
+from mne.io import BaseRaw
+from numpy.typing import NDArray
 
 from braindecode.datasets.base import (
     BaseConcatDataset,
     BaseDataset,
-    WindowsDataset,
     EEGWindowsDataset,
+    WindowsDataset,
 )
 from braindecode.datautil.serialization import (
-    load_concat_dataset,
     _check_save_dir_empty,
+    load_concat_dataset,
 )
 
 
@@ -53,15 +55,15 @@ class Preprocessor(object):
 
     Parameters
     ----------
-    fn: str or callable
+    fn : str or callable
         If str, the Raw/Epochs object must have a method with that name.
         If callable, directly apply the callable to the object.
     apply_on_array : bool
-        Ignored if `fn` is not a callable. If True, the `apply_function` of Raw
-        and Epochs object will be used to run `fn` on the underlying arrays
-        directly. If False, `fn` must directly modify the Raw or Epochs object.
-    kwargs:
-        Keyword arguments to be forwarded to the MNE function.
+        Ignored if ``fn`` is not a callable. If True, the ``apply_function`` of Raw
+        and Epochs will be used to run ``fn`` on the underlying arrays directly.
+        If False, ``fn`` must directly modify the Raw or Epochs object.
+    **kwargs : dict
+        Keyword arguments forwarded to the MNE function or callable.
     """
 
     def __init__(self, fn: Callable | str, *, apply_on_array: bool = True, **kwargs):
@@ -109,36 +111,39 @@ def preprocess(
     overwrite: bool = False,
     n_jobs: int | None = None,
     offset: int = 0,
+    copy_data: bool | None = None,
+    parallel_kwargs: dict | None = None,
 ):
     """Apply preprocessors to a concat dataset.
 
     Parameters
     ----------
-    concat_ds: BaseConcatDataset
-        A concat of BaseDataset or WindowsDataset datasets to be preprocessed.
-    preprocessors: list(Preprocessor)
-        List of Preprocessor objects to apply to the dataset.
+    concat_ds : BaseConcatDataset
+        A concat of ``BaseDataset`` or ``WindowsDataset`` to be preprocessed.
+    preprocessors : list of Preprocessor
+        Preprocessor objects to apply to each dataset.
     save_dir : str | None
-        If a string, the preprocessed data will be saved under the specified
-        directory and the datasets in ``concat_ds`` will be reloaded with
-        `preload=False`.
+        If provided, save preprocessed data under this directory and reload
+        datasets in ``concat_ds`` with ``preload=False``.
     overwrite : bool
-        When `save_dir` is provided, controls whether to delete the old
-        subdirectories that will be written to under `save_dir`. If False and
-        the corresponding subdirectories already exist, a ``FileExistsError``
-        will be raised.
+        When ``save_dir`` is provided, controls whether to delete the old
+        subdirectories that will be written to under ``save_dir``. If False and
+        the corresponding subdirectories already exist, a ``FileExistsError`` is raised.
     n_jobs : int | None
-        Number of jobs for parallel execution. See `joblib.Parallel` for
-        a more detailed explanation.
+        Number of jobs for parallel execution. See ``joblib.Parallel`` for details.
     offset : int
-        If provided, the integer is added to the id of the dataset in the
-        concat. This is useful in the setting of very large datasets, where
-        one dataset has to be processed and saved at a time to account for
-        its original position.
+        Integer added to the dataset id in the concat. Useful when processing
+        and saving very large datasets in chunks to preserve original positions.
+    copy_data : bool | None
+        Whether the data passed to parallel jobs should be copied or passed by reference.
+    parallel_kwargs : dict | None
+        Additional keyword arguments forwarded to ``joblib.Parallel``.
+        Defaults to None (equivalent to ``{}``).
+        See https://joblib.readthedocs.io/en/stable/generated/joblib.Parallel.html for details.
 
     Returns
     -------
-    BaseConcatDataset:
+    BaseConcatDataset
         Preprocessed dataset.
     """
     # In case of serialization, make sure directory is available before
@@ -153,14 +158,23 @@ def preprocess(
 
     parallel_processing = (n_jobs is not None) and (n_jobs != 1)
 
-    list_of_ds = Parallel(n_jobs=n_jobs)(
+    parallel_params = {} if parallel_kwargs is None else dict(parallel_kwargs)
+    parallel_params.setdefault(
+        "prefer", "threads" if platform.system() == "Windows" else None
+    )
+
+    list_of_ds = Parallel(n_jobs=n_jobs, **parallel_params)(
         delayed(_preprocess)(
             ds,
             i + offset,
             preprocessors,
             save_dir,
             overwrite,
-            copy_data=(parallel_processing and (save_dir is None)),
+            copy_data=(
+                (parallel_processing and (save_dir is None))
+                if copy_data is None
+                else copy_data
+            ),
         )
         for i, ds in enumerate(concat_ds.datasets)
     )
@@ -420,9 +434,7 @@ def filterbank(
         Please refer to mne for a detailed explanation.
     """
     if not frequency_bands:
-        raise ValueError(
-            f"Expected at least one frequency band, got" f" {frequency_bands}"
-        )
+        raise ValueError(f"Expected at least one frequency band, got {frequency_bands}")
     if not all([len(ch_name) < 8 for ch_name in raw.ch_names]):
         warn(
             "Try to use shorter channel names, since frequency band "

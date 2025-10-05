@@ -6,15 +6,14 @@
 #
 # License: BSD-3
 
-from contextlib import contextmanager
 import warnings
+from contextlib import contextmanager
 
 import numpy as np
 import torch
-from mne.utils.check import check_version
 from skorch.callbacks.scoring import EpochScoring
-from skorch.utils import to_numpy
 from skorch.dataset import unpack_data
+from skorch.utils import to_numpy
 from torch.utils.data import DataLoader
 
 
@@ -39,9 +38,9 @@ def trial_preds_from_window_preds(preds, i_window_in_trials, i_stop_in_trials):
         Predictions in each trial, duplicates removed
 
     """
-    assert (
-        len(preds) == len(i_window_in_trials) == len(i_stop_in_trials)
-    ), f"{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}"
+    assert len(preds) == len(i_window_in_trials) == len(i_stop_in_trials), (
+        f"{len(preds)}, {len(i_window_in_trials)}, {len(i_stop_in_trials)}"
+    )
 
     # Algorithm for assigning window predictions to trials
     # while removing duplicate predictions:
@@ -370,13 +369,8 @@ class PostEpochTrainScoring(EpochScoring):
             y_preds = []
             y_test = []
             for batch in iterator:
-                batch_X, batch_y = unpack_data(batch)
-                # TODO: remove after skorch 0.10 release
-                if not check_version("skorch", min_version="0.10.1"):
-                    yp = net.evaluation_step(batch_X, training=False)
-                # X, y unpacking has been pushed downstream in skorch 0.10
-                else:
-                    yp = net.evaluation_step(batch, training=False)
+                _, batch_y = unpack_data(batch)
+                yp = net.evaluation_step(batch, training=False)
                 yp = yp.to(device="cpu")
                 y_test.append(self.target_extractor(batch_y))
                 y_preds.append(yp)

@@ -5,13 +5,14 @@
 
 from __future__ import annotations
 
-import numpy as np
-from numpy.typing import ArrayLike, NDArray
-import pandas as pd
 import logging
-import mne
 
-from .base import BaseDataset, BaseConcatDataset
+import mne
+import numpy as np
+import pandas as pd
+from numpy.typing import ArrayLike, NDArray
+
+from .base import BaseConcatDataset, BaseDataset
 
 log = logging.getLogger(__name__)
 

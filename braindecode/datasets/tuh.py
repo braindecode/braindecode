@@ -8,20 +8,21 @@ TUH Abnormal EEG Corpus.
 # License: BSD (3-clause)
 
 from __future__ import annotations
-import re
-import os
+
 import glob
+import os
+import re
 import warnings
-from unittest import mock
 from datetime import datetime, timezone
 from typing import Iterable
+from unittest import mock
 
-import pandas as pd
-import numpy as np
 import mne
+import numpy as np
+import pandas as pd
 from joblib import Parallel, delayed
 
-from .base import BaseDataset, BaseConcatDataset
+from .base import BaseConcatDataset, BaseDataset
 
 
 class TUH(BaseConcatDataset):
@@ -65,9 +66,9 @@ class TUH(BaseConcatDataset):
         n_jobs: int = 1,
     ):
         if set_montage:
-            assert (
-                rename_channels
-            ), "If set_montage is True, rename_channels must be True."
+            assert rename_channels, (
+                "If set_montage is True, rename_channels must be True."
+            )
         # create an index of all files and gather easily accessible info
         # without actually touching the files
         file_paths = glob.glob(os.path.join(path, "**/*.edf"), recursive=True)
@@ -444,9 +445,9 @@ class TUHAbnormal(TUH):
         # e.g.            v2.0.0/edf/train/normal/01_tcp_ar/000/00000021/
         #                     s004_2013_08_15/00000021_s004_t000.edf
         assert "abnormal" in tokens or "normal" in tokens, "No pathology labels found."
-        assert (
-            "train" in tokens or "eval" in tokens
-        ), "No train or eval set information found."
+        assert "train" in tokens or "eval" in tokens, (
+            "No train or eval set information found."
+        )
         return {
             "version": tokens[-9],
             "train": "train" in tokens,

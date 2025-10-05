@@ -8,9 +8,7 @@ import pytest
 import torch
 from sklearn.utils import check_random_state
 
-from braindecode.augmentation.base import AugmentedDataLoader
-from braindecode.augmentation.base import Compose
-from braindecode.augmentation.base import Transform
+from braindecode.augmentation.base import AugmentedDataLoader, Compose, Transform
 from braindecode.augmentation.transforms import SmoothTimeMask
 from braindecode.datasets import create_from_mne_epochs
 

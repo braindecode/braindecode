@@ -1,11 +1,12 @@
 # Authors: Mohammad Bayazi <mj.darvishi92@gmail.com>
 #
 # License: BSD-3
-import platform
-import pytest
 import os
+import platform
 
-from braindecode.datasets.nmt import _NMTMock, _correct_path, NMT_archive_name
+import pytest
+
+from braindecode.datasets.nmt import NMT_archive_name, _correct_path, _NMTMock
 
 
 # Skip if OS is Windows

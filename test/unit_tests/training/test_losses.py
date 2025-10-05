@@ -3,11 +3,11 @@
 #
 # License: BSD-3 (3-clause)
 
-import pytest
 import numpy as np
+import pytest
 import torch
 
-from braindecode.training.losses import mixup_criterion, TimeSeriesLoss
+from braindecode.training.losses import TimeSeriesLoss, mixup_criterion
 
 
 def test_mixup_criterion():
