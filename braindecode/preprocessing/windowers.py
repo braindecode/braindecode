@@ -510,13 +510,26 @@ def _create_windows_from_events(
         )
 
     events, events_id = mne.events_from_annotations(ds.raw, mapping)
-    onsets = events[:, 0]
     # Onsets are relative to the beginning of the recording
-    filtered_durations = np.array(
-        [a["duration"] for a in ds.raw.annotations if a["description"] in events_id]
-    )
+    onsets = events[:, 0]
 
-    stops = onsets + (filtered_durations * ds.raw.info["sfreq"]).astype(int)
+    # check for zero durations in annotations
+    events_df = ds.raw.annotations.to_data_frame()
+    df_stim = events_df[events_df["description"].isin(events_id.keys())]
+    zero_duration = df_stim['duration'].apply(lambda x: (np.array(x) == 0).any())
+
+    if any(zero_duration):
+        warnings.warn(f"Duration of 0 found for event(s) {list(df_stim['description'][zero_duration].unique())}")
+
+    if window_size_samples:
+        # use window size as trial size
+        stops = onsets + window_size_samples
+    else:
+        filtered_durations = np.array(
+            [a["duration"] for a in ds.raw.annotations if a["description"] in events_id]
+        )
+        stops = onsets + (filtered_durations * ds.raw.info["sfreq"]).astype(int)
+
     # XXX This could probably be simplified by using chunk_duration in
     #     `events_from_annotations`
 
