@@ -82,6 +82,7 @@ provides a common interface for all EEG models and derivate variables names if n
     IFNet
     Labram
     MSVTNet
+    PBT
     SCCNet
     ShallowFBCSPNet
     SignalJEPA

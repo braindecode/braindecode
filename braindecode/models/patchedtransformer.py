@@ -11,6 +11,7 @@ import torch.nn.functional as F
 
 from braindecode.models.base import EEGModuleMixin
 
+
 class PBT(EEGModuleMixin, nn.Sequential):
     """Patched Brain Transformer (PBT) model from T Klein et al. (2025).
     This implementation was based in https://github.com/timonkl/PatchedBrainTransformer/
@@ -24,10 +25,10 @@ class PBT(EEGModuleMixin, nn.Sequential):
     .. rubric:: Architectural Overview
 
     - Tokenization: The pre-processed EEG signals `(Batch, Channel, Timestep)` is divided into non-overlapping
-      patches of size `d_input` along the time axis. Since the original implementation does 
+      patches of size `d_input` along the time axis. Since the original implementation does
       this process inside a custom Dataloader, we've adapted to apply this inside the own model.
       First the number of total patches is calculated using C, T, `d_input` and `num_tokens_per_channel`,
-      We've segment X input into these windows to fit the together with a positional encoder built internally 
+      We've segment X input into these windows to fit the together with a positional encoder built internally
       (since only one dataset can be used at time) Xp
     - Positional indexing: a `_ChannelEncoding` provides per-sample positional
       indices which are mapped to embeddings via :class:`nn.Embedding`.
@@ -68,9 +69,9 @@ class PBT(EEGModuleMixin, nn.Sequential):
 
     def __init__(
         self,
-        n_chans: Optional[int] = None,
-        n_outputs: Optional[int] = None,
-        n_times: Optional[int] = None,
+        n_chans: int,
+        n_outputs: int,
+        n_times: int,
         d_input: int = 64,
         num_tokens_per_channel: int = 8,
         d_model: int = 128,
@@ -107,7 +108,9 @@ class PBT(EEGModuleMixin, nn.Sequential):
         self.num_embeddings = self.num_tokens_per_channel * self.n_chans + 1
 
         # number of windows (how many disjoint chunks of size d_input fit in the trial)
-        self.windows = (self.n_chans * self.n_times) // ((self.num_embeddings - 1) * self.d_input)
+        self.windows = (self.n_chans * self.n_times) // (
+            (self.num_embeddings - 1) * self.d_input
+        )
 
         if self.windows == 0:
             raise ValueError(
@@ -117,7 +120,9 @@ class PBT(EEGModuleMixin, nn.Sequential):
             )
 
         # Linear projection from token raw-size -> d_model
-        self.linear_projection = nn.Linear(in_features=self.d_input, out_features=self.d_model, bias=False)
+        self.linear_projection = nn.Linear(
+            in_features=self.d_input, out_features=self.d_model, bias=False
+        )
 
         # Classification token (learnable or fixed zero)
         if learnable_cls:
@@ -129,24 +134,35 @@ class PBT(EEGModuleMixin, nn.Sequential):
                 fill_value=0,
                 requires_grad=False,
                 dtype=torch.float32,
-                device=device,
+                device=self.device,
             )
 
         # Channel-aware positional index generator (registers buffer internally)
         self.positional_embedding = _ChannelEncoding(
-            n_chans=n_chans, n_times=n_times, num_tokens_per_channel=num_tokens_per_channel, device=device
+            n_chans=n_chans,
+            n_times=n_times,
+            num_tokens_per_channel=num_tokens_per_channel,
+            device=self.device,
         )
 
         # actual embedding table mapping indices -> d_model
-        self.pos_embedding = nn.Embedding(num_embeddings=self.num_embeddings, embedding_dim=self.d_model)
+        self.pos_embedding = nn.Embedding(
+            num_embeddings=self.num_embeddings, embedding_dim=self.d_model
+        )
 
         # Transformer encoder stack
         self.transformer_encoder = _TransformerEncoder(
-            n_blocks=n_blocks, d_model=self.d_model, n_head=num_heads, dropout=dropout, bias=bias_transformer
+            n_blocks=n_blocks,
+            d_model=self.d_model,
+            n_head=num_heads,
+            dropout=dropout,
+            bias=bias_transformer,
         )
 
         # classification head on CLS token
-        self.cls_head = nn.Linear(in_features=d_model, out_features=n_outputs, bias=True)
+        self.cls_head = nn.Linear(
+            in_features=d_model, out_features=n_outputs, bias=True
+        )
 
         # initialize weights
         self.apply(self._init_weights)
@@ -192,10 +208,14 @@ class PBT(EEGModuleMixin, nn.Sequential):
             end_idx = (i + 1) * ((self.num_embeddings - 1) * self.d_input)
 
             # Xa: (B, num_embeddings - 1, d_input)
-            X_ = X.view(B, -1)[:, start_idx:end_idx].view(B, (self.num_embeddings - 1), self.d_input)
+            X_ = X.view(B, -1)[:, start_idx:end_idx].view(
+                B, (self.num_embeddings - 1), self.d_input
+            )
 
             # Xp_: (B, num_embeddings - 1, d_input) -> reduce to single index per token
-            Xp_ = Xp.view(B, -1)[:, start_idx:end_idx].view(B, (self.num_embeddings - 1), self.d_input)
+            Xp_ = Xp.view(B, -1)[:, start_idx:end_idx].view(
+                B, (self.num_embeddings - 1), self.d_input
+            )
 
             # reduce positional block to a single index per token (take first element)
             Xp_ = Xp_[:, :, 0].long()  # shape (B, num_embeddings-1)
@@ -210,7 +230,7 @@ class PBT(EEGModuleMixin, nn.Sequential):
             tokens = torch.cat([cls_token, tokens], dim=1)
 
             # build positional indices including CLS (0 reserved for CLS)
-            cls_idx = torch.zeros((B, 1), dtype=torch.long, device=X.device)
+            cls_idx = torch.zeros((B, 1), dtype=torch.long, device=self.device)
             int_pos = torch.cat([cls_idx, Xp_], dim=1)  # (B, num_embeddings)
 
             # lookup positional embeddings -> (B, num_embeddings, d_model)
@@ -222,7 +242,7 @@ class PBT(EEGModuleMixin, nn.Sequential):
             if split_sections is None:
                 concat.append(transformer_out[:, 0])  # CLS vector (B, d_model)
             else:
-                cls_indices = torch.arange(transformer_out.size(0), device=X.device)
+                cls_indices = torch.arange(transformer_out.size(0), device=self.device)
                 concat.append(transformer_out[cls_indices, 0])
 
         # If only one window, return directly
@@ -236,6 +256,7 @@ class PBT(EEGModuleMixin, nn.Sequential):
         # NOTE: preserving original final return (as in supplied code).
         # The original author left an alternative (commented) return that used concat_agg.
         return self.cls_head(transformer_out[:, 0])
+
 
 class _LayerNorm(nn.Module):
     """Layer normalization with optional bias.
@@ -394,7 +415,14 @@ class _MHSA(nn.Module):
                 )
             else:
                 parts = [
-                    self.attn_dropout(F.softmax((qs @ ks.transpose(-2, -1)) * (1.0 / math.sqrt(ks.size(-1))), dim=-1)) @ vs
+                    self.attn_dropout(
+                        F.softmax(
+                            (qs @ ks.transpose(-2, -1))
+                            * (1.0 / math.sqrt(ks.size(-1))),
+                            dim=-1,
+                        )
+                    )
+                    @ vs
                     for qs, ks, vs in zip(q, k, v)
                 ]
                 y = torch.cat(parts, dim=2)
@@ -522,7 +550,9 @@ class _TransformerEncoder(nn.Module):
         Whether linear layers use bias.
     """
 
-    def __init__(self, n_blocks: int, d_model: int, n_head: int, dropout: float, bias: bool) -> None:
+    def __init__(
+        self, n_blocks: int, d_model: int, n_head: int, dropout: float, bias: bool
+    ) -> None:
         super().__init__()
 
         self.encoder_block = nn.ModuleList(
@@ -579,8 +609,8 @@ class _ChannelEncoding(EEGModuleMixin, nn.Sequential):
 
     def __init__(
         self,
-        n_chans: int = None,
-        n_times: int = None,
+        n_chans: int,
+        n_times: int,
         num_tokens_per_channel: int = 8,
         device: str = "cpu",
     ) -> None:
