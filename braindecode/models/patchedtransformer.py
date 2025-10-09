@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from braindecode.models.base import EEGModuleMixin
 
 
-class PBT(EEGModuleMixin, nn.Sequential):
+class PBT(EEGModuleMixin, nn.Module):
     """Patched Brain Transformer (PBT) model from T Klein et al. (2025).
     This implementation was based in https://github.com/timonkl/PatchedBrainTransformer/
 
@@ -55,36 +55,33 @@ class PBT(EEGModuleMixin, nn.Sequential):
         Number of Transformer encoder layers.
     num_heads : int, optional
         Number of attention heads.
-    dropout : float, optional
+    drop_prob : float, optional
         Dropout probability used in Transformer components.
-    device : str or torch.device, optional
-        Device for initialization of optional buffers/params.
     learnable_cls : bool, optional
         Whether the classification token is learnable.
     bias_transformer : bool, optional
         Whether to use bias in Transformer linear layers.
-    input_window_seconds, sfreq, multiple_datasets, chs_info : optional
-        Passed to :class:`EEGModuleMixin` for metadata compatibility.
     """
 
     def __init__(
         self,
-        n_chans: int,
-        n_outputs: int,
-        n_times: int,
+        # Signal related parameters
+        n_chans=None,
+        n_outputs=None,
+        n_times=None,
+        chs_info=None,
+        input_window_seconds=None,
+        sfreq=None,
+        # Model parameters
         d_input: int = 64,
         num_tokens_per_channel: int = 8,
         d_model: int = 128,
         n_blocks: int = 4,
         num_heads: int = 4,
-        dropout: float = 0.1,
-        device: str = "cpu",
-        learnable_cls: bool = True,
-        bias_transformer: bool = False,
-        input_window_seconds=None,
-        sfreq=None,
-        multiple_datasets=None,
-        chs_info: Optional[list[Dict]] = None,
+        drop_prob: float = 0.1,
+        learnable_cls=True,
+        bias_transformer=False,
+        activation: nn.Module = nn.GELU
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -94,15 +91,14 @@ class PBT(EEGModuleMixin, nn.Sequential):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-
+        del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # Store hyperparameters
         self.d_input = d_input
         self.num_tokens_per_channel = num_tokens_per_channel
         self.d_model = d_model
         self.n_blocks = n_blocks
         self.num_heads = num_heads
-        self.dropout = dropout
-        self.device = device
+        self.drop_prob = drop_prob
 
         # number of distinct positional indices (per-channel tokens + cls)
         self.num_embeddings = self.num_tokens_per_channel * self.n_chans + 1
@@ -128,21 +124,19 @@ class PBT(EEGModuleMixin, nn.Sequential):
         if learnable_cls:
             self.cls_token = nn.Parameter(torch.randn(1, 1, self.d_model) * 0.002)
         else:
-            # non-learnable zeroed tensor on specified device
+            # non-learnable zeroed tensor
             self.cls_token = torch.full(
                 size=(1, 1, self.d_model),
                 fill_value=0,
                 requires_grad=False,
                 dtype=torch.float32,
-                device=self.device,
             )
 
         # Channel-aware positional index generator (registers buffer internally)
         self.positional_embedding = _ChannelEncoding(
-            n_chans=n_chans,
-            n_times=n_times,
-            num_tokens_per_channel=num_tokens_per_channel,
-            device=self.device,
+            n_chans=self.n_chans,
+            n_times=self.n_times,
+            num_tokens_per_channel=self.num_tokens_per_channel,
         )
 
         # actual embedding table mapping indices -> d_model
@@ -155,13 +149,14 @@ class PBT(EEGModuleMixin, nn.Sequential):
             n_blocks=n_blocks,
             d_model=self.d_model,
             n_head=num_heads,
-            dropout=dropout,
+            drop_prob=drop_prob,
             bias=bias_transformer,
+            activation=activation
         )
 
         # classification head on CLS token
-        self.cls_head = nn.Linear(
-            in_features=d_model, out_features=n_outputs, bias=True
+        self.final_layer = nn.Linear(
+            in_features=d_model, out_features=self.n_outputs, bias=True
         )
 
         # initialize weights
@@ -184,7 +179,7 @@ class PBT(EEGModuleMixin, nn.Sequential):
         - split input into windows of size `(num_embeddings - 1) * d_input`
         - for each window: reshape into tokens, map positional indices to embeddings,
           add cls token, run Transformer encoder and collect CLS outputs
-        - aggregate CLS outputs across windows (if >1) and pass through `cls_head`
+        - aggregate CLS outputs across windows (if >1) and pass through `final_layer`
 
         Parameters
         ----------
@@ -230,7 +225,7 @@ class PBT(EEGModuleMixin, nn.Sequential):
             tokens = torch.cat([cls_token, tokens], dim=1)
 
             # build positional indices including CLS (0 reserved for CLS)
-            cls_idx = torch.zeros((B, 1), dtype=torch.long, device=self.device)
+            cls_idx = torch.zeros((B, 1), dtype=torch.long)
             int_pos = torch.cat([cls_idx, Xp_], dim=1)  # (B, num_embeddings)
 
             # lookup positional embeddings -> (B, num_embeddings, d_model)
@@ -242,12 +237,12 @@ class PBT(EEGModuleMixin, nn.Sequential):
             if split_sections is None:
                 concat.append(transformer_out[:, 0])  # CLS vector (B, d_model)
             else:
-                cls_indices = torch.arange(transformer_out.size(0), device=self.device)
+                cls_indices = torch.arange(transformer_out.size(0))
                 concat.append(transformer_out[cls_indices, 0])
 
         # If only one window, return directly
         if self.windows == 1:
-            return self.cls_head(concat[0])
+            return self.final_layer(concat[0])
 
         # aggregate across windows (original code creates mean over windows but returns last transformer_out CLS)
         concat_agg = torch.stack(concat, dim=0)
@@ -255,7 +250,7 @@ class PBT(EEGModuleMixin, nn.Sequential):
 
         # NOTE: preserving original final return (as in supplied code).
         # The original author left an alternative (commented) return that used concat_agg.
-        return self.cls_head(transformer_out[:, 0])
+        return self.final_layer(transformer_out[:, 0])
 
 
 class _LayerNorm(nn.Module):
@@ -314,8 +309,8 @@ class _MHSA(nn.Module):
         Number of attention heads.
     bias : bool
         Whether linear layers use bias.
-    dropout : float, optional
-        Dropout probability applied to attention weights and residual projection.
+    drop_prob : float, optional
+        drop_prob probability applied to attention weights and residual projection.
     flash_att : bool, optional
         Whether to use `torch.nn.functional.scaled_dot_product_attention` when available.
     """
@@ -325,7 +320,7 @@ class _MHSA(nn.Module):
         d_model: int,
         n_head: int,
         bias: bool,
-        dropout: float = 0.0,
+        drop_prob: float = 0.0,
         flash_att: bool = True,
     ) -> None:
         super().__init__()
@@ -337,12 +332,12 @@ class _MHSA(nn.Module):
         self.proj = nn.Linear(d_model, d_model, bias=bias)
 
         # dropout modules
-        self.attn_dropout = nn.Dropout(dropout)
-        self.resid_dropout = nn.Dropout(dropout)
+        self.attn_drop_prob = nn.Dropout(drop_prob)
+        self.resid_drop_prob = nn.Dropout(drop_prob)
 
         self.n_head = n_head
         self.d_model = d_model
-        self.dropout = dropout
+        self.drop_prob = drop_prob
         self.flash_att = flash_att
 
     def forward(self, x: torch.Tensor, split_sections=None) -> torch.Tensor:
@@ -382,12 +377,12 @@ class _MHSA(nn.Module):
                     k,
                     v,
                     attn_mask=None,
-                    dropout_p=self.dropout if self.training else 0,
+                    dropout_p=self.drop_prob if self.training else 0,
                     is_causal=False,
                 )
             else:
                 scores = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-                y = self.attn_dropout(F.softmax(scores, dim=-1)) @ v
+                y = self.attn_drop_prob(F.softmax(scores, dim=-1)) @ v
 
             # re-assemble heads -> (B, T, C)
             y = y.transpose(1, 2).contiguous().view(B, T, C)
@@ -398,7 +393,7 @@ class _MHSA(nn.Module):
             v = torch.tensor_split(v, split_sections, dim=2)
 
             if self.flash_att:
-                att_dropout = self.dropout if self.training else 0
+                att_drop_prob = self.drop_prob if self.training else 0
                 y = torch.cat(
                     [
                         torch.nn.functional.scaled_dot_product_attention(
@@ -406,7 +401,7 @@ class _MHSA(nn.Module):
                             ks,
                             vs,
                             attn_mask=None,
-                            dropout_p=att_dropout,
+                            drop_prob_p=att_drop_prob,
                             is_causal=False,
                         )
                         for qs, ks, vs in zip(q, k, v)
@@ -415,7 +410,7 @@ class _MHSA(nn.Module):
                 )
             else:
                 parts = [
-                    self.attn_dropout(
+                    self.attn_drop_prob(
                         F.softmax(
                             (qs @ ks.transpose(-2, -1))
                             * (1.0 / math.sqrt(ks.size(-1))),
@@ -430,8 +425,8 @@ class _MHSA(nn.Module):
             # re-assemble heads, restore removed dimension
             y = y.transpose(1, 2).contiguous().view(B, T, C).squeeze(dim=0)
 
-        # final linear projection + residual dropout
-        y = self.resid_dropout(self.proj(y))
+        # final linear projection + residual drop_prob
+        y = self.resid_drop_prob(self.proj(y))
         return y
 
 
@@ -447,7 +442,7 @@ class _FeedForward(nn.Module):
         Input and output dimensionality.
     dim_feedforward : int, optional
         Hidden dimensionality of the feed-forward layer. If None, must be provided by caller.
-    dropout : float, optional
+    drop_prob : float, optional
         Dropout probability.
     bias : bool, optional
         Whether linear layers use bias.
@@ -457,8 +452,9 @@ class _FeedForward(nn.Module):
         self,
         d_model: int,
         dim_feedforward: Optional[int] = None,
-        dropout: float = 0.0,
+        drop_prob: float = 0.0,
         bias: bool = False,
+        activation: nn.Module = nn.GELU
     ) -> None:
         super().__init__()
 
@@ -466,18 +462,18 @@ class _FeedForward(nn.Module):
             raise ValueError("dim_feedforward must be provided")
 
         self.proj_in = nn.Linear(d_model, dim_feedforward, bias=bias)
-        self.gelu = nn.GELU()
+        self.activation = activation()
         self.proj = nn.Linear(dim_feedforward, d_model, bias=bias)
-        self.dropout = nn.Dropout(dropout)
-        self.dropout1 = nn.Dropout(dropout)
+        self.drop_prob = nn.Dropout(drop_prob)
+        self.drop_prob1 = nn.Dropout(drop_prob)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through the feed-forward block."""
         x = self.proj_in(x)
-        x = self.gelu(x)
-        x = self.dropout1(x)
+        x = self.activation(x)
+        x = self.drop_prob1(x)
         x = self.proj(x)
-        x = self.dropout(x)
+        x = self.drop_prob(x)
         return x
 
 
@@ -493,9 +489,10 @@ class _TransformerEncoderLayer(nn.Module):
         self,
         d_model: int,
         n_head: int,
-        dropout: float = 0.0,
+        drop_prob: float = 0.0,
         dim_feedforward: Optional[int] = None,
         bias: bool = False,
+        activation: nn.Module = nn.GELU
     ) -> None:
         super().__init__()
 
@@ -507,10 +504,14 @@ class _TransformerEncoderLayer(nn.Module):
             )
 
         self.layer_norm_att = _LayerNorm(d_model, bias=bias)
-        self.mhsa = _MHSA(d_model, n_head, bias, dropout=dropout, flash_att=True)
+        self.mhsa = _MHSA(d_model, n_head, bias, drop_prob=drop_prob, flash_att=True)
         self.layer_norm_ff = _LayerNorm(d_model, bias=bias)
         self.feed_forward = _FeedForward(
-            d_model=d_model, dim_feedforward=dim_feedforward, dropout=dropout, bias=bias
+            d_model=d_model, 
+            dim_feedforward=dim_feedforward, 
+            drop_prob=drop_prob, 
+            bias=bias,
+            activation=activation
         )
 
     def forward(self, x: torch.Tensor, split_sections=None) -> torch.Tensor:
@@ -544,14 +545,20 @@ class _TransformerEncoder(nn.Module):
         Dimensionality of embeddings.
     n_head : int
         Number of attention heads per layer.
-    dropout : float
+    drop_prob : float
         Dropout probability.
     bias : bool
         Whether linear layers use bias.
     """
 
     def __init__(
-        self, n_blocks: int, d_model: int, n_head: int, dropout: float, bias: bool
+        self, 
+        n_blocks: int, 
+        d_model: int, 
+        n_head: int, 
+        drop_prob: float, 
+        bias: bool,
+        activation: nn.Module = nn.GELU
     ) -> None:
         super().__init__()
 
@@ -560,9 +567,10 @@ class _TransformerEncoder(nn.Module):
                 _TransformerEncoderLayer(
                     d_model=d_model,
                     n_head=n_head,
-                    dropout=dropout,
+                    drop_prob=drop_prob,
                     dim_feedforward=None,
                     bias=bias,
+                    activation=activation
                 )
                 for _ in range(n_blocks)
             ]
@@ -588,7 +596,7 @@ class _TransformerEncoder(nn.Module):
         return x
 
 
-class _ChannelEncoding(EEGModuleMixin, nn.Sequential):
+class _ChannelEncoding(nn.Module):
     """Channel-aware positional encoding helper.
 
     This module builds a per-channel positional index buffer that maps each
@@ -603,25 +611,22 @@ class _ChannelEncoding(EEGModuleMixin, nn.Sequential):
         Number of time samples per trial.
     num_tokens_per_channel : int, optional
         Number of distinct token indices to use per channel.
-    device : str or torch.device, optional
-        Device where the buffer will be allocated.
     """
 
     def __init__(
         self,
-        n_chans: int,
-        n_times: int,
-        num_tokens_per_channel: int = 8,
-        device: str = "cpu",
+        n_chans=2,
+        n_times=1000,
+        num_tokens_per_channel=8
     ) -> None:
-        super().__init__(n_chans=n_chans, n_times=n_times)
+        super().__init__()
 
-        x_pos_single = torch.zeros((n_chans, n_times), dtype=torch.long, device=device)
+        x_pos_single = torch.zeros((n_chans, n_times), dtype=torch.long)
 
         for c in range(n_chans):
             start = c * num_tokens_per_channel + 1
             end = (c + 1) * num_tokens_per_channel + 1
-            seq = torch.arange(start, end, device=device, dtype=torch.long)
+            seq = torch.arange(start, end, dtype=torch.long)
             seq_rep = seq.repeat((n_times // num_tokens_per_channel) + 1)[:n_times]
             x_pos_single[c, :] = seq_rep
 

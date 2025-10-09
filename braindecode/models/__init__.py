@@ -27,6 +27,7 @@ from .hybrid import HybridNet
 from .ifnet import IFNet
 from .labram import Labram
 from .msvtnet import MSVTNet
+from .patchedtransformer import PBT
 from .sccnet import SCCNet
 from .shallow_fbcsp import ShallowFBCSPNet
 from .signal_jepa import (
@@ -77,6 +78,7 @@ __all__ = [
     "IFNet",
     "Labram",
     "MSVTNet",
+    "PBT",
     "SCCNet",
     "ShallowFBCSPNet",
     "SignalJEPA",
