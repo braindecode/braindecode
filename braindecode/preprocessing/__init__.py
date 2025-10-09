@@ -13,6 +13,7 @@ from .preprocess import (
     filterbank,
     preprocess,
 )
+from .eegrep_preprocess import EEGPrep
 from .windowers import (
     create_fixed_length_windows,
     create_windows_from_events,
@@ -31,6 +32,7 @@ __all__ = [
     "Filter",
     "Pick",
     "Crop",
+    "EEGPrep",
     "create_windows_from_events",
     "create_fixed_length_windows",
     "create_windows_from_target_channels",
