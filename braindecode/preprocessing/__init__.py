@@ -13,7 +13,7 @@ from .preprocess import (
     filterbank,
     preprocess,
 )
-from .eegrep_preprocess import EEGPrep
+from .eegprep_preprocess import EEGPrep
 from .windowers import (
     create_fixed_length_windows,
     create_windows_from_events,
