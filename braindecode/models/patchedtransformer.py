@@ -39,12 +39,6 @@ class PBT(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_chans : int, optional
-        Number of EEG channels.
-    n_outputs : int, optional
-        Number of output classes.
-    n_times : int, optional
-        Number of time samples per trial.
     d_input : int, optional
         Size (in samples) of each patch (token) extracted along the time axis.
     num_tokens_per_channel : int, optional
@@ -172,7 +166,7 @@ class PBT(EEGModuleMixin, nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.002)
 
-    def forward(self, X: torch.Tensor, split_sections=None) -> torch.Tensor:
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         """Forward pass.
 
         The implementation follows the original code logic:
@@ -184,9 +178,7 @@ class PBT(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         X : torch.Tensor
-            Input tensor with shape (B, C, T).
-        split_sections : optional
-            Passed to transformer layers for memory-optimized attention.
+            Input tensor with shape (B, C, T)
 
         Returns
         -------
@@ -232,25 +224,15 @@ class PBT(EEGModuleMixin, nn.Module):
             pos_emb = self.pos_embedding(int_pos)
 
             # transformer forward -> (B, num_embeddings, d_model)
-            transformer_out = self.transformer_encoder(tokens + pos_emb, split_sections)
+            transformer_out = self.transformer_encoder(tokens + pos_emb)
 
-            if split_sections is None:
-                concat.append(transformer_out[:, 0])  # CLS vector (B, d_model)
-            else:
-                cls_indices = torch.arange(transformer_out.size(0))
-                concat.append(transformer_out[cls_indices, 0])
-
-        # If only one window, return directly
-        if self.windows == 1:
-            return self.final_layer(concat[0])
+            concat.append(transformer_out[:, 0])  # CLS vector (B, d_model)
 
         # aggregate across windows (original code creates mean over windows but returns last transformer_out CLS)
         concat_agg = torch.stack(concat, dim=0)
         concat_agg = torch.mean(concat_agg, dim=0)  # (B, d_model)
 
-        # NOTE: preserving original final return (as in supplied code).
-        # The original author left an alternative (commented) return that used concat_agg.
-        return self.final_layer(transformer_out[:, 0])
+        return self.final_layer(concat_agg)
 
 
 class _LayerNorm(nn.Module):
@@ -311,8 +293,6 @@ class _MHSA(nn.Module):
         Whether linear layers use bias.
     drop_prob : float, optional
         drop_prob probability applied to attention weights and residual projection.
-    flash_att : bool, optional
-        Whether to use `torch.nn.functional.scaled_dot_product_attention` when available.
     """
 
     def __init__(
@@ -321,7 +301,6 @@ class _MHSA(nn.Module):
         n_head: int,
         bias: bool,
         drop_prob: float = 0.0,
-        flash_att: bool = True,
     ) -> None:
         super().__init__()
 
@@ -338,27 +317,20 @@ class _MHSA(nn.Module):
         self.n_head = n_head
         self.d_model = d_model
         self.drop_prob = drop_prob
-        self.flash_att = flash_att
 
-    def forward(self, x: torch.Tensor, split_sections=None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass for MHSA.
 
         Parameters
         ----------
         x : torch.Tensor
             Input tensor of shape (B, T, C) where C == d_model.
-        split_sections : optional
-            Optional integer list/tuple used to split heads along the head-dimension
-            for memory/compute trade-offs.
 
         Returns
         -------
         torch.Tensor
             Output tensor of shape (B, T, C).
         """
-        # Optional extra-dim insertion for split_sections path (kept from original logic)
-        if split_sections is not None:
-            x = torch.unsqueeze(input=x, dim=0)
 
         B, T, C = x.size()
 
@@ -370,60 +342,17 @@ class _MHSA(nn.Module):
         k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
         v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2)
 
-        if split_sections is None:
-            if self.flash_att:
-                y = torch.nn.functional.scaled_dot_product_attention(
-                    q,
-                    k,
-                    v,
-                    attn_mask=None,
-                    dropout_p=self.drop_prob if self.training else 0,
-                    is_causal=False,
-                )
-            else:
-                scores = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-                y = self.attn_drop_prob(F.softmax(scores, dim=-1)) @ v
+        y = torch.nn.functional.scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            attn_mask=None,
+            dropout_p=self.drop_prob if self.training else 0.0,
+            is_causal=False,
+        )
 
-            # re-assemble heads -> (B, T, C)
-            y = y.transpose(1, 2).contiguous().view(B, T, C)
-        else:
-            # split along head-dimension for memory constrained attention
-            q = torch.tensor_split(q, split_sections, dim=2)
-            k = torch.tensor_split(k, split_sections, dim=2)
-            v = torch.tensor_split(v, split_sections, dim=2)
-
-            if self.flash_att:
-                att_drop_prob = self.drop_prob if self.training else 0
-                y = torch.cat(
-                    [
-                        torch.nn.functional.scaled_dot_product_attention(
-                            qs,
-                            ks,
-                            vs,
-                            attn_mask=None,
-                            drop_prob_p=att_drop_prob,
-                            is_causal=False,
-                        )
-                        for qs, ks, vs in zip(q, k, v)
-                    ],
-                    dim=2,
-                )
-            else:
-                parts = [
-                    self.attn_drop_prob(
-                        F.softmax(
-                            (qs @ ks.transpose(-2, -1))
-                            * (1.0 / math.sqrt(ks.size(-1))),
-                            dim=-1,
-                        )
-                    )
-                    @ vs
-                    for qs, ks, vs in zip(q, k, v)
-                ]
-                y = torch.cat(parts, dim=2)
-
-            # re-assemble heads, restore removed dimension
-            y = y.transpose(1, 2).contiguous().view(B, T, C).squeeze(dim=0)
+        # re-assemble heads -> (B, T, C)
+        y = y.transpose(1, 2).contiguous().view(B, T, C)
 
         # final linear projection + residual drop_prob
         y = self.resid_drop_prob(self.proj(y))
@@ -504,7 +433,7 @@ class _TransformerEncoderLayer(nn.Module):
             )
 
         self.layer_norm_att = _LayerNorm(d_model, bias=bias)
-        self.mhsa = _MHSA(d_model, n_head, bias, drop_prob=drop_prob, flash_att=True)
+        self.mhsa = _MHSA(d_model, n_head, bias, drop_prob=drop_prob)
         self.layer_norm_ff = _LayerNorm(d_model, bias=bias)
         self.feed_forward = _FeedForward(
             d_model=d_model, 
@@ -514,22 +443,20 @@ class _TransformerEncoderLayer(nn.Module):
             activation=activation
         )
 
-    def forward(self, x: torch.Tensor, split_sections=None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Execute one encoder layer.
 
         Parameters
         ----------
         x : torch.Tensor
             Input of shape (B, T, d_model).
-        split_sections : optional
-            Optional split sections forwarded to MHSA.
 
         Returns
         -------
         torch.Tensor
             Output of the same shape as input.
         """
-        x = x + self.mhsa(self.layer_norm_att(x), split_sections)
+        x = x + self.mhsa(self.layer_norm_att(x))
         x = x + self.feed_forward(self.layer_norm_ff(x))
         return x
 
@@ -589,10 +516,10 @@ class _TransformerEncoder(nn.Module):
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
 
-    def forward(self, x: torch.Tensor, split_sections=None) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward through all encoder blocks sequentially."""
         for block in self.encoder_block:
-            x = block(x, split_sections)
+            x = block(x)
         return x
 
 
