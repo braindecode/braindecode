@@ -22,6 +22,7 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
 
 API changes
