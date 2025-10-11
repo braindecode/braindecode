@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Dict, Optional
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -75,7 +75,7 @@ class PBT(EEGModuleMixin, nn.Module):
         drop_prob: float = 0.1,
         learnable_cls=True,
         bias_transformer=False,
-        activation: nn.Module = nn.GELU
+        activation: nn.Module = nn.GELU,
     ) -> None:
         super().__init__(
             n_outputs=n_outputs,
@@ -145,7 +145,7 @@ class PBT(EEGModuleMixin, nn.Module):
             n_head=num_heads,
             drop_prob=drop_prob,
             bias=bias_transformer,
-            activation=activation
+            activation=activation,
         )
 
         # classification head on CLS token
@@ -383,7 +383,7 @@ class _FeedForward(nn.Module):
         dim_feedforward: Optional[int] = None,
         drop_prob: float = 0.0,
         bias: bool = False,
-        activation: nn.Module = nn.GELU
+        activation: nn.Module = nn.GELU,
     ) -> None:
         super().__init__()
 
@@ -421,7 +421,7 @@ class _TransformerEncoderLayer(nn.Module):
         drop_prob: float = 0.0,
         dim_feedforward: Optional[int] = None,
         bias: bool = False,
-        activation: nn.Module = nn.GELU
+        activation: nn.Module = nn.GELU,
     ) -> None:
         super().__init__()
 
@@ -436,11 +436,11 @@ class _TransformerEncoderLayer(nn.Module):
         self.mhsa = _MHSA(d_model, n_head, bias, drop_prob=drop_prob)
         self.layer_norm_ff = _LayerNorm(d_model, bias=bias)
         self.feed_forward = _FeedForward(
-            d_model=d_model, 
-            dim_feedforward=dim_feedforward, 
-            drop_prob=drop_prob, 
+            d_model=d_model,
+            dim_feedforward=dim_feedforward,
+            drop_prob=drop_prob,
             bias=bias,
-            activation=activation
+            activation=activation,
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -479,13 +479,13 @@ class _TransformerEncoder(nn.Module):
     """
 
     def __init__(
-        self, 
-        n_blocks: int, 
-        d_model: int, 
-        n_head: int, 
-        drop_prob: float, 
+        self,
+        n_blocks: int,
+        d_model: int,
+        n_head: int,
+        drop_prob: float,
         bias: bool,
-        activation: nn.Module = nn.GELU
+        activation: nn.Module = nn.GELU,
     ) -> None:
         super().__init__()
 
@@ -497,7 +497,7 @@ class _TransformerEncoder(nn.Module):
                     drop_prob=drop_prob,
                     dim_feedforward=None,
                     bias=bias,
-                    activation=activation
+                    activation=activation,
                 )
                 for _ in range(n_blocks)
             ]
@@ -540,12 +540,7 @@ class _ChannelEncoding(nn.Module):
         Number of distinct token indices to use per channel.
     """
 
-    def __init__(
-        self,
-        n_chans=2,
-        n_times=1000,
-        num_tokens_per_channel=8
-    ) -> None:
+    def __init__(self, n_chans=2, n_times=1000, num_tokens_per_channel=8) -> None:
         super().__init__()
 
         x_pos_single = torch.zeros((n_chans, n_times), dtype=torch.long)
