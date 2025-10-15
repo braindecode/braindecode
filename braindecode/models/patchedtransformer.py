@@ -186,7 +186,7 @@ class PBT(EEGModuleMixin, nn.Module):
             Output logits with shape (B, n_outputs).
         """
         # positional indices per-sample (B, C, T) -> values in [0, num_embeddings-1]
-        Xp = self.positional_embedding(X)
+        Xpositional = self.positional_embedding(X)
         B = X.shape[0]
 
         concat = []
@@ -194,21 +194,21 @@ class PBT(EEGModuleMixin, nn.Module):
             start_idx = i * ((self.num_embeddings - 1) * self.d_input)
             end_idx = (i + 1) * ((self.num_embeddings - 1) * self.d_input)
 
-            # Xa: (B, num_embeddings - 1, d_input)
-            X_ = X.view(B, -1)[:, start_idx:end_idx].view(
+            # X_patched: (B, num_embeddings - 1, d_input)
+            X_patched = X.view(B, -1)[:, start_idx:end_idx].view(
                 B, (self.num_embeddings - 1), self.d_input
             )
 
-            # Xp_: (B, num_embeddings - 1, d_input) -> reduce to single index per token
-            Xp_ = Xp.view(B, -1)[:, start_idx:end_idx].view(
+            # Xpos_patched: (B, num_embeddings - 1, d_input) -> reduce to single index per token
+            Xpos_patched = Xpositional.view(B, -1)[:, start_idx:end_idx].view(
                 B, (self.num_embeddings - 1), self.d_input
             )
 
             # reduce positional block to a single index per token (take first element)
-            Xp_ = Xp_[:, :, 0].long()  # shape (B, num_embeddings-1)
+            Xpos_patched = Xpos_patched[:, :, 0].long()  # shape (B, num_embeddings-1)
 
             # project patches -> (B, num_embeddings-1, d_model)
-            tokens = self.linear_projection(X_)
+            tokens = self.linear_projection(X_patched)
 
             # expand cls token -> (B, 1, d_model)
             cls_token = self.cls_token.expand(B, -1, -1)
@@ -217,8 +217,8 @@ class PBT(EEGModuleMixin, nn.Module):
             tokens = torch.cat([cls_token, tokens], dim=1)
 
             # build positional indices including CLS (0 reserved for CLS)
-            cls_idx = torch.zeros((B, 1), dtype=torch.long)
-            int_pos = torch.cat([cls_idx, Xp_], dim=1)  # (B, num_embeddings)
+            cls_idx = torch.zeros((B, 1), dtype=torch.long, device=X.device)
+            int_pos = torch.cat([cls_idx, Xpos_patched], dim=1)  # (B, num_embeddings)
 
             # lookup positional embeddings -> (B, num_embeddings, d_model)
             pos_emb = self.pos_embedding(int_pos)
