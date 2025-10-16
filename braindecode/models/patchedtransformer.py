@@ -25,10 +25,10 @@ class PBT(EEGModuleMixin, nn.Module):
 
     .. rubric:: Architectural Overview
 
-    - Tokenization: The pre-processed EEG signals `(Batch, Channel, Timestep)` is divided into non-overlapping
+    - Tokenization: The pre-processed EEG signals `(batch, n_chans, n_times)` is divided into non-overlapping
       patches of size `d_input` along the time axis. Since the original implementation does
       this process inside a custom Dataloader, we've adapted to apply this inside the own model.
-      First the number of total patches is calculated using C, T, `d_input` and `num_tokens_per_channel`,
+      First the number of total patches is calculated using `n_chans`, `n_times`, `d_input` and `num_tokens_per_channel`,
       We've segment X input into these windows to fit the together with a positional encoder built internally
       (since only one dataset can be used at time) Xp
     - Positional indexing: a `_ChannelEncoding` provides per-sample positional
