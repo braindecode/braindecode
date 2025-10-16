@@ -14,6 +14,7 @@ from braindecode.models.base import EEGModuleMixin
 
 class PBT(EEGModuleMixin, nn.Module):
     """Patched Brain Transformer (PBT) model from T Klein et al. (2025).
+    
     This implementation was based in https://github.com/timonkl/PatchedBrainTransformer/
 
     PBT tokenizes EEG trials into per-channel patches, linearly projects each
