@@ -16,6 +16,8 @@ from braindecode.models.base import EEGModuleMixin
 class PBT(EEGModuleMixin, nn.Module):
     """Patched Brain Transformer (PBT) model from T Klein et al. (2025) [pbt]_.
 
+    :bdg-info:`Small Attention`
+
     This implementation was based in https://github.com/timonkl/PatchedBrainTransformer/
 
     .. figure:: https://raw.githubusercontent.com/timonkl/PatchedBrainTransformer/refs/heads/main/PBT_sketch.png
@@ -38,7 +40,7 @@ class PBT(EEGModuleMixin, nn.Module):
       We have segment `X` input into these windows to fit the together with a positional encoder built internally
       (since only one dataset can be used at time) `Xp`
 
-    - Positional indexing: a `_ChannelEncoding` provides per-sample positional
+    - Positional indexing: a :class:`_ChannelEncoding` provides per-sample positional
       indices which are mapped to embeddings via :class:`nn.Embedding`.
 
     - Projection: linear projection `d_input -> d_model` maps tokens into the
@@ -178,7 +180,7 @@ class PBT(EEGModuleMixin, nn.Module):
             activation=activation,
         )
 
-        # classification head on CLS token
+        # classification head on Classify token - CLS token
         self.final_layer = nn.Linear(
             in_features=d_model, out_features=self.n_outputs, bias=True
         )
@@ -197,9 +199,8 @@ class PBT(EEGModuleMixin, nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.002)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:
-        """Forward pass.
+        """The implementation follows the original code logic
 
-        The implementation follows the original code logic:
         - split input into windows of size `(num_embeddings - 1) * d_input`
         - for each window: reshape into tokens, map positional indices to embeddings,
           add cls token, run Transformer encoder and collect CLS outputs
@@ -217,7 +218,7 @@ class PBT(EEGModuleMixin, nn.Module):
         """
         # positional indices per-sample (B, C, T) -> values in [0, num_embeddings-1]
         Xpositional = self.positional_embedding(X)
-        B = X.shape[0]
+        batch_size = X.shape[0]
 
         concat = []
         for i in range(self.windows):
@@ -225,13 +226,13 @@ class PBT(EEGModuleMixin, nn.Module):
             end_idx = (i + 1) * ((self.num_embeddings - 1) * self.d_input)
 
             # X_patched: (B, num_embeddings - 1, d_input)
-            X_patched = X.view(B, -1)[:, start_idx:end_idx].view(
-                B, (self.num_embeddings - 1), self.d_input
+            X_patched = X.view(batch_size, -1)[:, start_idx:end_idx].view(
+                batch_size, (self.num_embeddings - 1), self.d_input
             )
 
             # Xpos_patched: (B, num_embeddings - 1, d_input) -> reduce to single index per token
-            Xpos_patched = Xpositional.view(B, -1)[:, start_idx:end_idx].view(
-                B, (self.num_embeddings - 1), self.d_input
+            Xpos_patched = Xpositional.view(batch_size, -1)[:, start_idx:end_idx].view(
+                batch_size, (self.num_embeddings - 1), self.d_input
             )
 
             # reduce positional block to a single index per token (take first element)
@@ -241,13 +242,13 @@ class PBT(EEGModuleMixin, nn.Module):
             tokens = self.linear_projection(X_patched)
 
             # expand cls token -> (B, 1, d_model)
-            cls_token = self.cls_token.expand(B, -1, -1)
+            cls_token = self.cls_token.expand(batch_size, -1, -1)
 
             # add cls token to tokens -> (B, num_embeddings, d_model)
             tokens = torch.cat([cls_token, tokens], dim=1)
 
             # build positional indices including CLS (0 reserved for CLS)
-            cls_idx = torch.zeros((B, 1), dtype=torch.long, device=X.device)
+            cls_idx = torch.zeros((batch_size, 1), dtype=torch.long, device=X.device)
             int_pos = torch.cat([cls_idx, Xpos_patched], dim=1)  # (B, num_embeddings)
 
             # lookup positional embeddings -> (B, num_embeddings, d_model)
