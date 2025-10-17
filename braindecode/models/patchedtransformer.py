@@ -180,7 +180,7 @@ class PBT(EEGModuleMixin, nn.Module):
             activation=activation,
         )
 
-        # classification head on Classify token - CLS token
+        # classification head on classify token - CLS token
         self.final_layer = nn.Linear(
             in_features=d_model, out_features=self.n_outputs, bias=True
         )
@@ -209,14 +209,15 @@ class PBT(EEGModuleMixin, nn.Module):
         Parameters
         ----------
         X : torch.Tensor
-            Input tensor with shape (B, C, T)
+            Input tensor with shape (batch_size, n_chans, n_times)
 
         Returns
         -------
         torch.Tensor
-            Output logits with shape (B, n_outputs).
+            Output logits with shape (batch_size, n_outputs).
         """
-        # positional indices per-sample (B, C, T) -> values in [0, num_embeddings-1]
+        # positional indices per-sample (batch_size, n_chans, n_times) ->
+        # values in [0, num_embeddings-1]
         Xpositional = self.positional_embedding(X)
         batch_size = X.shape[0]
 
@@ -230,38 +231,43 @@ class PBT(EEGModuleMixin, nn.Module):
                 batch_size, (self.num_embeddings - 1), self.d_input
             )
 
-            # Xpos_patched: (B, num_embeddings - 1, d_input) -> reduce to single index per token
+            # Xpos_patched: (B, num_embeddings - 1, d_input) ->
+            # reduce to single index per token
             Xpos_patched = Xpositional.view(batch_size, -1)[:, start_idx:end_idx].view(
                 batch_size, (self.num_embeddings - 1), self.d_input
             )
 
             # reduce positional block to a single index per token (take first element)
-            Xpos_patched = Xpos_patched[:, :, 0].long()  # shape (B, num_embeddings-1)
+            Xpos_patched = Xpos_patched[:, :, 0].long()
+            # shape (batch_size, num_embeddings-1)
 
-            # project patches -> (B, num_embeddings-1, d_model)
+            # project patches -> (batch_size, num_embeddings-1, d_model)
             tokens = self.linear_projection(X_patched)
 
-            # expand cls token -> (B, 1, d_model)
+            # expand cls token -> (batch_size, 1, d_model)
             cls_token = self.cls_token.expand(batch_size, -1, -1)
 
-            # add cls token to tokens -> (B, num_embeddings, d_model)
+            # add cls token to tokens -> (batch_size, num_embeddings, d_model)
             tokens = torch.cat([cls_token, tokens], dim=1)
 
             # build positional indices including CLS (0 reserved for CLS)
             cls_idx = torch.zeros((batch_size, 1), dtype=torch.long, device=X.device)
-            int_pos = torch.cat([cls_idx, Xpos_patched], dim=1)  # (B, num_embeddings)
+            int_pos = torch.cat(
+                [cls_idx, Xpos_patched], dim=1
+            )  # (batch_size, num_embeddings)
 
-            # lookup positional embeddings -> (B, num_embeddings, d_model)
+            # lookup positional embeddings -> (batch_size, num_embeddings, d_model)
             pos_emb = self.pos_embedding(int_pos)
 
-            # transformer forward -> (B, num_embeddings, d_model)
+            # transformer forward -> (batch_size, num_embeddings, d_model)
             transformer_out = self.transformer_encoder(tokens + pos_emb)
 
-            concat.append(transformer_out[:, 0])  # CLS vector (B, d_model)
+            concat.append(transformer_out[:, 0])  # CLS vector (batch_size, d_model)
 
-        # aggregate across windows (original code creates mean over windows but returns last transformer_out CLS)
+        # aggregate across windows (original code creates mean over windows but
+        # returns last transformer_out CLS)
         concat_agg = torch.stack(concat, dim=0)
-        concat_agg = torch.mean(concat_agg, dim=0)  # (B, d_model)
+        concat_agg = torch.mean(concat_agg, dim=0)  # (batch_size, d_model)
 
         return self.final_layer(concat_agg)
 
