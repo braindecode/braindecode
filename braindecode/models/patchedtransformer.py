@@ -1,4 +1,5 @@
-# Authors: Your Name <you@domain.com>
+# Authors: Jose Mauricio <josemaurici3991@gmail.com>
+#          Bruno Aristimunha <b.aristimunha@gmail.com>
 # License: BSD (3-clause)
 from __future__ import annotations
 
@@ -13,9 +14,14 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class PBT(EEGModuleMixin, nn.Module):
-    """Patched Brain Transformer (PBT) model from T Klein et al. (2025).
-    
+    """Patched Brain Transformer (PBT) model from T Klein et al. (2025) [pbt]_.
+
     This implementation was based in https://github.com/timonkl/PatchedBrainTransformer/
+
+    .. figure:: https://raw.githubusercontent.com/timonkl/PatchedBrainTransformer/refs/heads/main/PBT_sketch.png
+       :align: center
+       :alt:  Patched Brain Transformer Architecture
+       :width: 680px
 
     PBT tokenizes EEG trials into per-channel patches, linearly projects each
     patch to a model embedding dimension, prepends a classification token and
@@ -29,14 +35,34 @@ class PBT(EEGModuleMixin, nn.Module):
       patches of size `d_input` along the time axis. Since the original implementation does
       this process inside a custom Dataloader, we've adapted to apply this inside the own model.
       First the number of total patches is calculated using `n_chans`, `n_times`, `d_input` and `num_tokens_per_channel`,
-      We've segment X input into these windows to fit the together with a positional encoder built internally
-      (since only one dataset can be used at time) Xp
+      We have segment `X` input into these windows to fit the together with a positional encoder built internally
+      (since only one dataset can be used at time) `Xp`
+
     - Positional indexing: a `_ChannelEncoding` provides per-sample positional
       indices which are mapped to embeddings via :class:`nn.Embedding`.
+
     - Projection: linear projection `d_input -> d_model` maps tokens into the
       Transformer embedding space to be input into the Transformer encoder.
+
     - Transformer encoder: a stack of `n_blocks` Transformer encoder layers with `num_heads` attention heads.
+
     - Classification head: a linear layer applied to the CLS token.
+
+    References
+    ----------
+    .. [pbt] Klein, T., Minakowski, P., & Sager, S. (2025).
+        Flexible Patched Brain Transformer model for EEG decoding.
+        Scientific Reports, 15(1), 1-12.
+    .. [visualtransformer]  Dosovitskiy, A., Beyer, L., Kolesnikov, A.,
+        Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M.,
+        Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J. & Houlsby,
+        N. (2021). An Image is Worth 16x16 Words: Transformers for Image
+        Recognition at Scale. International Conference on Learning
+        Representations (ICLR).
+    .. [efficient-batchpacking] Krell, M. M., Kosec, M., Perez, S. P., &
+        Fitzgibbon, A. (2021). Efficient sequence packing without
+        cross-contamination: Accelerating large language models without
+        impacting performance. arXiv preprint arXiv:2107.02027.
 
     Parameters
     ----------
@@ -56,6 +82,9 @@ class PBT(EEGModuleMixin, nn.Module):
         Whether the classification token is learnable.
     bias_transformer : bool, optional
         Whether to use bias in Transformer linear layers.
+    activation : nn.Module, optional
+        Activation function class to use in Transformer feed-forward layers.
+
     """
 
     def __init__(
