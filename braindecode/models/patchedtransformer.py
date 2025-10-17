@@ -14,7 +14,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class PBT(EEGModuleMixin, nn.Module):
-    """Patched Brain Transformer (PBT) model from T Klein et al. (2025) [pbt]_.
+    """Patched Brain Transformer (PBT) model from Klein et al. (2025) [pbt]_.
 
     :bdg-info:`Small Attention`
 
@@ -50,11 +50,13 @@ class PBT(EEGModuleMixin, nn.Module):
 
     - Classification head: a linear layer applied to the CLS token.
 
+
     References
     ----------
     .. [pbt] Klein, T., Minakowski, P., & Sager, S. (2025).
         Flexible Patched Brain Transformer model for EEG decoding.
         Scientific Reports, 15(1), 1-12.
+        https://www.nature.com/articles/s41598-025-86294-3
     .. [visualtransformer]  Dosovitskiy, A., Beyer, L., Kolesnikov, A.,
         Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M.,
         Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J. & Houlsby,
