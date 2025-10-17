@@ -104,6 +104,35 @@ class PBT(EEGModuleMixin, nn.Module):
       *Role.* Performs the final classification from the information aggregated into the CLS
       token after the Transformer encoder stack.
 
+    .. rubric:: Convolutional Details
+
+    PBT omits convolutional layers; equivalent feature extraction is carried out by the patch
+    pipeline and attention stack.
+
+    * **Temporal.** Tokenization slices the EEG into fixed windows of size :math:`D = d_{\text{input}}`
+      (for the default configuration, :math:`D=64` samples :math:`\approx 0.256\,\text{s}` at
+      :math:`250\,\text{Hz}`), while ``PBT.patch_projection`` learns periodic patterns within each
+      patch. The Transformer encoder then models long- and short-range temporal dependencies through
+      self-attention.
+
+    * **Spatial.** Patches are channel-specific, keeping the architecture adaptive to any electrode
+      montage. Channel-aware positional encodings :math:`W_{\text{pos}}` capture relationships between
+      nearby sensors; learned embeddings often form symmetric motifs across motor cortex electrodes
+      (C1–C6), and self-attention propagates information across all channels jointly.
+
+    * **Spectral.** ``PBT.patch_projection`` acts similarly to the first convolutional layer in
+      :class:`~braindecode.models.EEGNet`, learning frequency-selective filters without an explicit
+      Fourier transform. The highest-energy filters typically reside between :math:`20` and
+      :math:`40\,\text{Hz}`, aligning with beta/gamma rhythms tied to focused motor imagery.
+
+    .. rubric:: Attention / Sequential Modules
+
+    * **Attention Details.** ``PBT.transformer_encoder`` stacks :math:`n_{\text{blocks}}` Transformer
+      encoder layers with Multi-Head Self-Attention. Every token attends to all others, enabling
+      immediate global integration across time and channels and supporting heterogeneous datasets.
+      Attention rollout visualisations highlight strong activations over motor cortex electrodes
+      (C3, C4, Cz) during motor imagery decoding.
+
 
     References
     ----------
@@ -127,7 +156,7 @@ class PBT(EEGModuleMixin, nn.Module):
     d_input : int, optional
         Size (in samples) of each patch (token) extracted along the time axis.
     num_tokens_per_channel : int, optional
-        Number of token indices reserved per channel (positional embedding indexing).
+        Number of positional embedding slots allocated per channel.
     d_model : int, optional
         Transformer embedding dimensionality.
     n_blocks : int, optional
@@ -630,7 +659,7 @@ class _ChannelEncoding(nn.Module):
     n_times : int
         Number of time samples per trial.
     num_tokens_per_channel : int, optional
-        Number of distinct token indices to use per channel.
+        Number of positional embedding slots allocated per channel.
     """
 
     def __init__(self, n_chans=2, n_times=1000, num_tokens_per_channel=8) -> None:
