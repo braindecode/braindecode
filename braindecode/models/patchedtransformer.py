@@ -31,24 +31,71 @@ class PBT(EEGModuleMixin, nn.Module):
     by a Transformer encoder stack and classification is performed from the
     classification token.
 
-    .. rubric:: Architectural Overview
+    .. rubric:: Macro Components
 
-    - Tokenization: The pre-processed EEG signals `(batch, n_chans, n_times)` is divided into non-overlapping
-      patches of size `d_input` along the time axis. Since the original implementation does
-      this process inside a custom Dataloader, we've adapted to apply this inside the own model.
-      First the number of total patches is calculated using `n_chans`, `n_times`, `d_input` and `num_tokens_per_channel`,
-      We have segment `X` input into these windows to fit the together with a positional encoder built internally
-      (since only one dataset can be used at time) `Xp`
+    - ``PBT.tokenization`` **(patch extraction)**
 
-    - Positional indexing: a :class:`_ChannelEncoding` provides per-sample positional
-      indices which are mapped to embeddings via :class:`nn.Embedding`.
+      *Operations.* The pre-processed EEG signal :math:`X \in \mathbb{R}^{C \times T}`
+      (with :math:`C = \text{n_chans}` and :math:`T = \text{n_times}`) is divided into
+      non-overlapping patches of size :math:`d_{\text{input}}` along the time axis.
+      This process yields :math:`N` total patches, calculated as
+      :math:`N = C \left\lfloor \frac{T}{D} \right\rfloor` (where :math:`D = d_{\text{input}}`).
+      When time shifts are applied, :math:`N` decreases to
+      :math:`N = C \left\lfloor \frac{T - T_{\text{aug}}}{D} \right\rfloor`.
 
-    - Projection: linear projection `d_input -> d_model` maps tokens into the
-      Transformer embedding space to be input into the Transformer encoder.
+      *Role.* Tokenizes EEG trials into fixed-size, per-channel patches so the model
+      remains adaptive to different numbers of channels and recording lengths.
+      Process is inspired by Vision Transformers [visualtransformer]_ and
+      adapted for GPT context from [efficient-batchpacking]_.
 
-    - Transformer encoder: a stack of `n_blocks` Transformer encoder layers with `num_heads` attention heads.
+    - ``PBT.linear_projection`` **(patch embedding)**
 
-    - Classification head: a linear layer applied to the CLS token.
+      *Operations.* A linear projection maps the tokens from dimension
+      :math:`d_{\text{input}}` to the Transformer embedding dimension :math:`d_{\text{model}}`.
+      Patches :math:`X_P` are projected as :math:`X_E = X_P W_E^\top`, where
+      :math:`W_E \in \mathbb{R}^{d_{\text{model}} \times D}`. In this configuration
+      :math:`d_{\text{model}} = 2D` with :math:`D = d_{\text{input}}`.
+
+      *Interpretability.* Learns periodic structures similar to frequency filters in
+      the first convolutional layers of CNNs (for example EEGNet). The learned filters
+      frequently focus on the high-frequency range (20-40 Hz), which correlates with
+      beta and gamma waves linked to higher concentration levels.
+
+    - ``PBT.embedding`` **(positional encoding and CLS token)**
+
+      *Operations.* A classification token :math:`[c_{\text{ls}}] \in \mathbb{R}^{1 \times d_{\text{model}}}`
+      is prepended to the projected patch sequence :math:`X_E`. The CLS token can optionally
+      be learnable (see ``learnable_cls``). A learnable positional embedding
+      :math:`W_{\text{pos}} \in \mathbb{R}^{(N+1) \times d_{\text{model}}}` is added to the
+      sequence, producing :math:`X_{\text{pos}} = [c_{\text{ls}}, X_E] + W_{\text{pos}}`.
+      Positional indexing is provided by :class:`_ChannelEncoding`, which supplies
+      per-sample positional indices that are mapped to embeddings via :class:`nn.Embedding`.
+
+      *Role/Interpretability.* Introduces spatial and temporal dependence to counter the
+      position invariance of the Transformer encoder. The learned positional embedding
+      exposes spatial relationships, often revealing a symmetric pattern in central regions
+      (C1-C6) associated with the motor cortex.
+
+    - ``PBT.transformer_encoder`` **(sequence processing and attention)**
+
+      *Operations.* The token sequence passes through :math:`n_{\text{blocks}}` Transformer
+      encoder layers. Each block combines a Multi-Head Self-Attention (MHSA) module with
+      ``num_heads`` attention heads and a Feed-Forward Network (FFN). Both MHSA
+      and FFN use parallel residual connections with Layer Normalization inside the blocks
+      and apply dropout (``drop_prob``) within the Transformer components.
+
+      *Role/Robustness.* Self-attention enables every token to consider all others, capturing
+      global temporal and spatial dependencies immediately and adaptively. This architecture
+      accommodates arbitrary numbers of patches and channels, supporting pre-training across
+      diverse datasets.
+
+    - ``PBT.final_layer`` **(readout)**
+
+      *Operations.* A linear layer operates on the processed CLS token only, and the model
+      predicts class probabilities as :math:`y = \operatorname{softmax}([c_{\text{ls}}] W_{\text{class}}^\top + b_{\text{class}})`.
+
+      *Role.* Performs the final classification from the information aggregated into the CLS
+      token after the Transformer encoder stack.
 
 
     References
