@@ -401,3 +401,4 @@ Authors
 .. _Lucas Heck: https://github.com/lucas-heck
 .. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
 .. _Hamdi Altaheri: https://github.com/Altaheri
+.. _Jose Mauricio: https://github.com/josemaurici
