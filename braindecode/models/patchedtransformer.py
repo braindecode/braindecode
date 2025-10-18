@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -155,8 +155,6 @@ class PBT(EEGModuleMixin, nn.Module):
     ----------
     d_input : int, optional
         Size (in samples) of each patch (token) extracted along the time axis.
-    num_tokens_per_channel : int, optional
-        Number of positional embedding slots allocated per channel.
     d_model : int, optional
         Transformer embedding dimensionality.
     n_blocks : int, optional
@@ -185,7 +183,6 @@ class PBT(EEGModuleMixin, nn.Module):
         sfreq=None,
         # Model parameters
         d_input: int = 64,
-        num_tokens_per_channel: int = 8,
         d_model: int = 128,
         n_blocks: int = 4,
         num_heads: int = 4,
@@ -205,31 +202,13 @@ class PBT(EEGModuleMixin, nn.Module):
         del n_outputs, n_chans, chs_info, n_times, input_window_seconds, sfreq
         # Store hyperparameters
         self.d_input = d_input
-        self.num_tokens_per_channel = num_tokens_per_channel
         self.d_model = d_model
         self.n_blocks = n_blocks
         self.num_heads = num_heads
         self.drop_prob = drop_prob
 
         # number of distinct positional indices (per-channel tokens + cls)
-        self.num_embeddings = self.num_tokens_per_channel * self.n_chans + 1
-
-        # number of windows (how many disjoint chunks of size d_input fit in the trial)
-        self.windows = (self.n_chans * self.n_times) // (
-            (self.num_embeddings - 1) * self.d_input
-        )
-
-        if self.windows == 0:
-            raise ValueError(
-                f"Unable to form windows with the current parameters.\n"
-                f"num_embeddings = {self.num_embeddings}, d_input = {self.d_input}\n"
-                f"Consider reducing num_embeddings or d_input."
-            )
-
-        # Linear patch projection from token raw-size -> d_model
-        self.patch_projection = nn.Linear(
-            in_features=self.d_input, out_features=self.d_model, bias=False
-        )
+        self.num_embeddings = (self.n_chans * self.n_times) // self.d_input
 
         # Classification token (learnable or fixed zero)
         if learnable_cls:
@@ -243,16 +222,19 @@ class PBT(EEGModuleMixin, nn.Module):
                 dtype=torch.float32,
             )
 
-        # Channel-aware positional index generator (registered as ``linear_projection``)
-        self.linear_projection = _ChannelEncoding(
-            n_chans=self.n_chans,
-            n_times=self.n_times,
-            num_tokens_per_channel=self.num_tokens_per_channel,
+        # Patching the signal and producing channel-aware positional index generator
+        self.patch_signal = _Patcher(
+            n_chans=self.n_chans, n_times=self.n_times, d_input=self.d_input
+        )
+
+        # Linear patch projection from token raw-size -> d_model
+        self.patching_projection = nn.Linear(
+            in_features=self.d_input, out_features=self.d_model, bias=False
         )
 
         # actual embedding table mapping indices -> d_model
         self.pos_embedding = nn.Embedding(
-            num_embeddings=self.num_embeddings, embedding_dim=self.d_model
+            num_embeddings=self.num_embeddings + 1, embedding_dim=self.d_model
         )
 
         # Transformer encoder stack
@@ -301,60 +283,18 @@ class PBT(EEGModuleMixin, nn.Module):
         torch.Tensor
             Output logits with shape (batch_size, n_outputs).
         """
-        # positional indices per-sample (batch_size, n_chans, n_times) ->
-        # values in [0, num_embeddings-1]
-        positional_indices = self.linear_projection(X)
-        batch_size = X.shape[0]
+        X, int_pos = self.patch_signal(X)
 
-        concat = []
-        for i in range(self.windows):
-            start_idx = i * ((self.num_embeddings - 1) * self.d_input)
-            end_idx = (i + 1) * ((self.num_embeddings - 1) * self.d_input)
+        tokens = self.patching_projection(X)
 
-            # X_patched: (B, num_embeddings - 1, d_input)
-            X_patched = X.view(batch_size, -1)[:, start_idx:end_idx].view(
-                batch_size, (self.num_embeddings - 1), self.d_input
-            )
+        cls_token = self.cls_token.expand(X.size(0), 1, -1)
+        cls_idx = torch.zeros((X.size(0), 1), dtype=torch.long, device=X.device)
 
-            # Xpos_patched: (B, num_embeddings - 1, d_input) ->
-            # reduce to single index per token
-            Xpos_patched = positional_indices.view(batch_size, -1)[
-                :, start_idx:end_idx
-            ].view(batch_size, (self.num_embeddings - 1), self.d_input)
+        tokens = torch.cat([cls_token, tokens], dim=1)
+        pos_emb = self.pos_embedding(int_pos)
+        transformer_out = self.transformer_encoder(tokens + pos_emb)
 
-            # reduce positional block to a single index per token (take first element)
-            Xpos_patched = Xpos_patched[:, :, 0].long()
-            # shape (batch_size, num_embeddings-1)
-
-            # project patches -> (batch_size, num_embeddings-1, d_model)
-            tokens = self.patch_projection(X_patched)
-
-            # expand cls token -> (batch_size, 1, d_model)
-            cls_token = self.cls_token.expand(batch_size, -1, -1)
-
-            # add cls token to tokens -> (batch_size, num_embeddings, d_model)
-            tokens = torch.cat([cls_token, tokens], dim=1)
-
-            # build positional indices including CLS (0 reserved for CLS)
-            cls_idx = torch.zeros((batch_size, 1), dtype=torch.long, device=X.device)
-            int_pos = torch.cat(
-                [cls_idx, Xpos_patched], dim=1
-            )  # (batch_size, num_embeddings)
-
-            # lookup positional embeddings -> (batch_size, num_embeddings, d_model)
-            pos_emb = self.pos_embedding(int_pos)
-
-            # transformer forward -> (batch_size, num_embeddings, d_model)
-            transformer_out = self.transformer_encoder(tokens + pos_emb)
-
-            concat.append(transformer_out[:, 0])  # CLS vector (batch_size, d_model)
-
-        # aggregate across windows (original code creates mean over windows but
-        # returns last transformer_out CLS)
-        concat_agg = torch.stack(concat, dim=0)
-        concat_agg = torch.mean(concat_agg, dim=0)  # (batch_size, d_model)
-
-        return self.final_layer(concat_agg)
+        return self.final_layer(transformer_out[:, 0])
 
 
 class _LayerNorm(nn.Module):
@@ -645,12 +585,10 @@ class _TransformerEncoder(nn.Module):
         return x
 
 
-class _ChannelEncoding(nn.Module):
-    """Channel-aware positional encoding helper.
+class _Patcher(nn.Module):
+    """Patching encoding helper.
 
-    This module builds a per-channel positional index buffer that maps each
-    time sample to a token index for that channel. It is registered as a
-    buffer (`x_pos_single`) and expanded to batch-size at runtime.
+    This module "patchifies" the original X entry in a ViT manner.
 
     Parameters
     ----------
@@ -658,36 +596,38 @@ class _ChannelEncoding(nn.Module):
         Number of EEG channels.
     n_times : int
         Number of time samples per trial.
-    num_tokens_per_channel : int, optional
+    d_input : int, optional
         Number of positional embedding slots allocated per channel.
     """
 
-    def __init__(self, n_chans=2, n_times=1000, num_tokens_per_channel=8) -> None:
+    def __init__(self, n_chans=2, n_times=1000, d_input=64) -> None:
         super().__init__()
+        self.d_input = d_input
+        self.num_tokens = (n_chans * n_times) // d_input
 
-        x_pos_single = torch.zeros((n_chans, n_times), dtype=torch.long)
-
-        for c in range(n_chans):
-            start = c * num_tokens_per_channel + 1
-            end = (c + 1) * num_tokens_per_channel + 1
-            seq = torch.arange(start, end, dtype=torch.long)
-            seq_rep = seq.repeat((n_times // num_tokens_per_channel) + 1)[:n_times]
-            x_pos_single[c, :] = seq_rep
-
-        self.register_buffer("x_pos_single", x_pos_single)
-
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
-        """Return per-sample positional indices expanded to batch dimension.
+    def forward(self, X: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Returns patched input together with positional indices
+        expanded to batch dimension.
 
         Parameters
         ----------
         X : torch.Tensor
-            Input tensor only used for batch size inference (B, C, T).
+            Input tensor.
 
         Returns
         -------
-        torch.LongTensor
-            Tensor of shape (B, C, T) containing positional token indices.
+        x_patched: torch.LongTensor
+            Tensor of shape (B, (C*T)//d_input, d_input) containing positional token indices.
+
+        position: torch.LongTensor
+            Tensor of shape ((C*T)//d_input + 1) containing positional token indices.
         """
-        b, c, t = X.shape
-        return self.x_pos_single.unsqueeze(0).expand(b, -1, -1)
+
+        X_flat = X.view(X.size(0), -1)
+        x_patched = X_flat[:, : self.num_tokens * self.d_input].view(
+            X.size(0), self.num_tokens, self.d_input
+        )
+
+        position = torch.arange(x_patched.size(1) + 1, device=X.device)
+
+        return x_patched, position
