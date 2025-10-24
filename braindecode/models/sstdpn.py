@@ -106,6 +106,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     * The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$) and the optimization of ICPs are typically handled outside the primary `forward` method shown here.
     * The default parameters are configured based on the BCI Competition IV 2a dataset.
     * The model operates directly on raw MI-EEG signals without requiring traditional preprocessing steps like band-pass filtering.
+    * The first iteration of the braindecode adaptation was done by Can Han [Han2025Code], the original author of the paper and code.
 
     Parameters
     ----------
