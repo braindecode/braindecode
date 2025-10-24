@@ -234,25 +234,20 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             spt_attn_mode=self.spt_attn_mode,
         )
 
-        # Infer feature dimension with dry-run
-        with torch.no_grad():
-            dummy = torch.ones((1, self.n_chans, self.n_times))
-            feat = self.encoder(dummy)
-            feat_dim = int(feat.shape[-1])
+        # Infer feature dimension analytically
+        feat_dim = self._compute_feature_dim()
 
         # Prototypes: Inter-class Separation (ISP) and Intra-class Compactness (ICP)
         # ISP: provides inter-class separation via prototype learning
         # ICP: enhances intra-class compactness
         self.proto_sep = nn.Parameter(
-            torch.randn(self.n_outputs, feat_dim), requires_grad=True
+            torch.empty(self.n_outputs, feat_dim), requires_grad=True
         )
         self.proto_cpt = nn.Parameter(
-            torch.randn(self.n_outputs, feat_dim), requires_grad=True
+            torch.empty(self.n_outputs, feat_dim), requires_grad=True
         )
 
-        # Initialize prototypes
-        nn.init.kaiming_normal_(self.proto_sep.data)
-        nn.init.normal_(self.proto_cpt.data, mean=0.0, std=self.proto_cpt_std)
+        self._reset_parameters()
 
     def forward(
         self, x: torch.Tensor
@@ -285,6 +280,52 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             return features, logits
 
         return logits
+
+    def _compute_feature_dim(self) -> int:
+        """Compute encoder feature dimensionality without a forward pass."""
+        num_scales = len(self.mvp_kernel_sizes)
+        if num_scales == 0:
+            raise ValueError(
+                "`mvp_kernel_sizes` must contain at least one kernel size."
+            )
+
+        if self.n_fused_filters % num_scales != 0:
+            raise ValueError(
+                "Number of fused filters must be divisible by the number of MVP scales. "
+                f"Got {self.n_fused_filters=} and {num_scales=}."
+            )
+
+        channels_per_scale = self.n_fused_filters // num_scales
+        feature_dim = 0
+        for kernel_size in self.mvp_kernel_sizes:
+            stride = kernel_size // 2
+            if stride == 0:
+                raise ValueError(
+                    f"MVP kernel size {kernel_size} is too small to derive a valid stride."
+                )
+            pooled_length = self._pool1d_output_length(
+                length=self.n_times,
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=0,
+                dilation=1,
+            )
+            feature_dim += channels_per_scale * pooled_length
+        return feature_dim
+
+    @staticmethod
+    def _pool1d_output_length(
+        length: int, kernel_size: int, stride: int, padding: int = 0, dilation: int = 1
+    ) -> int:
+        """Compute the temporal length after 1D pooling."""
+        effective_kernel = dilation * (kernel_size - 1) + 1
+        numerator = length + 2 * padding - effective_kernel
+        return max(0, numerator // stride + 1)
+
+    def _reset_parameters(self) -> None:
+        """Initialize prototype parameters."""
+        nn.init.kaiming_normal_(self.proto_sep)
+        nn.init.normal_(self.proto_cpt, mean=0.0, std=self.proto_cpt_std)
 
 
 class _SSTEncoder(nn.Module):
