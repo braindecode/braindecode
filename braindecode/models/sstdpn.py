@@ -38,108 +38,101 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     Dual Prototype Learning (DPL) classification module [Han2025]_.
 
     1. **Adaptive Spatial–Spectral Fusion (ASSF)**: Uses LightConv to generate a
-    multi-channel spatial–spectral representation, followed by a lightweight
-    attention mechanism (SSA) to model relationships and highlight key spatial–spectral
-    channels [Han2025]_.
+        multi-channel spatial–spectral representation, followed by a lightweight
+        attention mechanism (SSA) to model relationships and highlight key spatial–spectral
+        channels [Han2025]_.
 
     2. **Multi-scale Variance Pooling (MVP)**: Applies a parameter-free variance pooling
-    layer with large kernels across multiple scales to capture long-term temporal
-    dependencies, serving as an efficient alternative to transformers [Han2025]_.
+        layer with large kernels across multiple scales to capture long-term temporal
+        dependencies, serving as an efficient alternative to transformers [Han2025]_.
 
     3. **Dual Prototype Learning (DPL)**: A training strategy that employs two sets of
-    prototypes—Inter-class Separation Prototypes (ISPs) and Intra-class Compact
-    Prototypes (ICPs)—to optimize the feature space, enhancing generalization ability and
-    preventing overfitting on small datasets [Han2025]_. During inference (forward pass),
-    classification decisions are typically made based on the distance (dot product) between the
-    feature vector and the ISP for each class [Han2025]_.
+        prototypes—Inter-class Separation Prototypes (ISPs) and Intra-class Compact
+        Prototypes (ICPs)—to optimize the feature space, enhancing generalization ability and
+        preventing overfitting on small datasets [Han2025]_. During inference (forward pass),
+        classification decisions are typically made based on the distance (dot product) between the
+        feature vector and the ISP for each class [Han2025]_.
 
     .. rubric:: Macro Components
 
     - `SSTDPN.encoder` **(Feature Extractor)**
 
-        - *Operations.* Combines the ASSF and MVP modules [12].
-        - *Role.* Maps the raw MI-EEG trial $X_i \in R^{C \times T}$ to the feature space $z_i \in R^d$ [13].
+        - *Operations.* Combines the ASSF and MVP modules.
+        - *Role.* Maps the raw MI-EEG trial $X_i \in R^{C \times T}$ to the feature space $z_i \in R^d$.
 
     - `SSTEncoder.time_conv` **(LightConv for Spatial–Spectral Representation)**
 
-        - *Operations.* :class:`~LightweightConv1d` (1D depthwise convolution) with kernel size `lightconv_kernel_size` and a depth multiplier `depth_multiplier_F1` ($F_1$ filters) [14, 15].
-        - *Role.* Extracts multiple distinct spectral bands from each EEG channel [14, 16].
+        - *Operations.* :class:`~LightweightConv1d` (1D depthwise convolution) with kernel size `lightconv_kernel_size` and a depth multiplier `depth_multiplier_F1` ($F_1$ filters).
+        - *Role.* Extracts multiple distinct spectral bands from each EEG channel.
 
     - `SSTEncoder.ssa` **(Spatial–Spectral Attention)**
 
-        - *Operations.* Global Context Embedding using a mean-var operation, followed by channel normalization and gating adaptation [17, 18]. The output scale is adjusted channel-wise [19].
-        - *Role.* Reweights channels in the spatial–spectral dimension to extract more efficient and discriminative features by emphasizing task-relevant regions and bands [3, 20].
+        - *Operations.* Global Context Embedding using a mean-var operation, followed by channel normalization and gating adaptation. The output scale is adjusted channel-wise.
+        - *Role.* Reweights channels in the spatial–spectral dimension to extract more efficient and discriminative features by emphasizing task-relevant regions and bands.
 
     - `SSTEncoder.chan_conv` **(Pointwise Fusion)**
 
-        - *Operations.* A simple 1D pointwise convolution with `n_pointwise_filters_F2` ($F_2$ filters), followed by BatchNorm and ELU activation [19, 21].
-        - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce $X_{assf} \in R^{F_2 \times T}$ [19].
+        - *Operations.* A simple 1D pointwise convolution with `n_pointwise_filters_F2` ($F_2$ filters), followed by BatchNorm and ELU activation.
+        - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce $X_{assf} \in R^{F_2 \times T}$.
 
     - `SSTEncoder.mixer` **(Multi-scale Variance Pooling - MVP)**
 
-        - *Operations.* :class:`~Mixer1D` uses :class:`~VarPool1D` layers with multi-scale large kernel sizes (`variance_pool_kernel_sizes`), followed by concatenation and flattening [22, 23].
-        - *Role.* Captures long-range temporal features. The variance operation is effective as it represents spectral power in EEG signals [24, 25].
+        - *Operations.* :class:`~Mixer1D` uses :class:`~VarPool1D` layers with multi-scale large kernel sizes (`variance_pool_kernel_sizes`), followed by concatenation and flattening.
+        - *Role.* Captures long-range temporal features. The variance operation is effective as it represents spectral power in EEG signals.
 
     - `SSTDPN.isp` / `SSTDPN.icp` **(Dual Prototypes)**
 
-        - *Operations.* Learnable vectors initialized randomly and optimized during training using $\mathcal{L}_S$, $\mathcal{L}_C$, and $\mathcal{L}_{EF}$ [9, 12, 26]. Note that in the forward pass shown, only the ISP is used for classification via dot product, and the ISP is constrained using L2 weight-normalization ($\lVert s_i \rVert_2 \leq S=1$) [11, 26].
-        - *Role.* ISP (Inter-class Separation Prototype) achieves inter-class separation, while ICP (Intra-class Compact Prototype) enhances intra-class compactness [9].
+        - *Operations.* Learnable vectors initialized randomly and optimized during training using $\mathcal{L}_S$, $\mathcal{L}_C$, and $\mathcal{L}_{EF}$. Note that in the forward pass shown, only the ISP is used for classification via dot product, and the ISP is constrained using L2 weight-normalization ($\lVert s_i \rVert_2 \leq S=1$).
+        - *Role.* ISP (Inter-class Separation Prototype) achieves inter-class separation, while ICP (Intra-class Compact Prototype) enhances intra-class compactness.
 
     .. rubric:: Convolutional Details
 
     * **Temporal (Long-term dependency).**
-    The initial LightConv uses a large kernel (e.g., 75) [27]. The MVP module employs pooling kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal features effectively [22, 25].
+        The initial LightConv uses a large kernel (e.g., 75). The MVP module employs pooling kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal features effectively.
 
     * **Spatial (Fine-grained modeling).**
-    The LightConv uses $h=1$, meaning all electrode channels share $F_1$ temporal filters to produce the spatial–spectral representation [14]. The SSA mechanism explicitly models relationships among multiple channels in the spatial–spectral dimension, allowing for finer-grained spatial feature modeling than standard GCNs [3, 28].
+    The LightConv uses $h=1$, meaning all electrode channels share $F_1$ temporal filters to produce the spatial–spectral representation. The SSA mechanism explicitly models relationships among multiple channels in the spatial–spectral dimension, allowing for finer-grained spatial feature modeling than standard GCNs.
 
     * **Spectral (Feature extraction).**
-    Spectral information is implicitly extracted via the $F_1$ filters in the LightConv [16]. The use of Variance Pooling explicitly leverages the prior knowledge that the variance of EEG signals represents their spectral power [24, 25].
+    Spectral information is implicitly extracted via the $F_1$ filters in the LightConv. The use of Variance Pooling explicitly leverages the prior knowledge that the variance of EEG signals represents their spectral power.
 
     .. rubric:: Additional Mechanisms
 
-    - **Attention.** A lightweight attention mechanism (SSA) is used explicitly to model spatial–spectral relationships at the channel level, rather than applying attention to deep features [3, 29].
-    - **Regularization.** Dual Prototype Learning (DPL) acts as a regularization technique, enhancing model generalization and classification performance, particularly useful for limited data typical of MI-EEG tasks [6, 8].
+    - **Attention.** A lightweight attention mechanism (SSA) is used explicitly to model spatial–spectral relationships at the channel level, rather than applying attention to deep features.
+    - **Regularization.** Dual Prototype Learning (DPL) acts as a regularization technique, enhancing model generalization and classification performance, particularly useful for limited data typical of MI-EEG tasks.
 
     Notes
     ----------
-    [30] The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$) and the optimization of ICPs are typically handled outside the primary `forward` method shown here [26, 31].
-    [32] The default parameters are configured based on the BCI Competition IV 2a dataset [27, 33].
-    [34] The model operates directly on raw MI-EEG signals without requiring traditional preprocessing steps like band-pass filtering [13, 35].
+    * The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$) and the optimization of ICPs are typically handled outside the primary `forward` method shown here.
+    * The default parameters are configured based on the BCI Competition IV 2a dataset.
+    * The model operates directly on raw MI-EEG signals without requiring traditional preprocessing steps like band-pass filtering.
 
     Parameters
     ----------
-    n_chans : int
-    Number of EEG channels.
-
-    n_outputs : int
-    Number of classes/outputs.
-
-    n_times : int
-    Number of time samples in the input window.
-
     depth_multiplier_F1 : int, optional
-    Depth multiplier for LightConv ($F_1$), which corresponds to the number of spectral bands extracted per channel. Default is 9 [14, 27].
+        Depth multiplier for LightConv ($F_1$), which corresponds to the number
+        of spectral bands extracted per channel. Default is 9.
 
     n_pointwise_filters_F2 : int, optional
-    Output channel dimension after the pointwise convolution ($F_2$). Default is 48 [19, 27].
+        Output channel dimension after the pointwise convolution ($F_2$).
+        Default is 48.
 
     lightconv_kernel_size : int, optional
-    Kernel size for the temporal LightweightConv1d layer ($k$). Default is 75 [27, 33].
+        Kernel size for the temporal LightweightConv1d layer ($k$). Default is 75.
 
     variance_pool_kernel_sizes : list[int], optional
-    Kernel sizes used in the Multi-scale Variance Pooling (MVP) module. Default is [36, 37] [22, 27].
+        Kernel sizes used in the Multi-scale Variance Pooling (MVP) module. Default is [36, 37].
 
     return_features : bool, optional
-    If True, the forward returns (features, logits). Default is False.
+        If True, the forward returns (features, logits). Default is False.
 
     References
     ----------
-    [Han2025] Han, C., Liu, C., Wang, J., Wang, Y., Cai, C.,
+    .. [Han2025] Han, C., Liu, C., Wang, J., Wang, Y., Cai, C.,
         & Qian, D. (2025). A spatial–spectral and temporal dual
         prototype network for motor imagery brain–computer
         interface. Knowledge-Based Systems, 315, 113315.
-    [Han2025Code] Han, C., Liu, C., Wang, J., Wang, Y.,
+    .. [Han2025Code] Han, C., Liu, C., Wang, J., Wang, Y.,
         Cai, C., & Qian, D. (2025). A spatial–spectral and
         temporal dual prototype network for motor imagery
         brain–computer interface. Knowledge-Based Systems,
