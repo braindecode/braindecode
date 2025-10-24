@@ -24,7 +24,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         :alt: SSTDPN Architecture
         :width: 620px
 
-    The **S**patial–**S**pectral and **T**emporal - **D**ual **P**rototype **N**etwork (SST-DPN)
+    The **Spatial–Spectral** and **Temporal - Dual Prototype Network** (SST-DPN)
     is an end-to-end 1D convolutional architecture designed for motor imagery (MI) EEG decoding,
     aiming to address challenges related to discriminative feature extraction and
     small-sample sizes [Han2025]_.
@@ -88,13 +88,13 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     .. rubric:: Convolutional Details
 
     * **Temporal (Long-term dependency).**
-        The initial LightConv uses a large kernel (e.g., 75). The MVP module employs pooling kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal features effectively.
+      The initial LightConv uses a large kernel (e.g., 75). The MVP module employs pooling kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal features effectively.
 
     * **Spatial (Fine-grained modeling).**
-    The LightConv uses $h=1$, meaning all electrode channels share $F_1$ temporal filters to produce the spatial–spectral representation. The SSA mechanism explicitly models relationships among multiple channels in the spatial–spectral dimension, allowing for finer-grained spatial feature modeling than standard GCNs.
+      The LightConv uses $h=1$, meaning all electrode channels share $F_1$ temporal filters to produce the spatial–spectral representation. The SSA mechanism explicitly models relationships among multiple channels in the spatial–spectral dimension, allowing for finer-grained spatial feature modeling than standard GCNs.
 
     * **Spectral (Feature extraction).**
-    Spectral information is implicitly extracted via the $F_1$ filters in the LightConv. The use of Variance Pooling explicitly leverages the prior knowledge that the variance of EEG signals represents their spectral power.
+      Spectral information is implicitly extracted via the $F_1$ filters in the LightConv. The use of Variance Pooling explicitly leverages the prior knowledge that the variance of EEG signals represents their spectral power.
 
     .. rubric:: Additional Mechanisms
 
