@@ -209,7 +209,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             Input tensor. Supported shapes:
               - (batch, n_chans, n_times)
 
-
         Returns
         -------
         logits : torch.Tensor
@@ -218,7 +217,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             (features, logits) where features shape is (batch, feat_dim)
         """
 
-        # 3D input
         features = self.encoder(x)  # (b, feat_dim)
         # renorm prototypes
         self.isp.data = torch.renorm(self.isp.data, p=2, dim=1, maxnorm=1.0)
