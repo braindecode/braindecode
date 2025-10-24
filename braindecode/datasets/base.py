@@ -815,7 +815,7 @@ class BaseConcatDataset(ConcatDataset):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
-        description.to_json(description_file_path)
+        description.to_json(description_file_path, default_handler=str)
 
     @staticmethod
     def _save_kwargs(sub_dir, ds):

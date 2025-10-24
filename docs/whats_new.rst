@@ -31,6 +31,7 @@ Bugs
 ~~~~
 - Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi Altaheri`_)
 - Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by `Pierre Guetschel`_)
+- Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
 
 
 Current 1.2 (stable)
