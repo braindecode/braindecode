@@ -99,17 +99,21 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-
+        del input_window_seconds, sfreq, chs_info, n_chans, n_outputs, n_times
+        self.times_kernel1 = time_kernel1
+        self.pool_kernels = pool_kernels
         self.return_features = return_features
+        self.F1 = F1
+        self.F2 = F2
 
         # Encoder accepts (batch, n_chans, n_times)
         self.encoder = SSTEncoder(
-            n_times=n_times,
-            n_chans=n_chans,
-            F1=F1,
-            F2=F2,
-            time_kernel1=time_kernel1,
-            pool_kernels=pool_kernels,
+            n_times=self.n_times,
+            n_chans=self.n_chans,
+            F1=self.F1,
+            F2=self.F2,
+            time_kernel1=self.times_kernel1,
+            pool_kernels=self.pool_kernels,
         )
 
         # infer feature dim with dry-run (safe - uses model init defaults)
@@ -119,13 +123,19 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             feat_dim = int(feat.shape[-1])
 
         # prototypes: ISP (inter-class separation), ICP (intra-class compactness)
-        self.isp = nn.Parameter(torch.randn(n_outputs, feat_dim), requires_grad=True)
-        self.icp = nn.Parameter(torch.randn(n_outputs, feat_dim), requires_grad=True)
+        self.isp = nn.Parameter(
+            torch.randn(self.n_outputs, feat_dim), requires_grad=True
+        )
+        self.icp = nn.Parameter(
+            torch.randn(self.n_outputs, feat_dim), requires_grad=True
+        )
 
         nn.init.kaiming_normal_(self.isp.data)
         nn.init.normal_(self.icp.data, mean=0.0, std=0.01)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
         Forward pass supporting 3D EEG inputs.
 
@@ -149,8 +159,10 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         # renorm prototypes
         self.isp.data = torch.renorm(self.isp.data, p=2, dim=1, maxnorm=1.0)
         logits = torch.einsum("bd,cd->bc", features, self.isp)  # (b, n_outputs)
+
         if self.return_features:
             return features, logits
+
         return logits
 
 
@@ -194,7 +206,7 @@ class SSTEncoder(nn.Module):
             nn.BatchNorm1d(F2),
             nn.ELU(),
         )
-        self.mixer = Mixer1D(dim=F2, kernel_sizes=pool_kernels)
+        self.mixer = Mixer1D(kernel_sizes=pool_kernels)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -369,7 +381,7 @@ class SSA(nn.Module):
 
 
 class Mixer1D(nn.Module):
-    def __init__(self, dim: int, kernel_sizes: Optional[List[int]] = None) -> None:
+    def __init__(self, kernel_sizes: Optional[List[int]] = None) -> None:
         super().__init__()
         if kernel_sizes is None:
             kernel_sizes = [50, 100, 250]
@@ -383,7 +395,7 @@ class Mixer1D(nn.Module):
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, d, L = x.shape
+        _, d, _ = x.shape
         assert d % self.L == 0, "Channel dim must be divisible by number of branches"
         x_split = torch.split(x, d // self.L, dim=1)
         out = []
