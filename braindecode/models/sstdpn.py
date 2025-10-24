@@ -1,3 +1,9 @@
+# Authors: Can Han <hancan@sjtu.edu.cn> (original paper and code,
+#                                        first iteration of braindecode adaptation)
+#          Bruno Aristimunha <b.aristimunha@gmail.com> (braindecode adaptation)
+#
+# License: BSD (3-clause)
+
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -9,7 +15,7 @@ from braindecode.models.base import EEGModuleMixin
 
 
 class SSTDPN(EEGModuleMixin, nn.Module):
-    """SSTDPN from Can Han et al. (2025) [Han2025].
+    r"""SSTDPN from Can Han et al (2025) [Han2025]_.
 
     :bdg-info:`Small Attention` :bdg-success:`Convolution`
 
@@ -18,50 +24,114 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         :alt: SSTDPN Architecture
         :width: 620px
 
-    SST-DPN begins with a **Spatial-Spectral Attention (SSA)** module, which jointly models
-    inter-channel (spatial) and inter-band (spectral) relationships. This mechanism adaptively
-    emphasizes the most informative frequency bands and electrode channels for the current MI task,
-    providing fine-grained spatial-spectral feature representations.
+    The **S**patial–**S**pectral and **T**emporal - **D**ual **P**rototype **N**etwork (SST-DPN)
+    is an end-to-end 1D convolutional architecture designed for motor imagery (MI) EEG decoding,
+    aiming to address challenges related to discriminative feature extraction and
+    small-sample sizes [Han2025]_.
 
-    Following SSA, a **Multi-Scale Variance Pooling (MVP)** module is applied to extract
-    long-range temporal dependencies. Instead of using computationally expensive recurrent or
-    transformer structures, MVP employs variance pooling over multiple temporal scales to capture
-    signal dynamics at different temporal resolutions, enhancing robustness without adding
-    significant parameters.
+    The framework systematically addresses three key challenges: multi-channel spatial–spectral
+    features, long-term temporal features, and the small-sample dilemma [Han2025]_.
 
-    On top of the spatial-spectral-temporal features, the model incorporates a **Dual Prototype
-    Learning (DPL)** strategy. DPL constructs class prototypes in the feature space to enforce
-    intra-class compactness and inter-class separability, improving discriminability and
-    generalization under few-trial or cross-subject conditions.
+    .. rubric:: Architectural Overview
 
-    Overall, SST-DPN integrates lightweight attention, non-parametric temporal modeling, and
-    prototype-based regularization into a unified framework for efficient and accurate MI-EEG
-    decoding.
+    SST-DPN consists of a feature extractor (SSTEncoder, comprising ASSF and MVP) followed by the
+    Dual Prototype Learning (DPL) classification module [Han2025]_.
 
-    The paper and original implementation with further methodological details are available at
-    [Han2025] and [Han2025Code].
+    1. **Adaptive Spatial–Spectral Fusion (ASSF)**: Uses LightConv to generate a
+    multi-channel spatial–spectral representation, followed by a lightweight
+    attention mechanism (SSA) to model relationships and highlight key spatial–spectral
+    channels [Han2025]_.
+
+    2. **Multi-scale Variance Pooling (MVP)**: Applies a parameter-free variance pooling
+    layer with large kernels across multiple scales to capture long-term temporal
+    dependencies, serving as an efficient alternative to transformers [Han2025]_.
+
+    3. **Dual Prototype Learning (DPL)**: A training strategy that employs two sets of
+    prototypes—Inter-class Separation Prototypes (ISPs) and Intra-class Compact
+    Prototypes (ICPs)—to optimize the feature space, enhancing generalization ability and
+    preventing overfitting on small datasets [Han2025]_. During inference (forward pass),
+    classification decisions are typically made based on the distance (dot product) between the
+    feature vector and the ISP for each class [Han2025]_.
+
+    .. rubric:: Macro Components
+
+    - `SSTDPN.encoder` **(Feature Extractor)**
+
+        - *Operations.* Combines the ASSF and MVP modules [12].
+        - *Role.* Maps the raw MI-EEG trial $X_i \in R^{C \times T}$ to the feature space $z_i \in R^d$ [13].
+
+    - `SSTEncoder.time_conv` **(LightConv for Spatial–Spectral Representation)**
+
+        - *Operations.* :class:`~LightweightConv1d` (1D depthwise convolution) with kernel size `lightconv_kernel_size` and a depth multiplier `depth_multiplier_F1` ($F_1$ filters) [14, 15].
+        - *Role.* Extracts multiple distinct spectral bands from each EEG channel [14, 16].
+
+    - `SSTEncoder.ssa` **(Spatial–Spectral Attention)**
+
+        - *Operations.* Global Context Embedding using a mean-var operation, followed by channel normalization and gating adaptation [17, 18]. The output scale is adjusted channel-wise [19].
+        - *Role.* Reweights channels in the spatial–spectral dimension to extract more efficient and discriminative features by emphasizing task-relevant regions and bands [3, 20].
+
+    - `SSTEncoder.chan_conv` **(Pointwise Fusion)**
+
+        - *Operations.* A simple 1D pointwise convolution with `n_pointwise_filters_F2` ($F_2$ filters), followed by BatchNorm and ELU activation [19, 21].
+        - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce $X_{assf} \in R^{F_2 \times T}$ [19].
+
+    - `SSTEncoder.mixer` **(Multi-scale Variance Pooling - MVP)**
+
+        - *Operations.* :class:`~Mixer1D` uses :class:`~VarPool1D` layers with multi-scale large kernel sizes (`variance_pool_kernel_sizes`), followed by concatenation and flattening [22, 23].
+        - *Role.* Captures long-range temporal features. The variance operation is effective as it represents spectral power in EEG signals [24, 25].
+
+    - `SSTDPN.isp` / `SSTDPN.icp` **(Dual Prototypes)**
+
+        - *Operations.* Learnable vectors initialized randomly and optimized during training using $\mathcal{L}_S$, $\mathcal{L}_C$, and $\mathcal{L}_{EF}$ [9, 12, 26]. Note that in the forward pass shown, only the ISP is used for classification via dot product, and the ISP is constrained using L2 weight-normalization ($\lVert s_i \rVert_2 \leq S=1$) [11, 26].
+        - *Role.* ISP (Inter-class Separation Prototype) achieves inter-class separation, while ICP (Intra-class Compact Prototype) enhances intra-class compactness [9].
+
+    .. rubric:: Convolutional Details
+
+    * **Temporal (Long-term dependency).**
+    The initial LightConv uses a large kernel (e.g., 75) [27]. The MVP module employs pooling kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal features effectively [22, 25].
+
+    * **Spatial (Fine-grained modeling).**
+    The LightConv uses $h=1$, meaning all electrode channels share $F_1$ temporal filters to produce the spatial–spectral representation [14]. The SSA mechanism explicitly models relationships among multiple channels in the spatial–spectral dimension, allowing for finer-grained spatial feature modeling than standard GCNs [3, 28].
+
+    * **Spectral (Feature extraction).**
+    Spectral information is implicitly extracted via the $F_1$ filters in the LightConv [16]. The use of Variance Pooling explicitly leverages the prior knowledge that the variance of EEG signals represents their spectral power [24, 25].
+
+    .. rubric:: Additional Mechanisms
+
+    - **Attention.** A lightweight attention mechanism (SSA) is used explicitly to model spatial–spectral relationships at the channel level, rather than applying attention to deep features [3, 29].
+    - **Regularization.** Dual Prototype Learning (DPL) acts as a regularization technique, enhancing model generalization and classification performance, particularly useful for limited data typical of MI-EEG tasks [6, 8].
 
     Notes
     ----------
-    [1] The following code only includes the forward inference process of SSTDPN.
-    During training, SSTDPN employs multiple loss functions that are jointly optimized.
-    [2] The default parameters below are configured for the BCI Competition IV 2a dataset.
-
-    For detailed implementation and reproduction, please refer to the
-    original paper [Han2025] and [Han2025Code].
+    [30] The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$) and the optimization of ICPs are typically handled outside the primary `forward` method shown here [26, 31].
+    [32] The default parameters are configured based on the BCI Competition IV 2a dataset [27, 33].
+    [34] The model operates directly on raw MI-EEG signals without requiring traditional preprocessing steps like band-pass filtering [13, 35].
 
     Parameters
     ----------
-    F1 : int
-        Depth multiplier for time conv, by default 9.
-    F2 : int
-        Channel mixing output dim, by default 48.
-    time_kernel1 : int
-        Kernel size for temporal lightweight conv, by default 75.
-    pool_kernels : list[int]
-        Mixer pooling kernel sizes, by default [50,100,200].
-    return_features : bool
-        If True, forward returns (features, logits).
+    n_chans : int
+    Number of EEG channels.
+
+    n_outputs : int
+    Number of classes/outputs.
+
+    n_times : int
+    Number of time samples in the input window.
+
+    depth_multiplier_F1 : int, optional
+    Depth multiplier for LightConv ($F_1$), which corresponds to the number of spectral bands extracted per channel. Default is 9 [14, 27].
+
+    n_pointwise_filters_F2 : int, optional
+    Output channel dimension after the pointwise convolution ($F_2$). Default is 48 [19, 27].
+
+    lightconv_kernel_size : int, optional
+    Kernel size for the temporal LightweightConv1d layer ($k$). Default is 75 [27, 33].
+
+    variance_pool_kernel_sizes : list[int], optional
+    Kernel sizes used in the Multi-scale Variance Pooling (MVP) module. Default is [36, 37] [22, 27].
+
+    return_features : bool, optional
+    If True, the forward returns (features, logits). Default is False.
 
     References
     ----------
@@ -383,10 +453,13 @@ class SSA(nn.Module):
 class Mixer1D(nn.Module):
     def __init__(self, kernel_sizes: Optional[List[int]] = None) -> None:
         super().__init__()
+
         if kernel_sizes is None:
             kernel_sizes = [50, 100, 250]
+
         self.var_layers = nn.ModuleList()
         self.L = len(kernel_sizes)
+
         for k in kernel_sizes:
             self.var_layers.append(
                 nn.Sequential(
