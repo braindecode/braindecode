@@ -131,18 +131,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_chans : int
-        Number of EEG channels.
-    n_outputs : int
-        Number of output classes.
-    n_times : int
-        Number of time samples per trial.
-    input_window_seconds : float or None, optional
-        Deprecated. Not used.
-    sfreq : float or None, optional
-        Deprecated. Not used.
-    chs_info : dict or None, optional
-        Deprecated. Not used.
     n_spectral_filters_temporal : int, optional
         Number of spectral filters extracted per channel via temporal convolution.
         These represent the temporal spectral bands (equivalent to :math:`F_1` in the paper).
@@ -190,12 +178,14 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     def __init__(
         self,
+        # Braindecode standard parameters
         n_chans: int,
         n_outputs: int,
         n_times: int,
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
+        # models parameters
         n_spectral_filters_temporal: int = 9,
         n_fused_filters: int = 48,
         temporal_conv_kernel_size: int = 75,
