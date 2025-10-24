@@ -95,6 +95,7 @@ models_mandatory_parameters = [
     ("FBMSNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
     ("FBLightConvNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
     ("IFNet", ["n_chans", "n_outputs", "n_times", "sfreq"], dict(sfreq=200.0)),
+    ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
 ]
 
 ################################################################
