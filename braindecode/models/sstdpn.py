@@ -58,11 +58,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     - `SSTDPN.encoder` **(Feature Extractor)**
 
         - *Operations.* Combines the ASSF and MVP modules.
-        - *Role.* Maps the raw MI-EEG trial $X_i \in R^{C \times T}$ to the feature space $z_i \in R^d$.
+        - *Role.* Maps the raw MI-EEG trial :math:`X_i \in \mathbb{R}^{C \times T}` to the feature space :math:`z_i \in \mathbb{R}^d`.
 
     - `SSTEncoder.time_conv` **(LightConv for Spatial–Spectral Representation)**
 
-        - *Operations.* :class:`~LightweightConv1d` (1D depthwise convolution) with kernel size `lightconv_kernel_size` and a depth multiplier `depth_multiplier_F1` ($F_1$ filters).
+        - *Operations.* :class:`~LightweightConv1d` (1D depthwise convolution) with kernel size `lightconv_kernel_size` and a depth multiplier `depth_multiplier_F1` (:math:`F_1` filters).
         - *Role.* Extracts multiple distinct spectral bands from each EEG channel.
 
     - `SSTEncoder.ssa` **(Spatial–Spectral Attention)**
@@ -72,8 +72,8 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     - `SSTEncoder.chan_conv` **(Pointwise Fusion)**
 
-        - *Operations.* A simple 1D pointwise convolution with `n_pointwise_filters_F2` ($F_2$ filters), followed by BatchNorm and ELU activation.
-        - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce $X_{assf} \in R^{F_2 \times T}$.
+        - *Operations.* A simple 1D pointwise convolution with `n_pointwise_filters_F2` (:math:`F_2` filters), followed by BatchNorm and ELU activation.
+        - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce :math:`X_{assf} \in \mathbb{R}^{F_2 \times T}`.
 
     - `SSTEncoder.mixer` **(Multi-scale Variance Pooling - MVP)**
 
@@ -82,7 +82,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     - `SSTDPN.isp` / `SSTDPN.icp` **(Dual Prototypes)**
 
-        - *Operations.* Learnable vectors initialized randomly and optimized during training using $\mathcal{L}_S$, $\mathcal{L}_C$, and $\mathcal{L}_{EF}$. Note that in the forward pass shown, only the ISP is used for classification via dot product, and the ISP is constrained using L2 weight-normalization ($\lVert s_i \rVert_2 \leq S=1$).
+        - *Operations.* Learnable vectors initialized randomly and optimized during training using :math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, and :math:`\mathcal{L}_{EF}`. Note that in the forward pass shown, only the ISP is used for classification via dot product, and the ISP is constrained using L2 weight-normalization (:math:`\lVert s_i \rVert_2 \leq S=1`).
         - *Role.* ISP (Inter-class Separation Prototype) achieves inter-class separation, while ICP (Intra-class Compact Prototype) enhances intra-class compactness.
 
     .. rubric:: Convolutional Details
@@ -91,10 +91,10 @@ class SSTDPN(EEGModuleMixin, nn.Module):
       The initial LightConv uses a large kernel (e.g., 75). The MVP module employs pooling kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal features effectively.
 
     * **Spatial (Fine-grained modeling).**
-      The LightConv uses $h=1$, meaning all electrode channels share $F_1$ temporal filters to produce the spatial–spectral representation. The SSA mechanism explicitly models relationships among multiple channels in the spatial–spectral dimension, allowing for finer-grained spatial feature modeling than standard GCNs.
+      The LightConv uses :math:`h=1`, meaning all electrode channels share :math:`F_1` temporal filters to produce the spatial–spectral representation. The SSA mechanism explicitly models relationships among multiple channels in the spatial–spectral dimension, allowing for finer-grained spatial feature modeling than standard GCNs.
 
     * **Spectral (Feature extraction).**
-      Spectral information is implicitly extracted via the $F_1$ filters in the LightConv. The use of Variance Pooling explicitly leverages the prior knowledge that the variance of EEG signals represents their spectral power.
+      Spectral information is implicitly extracted via the :math:`F_1` filters in the LightConv. The use of Variance Pooling explicitly leverages the prior knowledge that the variance of EEG signals represents their spectral power.
 
     .. rubric:: Additional Mechanisms
 
@@ -103,10 +103,10 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     Notes
     ----------
-    * The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$) and the optimization of ICPs are typically handled outside the primary `forward` method shown here.
+    * The implementation of the DPL loss functions (:math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, :math:`\mathcal{L}_{EF}`) and the optimization of ICPs are typically handled outside the primary `forward` method shown here.
     * The default parameters are configured based on the BCI Competition IV 2a dataset.
     * The model operates directly on raw MI-EEG signals without requiring traditional preprocessing steps like band-pass filtering.
-    * The first iteration of the braindecode adaptation was done by Can Han [Han2025Code], the original author of the paper and code.
+    * The first iteration of the braindecode adaptation was done by Can Han [Han2025Code]_, the original author of the paper and code.
 
     Parameters
     ----------
