@@ -13,6 +13,8 @@ from einops import rearrange
 
 from braindecode.models.base import EEGModuleMixin
 
+__all__ = ["SSTDPN"]
+
 
 class SSTDPN(EEGModuleMixin, nn.Module):
     r"""SSTDPN from Can Han et al (2025) [Han2025]_.
@@ -22,7 +24,7 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     .. figure:: https://raw.githubusercontent.com/hancan16/SST-DPN/refs/heads/main/figs/framework.png
         :align: center
         :alt: SSTDPN Architecture
-        :width: 620px
+        :width: 1000px
 
     The **Spatial–Spectral** and **Temporal - Dual Prototype Network** (SST-DPN)
     is an end-to-end 1D convolutional architecture designed for motor imagery (MI) EEG decoding,
@@ -57,27 +59,27 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     - `SSTDPN.encoder` **(Feature Extractor)**
 
-        - *Operations.* Combines the ASSF and MVP modules.
+        - *Operations.* Combines the Adaptive Spatial–Spectral Fusion and Multi-scale Variance Pooling modules via an internal :class:`_SSTEncoder`.
         - *Role.* Maps the raw MI-EEG trial :math:`X_i \in \mathbb{R}^{C \times T}` to the feature space :math:`z_i \in \mathbb{R}^d`.
 
-    - `SSTEncoder.time_conv` **(LightConv for Spatial–Spectral Representation)**
+    - `_SSTEncoder.time_conv` **(LightConv for Spatial–Spectral Representation)**
 
-        - *Operations.* :class:`~LightweightConv1d` (1D depthwise convolution) with kernel size `lightconv_kernel_size` and a depth multiplier `depth_multiplier_F1` (:math:`F_1` filters).
+        - *Operations.* Internal :class:`_LightweightConv1d` (1D depthwise convolution) with kernel size `lightconv_kernel_size` and a depth multiplier `depth_multiplier_F1` (:math:`F_1` filters).
         - *Role.* Extracts multiple distinct spectral bands from each EEG channel.
 
-    - `SSTEncoder.ssa` **(Spatial–Spectral Attention)**
+    - `_SSTEncoder.ssa` **(Spatial–Spectral Attention)**
 
-        - *Operations.* Global Context Embedding using a mean-var operation, followed by channel normalization and gating adaptation. The output scale is adjusted channel-wise.
+        - *Operations.* Internal :class:`_SSA` module using Global Context Embedding via a mean-variance operation, followed by channel normalization and gating adaptation.
         - *Role.* Reweights channels in the spatial–spectral dimension to extract more efficient and discriminative features by emphasizing task-relevant regions and bands.
 
-    - `SSTEncoder.chan_conv` **(Pointwise Fusion)**
+    - `_SSTEncoder.chan_conv` **(Pointwise Fusion)**
 
         - *Operations.* A simple 1D pointwise convolution with `n_pointwise_filters_F2` (:math:`F_2` filters), followed by BatchNorm and ELU activation.
         - *Role.* Fuses the weighted spatial–spectral features across all electrodes to produce :math:`X_{assf} \in \mathbb{R}^{F_2 \times T}`.
 
-    - `SSTEncoder.mixer` **(Multi-scale Variance Pooling - MVP)**
+    - `_SSTEncoder.mixer` **(Multi-scale Variance Pooling - MVP)**
 
-        - *Operations.* :class:`~Mixer1D` uses :class:`~VarPool1D` layers with multi-scale large kernel sizes (`variance_pool_kernel_sizes`), followed by concatenation and flattening.
+        - *Operations.* Internal :class:`_Mixer1D` uses :class:`_VarPool1D` layers with multi-scale large kernel sizes (`variance_pool_kernel_sizes`), followed by concatenation and flattening.
         - *Role.* Captures long-range temporal features. The variance operation is effective as it represents spectral power in EEG signals.
 
     - `SSTDPN.isp` / `SSTDPN.icp` **(Dual Prototypes)**
@@ -110,22 +112,43 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
+    n_chans : int
+        Number of EEG channels.
+    n_outputs : int
+        Number of output classes.
+    n_times : int
+        Number of time samples per trial.
+    input_window_seconds : float or None, optional
+        Deprecated. Not used.
+    sfreq : float or None, optional
+        Deprecated. Not used.
+    chs_info : dict or None, optional
+        Deprecated. Not used.
     depth_multiplier_F1 : int, optional
-        Depth multiplier for LightConv ($F_1$), which corresponds to the number
-        of spectral bands extracted per channel. Default is 9.
-
+        Depth multiplier for :class:`_LightweightConv1d` (number of spectral bands extracted per channel).
+        Default is 9. This controls the :math:`F_1` parameter from the paper.
     n_pointwise_filters_F2 : int, optional
-        Output channel dimension after the pointwise convolution ($F_2$).
-        Default is 48.
-
+        Output channel dimension after the pointwise convolution in :class:`_SSTEncoder`.
+        Default is 48. This controls the :math:`F_2` parameter from the paper.
     lightconv_kernel_size : int, optional
-        Kernel size for the temporal LightweightConv1d layer ($k$). Default is 75.
-
+        Kernel size for the temporal :class:`_LightweightConv1d` layer. Default is 75.
     variance_pool_kernel_sizes : list[int], optional
-        Kernel sizes used in the Multi-scale Variance Pooling (MVP) module. Default is [36, 37].
-
+        Kernel sizes used in the Multi-scale Variance Pooling (:class:`_Mixer1D` with :class:`_VarPool1D`) module.
+        Default is [50, 100, 200].
     return_features : bool, optional
-        If True, the forward returns (features, logits). Default is False.
+        If True, the forward pass returns (features, logits). If False, returns only logits.
+        Default is False.
+    isp_maxnorm : float, optional
+        Maximum norm constraint for ISP prototypes during forward pass (L2 weight normalization).
+        Default is 1.0.
+    icp_initialization_std : float, optional
+        Standard deviation for ICP initialization. Default is 0.01.
+    ssa_global_context_kernel : int, optional
+        Kernel size for global context embedding in :class:`_SSA`. Default is 250.
+    ssa_epsilon : float, optional
+        Small epsilon value for numerical stability in :class:`_SSA`. Default is 1e-5.
+    ssa_mode : str, optional
+        Mode for :class:`_SSA` embedding computation ('var', 'l2', or 'l1'). Default is 'var'.
 
     References
     ----------
@@ -149,11 +172,16 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
-        F1: int = 9,
-        F2: int = 48,
-        time_kernel1: int = 75,
-        pool_kernels: List[int] = [50, 100, 200],
+        depth_multiplier_F1: int = 9,
+        n_pointwise_filters_F2: int = 48,
+        lightconv_kernel_size: int = 75,
+        variance_pool_kernel_sizes: Optional[List[int]] = None,
         return_features: bool = False,
+        isp_maxnorm: float = 1.0,
+        icp_initialization_std: float = 0.01,
+        ssa_global_context_kernel: int = 250,
+        ssa_epsilon: float = 1e-5,
+        ssa_mode: str = "var",
     ) -> None:
         super().__init__(
             n_chans=n_chans,
@@ -163,30 +191,44 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             input_window_seconds=input_window_seconds,
             sfreq=sfreq,
         )
-        del input_window_seconds, sfreq, chs_info, n_chans, n_outputs, n_times
-        self.times_kernel1 = time_kernel1
-        self.pool_kernels = pool_kernels
+        del input_window_seconds, sfreq, chs_info
+
+        # Store hyperparameters
+        self.depth_multiplier_F1 = depth_multiplier_F1
+        self.n_pointwise_filters_F2 = n_pointwise_filters_F2
+        self.lightconv_kernel_size = lightconv_kernel_size
+        self.variance_pool_kernel_sizes = (
+            variance_pool_kernel_sizes
+            if variance_pool_kernel_sizes is not None
+            else [50, 100, 200]
+        )
         self.return_features = return_features
-        self.F1 = F1
-        self.F2 = F2
+        self.isp_maxnorm = isp_maxnorm
+        self.icp_initialization_std = icp_initialization_std
+        self.ssa_global_context_kernel = ssa_global_context_kernel
+        self.ssa_epsilon = ssa_epsilon
+        self.ssa_mode = ssa_mode
 
         # Encoder accepts (batch, n_chans, n_times)
-        self.encoder = SSTEncoder(
+        self.encoder = _SSTEncoder(
             n_times=self.n_times,
             n_chans=self.n_chans,
-            F1=self.F1,
-            F2=self.F2,
-            time_kernel1=self.times_kernel1,
-            pool_kernels=self.pool_kernels,
+            depth_multiplier_F1=self.depth_multiplier_F1,
+            n_pointwise_filters_F2=self.n_pointwise_filters_F2,
+            lightconv_kernel_size=self.lightconv_kernel_size,
+            variance_pool_kernel_sizes=self.variance_pool_kernel_sizes,
+            ssa_global_context_kernel=self.ssa_global_context_kernel,
+            ssa_epsilon=self.ssa_epsilon,
+            ssa_mode=self.ssa_mode,
         )
 
-        # infer feature dim with dry-run (safe - uses model init defaults)
+        # Infer feature dimension with dry-run
         with torch.no_grad():
-            dummy = torch.ones((1, n_chans, n_times))
+            dummy = torch.ones((1, self.n_chans, self.n_times))
             feat = self.encoder(dummy)
             feat_dim = int(feat.shape[-1])
 
-        # prototypes: ISP (inter-class separation), ICP (intra-class compactness)
+        # Prototypes: ISP (inter-class separation), ICP (intra-class compactness)
         self.isp = nn.Parameter(
             torch.randn(self.n_outputs, feat_dim), requires_grad=True
         )
@@ -194,8 +236,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
             torch.randn(self.n_outputs, feat_dim), requires_grad=True
         )
 
+        # Initialize prototypes
         nn.init.kaiming_normal_(self.isp.data)
-        nn.init.normal_(self.icp.data, mean=0.0, std=0.01)
+        nn.init.normal_(self.icp.data, mean=0.0, std=self.icp_initialization_std)
 
     def forward(
         self, x: torch.Tensor
@@ -219,7 +262,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
 
         features = self.encoder(x)  # (b, feat_dim)
         # renorm prototypes
-        self.isp.data = torch.renorm(self.isp.data, p=2, dim=1, maxnorm=1.0)
+        self.isp.data = torch.renorm(
+            self.isp.data, p=2, dim=1, maxnorm=self.isp_maxnorm
+        )
         logits = torch.einsum("bd,cd->bc", features, self.isp)  # (b, n_outputs)
 
         if self.return_features:
@@ -228,8 +273,11 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         return logits
 
 
-class SSTEncoder(nn.Module):
-    """Encoder inside SSTDPN
+class _SSTEncoder(nn.Module):
+    """Internal encoder for SSTDPN combining ASSF and MVP components.
+
+    This class should not be instantiated directly. It is an internal component
+    of :class:`SSTDPN`.
 
     Parameters
     ----------
@@ -237,43 +285,87 @@ class SSTEncoder(nn.Module):
         Number of time samples in the input window.
     n_chans : int
         Number of EEG channels.
-    F1, F2, time_kernel1, pool_kernels : see main model
+    depth_multiplier_F1 : int
+        Depth multiplier for :class:`_LightweightConv1d` (:math:`F_1`).
+    n_pointwise_filters_F2 : int
+        Number of output filters for pointwise convolution (:math:`F_2`).
+    lightconv_kernel_size : int
+        Kernel size for temporal convolution.
+    variance_pool_kernel_sizes : list[int]
+        Kernel sizes for Multi-scale Variance Pooling.
+    ssa_global_context_kernel : int
+        Kernel size for global context in SSA module.
+    ssa_epsilon : float
+        Epsilon for numerical stability in SSA.
+    ssa_mode : str
+        Mode for SSA computation ('var', 'l2', or 'l1').
     """
 
     def __init__(
         self,
         n_times: int,
         n_chans: int,
-        F1: int = 16,
-        F2: int = 36,
-        time_kernel1: int = 75,
-        pool_kernels: Optional[List[int]] = None,
+        depth_multiplier_F1: int = 9,
+        n_pointwise_filters_F2: int = 48,
+        lightconv_kernel_size: int = 75,
+        variance_pool_kernel_sizes: Optional[List[int]] = None,
+        ssa_global_context_kernel: int = 250,
+        ssa_epsilon: float = 1e-5,
+        ssa_mode: str = "var",
     ) -> None:
         super().__init__()
 
-        self.time_conv = LightweightConv1d(
+        if variance_pool_kernel_sizes is None:
+            variance_pool_kernel_sizes = [50, 100, 200]
+
+        # Adaptive Spatial–Spectral Fusion (ASSF)
+        self.time_conv = _LightweightConv1d(
             in_channels=n_chans,
             num_heads=1,
-            depth_multiplier=F1,
-            kernel_size=time_kernel1,
+            depth_multiplier=depth_multiplier_F1,
+            kernel_size=lightconv_kernel_size,
             stride=1,
             padding="same",
             bias=True,
             weight_softmax=False,
         )
-        self.ssa = SSA(T=n_times, num_channels=n_chans * F1)
+        self.ssa = _SSA(
+            T=n_times,
+            num_channels=n_chans * depth_multiplier_F1,
+            epsilon=ssa_epsilon,
+            mode=ssa_mode,
+            global_context_kernel=ssa_global_context_kernel,
+        )
 
         self.chan_conv = nn.Sequential(
-            nn.Conv1d(n_chans * F1, F2, kernel_size=1, stride=1, padding=0, bias=True),
-            nn.BatchNorm1d(F2),
+            nn.Conv1d(
+                n_chans * depth_multiplier_F1,
+                n_pointwise_filters_F2,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+                bias=True,
+            ),
+            nn.BatchNorm1d(n_pointwise_filters_F2),
             nn.ELU(),
         )
-        self.mixer = Mixer1D(kernel_sizes=pool_kernels)
+
+        # Multi-scale Variance Pooling (MVP)
+        self.mixer = _Mixer1D(kernel_sizes=variance_pool_kernel_sizes)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        x: (batch, n_chans, n_times)
-        returns: (batch, feat_dim)
+        Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape (batch, n_chans, n_times).
+
+        Returns
+        -------
+        torch.Tensor
+            Feature vector of shape (batch, feat_dim).
         """
         x = self.time_conv(x)  # (b, n_chans*F1, T)
         x, _ = self.ssa(x)  # (b, n_chans*F1, T)
@@ -282,8 +374,31 @@ class SSTEncoder(nn.Module):
         return feature
 
 
-class LightweightConv1d(nn.Module):
-    """Lightweight grouped temporal conv."""
+class _LightweightConv1d(nn.Module):
+    """Internal lightweight grouped temporal convolution module.
+
+    This is used internally by SSTDPN for efficient temporal filtering.
+    Not intended for external use.
+
+    Parameters
+    ----------
+    in_channels : int
+        Number of input channels.
+    num_heads : int, optional
+        Number of attention heads. Default is 1.
+    depth_multiplier : int, optional
+        Multiplier for output channels. Default is 1.
+    kernel_size : int, optional
+        Convolution kernel size. Default is 1.
+    stride : int, optional
+        Convolution stride. Default is 1.
+    padding : str or int, optional
+        Padding mode. Default is 0.
+    bias : bool, optional
+        Whether to use bias. Default is True.
+    weight_softmax : bool, optional
+        Whether to apply softmax to weights. Default is False.
+    """
 
     def __init__(
         self,
@@ -314,11 +429,25 @@ class LightweightConv1d(nn.Module):
         self.init_parameters()
 
     def init_parameters(self) -> None:
+        """Initialize parameters."""
         nn.init.xavier_uniform_(self.weight)
         if self.bias is not None:
             nn.init.constant_(self.bias, 0.0)
 
     def forward(self, inp: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        inp : torch.Tensor
+            Input of shape (batch, in_channels, time).
+
+        Returns
+        -------
+        torch.Tensor
+            Output of shape (batch, num_heads * depth_multiplier, time).
+        """
         B, C, T = inp.size()
         H = self.num_heads
         weight = self.weight
@@ -347,7 +476,24 @@ class LightweightConv1d(nn.Module):
         return output
 
 
-class VarMaxPool1D(nn.Module):
+class _VarMaxPool1D(nn.Module):
+    """Internal variance max pooling module.
+
+    Not intended for external use. Used internally for global context
+    embedding in :class:`_SSA`.
+
+    Parameters
+    ----------
+    T : int
+        Sequence length.
+    kernel_size : int
+        Pooling kernel size.
+    stride : int or None, optional
+        Stride. If None, defaults to kernel_size. Default is None.
+    padding : int, optional
+        Padding. Default is 0.
+    """
+
     def __init__(
         self, T: int, kernel_size: int, stride: Optional[int] = None, padding: int = 0
     ) -> None:
@@ -357,6 +503,19 @@ class VarMaxPool1D(nn.Module):
         self.padding = padding
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass computing variance pooling.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Variance-pooled output.
+        """
         mean_of_squares = F.avg_pool1d(
             x**2, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding
         )
@@ -373,7 +532,21 @@ class VarMaxPool1D(nn.Module):
         return out
 
 
-class VarPool1D(nn.Module):
+class _VarPool1D(nn.Module):
+    """Internal variance pooling module.
+
+    Not intended for external use. Used internally in :class:`_Mixer1D`.
+
+    Parameters
+    ----------
+    kernel_size : int
+        Pooling kernel size.
+    stride : int or None, optional
+        Stride. If None, defaults to kernel_size. Default is None.
+    padding : int, optional
+        Padding. Default is 0.
+    """
+
     def __init__(
         self, kernel_size: int, stride: Optional[int] = None, padding: int = 0
     ) -> None:
@@ -383,6 +556,19 @@ class VarPool1D(nn.Module):
         self.padding = padding
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass computing variance pooling.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Variance-pooled output.
+        """
         mean_of_squares = F.avg_pool1d(
             x**2, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding
         )
@@ -398,7 +584,27 @@ class VarPool1D(nn.Module):
         return variance
 
 
-class SSA(nn.Module):
+class _SSA(nn.Module):
+    """Internal Spatial–Spectral Attention module.
+
+    Not intended for external use. Used internally in :class:`_SSTEncoder`.
+
+    Parameters
+    ----------
+    T : int
+        Sequence length.
+    num_channels : int
+        Number of channels.
+    epsilon : float, optional
+        Small value for numerical stability. Default is 1e-5.
+    mode : str, optional
+        Embedding computation mode ('var', 'l2', or 'l1'). Default is 'var'.
+    after_relu : bool, optional
+        Whether ReLU is applied before this module. Default is False.
+    global_context_kernel : int, optional
+        Kernel size for global context embedding. Default is 250.
+    """
+
     def __init__(
         self,
         T: int,
@@ -406,6 +612,7 @@ class SSA(nn.Module):
         epsilon: float = 1e-5,
         mode: str = "var",
         after_relu: bool = False,
+        global_context_kernel: int = 250,
     ) -> None:
         super().__init__()
         self.alpha = nn.Parameter(torch.ones(1, num_channels, 1))
@@ -414,9 +621,22 @@ class SSA(nn.Module):
         self.epsilon = epsilon
         self.mode = mode
         self.after_relu = after_relu
-        self.GP = VarMaxPool1D(T, 250)
+        self.GP = _VarMaxPool1D(T, global_context_kernel)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape (batch, channels, time).
+
+        Returns
+        -------
+        tuple of torch.Tensor
+            (attention-gated output, gate) where both have same shape as input.
+        """
         B, C, T = x.shape
 
         if self.mode == "l2":
@@ -442,12 +662,22 @@ class SSA(nn.Module):
         return x * gate, gate
 
 
-class Mixer1D(nn.Module):
+class _Mixer1D(nn.Module):
+    """Internal Multi-scale Variance Pooling mixer module.
+
+    Not intended for external use. Used internally in :class:`_SSTEncoder`.
+
+    Parameters
+    ----------
+    kernel_sizes : list[int] or None, optional
+        Kernel sizes for variance pooling layers. If None, defaults to [50, 100, 200].
+    """
+
     def __init__(self, kernel_sizes: Optional[List[int]] = None) -> None:
         super().__init__()
 
         if kernel_sizes is None:
-            kernel_sizes = [50, 100, 250]
+            kernel_sizes = [50, 100, 200]
 
         self.var_layers = nn.ModuleList()
         self.L = len(kernel_sizes)
@@ -455,11 +685,25 @@ class Mixer1D(nn.Module):
         for k in kernel_sizes:
             self.var_layers.append(
                 nn.Sequential(
-                    VarPool1D(kernel_size=k, stride=int(k / 2)), nn.Flatten(start_dim=1)
+                    _VarPool1D(kernel_size=k, stride=int(k / 2)),
+                    nn.Flatten(start_dim=1),
                 )
             )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape (batch, channels, time).
+
+        Returns
+        -------
+        torch.Tensor
+            Concatenated features of shape (batch, total_features).
+        """
         _, d, _ = x.shape
         assert d % self.L == 0, "Channel dim must be divisible by number of branches"
         x_split = torch.split(x, d // self.L, dim=1)
