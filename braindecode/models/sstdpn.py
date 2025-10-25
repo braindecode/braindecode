@@ -96,35 +96,54 @@ class SSTDPN(EEGModuleMixin, nn.Module):
           (:math:`\lVert s_i \rVert_2 \leq` `proto_sep_maxnorm`) during inference.
         - *Role.* `proto_sep` achieves inter-class separation; `proto_cpt` enhances intra-class compactness.
 
-    .. rubric:: Convolutional Details
+    .. rubric:: How the information is encoded temporally, spatially, and spectrally
 
     * **Temporal (Long-term dependency).**
-      The _DepthwiseTemporalConv1d uses a large kernel (e.g., 75). The MVP module employs pooling
+      The initial `_DepthwiseTemporalConv1d` uses a large kernel (e.g., 75). The MVP module employs pooling
       kernels that are much larger (e.g., 50, 100, 200 samples) to capture long-term temporal
-      features effectively.
+      features effectively. Large kernel pooling layers are shown to be superior to transformer
+      modules for this task in EEG decoding according to [Han2025]_.
 
     * **Spatial (Fine-grained modeling).**
-      The _DepthwiseTemporalConv1d uses :math:`h=1`, meaning all electrode channels share
-      :math:`F_1` temporal filters independently to produce the spatial–spectral representation.
-      The _SpatSpectralAttn mechanism explicitly models relationships among channels in the
-      spatial–spectral dimension, enabling finer-grained spatial feature modeling.
+      The initial convolution at the classes `_DepthwiseTemporalConv1d` groups parameter :math:`h=1`,
+      meaning $F_1$ temporal filters are shared across channels. The Spatial-Spectral Attention
+      mechanism explicitly models the relationships among these channels in the spatial–spectral
+      dimension, allowing for finer-grained spatial feature modeling compared to conventional
+      GCNs according to the authors [Han2025]_.
+      In other words, all electrode channels share :math:`F_1` temporal filters
+      independently to produce the spatial–spectral representation.
 
     * **Spectral (Feature extraction).**
-      Spectral information is implicitly extracted via the :math:`F_1` filters in
-      _DepthwiseTemporalConv1d. The use of _VariancePool1D explicitly leverages the prior
-      knowledge that variance of EEG signals represents their spectral power.
+       Spectral information is implicitly extracted via the $F_1$ filters in `_DepthwiseTemporalConv1d` [9].
+       Furthermore, the use of Variance Pooling (in MVP) explicitly leverages the neurophysiological
+       prior that the **variance of EEG signals represents their spectral power**, which is an
+       important feature for distinguishing different MI classes [Han2025]_.
 
     .. rubric:: Additional Mechanisms
 
-    - **Attention.** A lightweight attention mechanism (SSA) is used explicitly to model spatial–spectral relationships at the channel level, rather than applying attention to deep features.
-    - **Regularization.** Dual Prototype Learning (DPL) acts as a regularization technique, enhancing model generalization and classification performance, particularly useful for limited data typical of MI-EEG tasks.
+    - **Attention.** A lightweight Spatial-Spectral Attention mechanism models spatial–spectral relationships
+        at the channel level, distinct from applying attention to deep feature dimensions,
+        which is common in comparison methods like :class:`ATCNet`.
+    - **Regularization.** Dual Prototype Learning acts as a regularization technique
+        by optimizing the feature space to be compact within classes and separated between
+        classes. This enhances model generalization and classification performance, particularly
+        useful for limited data typical of MI-EEG tasks, without requiring external transfer
+        learning data, according to [Han2025]_.
 
     Notes
     ----------
-    * The implementation of the DPL loss functions (:math:`\mathcal{L}_S`, :math:`\mathcal{L}_C`, :math:`\mathcal{L}_{EF}`) and the optimization of ICPs are typically handled outside the primary `forward` method shown here.
+    * The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$)
+      and the optimization of ICPs are typically handled outside the primary `forward` method, within the training strategy,
+      reference 52 from [Han2025]_.
     * The default parameters are configured based on the BCI Competition IV 2a dataset.
-    * The model operates directly on raw MI-EEG signals without requiring traditional preprocessing steps like band-pass filtering.
-    * The first iteration of the braindecode adaptation was done by Can Han [Han2025Code]_, the original author of the paper and code.
+    * The use of Prototype Learning (PL) methods is novel in the field of EEG-MI decoding.
+    * **Lowest FLOPs:** Achieves the lowest Floating Point Operations (FLOPs) (9.65 M) among competitive
+      SOTA methods, including braindecode models like :class:`ATCNet` (29.81 M) and
+      :class:`EEGConformer` (63.86 M), demonstrating computational efficiency [Han2025]_.
+    * **Transformer Alternative:** Multi-scale Variance Pooling (MVP) provides a accuracy
+      improvement over temporal attention transformer modules in ablation studies, offering a more
+      efficient alternative to transformer-based approaches like :class:`EEGConformer` [Han2025]_.
+
 
     Parameters
     ----------
@@ -132,35 +151,46 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         Number of spectral filters extracted per channel via temporal convolution.
         These represent the temporal spectral bands (equivalent to :math:`F_1` in the paper).
         Default is 9.
+
     n_fused_filters : int, optional
         Number of output filters after pointwise fusion convolution.
         These fuse the spectral filters across all channels (equivalent to :math:`F_2` in the paper).
         Default is 48.
+
     temporal_conv_kernel_size : int, optional
         Kernel size for the temporal convolution layer. Controls the receptive field for extracting
         spectral information. Default is 75 samples.
+
     mvp_kernel_sizes : list[int], optional
         Kernel sizes for Multi-scale Variance Pooling (MVP) module.
-        Larger kernels capture long-term temporal dependencies. Default is [50, 100, 200] samples.
+        Larger kernels capture long-term temporal dependencies .
+
     return_features : bool, optional
         If True, the forward pass returns (features, logits). If False, returns only logits.
         Default is False.
+
     proto_sep_maxnorm : float, optional
         Maximum L2 norm constraint for Inter-class Separation Prototypes during forward pass.
-        Ensures prototype regularization. Default is 1.0.
+        This constraint acts as an implicit force to push features away from the origin. Default is 1.0.
+
     proto_cpt_std : float, optional
         Standard deviation for Intra-class Compactness Prototype initialization. Default is 0.01.
+
     spt_attn_global_context_kernel : int, optional
         Kernel size for global context embedding in Spatial-Spectral Attention module.
         Default is 250 samples.
+
     spt_attn_epsilon : float, optional
         Small epsilon value for numerical stability in Spatial-Spectral Attention. Default is 1e-5.
+
     spt_attn_mode : str, optional
         Embedding computation mode for Spatial-Spectral Attention ('var', 'l2', or 'l1').
-        Default is 'var' (variance-based).
+        Default is 'var' (variance-based mean-var operation).
+
     activation : nn.Module, optional
-        Activation function to apply after the pointwise fusion convolution in _SSTEncoder.
+        Activation function to apply after the pointwise fusion convolution in :class:`_SSTEncoder`.
         Should be a PyTorch activation module class. Default is nn.ELU.
+
 
     References
     ----------
@@ -250,6 +280,8 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self.proto_sep = nn.Parameter(
             torch.empty(self.n_outputs, feat_dim), requires_grad=True
         )
+        # This parameters is not used in the forward pass, only during training for the
+        # prototype learning losses. You should implement the losses outside this class.
         self.proto_cpt = nn.Parameter(
             torch.empty(self.n_outputs, feat_dim), requires_grad=True
         )
@@ -265,7 +297,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         self, x: torch.Tensor
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """
-        Forward pass supporting 3D EEG inputs.
+        Classification is based on the dot product similarity with
+        Inter-class Separation Prototypes (:attr:`SSTDPN.proto_sep`).
+
 
         Parameters
         ----------
