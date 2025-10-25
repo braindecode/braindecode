@@ -27,7 +27,7 @@ __all__ = ["DilatedConvDecoder"]
 
 
 class DilatedConvDecoder(EEGModuleMixin, nn.Module):
-    """Dilated Convolutional Decoder for EEG data (Braindecode-native).
+    """Dilated Convolutional Decoder aka SimpleConv from [brainmagik]_.
 
     A flexible encoder-decoder architecture using dilated convolutions, LSTM,
     and optional attention mechanisms, originally designed for MEG decoding
