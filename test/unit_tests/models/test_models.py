@@ -25,6 +25,7 @@ from braindecode.models import (
     ContraWR,
     Deep4Net,
     DeepSleepNet,
+    DilatedConvDecoder,
     EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
@@ -1722,3 +1723,322 @@ def test_fc_length_eegconformer():
     )
 
     assert model is not None
+
+
+# ============================================================================
+# DilatedConvDecoder Tests
+# ============================================================================
+
+@pytest.fixture
+def dilated_conv_decoder_params():
+    """Fixture with common DilatedConvDecoder parameters."""
+    return dict(
+        n_chans=22,
+        n_outputs=4,
+        n_times=1000,
+        sfreq=250,
+    )
+
+
+@pytest.mark.parametrize("n_times", [500, 1000, 2000, 4000])
+def test_dilated_conv_decoder_forward_pass(dilated_conv_decoder_params, n_times):
+    """Test forward pass with 3D input and different temporal lengths."""
+    params = dilated_conv_decoder_params.copy()
+    params["n_times"] = n_times
+
+    set_random_seeds(0, False)
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], n_times)
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_backward_compatibility(dilated_conv_decoder_params):
+    """Ensure model works without new features (backward compatible)."""
+    set_random_seeds(0, False)
+    model = DilatedConvDecoder(**dilated_conv_decoder_params)
+    model.eval()
+
+    x = torch.randn(4, dilated_conv_decoder_params["n_chans"], dilated_conv_decoder_params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, dilated_conv_decoder_params["n_outputs"])
+
+
+@pytest.mark.parametrize("sfreq", [100, 250, 500])
+def test_dilated_conv_decoder_different_sfreq(dilated_conv_decoder_params, sfreq):
+    """Test with different sampling frequencies."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params["sfreq"] = sfreq
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+
+
+def test_dilated_conv_decoder_subject_embeddings(dilated_conv_decoder_params):
+    """Test basic subject embeddings functionality."""
+    set_random_seeds(0, False)
+    n_subjects = 50
+    subject_dim = 64
+
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": n_subjects, "subject_dim": subject_dim})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, n_subjects, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_subject_embeddings_missing_index(dilated_conv_decoder_params):
+    """Test that subject_index is required when subject_dim > 0."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": 50, "subject_dim": 64})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    with pytest.raises(ValueError, match="subject_index is required"):
+        model(x)
+
+
+@pytest.mark.parametrize("subject_dim", [16, 32, 64, 128])
+def test_dilated_conv_decoder_subject_embeddings_dims(dilated_conv_decoder_params, subject_dim):
+    """Test subject embeddings with different embedding dimensions."""
+    set_random_seeds(0, False)
+    n_subjects = 30
+
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": n_subjects, "subject_dim": subject_dim})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, n_subjects, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+
+
+def test_dilated_conv_decoder_subject_embeddings_all_subjects(dilated_conv_decoder_params):
+    """Test that all subjects produce valid outputs."""
+    set_random_seeds(0, False)
+    n_subjects = 10
+
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": n_subjects, "subject_dim": 32})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    for subject_id in range(n_subjects):
+        subject_idx = torch.full((4,), subject_id)
+        output = model(x, subject_index=subject_idx)
+        assert output.shape == (4, params["n_outputs"])
+        assert not torch.isnan(output).any()
+
+
+@pytest.mark.parametrize("n_fft", [64, 128, 256, 512])
+def test_dilated_conv_decoder_stft_different_fft_sizes(dilated_conv_decoder_params, n_fft):
+    """Test STFT with different FFT window sizes."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params["n_fft"] = n_fft
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+
+
+@pytest.mark.parametrize("fft_complex", [True, False])
+def test_dilated_conv_decoder_stft_complex_vs_power(dilated_conv_decoder_params, fft_complex):
+    """Test STFT with complex and power spectrogram."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_fft": 256, "fft_complex": fft_complex})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+
+
+def test_dilated_conv_decoder_stft_preserves_batch_output(dilated_conv_decoder_params):
+    """Test that STFT doesn't affect batch or output dimensions."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params["n_fft"] = 256
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    for batch_size in [1, 2, 4, 8]:
+        x = torch.randn(batch_size, params["n_chans"], params["n_times"])
+        output = model(x)
+
+        assert output.shape == (batch_size, params["n_outputs"])
+
+
+def test_dilated_conv_decoder_parameter_validation():
+    """Test parameter validation and error handling."""
+    # Test subject_layers requires subject_dim > 0
+    with pytest.raises(ValueError, match="subject_layers=True requires subject_dim > 0"):
+        DilatedConvDecoder(
+            n_chans=22,
+            n_outputs=4,
+            n_times=1000,
+            sfreq=250,
+            subject_layers=True,
+            subject_dim=0,
+        )
+
+    # Test invalid depth
+    with pytest.raises(ValueError, match="depth must be >= 1"):
+        DilatedConvDecoder(
+            n_chans=22,
+            n_outputs=4,
+            n_times=1000,
+            sfreq=250,
+            depth=0,
+        )
+
+    # Test invalid kernel_size
+    with pytest.raises(ValueError, match="kernel_size must be > 0"):
+        DilatedConvDecoder(
+            n_chans=22,
+            n_outputs=4,
+            n_times=1000,
+            sfreq=250,
+            kernel_size=0,
+        )
+
+
+def test_dilated_conv_decoder_gradient_flow(dilated_conv_decoder_params):
+    """Test that gradients flow properly through the model."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": 20, "subject_dim": 32})
+
+    model = DilatedConvDecoder(**params)
+
+    x = torch.randn(
+        4,
+        params["n_chans"],
+        params["n_times"],
+        requires_grad=True,
+    )
+    subject_idx = torch.randint(0, 20, (4,))
+
+    output = model(x, subject_index=subject_idx)
+    loss = output.sum()
+    loss.backward()
+
+    assert x.grad is not None
+    assert (x.grad != 0).any()
+
+
+def test_dilated_conv_decoder_gradient_flow_stft(dilated_conv_decoder_params):
+    """Test that gradients flow properly with STFT."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params["n_fft"] = 256
+
+    model = DilatedConvDecoder(**params)
+
+    x = torch.randn(
+        4,
+        params["n_chans"],
+        params["n_times"],
+        requires_grad=True,
+    )
+
+    output = model(x)
+    loss = output.sum()
+    loss.backward()
+
+    assert x.grad is not None
+    assert (x.grad != 0).any()
+
+
+def test_dilated_conv_decoder_train_eval_mode(dilated_conv_decoder_params):
+    """Test model switching between train and eval modes."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": 20, "subject_dim": 32})
+
+    model = DilatedConvDecoder(**params)
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 20, (4,))
+
+    # Test train mode
+    model.train()
+    output_train = model(x, subject_index=subject_idx)
+
+    # Test eval mode
+    model.eval()
+    output_eval = model(x, subject_index=subject_idx)
+
+    assert output_train.shape == (4, params["n_outputs"])
+    assert output_eval.shape == (4, params["n_outputs"])
+
+
+def test_dilated_conv_decoder_inference_no_grad(dilated_conv_decoder_params):
+    """Test inference with torch.no_grad()."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"n_subjects": 20, "subject_dim": 32})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 20, (4,))
+
+    with torch.no_grad():
+        output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 8, 64])
+def test_dilated_conv_decoder_edge_cases_batch(dilated_conv_decoder_params, batch_size):
+    """Test with different batch sizes."""
+    set_random_seeds(0, False)
+    model = DilatedConvDecoder(**dilated_conv_decoder_params)
+    model.eval()
+
+    x = torch.randn(batch_size, dilated_conv_decoder_params["n_chans"], dilated_conv_decoder_params["n_times"])
+    output = model(x)
+
+    assert output.shape == (batch_size, dilated_conv_decoder_params["n_outputs"])
