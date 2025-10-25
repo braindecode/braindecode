@@ -209,9 +209,9 @@ class SSTDPN(EEGModuleMixin, nn.Module):
     def __init__(
         self,
         # Braindecode standard parameters
-        n_chans: int,
-        n_outputs: int,
-        n_times: int,
+        n_chans=None,
+        n_times=None,
+        n_outputs=None,
         input_window_seconds=None,
         sfreq=None,
         chs_info=None,
