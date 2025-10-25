@@ -1,11 +1,13 @@
-"""Benchmarking eager and lazy loading
+""".. _benchmark-eager-lazy:
+
+Benchmarking eager and lazy loading
 ======================================
 
 In this example, we compare the execution time and memory requirements of 1)
 eager loading, i.e., preloading the entire data into memory and 2) lazy loading,
 i.e., only loading examples from disk when they are required. We also include
 some other experiment parameters in the comparison for the sake of completeness
-(e.g., `num_workers`, `cuda`, `batch_size`, etc.).
+(e.g., ``num_workers``, ``cuda``, ``batch_size``, etc.).
 
 While eager loading might be required for some preprocessing steps that require
 continuous data (e.g., temporal filtering, resampling), it also allows
@@ -32,31 +34,34 @@ have been instantiated with parameter `preload=False`.
 #
 # License: BSD (3-clause)
 
-from itertools import product
 import time
-
-import torch
-from torch import nn, optim
-from torch.utils.data import DataLoader
+from itertools import product
 
 import mne
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
+from torch import nn, optim
+from torch.utils.data import DataLoader
 
 from braindecode.datasets import TUHAbnormal
+from braindecode.models import Deep4Net, ShallowFBCSPNet
 from braindecode.preprocessing import create_fixed_length_windows
-from braindecode.models import ShallowFBCSPNet, Deep4Net
-
+from braindecode.util import set_random_seeds
 
 mne.set_log_level("WARNING")  # avoid messages every time a window is extracted
 
 ###############################################################################
 # We start by setting two pytorch internal parameters that can affect the
-# comparison::
+# comparison:
+
 N_JOBS = 8
 torch.backends.cudnn.benchmark = True  # Enables automatic algorithm optimizations
 torch.set_num_threads(N_JOBS)  # Sets the available number of threads
+cuda = torch.cuda.is_available()
+seed = 20240205
+set_random_seeds(seed=seed, cuda=cuda)
 
 
 ###############################################################################
@@ -90,8 +95,8 @@ def load_example_data(preload, window_len_s, n_recordings=10):
         The recordings from the TUH Abnormal corpus do not all share the same
         sampling rate. The following assumes that the files have already been
         resampled to a common sampling rate.
-    """
 
+    """
     recording_ids = list(range(n_recordings))
 
     ds = TUHAbnormal(
@@ -153,6 +158,7 @@ def create_example_model(
         Loss function
     optimizer :
         Optimizer
+
     """
     if kind == "shallow":
         model = ShallowFBCSPNet(
@@ -229,6 +235,7 @@ def run_training(model, dataloader, loss, optimizer, n_epochs=1, cuda=False):
     -------
     model : torch.nn.Module
         Trained model.
+
     """
     for i in range(n_epochs):
         loss_vals = list()

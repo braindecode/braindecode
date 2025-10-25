@@ -11,8 +11,8 @@ import warnings
 import numpy as np
 from skorch.regressor import NeuralNetRegressor
 
-from .training.scoring import predict_trials
 from .eegneuralnet import _EEGNeuralNet
+from .training.scoring import predict_trials
 from .util import ThrowAwayIndexLoader, update_estimator_docstring
 
 

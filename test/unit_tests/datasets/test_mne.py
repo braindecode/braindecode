@@ -3,10 +3,10 @@
 # License: BSD-3
 
 
-import numpy as np
 import mne
+import numpy as np
 
-from braindecode.datasets.mne import create_from_mne_raw, create_from_mne_epochs
+from braindecode.datasets.mne import create_from_mne_epochs, create_from_mne_raw
 
 
 def test_create_from_single_raw():

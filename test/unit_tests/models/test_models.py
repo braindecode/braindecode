@@ -12,39 +12,40 @@ from functools import partial
 
 import numpy as np
 import pytest
-
 import torch
 from sklearn.utils import check_random_state
 from torch import nn
 
-
 from braindecode.models import (
-    Deep4Net,
-    EEGNetv4,
-    EEGNetv1,
-    EEGTCNet,
-    HybridNet,
-    ShallowFBCSPNet,
-    EEGResNet,
+    BIOT,
     TCN,
-    SleepStagerChambon2018,
-    SleepStagerBlanco2020,
-    SleepStagerEldele2021,
-    USleep,
+    ATCNet,
+    AttentionBaseNet,
+    AttnSleep,
+    ContraWR,
+    Deep4Net,
     DeepSleepNet,
-    EEGITNet,
+    EEGConformer,
     EEGInceptionERP,
     EEGInceptionMI,
-    TIDNet,
-    ATCNet,
-    EEGConformer,
-    BIOT,
-    Labram,
+    EEGITNet,
+    EEGMiner,
+    EEGNet,
+    EEGNeX,
     EEGSimpleConv,
-    AttentionBaseNet,
+    EEGTCNet,
+    FBCNet,
+    HybridNet,
+    IFNet,
+    Labram,
+    SCCNet,
+    ShallowFBCSPNet,
+    SleepStagerBlanco2020,
+    SleepStagerChambon2018,
     SPARCNet,
-    ContraWR,
-    EEGMiner
+    TIDNet,
+    TSception,
+    USleep,
 )
 from braindecode.util import set_random_seeds
 
@@ -85,6 +86,25 @@ def check_forward_pass(model, input_sizes, only_check_until_dim=None):
         y_pred_new.detach().cpu().numpy(),
         atol=1e-4,
         rtol=0,
+    )
+
+def check_forward_pass_3d(model, input_sizes, only_check_until_dim=None):
+    rng = np.random.RandomState(42)
+
+    # Test 3d input
+    X = rng.randn(
+        input_sizes["n_samples"],
+        input_sizes["n_channels"],
+        input_sizes["n_in_times"],
+    )
+    X = torch.Tensor(X.astype(np.float32))
+    set_random_seeds(0, False)
+    X = X.squeeze(-1)
+    assert len(X.shape) == 3
+    y_pred_new = model(X)
+    assert y_pred_new.shape[:only_check_until_dim] == (
+        input_sizes["n_samples"],
+        input_sizes["n_classes"],
     )
 
 
@@ -175,27 +195,6 @@ def test_deep4net_load_state_dict(input_sizes):
     model.load_state_dict(state_dict)
 
 
-def test_eegresnet(input_sizes):
-    model = EEGResNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_pool_length=5,
-        n_first_filters=2,
-    )
-    check_forward_pass(model, input_sizes, only_check_until_dim=2)
-
-
-def test_eegresnet_pool_length_auto(input_sizes):
-    model = EEGResNet(
-        input_sizes["n_channels"],
-        input_sizes["n_classes"],
-        input_sizes["n_in_times"],
-        final_pool_length="auto",
-        n_first_filters=2,
-    )
-    check_forward_pass(model, input_sizes, only_check_until_dim=2)
-
 
 def test_hybridnet(input_sizes):
     model = HybridNet(
@@ -206,25 +205,13 @@ def test_hybridnet(input_sizes):
     check_forward_pass(model, input_sizes, only_check_until_dim=2)
 
 
-def test_eegnet_v4(input_sizes):
-    model = EEGNetv4(
+def test_eegnet(input_sizes):
+    model = EEGNet(
         input_sizes["n_channels"],
         input_sizes["n_classes"],
         n_times=input_sizes["n_in_times"],
     )
     check_forward_pass(model, input_sizes)
-
-
-def test_eegnet_v1(input_sizes):
-    model = EEGNetv1(
-        n_chans=input_sizes["n_channels"],
-        n_outputs=input_sizes["n_classes"],
-        n_times=input_sizes["n_in_times"],
-    )
-    check_forward_pass(
-        model,
-        input_sizes,
-    )
 
 
 def test_tcn(input_sizes):
@@ -509,7 +496,7 @@ def test_eldele_2021(sfreq, n_classes, input_size_s, d_model):
     n_channels = 1
     n_examples = 10
 
-    model = SleepStagerEldele2021(
+    model = AttnSleep(
         sfreq=sfreq,
         n_outputs=n_classes,
         input_window_seconds=input_size_s,
@@ -533,7 +520,7 @@ def test_eldele_2021_feats():
     n_classes = 3
     n_examples = 10
 
-    model = SleepStagerEldele2021(
+    model = AttnSleep(
         sfreq,
         input_window_seconds=input_size_s,
         n_outputs=n_classes,
@@ -719,6 +706,242 @@ def test_model_creation(model):
     assert model is not None
 
 
+def test_sparcnet_dummy():
+    input_sizes = dict(n_channels=32, n_in_times=125, n_classes=2, n_samples=64)
+    model = SPARCNet(
+        n_chans=input_sizes["n_channels"],
+        n_outputs=input_sizes["n_classes"],
+        n_times=input_sizes["n_in_times"],
+        sfreq=500.0,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (256, 8, 256.0, 2),
+        (204, 8, 256.0, 2),
+        (125, 32, 500.0, 2),
+        (204, 16, 256.0, 2),
+        (128, 16, 128.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_atcnet_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = ATCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (125, 32, 500.0, 2),
+        (614, 64, 2048.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_tsception_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = TSception(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (125, 32, 500.0, 2),
+        (614, 64, 2048.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_sccnet_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = SCCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (2000, 63, 500.0, 4),
+    ],
+)
+def test_eeginceptionmi_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = EEGInceptionMI(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        input_window_seconds=n_times / sfreq,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (256, 8, 256.0, 2),
+        (204, 8, 256.0, 2),
+        (125, 32, 500.0, 2),
+        (204, 16, 256.0, 2),
+        (128, 16, 128.0, 2),
+        (384, 14, 128.0, 5),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_deep4net_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = Deep4Net(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (1536, 16, 512.0, 3),
+        (512, 16, 512.0, 2),
+        (125, 32, 500.0, 2),
+        (2560, 32, 512.0, 2),
+        (2560, 13, 512.0, 2),
+        (512, 32, 512.0, 2),
+        (2560, 15, 512.0, 2),
+        (1024, 30, 1024.0, 2),
+        (5120, 16, 512.0, 2),
+        (1536, 64, 512.0, 2),
+        (2048, 32, 2048.0, 2),
+        (614, 64, 2048.0, 2),
+        (1536, 61, 512.0, 7),
+        (899, 31, 1000.0, 2),
+        (4000, 62, 1000.0, 4),
+        (4000, 62, 1000.0, 2),
+        (153, 8, 512.0, 2),
+        (1000, 62, 1000.0, 2),
+        (1200, 31, 1000.0, 2),
+    ],
+)
+def test_contrawr_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = ContraWR(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (204, 8, 256.0, 2),
+        (125, 32, 500.0, 2),
+        (204, 16, 256.0, 2),
+        (614, 64, 2048.0, 2),
+        (899, 31, 1000.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_biot_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = BIOT(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+@pytest.mark.parametrize(
+    "n_times, n_chans, sfreq, n_outputs",
+    [
+        (125, 32, 500.0, 2),
+        (128, 16, 128.0, 2),
+        (153, 8, 512.0, 2),
+    ],
+)
+def test_attentionbasenet_dummy(n_times, n_chans, sfreq, n_outputs):
+    batch_size = 64
+    input_sizes = dict(
+        n_channels=n_chans,
+        n_in_times=n_times,
+        n_classes=n_outputs,
+        n_samples=batch_size,
+    )
+    model = AttentionBaseNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        sfreq=sfreq,
+    )
+    check_forward_pass_3d(model, input_sizes)
+
+
+
 def test_conformer_forward_pass(sample_input, model):
     output = model(sample_input)
     assert isinstance(output, torch.Tensor)
@@ -728,7 +951,7 @@ def test_conformer_forward_pass(sample_input, model):
     )
     output = model_with_feature(sample_input)
 
-    assert isinstance(output, tuple) and len(output) == 2
+    assert isinstance(output, torch.Tensor) and output.shape == torch.Size([16, 61, 40])
 
 
 def test_patch_embedding(sample_input, model):
@@ -801,6 +1024,7 @@ def default_biot_params():
         "hop_length": 50,
         "n_outputs": 2,
         "n_chans": 64,
+        "n_times": 1000,
     }
 
 
@@ -1024,13 +1248,10 @@ def test_eeg_simpleconv_features(param_eegsimple):
     )
 
     output = model(input)
-    assert isinstance(output, tuple)
-    assert len(output) == 2
+    assert isinstance(output, torch.Tensor)
 
-    pred, feature = output
+    feature = output
 
-    assert (pred.shape[0] == batch_size and
-            pred.shape[1] == param_eegsimple['n_classes'])
 
     assert (feature.shape[0] == batch_size and
             feature.shape[1] == 32)
@@ -1073,7 +1294,7 @@ def test_attentionbasenet(default_attentionbasenet_params, attention_mode):
 
 def test_parameters_contrawr():
 
-    model = ContraWR(n_outputs=2, n_chans=22, sfreq=250)
+    model = ContraWR(n_outputs=2, n_chans=22, sfreq=250, n_times=1000)
 
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # 1.6M parameters according to the Labram paper, table 1
@@ -1247,3 +1468,257 @@ def test_eegminer_plv_values_range():
     # PLV values should be in [0, 1]
     assert torch.all(x >= 0.0) and torch.all(x <= 1.0), \
         "PLV values should be in the range [0, 1]"
+
+
+def test_eegnet_final_layer_linear_true():
+    """Test that final_layer_linear=True uses a conv-based classifier without warning."""
+    model = EEGNet(
+        final_layer_with_constraint=True,
+        n_chans=4,
+        n_times=128,
+        n_outputs=2
+    )
+
+    X = torch.randn(2, 4, 128)  # (batch_size=2, channels=4, time=128)
+    y = model(X)
+
+    # Check output shape: should be (batch_size, n_outputs)
+    assert y.shape == (2, 2), f"Unexpected output shape {y.shape}"
+
+    # Check final layer is Conv2d instead of Flatten/LinearWithConstraint
+    final_layer = dict(model.named_modules())["final_layer"]
+    # Inside final_layer for conv-based approach, we expect "conv_classifier" as the first sub-module:
+    assert hasattr(final_layer,
+                   "linearconstraint"), "Expected a 'linear constraint' sub-module."
+
+def test_eegnet_final_layer_linear_false():
+    """Test that final_layer_conv=False raises a DeprecationWarning and uses
+    a linear layer."""
+    with pytest.warns(DeprecationWarning,
+                      match="Parameter 'final_layer_with_constraint=False' is deprecated"):
+        model = EEGNet(
+            final_layer_with_constraint=False,
+            n_chans=4,
+            n_times=128,
+            n_outputs=2
+        )
+
+    X = torch.randn(2, 4, 128)
+    y = model(X)
+
+    # Check output shape: should be (batch_size, n_outputs)
+    assert y.shape == (2, 2), f"Unexpected output shape {y.shape}"
+
+    # Check final layer is Flatten + LinearWithConstraint (no "conv_classifier")
+    final_layer = dict(model.named_modules())["final_layer"]
+    submodule_names = list(dict(final_layer.named_children()).keys())
+    assert "conv_classifier" in submodule_names, "Did expect a convolutional classifier."
+    assert "linearconstraint" not in submodule_names, "Did not expected a linearconstraint sub-module."
+
+
+
+@pytest.mark.parametrize(
+    "temporal_layer", ['VarLayer', 'StdLayer', 'LogVarLayer',
+                       'MeanLayer', 'MaxLayer']
+)
+def test_fbcnet_forward_pass(temporal_layer):
+    n_chans = 22
+    n_times = 1000
+    n_outputs = 2
+    batch_size = 8
+    n_bands = 9
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        temporal_layer=temporal_layer,
+        sfreq=250,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+
+
+@pytest.mark.parametrize(
+    "n_chans, n_bands, n_filters_spat, stride_factor",
+    [
+        (3, 9, 32, 4),
+        (22, 9, 32, 4),
+        (22, 5, 16, 2),
+        (64, 10, 64, 8),
+    ],
+)
+def test_fbcnet_num_parameters(n_chans, n_bands, n_filters_spat, stride_factor):
+    """
+    The calculation total is according to paper page 13.
+    Equation:
+    (n_filters_spat ∗ n_bands*n_chans + n_filters_spat ∗ n_bands) +
+    (2*n_filters_spat ∗ n_bands) +
+    (n_filters_spat ∗ n_bands ∗ stride_factor ∗ n_outputs + n_outputs)
+    Where
+    number of EEG channels, variable n_chans,
+    number of time points, variable n_time
+    number of frequency bands, variable n_bands
+    number of convolution filters per frequency band, variable n_filters_spat,
+    number of output classes, variable n_outputs
+    temporal window length, variable stride_factor
+    Returns
+    -------
+    """
+    n_times = 1000
+    n_outputs = 2
+    sfreq = 250
+
+    conv_params = (n_filters_spat * n_bands*n_chans + n_filters_spat * n_bands)
+
+    batchnorm_params = (2*n_filters_spat * n_bands)
+
+    linear_parameters = n_filters_spat * n_bands * stride_factor * n_outputs + n_outputs
+
+    total_parameters = conv_params + batchnorm_params + linear_parameters
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=n_bands,
+        n_filters_spat=n_filters_spat,
+        stride_factor=stride_factor,
+        sfreq=sfreq,
+    )
+
+    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    assert total_parameters == num_params
+
+
+@pytest.mark.parametrize("n_times", [100, 500, 1000, 5000, 10000])
+def test_fbcnet_different_n_times(n_times):
+    n_chans = 22
+    n_outputs = 2
+    batch_size = 8
+
+    model = FBCNet(
+        n_chans=n_chans,
+        n_outputs=n_outputs,
+        n_times=n_times,
+        n_bands=9,
+        sfreq=250,
+    )
+
+    x = torch.randn(batch_size, n_chans, n_times)
+    output = model(x)
+
+    assert output.shape == (batch_size, n_outputs)
+@pytest.mark.parametrize("stride_factor", [1, 2, 4, 5])
+def test_fbcnet_stride_factor_warning(stride_factor):
+    n_chans = 22
+    n_times = 1003  # Not divisible by stride_factor when stride_factor > 1
+    n_outputs = 2
+
+    if n_times % stride_factor != 0:
+        with pytest.warns(UserWarning, match="Input will be padded."):
+
+            _ = FBCNet(
+                n_chans=n_chans,
+                n_outputs=n_outputs,
+                n_times=n_times,
+                stride_factor=stride_factor,
+                sfreq=250,
+            )
+
+
+def test_fbcnet_invalid_temporal_layer():
+    with pytest.raises(NotImplementedError):
+        FBCNet(
+            n_chans=22,
+            n_outputs=2,
+            n_times=1000,
+            temporal_layer='InvalidLayer',
+            sfreq=250,
+        )
+
+
+def test_initialize_weights_linear():
+    linear = nn.Linear(10, 5)
+    IFNet._initialize_weights(linear)
+    assert torch.allclose(linear.bias, torch.zeros_like(linear.bias))
+    assert linear.weight.std().item() <= 0.02  # Checking trunc_normal_ std
+
+
+def test_initialize_weights_norm():
+    layer_norm = nn.LayerNorm(10)
+    IFNet._initialize_weights(layer_norm)
+    assert torch.allclose(layer_norm.weight, torch.ones_like(layer_norm.weight))
+    assert torch.allclose(layer_norm.bias, torch.zeros_like(layer_norm.bias))
+
+    batch_norm = nn.BatchNorm1d(10)
+    IFNet._initialize_weights(batch_norm)
+    assert torch.allclose(batch_norm.weight, torch.ones_like(batch_norm.weight))
+    assert torch.allclose(batch_norm.bias, torch.zeros_like(batch_norm.bias))
+
+
+def test_initialize_weights_conv():
+    conv = nn.Conv1d(3, 6, kernel_size=3)
+    IFNet._initialize_weights(conv)
+    assert conv.weight.std().item() <= 0.02  # Checking trunc_normal_ std
+    if conv.bias is not None:
+        assert torch.allclose(conv.bias, torch.zeros_like(conv.bias))
+
+
+test_cases = [
+    pytest.param(64, id="n_times=64_perfect_multiple"),
+    pytest.param(437, id="n_times=437_trace_example"), # Expect 104
+    pytest.param(95, id="n_times=95_edge_case_1"), # Expect 24
+    pytest.param(67, id="n_times=67_edge_case_2"), # Expect 16
+    pytest.param(94, id="n_times=94_edge_case_3"), # Expect 24
+]
+
+@pytest.mark.parametrize("n_times_input", test_cases)
+def test_eegnex_final_layer_in_features(n_times_input):
+    """
+    Tests if the EEGNeX model correctly calculates the 'in_features'
+    for its final linear layer during initialization, especially for
+    n_times values that are not perfect multiples of pooling factors,
+    considering the specified padding.
+    """
+    n_chans_test = 2
+    n_outputs_test = 5
+
+    model = EEGNeX(
+        n_chans=n_chans_test,
+        n_outputs=n_outputs_test,
+        n_times=n_times_input
+    )
+
+    print(model)
+
+@pytest.mark.parametrize("batch_norm", [True, False])
+def test_batchnorm_deep4net(batch_norm):
+    """
+    Test the number of trainable parameters in Deep4Net model.
+    """
+    model = Deep4Net(n_outputs=2, n_chans=22, n_times=1000, batch_norm=batch_norm)
+
+    assert model is not None
+
+def test_fc_length_eegconformer():
+    """
+    Test the number of trainable parameters in EEGConformer model.
+    """
+    model = EEGConformer(
+        n_chans=64,  # Number of EEG channels
+        n_outputs=2,  # Number of output classes
+        n_times=500,  # Length of the input sequence (e.g., 500 time steps)
+        final_fc_length=120,
+        input_window_seconds=1.0,
+        return_features=True,
+        drop_prob=0.5,  # Dropout probability
+        sfreq=500.0  # Sampling frequency of the EEG data
+    )
+
+    assert model is not None

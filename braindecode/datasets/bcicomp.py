@@ -4,6 +4,7 @@
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
 import glob
 import os
 import os.path as osp
@@ -15,7 +16,7 @@ import numpy as np
 from mne.utils import verbose
 from scipy.io import loadmat
 
-from braindecode.datasets import BaseDataset, BaseConcatDataset
+from braindecode.datasets import BaseConcatDataset, BaseDataset
 
 DATASET_URL = (
     "https://stacks.stanford.edu/file/druid:zk881ps0522/"

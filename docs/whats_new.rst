@@ -17,12 +17,92 @@ What's new
 
 .. _current:
 
-Current 0.9 (dev0)
+Current 1.3 (dev)
 ----------------------
 
 Enhancements
 ~~~~~~~~~~~~
+- Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
+- Including typing in the augmentation module (:gh:`709` by `Aphel`_)
+- Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
 
+
+API changes
+~~~~~~~~~~~
+
+Bugs
+~~~~
+- Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi Altaheri`_)
+- Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by `Pierre Guetschel`_)
+- Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
+
+
+Current 1.2 (stable)
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Improving the docstring for :class:`braindecode.models.EEGNetv4`  (:gh:`768` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGConformer`  (:gh:`769` by `Bruno Aristimunha`_)
+- Experimental BIDS Iterable Dataset support (:gh:`766` by `Bruno Aristimunha`_ and `Pierre Guetschel`_)
+- Improving the docstring for :class:`braindecode.models.ATCNet`  (:gh:`771` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.AttentionBaseNet`  (:gh:`772` by `Bruno Aristimunha`_)
+- Improving the docstring for :class:`braindecode.models.EEGNeX`  (:gh:`773` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`774` by `Bruno Aristimunha`_)
+- Massive refactor of the models webpage (:gh:`775` by `Bruno Aristimunha`_), creating the models categorization, table and many details.
+
+
+API changes
+~~~~~~~~~~~
+- Using the name from the original name and deprecation models that we create for no reason, models :gh:`775` by `Bruno Aristimunha`_
+- Deprecated the version name in :class:`braindecode.models.EEGNetv4` in favour of :class:`braindecode.models.EEGNetv`.
+- Deprecated the version name in :class:`braindecode.models.SleepStagerEldele2021` in favour of :class:`braindecode.models.AttnSleep`.
+- Deprecated the version name in :class:`braindecode.models.TSceptionV1` in favour of :class:`braindecode.models.TSception`.
+
+Bugs
+~~~~
+
+
+Version 1.1.1
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Massive refactor of the model webpage
+
+API changes
+~~~~~~~~~~~
+
+
+Bugs
+~~~~
+- Fixing several models to be be compatibility with small windows size(:gh:`756` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.Deep4Net` (:gh:`752` by `Bruno Aristimunha`_)
+- Fix initialization of :class:`braindecode.models.ATCNet` (:gh:`754` by `Bruno Aristimunha`_)
+- Fix Labram model for small input (:gh:`757` by `Bruno Aristimunha`_)
+- Fix the CTNet parameters to make the embedding configuration easy (:gh:`760` by `Bruno Aristimunha`_)
+
+API changes
+~~~~~~~~~~~
+
+
+Version 1.0
+----------------------
+
+Enhancements
+~~~~~~~~~~~~
+- Make sure all the models start at train model (:gh:`745` by `Bruno Aristimunha`_)
+- Enable more models to be pytorch compatible (:gh:`732` by `Bruno Aristimunha`_ and `Lucas Heck`_)
+- Making the braindecode.models compatibility with torch compile, torch export and torch jit (:gh:`729` by `Bruno Aristimunha` and `Pierre Guetschel`_)
+- Reorder the modules, functional and re-organize the codebase (:gh:`728` by `Bruno Aristimunha`_)
+- Adding :class:`braindecode.models.IFNet` (:gh:`725` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBMSNet` (:gh:`724` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBCNet` (:gh:`722` by `Bruno Aristimunha`_ )
+- Adding :class:`braindecode.models.FBLightConvNet` (:gh:`723` by `Bruno Aristimunha`_ )
+- Added dropdown menus for selecting `paradigm`, `type`, and `hyperparameters` on the model summary page. (:gh:`718` by `Ganasekhar Kalla`)
+- Adding model page (:gh:`715` by `Lucas Heck`_)
+- Inference of shape for string module when using :class:`skorch.helper.SliceDataset` (:gh:`716` by `Bruno Aristimunha`_)
+- Fix error when using n_njobs > 1 on Windows (:gh:`700` by `Arnaud Delorme`_)
 - Adding :class:`braindecode.models.AttentionBaseNet`  (:gh:`572` by `Bruno Aristimunha`_ and `Martin Wimpff`_)
 - Adding :class:`braindecode.datasets.NMT` dataset (:gh:`443` by `Mohammad Javad D`_  and `Bruno Aristimunha`_)
 - Adding an integration test for all the models (:gh: 570 by `Bruno Aristimunha`_)
@@ -62,9 +142,20 @@ Enhancements
 - Adding :class:`braindecode.models.SincShallowNet` (:gh:`678` by `Bruno Aristimunha`_ )
 - Adding :class:`braindecode.models.SCCNet` (:gh:`679` by `Bruno Aristimunha`_ )
 - Fix error when using NMT dataset with n_jobs > 1 (:gh:`690` by `Aphel`_)
+- Adding support for distributed samplers (:gh:`695` by `Young Truong`_)
+- Adding :class:`braindecode.datasets.BIDSDataset` and :class:`braindecode.datasets.BIDSEpochsDataset` plus tutorial (:gh:`701` :gh:`702` :gh:`704` by `Pierre Guetschel`_ )
+- Add :class:`braindecode.models.SignalJEPA` plus downstream architectures (:gh:`703` by `Pierre Guetschel`_ )
+- Various improvements on documentation:
+
+  * :gh:`706` by `Pierre Guetschel`_
 
 Bugs
 ~~~~
+- Making the :class:`braindecode.models.SCCNet` more compatible with paper instead of source code (:gh:`742` by `Bruno Aristimunha`_)
+- Making the :class:`braindecode.models.EEGNeX` and :class:`braindecode.models.CTNet` more compatible with paper instead of source code (:gh:`740` by `Bruno Aristimunha`_)
+- Exposing extra variable to avoid problem with the parallel process (:gh:`736` by `Pierre Guetschel`_)
+- Fixing the IFNet (:gh:`739` by `Bruno Aristimunha`_)
+- Fix dead links in the documentation (:gh:`727` by `Lucas Heck`_)
 - Fix annotations bug for moabb datasets with non-zero interval (:gh: 561 by `Daniel Wilson`_)
 - Fix deprecated test and changing the what's new checker (:gh: 569 by `Bruno Aristimunha`_)
 - Fix issue with coverage CI and adding a condition on the test for avoid HTML errors (:gh: 591 by `Bruno Aristimunha`_)
@@ -76,19 +167,24 @@ Bugs
 - Deprecate moabb version 1.0.0 because of incorrect epoching (:gh:`627` by `Pierre Guetschel`_)
 - Fixing tutorial benchmark lazy eager loagin (:gh:`` by `Bruno Aristimunha`_ and `Aphel`_)
 - Improve doc build's time with better caching (:gh:`693` by `Thomas Moreau`_)
+- Fixing the MOABBDataset to work with the cache (:gh:`694` by `Bruno Aristimunha`_)
 
 API changes
 ~~~~~~~~~~~
+- Removing deprecated variable ``use_log_softmax`` from :class:`braindecode.models.base` (:gh:`729` by `Bruno Aristimunha`_)
+- Removing function ``squeze_final_output`` with Expression because of not compatibility with torch script (:gh:`729` by `Bruno Aristimunha`_)
 - Expose the ``use_mne_epochs parameter`` of :func:`braindecode.preprocessing.create_windows_from_events` (:gh:`607` by `Pierre Guetschel`_)
 - Parameter ``use_log_softmax`` is default as `False` for all the models in (:gh:`624` by `Bruno Aristimunha`_)
 - Normalizing the parameters for dropout as part of normalization of model parameters  (:gh:`624` by `Bruno Aristimunha`_)
 - Removing ``use_log_softmax`` and old parameters (:gh:`671` by `Bruno Aristimunha`_)
 - Moving :class:`braindecode.models.TCN` and :class:`braindecode.models.HybridNet` to module and creating :class:`braindecode.models.BDTCN` (:gh:`673` by `Bruno Aristimunha`_)
 - Removing dead parameters from :class:`braindecode.models.EEGNetv4` (:gh:`676` by `Bruno Aristimunha`_)
+- Including Linear Layer at the end :class:`braindecode.models.EEGNetv4` (:gh:`680` by `Bruno Aristimunha`_)
+- Expose ``copy_data`` parameter in :func:`braindecode.preprocessing.preprocess` (:gh:`736` by `Pierre Guetschel`_)
 
 .. _changes_0_8_0:
 
-Current 0.8 (11-2022)
+Version 0.8 (11-2022)
 ----------------------
 
 Enhancements
@@ -155,7 +251,7 @@ API changes
 
 .. _changes_0_7_0:
 
-Current 0.7 (10-2022)
+Version 0.7 (10-2022)
 ----------------------
 
 Enhancements
@@ -269,6 +365,7 @@ API changes
 Authors
 ~~~~~~~
 
+.. _Arnaud Delorme: https://github.com/arnodelorme
 .. _Hubert Banville: https://github.com/hubertjb
 .. _Robin Tibor Schirrmeister: https://github.com/robintibor
 .. _Lukas Gemein: https://github.com/gemeinl
@@ -304,3 +401,9 @@ Authors
 .. _John Muradeli: https://github.com/OverLordGoldDragon/
 .. _Gustavo Rodrigues: https://github.com/gustavohenriquesr
 .. _Aphel: https://github.com/itsaphel
+.. _Young Truong: https://github.com/dungscout96
+.. _Lucas Heck: https://github.com/lucas-heck
+.. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
+.. _Hamdi Altaheri: https://github.com/Altaheri
+.. _José Mauricio: https://github.com/josemaurici
+.. _Can Han: https://github.com/hancan16

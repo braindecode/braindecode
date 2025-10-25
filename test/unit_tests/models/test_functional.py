@@ -1,9 +1,9 @@
-import pytest
-
-import torch
 import numpy as np
-from scipy.signal import hilbert
-from braindecode.models.functions import hilbert_freq, plv_time
+import pytest
+import torch
+
+from braindecode.functional import hilbert_freq, plv_time
+
 
 @pytest.fixture(autouse=True)
 def set_seed():

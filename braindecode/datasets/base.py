@@ -11,25 +11,26 @@ Dataset classes.
 # License: BSD (3-clause)
 
 from __future__ import annotations
-from collections.abc import Callable
-import os
+
 import json
+import os
 import shutil
-from typing import Iterable, no_type_check
 import warnings
+from collections.abc import Callable
 from glob import glob
+from typing import Iterable, no_type_check
 
 import mne.io
 import numpy as np
 import pandas as pd
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import ConcatDataset, Dataset
 
 
 def _create_description(description) -> pd.Series:
     if description is not None:
         if not isinstance(description, pd.Series) and not isinstance(description, dict):
             raise ValueError(
-                f"'{description}' has to be either a " f"pandas.Series or a dict."
+                f"'{description}' has to be either a pandas.Series or a dict."
             )
         if isinstance(description, dict):
             description = pd.Series(description)
@@ -621,14 +622,14 @@ class BaseConcatDataset(ConcatDataset):
         if not (
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
-            raise ValueError("dataset should have either raw or windows " "attribute")
+            raise ValueError("dataset should have either raw or windows attribute")
         file_name_templates = ["{}-raw.fif", "{}-epo.fif"]
         description_file_name = os.path.join(path, "description.json")
         target_file_name = os.path.join(path, "target_name.json")
         if not overwrite:
-            from braindecode.datautil.serialization import (
+            from braindecode.datautil.serialization import (  # Import here to avoid circular import
                 _check_save_dir_empty,
-            )  # Import here to avoid circular import
+            )
 
             _check_save_dir_empty(path)
         else:
@@ -738,7 +739,7 @@ class BaseConcatDataset(ConcatDataset):
         if not (
             hasattr(self.datasets[0], "raw") or hasattr(self.datasets[0], "windows")
         ):
-            raise ValueError("dataset should have either raw or windows " "attribute")
+            raise ValueError("dataset should have either raw or windows attribute")
         path_contents = os.listdir(path)
         n_sub_dirs = len([os.path.isdir(e) for e in path_contents])
         for i_ds, ds in enumerate(self.datasets):
@@ -814,7 +815,7 @@ class BaseConcatDataset(ConcatDataset):
     @staticmethod
     def _save_description(sub_dir, description):
         description_file_path = os.path.join(sub_dir, "description.json")
-        description.to_json(description_file_path)
+        description.to_json(description_file_path, default_handler=str)
 
     @staticmethod
     def _save_kwargs(sub_dir, ds):

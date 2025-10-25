@@ -12,13 +12,15 @@ AttentionBaseNet class.
 # License: BSD (3-clause)
 
 import math
+from typing import Optional
 
 import torch
+import torch.nn.functional as F
 from einops import rearrange
 from einops.layers.torch import Rearrange
-from torch import nn
+from torch import Tensor, nn
 
-from braindecode.models.functions import _get_gaussian_kernel1d
+from braindecode.functional import _get_gaussian_kernel1d
 
 
 class SqueezeAndExcitation(nn.Module):
@@ -131,7 +133,7 @@ class GSoP(nn.Module):
         return scale * x
 
 
-class FCA(torch.nn.Module):
+class FCA(nn.Module):
     """
     Frequency Channel Attention Networks from [Qin2021]_.
 
@@ -155,7 +157,8 @@ class FCA(torch.nn.Module):
     ):
         super(FCA, self).__init__()
         mapper_y = [freq_idx]
-        assert in_channels % len(mapper_y) == 0
+        if in_channels % len(mapper_y) != 0:
+            raise ValueError("in_channels must be divisible by number of DCT filters")
 
         self.weight = nn.Parameter(
             self.get_dct_filter(seq_len, mapper_y, in_channels), requires_grad=False
@@ -293,7 +296,8 @@ class ECA(nn.Module):
     def __init__(self, in_channels: int, kernel_size: int):
         super(ECA, self).__init__()
         self.gap = nn.AdaptiveAvgPool2d(1)
-        assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
+        if kernel_size % 2 != 1:
+            raise ValueError("kernel size must be odd for same padding")
         self.conv = nn.Conv1d(
             1, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False
         )
@@ -528,7 +532,8 @@ class CBAM(nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels // reduction_rate, in_channels, 1, bias=False),
         )
-        assert kernel_size % 2 == 1, "kernel size must be odd for same padding"
+        if kernel_size % 2 != 1:
+            raise ValueError("kernel size must be odd for same padding")
         self.conv = nn.Conv2d(2, 1, (1, kernel_size), padding=(0, kernel_size // 2))
 
     def forward(self, x):
@@ -573,7 +578,8 @@ class CAT(nn.Module):
     References
     ----------
     .. [Wu2023] Wu, Z. et al., 2023
-    CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
+        CAT: Learning to Collaborate Channel and Spatial Attention from
+        Multi-Information Fusion. IET Computer Vision 2023.
     """
 
     def __init__(
@@ -654,7 +660,7 @@ class CAT(nn.Module):
 
 class CATLite(nn.Module):
     """
-    Modification of CAT without the convolutional layer.
+    Modification of CAT without the convolutional layer from [Wu2023]_.
 
     Parameters
     ----------
@@ -667,8 +673,8 @@ class CATLite(nn.Module):
 
     References
     ----------
-    .. [Wu2023] Wu, Z. et al., 2023
-    CAT: Learning to Collaborate Channel and Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
+    .. [Wu2023] Wu, Z. et al., 2023 CAT: Learning to Collaborate Channel and
+        Spatial Attention from Multi-Information Fusion. IET Computer Vision 2023.
     """
 
     def __init__(self, in_channels: int, reduction_rate: int, bias: bool = True):
@@ -715,3 +721,40 @@ class CATLite(nn.Module):
         channel_score = channel_score.expand(b, c, h, w)
 
         return channel_score * x
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, emb_size, num_heads, dropout):
+        super().__init__()
+        self.emb_size = emb_size
+        self.num_heads = num_heads
+        self.keys = nn.Linear(emb_size, emb_size)
+        self.queries = nn.Linear(emb_size, emb_size)
+        self.values = nn.Linear(emb_size, emb_size)
+        self.att_drop = nn.Dropout(dropout)
+        self.projection = nn.Linear(emb_size, emb_size)
+
+        self.rearrange_stack = Rearrange(
+            "b n (h d) -> b h n d",
+            h=num_heads,
+        )
+        self.rearrange_unstack = Rearrange(
+            "b h n d -> b n (h d)",
+        )
+
+    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        queries = self.rearrange_stack(self.queries(x))
+        keys = self.rearrange_stack(self.keys(x))
+        values = self.rearrange_stack(self.values(x))
+        energy = torch.einsum("bhqd, bhkd -> bhqk", queries, keys)
+        if mask is not None:
+            fill_value = float("-inf")
+            energy = energy.masked_fill(~mask, fill_value)
+
+        scaling = self.emb_size ** (1 / 2)
+        att = F.softmax(energy / scaling, dim=-1)
+        att = self.att_drop(att)
+        out = torch.einsum("bhal, bhlv -> bhav ", att, values)
+        out = self.rearrange_unstack(out)
+        out = self.projection(out)
+        return out

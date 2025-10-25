@@ -5,6 +5,11 @@ The NMT Scalp EEG Dataset is an open-source annotated dataset of healthy and
 pathological EEG recordings for predictive modeling. This dataset contains
 2,417 recordings from unique participants spanning almost 625 h.
 
+Note:
+    - The signal unit may not be uV and further examination is required.
+    - The spectrum shows that the signal may have been band-pass filtered from about 2 - 33Hz,
+    which needs to be further determined.
+
 """
 
 # Authors: Mohammad Bayazi <mj.darvishi92@gmail.com>
@@ -13,17 +18,17 @@ pathological EEG recordings for predictive modeling. This dataset contains
 # License: BSD (3-clause)
 
 from __future__ import annotations
+
 import glob
 import os
 import warnings
+from pathlib import Path
+from unittest import mock
 
+import mne
 import numpy as np
 import pandas as pd
-import mne
-
-from unittest import mock
-from pathlib import Path
-from joblib import delayed, Parallel
+from joblib import Parallel, delayed
 from mne.datasets import fetch_dataset
 
 from braindecode.datasets.base import BaseConcatDataset, BaseDataset

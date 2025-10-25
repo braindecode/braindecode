@@ -1,64 +1,21 @@
 # Authors: Robin Schirrmeister <robintibor@gmail.com>
 #
 # License: BSD (3-clause)
-import math
+
 import torch
 import torch.nn.functional as F
-
-
-def rescale_parameter(param, layer_id):
-    r"""Recaling the l-th transformer layer.
-
-    Rescales the parameter tensor by the inverse square root of the layer id.
-    Made inplace. :math:`\frac{1}{\sqrt{2 \cdot \text{layer\_id}}}` [Beit2022]
-
-    In the labram, this is used to rescale the output matrices
-    (i.e., the last linear projection within each sub-layer) of the
-    self-attention module.
-
-    Parameters
-    ----------
-    param: :class:`torch.Tensor`
-        tensor to be rescaled
-    layer_id: int
-        layer id in the neural network
-
-    References
-    ----------
-    [Beit2022] Hangbo Bao, Li Dong, Songhao Piao, Furu We (2022). BEIT: BERT
-    Pre-Training of Image Transformers.
-    """
-    param.div_(math.sqrt(2.0 * layer_id))
 
 
 def square(x):
     return x * x
 
 
-def safe_log(x, eps=1e-6):
+def safe_log(x, eps: float = 1e-6) -> torch.Tensor:
     """Prevents :math:`log(0)` by using :math:`log(max(x, eps))`."""
     return torch.log(torch.clamp(x, min=eps))
 
 
 def identity(x):
-    return x
-
-
-def squeeze_final_output(x):
-    """Removes empty dimension at end and potentially removes empty time
-     dimension. It does  not just use squeeze as we never want to remove
-     first dimension.
-
-    Returns
-    -------
-    x: torch.Tensor
-        squeezed tensor
-    """
-
-    assert x.size()[3] == 1
-    x = x[:, :, :, 0]
-    if x.size()[2] == 1:
-        x = x[:, :, 0]
     return x
 
 
