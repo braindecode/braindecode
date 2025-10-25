@@ -14,6 +14,11 @@
 
 :bdg-danger:`Large Brain Models`
 
+
+.. include:: ../../links.inc
+
+.. raw:: html
+
 .. figure:: ../../_static/model_connection/litmap_lbm.png
     :width: 100%
     :align: center

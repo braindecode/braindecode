@@ -12,7 +12,12 @@
    :alt: Symmetric Positive-Definite icon
    :class: heading-icon no-scaled-link
 
-:bdg-dark:`Symmetric Positive-Definite`
+:bdg-success:`Symmetric Positive-Definite (SPD)`
+
+
+.. include:: ../../links.inc
+
+.. raw:: html
 
 .. figure:: ../../_static/model_connection/litmap_spd_learn.png
     :width: 100%

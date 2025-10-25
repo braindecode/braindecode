@@ -14,6 +14,11 @@
 
 :bdg-light:`Channel-Domain`
 
+
+.. include:: ../../links.inc
+
+.. raw:: html
+
 .. figure:: ../../_static/model_connection/litmap_channel.png
     :width: 100%
     :align: center

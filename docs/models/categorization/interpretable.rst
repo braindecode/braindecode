@@ -12,7 +12,12 @@
    :alt: Interpretability-by-Design icon
    :class: heading-icon no-scaled-link
 
-:bdg-warning:`Interpretability-by-Design`
+:bdg-light:`Interpretability-by-Design`
+
+
+.. include:: ../../links.inc
+
+.. raw:: html
 
 .. figure:: ../../_static/model_connection/litmap_interpretable.png
     :width: 100%

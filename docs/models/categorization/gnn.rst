@@ -17,7 +17,7 @@
 
 I doesn't know much about GNNs for EEG yet. No LitMap available.
 
-.. include:: ../links.inc
+.. include:: ../../links.inc
 
 .. raw:: html
 
