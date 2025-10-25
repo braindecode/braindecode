@@ -23,6 +23,8 @@ Current 1.3 (dev)
 Enhancements
 ~~~~~~~~~~~~
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
+- Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
+
 
 API changes
 ~~~~~~~~~~~
