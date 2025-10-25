@@ -14,11 +14,6 @@
 
 :bdg-success:`Symmetric Positive-Definite (SPD)`
 
-
-.. include:: ../../links.inc
-
-.. raw:: html
-
 .. figure:: ../../_static/model_connection/litmap_spd_learn.png
     :width: 100%
     :align: center
@@ -26,7 +21,7 @@
     Figure: `LitMap <https://app.litmaps.com/shared/bcd44ea5-9d52-46ed-9948-4b34714d4f05>`__ **with symmetric positive-definite layers, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
-.. include:: ../links.inc
+.. include:: ../../links.inc
 
 .. raw:: html
 
