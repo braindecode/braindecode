@@ -127,8 +127,8 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         via LayerScale) stabilise these wide receptive fields. When enabled, the :class:`~braindecode.models.dilated_conv_decoder._LSTM`
         layer (optionally flipped or bidirectional) and the :class:`braindecode.modules.attention.LocalSelfAttention` blocks
         refine sequential structure on the `(time, feature)` axis before the decoder
-        mirrors the stride pattern with transposed convolutions. Padding/cropping through
-        :meth:`~braindecode.models.dilated_conv_decoder.DilatedConvDecoder.pad_to_valid_length` and the final adaptive pooling ensure that temporal
+        mirrors the stride pattern with transposed convolutions. Internal padding and
+        final adaptive pooling ensure that temporal
         resolution matches the requested output while still leveraging the enlarged
         receptive field.
 
@@ -179,7 +179,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     -----
     * **Input/Output Shape:** Input is typically (batch, n_chans, n_times); output depends on configuration but is often (batch, n_outputs, n_times) or (batch, n_outputs) if pooling is applied.
     * **Subject-Specific Features:** Subject embeddings (`subject_dim > 0`) or subject layers (`subject_layers=True`) require passing subject indices in the forward pass.
-    * **Temporal Padding:** Padding logic is utilized (`pad_to_valid_length`) to ensure temporal dimensions are maintained correctly through the encoder-decoder roundtrip.
+    * **Temporal Padding:** Padding logic ensures temporal dimensions are maintained correctly through the encoder-decoder roundtrip.
     * **Original Context:** The brain module was trained using a **contrastive CLIP loss**  to maximize discrimination between segments, showing improved performance over regression losses targeting low-level features like Mel spectrograms.
 
     Parameters
@@ -613,6 +613,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         final_modules["pool"] = nn.AdaptiveAvgPool1d(1)
         self.final_layer = nn.Sequential(*final_modules.values())
 
+    @torch.jit.export
     def compute_valid_length(self, length: int) -> int:
         """
         Compute valid output length after encoder-decoder roundtrip.
@@ -639,29 +640,6 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         for _ in range(self.depth):
             length = (length - 1) * self.stride
         return int(length)
-
-    def pad_to_valid_length(self, x: torch.Tensor) -> tuple[torch.Tensor, int]:
-        """
-        Pad input to valid length.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor of shape (batch, channels, time).
-
-        Returns
-        -------
-        padded_x : torch.Tensor
-            Padded tensor.
-        original_length : int
-            Original time dimension (for later cropping).
-        """
-        original_length = x.shape[-1]
-        valid_length = self.compute_valid_length(original_length)
-        delta = valid_length - original_length
-        if delta > 0:
-            x = F.pad(x, (0, delta))
-        return x, original_length
 
     def forward(
         self, x: torch.Tensor, subject_index: torch.Tensor | None = None
@@ -741,7 +719,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             x = self.initial_layer(x)
 
         # Pad to valid length for convolutions
-        x, _ = self.pad_to_valid_length(x)
+        padded_length = self.compute_valid_length(x.shape[-1])
+        if padded_length > x.shape[-1]:
+            x = F.pad(x, (0, padded_length - x.shape[-1]))
 
         # Encode
         encoded = self.encoder(x)
@@ -865,13 +845,12 @@ class _ConvSequence(nn.Module):
             else:
                 self.glus.append(None)
 
-    def forward(self, x: tp.Any) -> tp.Any:
-        for module_idx, module in enumerate(self.sequence):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for module, glu in zip(self.sequence, self.glus):
             old_x = x
             x = module(x)
             if self.skip and x.shape == old_x.shape:
                 x = x + old_x
-            glu = self.glus[module_idx]
             if glu is not None:
                 x = glu(x)
         return x
