@@ -22,7 +22,10 @@ Current 1.3 (dev)
 
 Enhancements
 ~~~~~~~~~~~~
+- Added Patched Brain Transformer from Klein T et al 2025 at :class:`braindecode.models.PBT` (:gh:`787` by `José Mauricio`_)
 - Including typing in the augmentation module (:gh:`709` by `Aphel`_)
+- Adding :class:`braindecode.models.SSTDPN`  (:gh:`790` by `Can Han`_ and `Bruno Aristimunha`_ )
+
 
 API changes
 ~~~~~~~~~~~
@@ -31,6 +34,7 @@ Bugs
 ~~~~
 - Fixing the issues with :class:`braindecode.models.ATCNet` (:gh:`782` by `Hamdi Altaheri`_)
 - Fixing expired path when loading a preprocessed dataset that was moved (:gh:`786` by `Pierre Guetschel`_)
+- Fix OverflowError sometimes when saving description to a json file (:gh:`789` by `Pierre Guetschel`_)
 
 
 Current 1.2 (stable)
@@ -400,3 +404,5 @@ Authors
 .. _Lucas Heck: https://github.com/lucas-heck
 .. _Ganasekhar Kalla: https://github.com/Ganasekhar-gif
 .. _Hamdi Altaheri: https://github.com/Altaheri
+.. _José Mauricio: https://github.com/josemaurici
+.. _Can Han: https://github.com/hancan16

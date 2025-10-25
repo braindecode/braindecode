@@ -2,7 +2,7 @@
 
 .. currentmodule:: braindecode.models
 
-.. _models:
+.. _models_interpretable:
 
 |inter-icon|  Interpretability-by-Design
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -12,7 +12,7 @@
    :alt: Interpretability-by-Design icon
    :class: heading-icon no-scaled-link
 
-:bdg-warning:`Interpretability-by-Design`
+:bdg-light:`Interpretability-by-Design`
 
 .. figure:: ../../_static/model_connection/litmap_interpretable.png
     :width: 100%
@@ -21,7 +21,7 @@
     Figure: `LitMap <https://app.litmaps.com/shared/4ab67d8d-603f-4907-93a1-040cb06f91ec>`__ **with interpretable by design layers, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
-.. include:: ../links.inc
+.. include:: ../../links.inc
 
 .. raw:: html
 

@@ -2,7 +2,7 @@
 
 .. currentmodule:: braindecode.models
 
-.. _models:
+.. _models_lbm:
 
 |lbm-icon| Large Brain Models
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -21,7 +21,7 @@
     Figure: `LitMap <https://app.litmaps.com/shared/e33fb41d-bc98-407f-9372-437f2b59a140>`__ **with large brain model layers, last updated 26/08/2025.** Each node is a paper; rightward means more recently published, upward more cited, and links show amount of citation with logaritm scale.
 
 
-.. include:: ../links.inc
+.. include:: ../../links.inc
 
 .. raw:: html
 
