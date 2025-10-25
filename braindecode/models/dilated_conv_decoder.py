@@ -547,7 +547,6 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}")
 
         original_length = x.shape[-1]
-        batch_size = x.shape[0]
 
         # Apply STFT if enabled
         if self.stft is not None:
@@ -930,7 +929,7 @@ class _ChannelDropout(nn.Module):
         if not self.training or self.dropout_prob == 0:
             return x
 
-        batch, channels, time = x.shape
+        _, channels, _ = x.shape
 
         # Determine which channels to drop
         if self.droppable_indices is not None:
