@@ -130,13 +130,6 @@ class SSTDPN(EEGModuleMixin, nn.Module):
         useful for limited data typical of MI-EEG tasks, without requiring external transfer
         learning data, according to [Han2025]_.
 
-    .. warning::
-
-        **Important:** To utilize the full potential of SSTDPN with Dual Prototype Learning (DPL),
-        users must implement the DPL optimization strategy outside the model's forward method.
-        For implementation details and training strategies, please consult the official code at:
-        https://github.com/hancan16/SST-DPN/blob/main/train.py
-
     Notes
     ----------
     * The implementation of the DPL loss functions ($\mathcal{L}_S, \mathcal{L}_C, \mathcal{L}_{EF}$)
@@ -151,6 +144,12 @@ class SSTDPN(EEGModuleMixin, nn.Module):
       improvement over temporal attention transformer modules in ablation studies, offering a more
       efficient alternative to transformer-based approaches like :class:`EEGConformer` [Han2025]_.
 
+    .. warning::
+
+        **Important:** To utilize the full potential of SSTDPN with Dual Prototype Learning (DPL),
+        users must implement the DPL optimization strategy outside the model's forward method.
+        For implementation details and training strategies, please consult the official code at:
+        https://github.com/hancan16/SST-DPN/blob/main/train.py
 
     Parameters
     ----------
