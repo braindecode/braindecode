@@ -41,14 +41,6 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
 
     Parameters
     ----------
-    n_chans : int
-        Number of input EEG channels.
-    n_outputs : int
-        Number of output classes (classification) or output dimensions (regression).
-    n_times : int, optional
-        Number of time samples in input windows. Used for input validation.
-    sfreq : float, optional
-        Sampling frequency of the EEG data in Hz.
     hidden_dim : int, default=64
         Base hidden dimension for convolutional layers. Actual layer sizes
         grow or shrink according to the `growth` parameter.
@@ -153,10 +145,6 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     glu_glu : bool, default=True
         If True with glu > 0, uses nn.GLU for gating (doubles channels internally).
         If False, uses standard activation for gating (no channel doubling).
-    chs_info : list of dict, optional
-        Information about each EEG channel (for compatibility with EEGModuleMixin).
-    input_window_seconds : float, optional
-        Length of input window in seconds (for compatibility with EEGModuleMixin).
 
     References
     ----------
