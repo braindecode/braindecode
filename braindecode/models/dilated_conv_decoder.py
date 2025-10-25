@@ -50,8 +50,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         grow or shrink according to the `growth` parameter.
     depth : int, default=2
         Number of encoder/decoder layer pairs.
-    kernel_size : int, default=4
-        Convolutional kernel size. Must be even (e.g., 4, 8).
+    kernel_size : int, default=5
+        Convolutional kernel size. Must be odd (e.g., 3, 5, 7) for dilation to work properly.
+        Default changed from 4 to 5 to support dilation_growth > 1.
     stride : int, default=2
         Stride for downsampling in encoder, upsampling in decoder.
     growth : float, default=1.0
@@ -82,6 +83,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         If True, apply batch normalization after each convolution.
     relu_leakiness : float, default=0.0
         Leakiness of LeakyReLU (0.0 = standard ReLU, >0 = leaky).
+    gelu : bool, default=False
+        If True, use GELU activation instead of ReLU/LeakyReLU.
+        Only applies when relu_leakiness is 0.0.
     linear_out : bool, default=False
         If True, apply a final 1x1 convolution to produce outputs.
         Otherwise, the decoder directly outputs n_outputs channels.
@@ -181,7 +185,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         # Architecture
         hidden_dim: int = 64,
         depth: int = 2,
-        kernel_size: int = 4,
+        kernel_size: int = 5,
         stride: int = 2,
         growth: float = 1.0,
         dilation_growth: int = 1,
@@ -199,6 +203,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         dropout_input: float = 0.0,
         batch_norm: bool = False,
         relu_leakiness: float = 0.0,
+        gelu: bool = False,
         # final layer
         linear_out: bool = False,
         complex_out: bool = False,
@@ -392,6 +397,14 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         if lstm_layers > 0:
             lstm_hidden = decoder_input_dim
 
+        # Configure activation function based on gelu parameter
+        if gelu:
+            activation_fn = nn.GELU
+        elif relu_leakiness:
+            activation_fn = partial(nn.LeakyReLU, relu_leakiness)
+        else:
+            activation_fn = nn.ReLU
+
         # Build encoder
         encoder_params: dict[str, tp.Any] = dict(
             kernel=kernel_size,
@@ -408,6 +421,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             glu=glu,
             glu_context=glu_context,
             glu_glu=glu_glu,
+            activation=activation_fn,
         )
 
         self.encoder = ConvSequence(encoder_dims, **encoder_params)
