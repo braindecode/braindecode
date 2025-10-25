@@ -91,7 +91,7 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         - *Presence.* Enabled if `lstm_layers > 0`.
     - `DilatedConvDecoder.attentions` **(Optional Local Self-Attention)**
         - *Original Paper Role.* Attention layers added after the LSTM for further temporal refinement.
-        - *Presence.* Enabled if `attention_layers > 0`.
+        - *Presence.* Enabled if `attention_layers > 0`, instantiated as :class:`braindecode.modules.attention.LocalSelfAttention` with windowed self-attention that preserves sequence length via residual connections.
     - `DilatedConvDecoder.decoder` **(Dilated Convolutional Decoding)**
         - *Original Paper Role.* Symmetrical reconstruction layers that map the temporal representations back to the original time dimension.
         - *Presence.* Implemented via the internal `_ConvSequence` with `decode=True`.
@@ -107,11 +107,15 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         The encoder blocks utilize dilated convolutions (in the first two layers of each block) where the dilation rate increases exponentially per layer (e.g., :math:`2^{2k \mod 5}` and :math:`2^{2k+1 \mod 5}` for block :math:`k`).
         This mechanism allows the model to capture context across a **large receptive field** without drastically reducing the time dimension.
     * **Residual Skip Connections.**
-        Skip (residual) connections are applied across the convolutional layers in the encoder and decoder blocks to stabilize training and improve gradient flow, particularly in deep networks. These can optionally use LayerScale.
+        Skip (residual) connections are applied across the convolutional layers in the encoder and decoder blocks to stabilize training and improve gradient flow, particularly in deep networks. These can optionally use :class:`~braindecode.models.dilated_conv_decoder._LayerScale`.
     * **Gated Activation.** The convolutional layers rely primarily on GELU activation.
-        Specifically, the third layer in each block uses a **Gated Linear Unit (GLU)** activation, which gates intermediate representations for enhanced expressivity.
+        Specifically, the third layer in each block uses a **Gated Linear Unit (GLU)** activation (implemented with :class:`torch.nn.GLU`), which gates intermediate representations for enhanced expressivity.
     * **Input Transformation (STFT).**
         The module optionally includes a Spectrogram transformation (if `n_fft` is set) before encoding, allowing the model to operate in the **spectrogram domain** rather than the raw time domain.
+    * **Local Self-Attention Refinement.**
+        Each attention stage wraps the encoded sequence in :class:`braindecode.modules.attention.LocalSelfAttention`, applying sliding-window self-attention with residual connections so temporal saliency can be adjusted without destabilising the convolutional backbone.
+    * **Regularization & Robustness Tooling.**
+        Dropout knobs (input, per-conv, LSTM), :class:`~braindecode.models.dilated_conv_decoder._ChannelDropout`, optional LayerScale, GLU gating, and subject-aware adapters (embeddings + :class:`braindecode.modules.layers.SubjectLayers`) provide avenues to combat overfitting and deal with inter-participant variability.
     * **Temporal Alignment.**
         To compensate for the expected delay between acoustic stimulus and neural response, the original paper's architecture shifts the input brain signal by **150 ms into the future** to facilitate alignment between brain representation :math:`Z` and speech representation :math:`Y`.
 
@@ -119,25 +123,25 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     --------------------------------------------------------------------
 
     * **Temporal.**
-        The temporal axis is the primary processing dimension. The encoder `_ConvSequence`
+        The temporal axis is the primary processing dimension. The encoder :class:`~braindecode.models.dilated_conv_decoder._ConvSequence`
         applies stacks of dilated 1D convolutions whose dilation grows geometrically
         (`dilation_growth`) so each successive block aggregates progressively longer
         context without collapsing the sample rate. Residual shortcuts (optionally scaled
-        via LayerScale) stabilise these wide receptive fields. When enabled, the `_LSTM`
-        layer (optionally flipped or bidirectional) and the `LocalSelfAttention` blocks
+        via LayerScale) stabilise these wide receptive fields. When enabled, the :class:`~braindecode.models.dilated_conv_decoder._LSTM`
+        layer (optionally flipped or bidirectional) and the :class:`braindecode.modules.attention.LocalSelfAttention` blocks
         refine sequential structure on the `(time, feature)` axis before the decoder
         mirrors the stride pattern with transposed convolutions. Padding/cropping through
-        `pad_to_valid_length` and the final adaptive pooling ensure that temporal
+        :meth:`~braindecode.models.dilated_conv_decoder.DilatedConvDecoder.pad_to_valid_length` and the final adaptive pooling ensure that temporal
         resolution matches the requested output while still leveraging the enlarged
         receptive field.
 
     * **Spatial.**
         Spatial structure (sensors/electrodes) is shaped ahead of the temporal stack.
-        `_ChannelDropout` can drop entire electrodes to promote robustness to missing
-        channels. When `subject_layers` is active, `SubjectLayers` injects per-subject
-        1x1 projections across the channel axis and `_ScaledEmbedding` concatenates learned
+        :class:`~braindecode.models.dilated_conv_decoder._ChannelDropout` can drop entire electrodes to promote robustness to missing
+        channels. When `subject_layers` is active, :class:`braindecode.modules.layers.SubjectLayers` injects per-subject
+        1x1 projections across the channel axis and :class:`~braindecode.models.dilated_conv_decoder._ScaledEmbedding` concatenates learned
         subject embeddings as extra "virtual" channels. The optional initial 1x1 block
-        (and the ungrouped first convolution in `_ConvSequence`) mixes all channels,
+        (and the ungrouped first convolution in :class:`~braindecode.models.dilated_conv_decoder._ConvSequence`) mixes all channels,
         letting every temporal filter access the full montage, while later grouped
         convolutions or residual skips preserve locality if desired.
 
@@ -154,9 +158,25 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     .. rubric:: Additional Mechanisms
 
     - **Attention.**
+        When `attention_layers > 0`, each stage adds a
+        :class:`braindecode.modules.attention.LocalSelfAttention` block after the
+        encoder (or :class:`~braindecode.models.dilated_conv_decoder._LSTM` output if
+        present). These modules form sliding-window self-attention over the time axis,
+        allowing the network to reweight features using local contextual cues while
+        keeping computational cost linear in sequence length. The attention output is
+        merged residually with the incoming representation so it acts as an adaptive,
+        low-cost refinement on top of the dilated convolutions.
 
     - **Regularization.**
-
+        Several mechanisms curb overfitting and improve robustness: per-layer dropout
+        (`conv_drop_prob`) and input dropout (`dropout_input`) use
+        :class:`torch.nn.Dropout`, recurrent dropout (`lstm_drop_prob`) regularises the
+        LSTM stack, and :class:`~braindecode.models.dilated_conv_decoder._ChannelDropout`
+        randomly drops full sensor channels. Optional :class:`~braindecode.models.dilated_conv_decoder._LayerScale`
+        gently rescales residual branches, while GLU gating (`glu`, `glu_context`, :class:`torch.nn.GLU`) and subject-specific parameter
+        sharing (via :class:`~braindecode.modules.layers.SubjectLayers` and
+        :class:`~braindecode.models.dilated_conv_decoder._ScaledEmbedding`) encourage
+        sparse, participant-aware representations that generalise across recordings.
 
     Notes
     -----
