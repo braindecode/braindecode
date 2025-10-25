@@ -535,7 +535,6 @@ def test_model_torch_script(model):
         "Labram",
         "EEGMiner",
         "SSTDPN",
-        "DilatedConvDecoderBraindecode",
     ]
 
     if model.__class__.__name__ in not_working_models:
