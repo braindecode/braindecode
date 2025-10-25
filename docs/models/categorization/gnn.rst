@@ -2,7 +2,7 @@
 
 .. currentmodule:: braindecode.models
 
-.. _models:
+.. _models_gnn:
 
 |gnn-icon| Graph Neural Networks
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
