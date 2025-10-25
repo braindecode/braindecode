@@ -11,8 +11,7 @@ from .contrawr import ContraWR
 from .ctnet import CTNet
 from .deep4 import Deep4Net
 from .deepsleepnet import DeepSleepNet
-from .dilated_conv_decoder_adapted import DilatedConvDecoderBraindecode
-from .dilated_conv_decoder_braindecode import DilatedConvDecoder
+from .dilated_conv_decoder import DilatedConvDecoder
 from .eegconformer import EEGConformer
 from .eeginception_erp import EEGInceptionERP
 from .eeginception_mi import EEGInceptionMI
@@ -65,7 +64,6 @@ __all__ = [
     "Deep4Net",
     "DeepSleepNet",
     "DilatedConvDecoder",
-    "DilatedConvDecoderBraindecode",
     "EEGConformer",
     "EEGInceptionERP",
     "EEGInceptionMI",
