@@ -98,6 +98,11 @@ models_mandatory_parameters = [
     ("PBT", ["n_chans", "n_outputs", "n_times"], None),
     ("SSTDPN", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
     ("DilatedConvDecoder", ["n_chans", "n_outputs", "n_times", "sfreq"], None),
+    (
+        "DilatedConvDecoderBraindecode",
+        ["n_chans", "n_outputs", "n_times", "sfreq"],
+        None,
+    ),
 ]
 
 ################################################################
