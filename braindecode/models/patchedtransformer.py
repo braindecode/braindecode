@@ -16,7 +16,7 @@ from braindecode.models.base import EEGModuleMixin
 class PBT(EEGModuleMixin, nn.Module):
     r"""Patched Brain Transformer (PBT) model from Klein et al. (2025) [pbt]_.
 
-    :bdg-info:`Small Attention`
+    :bdg-danger:`Large Brain Models`
 
     This implementation was based in https://github.com/timonkl/PatchedBrainTransformer/
 
