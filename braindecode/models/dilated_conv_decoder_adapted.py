@@ -131,24 +131,21 @@ class DilatedConvDecoderBraindecode(EEGModuleMixin, nn.Module):
         dilation_period: int | None = None,
         # LSTM
         lstm_layers: int = 0,
-        lstm_dropout: float = 0.0,
+        lstm_drop_prob: float = 0.0,
         flip_lstm: bool = False,
         bidirectional_lstm: bool = False,
         # Attention
         attention_layers: int = 0,
         attention_heads: int = 4,
         # Regularization
-        conv_dropout: float = 0.0,
+        conv_drop_prob: float = 0.0,
         dropout_input: float = 0.0,
         batch_norm: bool = False,
         relu_leakiness: float = 0.0,
-        # Activation (for test compatibility)
-        activation: type[nn.Module] = nn.ReLU,
-        # Dropout probability (for test compatibility)
-        drop_prob: float = 0.0,
-        # Output
+        # final layer
         linear_out: bool = False,
         complex_out: bool = False,
+        final_activation: type[nn.Module] = nn.ReLU,
         # Feature flags (v2 reserved)
         use_subject_layers: bool = False,
         **kwargs,
@@ -223,7 +220,7 @@ class DilatedConvDecoderBraindecode(EEGModuleMixin, nn.Module):
             kernel=kernel_size,
             stride=stride,
             leakiness=relu_leakiness,
-            dropout=conv_dropout,
+            dropout=conv_drop_prob,
             dropout_input=dropout_input,
             batch_norm=batch_norm,
             dilation_growth=dilation_growth,
@@ -238,7 +235,7 @@ class DilatedConvDecoderBraindecode(EEGModuleMixin, nn.Module):
             self.lstm = LSTM(
                 input_size=decoder_input_dim,
                 hidden_size=lstm_hidden,
-                dropout=lstm_dropout,
+                dropout=lstm_drop_prob,
                 num_layers=lstm_layers,
                 bidirectional=bidirectional_lstm,
             )
@@ -267,7 +264,7 @@ class DilatedConvDecoderBraindecode(EEGModuleMixin, nn.Module):
             if complex_out:
                 final_modules["final_conv"] = nn.Sequential(
                     nn.Conv1d(decoder_dims[-1], 2 * decoder_dims[-1], 1),
-                    nn.ReLU(),
+                    final_activation(),
                     nn.Conv1d(2 * decoder_dims[-1], self.n_outputs, 1),
                 )
             else:
@@ -354,10 +351,8 @@ class DilatedConvDecoderBraindecode(EEGModuleMixin, nn.Module):
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}")
 
-        original_length = x.shape[-1]
-
         # Pad to valid length for convolutions
-        x, original_length = self.pad_to_valid_length(x)
+        x, _ = self.pad_to_valid_length(x)
 
         # Encode
         encoded = self.encoder(x)
