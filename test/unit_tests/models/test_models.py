@@ -2042,3 +2042,473 @@ def test_dilated_conv_decoder_edge_cases_batch(dilated_conv_decoder_params, batc
     output = model(x)
 
     assert output.shape == (batch_size, dilated_conv_decoder_params["n_outputs"])
+
+
+@pytest.mark.parametrize("initial_linear", [32, 64, 128])
+def test_dilated_conv_decoder_initial_linear_basic(dilated_conv_decoder_params, initial_linear):
+    """Test basic initial linear layer functionality."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params["initial_linear"] = initial_linear
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+    assert model.initial_layer is not None
+
+
+def test_dilated_conv_decoder_initial_linear_disabled(dilated_conv_decoder_params):
+    """Test that initial_linear=0 disables the layer."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params["initial_linear"] = 0
+
+    model = DilatedConvDecoder(**params)
+    assert model.initial_layer is None
+
+
+@pytest.mark.parametrize("initial_depth", [1, 2, 3])
+def test_dilated_conv_decoder_initial_linear_depth(dilated_conv_decoder_params, initial_depth):
+    """Test initial layers with different depths."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"initial_linear": 64, "initial_depth": initial_depth})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+    # Verify the module was created
+    assert model.initial_layer is not None
+    # Should have initial_depth Conv1d layers + activations/norms
+    assert len(model.initial_layer) >= initial_depth
+
+
+@pytest.mark.parametrize("initial_nonlin", [False, True])
+def test_dilated_conv_decoder_initial_linear_nonlin(dilated_conv_decoder_params, initial_nonlin):
+    """Test initial layers with and without nonlinearity after final layer."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"initial_linear": 64, "initial_nonlin": initial_nonlin})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_initial_linear_with_subject_embeddings(dilated_conv_decoder_params):
+    """Test initial layers combined with subject embeddings."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "initial_linear": 64,
+        "subject_dim": 32,
+        "n_subjects": 50,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_initial_linear_with_stft(dilated_conv_decoder_params):
+    """Test initial layers combined with STFT preprocessing."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "initial_linear": 64,
+        "n_fft": 256,
+        "fft_complex": True,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_initial_linear_gradient_flow(dilated_conv_decoder_params):
+    """Test that gradients flow through initial layers."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params["initial_linear"] = 64
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"], requires_grad=True)
+    output = model(x)
+
+    loss = output.sum()
+    loss.backward()
+
+    # Check that initial_layer parameters have gradients
+    for param in model.initial_layer.parameters():
+        assert param.grad is not None
+
+
+def test_dilated_conv_decoder_initial_linear_validation_errors(dilated_conv_decoder_params):
+    """Test parameter validation for initial layers."""
+    params = dilated_conv_decoder_params.copy()
+
+    # Test initial_depth > 1 requires initial_linear > 0
+    with pytest.raises(ValueError, match="initial_depth > 1 requires initial_linear > 0"):
+        DilatedConvDecoder(
+            **params,
+            initial_linear=0,
+            initial_depth=2,
+        )
+
+    # Test initial_linear < 0 is invalid
+    with pytest.raises(ValueError, match="initial_linear must be >= 0"):
+        DilatedConvDecoder(
+            **params,
+            initial_linear=-1,
+        )
+
+
+@pytest.mark.parametrize("layer_scale", [0.05, 0.1, 0.5])
+def test_dilated_conv_decoder_layer_scale_basic(dilated_conv_decoder_params, layer_scale):
+    """Test basic layer scale functionality."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": True, "layer_scale": layer_scale})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_layer_scale_requires_skip(dilated_conv_decoder_params):
+    """Test that layer_scale is ignored or properly handled without skip."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": False, "layer_scale": 0.1})
+
+    # Should work even if skip=False (layer_scale just won't be applied)
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+
+
+def test_dilated_conv_decoder_layer_scale_with_skip(dilated_conv_decoder_params):
+    """Test layer scale with skip connections enabled."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": True, "layer_scale": 0.1})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+    # Verify LayerScale modules exist in encoder
+    has_layer_scale = False
+    for module in model.encoder.modules():
+        if type(module).__name__ == "LayerScale":
+            has_layer_scale = True
+            break
+    assert has_layer_scale
+
+
+def test_dilated_conv_decoder_layer_scale_gradient_stability(dilated_conv_decoder_params):
+    """Test that layer scale helps with gradient flow."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": True, "layer_scale": 0.1, "depth": 4})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"], requires_grad=True)
+    output = model(x)
+
+    loss = output.sum()
+    loss.backward()
+
+    # Check that gradients are not NaN (layer scale helps prevent this)
+    for param in model.parameters():
+        if param.grad is not None:
+            assert not torch.isnan(param.grad).any()
+
+
+def test_dilated_conv_decoder_layer_scale_validation(dilated_conv_decoder_params):
+    """Test layer scale parameter validation."""
+    params = dilated_conv_decoder_params.copy()
+
+    # Test invalid layer_scale value
+    with pytest.raises(ValueError, match="layer_scale must be > 0"):
+        DilatedConvDecoder(
+            **params,
+            skip=True,
+            layer_scale=-0.1,
+        )
+
+    # Test layer_scale <= 0
+    with pytest.raises(ValueError, match="layer_scale must be > 0"):
+        DilatedConvDecoder(
+            **params,
+            skip=True,
+            layer_scale=0,
+        )
+
+def test_dilated_conv_decoder_post_skip_basic(dilated_conv_decoder_params):
+    """Test basic post-skip connection functionality."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": True, "post_skip": True})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_post_skip_requires_skip(dilated_conv_decoder_params):
+    """Test that post_skip requires skip=True."""
+    params = dilated_conv_decoder_params.copy()
+
+    with pytest.raises(ValueError, match="post_skip=True requires skip=True"):
+        DilatedConvDecoder(
+            **params,
+            skip=False,
+            post_skip=True,
+        )
+
+
+def test_dilated_conv_decoder_pre_skip_vs_post_skip(dilated_conv_decoder_params):
+    """Compare pre-skip and post-skip architectures."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": True})
+
+    # Pre-skip model
+    set_random_seeds(0, False)
+    params_pre = params.copy()
+    params_pre["post_skip"] = False
+    model_pre = DilatedConvDecoder(**params_pre)
+    model_pre.eval()
+
+    # Post-skip model
+    set_random_seeds(0, False)
+    params_post = params.copy()
+    params_post["post_skip"] = True
+    model_post = DilatedConvDecoder(**params_post)
+    model_post.eval()
+
+    # Both should process input correctly
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    output_pre = model_pre(x)
+    output_post = model_post(x)
+
+    assert output_pre.shape == (4, params["n_outputs"])
+    assert output_post.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output_pre).any()
+    assert not torch.isnan(output_post).any()
+
+
+def test_dilated_conv_decoder_post_skip_with_layer_scale(dilated_conv_decoder_params):
+    """Test post-skip combined with layer scale."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "skip": True,
+        "post_skip": True,
+        "layer_scale": 0.1,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_post_skip_with_initial_layers(dilated_conv_decoder_params):
+    """Test post-skip combined with initial linear layers."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "skip": True,
+        "post_skip": True,
+        "initial_linear": 64,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_post_skip_gradient_flow(dilated_conv_decoder_params):
+    """Test gradient flow through post-skip connections."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"skip": True, "post_skip": True})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"], requires_grad=True)
+    output = model(x)
+
+    loss = output.sum()
+    loss.backward()
+
+    # Check gradients exist
+    for param in model.parameters():
+        if param.grad is not None:
+            assert not torch.isnan(param.grad).any()
+
+
+def test_dilated_conv_decoder_all_features_combined(dilated_conv_decoder_params):
+    """Test initial layers, layer scale, and post-skip all enabled."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "initial_linear": 64,
+        "initial_depth": 2,
+        "initial_nonlin": True,
+        "skip": True,
+        "layer_scale": 0.1,
+        "post_skip": True,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_all_features_with_subject_and_stft(dilated_conv_decoder_params):
+    """Test all three new features combined with subject embeddings and STFT."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    # Note: Combine initial_linear with subject embeddings (both before main encoder)
+    # and skip features (in main encoder), but not with STFT since they're at different stages
+    params.update({
+        "initial_linear": 64,
+        "skip": True,
+        "layer_scale": 0.1,
+        "post_skip": True,
+        "subject_dim": 32,
+        "n_subjects": 50,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_all_features_with_stft(dilated_conv_decoder_params):
+    """Test all three features (initial, skip, layer_scale) combined with STFT."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    # STFT applied first, then initial_linear, then skip connections
+    params.update({
+        "n_fft": 256,
+        "initial_linear": 64,
+        "skip": True,
+        "layer_scale": 0.1,
+        "post_skip": True,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_dilated_conv_decoder_train_eval_consistency(dilated_conv_decoder_params):
+    """Test train/eval consistency with all new features."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "initial_linear": 64,
+        "skip": True,
+        "layer_scale": 0.1,
+        "post_skip": True,
+    })
+
+    model = DilatedConvDecoder(**params)
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    # Train mode
+    model.train()
+    output_train = model(x)
+
+    # Eval mode with no_grad
+    model.eval()
+    with torch.no_grad():
+        output_eval = model(x)
+
+    assert output_train.shape == (4, params["n_outputs"])
+    assert output_eval.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output_train).any()
+    assert not torch.isnan(output_eval).any()

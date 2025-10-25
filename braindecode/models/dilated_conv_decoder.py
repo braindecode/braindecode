@@ -109,6 +109,26 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     fft_complex : bool, default=True
         If True, keep complex spectrogram. If False, use power spectrogram.
         Only used when n_fft is not None.
+    initial_linear : int, default=0
+        Number of output channels for initial linear (1x1 conv) preprocessing layer.
+        If 0, no initial layer is applied. If > 0, applies one or more 1x1 convolutions
+        before the main encoder for feature conditioning and domain adaptation.
+    initial_depth : int, default=1
+        Number of 1x1 convolutional layers to apply before the encoder.
+        Only used if initial_linear > 0.
+    initial_nonlin : bool, default=False
+        If True, apply a non-linearity after the final initial layer.
+        Only used if initial_linear > 0.
+    layer_scale : float, optional
+        If not None, applies LayerScale to residual skip connections in encoder/decoder.
+        Helps stabilize training in deep networks with skip connections.
+        Typical value: 0.1. Higher values mean more aggressive scaling.
+    skip : bool, default=False
+        If True, adds skip (residual) connections in encoder and decoder blocks.
+        Skip connections help with gradient flow and training stability.
+    post_skip : bool, default=False
+        If True, applies skip connections after activation instead of before.
+        Only used if skip=True. Changes residual connection pattern.
     chs_info : list of dict, optional
         Information about each EEG channel (for compatibility with EEGModuleMixin).
     input_window_seconds : float, optional
@@ -177,6 +197,14 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         # STFT/Spectrogram (optional)
         n_fft: int | None = None,
         fft_complex: bool = True,
+        # Initial linear layers (optional)
+        initial_linear: int = 0,
+        initial_depth: int = 1,
+        initial_nonlin: bool = False,
+        # Skip connection features (optional)
+        layer_scale: float | None = None,
+        skip: bool = False,
+        post_skip: bool = False,
         **kwargs,
     ):
         # Initialize EEGModuleMixin
@@ -224,6 +252,16 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             raise ValueError(f"lstm_layers must be >= 0, got {lstm_layers}")
         if attention_layers < 0:
             raise ValueError(f"attention_layers must be >= 0, got {attention_layers}")
+        if initial_linear < 0:
+            raise ValueError(f"initial_linear must be >= 0, got {initial_linear}")
+        if initial_depth < 1:
+            raise ValueError(f"initial_depth must be >= 1, got {initial_depth}")
+        if initial_depth > 1 and initial_linear == 0:
+            raise ValueError("initial_depth > 1 requires initial_linear > 0")
+        if layer_scale is not None and layer_scale <= 0:
+            raise ValueError(f"layer_scale must be > 0, got {layer_scale}")
+        if post_skip and not skip:
+            raise ValueError("post_skip=True requires skip=True")
 
         self.depth = depth
         self.kernel_size = kernel_size
@@ -234,6 +272,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         self.dilation_period = dilation_period
         self.lstm_layers = lstm_layers
         self.attention_layers = attention_layers
+        self.skip = skip
+        self.post_skip = post_skip
+        self.layer_scale = layer_scale
 
         # Initialize subject-specific modules (optional)
         self.subject_embedding = None
@@ -272,6 +313,24 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             else:
                 input_channels *= freq_bins
 
+        # Initialize initial linear layers (optional)
+        self.initial_layer = None
+        if initial_linear > 0:
+            initial_modules: list[nn.Module] = []
+            for k in range(initial_depth):
+                in_chans = input_channels if k == 0 else initial_linear
+                initial_modules.append(
+                    nn.Conv1d(in_chans, initial_linear, 1, bias=True)
+                )
+                if k < initial_depth - 1 or initial_nonlin:
+                    initial_modules.append(nn.LeakyReLU(relu_leakiness))
+                    if batch_norm:
+                        initial_modules.append(nn.BatchNorm1d(initial_linear))
+                    if conv_drop_prob > 0:
+                        initial_modules.append(nn.Dropout(conv_drop_prob))
+            self.initial_layer = nn.Sequential(*initial_modules)
+            input_channels = initial_linear
+
         # Build channel dimension sequences for encoder and decoder
         # Use self.n_chans property to infer from chs_info if needed
         encoder_dims = [input_channels] + [
@@ -294,6 +353,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             batch_norm=batch_norm,
             dilation_growth=dilation_growth,
             dilation_period=dilation_period,
+            skip=skip,
+            scale=layer_scale,
+            post_skip=post_skip,
         )
 
         self.encoder = ConvSequence(encoder_dims, **encoder_params)
@@ -464,6 +526,10 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
                 -1, -1, x.shape[-1]
             )  # (batch, subject_dim, time)
             x = torch.cat([x, emb], dim=1)  # Concatenate along channel dimension
+
+        # Apply initial linear layers if enabled
+        if self.initial_layer is not None:
+            x = self.initial_layer(x)
 
         # Pad to valid length for convolutions
         x, _ = self.pad_to_valid_length(x)
