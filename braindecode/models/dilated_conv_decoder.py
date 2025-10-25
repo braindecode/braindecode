@@ -7,15 +7,19 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import typing as tp
 from functools import partial
 
 import torch
+import torchaudio as ta
 from torch import nn
 from torch.nn import functional as F
 
 from braindecode.models.base import EEGModuleMixin
+
+logger = logging.getLogger(__name__)
 
 
 class DilatedConvDecoder(EEGModuleMixin, nn.Module):
@@ -84,9 +88,27 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     complex_out : bool, default=False
         If True and linear_out=True, apply a non-linearity between
         intermediate and output convolutions.
-    use_subject_layers : bool, default=False
-        **v1: Feature flag disabled by default. Subject-specific layers**
-        **will be implemented in v2.** Currently raises NotImplementedError if True.
+    n_subjects : int, default=200
+        Number of unique subjects (for subject-specific pathways).
+        Only used if subject_dim > 0.
+    subject_dim : int, default=0
+        Dimension of subject embeddings. If 0, no subject-specific features.
+        If > 0, adds subject embeddings to the input before encoding.
+    subject_layers : bool, default=False
+        If True, apply subject-specific linear transformations to input channels.
+        Each subject has its own weight matrix. Requires subject_dim > 0.
+    subject_layers_dim : str, default="input"
+        Where to apply subject layers: "input" or "hidden".
+    subject_layers_id : bool, default=False
+        If True, initialize subject layers as identity matrices.
+    embedding_scale : float, default=1.0
+        Scaling factor for subject embeddings learning rate.
+    n_fft : int, optional
+        FFT size for STFT processing. If None, no STFT is applied.
+        If specified, applies spectrogram transform before encoding.
+    fft_complex : bool, default=True
+        If True, keep complex spectrogram. If False, use power spectrogram.
+        Only used when n_fft is not None.
     chs_info : list of dict, optional
         Information about each EEG channel (for compatibility with EEGModuleMixin).
     input_window_seconds : float, optional
@@ -106,8 +128,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     - The model uses dilated convolutions to achieve large receptive fields
       without losing temporal resolution excessively.
     - Padding is computed to maintain temporal dimensions through layers when possible.
-    - Subject-specific pathways (subject_layers, subject_embedding) are reserved
-      for v2 and currently raise errors if requested.
+    - Subject-specific features (subject_dim > 0, subject_layers) require passing
+      subject indices in the forward pass as an optional parameter or via batch.
+    - STFT processing (n_fft > 0) automatically transforms input to spectrogram domain.
     """
 
     def __init__(
@@ -143,8 +166,16 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         linear_out: bool = False,
         complex_out: bool = False,
         final_activation: type[nn.Module] = nn.ReLU,
-        # Feature flags (v2 reserved)
-        use_subject_layers: bool = False,
+        # Subject-specific features (optional)
+        n_subjects: int = 200,
+        subject_dim: int = 0,
+        subject_layers: bool = False,
+        subject_layers_dim: str = "input",
+        subject_layers_id: bool = False,
+        embedding_scale: float = 1.0,
+        # STFT/Spectrogram (optional)
+        n_fft: int | None = None,
+        fft_complex: bool = True,
         **kwargs,
     ):
         # Initialize EEGModuleMixin
@@ -157,12 +188,15 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             sfreq=sfreq,
         )
 
+        # Store parameters for later use
+        self.subject_dim = subject_dim
+        self.n_subjects = n_subjects
+        self.n_fft = n_fft
+        self.fft_complex = fft_complex
+
         # Validate inputs
-        if use_subject_layers:
-            raise NotImplementedError(
-                "Subject-specific layers are reserved for v2. "
-                "Use use_subject_layers=False (default)."
-            )
+        if subject_layers and subject_dim == 0:
+            raise ValueError("subject_layers=True requires subject_dim > 0")
         if complex_out and not linear_out:
             raise ValueError(
                 "complex_out=True requires linear_out=True; "
@@ -200,9 +234,46 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         self.lstm_layers = lstm_layers
         self.attention_layers = attention_layers
 
+        # Initialize subject-specific modules (optional)
+        self.subject_embedding = None
+        self.subject_layers_module = None
+        input_channels = self.n_chans
+
+        if subject_dim > 0:
+            self.subject_embedding = ScaledEmbedding(
+                n_subjects, subject_dim, embedding_scale
+            )
+            input_channels += subject_dim
+
+        if subject_layers:
+            assert subject_dim > 0, "subject_layers requires subject_dim > 0"
+            meg_dim = input_channels
+            dim = hidden_dim if subject_layers_dim == "hidden" else meg_dim
+            self.subject_layers_module = SubjectLayers(
+                meg_dim, dim, n_subjects, subject_layers_id
+            )
+            input_channels = dim
+
+        # Initialize STFT module (optional)
+        self.stft = None
+        if n_fft is not None:
+            self.stft = ta.transforms.Spectrogram(
+                n_fft=n_fft,
+                hop_length=n_fft // 2,
+                normalized=True,
+                power=None if fft_complex else 1,
+                return_complex=True,
+            )
+            # Update input channels for spectrogram
+            freq_bins = n_fft // 2 + 1
+            if fft_complex:
+                input_channels *= 2 * freq_bins
+            else:
+                input_channels *= freq_bins
+
         # Build channel dimension sequences for encoder and decoder
         # Use self.n_chans property to infer from chs_info if needed
-        encoder_dims = [self.n_chans] + [
+        encoder_dims = [input_channels] + [
             int(round(hidden_dim * growth**k)) for k in range(depth)
         ]
         decoder_input_dim = encoder_dims[-1]
@@ -323,7 +394,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             x = F.pad(x, (0, delta))
         return x, original_length
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, subject_index: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """
         Forward pass.
 
@@ -331,6 +404,8 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         ----------
         x : torch.Tensor
             Input EEG data of shape (batch, n_chans, n_times).
+        subject_index : torch.Tensor, optional
+            Subject indices of shape (batch,). Required if subject_dim > 0.
 
         Returns
         -------
@@ -347,6 +422,47 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             )
         if x.shape[1] != self.n_chans:
             raise ValueError(f"Expected {self.n_chans} channels, got {x.shape[1]}")
+
+        original_length = x.shape[-1]
+        batch_size = x.shape[0]
+
+        # Apply STFT if enabled
+        if self.stft is not None:
+            # Pad for STFT window
+            assert self.n_fft is not None, "n_fft must be set if stft is not None"
+            pad_size = self.n_fft // 4
+            x = F.pad(
+                pad_multiple(x, self.n_fft // 2), (pad_size, pad_size), mode="reflect"
+            )
+
+            # Apply STFT
+            spec = self.stft(x)  # (batch, channels, freq, time)
+            B, C, Fr, T = spec.shape
+
+            if self.fft_complex:
+                # Convert complex to real/imag channels
+                spec = torch.view_as_real(spec).permute(0, 1, 2, 4, 3)
+                x = spec.reshape(B, C * 2 * Fr, T)
+            else:
+                x = spec.reshape(B, C * Fr, T)
+
+        # Apply subject layers if enabled
+        if self.subject_layers_module is not None:
+            if subject_index is None:
+                raise ValueError(
+                    "subject_index is required when subject_layers is enabled"
+                )
+            x = self.subject_layers_module(x, subject_index)
+
+        # Apply subject embedding if enabled
+        if self.subject_embedding is not None:
+            if subject_index is None:
+                raise ValueError("subject_index is required when subject_dim > 0")
+            emb = self.subject_embedding(subject_index)  # (batch, subject_dim)
+            emb = emb[:, :, None].expand(
+                -1, -1, x.shape[-1]
+            )  # (batch, subject_dim, time)
+            x = torch.cat([x, emb], dim=1)  # Concatenate along channel dimension
 
         # Pad to valid length for convolutions
         x, _ = self.pad_to_valid_length(x)
@@ -374,6 +490,10 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
 
         # Apply final layer (output conv + pooling)
         decoded = self.final_layer(decoded).squeeze(-1)
+
+        # Crop to original length
+        if decoded.shape[-1] > original_length:
+            decoded = decoded[..., :original_length]
 
         return decoded
 
@@ -649,3 +769,91 @@ class Attention(nn.Module):
         out = out.reshape(batch_size, -1, length)
         out = F.relu(self.bn(self.fc(out))) * self.scale.view(1, -1, 1)
         return out
+
+
+def pad_multiple(x: torch.Tensor, base: int) -> torch.Tensor:
+    """Pad tensor to be a multiple of base."""
+    length = x.shape[-1]
+    target = math.ceil(length / base) * base
+    return F.pad(x, (0, target - length))
+
+
+class ScaledEmbedding(nn.Module):
+    """Scaled embedding layer for subjects.
+
+    Scales up the learning rate for the embedding to prevent slow convergence.
+    Used for subject-specific representations.
+    """
+
+    def __init__(self, num_embeddings: int, embedding_dim: int, scale: float = 10.0):
+        super().__init__()
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        self.embedding.weight.data /= scale
+        self.scale = scale
+
+    @property
+    def weight(self) -> torch.Tensor:
+        """Get scaled embedding weights."""
+        return self.embedding.weight * self.scale
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Subject indices of shape (batch,).
+
+        Returns
+        -------
+        torch.Tensor
+            Scaled embeddings of shape (batch, embedding_dim).
+        """
+        return self.embedding(x) * self.scale
+
+
+class SubjectLayers(nn.Module):
+    """Per-subject linear transformation layer.
+
+    Applies subject-specific linear transformations to the input. Each subject
+    has its own weight matrix for personalized processing.
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        n_subjects: int,
+        init_id: bool = False,
+    ):
+        super().__init__()
+        self.weights = nn.Parameter(torch.randn(n_subjects, in_channels, out_channels))
+        if init_id:
+            assert in_channels == out_channels, (
+                "init_id requires in_channels == out_channels"
+            )
+            self.weights.data[:] = torch.eye(in_channels)[None]
+        self.weights.data *= 1 / (in_channels**0.5)
+
+    def forward(self, x: torch.Tensor, subjects: torch.Tensor) -> torch.Tensor:
+        """Forward pass.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input of shape (batch, in_channels, time).
+        subjects : torch.Tensor
+            Subject indices of shape (batch,).
+
+        Returns
+        -------
+        torch.Tensor
+            Output of shape (batch, out_channels, time).
+        """
+        _, C, D = self.weights.shape
+        weights = self.weights.gather(0, subjects.view(-1, 1, 1).expand(-1, C, D))
+        return torch.einsum("bct,bcd->bdt", x, weights)
+
+    def __repr__(self) -> str:
+        S, C, D = self.weights.shape
+        return f"SubjectLayers({C}, {D}, {S})"
