@@ -2803,3 +2803,313 @@ def test_channel_dropout_all_features_combined(dilated_conv_decoder_params):
 
     assert output.shape == (4, params["n_outputs"])
     assert not torch.isnan(output).any()
+
+
+# ============================================================================
+# GLU (Gated Linear Units) Tests
+# ============================================================================
+
+
+def test_glu_disabled_by_default(dilated_conv_decoder_params):
+    """Test that GLU is disabled by default (glu=0)."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    # No glu specified - should default to 0
+
+    model = DilatedConvDecoder(**params)
+
+    # Check no GLU modules are created
+    assert all(g is None for g in model.encoder.glus)
+    assert all(g is None for g in model.decoder.glus)
+
+
+def test_glu_basic_initialization(dilated_conv_decoder_params):
+    """Test basic GLU initialization."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "depth": 2})  # GLU every 1 layer
+
+    model = DilatedConvDecoder(**params)
+
+    # Check GLU modules are created
+    assert any(g is not None for g in model.encoder.glus), "No GLU modules in encoder"
+    assert any(g is not None for g in model.decoder.glus), "No GLU modules in decoder"
+
+
+@pytest.mark.parametrize("glu_interval", [1, 2])
+def test_glu_different_intervals(dilated_conv_decoder_params, glu_interval):
+    """Test GLU with different application intervals."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": glu_interval, "depth": 3})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_forward_pass(dilated_conv_decoder_params):
+    """Test GLU forward pass works correctly."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "depth": 2})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_glu_variant_true(dilated_conv_decoder_params):
+    """Test GLU with glu_glu=True (uses nn.GLU internally)."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "glu_glu": True, "depth": 2})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_glu_variant_false(dilated_conv_decoder_params):
+    """Test GLU with glu_glu=False (standard activation for gating)."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "glu_glu": False, "depth": 2})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_with_context(dilated_conv_decoder_params):
+    """Test GLU with context window for gating."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "glu_context": 1, "depth": 2})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_context_requires_glu(dilated_conv_decoder_params):
+    """Test that glu_context requires glu > 0."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 0, "glu_context": 1})
+
+    with pytest.raises(ValueError, match="glu_context > 0 requires glu > 0"):
+        DilatedConvDecoder(**params)
+
+
+def test_glu_invalid_values():
+    """Test that invalid GLU values are rejected."""
+    params = {
+        "n_chans": 32,
+        "n_outputs": 4,
+        "n_times": 1000,
+        "glu": -1,
+    }
+
+    with pytest.raises(ValueError, match="glu must be >= 0"):
+        DilatedConvDecoder(**params)
+
+    params["glu"] = 1
+    params["glu_context"] = -1
+
+    with pytest.raises(ValueError, match="glu_context must be >= 0"):
+        DilatedConvDecoder(**params)
+
+
+def test_glu_context_size_validation():
+    """Test that glu_context must be < kernel_size."""
+    params = {
+        "n_chans": 32,
+        "n_outputs": 4,
+        "n_times": 1000,
+        "kernel_size": 4,
+        "glu": 1,
+        "glu_context": 4,  # >= kernel_size, should fail
+    }
+
+    with pytest.raises(ValueError, match="glu_context must be < kernel_size"):
+        DilatedConvDecoder(**params)
+
+
+def test_glu_gradient_flow(dilated_conv_decoder_params):
+    """Test gradient flow through GLU layers."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "depth": 2})
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"], requires_grad=True)
+    output = model(x)
+
+    loss = output.sum()
+    loss.backward()
+
+    # Check gradients exist
+    for param in model.parameters():
+        if param.grad is not None:
+            assert not torch.isnan(param.grad).any()
+
+    # Check input gradient
+    assert x.grad is not None
+    assert not torch.isnan(x.grad).any()
+
+
+def test_glu_with_skip_connections(dilated_conv_decoder_params):
+    """Test GLU combined with skip connections."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "glu": 1,
+        "skip": True,
+        "layer_scale": 0.1,
+        "depth": 2,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_with_initial_layers(dilated_conv_decoder_params):
+    """Test GLU combined with initial linear layers."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "glu": 1,
+        "initial_linear": 64,
+        "depth": 2,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    output = model(x)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_with_subject_embeddings(dilated_conv_decoder_params):
+    """Test GLU combined with subject embeddings."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "glu": 1,
+        "subject_dim": 32,
+        "n_subjects": 50,
+        "depth": 2,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_all_features_combined(dilated_conv_decoder_params):
+    """Test GLU with all other features combined."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({
+        "glu": 1,
+        "glu_context": 1,
+        "initial_linear": 64,
+        "skip": True,
+        "layer_scale": 0.1,
+        "post_skip": True,
+        "channel_dropout_prob": 0.1,
+        "subject_dim": 32,
+        "n_subjects": 50,
+        "depth": 2,
+    })
+
+    model = DilatedConvDecoder(**params)
+    model.train()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+    subject_idx = torch.randint(0, 50, (4,))
+
+    output = model(x, subject_index=subject_idx)
+
+    assert output.shape == (4, params["n_outputs"])
+    assert not torch.isnan(output).any()
+
+
+def test_glu_eval_mode_consistency(dilated_conv_decoder_params):
+    """Test GLU is deterministic in eval mode."""
+    set_random_seeds(0, False)
+    params = dilated_conv_decoder_params.copy()
+    params.update({"glu": 1, "depth": 2})
+
+    model = DilatedConvDecoder(**params)
+    model.eval()
+
+    x = torch.randn(4, params["n_chans"], params["n_times"])
+
+    with torch.no_grad():
+        output1 = model(x)
+        output2 = model(x)
+
+    torch.testing.assert_close(output1, output2)
+
+
+def test_glu_different_depths(dilated_conv_decoder_params):
+    """Test GLU with different depth values."""
+    set_random_seeds(0, False)
+
+    for depth in [1, 2, 3]:
+        params = dilated_conv_decoder_params.copy()
+        params.update({"glu": 1, "depth": depth})
+
+        model = DilatedConvDecoder(**params)
+        model.train()
+
+        x = torch.randn(4, params["n_chans"], params["n_times"])
+        output = model(x)
+
+        assert output.shape == (4, params["n_outputs"])
+        assert not torch.isnan(output).any()

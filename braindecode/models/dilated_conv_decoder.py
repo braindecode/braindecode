@@ -135,6 +135,16 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
     channel_dropout_type : str, optional
         If specified with chs_info, only drop channels of this type
         (e.g., 'eeg', 'ref', 'eog'). If None with dropout_prob > 0, drops any channel.
+    glu : int, default=0
+        If > 0, applies Gated Linear Units (GLU) every N encoder/decoder layers
+        where N = glu. GLUs gate intermediate representations for more expressivity.
+        If 0, no GLU is applied.
+    glu_context : int, default=0
+        Context window size for GLU gates. If > 0, uses contextual information
+        from neighboring time steps for gating. Requires glu > 0.
+    glu_glu : bool, default=True
+        If True with glu > 0, uses nn.GLU for gating (doubles channels internally).
+        If False, uses standard activation for gating (no channel doubling).
     chs_info : list of dict, optional
         Information about each EEG channel (for compatibility with EEGModuleMixin).
     input_window_seconds : float, optional
@@ -214,6 +224,10 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
         # Channel dropout (optional)
         channel_dropout_prob: float = 0.0,
         channel_dropout_type: str | None = None,
+        # GLU gates (optional)
+        glu: int = 0,
+        glu_context: int = 0,
+        glu_glu: bool = True,
         **kwargs,
     ):
         # Initialize EEGModuleMixin
@@ -278,6 +292,17 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             )
         if channel_dropout_type is not None and channel_dropout_prob == 0.0:
             raise ValueError("channel_dropout_type requires channel_dropout_prob > 0")
+        if glu < 0:
+            raise ValueError(f"glu must be >= 0, got {glu}")
+        if glu_context < 0:
+            raise ValueError(f"glu_context must be >= 0, got {glu_context}")
+        if glu_context > 0 and glu == 0:
+            raise ValueError("glu_context > 0 requires glu > 0")
+        if glu_context >= kernel_size:
+            raise ValueError(
+                f"glu_context must be < kernel_size "
+                f"(got {glu_context} >= {kernel_size})"
+            )
 
         self.depth = depth
         self.kernel_size = kernel_size
@@ -381,6 +406,9 @@ class DilatedConvDecoder(EEGModuleMixin, nn.Module):
             skip=skip,
             scale=layer_scale,
             post_skip=post_skip,
+            glu=glu,
+            glu_context=glu_context,
+            glu_glu=glu_glu,
         )
 
         self.encoder = ConvSequence(encoder_dims, **encoder_params)
@@ -621,35 +649,30 @@ class ConvSequence(nn.Module):
         activation: tp.Any = None,
     ) -> None:
         super().__init__()
-
-        if activation is None:
-            activation = partial(nn.LeakyReLU, leakiness)
-
         dilation = 1
         channels = tuple(channels)
         self.skip = skip
         self.sequence = nn.ModuleList()
         self.glus = nn.ModuleList()
-
+        if activation is None:
+            activation = partial(nn.LeakyReLU, leakiness)
         Conv = nn.Conv1d if not decode else nn.ConvTranspose1d
-
+        # build layers
         for k, (chin, chout) in enumerate(zip(channels[:-1], channels[1:])):
-            layers: list[nn.Module] = []
+            layers: tp.List[nn.Module] = []
             is_last = k == len(channels) - 2
 
-            # Input dropout (only on first layer)
-            if k == 0 and dropout_input > 0:
-                assert 0 < dropout_input < 1, "dropout_input must be in (0, 1)"
+            # Set dropout for the input of the conv sequence if defined
+            if k == 0 and dropout_input:
+                assert 0 < dropout_input < 1
                 layers.append(nn.Dropout(dropout_input))
 
-            # Dilation schedule
+            # conv layer
+            if dilation_growth > 1:
+                assert kernel % 2 != 0, "Supports only odd kernel with dilation for now"
             if dilation_period and (k % dilation_period) == 0:
                 dilation = 1
-
-            # Padding computation
             pad = kernel // 2 * dilation
-
-            # Convolutional layer
             layers.append(
                 Conv(
                     chin,
@@ -662,18 +685,15 @@ class ConvSequence(nn.Module):
                 )
             )
             dilation *= dilation_growth
-
-            # Non-linearity, normalization, and regularization
+            # non-linearity
             if activation_on_last or not is_last:
                 if batch_norm:
                     layers.append(nn.BatchNorm1d(num_features=chout))
                 layers.append(activation())
-                if dropout > 0:
+                if dropout:
                     layers.append(nn.Dropout(dropout))
                 if rewrite:
-                    layers.extend([nn.Conv1d(chout, chout, 1), nn.LeakyReLU(leakiness)])
-
-            # Skip connection scaling
+                    layers += [nn.Conv1d(chout, chout, 1), nn.LeakyReLU(leakiness)]
             if chin == chout and skip:
                 if scale is not None:
                     layers.append(LayerScale(chout, scale))
@@ -681,8 +701,6 @@ class ConvSequence(nn.Module):
                     layers.append(Conv(chout, chout, 1, groups=chout, bias=False))
 
             self.sequence.append(nn.Sequential(*layers))
-
-            # GLU layer (Gated Linear Unit)
             if glu and (k + 1) % glu == 0:
                 ch = 2 * chout if glu_glu else chout
                 act = nn.GLU(dim=1) if glu_glu else activation()
@@ -695,14 +713,12 @@ class ConvSequence(nn.Module):
             else:
                 self.glus.append(None)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: tp.Any) -> tp.Any:
         for module_idx, module in enumerate(self.sequence):
             old_x = x
             x = module(x)
-            # Residual skip connection
             if self.skip and x.shape == old_x.shape:
                 x = x + old_x
-            # GLU
             glu = self.glus[module_idx]
             if glu is not None:
                 x = glu(x)
